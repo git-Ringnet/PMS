@@ -36,7 +36,7 @@ const subMenuItems = computed(() => {
       { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
       { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
       { name: 'Khóa Phòng', icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
-      { name: 'Đổi Công Việc', icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
+      { name: 'D.S Công Việc', icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: 'Công Ty', icon: 'building', tab: 'company', active: currentTab === 'company' },
       { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
       { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
@@ -46,16 +46,30 @@ const subMenuItems = computed(() => {
   return []
 })
 
-// Custom date/time string to match: Demo - Ca 2 09/06/2026 2:56 CH
+// Custom date/time string to match: Demo - Ca 2 09/06/2026 2:56 CH (Bound to Asia/Ho_Chi_Minh timezone)
 const formattedTimeVi = computed(() => {
   const d = currentDate.value
-  const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
-  let hours = d.getHours()
-  const minutes = String(d.getMinutes()).padStart(2, '0')
-  const ampm = hours >= 12 ? 'CH' : 'SA'
-  hours = hours % 12
-  hours = hours ? hours : 12 // the hour '0' should be '12'
-  return `${dateStr} ${hours}:${minutes} ${ampm}`
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  })
+  
+  const parts = formatter.formatToParts(d)
+  const month = parts.find(p => p.type === 'month').value
+  const day = parts.find(p => p.type === 'day').value
+  const year = parts.find(p => p.type === 'year').value
+  const hour = parts.find(p => p.type === 'hour').value
+  const minute = parts.find(p => p.type === 'minute').value
+  const dayPeriod = parts.find(p => p.type === 'dayPeriod').value // "AM" or "PM"
+  
+  const dateStr = `${day}/${month}/${year}`
+  const period = dayPeriod === 'PM' ? 'CH' : 'SA'
+  return `${dateStr} ${hour}:${minute} ${period}`
 })
 
 // Update time every minute
@@ -185,12 +199,12 @@ function toggleSidebar() {
         
         <span>{{ item.name }}</span>
 
-        <!-- Notification Badge specifically for "Đổi Công Việc" -->
+        <!-- Notification Badge specifically for "D.S Công Việc" -->
         <span
-          v-if="item.name === 'Đổi Công Việc'"
+          v-if="item.name === 'D.S Công Việc'"
           class="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold border border-white"
         >
-          7
+          2
         </span>
       </button>
     </div>

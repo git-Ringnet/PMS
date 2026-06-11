@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui-store'
 import RoomDetailModal from '@/components/RoomDetailModal.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
+import ShiftWorkPage from './ShiftWorkPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -225,7 +226,7 @@ onMounted(async () => {
 <template>
   <div class="flex h-full overflow-hidden">
     <!-- Left Slim Sidebar (Visual Match with circular badges) -->
-    <aside v-if="currentTab !== 'available' && currentTab !== 'room-plan'" class="w-[118px] shrink-0 border-r border-slate-200 bg-white flex flex-col items-center py-3 overflow-y-auto z-20">
+    <aside v-if="currentTab !== 'available' && currentTab !== 'room-plan' && currentTab !== 'shift-work'" class="w-[118px] shrink-0 border-r border-slate-200 bg-white flex flex-col items-center py-3 overflow-y-auto z-20">
       <!-- Date Display (Editable input when isFuture is true, else static today's date text) -->
       <div class="mb-3 w-full px-2 flex flex-col items-center gap-1 shrink-0">
         <input 
@@ -396,6 +397,11 @@ onMounted(async () => {
     <!-- Main Content Area (Kế hoạch phòng Tab RoomPlanPage) -->
     <div v-else-if="currentTab === 'room-plan'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
       <RoomPlanPage />
+    </div>
+
+    <!-- Main Content Area (D.S Công Việc Tab ShiftWorkPage) -->
+    <div v-else-if="currentTab === 'shift-work'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
+      <ShiftWorkPage />
     </div>
 
     <!-- Main Content Area (Room Map Sơ đồ / Lưới danh sách) -->
