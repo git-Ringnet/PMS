@@ -3,11 +3,12 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import CompanySettingsPage from './company/CompanySettingsPage.vue'
 
 const router = useRouter()
 const uiStore = useUiStore()
 
-// View state: 'menu', 'hotel', 'room'
+// View state: 'menu', 'hotel', 'room', 'company'
 const currentView = ref('menu')
 const activeHotelTab = ref('THÔNG TIN KHÁCH SẠN')
 const activeRoomTab = ref('TÊN LOẠI PHÒNG')
@@ -258,7 +259,8 @@ const formatCurrency = (val) => {
           <span class="uppercase tracking-wider text-sm">
             {{ 
               currentView === 'menu' ? 'Cấu hình hệ thống' : 
-              currentView === 'hotel' ? 'Định nghĩa khách sạn' : 'Định nghĩa phòng'
+              currentView === 'hotel' ? 'Định nghĩa khách sạn' : 
+              currentView === 'company' ? 'Công Ty' : 'Định nghĩa phòng'
             }}
           </span>
         </button>
@@ -344,6 +346,19 @@ const formatCurrency = (val) => {
               </svg>
             </div>
             <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Định nghĩa channel manager</span>
+          </div>
+
+          <!-- Card 6: Công Ty -->
+          <div 
+            @click="currentView = 'company'"
+            class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
+          >
+            <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <svg class="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Công Ty</span>
           </div>
         </div>
       </div>
@@ -709,6 +724,11 @@ const formatCurrency = (val) => {
               </tbody>
             </table>
           </div>
+        </template>
+
+        <!-- INNER VIEW: COMPANY SETTINGS -->
+        <template v-else-if="currentView === 'company'">
+          <CompanySettingsPage />
         </template>
       </div>
     </template>

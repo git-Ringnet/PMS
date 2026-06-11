@@ -21,3 +21,10 @@ Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'st
 Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
 Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 
+// Company settings
+Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class);
+Route::apiResource('customer-sources', \App\Http\Controllers\Api\CustomerSourceController::class);
+Route::apiResource('branches', \App\Http\Controllers\Api\BranchController::class);
+Route::apiResource('bookers', \App\Http\Controllers\Api\BookerController::class);
+Route::apiResource('companies', \App\Http\Controllers\Api\CompanyController::class);
+
