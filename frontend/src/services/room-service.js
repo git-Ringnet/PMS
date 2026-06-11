@@ -1,4 +1,4 @@
-import apiClient from './api'
+import http from './http'
 
 /**
  * Mock data cho room map khi API chưa sẵn sàng
@@ -26,7 +26,7 @@ const ROOM_STATUSES = {
 }
 
 // Bypasses network request timeouts if VITE_API_URL is not configured
-const USE_MOCK_ONLY = !import.meta.env.VITE_API_URL
+const USE_MOCK_ONLY = false
 
 function generateMockRooms() {
   const rooms = []
@@ -97,7 +97,7 @@ export const roomService = {
     }
 
     try {
-      const response = await apiClient.get('/rooms', { params })
+      const response = await http.get('/rooms', { params })
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
@@ -124,7 +124,7 @@ export const roomService = {
     }
 
     try {
-      const response = await apiClient.get(`/rooms/${roomId}`)
+      const response = await http.get(`/rooms/${roomId}`)
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
@@ -146,7 +146,7 @@ export const roomService = {
     }
 
     try {
-      const response = await apiClient.put(`/rooms/${roomId}/status`, { status })
+      const response = await http.put(`/rooms/${roomId}/status`, { status })
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
@@ -176,7 +176,7 @@ export const roomService = {
     }
 
     try {
-      const response = await apiClient.get('/rooms/stats')
+      const response = await http.get('/rooms/stats')
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)

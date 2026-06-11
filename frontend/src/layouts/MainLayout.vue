@@ -28,18 +28,19 @@ const menuItems = [
 
 const subMenuItems = computed(() => {
   if (route.path.startsWith('/reservation')) {
+    const currentTab = route.query.tab || 'room-map'
     return [
-      { name: 'Sơ đồ Phòng', icon: 'grid', active: true },
-      { name: 'Phòng Trống', icon: 'check-circle' },
-      { name: 'Kế Hoạch Phòng', icon: 'calendar-range' },
-      { name: 'Tạo Đăng Ký', icon: 'plus-circle' },
-      { name: 'Quản Lý Phòng', icon: 'settings' },
-      { name: 'Khóa Phòng', icon: 'lock' },
-      { name: 'Đổi Công Việc', icon: 'briefcase' },
-      { name: 'Công Ty', icon: 'building' },
-      { name: 'Báo Cáo', icon: 'bar-chart' },
-      { name: 'Lịch Sử Thao Tác', icon: 'clock' },
-      { name: 'Tìm Kiếm Chung', icon: 'search' },
+      { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
+      { name: 'Phòng Trống', icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
+      { name: 'Kế Hoạch Phòng', icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
+      { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
+      { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
+      { name: 'Khóa Phòng', icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
+      { name: 'Đổi Công Việc', icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
+      { name: 'Công Ty', icon: 'building', tab: 'company', active: currentTab === 'company' },
+      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: 'Tìm Kiếm Chung', icon: 'search', tab: 'search', active: currentTab === 'search' },
     ]
   }
   return []
@@ -68,6 +69,12 @@ function isActive(menuRoute) {
 
 function navigateTo(menuRoute) {
   router.push(menuRoute)
+}
+
+function handleSubMenuClick(item) {
+  if (item.tab) {
+    router.push({ path: route.path, query: { tab: item.tab } })
+  }
 }
 
 function goHome() {
@@ -156,6 +163,7 @@ function toggleSidebar() {
       <button
         v-for="item in subMenuItems"
         :key="item.name"
+        @click="handleSubMenuClick(item)"
         class="flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-bold"
         :class="item.active
           ? 'bg-[#bdecfe] text-[#0369a1] border-[#7dd3fc]'

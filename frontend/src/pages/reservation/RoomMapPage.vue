@@ -1,12 +1,18 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import RoomDetailModal from '@/components/RoomDetailModal.vue'
+import AvailableRoomsPage from './AvailableRoomsPage.vue'
+import RoomPlanPage from './RoomPlanPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
+const route = useRoute()
+
+const currentTab = computed(() => route.query.tab || 'room-map')
 
 const showDetailModal = ref(false)
 const isLoaded = ref(false)
@@ -219,7 +225,7 @@ onMounted(async () => {
 <template>
   <div class="flex h-full overflow-hidden">
     <!-- Left Slim Sidebar (Visual Match with circular badges) -->
-    <aside class="w-[118px] shrink-0 border-r border-slate-200 bg-white flex flex-col items-center py-3 overflow-y-auto z-20">
+    <aside v-if="currentTab !== 'available' && currentTab !== 'room-plan'" class="w-[118px] shrink-0 border-r border-slate-200 bg-white flex flex-col items-center py-3 overflow-y-auto z-20">
       <!-- Date Display (Editable input when isFuture is true, else static today's date text) -->
       <div class="mb-3 w-full px-2 flex flex-col items-center gap-1 shrink-0">
         <input 
@@ -382,8 +388,18 @@ onMounted(async () => {
       </div>
     </aside>
 
-    <!-- Main Content Area -->
-    <div class="flex-1 overflow-x-auto overflow-y-auto bg-slate-100 py-4 pr-4 pl-0 flex flex-col gap-2.5">
+    <!-- Main Content Area (Phòng Trống Tab AvailableRoomsPage) -->
+    <div v-if="currentTab === 'available'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
+      <AvailableRoomsPage />
+    </div>
+
+    <!-- Main Content Area (Kế hoạch phòng Tab RoomPlanPage) -->
+    <div v-else-if="currentTab === 'room-plan'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
+      <RoomPlanPage />
+    </div>
+
+    <!-- Main Content Area (Room Map Sơ đồ / Lưới danh sách) -->
+    <div v-else class="flex-1 overflow-x-auto overflow-y-auto bg-slate-100 py-4 pr-4 pl-0 flex flex-col gap-2.5">
       <!-- Toggled Search Input Header -->
       <div v-if="showSearch" class="bg-white rounded-lg p-2.5 border border-slate-200 shadow-sm flex items-center gap-3 w-full shrink-0 ml-14">
         <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>

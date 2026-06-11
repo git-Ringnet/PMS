@@ -1,0 +1,23 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/user', function (Request $request) {
+    return $request->user();
+})->middleware('auth:sanctum');
+
+// Hotel settings
+Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
+Route::put('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'update']);
+
+// Room configurations
+Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index']);
+Route::get('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'index']);
+Route::get('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'index']);
+
+// Rooms management
+Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
+Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
+Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
+

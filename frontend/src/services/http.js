@@ -1,7 +1,7 @@
 import axios from 'axios'
 
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api',
+const http = axios.create({
+  baseURL: '/api',
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -10,7 +10,7 @@ const apiClient = axios.create({
 })
 
 // Request interceptor
-apiClient.interceptors.request.use(
+http.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('pms_token')
     if (token) {
@@ -22,7 +22,7 @@ apiClient.interceptors.request.use(
 )
 
 // Response interceptor
-apiClient.interceptors.response.use(
+http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
@@ -43,4 +43,4 @@ apiClient.interceptors.response.use(
   }
 )
 
-export default apiClient
+export default http
