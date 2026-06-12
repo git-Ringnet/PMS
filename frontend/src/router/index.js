@@ -1,11 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth-store'
 
 const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/pages/LoginPage.vue'),
+    meta: { title: 'Đăng nhập - PMS', noLayout: true, guest: true },
+  },
   {
     path: '/',
     name: 'Home',
     component: () => import('@/pages/HomePage.vue'),
-    meta: { title: 'Trang chủ - PMS' },
+    meta: { title: 'Trang chủ - PMS', noLayout: true },
   },
   {
     path: '/reservation',
@@ -44,9 +51,35 @@ const router = createRouter({
   routes,
 })
 
-// Navigation guard - cập nhật title
-router.beforeEach((to) => {
-  document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
+// Navigation guard
+router.beforeEach(async (to, from, next) => {
+  const token = localStorage.getItem('pms_token')
+
+  if (to.meta.guest) {
+    if (token) {
+      next('/')
+    } else {
+      document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
+      next()
+    }
+  } else {
+    if (!token) {
+      next('/login')
+    } else {
+      const authStore = useAuthStore()
+      if (!authStore.user) {
+        try {
+          await authStore.initialize()
+        } catch (err) {
+          next('/login')
+          return
+        }
+      }
+      document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
+      next()
+    }
+  }
 })
 
 export default router
+

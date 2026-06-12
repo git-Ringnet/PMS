@@ -201,9 +201,10 @@ function getMockCompany(room) {
 
 // Room shape description
 function getRoomTypeShape(room) {
-  if (room.room_type.includes('D') || room.room_type.includes('Double')) return 'Double'
-  if (room.room_type.includes('TB') || room.room_type.includes('Twin')) return 'Twin'
-  if (room.room_type.includes('TR') || room.room_type.includes('Triple')) return 'Triple'
+  const type = room.room_type || room.room_class?.code || '';
+  if (type.includes('D') || type.includes('Double')) return 'Double'
+  if (type.includes('TB') || type.includes('Twin')) return 'Twin'
+  if (type.includes('TR') || type.includes('Triple')) return 'Triple'
   return 'Family'
 }
 
@@ -465,7 +466,7 @@ onMounted(async () => {
         >
           <!-- Floor Rounded Label Badge on the left (Sticky bg-slate-100 acts as opaque cover when scrolling) -->
           <div class="w-14 shrink-0 flex items-center justify-center select-none sticky left-0 z-10 bg-slate-100 pr-1.5">
-            <div class="w-9 h-9 rounded-md bg-[#a6dcfc] text-[#1d4ed8] font-black text-sm flex items-center justify-center shadow-sm">
+            <div class="w-9 h-9 rounded-md bg-[#c9eeff] text-[#1d4ed8] font-black text-sm flex items-center justify-center shadow-sm">
               {{ floor }}
             </div>
           </div>
@@ -478,7 +479,7 @@ onMounted(async () => {
               class="room-card relative cursor-pointer border rounded-xl p-3.5 min-h-[110px] flex flex-col justify-between select-none transition-all duration-200"
               :class="[
                 room.status === ROOM_STATUSES.OCCUPIED 
-                  ? 'bg-[#a6dcfc] hover:bg-[#8ecefa] border-[#7ec0f3] text-slate-800' 
+                  ? 'bg-[#c9eeff] hover:bg-[#8ecefa] border-[#7ec0f3] text-slate-800' 
                   : 'bg-white hover:bg-slate-50 border-slate-200/80 text-slate-700 shadow-sm'
               ]"
               @click="handleRoomClick(room)"
@@ -503,10 +504,10 @@ onMounted(async () => {
               <div class="flex items-end justify-between mt-auto">
                 <div class="text-[12px] font-bold text-slate-600 leading-tight">
                   <span v-if="room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED">
-                    {{ room.room_type }} - SL khách: {{ room.max_guests }}
+                    {{ room.room_type || room.room_class?.code }} - SL khách: {{ room.max_guests }}
                   </span>
                   <span v-else>
-                    {{ room.room_type }}
+                    {{ room.room_type || room.room_class?.code }}
                   </span>
                 </div>
 
@@ -570,7 +571,7 @@ onMounted(async () => {
               v-for="room in roomStore.filteredRooms"
               :key="room.id"
               class="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none h-9"
-              :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#a6dcfc]/80 hover:bg-[#8ecefa]/80' : 'bg-white'"
+              :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#c9eeff]/80 hover:bg-[#8ecefa]/80' : 'bg-white'"
               @click="handleRoomClick(room)"
             >
               <!-- TTDK (Status Dot) -->
@@ -627,7 +628,7 @@ onMounted(async () => {
               <td class="p-2 border-r border-slate-200 text-center text-slate-400 font-bold">-</td>
               <!-- Loại phòng -->
               <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-700">
-                {{ room.room_type }}
+                {{ room.room_type || room.room_class?.code }}
               </td>
               <!-- Dạng phòng -->
               <td class="p-2 border-r border-slate-200 text-center text-slate-600 font-bold text-[11px]">

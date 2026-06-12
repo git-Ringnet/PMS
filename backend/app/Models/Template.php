@@ -4,19 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Branch extends Model
+class Template extends Model
 {
     use HasFactory;
 
     protected $fillable = [
+        'group',
         'name',
+        'report',
     ];
-
-    public function companies(): HasMany
-    {
-        return $this->hasMany(Company::class);
-    }
 }
-

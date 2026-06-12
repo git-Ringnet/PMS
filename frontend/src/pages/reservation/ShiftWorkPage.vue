@@ -881,7 +881,7 @@ function formatMoney(num) {
       <!-- Search button -->
       <button
         @click="handleSearch"
-        class="px-4 py-1.5 bg-[#60a5fa] hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer border-none"
+        class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer border-none"
       >
         Tìm kiếm
       </button>
@@ -919,7 +919,7 @@ function formatMoney(num) {
                       <button
                         @click="toggleCollapse(booking.id)"
                         type="button"
-                        class="w-4 h-4 rounded bg-[#a6dcfc] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mt-0.5"
+                        class="w-4 h-4 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mt-0.5"
                       >
                         {{ collapsedBookings[booking.id] ? '+' : '-' }}
                       </button>
@@ -1062,7 +1062,7 @@ function formatMoney(num) {
                       <button
                         @click="toggleCollapse(booking.id)"
                         type="button"
-                        class="w-4 h-4 rounded bg-[#a6dcfc] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mt-0.5"
+                        class="w-4 h-4 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mt-0.5"
                       >
                         {{ collapsedBookings[booking.id] ? '+' : '-' }}
                       </button>
@@ -1209,7 +1209,7 @@ function formatMoney(num) {
                     <button
                       @click="toggleGroupCollapse('pending-' + dateGroup)"
                       type="button"
-                      class="w-4 h-4 rounded bg-[#a6dcfc] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
+                      class="w-4 h-4 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
                     >
                       {{ isGroupCollapsed('pending-' + dateGroup) ? '+' : '-' }}
                     </button>
@@ -1331,7 +1331,7 @@ function formatMoney(num) {
                     <button
                       @click="toggleGroupCollapse('shuttle-' + dateGroup)"
                       type="button"
-                      class="w-4 h-4 rounded bg-[#a6dcfc] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
+                      class="w-4 h-4 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
                     >
                       {{ isGroupCollapsed('shuttle-' + dateGroup) ? '+' : '-' }}
                     </button>
@@ -1415,7 +1415,7 @@ function formatMoney(num) {
                     <button
                       @click="toggleGroupCollapse('noshow-' + category)"
                       type="button"
-                      class="w-4 h-4 rounded bg-[#a6dcfc] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
+                      class="w-4 h-4 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
                     >
                       {{ isGroupCollapsed('noshow-' + category) ? '+' : '-' }}
                     </button>
@@ -1549,7 +1549,7 @@ function formatMoney(num) {
                     <button
                       @click="toggleGroupCollapse('birthdays-' + dateGroup)"
                       type="button"
-                      class="w-4 h-4 rounded bg-[#a6dcfc] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
+                      class="w-4 h-4 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-black flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-[11px] mx-auto"
                     >
                       {{ isGroupCollapsed('birthdays-' + dateGroup) ? '+' : '-' }}
                     </button>
