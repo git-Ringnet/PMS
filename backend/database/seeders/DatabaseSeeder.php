@@ -22,6 +22,9 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
-        $this->call(SystemConfigurationSeeder::class);
+        $this->call([
+            SystemConfigurationSeeder::class,
+            HotelDefinitionSeeder::class,
+        ]);
     }
 }

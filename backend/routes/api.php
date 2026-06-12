@@ -25,6 +25,14 @@ Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class);
 Route::apiResource('customer-sources', \App\Http\Controllers\Api\CustomerSourceController::class);
 Route::apiResource('branches', \App\Http\Controllers\Api\BranchController::class);
+Route::apiResource('branches-total', \App\Http\Controllers\Api\BranchTotalController::class);
 Route::apiResource('bookers', \App\Http\Controllers\Api\BookerController::class);
 Route::apiResource('companies', \App\Http\Controllers\Api\CompanyController::class);
+
+// Hotel details configuration routes
+Route::apiResource('hotel-services', \App\Http\Controllers\Api\HotelServiceController::class);
+Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
+Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
+Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
+
 

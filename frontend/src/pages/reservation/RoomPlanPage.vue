@@ -19,7 +19,7 @@ const weekDays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 const legends = [
   { name: 'OOO', class: 'bg-[repeating-linear-gradient(45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-white border-blue-400' },
   { name: 'OOS', class: 'bg-[repeating-linear-gradient(45deg,#94a3b8,#94a3b8_5px,#cbd5e1_5px,#cbd5e1_10px)] text-white border-slate-400' },
-  { name: 'InHouse', class: 'bg-[#a6dcfc] text-[#0369a1] border-[#7dd3fc]' },
+  { name: 'InHouse', class: 'bg-[#c9eeff] text-[#0369a1] border-[#7dd3fc]' },
   { name: 'Reservation', class: 'bg-[#fef3c7] text-[#b45309] border-[#fde68a]' },
   { name: 'Late Checkout', class: 'bg-[#fef9c3] text-[#854d0e] border-[#fef08a]' },
   { name: 'Guaranteed', class: 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]' },
@@ -159,7 +159,7 @@ const bookingsByRoom = {
 
 // Map legend colors to Tailwind classes
 function getBookingClass(type) {
-  if (type === 'InHouse') return 'bg-[#a6dcfc] text-[#0369a1] border-[#7dd3fc]'
+  if (type === 'InHouse') return 'bg-[#c9eeff] text-[#0369a1] border-[#7dd3fc]'
   if (type === 'Reservation') return 'bg-[#fef3c7] text-[#b45309] border-[#fde68a]'
   if (type === 'Late Checkout') return 'bg-[#fef9c3] text-[#854d0e] border-[#fef08a]'
   if (type === 'Guaranteed') return 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]'
@@ -197,7 +197,7 @@ function handleViewClick() {
         <!-- View Button -->
         <button 
           @click="handleViewClick"
-          class="px-4 py-1.5 bg-[#a6dcfc] hover:bg-[#8ecefa] text-sky-800 rounded-lg text-xs font-bold border-none shadow-sm transition-colors cursor-pointer"
+          class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold border-none shadow-sm transition-colors cursor-pointer"
         >
           View
         </button>

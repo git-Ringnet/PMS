@@ -38,7 +38,7 @@ export const useRoomStore = defineStore('room', () => {
       const search = filters.value.search.toLowerCase()
       result = result.filter(r =>
         r.room_number.includes(search) ||
-        r.room_type.toLowerCase().includes(search)
+        (r.room_type || r.room_class?.code || '').toLowerCase().includes(search)
       )
     }
 
