@@ -44,4 +44,14 @@ class Room extends Model
     {
         return $this->belongsTo(RoomClass::class);
     }
+
+    public function locks(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(RoomLock::class);
+    }
+
+    public function activeLock(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(RoomLock::class)->where('is_active', true);
+    }
 }

@@ -30,6 +30,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 
+    // Room locks management
+    Route::get('/room-locks/history/{room_id}', [\App\Http\Controllers\Api\RoomLockController::class, 'history']);
+    Route::post('/room-locks/bulk-lock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkLock']);
+    Route::post('/room-locks/bulk-unlock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUnlock']);
+    Route::apiResource('room-locks', \App\Http\Controllers\Api\RoomLockController::class);
+
     // Company settings
     Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class);
     Route::apiResource('customer-sources', \App\Http\Controllers\Api\CustomerSourceController::class);
