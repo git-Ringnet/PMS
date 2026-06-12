@@ -45,9 +45,8 @@ const router = createRouter({
 })
 
 // Navigation guard - cập nhật title
-router.beforeEach((to, from, next) => {
+router.beforeEach((to) => {
   document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
-  next()
 })
 
 export default router

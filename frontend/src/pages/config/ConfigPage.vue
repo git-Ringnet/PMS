@@ -244,7 +244,8 @@ const formatCurrency = (val) => {
 </script>
 
 <template>
-  <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 overflow-y-auto h-full text-slate-800">
+  <div class="h-full flex flex-col overflow-hidden">
+    <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 overflow-y-auto h-full text-slate-800">
     
     <!-- Header: Dynamic Back Arrow & View Title -->
     <div class="flex items-center justify-between shrink-0">
@@ -870,6 +871,7 @@ const formatCurrency = (val) => {
         </button>
       </div>
     </div>
+  </div>
   </div>
 </template>
 
