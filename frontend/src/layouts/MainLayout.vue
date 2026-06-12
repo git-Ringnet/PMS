@@ -280,7 +280,7 @@ function toggleSidebar() {
     </div>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-hidden">
+    <main class="flex-1 overflow-auto">
       <slot />
     </main>
   </div>

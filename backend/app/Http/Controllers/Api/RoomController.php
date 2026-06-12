@@ -16,6 +16,11 @@ class RoomController extends Controller
     {
         $query = Room::with(['roomForm', 'roomClass', 'activeLock']);
 
+        // Filter out rooms that belong to inactive room classes
+        $query->whereHas('roomClass', function($q) {
+            $q->where('is_active', true);
+        });
+
         // Optional filtering
         if ($request->has('floor') && !empty($request->floor)) {
             $query->where('floor', $request->floor);
@@ -34,7 +39,14 @@ class RoomController extends Controller
             'data' => RoomResource::collection($rooms),
             'meta' => [
                 'total' => $rooms->count(),
-                'floors' => Room::select('floor')->distinct()->orderBy('floor')->pluck('floor')->map(fn($f) => (int)$f),
+                'floors' => Room::select('floor')
+                    ->whereHas('roomClass', function($q) {
+                        $q->where('is_active', true);
+                    })
+                    ->distinct()
+                    ->orderBy('floor')
+                    ->pluck('floor')
+                    ->map(fn($f) => (int)$f),
             ]
         ]);
     }
@@ -167,15 +179,18 @@ class RoomController extends Controller
      */
     public function stats()
     {
-        $total = Room::count();
+        $activeRoomQuery = Room::whereHas('roomClass', function($q) {
+            $q->where('is_active', true);
+        });
+
         $stats = [
-            'total' => $total,
-            'available' => Room::where('status', 'available')->count(),
-            'occupied' => Room::where('status', 'occupied')->count(),
-            'dirty' => Room::where('status', 'dirty')->count(),
-            'maintenance' => Room::where('status', 'maintenance')->count(),
-            'reserved' => Room::where('status', 'reserved')->count(),
-            'checkout' => Room::where('status', 'checkout')->count(),
+            'total' => (clone $activeRoomQuery)->count(),
+            'available' => (clone $activeRoomQuery)->where('status', 'available')->count(),
+            'occupied' => (clone $activeRoomQuery)->where('status', 'occupied')->count(),
+            'dirty' => (clone $activeRoomQuery)->where('status', 'dirty')->count(),
+            'maintenance' => (clone $activeRoomQuery)->where('status', 'maintenance')->count(),
+            'reserved' => (clone $activeRoomQuery)->where('status', 'reserved')->count(),
+            'checkout' => (clone $activeRoomQuery)->where('status', 'checkout')->count(),
         ];
 
         return response()->json([

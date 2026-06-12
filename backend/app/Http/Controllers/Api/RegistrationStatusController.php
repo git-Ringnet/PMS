@@ -1,0 +1,92 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Resources\RegistrationStatusResource;
+use App\Models\RegistrationStatus;
+use Illuminate\Http\Request;
+
+class RegistrationStatusController extends Controller
+{
+    public function index()
+    {
+        $statuses = RegistrationStatus::all();
+        return response()->json([
+            'success' => true,
+            'data' => RegistrationStatusResource::collection($statuses)
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'color' => 'nullable|string|max:50',
+            'confirmation_days' => 'nullable|integer|min:0',
+            'description' => 'nullable|string|max:255',
+            'status_value' => 'nullable|string|max:255',
+            'is_hidden' => 'nullable|boolean',
+            'is_availability' => 'nullable|boolean',
+        ]);
+
+        $status = RegistrationStatus::create($validated);
+
+        return response()->json([
+            'success' => true,
+            'data' => new RegistrationStatusResource($status)
+        ], 201);
+    }
+
+    public function show($id)
+    {
+        $status = RegistrationStatus::find($id);
+        if (!$status) {
+            return response()->json(['message' => 'Registration status not found'], 404);
+        }
+        return response()->json([
+            'success' => true,
+            'data' => new RegistrationStatusResource($status)
+        ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $status = RegistrationStatus::find($id);
+        if (!$status) {
+            return response()->json(['message' => 'Registration status not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'color' => 'nullable|string|max:50',
+            'confirmation_days' => 'nullable|integer|min:0',
+            'description' => 'nullable|string|max:255',
+            'status_value' => 'nullable|string|max:255',
+            'is_hidden' => 'nullable|boolean',
+            'is_availability' => 'nullable|boolean',
+        ]);
+
+        $status->update($validated);
+
+        return response()->json([
+            'success' => true,
+            'data' => new RegistrationStatusResource($status)
+        ]);
+    }
+
+    public function destroy($id)
+    {
+        $status = RegistrationStatus::find($id);
+        if (!$status) {
+            return response()->json(['message' => 'Registration status not found'], 404);
+        }
+
+        $status->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registration status deleted successfully'
+        ]);
+    }
+}
