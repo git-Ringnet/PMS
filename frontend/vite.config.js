@@ -4,8 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 // https://vite.dev/config/
-export default defineConfig({
-  base: '/build/',
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/build/' : '/',
   plugins: [
     vue(),
     tailwindcss(),
@@ -27,4 +27,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
