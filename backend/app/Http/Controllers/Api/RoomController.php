@@ -14,7 +14,7 @@ class RoomController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Room::with(['roomForm', 'roomClass']);
+        $query = Room::with(['roomForm', 'roomClass', 'activeLock']);
 
         // Optional filtering
         if ($request->has('floor') && !empty($request->floor)) {

@@ -36,6 +36,13 @@ class RoomResource extends JsonResource
             'is_internal' => (bool) $this->is_internal,
             'status' => $this->status,
             'notes' => $this->notes,
+            'lock_type' => $this->activeLock?->lock_type,
+            'lock_start_date' => $this->activeLock?->start_date instanceof \DateTimeInterface ? $this->activeLock?->start_date?->format('Y-m-d') : $this->activeLock?->start_date,
+            'lock_end_date' => $this->activeLock?->end_date instanceof \DateTimeInterface ? $this->activeLock?->end_date?->format('Y-m-d') : $this->activeLock?->end_date,
+            'lock_reason' => $this->activeLock?->reason,
+            'lock_maintenance_percent' => $this->activeLock?->maintenance_percent ?? 0,
+            'lock_status' => $this->activeLock?->status ?? '',
+            'lock_username' => $this->activeLock?->username ?? '',
         ];
     }
 }

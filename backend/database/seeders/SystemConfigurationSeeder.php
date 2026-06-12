@@ -120,6 +120,26 @@ class SystemConfigurationSeeder extends Seeder
             ['room_number' => '504', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 4],
             ['room_number' => '505', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '5', 'row' => 2, 'col' => 5],
             ['room_number' => '506', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 6],
+
+            // Floor 7 (For Room Lock page screenshot match)
+            ['room_number' => '701', 'class' => 'DLXD', 'form' => 'Double', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 1],
+            ['room_number' => '702', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 2],
+            ['room_number' => '703', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 3],
+            ['room_number' => '704', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 4],
+            ['room_number' => '705', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '7', 'row' => 3, 'col' => 5],
+            ['room_number' => '706', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 6],
+            ['room_number' => '707', 'class' => 'SUPTR', 'form' => 'Triple', 'guests' => 3, 'floor' => '7', 'row' => 3, 'col' => 7],
+            ['room_number' => '708', 'class' => 'SUPD', 'form' => 'Double', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 8],
+
+            // Floor 8 (For Room Lock page screenshot match)
+            ['room_number' => '801', 'class' => 'DLXD', 'form' => 'Double', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 1],
+            ['room_number' => '802', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 2],
+            ['room_number' => '803', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 3],
+            ['room_number' => '804', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 4],
+            ['room_number' => '805', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '8', 'row' => 4, 'col' => 5],
+            ['room_number' => '806', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 6],
+            ['room_number' => '807', 'class' => 'SUPTR', 'form' => 'Triple', 'guests' => 3, 'floor' => '8', 'row' => 4, 'col' => 7],
+            ['room_number' => '808', 'class' => 'SUPD', 'form' => 'Double', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 8],
         ];
 
         foreach ($roomsData as $r) {
@@ -137,6 +157,54 @@ class SystemConfigurationSeeder extends Seeder
                 'status' => 'available',
                 'notes' => 'Phòng tự động tạo bằng seeder',
             ]);
+        }
+
+        // Seed some room locks and histories
+        $room501 = Room::where('room_number', '501')->first();
+        $room502 = Room::where('room_number', '502')->first();
+        $room503 = Room::where('room_number', '503')->first();
+
+        if ($room501 && $room502 && $room503) {
+            // Room 501: Active OOS lock
+            \App\Models\RoomLock::create([
+                'room_id' => $room501->id,
+                'start_date' => '2026-06-09',
+                'end_date' => '2026-06-15',
+                'reason' => 'Sửa máy lạnh rò nước',
+                'maintenance_percent' => 50,
+                'status' => 'Active',
+                'username' => 'NB0016',
+                'lock_type' => 'OOS',
+                'is_active' => true,
+            ]);
+            $room501->update(['status' => 'maintenance']);
+
+            // Room 502: Inactive OOS lock (History example)
+            \App\Models\RoomLock::create([
+                'room_id' => $room502->id,
+                'start_date' => '2026-05-08',
+                'end_date' => '2026-05-12',
+                'reason' => 'tháo rèm giặt',
+                'maintenance_percent' => 0,
+                'status' => 'New',
+                'username' => 'NB0016',
+                'lock_type' => 'OOS',
+                'is_active' => false,
+            ]);
+
+            // Room 503: Active OOO lock
+            \App\Models\RoomLock::create([
+                'room_id' => $room503->id,
+                'start_date' => '2026-06-10',
+                'end_date' => '2026-06-20',
+                'reason' => 'Thay đệm giường hỏng',
+                'maintenance_percent' => 100,
+                'status' => 'Active',
+                'username' => 'NB0031',
+                'lock_type' => 'OOO',
+                'is_active' => true,
+            ]);
+            $room503->update(['status' => 'maintenance']);
         }
     }
 }
