@@ -1,8 +1,11 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
+import { useAuthStore } from "@/stores/auth-store";
 
 const router = useRouter();
+const authStore = useAuthStore();
+const currentUser = computed(() => authStore.user);
 const currentTime = ref("");
 const currentDate = ref("");
 const isLoaded = ref(false);
@@ -42,6 +45,13 @@ const menuItems = [
 
 function navigateTo(route) {
   router.push(route);
+}
+
+async function handleLogout() {
+  if (confirm("Bạn có chắc chắn muốn đăng xuất?")) {
+    await authStore.logout();
+    router.push("/login");
+  }
 }
 
 function updateTime() {
@@ -117,17 +127,30 @@ onUnmounted(() => {
             class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center font-bold text-white shadow-lg">4</span>
         </button>
 
-        <div
-          class="flex items-center gap-2 text-xs text-white/80 bg-black/20 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/10">
-          <span class="font-medium">MKT 1</span>
-          <span class="text-white/40">•</span>
-          <span>Demo</span>
-          <span class="text-white/40">•</span>
-          <span>Ca 2</span>
-          <span class="text-white/40">•</span>
-          <span class="text-primary-300 font-semibold">{{
-            currentTime.slice(0, 5)
-            }}</span>
+        <!-- User Box & Logout button -->
+        <div class="flex items-center gap-2 animate-fade">
+          <div
+            class="flex items-center gap-2 text-xs text-white/80 bg-black/20 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/10">
+            <span class="font-medium">MKT 1</span>
+            <span class="text-white/40">•</span>
+            <span>{{ currentUser?.name || 'Khách' }}</span>
+            <span class="text-white/40">•</span>
+            <span>Ca 2</span>
+            <span class="text-white/40">•</span>
+            <span class="text-primary-300 font-semibold">{{
+              currentTime.slice(0, 5)
+              }}</span>
+          </div>
+          <!-- Quick Logout Button -->
+          <button 
+            @click="handleLogout"
+            class="p-2 rounded-full bg-black/20 backdrop-blur-sm hover:bg-red-600/20 text-white/80 hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer border border-white/10"
+            title="Đăng xuất"
+          >
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
         </div>
 
         <div

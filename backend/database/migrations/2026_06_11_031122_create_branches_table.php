@@ -11,15 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('branches', function (Blueprint $table) {
-            $table->id();
-            $table->string('code')->nullable();
-            $table->string('name')->nullable();
-            $table->string('api_url')->nullable();
-            $table->string('api_report_url')->nullable();
-            $table->boolean('is_master')->default(false);
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('branches')) {
+            Schema::create('branches', function (Blueprint $table) {
+                $table->id();
+                $table->string('code')->nullable();
+                $table->string('name')->nullable();
+                $table->string('api_url')->nullable();
+                $table->string('api_report_url')->nullable();
+                $table->boolean('is_master')->default(false);
+                $table->timestamps();
+            });
+        }
     }
 
     /**

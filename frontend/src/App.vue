@@ -7,12 +7,12 @@ import { computed } from 'vue'
 
 const route = useRoute()
 
-// Trang chủ không dùng layout
-const isHomePage = computed(() => route.name === 'Home')
+// Trang không dùng layout (như Home, Login)
+const noLayout = computed(() => !!route.meta.noLayout)
 </script>
 
 <template>
-  <div v-if="isHomePage">
+  <div v-if="noLayout">
     <router-view />
   </div>
   <MainLayout v-else>

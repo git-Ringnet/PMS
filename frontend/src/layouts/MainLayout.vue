@@ -1,11 +1,39 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth-store'
 
 const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
+
+const authStore = useAuthStore()
+const currentUser = computed(() => authStore.user)
+const isDropdownOpen = ref(false)
+const dropdownRef = ref(null)
+
+async function handleLogout() {
+  if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
+    isDropdownOpen.value = false
+    await authStore.logout()
+    router.push('/login')
+  }
+}
+
+function closeDropdown(e) {
+  if (isDropdownOpen.value && dropdownRef.value && !dropdownRef.value.contains(e.target)) {
+    isDropdownOpen.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('click', closeDropdown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', closeDropdown)
+})
 
 const menuItems = [
   {
@@ -152,12 +180,54 @@ function toggleSidebar() {
           </svg>
         </div>
 
-        <!-- User Ca Info -->
-        <div class="flex items-center gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-3.5 py-1.5 rounded-full text-[13px] font-bold cursor-pointer transition-colors">
-          <svg class="w-3.5 h-3.5 text-slate-500" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-          </svg>
-          <span>Demo - Ca 2 &nbsp;{{ formattedTimeVi }}</span>
+        <!-- User Profile Dropdown -->
+        <div class="relative" ref="dropdownRef">
+          <div 
+            @click="isDropdownOpen = !isDropdownOpen" 
+            class="flex items-center gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-3.5 py-1.5 rounded-full text-[13px] font-bold cursor-pointer transition-colors select-none"
+          >
+            <img 
+              v-if="currentUser?.avatar" 
+              :src="currentUser.avatar" 
+              alt="Avatar" 
+              class="w-5 h-5 rounded-full object-cover border border-slate-300"
+            />
+            <svg v-else class="w-3.5 h-3.5 text-slate-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
+            <span>{{ currentUser?.name || 'Khách' }}</span>
+            <svg class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200" :class="isDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+
+          <!-- Dropdown Menu -->
+          <div 
+            v-if="isDropdownOpen" 
+            class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-[100]"
+          >
+            <div class="px-4 py-2 border-b border-slate-100">
+              <p class="text-xs font-bold text-slate-800 truncate">{{ currentUser?.name || 'Chưa Đăng Nhập' }}</p>
+              <p class="text-[10px] text-slate-500 truncate mt-0.5">{{ currentUser?.email || currentUser?.zalo_id || 'guest@pms.com' }}</p>
+            </div>
+            
+            <div class="px-4 py-1.5 text-[11px] text-slate-600 font-medium">
+              Ca làm việc: Ca 2
+            </div>
+            <div class="px-4 py-1.5 text-[11px] text-slate-600 font-medium border-b border-slate-100 pb-2">
+              {{ formattedTimeVi }}
+            </div>
+
+            <button 
+              @click="handleLogout"
+              class="w-full text-left px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span>Đăng xuất</span>
+            </button>
+          </div>
         </div>
 
         <!-- Vietnamese Flag -->
