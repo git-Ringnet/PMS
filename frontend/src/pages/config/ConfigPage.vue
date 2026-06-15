@@ -4,11 +4,12 @@ import { useRouter, useRoute } from 'vue-router'
 import HotelDefinition from './components/HotelDefinition.vue'
 import RoomDefinition from './components/RoomDefinition.vue'
 import SystemDefinition from './components/SystemDefinition.vue'
+import RateSetup from './components/RateSetup.vue'
 
 const router = useRouter()
 const route = useRoute()
 
-// View state: 'menu', 'hotel', 'room', 'system'
+// View state: 'menu', 'hotel', 'room', 'system', 'rate'
 const currentView = ref(route.query.view || 'menu')
 
 // Update currentView when query changes
@@ -70,7 +71,8 @@ function handleBack() {
             {{ 
               currentView === 'menu' ? 'Cấu hình hệ thống' : 
               currentView === 'hotel' ? 'Định nghĩa khách sạn' : 
-              currentView === 'room' ? 'Định nghĩa phòng' : 'Định nghĩa hệ thống'
+              currentView === 'room' ? 'Định nghĩa phòng' : 
+              currentView === 'system' ? 'Định nghĩa hệ thống' : 'Thiết lập giá'
             }}
           </span>
         </button>
@@ -123,6 +125,7 @@ function handleBack() {
 
           <!-- Card 4: Thiết lập giá -->
           <div 
+            @click="currentView = 'rate'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
             <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -167,6 +170,11 @@ function handleBack() {
         <SystemDefinition 
           v-else-if="currentView === 'system'" 
           :initialTab="route.query.tab || 'HÌNH THỨC THANH TOÁN'"
+          @update:activeTab="updateActiveTab"
+        />
+        <RateSetup 
+          v-else-if="currentView === 'rate'" 
+          :initialTab="route.query.tab || 'Mã giá phòng'"
           @update:activeTab="updateActiveTab"
         />
       </div>
