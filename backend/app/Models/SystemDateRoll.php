@@ -5,18 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class HotelConfig extends Model
+class SystemDateRoll extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'name',
-        'value',
-        'description',
-        'is_visible',
+        'system_date',
+        'actual_date',
+        'shift',
+        'username',
     ];
 
     protected $casts = [
-        'is_visible' => 'boolean',
+        'system_date' => 'datetime',
+        'actual_date' => 'datetime',
     ];
 }

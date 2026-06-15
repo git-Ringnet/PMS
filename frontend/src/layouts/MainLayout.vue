@@ -12,6 +12,7 @@ const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 const isDropdownOpen = ref(false)
 const dropdownRef = ref(null)
+const isDark = ref(false)
 
 async function handleLogout() {
   if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
@@ -27,8 +28,28 @@ function closeDropdown(e) {
   }
 }
 
+function toggleDarkMode() {
+  isDark.value = !isDark.value
+  if (isDark.value) {
+    document.documentElement.classList.add('dark')
+    localStorage.setItem('theme', 'dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+    localStorage.setItem('theme', 'light')
+  }
+}
+
 onMounted(() => {
   window.addEventListener('click', closeDropdown)
+  
+  const savedTheme = localStorage.getItem('theme')
+  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    isDark.value = true
+    document.documentElement.classList.add('dark')
+  } else {
+    isDark.value = false
+    document.documentElement.classList.remove('dark')
+  }
 })
 
 onUnmounted(() => {
@@ -169,6 +190,22 @@ function toggleSidebar() {
           </svg>
         </button>
 
+        <!-- Dark Mode Toggle Button -->
+        <button 
+          @click="toggleDarkMode" 
+          class="p-1 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center"
+          title="Bật/Tắt Chế độ tối"
+        >
+          <!-- Moon Icon (for Light Mode) -->
+          <svg v-if="!isDark" class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+          <!-- Sun Icon (for Dark Mode) -->
+          <svg v-else class="w-4.5 h-4.5 text-yellow-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M14 12a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+        </button>
+
         <!-- HKT 1 Dropdown -->
         <div class="flex items-center gap-1 text-slate-700 hover:text-slate-900 cursor-pointer font-bold">
           <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -206,16 +243,9 @@ function toggleSidebar() {
             v-if="isDropdownOpen" 
             class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-[100]"
           >
-            <div class="px-4 py-2 border-b border-slate-100">
+            <div class="px-4 py-2 border-b border-slate-100 mb-1.5">
               <p class="text-xs font-bold text-slate-800 truncate">{{ currentUser?.name || 'Chưa Đăng Nhập' }}</p>
               <p class="text-[10px] text-slate-500 truncate mt-0.5">{{ currentUser?.email || currentUser?.zalo_id || 'guest@pms.com' }}</p>
-            </div>
-            
-            <div class="px-4 py-1.5 text-[11px] text-slate-600 font-medium">
-              Ca làm việc: Ca 2
-            </div>
-            <div class="px-4 py-1.5 text-[11px] text-slate-600 font-medium border-b border-slate-100 pb-2">
-              {{ formattedTimeVi }}
             </div>
 
             <button 
@@ -228,6 +258,12 @@ function toggleSidebar() {
               <span>Đăng xuất</span>
             </button>
           </div>
+        </div>
+
+        <!-- Shift & Date Time in Header (Mockup style) -->
+        <div class="flex items-center gap-3 text-slate-600 dark:text-slate-300 font-semibold text-[13px] whitespace-nowrap px-1.5">
+          <span>Ca: 2</span>
+          <span>{{ formattedTimeVi }}</span>
         </div>
 
         <!-- Vietnamese Flag -->

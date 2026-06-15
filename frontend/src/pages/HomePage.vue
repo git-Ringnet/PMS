@@ -1,13 +1,8 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { ref, onMounted, onUnmounted, computed } from "vue";
-import { useAuthStore } from "@/stores/auth-store";
+import { ref, onMounted } from "vue";
 
 const router = useRouter();
-const authStore = useAuthStore();
-const currentUser = computed(() => authStore.user);
-const currentTime = ref("");
-const currentDate = ref("");
 const isLoaded = ref(false);
 
 const menuItems = [
@@ -47,122 +42,21 @@ function navigateTo(route) {
   router.push(route);
 }
 
-async function handleLogout() {
-  if (confirm("Bạn có chắc chắn muốn đăng xuất?")) {
-    await authStore.logout();
-    router.push("/login");
-  }
-}
-
-function updateTime() {
-  const now = new Date();
-  currentTime.value = now.toLocaleTimeString("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  currentDate.value = now.toLocaleDateString("vi-VN", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-let timer = null;
 onMounted(() => {
-  updateTime();
-  timer = setInterval(updateTime, 1000);
   setTimeout(() => {
     isLoaded.value = true;
   }, 100);
 });
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer);
-});
 </script>
 
 <template>
-  <div class="relative w-full h-screen overflow-hidden">
+  <div class="relative w-full h-[calc(100vh-3rem)] overflow-hidden">
     <!-- Background Image -->
     <div class="absolute inset-0">
       <img src="@/assets/hotel-bg.png" alt="Hotel Background" class="w-full h-full object-cover" />
       <!-- Gradient Overlay -->
       <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/50"></div>
     </div>
-
-    <!-- Top Navigation Bar -->
-    <header class="relative z-20 flex items-center justify-between px-6 h-12 transition-all duration-700" :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
-      ">
-      <!-- Logo -->
-      <div class="flex items-center gap-3">
-        <div
-          class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-400 to-primary-700 flex items-center justify-center shadow-lg backdrop-blur-sm">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-          </svg>
-        </div>
-      </div>
-
-      <!-- Center Navigation -->
-      <nav class="flex items-center gap-1 bg-black/30 backdrop-blur-md rounded-full px-2 py-1 border border-white/10">
-        <button v-for="item in menuItems" :key="item.route" @click="navigateTo(item.route)"
-          class="px-4 py-1.5 text-[13px] font-semibold text-white/90 rounded-full transition-all duration-300 cursor-pointer border-none bg-transparent hover:bg-white/15 hover:text-white hover:shadow-lg tracking-wide">
-          {{ item.name.toUpperCase() }}
-        </button>
-      </nav>
-
-      <!-- Right Side -->
-      <div class="flex items-center gap-3">
-        <!-- Notifications -->
-        <button
-          class="relative p-2 rounded-full bg-black/20 backdrop-blur-sm hover:bg-black/30 transition-all cursor-pointer border border-white/10">
-          <svg class="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span
-            class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center font-bold text-white shadow-lg">4</span>
-        </button>
-
-        <!-- User Box & Logout button -->
-        <div class="flex items-center gap-2 animate-fade">
-          <div
-            class="flex items-center gap-2 text-xs text-white/80 bg-black/20 backdrop-blur-sm rounded-full px-3 py-1.5 border border-white/10">
-            <span class="font-medium">MKT 1</span>
-            <span class="text-white/40">•</span>
-            <span>{{ currentUser?.name || 'Khách' }}</span>
-            <span class="text-white/40">•</span>
-            <span>Ca 2</span>
-            <span class="text-white/40">•</span>
-            <span class="text-primary-300 font-semibold">{{
-              currentTime.slice(0, 5)
-              }}</span>
-          </div>
-          <!-- Quick Logout Button -->
-          <button 
-            @click="handleLogout"
-            class="p-2 rounded-full bg-black/20 backdrop-blur-sm hover:bg-red-600/20 text-white/80 hover:text-red-400 hover:border-red-500/30 transition-all cursor-pointer border border-white/10"
-            title="Đăng xuất"
-          >
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-          </button>
-        </div>
-
-        <div
-          class="w-6 h-4.5 bg-red-600 flex items-center justify-center rounded-sm shadow-sm relative overflow-hidden shrink-0 border border-red-700/10">
-          <svg class="w-2.5 h-2.5 text-yellow-400 fill-current" viewBox="0 0 24 24">
-            <path
-              d="M12 .587l3.668 7.431 8.2 1.192-5.934 5.787 1.4 8.168L12 18.896l-7.334 3.857 1.4-8.168L.132 9.21l8.2-1.192L12 .587z">
-            </path>
-          </svg>
-        </div>
-      </div>
-    </header>
 
     <!-- Center Content - Welcome -->
     <div class="absolute inset-0 flex items-center justify-center z-10">

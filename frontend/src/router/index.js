@@ -12,7 +12,7 @@ const routes = [
     path: '/',
     name: 'Home',
     component: () => import('@/pages/HomePage.vue'),
-    meta: { title: 'Trang chủ - PMS', noLayout: true },
+    meta: { title: 'Trang chủ - PMS' },
   },
   {
     path: '/reservation',
