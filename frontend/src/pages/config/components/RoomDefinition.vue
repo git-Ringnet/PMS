@@ -577,7 +577,6 @@ const rateColumns = ref([
 const roomColumns = ref([
   { id: 'room_number', label: 'PHÒNG', visible: true },
   { id: 'room_form', label: 'DẠNG PHÒNG', visible: true },
-  { id: 'room_class', label: 'Tên loại phòng', visible: true },
   { id: 'max_guests', label: 'Khách hàng', visible: true },
   { id: 'extra_beds_limit', label: 'Thêm giường', visible: true },
   { id: 'area', label: 'Khu vực', visible: true },
@@ -678,6 +677,80 @@ watch(roomColumns, (newCols) => {
     saveConfig('room', newCols, roomConfigRecord)
   }
 }, { deep: true })
+
+// Grouped table expand states
+const expandedRoomClasses = reactive({})
+const toggleRoomClassExpand = (classId) => {
+  expandedRoomClasses[classId] = !expandedRoomClasses[classId]
+}
+
+// Compute rooms grouped by room_class for the current page
+const groupedRooms = computed(() => {
+  const classMap = {}
+  
+  // Initialize groups based on all known roomClasses to maintain display order
+  roomClasses.value.forEach(rc => {
+    classMap[rc.id] = {
+      roomClass: rc,
+      rooms: [],
+      count: rooms.value.filter(r => r.room_class_id === rc.id).length
+    }
+  })
+  
+  // Fallback group for rooms without class
+  const noClassId = 'no-class'
+  classMap[noClassId] = {
+    roomClass: { id: noClassId, name: 'Chưa phân loại', code: '-' },
+    rooms: [],
+    count: rooms.value.filter(r => !r.room_class_id).length
+  }
+  
+  // Group only the paginated rooms to preserve page size limits
+  paginatedRooms.value.forEach(r => {
+    const classId = r.room_class_id || noClassId
+    if (!classMap[classId]) {
+      classMap[classId] = {
+        roomClass: r.room_class || { id: classId, name: `Loại phòng ${classId}`, code: '' },
+        rooms: [],
+        count: rooms.value.filter(r => r.room_class_id === classId).length
+      }
+    }
+    classMap[classId].rooms.push(r)
+  })
+  
+  // Filter out empty groups (meaning groups that have no rooms on the current page)
+  return Object.values(classMap).filter(g => g.rooms.length > 0)
+})
+
+// Quick toggle for is_internal room field
+const toggleRoomInternal = async (room) => {
+  try {
+    const updatedVal = !room.is_internal
+    const payload = {
+      room_number: room.room_number,
+      room_form_id: room.room_form_id,
+      room_class_id: room.room_class_id,
+      max_guests: room.max_guests,
+      floor: String(room.floor),
+      area: room.area,
+      extra_beds_limit: room.extra_beds_limit,
+      grid_row: room.grid_row,
+      grid_column: room.grid_column,
+      owner_room: room.owner_room,
+      linked_room: room.linked_room,
+      is_internal: updatedVal,
+      status: room.status,
+      notes: room.notes
+    }
+    await http.put(`/rooms/${room.id}`, payload)
+    room.is_internal = updatedVal
+    uiStore.showToast('Cập nhật trạng thái phòng nội bộ thành công!', 'success')
+  } catch (err) {
+    console.error(err)
+    const errorMsg = err.response?.data?.message || 'Không thể cập nhật trạng thái phòng nội bộ'
+    uiStore.showToast(errorMsg, 'error')
+  }
+}
 </script>
 
 <template>
@@ -973,16 +1046,15 @@ watch(roomColumns, (newCols) => {
       <!-- Sub Tab 4: Rooms -->
       <div v-if="activeRoomTab === 'PHÒNG'">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-sm font-black text-slate-600 uppercase">Danh sách Phòng thực tế</h3>
           <div class="flex gap-2 relative popover-container">
             <button 
               @click="openAddRoomModal"
-              class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1 border-none cursor-pointer shadow-xs transition-colors"
+              class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1 border-none cursor-pointer shadow-xs transition-colors"
             >
-              + Thêm phòng
+              + Thêm
             </button>
-            <button class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-bold flex items-center gap-1 border-none cursor-pointer transition-colors">
-              Nhập Excel
+            <button class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1 border-none cursor-pointer shadow-xs transition-colors">
+              Nhập excel
             </button>
             <button 
               @click.stop="isRoomColumnSelectorOpen = !isRoomColumnSelectorOpen"
@@ -1011,99 +1083,205 @@ watch(roomColumns, (newCols) => {
           <table class="w-full text-sm text-left border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
-                <th v-if="isRoomColumnVisible('room_number')" class="p-3">PHÒNG</th>
-              <th v-if="isRoomColumnVisible('room_form')" class="p-3">DẠNG PHÒNG</th>
-              <th v-if="isRoomColumnVisible('room_class')" class="p-3">TÊN LOẠI PHÒNG</th>
-              <th v-if="isRoomColumnVisible('max_guests')" class="p-3 text-center">Khách hàng</th>
-              <th v-if="isRoomColumnVisible('extra_beds_limit')" class="p-3 text-center">Thêm giường</th>
-              <th v-if="isRoomColumnVisible('area')" class="p-3">Khu vực</th>
-              <th v-if="isRoomColumnVisible('floor')" class="p-3">Tầng</th>
-              <th v-if="isRoomColumnVisible('grid_row')" class="p-3 text-center">Hàng</th>
-              <th v-if="isRoomColumnVisible('grid_column')" class="p-3 text-center">Cột</th>
-              <th v-if="isRoomColumnVisible('linked_room')" class="p-3">Liên kết</th>
-              <th v-if="isRoomColumnVisible('is_internal')" class="p-3">Phòng nội bộ</th>
-              <th v-if="isRoomColumnVisible('owner_room')" class="p-3">Phòng chủ sở hữu</th>
-              <th v-if="isRoomColumnVisible('notes')" class="p-3">Ghi chú</th>
-              <th v-if="isRoomColumnVisible('action')" class="p-3 text-right">Hành động</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in paginatedRooms" :key="r.id" @click="openEditRoomModal(r)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
-              <td v-if="isRoomColumnVisible('room_number')" class="p-3 font-black text-slate-800 text-base">{{ r.room_number }}</td>
-              <td v-if="isRoomColumnVisible('room_form')" class="p-3 font-semibold text-slate-600">{{ r.room_form?.name }}</td>
-              <td v-if="isRoomColumnVisible('room_class')" class="p-3 font-bold text-sky-700">{{ r.room_class?.name }}</td>
-              <td v-if="isRoomColumnVisible('max_guests')" class="p-3 text-center font-bold text-slate-600">{{ r.max_guests }}</td>
-              <td v-if="isRoomColumnVisible('extra_beds_limit')" class="p-3 text-center font-bold text-slate-500">{{ r.extra_beds_limit }}</td>
-              <td v-if="isRoomColumnVisible('area')" class="p-3 text-slate-500 font-semibold">{{ r.area || 'Khu A' }}</td>
-              <td v-if="isRoomColumnVisible('floor')" class="p-3 text-slate-500 font-bold">Tầng {{ r.floor }}</td>
-              <td v-if="isRoomColumnVisible('grid_row')" class="p-3 text-center text-slate-500 font-mono">{{ r.grid_row }}</td>
-              <td v-if="isRoomColumnVisible('grid_column')" class="p-3 text-center text-slate-500 font-mono">{{ r.grid_column }}</td>
-              <td v-if="isRoomColumnVisible('linked_room')" class="p-3 text-slate-500 font-semibold">{{ r.linked_room || '-' }}</td>
-              <td v-if="isRoomColumnVisible('is_internal')" class="p-3">
-                <span 
-                  class="px-2 py-0.5 rounded-sm font-extrabold text-xs uppercase shadow-2xs"
-                  :class="r.is_internal ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-green-100 text-green-700 border border-green-200'"
-                >
-                  {{ r.is_internal ? 'Nội bộ' : 'Thương mại' }}
-                </span>
-              </td>
-              <td v-if="isRoomColumnVisible('owner_room')" class="p-3 text-slate-500 font-semibold">{{ r.owner_room || '-' }}</td>
-              <td v-if="isRoomColumnVisible('notes')" class="p-3 text-slate-400 italic max-w-[120px] truncate" :title="r.notes">{{ r.notes || '-' }}</td>
-              <td v-if="isRoomColumnVisible('action')" class="p-3 text-right">
-                <div class="flex justify-end gap-1.5">
-                  <button 
-                    @click.stop="deleteRoom(r.id)"
-                    class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <th v-if="isRoomColumnVisible('room_number')" class="p-3">
+                  <div class="flex items-center gap-1.5">
+                    <span>PHÒNG</span>
+                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                  </div>
+                </th>
+                <th v-if="isRoomColumnVisible('room_form')" class="p-3">DẠNG PHÒNG</th>
+                <th v-if="isRoomColumnVisible('max_guests')" class="p-3 text-center">Khách hàng</th>
+                <th v-if="isRoomColumnVisible('extra_beds_limit')" class="p-3 text-center">Thêm giường</th>
+                <th v-if="isRoomColumnVisible('area')" class="p-3">Khu vực</th>
+                <th v-if="isRoomColumnVisible('floor')" class="p-3">Tầng</th>
+                <th v-if="isRoomColumnVisible('grid_row')" class="p-3 text-center">Hàng</th>
+                <th v-if="isRoomColumnVisible('grid_column')" class="p-3 text-center">Cột</th>
+                <th v-if="isRoomColumnVisible('linked_room')" class="p-3">Liên kết</th>
+                <th v-if="isRoomColumnVisible('is_internal')" class="p-3">Phòng nội bộ</th>
+                <th v-if="isRoomColumnVisible('owner_room')" class="p-3">Phòng chủ sở hữu</th>
+                <th v-if="isRoomColumnVisible('notes')" class="p-3">Ghi chú</th>
+                <th v-if="isRoomColumnVisible('action')" class="p-3 text-right">Hành động</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Render Grouped Rooms -->
+              <template v-for="g in groupedRooms" :key="g.roomClass.id">
+                <!-- Group Header Row -->
+                <tr class="border-b border-slate-200 bg-slate-50/40 select-none">
+                  <!-- PHÒNG Column -->
+                  <td v-if="isRoomColumnVisible('room_number')" class="p-3 font-bold text-slate-700">
+                    <div class="flex items-center gap-3">
+                      <button 
+                        @click.stop="toggleRoomClassExpand(g.roomClass.id)" 
+                        class="w-5 h-5 flex items-center justify-center bg-sky-100 hover:bg-sky-200 text-sky-600 border border-sky-300 rounded cursor-pointer transition-colors shrink-0"
+                      >
+                        <svg v-if="!expandedRoomClasses[g.roomClass.id]" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15" />
+                        </svg>
+                      </button>
+                      <span>{{ g.roomClass.name || 'Loại phòng' }}</span>
+                    </div>
+                  </td>
+                  
+                  <!-- DẠNG PHÒNG Column -->
+                  <td v-if="isRoomColumnVisible('room_form')" class="p-3 font-bold text-slate-800">
+                    {{ g.count }}
+                  </td>
+                  
+                  <!-- Other empty cells to keep vertical grid borders intact -->
+                  <td v-if="isRoomColumnVisible('max_guests')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('extra_beds_limit')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('area')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('floor')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('grid_row')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('grid_column')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('linked_room')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('is_internal')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('owner_room')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('notes')" class="p-3"></td>
+                  <td v-if="isRoomColumnVisible('action')" class="p-3"></td>
+                </tr>
+                
+                <!-- Expanded Sub-rows (Rooms in Group) -->
+                <template v-if="expandedRoomClasses[g.roomClass.id]">
+                  <tr 
+                    v-for="r in g.rooms" 
+                    :key="r.id" 
+                    @click="openEditRoomModal(r)" 
+                    class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer"
+                  >
+                    <!-- PHÒNG Column (Indented Room Number) -->
+                    <td v-if="isRoomColumnVisible('room_number')" class="p-3 font-black text-slate-700 text-sm pl-11">
+                      {{ r.room_number }}
+                    </td>
+                    
+                    <!-- DẠNG PHÒNG Column -->
+                    <td v-if="isRoomColumnVisible('room_form')" class="p-3 font-semibold text-slate-600">
+                      {{ r.room_form?.name }}
+                    </td>
+                    
+                    <!-- Khách hàng -->
+                    <td v-if="isRoomColumnVisible('max_guests')" class="p-3 text-slate-600 font-medium text-center">
+                      {{ r.max_guests }}
+                    </td>
+                    
+                    <!-- Thêm giường -->
+                    <td v-if="isRoomColumnVisible('extra_beds_limit')" class="p-3 text-slate-500 font-medium text-center">
+                      {{ r.extra_beds_limit }}
+                    </td>
+                    
+                    <!-- Khu vực -->
+                    <td v-if="isRoomColumnVisible('area')" class="p-3 text-slate-500 font-medium">
+                      {{ r.area || 'Khu A' }}
+                    </td>
+                    
+                    <!-- Tầng -->
+                    <td v-if="isRoomColumnVisible('floor')" class="p-3 text-slate-500 font-medium">
+                      Tầng {{ r.floor }}
+                    </td>
+                    
+                    <!-- Hàng -->
+                    <td v-if="isRoomColumnVisible('grid_row')" class="p-3 text-slate-500 font-mono text-center">
+                      {{ r.grid_row }}
+                    </td>
+                    
+                    <!-- Cột -->
+                    <td v-if="isRoomColumnVisible('grid_column')" class="p-3 text-slate-500 font-mono text-center">
+                      {{ r.grid_column }}
+                    </td>
+                    
+                    <!-- Liên kết -->
+                    <td v-if="isRoomColumnVisible('linked_room')" class="p-3 text-slate-500 font-medium">
+                      {{ r.linked_room || '-' }}
+                    </td>
+                    
+                    <!-- Phòng nội bộ (Toggle switch instead of badge) -->
+                    <td v-if="isRoomColumnVisible('is_internal')" class="p-3" @click.stop>
+                      <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" :checked="r.is_internal" @change="toggleRoomInternal(r)" class="sr-only peer" />
+                        <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+                      </label>
+                    </td>
+                    
+                    <!-- Phòng chủ sở hữu -->
+                    <td v-if="isRoomColumnVisible('owner_room')" class="p-3 text-slate-500 font-medium">
+                      {{ r.owner_room || '-' }}
+                    </td>
+                    
+                    <!-- Ghi chú -->
+                    <td v-if="isRoomColumnVisible('notes')" class="p-3 text-slate-400 italic max-w-[120px] truncate" :title="r.notes">
+                      {{ r.notes || '-' }}
+                    </td>
+                    
+                    <!-- Hành động (Delete Button styled like a trash can inside a square light-blue button) -->
+                    <td v-if="isRoomColumnVisible('action')" class="p-3 text-right" @click.stop>
+                      <div class="flex justify-end">
+                        <button 
+                          @click="deleteRoom(r.id)"
+                          class="w-7 h-7 flex items-center justify-center bg-sky-100 hover:bg-sky-200 border border-sky-300 rounded-lg text-sky-600 hover:text-sky-700 cursor-pointer transition-colors shadow-xs"
+                          title="Xóa phòng"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </template>
+            </tbody>
+          </table>
         </div>
 
-        <!-- Pagination controls -->
-        <div class="flex items-center justify-end gap-2 mt-4 select-none">
-          <button 
-            @click="roomPage = Math.max(1, roomPage - 1)" 
-            :disabled="roomPage === 1"
-            class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold"
-          >
-            &lt;
-          </button>
-          
-          <button 
-            v-for="p in totalRoomPages" 
-            :key="p"
-            @click="roomPage = p"
-            class="w-8 h-8 flex items-center justify-center border rounded font-semibold cursor-pointer text-sm"
-            :class="roomPage === p ? 'border-sky-500 text-sky-600 font-bold bg-sky-50/20' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
-          >
-            {{ p }}
-          </button>
-          
-          <button 
-            @click="roomPage = Math.min(totalRoomPages, roomPage + 1)" 
-            :disabled="roomPage === totalRoomPages"
-            class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold"
-          >
-            &gt;
-          </button>
-          
-          <select 
-            v-model="roomPageSize" 
-            @change="roomPage = 1"
-            class="border border-slate-200 rounded p-1.5 bg-white text-slate-600 font-semibold text-xs cursor-pointer focus:outline-sky-400"
-          >
-            <option :value="10">10 / page</option>
-            <option :value="25">25 / page</option>
-            <option :value="50">50 / page</option>
-            <option :value="100">100 / page</option>
-          </select>
+        <!-- Pagination controls with total room count in footer -->
+        <div class="flex items-center justify-between mt-4 select-none">
+          <div class="text-sm font-bold text-slate-700">
+            Tổng số phòng <span class="ml-2 font-black text-base">{{ rooms.length }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button 
+              @click="roomPage = Math.max(1, roomPage - 1)" 
+              :disabled="roomPage === 1"
+              class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold"
+            >
+              &lt;
+            </button>
+            
+            <button 
+              v-for="p in totalRoomPages" 
+              :key="p"
+              @click="roomPage = p"
+              class="w-8 h-8 flex items-center justify-center border rounded font-semibold cursor-pointer text-sm"
+              :class="roomPage === p ? 'border-sky-500 text-sky-600 font-bold bg-sky-50/20' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'"
+            >
+              {{ p }}
+            </button>
+            
+            <button 
+              @click="roomPage = Math.min(totalRoomPages, roomPage + 1)" 
+              :disabled="roomPage === totalRoomPages"
+              class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold"
+            >
+              &gt;
+            </button>
+            
+            <select 
+              v-model="roomPageSize" 
+              @change="roomPage = 1"
+              class="border border-slate-200 rounded p-1.5 bg-white text-slate-600 font-semibold text-xs cursor-pointer focus:outline-sky-400"
+            >
+              <option :value="10">10 / page</option>
+              <option :value="25">25 / page</option>
+              <option :value="50">50 / page</option>
+              <option :value="100">100 / page</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
