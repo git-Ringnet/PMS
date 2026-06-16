@@ -69,6 +69,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
     Route::apiResource('room-rate-codes', \App\Http\Controllers\Api\RoomRateCodeController::class);
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
-});
 
+    // System Administration routes
+    Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
+    Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+    Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature']);
+    Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature']);
+    Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);
+    Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update']);
+    Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
+    Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
+});
 

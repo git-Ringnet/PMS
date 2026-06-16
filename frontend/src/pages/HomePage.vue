@@ -94,7 +94,7 @@ onMounted(() => {
       >
         <!-- Icon Square -->
         <button 
-          @click="navigateTo('/config')"
+          @click="navigateTo('/system')"
           class="w-36 h-36 sm:w-40 sm:h-40 bg-slate-900/40 backdrop-blur-md rounded-3xl shadow-xl hover:shadow-2xl flex items-center justify-center p-6 sm:p-7 cursor-pointer border border-white/10 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.03] hover:bg-slate-900/50 active:scale-95 group-hover:shadow-white/10 group-hover:border-white/20"
         >
           <!-- Gear setting SVG icon -->
