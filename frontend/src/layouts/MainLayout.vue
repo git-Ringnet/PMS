@@ -56,28 +56,95 @@ onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
 })
 
-const menuItems = [
-  {
-    name: 'Đăng ký',
-    route: '/reservation',
-  },
-  {
-    name: 'Kiểm tra phòng trống',
-    route: '/frontdesk',
-  },
-  {
-    name: 'Báo cáo',
-    route: '/reports',
-  },
-  {
-    name: 'Channel Manager',
-    route: '/config',
-  },
-]
+const menuItems = computed(() => {
+  if (route.path.startsWith('/frontdesk')) {
+    //trang lễ tân frontdesk
+    return [
+      { name: 'Giao phòng', route: '/frontdesk' },
+      { name: 'Kiểm tra phòng trống', route: '/frontdesk?tab=available' },
+      { name: 'Quản lý hóa đơn', route: '/frontdesk?tab=invoices' },
+      { name: 'Thông tin khách hàng', route: '/frontdesk?tab=customers' },
+      { name: 'Sang ngày', route: '/frontdesk?tab=day-close' },
+      { name: 'Báo cáo', route: '/reports' },
+      { name: 'Channel Manager', route: '/config' },
+    ]
+  }
+  //trang buồng phòng housekeeping
+  if (route.path.startsWith('/housekeeping')) {
+    return [
+      { name: 'Minibar', route: '/housekeeping?tab=minibar' },
+      { name: 'Giặt ủi', route: '/housekeeping?tab=laundry' },
+      { name: 'Hàng đền bù', route: '/housekeeping?tab=compensation' },
+      { name: 'Báo cáo', route: '/reports' },
+    ]
+  }
+  //trang báo cáo reports
+  if (route.path.startsWith('/reports')) {
+    return [
+      { name: 'Báo cáo doanh thu', route: '/reports?type=revenue' },
+      { name: 'Báo cáo thống kê', route: '/reports?type=stats' },
+      { name: 'Báo cáo hủy/xóa', route: '/reports?type=cancel' },
+      { name: 'Quản lý', route: '/reports?type=manage' },
+    ]
+  }
+  // trang PMS chính
+  if (route.path.startsWith('/config')) {
+    return [
+      { name: 'Đặt phòng', route: '/reservation' },
+      { name: 'Lễ tân', route: '/frontdesk' },
+      { name: 'Buồng phòng', route: '/housekeeping' },
+      { name: 'Báo cáo quản lý', route: '/reports' },
+      { name: 'Cấu hình hệ thống', route: '/config' },
+    ]
+  }
+  // trang đặt phòng
+  return [
+    {
+      name: 'Đăng ký',
+      route: '/reservation',
+      dropdown: [
+        { name: 'TẠO ĐĂNG KÝ', tab: 'create-res' },
+        { name: 'ALLOTMENT', tab: 'allotment' },
+        { name: 'CHI TIẾT ALLOTMENT', tab: 'allotment-detail' },
+        { name: 'BÁO CÁO PHÂN BỔ PHÒNG ALLOTMENT', tab: 'allotment-report' }
+      ]
+    },
+    {
+      name: 'Kiểm tra phòng trống',
+      route: '/reservation?tab=available',
+      dropdown: [
+        { name: 'PHÒNG TRỐNG', tab: 'available' },
+        { name: 'KẾ HOẠCH PHÒNG', tab: 'room-plan' },
+        { name: 'QUẢN LÝ PHÒNG', tab: 'manage-rooms' },
+        { name: 'PHÒNG KHÓA', tab: 'lock-room' }
+      ]
+    },
+    {
+      name: 'Báo cáo',
+      route: '/reservation?tab=reports',
+      dropdown: [
+        { name: 'BÁO CÁO ĐĂNG KÝ', tab: 'report-reg', hasChevron: true },
+        { name: 'BÁO CÁO THỐNG KÊ', tab: 'report-stats', hasChevron: true },
+        { name: 'BÁO CÁO PHÒNG', tab: 'report-rooms', hasChevron: true },
+        { name: 'BÁO CÁO HỦY PHÒNG', tab: 'report-cancel', hasChevron: true }
+      ]
+    },
+    {
+      name: 'Channel Manager',
+      route: '/reservation?tab=channel-manager',
+      dropdown: [
+        { name: 'BÁO CÁO ĐĂNG KÝ CHANNEL MANAGER', tab: 'channel-manager' }
+      ]
+    }
+  ]
+})
 
 const subMenuItems = computed(() => {
+  const currentTab = route.path.startsWith('/reports')
+    ? (route.query.tab || 'overview')
+    : (route.query.tab || 'room-map')
+  
   if (route.path.startsWith('/reservation')) {
-    const currentTab = route.query.tab || 'room-map'
     return [
       { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
       { name: 'Phòng Trống', icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
@@ -92,6 +159,50 @@ const subMenuItems = computed(() => {
       { name: 'Tìm Kiếm Chung', icon: 'search', tab: 'search', active: currentTab === 'search' },
     ]
   }
+  
+  if (route.path.startsWith('/frontdesk')) {
+    return [
+      { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
+      { name: 'Phòng Trống', icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
+      { name: 'Kế Hoạch Phòng', icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
+      { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
+      { name: 'Trả Phòng', icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
+      { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
+      { name: 'Tìm Kiếm Chung', icon: 'search', tab: 'search', active: currentTab === 'search' },
+      { name: 'Sang Ngày', icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
+      { name: 'D.S Công Việc', icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
+      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
+    ]
+  }
+  
+  if (route.path.startsWith('/housekeeping')) {
+    return [
+      { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
+      { name: 'Kế Hoạch Phòng', icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
+      { name: 'In Phân Công Phòng', icon: 'printer', tab: 'print-tasks', active: currentTab === 'print-tasks' },
+      { name: 'Thêm Dv Buồng Phòng', icon: 'plus-circle', tab: 'add-service', active: currentTab === 'add-service' },
+      { name: 'Quản Lý Đồ Thất Lạc', icon: 'briefcase', tab: 'lost-found', active: currentTab === 'lost-found' },
+      { name: 'Tồn Kho', icon: 'box', tab: 'inventory', active: currentTab === 'inventory' },
+      { name: 'Khóa Phòng', icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
+      { name: 'Tìm Kiếm Hóa Đơn', icon: 'search', tab: 'invoice-search', active: currentTab === 'invoice-search' },
+      { name: 'Tạo Menu', icon: 'settings', tab: 'create-menu', active: currentTab === 'create-menu' },
+      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+    ]
+  }
+  
+  if (route.path.startsWith('/reports')) {
+    return [
+      { name: 'Tổng Quan', icon: 'pie-chart', tab: 'overview', active: currentTab === 'overview' },
+      { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
+      { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
+      { name: 'Trả Phòng', icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
+      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
+    ]
+  }
+  
   return []
 })
 
@@ -127,7 +238,20 @@ setInterval(() => {
 }, 60000)
 
 function isActive(menuRoute) {
-  return route.path === menuRoute || route.path.startsWith(menuRoute + '/')
+  const [path, query] = menuRoute.split('?')
+  const pathMatch = route.path === path || route.path.startsWith(path + '/')
+  if (!query) return pathMatch
+  
+  const searchParams = new URLSearchParams(query)
+  for (const [key, val] of searchParams.entries()) {
+    if (key === 'type' && val === 'revenue' && !route.query.type) {
+      continue
+    }
+    if (route.query[key] !== val) {
+      return false
+    }
+  }
+  return pathMatch
 }
 
 function navigateTo(menuRoute) {
@@ -140,8 +264,14 @@ function handleSubMenuClick(item) {
   }
 }
 
+function handleDropdownClick(sub) {
+  if (sub.tab) {
+    router.push({ path: '/reservation', query: { tab: sub.tab } })
+  }
+}
+
 function goHome() {
-  router.push('/')
+  router.push('/pms')
 }
 
 function toggleSidebar() {
@@ -152,7 +282,10 @@ function toggleSidebar() {
 <template>
   <div class="flex flex-col h-screen overflow-hidden bg-slate-50">
     <!-- Top Header Bar (Light Theme) -->
-    <header class="grid grid-cols-[1fr_auto_1fr] items-center h-12 bg-white border-b border-slate-200 px-4 shrink-0 z-50">
+    <header 
+      class="grid grid-cols-[1fr_auto_1fr] items-center h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-colors duration-200"
+      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? 'bg-[#e0f2fe]' : 'bg-white'"
+    >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start">
         <button
@@ -167,18 +300,43 @@ function toggleSidebar() {
       </div>
 
       <!-- Main Navigation (Center) -->
-      <nav class="flex items-center gap-1.5">
-        <button
+      <nav v-if="route.path !== '/pms'" class="flex items-center gap-1.5">
+        <div
           v-for="item in menuItems"
           :key="item.route"
-          @click="navigateTo(item.route)"
-          class="px-3.5 py-1.5 text-[13.5px] font-extrabold transition-colors cursor-pointer border-none whitespace-nowrap bg-transparent tracking-wide"
-          :class="isActive(item.route)
-            ? 'text-[#0284c7]'
-            : 'text-slate-600 hover:text-slate-900'"
+          class="relative group py-2"
         >
-          {{ item.name.toUpperCase() }}
-        </button>
+          <button
+            @click="navigateTo(item.route)"
+            class="px-3.5 py-1.5 text-[13.5px] font-extrabold transition-colors cursor-pointer border-none whitespace-nowrap bg-transparent tracking-wide"
+            :class="isActive(item.route)
+              ? 'text-[#0284c7]'
+              : 'text-slate-600 hover:text-slate-900'"
+          >
+            {{ item.name.toUpperCase() }}
+          </button>
+          
+          <!-- Dropdown Menu -->
+          <div
+            v-if="item.dropdown"
+            class="absolute left-1/2 -translate-x-1/2 mt-1.5 w-72 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
+          >
+            <!-- Tip decoration arrow -->
+            <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"></div>
+            
+            <button
+              v-for="sub in item.dropdown"
+              :key="sub.name"
+              @click="handleDropdownClick(sub)"
+              class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+            >
+              <span>{{ sub.name }}</span>
+              <svg v-if="sub.hasChevron" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </nav>
 
       <!-- Right Side: User Info / Date / Time (Right) -->
@@ -249,6 +407,18 @@ function toggleSidebar() {
             </div>
 
             <button 
+              @click="router.push('/'); isDropdownOpen = false"
+              class="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
+            >
+              <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span>Trang chủ Portal</span>
+            </button>
+
+            <div class="border-t border-slate-100 my-1"></div>
+
+            <button 
               @click="handleLogout"
               class="w-full text-left px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
             >
@@ -278,7 +448,7 @@ function toggleSidebar() {
     <!-- Sub Navigation (Light Theme Tabs) -->
     <div
       v-if="subMenuItems.length > 0"
-      class="flex items-center gap-2 h-11 bg-slate-50 border-b border-slate-200 px-4 shrink-0 overflow-x-auto"
+      class="flex items-center gap-2 h-11 bg-white border-b border-slate-200 px-4 shrink-0 overflow-x-auto"
     >
       <button
         v-for="item in subMenuItems"
@@ -290,7 +460,11 @@ function toggleSidebar() {
           : 'bg-transparent text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-900'"
       >
         <!-- Icons inline SVG for each type -->
-        <svg v-if="item.icon === 'grid'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+        <svg v-if="item.icon === 'pie-chart'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.003 9.003 0 1020.945 13H11V3.055z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+        </svg>
+        <svg v-else-if="item.icon === 'grid'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
         <svg v-else-if="item.icon === 'check-circle'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
         <svg v-else-if="item.icon === 'calendar-range'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
         <svg v-else-if="item.icon === 'plus-circle'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -301,6 +475,9 @@ function toggleSidebar() {
         <svg v-else-if="item.icon === 'bar-chart'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
         <svg v-else-if="item.icon === 'clock'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
         <svg v-else-if="item.icon === 'search'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        <svg v-else-if="item.icon === 'dollar-sign'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <svg v-else-if="item.icon === 'printer'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+        <svg v-else-if="item.icon === 'box'" class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
         <svg v-else class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /></svg>
         
         <span>{{ item.name }}</span>

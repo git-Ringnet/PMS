@@ -417,6 +417,333 @@ onMounted(async () => {
       <LockRoomPage />
     </div>
 
+    <!-- Main Content Area (ALLOTMENT Tab) -->
+    <div v-else-if="currentTab === 'allotment'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+          <div>
+            <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Cấu hình phân bổ phòng (Allotment)</h2>
+            <p class="text-xs text-slate-400 font-bold mt-1">Quản lý định mức bán phòng qua các đối tác OTA & lữ hành</p>
+          </div>
+          <button @click="showDevelopmentToast('Thêm Allotment')" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
+            + Tạo Allotment Mới
+          </button>
+        </div>
+        
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Đối tác OTA / Đại lý</th>
+              <th class="p-2.5">Loại phòng phân bổ</th>
+              <th class="p-2.5 text-center">Số lượng phân bổ</th>
+              <th class="p-2.5 text-center">Đã bán</th>
+              <th class="p-2.5 text-center">Còn trống</th>
+              <th class="p-2.5 text-center">Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { partner: 'Agoda.com', type: 'Deluxe Double', allocated: 10, sold: 6, status: 'Đang mở' },
+              { partner: 'Booking.com', type: 'Executive Suite', allocated: 5, sold: 3, status: 'Đang mở' },
+              { partner: 'Travel Concierge', type: 'Standard Twin', allocated: 8, sold: 8, status: 'Đã hết' },
+              { partner: 'Trip.com', type: 'Standard Double', allocated: 6, sold: 1, status: 'Đang mở' }
+            ]" :key="item.partner" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-slate-900 font-black">{{ item.partner }}</td>
+              <td class="p-2.5">{{ item.type }}</td>
+              <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} phòng</td>
+              <td class="p-2.5 text-center text-sky-600">{{ item.sold }}</td>
+              <td class="p-2.5 text-center text-slate-500">{{ item.allocated - item.sold }}</td>
+              <td class="p-2.5 text-center">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Đang mở' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'">
+                  {{ item.status }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Content Area (CHI TIẾT ALLOTMENT Tab) -->
+    <div v-else-if="currentTab === 'allotment-detail'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Chi tiết phân bổ phòng (Allotment Details)</h2>
+          <p class="text-xs text-slate-400 font-bold mt-1">Danh sách phòng phân bổ cụ thể theo ngày</p>
+        </div>
+
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Mã Allotment</th>
+              <th class="p-2.5">Đối tác</th>
+              <th class="p-2.5 text-center">Số phòng</th>
+              <th class="p-2.5 text-center">Ngày bắt đầu</th>
+              <th class="p-2.5 text-center">Ngày kết thúc</th>
+              <th class="p-2.5 text-center">Mở khoá</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { id: 'AL-1009', partner: 'Agoda.com', room: '202', start: '10-06-2026', end: '20-06-2026', active: true },
+              { id: 'AL-1012', partner: 'Booking.com', room: '304', start: '12-06-2026', end: '22-06-2026', active: true },
+              { id: 'AL-1015', partner: 'Travel Concierge', room: '104', start: '15-06-2026', end: '25-06-2026', active: false }
+            ]" :key="item.id" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-slate-900 font-black">{{ item.id }}</td>
+              <td class="p-2.5 text-slate-900">{{ item.partner }}</td>
+              <td class="p-2.5 text-center font-black">{{ item.room }}</td>
+              <td class="p-2.5 text-center text-slate-500">{{ item.start }}</td>
+              <td class="p-2.5 text-center text-slate-500">{{ item.end }}</td>
+              <td class="p-2.5 text-center">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.active ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
+                  {{ item.active ? 'Đang mở' : 'Đã khóa' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Content Area (BÁO CÁO PHÂN BỔ PHÒNG ALLOTMENT Tab) -->
+    <div v-else-if="currentTab === 'allotment-report'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-6 text-slate-800">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo phân bổ phòng Allotment</h2>
+          <p class="text-xs text-slate-400 font-bold mt-1">Báo cáo hiệu suất bán hàng qua các kênh đại lý</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div v-for="item in [
+            { title: 'Tổng số phòng Allotment', value: '45 phòng', color: 'text-blue-600', desc: 'Đã phân bổ trong tháng' },
+            { title: 'Phòng đã lấp đầy', value: '29 phòng', color: 'text-emerald-600', desc: 'Chiếm tỷ lệ lấp đầy 64.4%' },
+            { title: 'Doanh thu Allotment', value: '38.250.000 đ', color: 'text-indigo-600', desc: 'Thanh toán từ đại lý' }
+          ]" :key="item.title" class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+            <span class="text-[11px] font-black uppercase text-slate-400 tracking-wide block mb-1">{{ item.title }}</span>
+            <span class="text-xl font-black block" :class="item.color">{{ item.value }}</span>
+            <span class="text-[10px] text-slate-500 block mt-1.5 font-bold">{{ item.desc }}</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-3.5 mt-2">
+          <span class="text-xs font-black uppercase text-slate-600 tracking-wider">Hiệu suất bán theo kênh đại lý</span>
+          <div v-for="k in [
+            { name: 'Agoda.com', percent: '80%', sold: '16/20 phòng' },
+            { name: 'Booking.com', percent: '60%', sold: '9/15 phòng' },
+            { name: 'Travel Concierge', percent: '40%', sold: '4/10 phòng' }
+          ]" :key="k.name" class="flex flex-col gap-1.5">
+            <div class="flex justify-between text-xs font-bold text-slate-700">
+              <span>{{ k.name }}</span>
+              <span>{{ k.sold }} ({{ k.percent }})</span>
+            </div>
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full bg-blue-500 rounded-full" :style="{ width: k.percent }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area (BÁO CÁO ĐĂNG KÝ Tab) -->
+    <div v-else-if="currentTab === 'report-reg'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo đăng ký nhận phòng</h2>
+          <p class="text-xs text-slate-400 font-bold mt-1">Thông số thống kê các lượt đăng ký phòng mới</p>
+        </div>
+
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Mã đăng ký</th>
+              <th class="p-2.5">Khách hàng</th>
+              <th class="p-2.5 text-center">Số phòng</th>
+              <th class="p-2.5 text-center">Nhận phòng</th>
+              <th class="p-2.5 text-center">Trả phòng</th>
+              <th class="p-2.5 text-center">Trạng thái</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { id: 'REG-552', guest: 'Ms. Ivanova Daria', room: '102', in: '12-06-2026', out: '16-06-2026', status: 'Hoạt động' },
+              { id: 'REG-553', guest: 'Mr. Rachid Boufarki', room: '204', in: '14-06-2026', out: '18-06-2026', status: 'Hoạt động' },
+              { id: 'REG-554', guest: 'Walkin Guest', room: '302', in: '15-06-2026', out: '16-06-2026', status: 'Hoàn thành' }
+            ]" :key="item.id" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-slate-900 font-black text-sm">{{ item.id }}</td>
+              <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
+              <td class="p-2.5 text-center font-black">{{ item.room }}</td>
+              <td class="p-2.5 text-center text-slate-500">{{ item.in }}</td>
+              <td class="p-2.5 text-center text-slate-500">{{ item.out }}</td>
+              <td class="p-2.5 text-center">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Hoạt động' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
+                  {{ item.status }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Content Area (BÁO CÁO THỐNG KÊ Tab) -->
+    <div v-else-if="currentTab === 'report-stats'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo thống kê hoạt động phòng</h2>
+          <p class="text-xs text-slate-400 font-bold mt-1">Thống kê công suất phòng và các chỉ số vận hành</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">Công suất sử dụng trung bình</span>
+            <span class="text-3xl font-black text-blue-600 tracking-tight mt-1">72.8%</span>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">Thời gian lưu trú trung bình</span>
+            <span class="text-3xl font-black text-emerald-600 tracking-tight mt-1">2.4 ngày</span>
+          </div>
+        </div>
+
+        <table class="w-full text-left border-collapse text-xs mt-2">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Phân loại phòng</th>
+              <th class="p-2.5 text-center">Tổng số phòng</th>
+              <th class="p-2.5 text-center">Phòng đang ở</th>
+              <th class="p-2.5 text-center">Phòng sửa chữa</th>
+              <th class="p-2.5 text-center">Hiệu suất</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { name: 'Standard Double', total: 30, occ: 22, repair: 1, rate: '73.3%' },
+              { name: 'Deluxe Twin', total: 25, occ: 20, repair: 0, rate: '80.0%' },
+              { name: 'Executive Suite', total: 12, occ: 7, repair: 2, rate: '58.3%' }
+            ]" :key="item.name" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-slate-900 font-black">{{ item.name }}</td>
+              <td class="p-2.5 text-center text-slate-800">{{ item.total }}</td>
+              <td class="p-2.5 text-center text-sky-600">{{ item.occ }}</td>
+              <td class="p-2.5 text-center text-rose-500">{{ item.repair }}</td>
+              <td class="p-2.5 text-center text-slate-900">{{ item.rate }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Content Area (BÁO CÁO PHÒNG Tab) -->
+    <div v-else-if="currentTab === 'report-rooms'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo hiện trạng phòng</h2>
+          <p class="text-xs text-slate-400 font-bold mt-1">Thông tin chi tiết về số lượng phòng sạch/dơ, sửa chữa</p>
+        </div>
+
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Trạng thái phòng</th>
+              <th class="p-2.5 text-center">Số lượng</th>
+              <th class="p-2.5 text-center">Tỷ lệ %</th>
+              <th class="p-2.5">Ghi chú vận hành</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { status: 'Phòng Sạch Sẵn Sàng (Clean Vacant)', count: 42, pct: '39.3%', desc: 'Sẵn sàng tiếp đón khách mới' },
+              { status: 'Phòng Có Khách Đang Ở (Occupied)', count: 45, pct: '42.1%', desc: 'Khách lưu trú bình thường' },
+              { status: 'Phòng Dơ Chưa Dọn (Dirty Vacant)', count: 15, pct: '14.0%', desc: 'Cần dọn dẹp khẩn cấp' },
+              { status: 'Phòng Đang Bảo Trì (Maintenance)', count: 5, pct: '4.6%', desc: 'Khóa sửa chữa thiết bị kỹ thuật' }
+            ]" :key="item.status" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-slate-900 font-black">{{ item.status }}</td>
+              <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} phòng</td>
+              <td class="p-2.5 text-center text-sky-600">{{ item.pct }}</td>
+              <td class="p-2.5 text-slate-500 font-medium">{{ item.desc }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Content Area (BÁO CÁO HỦY PHÒNG Tab) -->
+    <div v-else-if="currentTab === 'report-cancel'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="pb-4 border-b border-slate-100">
+          <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo hủy phòng đặt</h2>
+          <p class="text-xs text-slate-400 font-bold mt-1">Danh sách các booking bị hủy hoặc xóa giao dịch</p>
+        </div>
+
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Mã hủy</th>
+              <th class="p-2.5">Tên khách hàng</th>
+              <th class="p-2.5 text-center">Ngày hủy</th>
+              <th class="p-2.5 text-right">Giá trị booking</th>
+              <th class="p-2.5">Lý do hủy phòng</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { id: 'CN-201', guest: 'Mr. David Lee', date: '08-06-2026', val: '2.500.000', reason: 'Thay đổi kế hoạch du lịch cá nhân' },
+              { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reason: 'Đặt nhầm ngày, đặt lại booking khác' },
+              { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reason: 'Lý do gia đình đột xuất' }
+            ]" :key="item.id" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-rose-600 font-black text-sm">{{ item.id }}</td>
+              <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
+              <td class="p-2.5 text-center text-slate-500">{{ item.date }}</td>
+              <td class="p-2.5 text-right text-slate-800 font-black">{{ item.val }} đ</td>
+              <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ item.reason }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Content Area (CHANNEL MANAGER Tab) -->
+    <div v-else-if="currentTab === 'channel-manager'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
+      <div class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+        <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+          <div>
+            <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo đăng ký Channel Manager</h2>
+            <p class="text-xs text-slate-400 font-bold mt-1">Đồng bộ giá phòng và số lượng phòng trống lên các OTA</p>
+          </div>
+          <button @click="showDevelopmentToast('Đồng bộ OTA')" class="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
+            Đồng bộ ngay
+          </button>
+        </div>
+
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+              <th class="p-2.5">Kênh OTA liên kết</th>
+              <th class="p-2.5 text-center">Số lượng phòng khả dụng</th>
+              <th class="p-2.5 text-right">Giá phòng đang đồng bộ</th>
+              <th class="p-2.5 text-center">Đồng bộ cuối</th>
+              <th class="p-2.5 text-center">Trạng thái kết nối</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+            <tr v-for="item in [
+              { channel: 'Agoda API Connection', rooms: 15, rate: '650.000 đ', time: '10 phút trước', status: 'Hoạt động' },
+              { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', time: '5 phút trước', status: 'Hoạt động' },
+              { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', time: '1 giờ trước', status: 'Đang kết nối lại' }
+            ]" :key="item.channel" class="hover:bg-slate-50 h-10">
+              <td class="p-2.5 text-slate-900 font-black">{{ item.channel }}</td>
+              <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} phòng</td>
+              <td class="p-2.5 text-right text-emerald-600 font-black">{{ item.rate }}</td>
+              <td class="p-2.5 text-center text-slate-400">{{ item.time }}</td>
+              <td class="p-2.5 text-center">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Hoạt động' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
+                  {{ item.status }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Main Content Area (Room Map Sơ đồ / Lưới danh sách) -->
     <div v-else class="flex-1 overflow-x-auto overflow-y-auto bg-slate-100 py-4 pr-4 pl-0 flex flex-col gap-2.5">
       <!-- Toggled Search Input Header -->
