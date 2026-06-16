@@ -11,7 +11,15 @@ class Branch extends Model
     use HasFactory;
 
     protected $fillable = [
+        'code',
         'name',
+        'api_url',
+        'api_report_url',
+        'is_master',
+    ];
+
+    protected $casts = [
+        'is_master' => 'boolean',
     ];
 
     public function companies(): HasMany

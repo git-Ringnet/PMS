@@ -18,25 +18,41 @@ class SystemConfigurationSeeder extends Seeder
     {
         // 1. Seed Hotel Settings (from Screenshot 1)
         HotelSetting::create([
-            'code' => 'Galliot',
-            'name' => 'Galliot Hotel Nha Trang',
+            'first_name' => null,
+            'hotel_name' => 'Galliot Hotel Nha Trang',
+            'hotel_name1' => null,
             'address' => '195 Nguyễn Thiện Thuật, Phường Nha Trang, Tỉnh Khánh Hòa, Việt Nam',
-            'tax_code' => '0313161911-001',
+            'address1' => '3A Quản Trạn, Phường Nha Trang, Tỉnh Khánh Hòa, Việt Nam',
             'phone' => '+84 258 3528 555',
             'fax' => '',
             'email' => 'fo.galliot@navyhotelgroup.com',
-            'facebook' => '',
-            'channel_manager' => 'HotelLink',
-            'currency' => 'VND',
-            'bank_name' => 'Ngân hàng TMCP Quân Đội - CN Khánh Hòa',
-            'bank_account_name' => 'CN CTCP DV BAY VA DL BIEN TAN CANG TAI KHANH HOA',
-            'bank_account_number' => '3427247085770',
-            'adult_breakfast_price' => 180000,
-            'child_breakfast_price' => 90000,
-            'extra_bed_price' => 300000,
-            'total_rooms' => 131,
             'website' => 'www.galliothotel.vn',
-            'booking_prefix' => 'GAL',
+            'account' => '3427247085770',
+            'bank_code' => 'MB',
+            'bank' => 'Ngân hàng TMCP Quân Đội - CN Khánh Hòa',
+            'tax_code' => '0313161911-001',
+            'account_name' => 'CN CTCP DV BAY VA DL BIEN TAN CANG TAI KHANH HOA',
+            'serial' => null,
+            'invoice_number' => null,
+            'invoice_number_length' => null,
+            'form_no' => null,
+            'logo' => null,
+            'invoice_address' => '195 Nguyễn Thiện Thuật, P. Nha Trang, T. Khánh Hòa',
+            'breakfast_adult_rate' => 180000,
+            'breakfast_child_rate' => 90000,
+            'extra_bed_rate' => 300000,
+            'room_number' => 131,
+            'division' => 'GAL',
+            'currency' => 'VND',
+            'prefix_booking_id' => 'GAL',
+            'channel_manager' => 'HotelLink',
+            'facebook' => '',
+            'hotel_link' => null,
+            'pos_serial' => null,
+            'pos_invoice_number' => null,
+            'pos_invoice_number_length' => null,
+            'pos_invoice_form_no' => null,
+            'pos_invoice_symbol' => null,
             'logo_url' => 'assets/hotel-logo.png',
             'qr_code_url' => 'assets/hotel-qr.png',
         ]);
@@ -97,50 +113,70 @@ class SystemConfigurationSeeder extends Seeder
             ]);
         }
 
-        // 5. Seed Rooms ( khớp RoomPlanPage.vue mock data & Screenshot 5 modal)
-        $roomsData = [
-            // Floor 4
-            ['room_number' => '401', 'class' => 'DLXD', 'form' => 'Double', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 1],
-            ['room_number' => '402', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 2],
-            ['room_number' => '403', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 3],
-            ['room_number' => '404', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 4],
-            ['room_number' => '405', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '4', 'row' => 1, 'col' => 5],
-            ['room_number' => '406', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 6],
-            ['room_number' => '407', 'class' => 'SUPTR', 'form' => 'Triple', 'guests' => 3, 'floor' => '4', 'row' => 1, 'col' => 7],
-            ['room_number' => '408', 'class' => 'SUPD', 'form' => 'Double', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 8],
-            ['room_number' => '409', 'class' => 'SUPTR', 'form' => 'Triple', 'guests' => 3, 'floor' => '4', 'row' => 1, 'col' => 9],
-            ['room_number' => '410', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 10],
-            ['room_number' => '411', 'class' => 'DLXDB', 'form' => 'Double', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 11],
-            ['room_number' => '412', 'class' => 'DLXDB', 'form' => 'Double', 'guests' => 2, 'floor' => '4', 'row' => 1, 'col' => 12],
+        // 5. Seed Rooms (15 floors, 12 rooms per floor)
+        $roomsData = [];
+        $floorsList = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-            // Floor 5
-            ['room_number' => '501', 'class' => 'DLXD', 'form' => 'Double', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 1],
-            ['room_number' => '502', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 2],
-            ['room_number' => '503', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 3],
-            ['room_number' => '504', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 4],
-            ['room_number' => '505', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '5', 'row' => 2, 'col' => 5],
-            ['room_number' => '506', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '5', 'row' => 2, 'col' => 6],
+        foreach ($floorsList as $floorIndex => $floor) {
+            for ($col = 1; $col <= 12; $col++) {
+                $roomNumber = $floor . str_pad($col, 2, '0', STR_PAD_LEFT);
 
-            // Floor 7 (For Room Lock page screenshot match)
-            ['room_number' => '701', 'class' => 'DLXD', 'form' => 'Double', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 1],
-            ['room_number' => '702', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 2],
-            ['room_number' => '703', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 3],
-            ['room_number' => '704', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 4],
-            ['room_number' => '705', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '7', 'row' => 3, 'col' => 5],
-            ['room_number' => '706', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 6],
-            ['room_number' => '707', 'class' => 'SUPTR', 'form' => 'Triple', 'guests' => 3, 'floor' => '7', 'row' => 3, 'col' => 7],
-            ['room_number' => '708', 'class' => 'SUPD', 'form' => 'Double', 'guests' => 2, 'floor' => '7', 'row' => 3, 'col' => 8],
+                // Phân bổ loại phòng và hạng phòng
+                $classCode = 'SUPD';
+                $formName = 'Double';
+                $guests = 2;
 
-            // Floor 8 (For Room Lock page screenshot match)
-            ['room_number' => '801', 'class' => 'DLXD', 'form' => 'Double', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 1],
-            ['room_number' => '802', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 2],
-            ['room_number' => '803', 'class' => 'DLXTB', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 3],
-            ['room_number' => '804', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 4],
-            ['room_number' => '805', 'class' => 'FAM', 'form' => 'Family', 'guests' => 4, 'floor' => '8', 'row' => 4, 'col' => 5],
-            ['room_number' => '806', 'class' => 'SUPT', 'form' => 'Twin', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 6],
-            ['room_number' => '807', 'class' => 'SUPTR', 'form' => 'Triple', 'guests' => 3, 'floor' => '8', 'row' => 4, 'col' => 7],
-            ['room_number' => '808', 'class' => 'SUPD', 'form' => 'Double', 'guests' => 2, 'floor' => '8', 'row' => 4, 'col' => 8],
-        ];
+                if ($col == 1 || $col == 2) {
+                    $classCode = 'DLXD';
+                    $formName = 'Double';
+                    $guests = 2;
+                } elseif ($col == 3 || $col == 4) {
+                    $classCode = 'DLXT';
+                    $formName = 'Twin';
+                    $guests = 2;
+                } elseif ($col == 5 || $col == 6) {
+                    $classCode = 'SUPD';
+                    $formName = 'Double';
+                    $guests = 2;
+                } elseif ($col == 7 || $col == 8) {
+                    $classCode = 'SUPT';
+                    $formName = 'Twin';
+                    $guests = 2;
+                } elseif ($col == 9) {
+                    $classCode = 'SUPTR';
+                    $formName = 'Triple';
+                    $guests = 3;
+                } elseif ($col == 10) {
+                    $classCode = 'DLXDB';
+                    $formName = 'Double';
+                    $guests = 2;
+                } elseif ($col == 11) {
+                    $classCode = 'DLXTB';
+                    $formName = 'Twin';
+                    $guests = 2;
+                } elseif ($col == 12) {
+                    if ($floor >= 12) {
+                        $classCode = 'JST';
+                        $formName = 'King';
+                        $guests = 2;
+                    } else {
+                        $classCode = 'FAM';
+                        $formName = 'Family';
+                        $guests = 4;
+                    }
+                }
+
+                $roomsData[] = [
+                    'room_number' => $roomNumber,
+                    'class' => $classCode,
+                    'form' => $formName,
+                    'guests' => $guests,
+                    'floor' => (string)$floor,
+                    'row' => $floorIndex + 1,
+                    'col' => $col
+                ];
+            }
+        }
 
         foreach ($roomsData as $r) {
             Room::create([

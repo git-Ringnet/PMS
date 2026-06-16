@@ -21,6 +21,9 @@ class RoomClassResource extends JsonResource
             'color' => $this->color,
             'is_active' => (bool) $this->is_active,
             'group' => $this->group,
+            'notes' => $this->notes,
+            'image_path' => $this->image_path,
+            'image_url' => $this->image_path ? asset('storage/' . $this->image_path) : null,
         ];
     }
 }

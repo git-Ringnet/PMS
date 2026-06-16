@@ -25,6 +25,12 @@ class DatabaseSeeder extends Seeder
         $this->call([
             SystemConfigurationSeeder::class,
             HotelDefinitionSeeder::class,
+            SystemDefinitionSeeder::class,
+            CompanyAndPartnerSeeder::class,
+            SystemDateRollSeeder::class,
+            SystemBranchSeeder::class,
+            InfoBusinessSeeder::class,
+            EmployeeSeeder::class,
         ]);
     }
 }

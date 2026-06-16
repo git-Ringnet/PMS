@@ -13,5 +13,10 @@ class HotelConfig extends Model
         'name',
         'value',
         'description',
+        'is_visible',
+    ];
+
+    protected $casts = [
+        'is_visible' => 'boolean',
     ];
 }

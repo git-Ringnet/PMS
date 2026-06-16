@@ -1,12 +1,32 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+
+const props = defineProps({
+  initialTab: {
+    type: String,
+    default: 'THÔNG TIN KHÁCH SẠN'
+  }
+})
+
+const emit = defineEmits(['update:activeTab'])
 
 const uiStore = useUiStore()
 const loading = ref(false)
 
-const activeHotelTab = ref('THÔNG TIN KHÁCH SẠN')
+const activeHotelTab = ref(props.initialTab)
+
+watch(() => props.initialTab, (newVal) => {
+  if (newVal) {
+    activeHotelTab.value = newVal
+  }
+})
+
+watch(activeHotelTab, (newVal) => {
+  emit('update:activeTab', newVal)
+})
+
 const hotelTabs = [
   'THÔNG TIN KHÁCH SẠN',
   'DỊCH VỤ KHÁCH SẠN',
@@ -20,25 +40,43 @@ const hotelTabs = [
 
 // Data States
 const hotelForm = reactive({
-  code: '',
-  name: '',
+  first_name: '',
+  hotel_name: '',
+  hotel_name1: '',
   address: '',
-  tax_code: '',
+  address1: '',
   phone: '',
   fax: '',
   email: '',
-  facebook: '',
-  channel_manager: '',
-  currency: 'VND',
-  bank_name: '',
-  bank_account_name: '',
-  bank_account_number: '',
-  adult_breakfast_price: 0,
-  child_breakfast_price: 0,
-  extra_bed_price: 0,
-  total_rooms: 0,
   website: '',
-  booking_prefix: ''
+  account: '',
+  bank_code: '',
+  bank: '',
+  tax_code: '',
+  account_name: '',
+  invoice_address: '',
+  breakfast_adult_rate: 0,
+  breakfast_child_rate: 0,
+  extra_bed_rate: 0,
+  room_number: 0,
+  division: '',
+  currency: 'VND',
+  prefix_booking_id: '',
+  channel_manager: '',
+  facebook: '',
+  hotel_link: '',
+  serial: '',
+  invoice_number: '',
+  invoice_number_length: null,
+  form_no: '',
+  logo: '',
+  pos_serial: '',
+  pos_invoice_number: '',
+  pos_invoice_number_length: null,
+  pos_invoice_form_no: '',
+  pos_invoice_symbol: '',
+  logo_url: '',
+  qr_code_url: ''
 })
 
 const hotelServices = ref([])
@@ -205,8 +243,14 @@ const saveDeptService = () => {
   isDeptServiceModalOpen.value = false
 }
 
-const deleteDeptService = (serviceId) => {
-  if (!confirm('Bạn có chắc chắn muốn xóa dịch vụ này khỏi bộ phận?')) return
+const deleteDeptService = async (serviceId) => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa dịch vụ này khỏi bộ phận?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   const activeList = departmentServices.value[activeDepartment.value] || []
   const idx = activeList.findIndex(s => s.id === serviceId)
   if (idx !== -1) {
@@ -280,8 +324,14 @@ const saveReportConfig = () => {
   isReportConfigModalOpen.value = false
 }
 
-const deleteReportConfig = (reportId) => {
-  if (!confirm('Bạn có chắc chắn muốn xóa báo cáo này cùng toàn bộ thiết lập?')) return
+const deleteReportConfig = async (reportId) => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa báo cáo này cùng toàn bộ thiết lập?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   const idx = synthesisReports.value.findIndex(r => r.id === reportId)
   if (idx !== -1) {
     synthesisReports.value.splice(idx, 1)
@@ -408,12 +458,18 @@ const saveReportLine = () => {
   }
 }
 
-const deleteReportLine = () => {
+const deleteReportLine = async () => {
   if (!selectedReportLineId.value) {
     uiStore.showToast('Vui lòng chọn một dòng báo cáo ở bảng dưới để xóa', 'warning')
     return
   }
-  if (!confirm('Bạn có chắc chắn muốn xóa dòng báo cáo này?')) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa dòng báo cáo này?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   const idx = synthesisReportLines.value.findIndex(l => l.id === selectedReportLineId.value)
   if (idx !== -1) {
     synthesisReportLines.value.splice(idx, 1)
@@ -483,14 +539,21 @@ const saveService = async () => {
     fetchHotelServices()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi lưu dịch vụ', 'error')
+    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu dịch vụ'
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
   }
 }
 
 const deleteService = async (serviceId) => {
-  if (!confirm('Bạn có chắc chắn muốn xóa dịch vụ này?')) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa dịch vụ này?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try {
     await http.delete(`/hotel-services/${serviceId}`)
     uiStore.showToast('Xóa dịch vụ thành công!', 'success')
@@ -567,14 +630,21 @@ const saveShift = async () => {
     fetchShifts()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi lưu ca làm việc', 'error')
+    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu ca làm việc'
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
   }
 }
 
 const deleteShift = async (shiftId) => {
-  if (!confirm('Bạn có chắc chắn muốn xóa ca làm việc này?')) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa ca làm việc này?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try {
     await http.delete(`/shifts/${shiftId}`)
     uiStore.showToast('Xóa ca làm việc thành công!', 'success')
@@ -626,14 +696,21 @@ const saveConfig = async () => {
     fetchHotelConfigs()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi lưu cấu hình', 'error')
+    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu cấu hình'
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
   }
 }
 
 const deleteConfig = async (configId) => {
-  if (!confirm('Bạn có chắc chắn muốn xóa cấu hình này?')) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa cấu hình này?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try {
     await http.delete(`/hotel-configs/${configId}`)
     uiStore.showToast('Xóa cấu hình thành công!', 'success')
@@ -689,14 +766,21 @@ const saveBranch = async () => {
     fetchBranches()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi lưu chi nhánh', 'error')
+    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu chi nhánh'
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
   }
 }
 
 const deleteBranch = async (branchId) => {
-  if (!confirm('Bạn có chắc chắn muốn xóa chi nhánh này?')) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa chi nhánh này?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try {
     await http.delete(`/branches-total/${branchId}`)
     uiStore.showToast('Xóa chi nhánh thành công!', 'success')
@@ -737,6 +821,122 @@ const updateTemplateReport = async (template) => {
   }
 }
 
+// Image Upload & Utility functions
+const getImageUrl = (path) => {
+  if (!path) return ''
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+  const isDev = import.meta.env.DEV
+  const backendUrl = 'http://localhost:8000'
+  return isDev ? `${backendUrl}/${path}` : `/${path}`
+}
+
+const logoInput = ref(null)
+const qrInput = ref(null)
+
+const onLogoSelected = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+
+  const formData = new FormData()
+  formData.append('logo', file)
+
+  loading.value = true
+  try {
+    const res = await http.post('/hotel-settings/logo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    if (res.data && res.data.data) {
+      hotelForm.logo_url = res.data.data.logo_url
+      uiStore.showToast('Tải lên logo thành công!', 'success')
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải lên logo:', err)
+    uiStore.showToast('Không thể tải lên logo', 'error')
+  } finally {
+    loading.value = false
+    if (logoInput.value) logoInput.value.value = ''
+  }
+}
+
+const removeLogo = async () => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa logo',
+    message: 'Bạn có chắc chắn muốn xóa logo của khách sạn?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
+
+  loading.value = true
+  try {
+    const res = await http.delete('/hotel-settings/logo')
+    if (res.data && res.data.data) {
+      hotelForm.logo_url = res.data.data.logo_url
+      uiStore.showToast('Xóa logo thành công!', 'success')
+    }
+  } catch (err) {
+    console.error('Lỗi khi xóa logo:', err)
+    uiStore.showToast('Không thể xóa logo', 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
+const onQrSelected = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+
+  const formData = new FormData()
+  formData.append('qr_code', file)
+
+  loading.value = true
+  try {
+    const res = await http.post('/hotel-settings/qr-code', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    if (res.data && res.data.data) {
+      hotelForm.qr_code_url = res.data.data.qr_code_url
+      uiStore.showToast('Tải lên mã QR thành công!', 'success')
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải lên mã QR:', err)
+    uiStore.showToast('Không thể tải lên mã QR', 'error')
+  } finally {
+    loading.value = false
+    if (qrInput.value) qrInput.value.value = ''
+  }
+}
+
+const removeQrCode = async () => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa mã QR',
+    message: 'Bạn có chắc chắn muốn xóa mã QR thanh toán?',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
+
+  loading.value = true
+  try {
+    const res = await http.delete('/hotel-settings/qr-code')
+    if (res.data && res.data.data) {
+      hotelForm.qr_code_url = res.data.data.qr_code_url
+      uiStore.showToast('Xóa mã QR thành công!', 'success')
+    }
+  } catch (err) {
+    console.error('Lỗi khi xóa mã QR:', err)
+    uiStore.showToast('Không thể xóa mã QR', 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
 // API Functions
 const fetchHotelSettings = async () => {
   try {
@@ -750,13 +950,18 @@ const fetchHotelSettings = async () => {
 }
 
 const saveHotelSettings = async () => {
+  if (hotelForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hotelForm.email)) {
+    uiStore.showToast('Email không đúng định dạng', 'warning')
+    return
+  }
   loading.value = true
   try {
     await http.put('/hotel-settings', hotelForm)
     uiStore.showToast('Lưu thông tin khách sạn thành công!', 'success')
   } catch (err) {
     console.error('Lỗi khi lưu cấu hình khách sạn:', err)
-    uiStore.showToast('Không thể lưu cấu hình khách sạn', 'error')
+    const errorMsg = err.response?.data?.message || 'Không thể lưu cấu hình khách sạn'
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
   }
@@ -822,13 +1027,23 @@ const formatCurrency = (val) => {
 }
 
 // Initial fetches
-onMounted(() => {
-  fetchHotelSettings()
-  fetchHotelServices()
-  fetchShifts()
-  fetchHotelConfigs()
-  fetchBranches()
-  fetchTemplates()
+const isLoaded = ref(false)
+
+onMounted(async () => {
+  try {
+    await Promise.all([
+      fetchHotelSettings(),
+      fetchHotelServices(),
+      fetchShifts(),
+      fetchHotelConfigs(),
+      fetchBranches(),
+      fetchTemplates()
+    ])
+  } catch (err) {
+    console.error('Lỗi khi tải dữ liệu định nghĩa khách sạn:', err)
+  } finally {
+    isLoaded.value = true
+  }
 })
 </script>
 
@@ -846,9 +1061,18 @@ onMounted(() => {
     </div>
 
     <!-- Detail Card Content -->
-    <div class="flex-1 overflow-y-auto min-h-[400px]" :class="activeHotelTab === 'THÔNG TIN KHÁCH SẠN'
+    <div class="flex-1 overflow-y-auto min-h-[400px] relative" :class="activeHotelTab === 'THÔNG TIN KHÁCH SẠN'
       ? ''
       : 'bg-white rounded-xl shadow-xs border border-slate-200 p-6'">
+
+      <!-- Loading State (Premium 3D Rotating Rings Loader) -->
+      <div v-if="!isLoaded" class="flex items-center justify-center absolute inset-0 bg-white/70 z-30">
+        <div class="loader">
+          <div class="inner one"></div>
+          <div class="inner two"></div>
+          <div class="inner three"></div>
+        </div>
+      </div>
 
       <!-- Tab 1: THÔNG TIN KHÁCH SẠN -->
       <div v-if="activeHotelTab === 'THÔNG TIN KHÁCH SẠN'" class="flex flex-col gap-4 py-2">
@@ -871,16 +1095,13 @@ onMounted(() => {
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <!-- Col 1: Basic settings -->
           <div class="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">
-            <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
-              <span>Mã KS</span>
-              <input type="text" v-model="hotelForm.code"
-                class="col-span-2 border border-slate-200 bg-yellow-50 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
-            </div>
-
-            <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
-              <span>Tên KS/KNM</span>
-              <input type="text" v-model="hotelForm.name"
-                class="col-span-2 border border-slate-200 bg-yellow-50 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
+            <div class="grid grid-cols-12 items-center gap-2 text-sm font-bold text-slate-600">
+              <span class="col-span-2">Mã KS</span>
+              <input type="text" v-model="hotelForm.division"
+                class="col-span-3 border border-slate-200 bg-yellow-50 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
+              <span class="col-span-3 text-right pr-2">Tên KS/KNM</span>
+              <input type="text" v-model="hotelForm.hotel_name"
+                class="col-span-4 border border-slate-200 bg-yellow-50 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
@@ -939,43 +1160,43 @@ onMounted(() => {
           <div class="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Tên ngân hàng</span>
-              <input type="text" v-model="hotelForm.bank_name"
+              <input type="text" v-model="hotelForm.bank"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Tên tài khoản</span>
-              <input type="text" v-model="hotelForm.bank_account_name"
+              <input type="text" v-model="hotelForm.account_name"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Số tài khoản</span>
-              <input type="text" v-model="hotelForm.bank_account_number"
+              <input type="text" v-model="hotelForm.account"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-semibold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
-              <span>Giá ăn sáng NL</span>
-              <input type="number" v-model="hotelForm.adult_breakfast_price"
+              <span>Giá ăn sáng người lớn</span>
+              <input type="number" v-model="hotelForm.breakfast_adult_rate"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Giá ăn sáng trẻ em</span>
-              <input type="number" v-model="hotelForm.child_breakfast_price"
+              <input type="number" v-model="hotelForm.breakfast_child_rate"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Giá Thêm Giường</span>
-              <input type="number" v-model="hotelForm.extra_bed_price"
+              <input type="number" v-model="hotelForm.extra_bed_rate"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Số phòng</span>
-              <input type="number" v-model="hotelForm.total_rooms"
+              <input type="number" v-model="hotelForm.room_number"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 bg-yellow-50 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
@@ -986,8 +1207,8 @@ onMounted(() => {
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
-              <span>Tiền tố đăng ký</span>
-              <input type="text" v-model="hotelForm.booking_prefix"
+              <span>Tiền tố mã đăng ký</span>
+              <input type="text" v-model="hotelForm.prefix_booking_id"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold uppercase text-sm" />
             </div>
           </div>
@@ -1002,7 +1223,10 @@ onMounted(() => {
               </div>
               <div class="p-6 flex flex-col items-center justify-center gap-4">
                 <!-- Logo Image -->
-                <div
+                <div v-if="hotelForm.logo_url" class="w-24 h-24 rounded-full overflow-hidden shadow-inner border border-slate-200">
+                  <img :src="getImageUrl(hotelForm.logo_url)" alt="Logo" class="w-full h-full object-cover" />
+                </div>
+                <div v-else
                   class="w-24 h-24 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 shadow-inner">
                   <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -1011,31 +1235,65 @@ onMounted(() => {
                 </div>
                 <!-- Action buttons -->
                 <div class="flex items-center gap-4 text-slate-400">
-                  <button
-                    class="p-1 text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer"><svg
-                      class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <label class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer flex items-center justify-center">
+                    <input type="file" ref="logoInput" @change="onLogoSelected" class="hidden" accept="image/*" />
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                  </label>
+                  <a v-if="hotelForm.logo_url" :href="getImageUrl(hotelForm.logo_url)" target="_blank"
+                    class="p-1 text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer flex items-center justify-center">
+                    <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       <path stroke-linecap="round" stroke-linejoin="round"
                         d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg></button>
-                  <button class="p-1 text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer"><svg
-                      class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    </svg>
+                  </a>
+                  <button v-if="hotelForm.logo_url" @click="removeLogo" class="p-1 text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer">
+                    <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round"
                         d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg></button>
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
 
             <!-- QR Box -->
-            <div class="flex flex-col items-center p-2 mt-4">
-              <svg class="w-32 h-32 text-slate-700 bg-white p-2 rounded-xl border border-slate-100 shadow-2xs"
+            <div class="flex flex-col items-center p-2 mt-4 gap-2">
+              <div v-if="hotelForm.qr_code_url" class="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-white p-2 shadow-2xs">
+                <img :src="getImageUrl(hotelForm.qr_code_url)" alt="QR Code" class="w-full h-full object-contain" />
+              </div>
+              <svg v-else class="w-32 h-32 text-slate-700 bg-white p-2 rounded-xl border border-slate-100 shadow-2xs"
                 fill="currentColor" viewBox="0 0 24 24">
                 <path
                   d="M0 0h6v6H0V0zm1 1v4h4V1H1zm7-1h6v6H8V0zm1 1v4h4V1H9zm7-1h6v6h-6V0zm1 1v4h4V1h-4zM0 8h6v6H0V8zm1 1v4h4V9H1zm7 0h6v6H8V9zm1 1v4h4v-4H9zm7-1h1v1h-1V9zm1 1h1v1h-1v-1zm-1 1h1v1h-1v-1zm2-2h1v1h-1V9zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1zm-1 3h1v1h-1v-1zm-1-1h1v1h-1v-1zm-1 1h1v1h-1v-1zm2-1h1v1h-1v-1zm1 1h1v1h-1v-1zm-6 2h1v1H8v-1zm1 1h1v1H9v-1zm-1 1h1v1H8v-1zm2-3h1v1h-1v-1zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1zm3 0h1v1h-1v-1zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1zm-6 3h1v1h-1v-1zm1 1h1v1H9v-1zm-1 1h1v1H8v-1zm2-3h1v1h-1v-1zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1z" />
               </svg>
-              <span class="text-xs text-slate-500 font-extrabold mt-2 tracking-wider">MÃ QR THANH TOÁN / ĐẶT
-                PHÒNG</span>
+              <span class="text-xs text-slate-500 font-extrabold tracking-wider">MÃ QR THANH TOÁN / ĐẶT PHÒNG</span>
+              
+              <!-- QR Action Buttons -->
+              <div class="flex items-center gap-4 text-slate-400 mt-1">
+                <label class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer flex items-center justify-center">
+                  <input type="file" ref="qrInput" @change="onQrSelected" class="hidden" accept="image/*" />
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                </label>
+                <a v-if="hotelForm.qr_code_url" :href="getImageUrl(hotelForm.qr_code_url)" target="_blank"
+                  class="p-1 text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer flex items-center justify-center">
+                  <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </a>
+                <button v-if="hotelForm.qr_code_url" @click="removeQrCode" class="p-1 text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer">
+                  <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1046,7 +1304,7 @@ onMounted(() => {
         <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
           <div class="flex items-center gap-2">
             <button @click="openAddServiceModal"
-              class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
+              class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
               </svg>
@@ -1087,14 +1345,14 @@ onMounted(() => {
             <tbody>
               <tr
                 v-for="s in hotelServices.filter(item => !searchServiceQuery || (item.code && item.code.toLowerCase().includes(searchServiceQuery.toLowerCase())) || (item.name && item.name.toLowerCase().includes(searchServiceQuery.toLowerCase())))"
-                :key="s.id" class="border-b border-slate-100 hover:bg-slate-50/55">
+                :key="s.id" @click="openEditServiceModal(s)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ s.code }}</td>
                 <td class="p-3 font-bold text-slate-700">{{ s.name }}</td>
                 <td class="p-3 text-center font-bold text-slate-600">{{ s.service_charge }}</td>
                 <td class="p-3 text-center font-bold text-slate-600">{{ s.tax }}</td>
                 <td class="p-3 text-center font-bold text-slate-600">{{ s.special_tax }}</td>
                 <td class="p-3 text-center">
-                  <label class="relative inline-flex items-center cursor-pointer">
+                  <label @click.stop class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" :checked="s.include_service_charge"
                       @change="toggleServiceFlag(s, 'include_service_charge')" class="sr-only peer" />
                     <div
@@ -1103,7 +1361,7 @@ onMounted(() => {
                   </label>
                 </td>
                 <td class="p-3 text-center">
-                  <label class="relative inline-flex items-center cursor-pointer">
+                  <label @click.stop class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" :checked="s.include_tax" @change="toggleServiceFlag(s, 'include_tax')"
                       class="sr-only peer" />
                     <div
@@ -1112,7 +1370,7 @@ onMounted(() => {
                   </label>
                 </td>
                 <td class="p-3 text-center">
-                  <label class="relative inline-flex items-center cursor-pointer">
+                  <label @click.stop class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" :checked="s.include_special_tax"
                       @change="toggleServiceFlag(s, 'include_special_tax')" class="sr-only peer" />
                     <div
@@ -1127,14 +1385,7 @@ onMounted(() => {
                 <td class="p-3 text-slate-500 font-semibold text-xs">{{ s.department || '-' }}</td>
                 <td class="p-3 text-right">
                   <div class="flex items-center justify-end gap-1">
-                    <button @click="openEditServiceModal(s)"
-                      class="p-1 hover:bg-slate-100 rounded text-sky-600 bg-transparent border-none cursor-pointer">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button @click="deleteService(s.id)"
+                    <button @click.stop="deleteService(s.id)"
                       class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round"
@@ -1153,7 +1404,7 @@ onMounted(() => {
       <div v-else-if="activeHotelTab === 'CA LÀM VIỆC'" class="flex flex-col gap-4">
         <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
           <button @click="openAddShiftModal"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
             </svg>
@@ -1172,20 +1423,13 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="sh in shifts" :key="sh.id" class="border-b border-slate-100 hover:bg-slate-50/55">
+              <tr v-for="sh in shifts" :key="sh.id" @click="openEditShiftModal(sh)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ sh.name }}</td>
                 <td class="p-3 font-bold text-slate-600 font-mono">{{ sh.start_time }}</td>
                 <td class="p-3 font-bold text-slate-600 font-mono">{{ sh.end_time }}</td>
                 <td class="p-3 text-right">
                   <div class="flex items-center justify-end gap-1">
-                    <button @click="openEditShiftModal(sh)"
-                      class="p-1 hover:bg-slate-100 rounded text-sky-600 bg-transparent border-none cursor-pointer">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button @click="deleteShift(sh.id)"
+                    <button @click.stop="deleteShift(sh.id)"
                       class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round"
@@ -1207,7 +1451,7 @@ onMounted(() => {
       <div v-else-if="activeHotelTab === 'CẤU HÌNH'" class="flex flex-col gap-4">
         <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
           <button @click="openAddConfigModal"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
             </svg>
@@ -1237,20 +1481,13 @@ onMounted(() => {
             <tbody>
               <tr
                 v-for="cfg in hotelConfigs.filter(item => !searchConfigQuery || (item.name && item.name.toLowerCase().includes(searchConfigQuery.toLowerCase())) || (item.description && item.description.toLowerCase().includes(searchConfigQuery.toLowerCase())))"
-                :key="cfg.id" class="border-b border-slate-100 hover:bg-slate-50/55">
+                :key="cfg.id" @click="openEditConfigModal(cfg)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ cfg.name }}</td>
                 <td class="p-3 font-bold text-sky-700 font-mono">{{ cfg.value || '-' }}</td>
                 <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed max-w-xs">{{ cfg.description || '-' }}</td>
                 <td class="p-3 text-right">
                   <div class="flex items-center justify-end gap-1">
-                    <button @click="openEditConfigModal(cfg)"
-                      class="p-1 hover:bg-slate-100 rounded text-sky-600 bg-transparent border-none cursor-pointer">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button @click="deleteConfig(cfg.id)"
+                    <button @click.stop="deleteConfig(cfg.id)"
                       class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round"
@@ -1273,7 +1510,7 @@ onMounted(() => {
         <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
           <div class="flex items-center gap-2">
             <button @click="openAddBranchModal"
-              class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
+              class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold flex items-center gap-1.5 border-none cursor-pointer shadow-xs transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
               </svg>
@@ -1310,13 +1547,13 @@ onMounted(() => {
             <tbody>
               <tr
                 v-for="b in branches.filter(item => !searchBranchQuery || (item.code && item.code.toLowerCase().includes(searchBranchQuery.toLowerCase())) || (item.name && item.name.toLowerCase().includes(searchBranchQuery.toLowerCase())))"
-                :key="b.id" class="border-b border-slate-100 hover:bg-slate-50/55">
+                :key="b.id" @click="openEditBranchModal(b)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ b.code }}</td>
                 <td class="p-3 font-bold text-slate-700">{{ b.name }}</td>
                 <td class="p-3 font-semibold text-sky-700 text-xs break-all select-all">{{ b.api_url || '-' }}</td>
                 <td class="p-3 font-semibold text-sky-700 text-xs break-all select-all">{{ b.api_report_url || '-' }}</td>
                 <td class="p-3 text-center">
-                  <label class="relative inline-flex items-center cursor-pointer">
+                  <label @click.stop class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" :checked="b.is_master" @change="toggleBranchMaster(b)"
                       class="sr-only peer" />
                     <div
@@ -1326,14 +1563,7 @@ onMounted(() => {
                 </td>
                 <td class="p-3 text-right">
                   <div class="flex items-center justify-end gap-1">
-                    <button @click="openEditBranchModal(b)"
-                      class="p-1 hover:bg-slate-100 rounded text-sky-600 bg-transparent border-none cursor-pointer">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button @click="deleteBranch(b.id)"
+                    <button @click.stop="deleteBranch(b.id)"
                       class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round"
@@ -1422,7 +1652,7 @@ onMounted(() => {
             </span>
             <div class="flex gap-2">
               <button @click="openAddDeptServiceModal"
-                class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded text-xs font-bold border-none cursor-pointer flex items-center gap-1">
+                class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded text-xs font-bold border-none cursor-pointer flex items-center gap-1">
                 + Thêm dịch vụ
               </button>
               <input type="text" v-model="searchDeptServiceQuery" placeholder="Tìm tên dịch vụ..."
@@ -1441,18 +1671,12 @@ onMounted(() => {
               </thead>
               <tbody>
                 <tr v-for="s in (departmentServices[activeDepartment] || []).filter(item => !searchDeptServiceQuery || item.name.toLowerCase().includes(searchDeptServiceQuery.toLowerCase()))" :key="s.id"
-                  class="border-b border-slate-100 hover:bg-slate-50/55">
+                  @click="openEditDeptServiceModal(s)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                   <td class="p-3 font-bold text-slate-800">{{ s.name }}</td>
                   <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed">{{ s.description || '-' }}</td>
                   <td class="p-3 text-right">
                     <div class="flex items-center justify-end gap-1">
-                      <button @click="openEditDeptServiceModal(s)"
-                        class="p-1 hover:bg-slate-100 rounded text-sky-600 bg-transparent border-none cursor-pointer">
-                        <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button @click="deleteDeptService(s.id)"
+                      <button @click.stop="deleteDeptService(s.id)"
                         class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
                         <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1483,7 +1707,7 @@ onMounted(() => {
           </div>
           <div class="flex items-center gap-2">
             <button @click="openAddReportConfigModal"
-              class="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-lg border-none cursor-pointer shadow-xs transition-colors">
+              class="px-3.5 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white font-bold text-xs rounded-lg border-none cursor-pointer shadow-xs transition-colors">
               Thêm báo cáo mới
             </button>
             <button
@@ -1702,7 +1926,7 @@ onMounted(() => {
               <button
                 @click="selectedReportLineId && selectReportLine(synthesisReportLines.find(l => l.id === selectedReportLineId))"
                 :disabled="!selectedReportLineId"
-                class="px-4 py-2 bg-sky-50 hover:bg-sky-600 disabled:opacity-50 text-white rounded-lg text-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs">
+                class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] disabled:opacity-50 text-white rounded-lg text-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs">
                 Sửa
               </button>
               <button @click="deleteReportLine" :disabled="!selectedReportLineId"
@@ -1710,7 +1934,7 @@ onMounted(() => {
                 Xóa
               </button>
               <button @click="saveReportLine"
-                class="px-5 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs">
+                class="px-5 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg text-sm font-bold cursor-pointer transition-colors flex items-center gap-1 shadow-xs">
                 Lưu
               </button>
             </div>
@@ -1739,7 +1963,7 @@ onMounted(() => {
       <div
         class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         <!-- Modal Header -->
-        <div class="bg-sky-500 px-6 py-4 flex items-center justify-between text-white">
+        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
           <h2 class="text-base font-black uppercase tracking-wider">Hotel Service</h2>
           <button @click="isServiceModalOpen = false"
             class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
@@ -1883,7 +2107,7 @@ onMounted(() => {
             Đóng
           </button>
           <button @click="saveService"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors flex items-center gap-1.5">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors flex items-center gap-1.5">
             <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -1900,7 +2124,7 @@ onMounted(() => {
       <div
         class="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         <!-- Modal Header -->
-        <div class="bg-sky-500 px-6 py-4 flex items-center justify-between text-white">
+        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
           <h2 class="text-base font-black uppercase tracking-wider">{{ isEditMode ? 'Chỉnh sửa ca' : 'Thêm ca' }}</h2>
           <button @click="isShiftModalOpen = false"
             class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
@@ -1936,7 +2160,7 @@ onMounted(() => {
             Đóng
           </button>
           <button @click="saveShift"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
             Lưu ca
           </button>
         </div>
@@ -1949,7 +2173,7 @@ onMounted(() => {
       <div
         class="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         <!-- Modal Header -->
-        <div class="bg-sky-500 px-6 py-4 flex items-center justify-between text-white">
+        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
           <h2 class="text-base font-black uppercase tracking-wider">{{ isEditMode ? 'Chỉnh sửa cấu hình' : 'Thêm cấu hình' }}</h2>
           <button @click="isConfigModalOpen = false"
             class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
@@ -1984,7 +2208,7 @@ onMounted(() => {
             Đóng
           </button>
           <button @click="saveConfig"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
             Lưu cấu hình
           </button>
         </div>
@@ -1997,7 +2221,7 @@ onMounted(() => {
       <div
         class="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         <!-- Modal Header -->
-        <div class="bg-sky-400 px-6 py-4 flex items-center justify-between text-white">
+        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
           <h2 class="text-base font-black uppercase tracking-wider">{{ isEditMode ? 'Sửa' : 'Thêm' }}</h2>
           <button @click="isBranchModalOpen = false"
             class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
@@ -2043,7 +2267,7 @@ onMounted(() => {
         <!-- Modal Footer -->
         <div class="bg-white px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-100">
           <button @click="isBranchModalOpen = false"
-            class="px-5 py-2.5 bg-sky-300 hover:bg-sky-400 text-white rounded-lg font-bold text-sm cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-sm">
+            class="px-5 py-2.5 bg-[#8dcbf4]/90 hover:bg-[#8dcbf4] text-white rounded-lg font-bold text-sm cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-sm">
             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 9l-6 6M9 9l6 6" />
@@ -2051,7 +2275,7 @@ onMounted(() => {
             Đóng
           </button>
           <button @click="saveBranch"
-            class="px-5 py-2.5 bg-sky-400 hover:bg-sky-500 text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-sm transition-colors flex items-center gap-1.5">
+            class="px-5 py-2.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-sm transition-colors flex items-center gap-1.5">
             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-4-4H8z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 14a3 3 0 100-6 3 3 0 000 6z" />
@@ -2069,7 +2293,7 @@ onMounted(() => {
       <div
         class="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         <!-- Modal Header -->
-        <div class="bg-sky-500 px-6 py-4 flex items-center justify-between text-white">
+        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
           <h2 class="text-base font-black uppercase tracking-wider">{{ isEditDeptServiceMode ? 'Sửa dịch vụ bộ phận' : 'Thêm dịch vụ bộ phận' }}</h2>
           <button @click="isDeptServiceModalOpen = false"
             class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
@@ -2098,7 +2322,7 @@ onMounted(() => {
             Đóng
           </button>
           <button @click="saveDeptService"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
             Lưu dịch vụ
           </button>
         </div>
@@ -2111,7 +2335,7 @@ onMounted(() => {
       <div
         class="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         <!-- Modal Header -->
-        <div class="bg-sky-500 px-6 py-4 flex items-center justify-between text-white">
+        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
           <h2 class="text-base font-black uppercase tracking-wider">{{ isEditReportConfigMode ? 'Sửa báo cáo' : 'Thêm báo cáo mới' }}</h2>
           <button @click="isReportConfigModalOpen = false"
             class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
@@ -2156,7 +2380,7 @@ onMounted(() => {
             Đóng
           </button>
           <button @click="saveReportConfig"
-            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
+            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-xs transition-colors">
             Lưu báo cáo
           </button>
         </div>

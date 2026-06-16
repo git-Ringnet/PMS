@@ -16,6 +16,8 @@ class RoomClass extends Model
         'color',
         'is_active',
         'group',
+        'notes',
+        'image_path',
     ];
 
     protected $casts = [

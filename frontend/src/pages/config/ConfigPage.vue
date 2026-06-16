@@ -1,13 +1,48 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import HotelDefinition from './components/HotelDefinition.vue'
 import RoomDefinition from './components/RoomDefinition.vue'
+import SystemDefinition from './components/SystemDefinition.vue'
+import RateSetup from './components/RateSetup.vue'
 
 const router = useRouter()
+const route = useRoute()
 
-// View state: 'menu', 'hotel', 'room'
-const currentView = ref('menu')
+// View state: 'menu', 'hotel', 'room', 'system', 'rate'
+const currentView = ref(route.query.view || 'menu')
+
+// Update currentView when query changes
+watch(() => route.query.view, (newVal) => {
+  currentView.value = newVal || 'menu'
+})
+
+// Update query when currentView changes
+watch(currentView, (newVal) => {
+  if (route.query.view !== newVal) {
+    const query = { ...route.query }
+    if (newVal === 'menu') {
+      delete query.view
+      delete query.tab
+    } else {
+      query.view = newVal
+      delete query.tab // reset tab when changing view
+    }
+    router.push({ query })
+  }
+})
+
+// Sync active tab with route query
+function updateActiveTab(newTab) {
+  if (route.query.tab !== newTab) {
+    router.replace({
+      query: {
+        ...route.query,
+        tab: newTab
+      }
+    })
+  }
+}
 
 function handleBack() {
   if (currentView.value === 'menu') {
@@ -19,8 +54,8 @@ function handleBack() {
 </script>
 
 <template>
-  <div class="h-full flex flex-col overflow-hidden">
-    <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 overflow-y-auto h-full text-slate-800">
+  <div class="h-full flex flex-col">
+    <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 overflow-y-auto text-slate-800">
     
     <!-- Header: Dynamic Back Arrow & View Title -->
     <div class="flex items-center justify-between shrink-0">
@@ -35,7 +70,9 @@ function handleBack() {
           <span class="uppercase tracking-wider text-sm">
             {{ 
               currentView === 'menu' ? 'Cấu hình hệ thống' : 
-              currentView === 'hotel' ? 'Định nghĩa khách sạn' : 'Định nghĩa phòng'
+              currentView === 'hotel' ? 'Định nghĩa khách sạn' : 
+              currentView === 'room' ? 'Định nghĩa phòng' : 
+              currentView === 'system' ? 'Định nghĩa hệ thống' : 'Thiết lập giá'
             }}
           </span>
         </button>
@@ -74,6 +111,7 @@ function handleBack() {
 
           <!-- Card 3: Định nghĩa hệ thống -->
           <div 
+            @click="currentView = 'system'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
             <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -87,6 +125,7 @@ function handleBack() {
 
           <!-- Card 4: Thiết lập giá -->
           <div 
+            @click="currentView = 'rate'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
             <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -117,9 +156,27 @@ function handleBack() {
 
     <!-- VIEW 2: DỊCH VỤ / TÁC VỤ CHI TIẾT -->
     <template v-else>
-      <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 p-6 overflow-hidden flex flex-col min-h-[400px]">
-        <HotelDefinition v-if="currentView === 'hotel'" />
-        <RoomDefinition v-else-if="currentView === 'room'" />
+      <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 p-6 overflow-auto flex flex-col min-h-0">
+        <HotelDefinition 
+          v-if="currentView === 'hotel'" 
+          :initialTab="route.query.tab || 'THÔNG TIN KHÁCH SẠN'"
+          @update:activeTab="updateActiveTab"
+        />
+        <RoomDefinition 
+          v-else-if="currentView === 'room'" 
+          :initialTab="route.query.tab || 'TÊN LOẠI PHÒNG'"
+          @update:activeTab="updateActiveTab"
+        />
+        <SystemDefinition 
+          v-else-if="currentView === 'system'" 
+          :initialTab="route.query.tab || 'HÌNH THỨC THANH TOÁN'"
+          @update:activeTab="updateActiveTab"
+        />
+        <RateSetup 
+          v-else-if="currentView === 'rate'" 
+          :initialTab="route.query.tab || 'Mã giá phòng'"
+          @update:activeTab="updateActiveTab"
+        />
       </div>
     </template>
   </div>

@@ -19,11 +19,24 @@ Route::middleware('auth:sanctum')->group(function () {
     // Hotel settings
     Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
     Route::put('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'update']);
+    Route::post('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadLogo']);
+    Route::delete('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteLogo']);
+    Route::post('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadQrCode']);
+    Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
 
     // Room configurations
     Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index']);
+    Route::post('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'store']);
+    Route::put('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'update']);
+    Route::delete('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'destroy']);
     Route::get('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'index']);
+    Route::post('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'store']);
+    Route::put('/room-forms/{id}', [\App\Http\Controllers\Api\RoomFormController::class, 'update']);
+    Route::delete('/room-forms/{id}', [\App\Http\Controllers\Api\RoomFormController::class, 'destroy']);
     Route::get('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'index']);
+    Route::post('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'store']);
+    Route::put('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'update']);
+    Route::delete('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'destroy']);
 
     // Rooms management
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
@@ -49,6 +62,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
     Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
-});
 
+    // System configuration routes
+    Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
+    Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
+    Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
+    Route::apiResource('room-rate-codes', \App\Http\Controllers\Api\RoomRateCodeController::class);
+    Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
+
+    // System Administration routes
+    Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
+    Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+    Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature']);
+    Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature']);
+    Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);
+    Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update']);
+    Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
+    Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
+});
 

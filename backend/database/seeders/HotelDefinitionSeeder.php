@@ -218,16 +218,16 @@ class HotelDefinitionSeeder extends Seeder
 
         // 3. Seed Configs
         $configs = [
-            ['name' => 'AllowChangeRoomStatusAtReception', 'value' => '1', 'description' => 'AllowChangeRoomStatusAtReception'],
-            ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow'],
-            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'AllowCheckinVacantClean'],
-            ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow'],
-            ['name' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'value' => '1', 'description' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK'],
-            ['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'AllowEarlyCheckout'],
-            ['name' => 'AllowExtendDateRoomOverDateBooking', 'value' => '1', 'description' => 'Cho phép gia hạn phòng vượt quá ngày của booking'],
-            ['name' => 'AllowInputOverAV', 'value' => '0', 'description' => 'AllowInputOverAV'],
-            ['name' => 'AllowLockRoomCauseUnassignableRoomBK', 'value' => '0', 'description' => 'AllowLockRoomCauseUnassignableRoomBK'],
-            ['name' => 'AllowNegativeAmountDeposit', 'value' => '', 'description' => 'AllowNegativeAmountDeposit'],
+            ['name' => 'AllowChangeRoomStatusAtReception', 'value' => '1', 'description' => 'AllowChangeRoomStatusAtReception', 'is_visible' => false],
+            ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow', 'is_visible' => true],
+            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'AllowCheckinVacantClean', 'is_visible' => false],
+            ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow', 'is_visible' => false],
+            ['name' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'value' => '1', 'description' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'is_visible' => false],
+            ['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'AllowEarlyCheckout', 'is_visible' => false],
+            ['name' => 'AllowExtendDateRoomOverDateBooking', 'value' => '1', 'description' => 'Cho phép gia hạn phòng vượt quá ngày của booking', 'is_visible' => false],
+            ['name' => 'AllowInputOverAV', 'value' => '0', 'description' => 'AllowInputOverAV', 'is_visible' => false],
+            ['name' => 'AllowLockRoomCauseUnassignableRoomBK', 'value' => '0', 'description' => 'AllowLockRoomCauseUnassignableRoomBK', 'is_visible' => false],
+            ['name' => 'AllowNegativeAmountDeposit', 'value' => '', 'description' => 'AllowNegativeAmountDeposit', 'is_visible' => false],
         ];
 
         foreach ($configs as $cfg) {

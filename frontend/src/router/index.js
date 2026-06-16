@@ -12,7 +12,13 @@ const routes = [
     path: '/',
     name: 'Home',
     component: () => import('@/pages/HomePage.vue'),
-    meta: { title: 'Trang chủ - PMS', noLayout: true },
+    meta: { title: 'Trang chủ - Provista', noLayout: true },
+  },
+  {
+    path: '/pms',
+    name: 'PmsPages',
+    component: () => import('@/pages/PmsPages.vue'),
+    meta: { title: 'Trang chủ - PMS' },
   },
   {
     path: '/reservation',
@@ -23,13 +29,13 @@ const routes = [
   {
     path: '/frontdesk',
     name: 'FrontDesk',
-    component: () => import('@/pages/frontdesk/FrontDeskPage.vue'),
+    component: () => import('@/pages/reservation/RoomMapPage.vue'),
     meta: { title: 'Lễ tân - PMS' },
   },
   {
     path: '/housekeeping',
     name: 'Housekeeping',
-    component: () => import('@/pages/housekeeping/HousekeepingPage.vue'),
+    component: () => import('@/pages/reservation/RoomMapPage.vue'),
     meta: { title: 'Buồng phòng - PMS' },
   },
   {
@@ -43,6 +49,12 @@ const routes = [
     name: 'Config',
     component: () => import('@/pages/config/ConfigPage.vue'),
     meta: { title: 'Cấu hình hệ thống - PMS' },
+  },
+  {
+    path: '/system',
+    name: 'SystemConfig',
+    component: () => import('@/pages/system/SystemPage.vue'),
+    meta: { title: 'Cấu hình hệ thống - Provista', noLayout: true },
   },
 ]
 
