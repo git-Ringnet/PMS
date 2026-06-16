@@ -19,6 +19,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Hotel settings
     Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
     Route::put('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'update']);
+    Route::post('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadLogo']);
+    Route::delete('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteLogo']);
+    Route::post('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadQrCode']);
+    Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
 
     // Room configurations
     Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index']);
