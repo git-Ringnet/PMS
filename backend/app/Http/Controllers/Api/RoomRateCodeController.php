@@ -3,106 +3,132 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\RoomRateCodeResource;
 use App\Models\RoomRateCode;
+use App\Models\RoomRatePlan;
+use App\Models\RoomRateDailyMapping;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RoomRateCodeController extends Controller
 {
     public function index()
     {
-        $rates = RoomRateCode::with(['roomClass', 'roomForm'])->get();
-        return response()->json([
-            'success' => true,
-            'data' => RoomRateCodeResource::collection($rates)
-        ]);
+        $rateCodes = RoomRateCode::with('ratePlans', 'dailyMappings')->get();
+        return response()->json(['data' => $rateCodes]);
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'code' => 'required|string|max:50|unique:room_rate_codes,code',
-            'description' => 'nullable|string|max:255',
-            'room_class_id' => 'nullable|exists:room_classes,id',
-            'room_form_id' => 'nullable|exists:room_forms,id',
-            'adults' => 'nullable|integer|min:0',
-            'children' => 'nullable|integer|min:0',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-            'price' => 'nullable|numeric|min:0',
-            'breakfast_price' => 'nullable|numeric|min:0',
-            'extra_bed_price' => 'nullable|numeric|min:0',
-            'has_breakfast' => 'nullable|boolean',
-            'is_allowed' => 'nullable|boolean',
-            'rate_type' => 'nullable|string|max:20',
+        $request->validate([
+            'Ma' => 'required|string|unique:room_rate_codes,Ma',
+            'Description' => 'nullable|string',
+            'BeginDate' => 'nullable|date',
+            'EndDate' => 'nullable|date',
+            'IncludeBF' => 'boolean',
+            'Currency' => 'nullable|string',
         ]);
 
-        $rate = RoomRateCode::create($validated);
-        $rate->load(['roomClass', 'roomForm']);
+        $rateCode = RoomRateCode::create($request->all());
 
-        return response()->json([
-            'success' => true,
-            'data' => new RoomRateCodeResource($rate)
-        ], 201);
+        // Always create a default rate plan when a new code is created
+        RoomRatePlan::create([
+            'RateCode' => $rateCode->Ma,
+            'Code' => 'DEFAULT',
+            'Description' => 'Mặc định',
+            'Period' => []
+        ]);
+
+        return response()->json(['message' => 'Created successfully', 'data' => $rateCode], 201);
     }
 
-    public function show($id)
+    public function show($ma)
     {
-        $rate = RoomRateCode::with(['roomClass', 'roomForm'])->find($id);
-        if (!$rate) {
-            return response()->json(['message' => 'Room rate code not found'], 404);
-        }
-        return response()->json([
-            'success' => true,
-            'data' => new RoomRateCodeResource($rate)
-        ]);
+        $rateCode = RoomRateCode::with('ratePlans', 'dailyMappings')->findOrFail($ma);
+        return response()->json(['data' => $rateCode]);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, $ma)
     {
-        $rate = RoomRateCode::find($id);
-        if (!$rate) {
-            return response()->json(['message' => 'Room rate code not found'], 404);
-        }
+        $rateCode = RoomRateCode::findOrFail($ma);
+        $rateCode->update($request->all());
 
-        $validated = $request->validate([
-            'code' => 'required|string|max:50|unique:room_rate_codes,code,' . $rate->id,
-            'description' => 'nullable|string|max:255',
-            'room_class_id' => 'nullable|exists:room_classes,id',
-            'room_form_id' => 'nullable|exists:room_forms,id',
-            'adults' => 'nullable|integer|min:0',
-            'children' => 'nullable|integer|min:0',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-            'price' => 'nullable|numeric|min:0',
-            'breakfast_price' => 'nullable|numeric|min:0',
-            'extra_bed_price' => 'nullable|numeric|min:0',
-            'has_breakfast' => 'nullable|boolean',
-            'is_allowed' => 'nullable|boolean',
-            'rate_type' => 'nullable|string|max:20',
-        ]);
-
-        $rate->update($validated);
-        $rate->load(['roomClass', 'roomForm']);
-
-        return response()->json([
-            'success' => true,
-            'data' => new RoomRateCodeResource($rate)
-        ]);
+        return response()->json(['message' => 'Updated successfully', 'data' => $rateCode]);
     }
 
-    public function destroy($id)
+    public function destroy($ma)
     {
-        $rate = RoomRateCode::find($id);
-        if (!$rate) {
-            return response()->json(['message' => 'Room rate code not found'], 404);
+        $rateCode = RoomRateCode::findOrFail($ma);
+        $rateCode->delete();
+
+        return response()->json(['message' => 'Deleted successfully']);
+    }
+
+    // Custom method to save Rate Plans (Matrix Grid)
+    public function saveRatePlan(Request $request, $ma)
+    {
+        $request->validate([
+            'Code' => 'required|string',
+            'Description' => 'nullable|string',
+            'BeginDate' => 'nullable|date',
+            'EndDate' => 'nullable|date',
+            'Period' => 'nullable|array', // JSON matrix
+        ]);
+
+        $data = $request->only(['Description', 'BeginDate', 'EndDate', 'Period']);
+        $data['RateCode'] = $ma;
+        $data['Code'] = $request->Code;
+
+        // Use updateOrCreate manually since we have composite keys
+        $plan = RoomRatePlan::where('RateCode', $ma)->where('Code', $request->Code)->first();
+        if ($plan) {
+            $plan->update($data);
+        } else {
+            $plan = RoomRatePlan::create($data);
         }
 
-        $rate->delete();
+        return response()->json(['message' => 'Rate Plan saved', 'data' => $plan]);
+    }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Room rate code deleted successfully'
+    public function deleteRatePlan($ma, $code)
+    {
+        $plan = RoomRatePlan::where('RateCode', $ma)->where('Code', $code)->firstOrFail();
+        $plan->delete();
+        
+        // Cascade delete daily mappings mapped to this code
+        RoomRateDailyMapping::where('RateCode', $ma)->where('Code', $code)->delete();
+        
+        return response()->json(['message' => 'Rate Plan deleted']);
+    }
+
+    public function saveDailyMappings(Request $request, $ma)
+    {
+        $request->validate([
+            'mappings' => 'required|array',
+            'mappings.*.Date' => 'required|date',
+            'mappings.*.Code' => 'required|string',
         ]);
+
+        DB::beginTransaction();
+        try {
+            foreach ($request->mappings as $mapping) {
+                $existing = RoomRateDailyMapping::where('RateCode', $ma)
+                    ->where('Date', $mapping['Date'])
+                    ->first();
+                if ($existing) {
+                    $existing->update(['Code' => $mapping['Code']]);
+                } else {
+                    RoomRateDailyMapping::create([
+                        'RateCode' => $ma,
+                        'Date' => $mapping['Date'],
+                        'Code' => $mapping['Code']
+                    ]);
+                }
+            }
+            DB::commit();
+            return response()->json(['message' => 'Daily mappings saved']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Error saving daily mappings', 'error' => $e->getMessage()], 500);
+        }
     }
 }
