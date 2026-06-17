@@ -69,6 +69,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
     Route::apiResource('room-rate-codes', \App\Http\Controllers\Api\RoomRateCodeController::class);
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
+
+    // Price setting routes
+    Route::apiResource('rate-codes', App\Http\Controllers\Api\RateCodeController::class);
+    Route::patch('rate-codes/{rate_code}/toggle', [App\Http\Controllers\Api\RateCodeController::class, 'toggle']);
+    Route::apiResource('rate-codes.plans', App\Http\Controllers\Api\RatePlanController::class)
+        ->except(['show'])
+        ->parameters(['plans' => 'plan']);
+    Route::prefix('rate-codes/{rate_code}/dailies')->group(function () {
+        Route::get('/',          [App\Http\Controllers\Api\RatePlanDailyController::class, 'index']);
+        Route::post('/apply',    [App\Http\Controllers\Api\RatePlanDailyController::class, 'apply']);
+        Route::delete('/range',  [App\Http\Controllers\Api\RatePlanDailyController::class, 'destroyRange']);
+        Route::delete('/{id}',   [App\Http\Controllers\Api\RatePlanDailyController::class, 'destroy']);
+    });
 });
 
 

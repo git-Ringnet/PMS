@@ -1651,6 +1651,31 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
                 <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
               </label>
             </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-500">GIT/FIT</span>
+
+              <div
+                @click="rateForm.rate_type = rateForm.rate_type === 'GIT' ? 'FIT' : 'GIT'"
+                class="relative h-7 rounded-full cursor-pointer transition-all duration-200 select-none flex items-center"
+                :class="rateForm.rate_type === 'GIT'
+                  ? 'bg-blue-400 pl-2.5 pr-7'
+                  : 'bg-slate-200 pl-7 pr-2.5'"
+              >
+                <!-- Text -->
+                <span
+                  class="text-[11px] font-bold"
+                  :class="rateForm.rate_type === 'GIT' ? 'text-white' : 'text-slate-500'"
+                >
+                  {{ rateForm.rate_type }}
+                </span>
+
+                <!-- Thumb -->
+                <div
+                  class="absolute top-[3px] w-[22px] h-[22px] bg-white rounded-full shadow transition-all duration-200"
+                  :class="rateForm.rate_type === 'GIT' ? 'right-[3px]' : 'left-[3px]'"
+                ></div>
+              </div>
+            </div>
           </div>
 
           <div class="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-slate-100">

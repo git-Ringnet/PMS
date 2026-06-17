@@ -1,211 +1,360 @@
 <script setup>
-import { ref, reactive, watch, computed } from 'vue'
+import { ref, reactive, watch, computed, onMounted } from 'vue'
+import http from '@/services/http'
 
 const props = defineProps({
-  initialTab: {
-    type: String,
-    default: 'Mã giá phòng'
-  }
+  initialTab: { type: String, default: 'Mã giá phòng' }
 })
-
 const emit = defineEmits(['update:activeTab'])
 
 const activeRateTab = ref(props.initialTab)
-
-watch(() => props.initialTab, (newVal) => {
-  if (newVal) {
-    activeRateTab.value = newVal
-  }
-})
-
-watch(activeRateTab, (newVal) => {
-  emit('update:activeTab', newVal)
-})
-
+watch(() => props.initialTab, (v) => { if (v) activeRateTab.value = v })
+watch(activeRateTab, (v) => emit('update:activeTab', v))
 const rateTabs = ['Mã giá phòng', 'Gói dịch vụ']
 
-// --- MOCK DATA FOR TABS ---
+// ===================== STATE =====================
+const loading = ref(false)
 
-// 1. Tab Mã giá phòng: Rate Codes List
-const rateCodes = ref([
-  { id: 'B2B', code: 'B2B', description: 'B2B', currency: 'VND', fromDate: '20/05/2025', toDate: '31/12/2026', isDaily: false, isInactive: false, isAllowManual: false, isPushChannel: false, isBreakfast: false },
-  { id: 'FOC', code: 'FOC', description: 'FOC', currency: 'VND', fromDate: '06/02/2025', toDate: '01/02/2026', isDaily: false, isInactive: false, isAllowManual: false, isPushChannel: false, isBreakfast: false },
-  { id: 'ROB2B', code: 'ROB2B', description: 'RO-B2B', currency: 'VND', fromDate: '02/01/2026', toDate: '31/12/2026', isDaily: false, isInactive: false, isAllowManual: false, isPushChannel: false, isBreakfast: false },
-  { id: 'ROBAR', code: 'ROBAR', description: 'RO-BAR', currency: 'VND', fromDate: '02/01/2026', toDate: '31/12/2026', isDaily: false, isInactive: false, isAllowManual: false, isPushChannel: false, isBreakfast: false },
-  { id: 'ST', code: 'ST', description: 'BAR', currency: 'VND', fromDate: '01/01/2025', toDate: '31/12/2026', isDaily: false, isInactive: false, isAllowManual: false, isPushChannel: false, isBreakfast: true }
-])
+// --- Rate Codes ---
+const rateCodes = ref([])
+const selectedRateCode = ref(null)
+const isNewMode = ref(false)
 
-const selectedRateCode = ref(rateCodes.value[0])
-
-// Selected Rate Code Form Fields
-const rateFormState = reactive({
-  code: 'B2B',
-  description: 'B2B',
-  fromDate: '20/05/2025',
-  toDate: '31/12/2026',
+const rateForm = reactive({
+  code: '',
+  description: '',
+  begin_date: '',
+  end_date: '',
   currency: 'VND',
-  isDaily: false,
-  isInactive: false,
-  isAllowManual: false,
-  isPushChannel: false,
-  isBreakfast: false
+  include_bf: false,
+  disable: false,
+  allow_change_rate: false,
+  is_channel_manager: false,
+  type: 'fixed',
 })
 
-// Sync form with selected row
-watch(selectedRateCode, (newVal) => {
-  if (newVal) {
-    Object.assign(rateFormState, {
-      code: newVal.code,
-      description: newVal.description,
-      fromDate: newVal.fromDate,
-      toDate: newVal.toDate,
-      currency: newVal.currency,
-      isDaily: newVal.isDaily,
-      isInactive: newVal.isInactive,
-      isAllowManual: newVal.isAllowManual,
-      isPushChannel: newVal.isPushChannel,
-      isBreakfast: newVal.isBreakfast
-    })
-  }
-}, { immediate: true })
+// --- Room Classes & Forms (cho grid) ---
+const roomClasses = ref([]) // loại phòng: SUPD, DLXD...
+const roomForms = ref([])   // dạng phòng: Double, Twin...
 
+// --- Grid giá tĩnh (value JSON) ---
+// matrix[roomClassId][roomFormId] = price
+const matrix = reactive({})
+
+// --- Giá theo ngày ---
+const isDaily = computed(() => !!selectedRateCode.value?.type === 'daily' || rateForm.type === 'daily')
+// Dùng riêng 1 field để track checkbox "Giá theo ngày"
+const isGiaTheoNgay = ref(false)
+
+// --- Rate Plans (mã con BB1/BB2...) ---
+const ratePlans = ref([])
+const selectedRatePlan = ref(null)
+
+// --- Apply form (khi Giá theo ngày) ---
+const applyForm = reactive({
+  from: '',
+  to: '',
+  code: '',         // mã con chọn từ ratePlans
+  days_of_week: [0, 1, 2, 3, 4, 5, 6], // 0=CN,1=T2...6=T7
+})
+const dayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+
+// --- Daily data (bảng ngày × loại phòng) ---
+const dailyRows = ref([])
+const dailyFrom = ref('')
+const dailyTo = ref('')
+
+// ===================== FETCH =====================
+const fetchRateCodes = async () => {
+  loading.value = true
+  try {
+    const res = await http.get('/rate-codes')
+    rateCodes.value = res.data.data || []
+    if (rateCodes.value.length > 0) selectRateCode(rateCodes.value[0])
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+const fetchRoomClasses = async () => {
+  try {
+    const res = await http.get('/room-classes')
+    roomClasses.value = res.data.data || []
+  } catch (e) { console.error(e) }
+}
+
+const fetchRoomForms = async () => {
+  try {
+    const res = await http.get('/room-forms')
+    roomForms.value = res.data.data || []
+  } catch (e) { console.error(e) }
+}
+
+const fetchRatePlans = async (code) => {
+  if (!code) return
+  try {
+    const res = await http.get(`/rate-codes/${code}/plans`)
+    ratePlans.value = res.data.data || []
+    selectedRatePlan.value = ratePlans.value[0] || null
+    if (selectedRatePlan.value) applyForm.code = selectedRatePlan.value.code
+  } catch (e) { console.error(e) }
+}
+
+const fetchDailies = async () => {
+  if (!selectedRateCode.value || !dailyFrom.value || !dailyTo.value) return
+  try {
+    const res = await http.get(`/rate-codes/${selectedRateCode.value.code}/dailies`, {
+      params: { from: dailyFrom.value, to: dailyTo.value }
+    })
+    dailyRows.value = res.data.data || []
+  } catch (e) { console.error(e) }
+}
+
+onMounted(() => {
+  fetchRateCodes()
+  fetchRoomClasses()
+  fetchRoomForms()
+  // Mặc định dailyFrom/To là tháng hiện tại
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  dailyFrom.value = `${y}-${m}-01`
+  const lastDay = new Date(y, now.getMonth() + 1, 0).getDate()
+  dailyTo.value = `${y}-${m}-${lastDay}`
+  applyForm.from = dailyFrom.value
+  applyForm.to = dailyTo.value
+})
+
+// ===================== SELECT =====================
 const selectRateCode = (rc) => {
   selectedRateCode.value = rc
+  isNewMode.value = false
+  syncForm(rc)
+  buildMatrix(rc)
+  fetchRatePlans(rc.code)
+  if (isGiaTheoNgay.value) fetchDailies()
 }
 
-// Room Types Matrix list
-const roomTypes = ref([
-  { code: 'SUPD', description: 'Superior Double' },
-  { code: 'SUPT', description: 'Superior Twin' },
-  { code: 'SUPTR', description: 'Superior Triple' },
-  { code: 'DLXD', description: 'Deluxe Double City view' },
-  { code: 'DLXT', description: 'Deluxe Twin City View' },
-  { code: 'DLXDB', description: 'Deluxe Double with Balcony' },
-  { code: 'DLXTB', description: 'Deluxe Twin with Balcony' },
-  { code: 'FAM', description: 'Family City View' },
-  { code: 'JST', description: 'Suite' },
-  { code: 'DP', description: 'DỰ PHÒNG' }
-])
-
-// Rates values stored per RateCode + RoomType + Occupancy
-const rateMatrix = reactive({
-  // B2B rates
-  'B2B_SUPD_Double': '1.200.000', 'B2B_SUPD_Twin': '1.200.000', 'B2B_SUPD_Triple': '', 'B2B_SUPD_Family': '', 'B2B_SUPD_King': '',
-  'B2B_SUPT_Double': '', 'B2B_SUPT_Twin': '1.250.000', 'B2B_SUPT_Triple': '', 'B2B_SUPT_Family': '', 'B2B_SUPT_King': '',
-  'B2B_SUPTR_Double': '', 'B2B_SUPTR_Twin': '', 'B2B_SUPTR_Triple': '1.500.000', 'B2B_SUPTR_Family': '', 'B2B_SUPTR_King': '',
-  'B2B_DLXD_Double': '1.400.000', 'B2B_DLXD_Twin': '', 'B2B_DLXD_Triple': '', 'B2B_DLXD_Family': '', 'B2B_DLXD_King': '',
-  'B2B_DLXT_Double': '', 'B2B_DLXT_Twin': '1.450.000', 'B2B_DLXT_Triple': '', 'B2B_DLXT_Family': '', 'B2B_DLXT_King': '',
-  'B2B_DLXDB_Double': '1.600.000', 'B2B_DLXDB_Twin': '', 'B2B_DLXDB_Triple': '', 'B2B_DLXDB_Family': '', 'B2B_DLXDB_King': '',
-  'B2B_DLXTB_Double': '', 'B2B_DLXTB_Twin': '1.650.000', 'B2B_DLXTB_Triple': '', 'B2B_DLXTB_Family': '', 'B2B_DLXTB_King': '',
-  'B2B_FAM_Double': '', 'B2B_FAM_Twin': '', 'B2B_FAM_Triple': '', 'B2B_FAM_Family': '2.200.000', 'B2B_FAM_King': '',
-  'B2B_JST_Double': '', 'B2B_JST_Twin': '', 'B2B_JST_Triple': '', 'B2B_JST_Family': '', 'B2B_JST_King': '3.000.000',
-  'B2B_DP_Double': '', 'B2B_DP_Twin': '', 'B2B_DP_Triple': '', 'B2B_DP_Family': '', 'B2B_DP_King': '',
-
-  // ROBAR rates
-  'ROBAR_SUPD_Double': '1.500.000', 'ROBAR_SUPD_Twin': '1.500.000', 'ROBAR_SUPD_Triple': '', 'ROBAR_SUPD_Family': '', 'ROBAR_SUPD_King': '',
-  'ROBAR_SUPT_Double': '', 'ROBAR_SUPT_Twin': '1.550.000', 'ROBAR_SUPT_Triple': '', 'ROBAR_SUPT_Family': '', 'ROBAR_SUPT_King': '',
-  'ROBAR_SUPTR_Double': '', 'ROBAR_SUPTR_Twin': '', 'ROBAR_SUPTR_Triple': '1.900.000', 'ROBAR_SUPTR_Family': '', 'ROBAR_SUPTR_King': '',
-  'ROBAR_DLXD_Double': '1.800.000', 'ROBAR_DLXD_Twin': '', 'ROBAR_DLXD_Triple': '', 'ROBAR_DLXD_Family': '', 'ROBAR_DLXD_King': '',
-  'ROBAR_DLXT_Double': '', 'ROBAR_DLXT_Twin': '1.850.000', 'ROBAR_DLXT_Triple': '', 'ROBAR_DLXT_Family': '', 'ROBAR_DLXT_King': '',
-  'ROBAR_DLXDB_Double': '2.000.000', 'ROBAR_DLXDB_Twin': '', 'ROBAR_DLXDB_Triple': '', 'ROBAR_DLXDB_Family': '', 'ROBAR_DLXDB_King': '',
-  'ROBAR_DLXTB_Double': '', 'ROBAR_DLXTB_Twin': '2.050.000', 'ROBAR_DLXTB_Triple': '', 'ROBAR_DLXTB_Family': '', 'ROBAR_DLXTB_King': '',
-  'ROBAR_FAM_Double': '', 'ROBAR_FAM_Twin': '', 'ROBAR_FAM_Triple': '', 'ROBAR_FAM_Family': '2.800.000', 'ROBAR_FAM_King': '',
-  'ROBAR_JST_Double': '', 'ROBAR_JST_Twin': '', 'ROBAR_JST_Triple': '', 'ROBAR_JST_Family': '', 'ROBAR_JST_King': '4.000.000',
-  'ROBAR_DP_Double': '', 'ROBAR_DP_Twin': '', 'ROBAR_DP_Triple': '', 'ROBAR_DP_Family': '', 'ROBAR_DP_King': '',
-})
-
-const getMatrixKey = (roomCode, occupancy) => {
-  return `${selectedRateCode.value?.id || 'B2B'}_${roomCode}_${occupancy}`
+const syncForm = (rc) => {
+  Object.assign(rateForm, {
+    code: rc.code,
+    description: rc.description || '',
+    begin_date: rc.begin_date || '',
+    end_date: rc.end_date || '',
+    currency: rc.currency || 'VND',
+    include_bf: !!rc.include_bf,
+    disable: !!rc.disable,
+    allow_change_rate: !!rc.allow_change_rate,
+    is_channel_manager: !!rc.is_channel_manager,
+    type: rc.type || 'fixed',
+  })
 }
 
-// 2. Tab Gói dịch vụ: Service Packages List & Package Details
-const servicePackages = ref([
-  { id: 'PKG1', code: 'PKG01', currency: 'VND', nights: 1, displayPrice: '200.000', startDate: '01/01/2026', endDate: '31/12/2026', inactive: false, daysOfWeek: 'Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7, Chủ Nhật', description: 'Gói ăn sáng Buffet' },
-  { id: 'PKG2', code: 'PKG02', currency: 'VND', nights: 1, displayPrice: '450.000', startDate: '01/01/2026', endDate: '31/12/2026', inactive: false, daysOfWeek: 'Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7, Chủ Nhật', description: 'Gói ăn tối Set menu' },
-  { id: 'PKG3', code: 'PKG03', currency: 'VND', nights: 2, displayPrice: '900.000', startDate: '15/02/2026', endDate: '15/02/2027', inactive: false, daysOfWeek: 'Thứ 6, Thứ 7, Chủ Nhật', description: 'Combo Cuối tuần Spa & Dining' }
-])
+// ===================== MATRIX GIÁ =====================
+const buildMatrix = (rc) => {
+  // Reset matrix
+  Object.keys(matrix).forEach(k => delete matrix[k])
+  if (!rc?.value) return
+  const arr = typeof rc.value === 'string' ? JSON.parse(rc.value) : rc.value
+  arr.forEach(item => {
+    if (!matrix[item.RoomTypeId]) matrix[item.RoomTypeId] = {}
+    matrix[item.RoomTypeId][item.RoomKindId] = item.Price
+  })
+}
 
-const selectedPackage = ref(servicePackages.value[0])
+const getPrice = (roomClassId, roomFormId) => {
+  return matrix[roomClassId]?.[roomFormId] ?? ''
+}
 
-const packageDetails = computed(() => {
-  if (!selectedPackage.value) return []
-  if (selectedPackage.value.id === 'PKG1') {
-    return [
-      { id: 'd1', validity: 'Theo ngày ở', fromDate: '01/01/2026', endDate: '31/12/2026', service: 'Buffet sáng người lớn', department: 'Restaurant/Nhà Hàng', mealPlan: 'Breakfast', amount: '150.000', calculatedOn: 'Người/Đêm', roomClass: 'Tất cả' },
-      { id: 'd2', validity: 'Theo ngày ở', fromDate: '01/01/2026', endDate: '31/12/2026', service: 'Buffet sáng trẻ em', department: 'Restaurant/Nhà Hàng', mealPlan: 'Breakfast', amount: '50.000', calculatedOn: 'Trẻ em/Đêm', roomClass: 'Tất cả' }
-    ]
-  } else if (selectedPackage.value.id === 'PKG2') {
-    return [
-      { id: 'd3', validity: 'Theo ngày ở', fromDate: '01/01/2026', endDate: '31/12/2026', service: 'Set ăn tối Deluxe', department: 'Restaurant/Nhà Hàng', mealPlan: 'Dinner', amount: '450.000', calculatedOn: 'Người/Đêm', roomClass: 'Tất cả' }
-    ]
-  } else {
-    return [
-      { id: 'd4', validity: 'Theo ngày ở', fromDate: '15/02/2026', endDate: '15/02/2027', service: 'Liệu trình Spa thư giãn', department: 'Spa', mealPlan: 'None', amount: '500.000', calculatedOn: 'Khách/Lần', roomClass: 'Suite' },
-      { id: 'd5', validity: 'Theo ngày ở', fromDate: '15/02/2026', endDate: '15/02/2027', service: 'Set ăn tối đặc biệt', department: 'Restaurant/Nhà Hàng', mealPlan: 'Dinner', amount: '400.000', calculatedOn: 'Người/Đêm', roomClass: 'Suite' }
-    ]
+const setPrice = (roomClassId, roomFormId, val) => {
+  if (!matrix[roomClassId]) matrix[roomClassId] = {}
+  matrix[roomClassId][roomFormId] = val === '' ? 0 : parseFloat(val) || 0
+}
+
+// Build value array từ matrix để gửi lên API
+const buildValueArray = () => {
+  const arr = []
+  roomClasses.value.forEach(rc => {
+    roomForms.value.forEach(rf => {
+      arr.push({
+        RoomTypeId: rc.id,
+        RoomKindId: rf.id,
+        Price: matrix[rc.id]?.[rf.id] ?? 0,
+      })
+    })
+  })
+  return arr
+}
+
+// Save giá matrix (blur input)
+const saveMatrix = async () => {
+  if (!selectedRateCode.value) return
+  try {
+    await http.put(`/rate-codes/${selectedRateCode.value.id}`, {
+      ...rateForm,
+      value: buildValueArray(),
+    })
+  } catch (e) { console.error(e) }
+}
+
+// ===================== THÊM / LƯU / XÓA =====================
+const handleAdd = () => {
+  isNewMode.value = true
+  selectedRateCode.value = null
+  ratePlans.value = []
+  dailyRows.value = []
+  Object.keys(matrix).forEach(k => delete matrix[k])
+  const today = new Date().toISOString().split('T')[0]
+  const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  Object.assign(rateForm, {
+    code: '', description: '',
+    begin_date: today, end_date: nextYear,
+    currency: 'VND', include_bf: false,
+    disable: false, allow_change_rate: false,
+    is_channel_manager: false, type: 'fixed',
+  })
+}
+
+const handleSave = async () => {
+  if (!rateForm.code) { alert('Vui lòng nhập mã'); return }
+  loading.value = true
+  try {
+    const payload = { ...rateForm, value: buildValueArray() }
+    if (isNewMode.value) {
+      const res = await http.post('/rate-codes', payload)
+      rateCodes.value.push(res.data.data)
+      selectRateCode(res.data.data)
+    } else {
+      const res = await http.put(`/rate-codes/${selectedRateCode.value.id}`, payload)
+      const idx = rateCodes.value.findIndex(r => r.id === selectedRateCode.value.id)
+      if (idx !== -1) rateCodes.value[idx] = res.data.data
+      selectedRateCode.value = res.data.data
+      syncForm(res.data.data)
+    }
+    isNewMode.value = false
+  } catch (e) {
+    alert(e.response?.data?.message || 'Lỗi lưu dữ liệu')
+  } finally {
+    loading.value = false
   }
-})
-
-// Calculate total sum of package details
-const totalPackageDetailsAmount = computed(() => {
-  return packageDetails.value.reduce((sum, item) => {
-    const numeric = parseInt(item.amount.replace(/\./g, ''), 10) || 0
-    return sum + numeric
-  }, 0)
-})
-
-const formatNumber = (num) => {
-  return new Intl.NumberFormat('vi-VN').format(num)
 }
 
-const selectPackage = (pkg) => {
-  selectedPackage.value = pkg
+const handleDelete = async () => {
+  if (!selectedRateCode.value) return
+  if (!confirm(`Xóa rate code "${selectedRateCode.value.code}"?`)) return
+  loading.value = true
+  try {
+    await http.delete(`/rate-codes/${selectedRateCode.value.id}`)
+    rateCodes.value = rateCodes.value.filter(r => r.id !== selectedRateCode.value.id)
+    selectedRateCode.value = null
+    ratePlans.value = []
+    dailyRows.value = []
+    if (rateCodes.value.length > 0) selectRateCode(rateCodes.value[0])
+  } catch (e) {
+    alert('Lỗi khi xóa')
+  } finally {
+    loading.value = false
+  }
+}
+
+// ===================== APPLY DAILY =====================
+const handleApply = async () => {
+  if (!selectedRateCode.value || !applyForm.code || !applyForm.from || !applyForm.to) {
+    alert('Vui lòng chọn đầy đủ thông tin')
+    return
+  }
+  loading.value = true
+  try {
+    await http.post(`/rate-codes/${selectedRateCode.value.code}/dailies/apply`, {
+      code: applyForm.code,
+      from: applyForm.from,
+      to: applyForm.to,
+      days_of_week: applyForm.days_of_week,
+    })
+    dailyFrom.value = applyForm.from
+    dailyTo.value = applyForm.to
+    await fetchDailies()
+  } catch (e) {
+    alert(e.response?.data?.message || 'Lỗi áp dụng')
+  } finally {
+    loading.value = false
+  }
+}
+
+watch(isGiaTheoNgay, (val) => {
+  if (val && selectedRateCode.value) fetchDailies()
+})
+
+// ===================== FORMAT =====================
+const formatDate = (d) => {
+  if (!d) return ''
+  const dt = new Date(d)
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`
+}
+
+const getDayLabel = (dateStr) => {
+  const days = ['CN','T2','T3','T4','T5','T6','T7']
+  return days[new Date(dateStr).getDay()]
+}
+
+const toggleDay = (dayIndex) => {
+  const idx = applyForm.days_of_week.indexOf(dayIndex)
+  if (idx === -1) applyForm.days_of_week.push(dayIndex)
+  else applyForm.days_of_week.splice(idx, 1)
+}
+
+const isDaySelected = (dayIndex) => applyForm.days_of_week.includes(dayIndex)
+
+// Lấy giá từ dailyRows cho 1 ngày + loại phòng + dạng phòng
+// (Hiện tại daily chỉ lưu code mã con, không lưu giá riêng)
+const getDailyCode = (dateStr) => {
+  const found = dailyRows.value.find(r => r.date === dateStr)
+  return found?.code || ''
 }
 </script>
 
 <template>
   <div class="flex-1 flex flex-col gap-4 text-slate-800">
-    <!-- Sub Navigation Tabs Bar -->
+
+    <!-- Tabs -->
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
-        <button 
-          v-for="tab in rateTabs" 
-          :key="tab"
+        <button
+          v-for="tab in rateTabs" :key="tab"
           @click="activeRateTab = tab"
           class="px-4 py-2 text-sm font-bold border-none bg-transparent cursor-pointer relative pb-3 transition-colors"
           :class="activeRateTab === tab ? 'text-sky-600 border-b-2 border-sky-500' : 'text-slate-500 hover:text-slate-800'"
-        >
-          {{ tab }}
-        </button>
+        >{{ tab }}</button>
       </div>
     </div>
 
-    <!-- MAIN VIEW WRAPPER -->
     <div class="flex-1 min-h-0 flex flex-col gap-4">
-      
-      <!-- ================= TAB 1: MÃ GIÁ PHÒNG ================= -->
+
+      <!-- ===== TAB 1: MÃ GIÁ PHÒNG ===== -->
       <div v-if="activeRateTab === 'Mã giá phòng'" class="flex-1 flex flex-col gap-4 min-h-0">
-        
-        <!-- Top Half: Table on left (40%), form on right (60%) -->
-        <div class="flex flex-col lg:flex-row gap-4 h-[350px] shrink-0 min-h-0">
-          
-          <!-- Left Table (40%) -->
+
+        <!-- Top: Bảng trái + Form phải -->
+        <div class="flex flex-col lg:flex-row gap-4 shrink-0" style="height: 380px;">
+
+          <!-- Bảng trái: danh sách rate codes -->
           <div class="w-full lg:w-[42%] bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
             <div class="overflow-y-auto flex-1">
-              <table class="w-full text-xs text-left border-collapse border border-slate-200">
+              <div v-if="loading" class="text-center py-8 text-xs text-slate-400">Đang tải...</div>
+              <table v-else class="w-full text-xs text-left border-collapse border border-slate-200">
                 <thead>
-                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase sticky top-0 z-10">
+                  <tr class="bg-slate-50 text-slate-600 font-bold uppercase sticky top-0 z-10">
                     <th class="p-2 border border-slate-200 w-16">Mã</th>
                     <th class="p-2 border border-slate-200">Mô tả</th>
-                    <th class="p-2 border border-slate-200 w-16 text-center">Tiền tệ</th>
+                    <th class="p-2 border border-slate-200 w-14 text-center">Tiền tệ</th>
                     <th class="p-2 border border-slate-200 w-24 text-center">Từ ngày</th>
                     <th class="p-2 border border-slate-200 w-24 text-center">Đến ngày</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr 
-                    v-for="rc in rateCodes" 
-                    :key="rc.id"
+                  <tr
+                    v-for="rc in rateCodes" :key="rc.id"
                     @click="selectRateCode(rc)"
                     class="border-b border-slate-100 hover:bg-slate-50/70 cursor-pointer transition-colors"
                     :class="selectedRateCode?.id === rc.id ? 'bg-sky-50/40 font-semibold text-sky-700' : 'text-slate-700'"
@@ -213,195 +362,225 @@ const selectPackage = (pkg) => {
                     <td class="p-2 border border-slate-100 font-bold">{{ rc.code }}</td>
                     <td class="p-2 border border-slate-100">{{ rc.description }}</td>
                     <td class="p-2 border border-slate-100 text-center">{{ rc.currency }}</td>
-                    <td class="p-2 border border-slate-100 text-center text-slate-500">{{ rc.fromDate }}</td>
-                    <td class="p-2 border border-slate-100 text-center text-slate-500">{{ rc.toDate }}</td>
+                    <td class="p-2 border border-slate-100 text-center text-slate-500">{{ formatDate(rc.begin_date) }}</td>
+                    <td class="p-2 border border-slate-100 text-center text-slate-500">{{ formatDate(rc.end_date) }}</td>
+                  </tr>
+                  <tr v-if="rateCodes.length === 0">
+                    <td colspan="5" class="p-6 text-center text-slate-400">Chưa có dữ liệu</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
 
-          <!-- Right Form (58%) -->
-          <div class="w-full lg:w-[58%] bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs justify-between">
-            <!-- Form Action Buttons Header -->
+          <!-- Form phải -->
+          <div class="w-full lg:w-[58%] bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
+            <!-- Header buttons -->
             <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
               <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">Chi tiết thiết lập giá</span>
               <div class="flex items-center gap-1.5">
-                <!-- Search Mock Button -->
-                <button class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 cursor-pointer bg-white">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </button>
-                <!-- Add Button -->
-                <button class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
+                <button @click="handleAdd" class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1">
                   <span class="text-sm">+</span> Thêm
                 </button>
-                <!-- Save Button -->
-                <button class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
+                <button @click="handleSave" :disabled="loading" class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer disabled:opacity-50">
                   Lưu
                 </button>
-                <!-- Delete Button (using scoped CSS class to prevent HMR/Vite styles caching issues) -->
-                <button class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shadow-sm">
+                <button @click="handleDelete" :disabled="!selectedRateCode || loading" class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer disabled:opacity-40">
                   Xóa
                 </button>
               </div>
             </div>
 
-            <!-- Form Content Fields stacked in rows matching mockup -->
+            <!-- Fields -->
             <div class="flex flex-col gap-3 py-3 overflow-y-auto flex-1">
-              <!-- Row 1: Mã (1/3) & Mô tả (2/3) -->
-              <div class="flex gap-4">
-                <div class="w-1/3">
+              <!-- Row 1: Mã + Mô tả -->
+              <div class="flex gap-3">
+                <div class="w-1/4">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Mã</label>
-                  <input 
-                    type="text" 
-                    v-model="rateFormState.code"
-                    class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" 
-                  />
+                  <input type="text" v-model="rateForm.code" :disabled="!isNewMode && !!selectedRateCode"
+                    class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold disabled:bg-slate-50" />
                 </div>
-                <div class="w-2/3">
+                <div class="flex-1">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Mô tả</label>
-                  <input 
-                    type="text" 
-                    v-model="rateFormState.description"
-                    class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" 
-                  />
+                  <input type="text" v-model="rateForm.description"
+                    class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
                 </div>
               </div>
-              
-              <!-- Row 2: Từ ngày - đến ngày (45%) & Tiền tệ (20%) & Ăn sáng checkbox (35%) -->
-              <div class="flex gap-4 items-end">
-                <div class="w-[45%]">
+
+              <!-- Row 2: Từ ngày ~ Đến ngày + Tiền tệ + Ăn sáng -->
+              <div class="flex gap-3 items-end flex-wrap">
+                <div class="flex-1 min-w-[120px]">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Từ ngày - đến ngày</label>
-                  <div class="relative flex items-center">
-                    <input 
-                      type="text" 
-                      :value="`${rateFormState.fromDate} ~ ${rateFormState.toDate}`"
-                      class="w-full pl-3 pr-8 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold bg-white cursor-pointer"
-                      readonly 
-                    />
-                    <svg class="w-4.5 h-4.5 absolute right-2 text-emerald-500 cursor-pointer pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                  <div class="flex items-center gap-1">
+                    <input type="date" v-model="rateForm.begin_date"
+                      class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
+                    <span class="text-slate-400 text-xs">~</span>
+                    <input type="date" v-model="rateForm.end_date"
+                      class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
                   </div>
                 </div>
-
-                <div class="w-[25%]">
+                <div class="w-24">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Tiền tệ</label>
-                  <div class="relative flex items-center">
-                    <select 
-                      v-model="rateFormState.currency"
-                      class="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold appearance-none bg-white"
-                    >
-                      <option value="VND">VND</option>
-                      <option value="USD">USD</option>
-                    </select>
-                    <span class="absolute left-2.5 flex items-center text-xs font-black">🇻🇳</span>
-                    <div class="pointer-events-none absolute right-2 flex items-center text-slate-400">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                    </div>
-                  </div>
+                  <select v-model="rateForm.currency"
+                    class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold bg-white">
+                    <option value="VND">🇻🇳 VND</option>
+                    <option value="USD">🇺🇸 USD</option>
+                  </select>
                 </div>
-
-                <div class="w-[30%] pb-2 pl-2">
-                  <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                    <input type="checkbox" v-model="rateFormState.isBreakfast" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                <div class="pb-2">
+                  <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                    <input type="checkbox" v-model="rateForm.include_bf" class="rounded border-slate-300 text-sky-500" />
                     Ăn sáng
                   </label>
                 </div>
               </div>
 
-              <!-- Row 3: Remaining Checkboxes Grouped Inline -->
-              <div class="flex flex-wrap gap-x-5 gap-y-2 items-center pt-2 border-t border-slate-100">
-                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                  <input type="checkbox" v-model="rateFormState.isDaily" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+              <!-- Row 3: Checkboxes -->
+              <div class="flex flex-wrap gap-x-5 gap-y-2 pt-2 border-t border-slate-100">
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" v-model="isGiaTheoNgay" class="rounded border-slate-300 text-sky-500" />
                   Giá theo ngày
                 </label>
-                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                  <input type="checkbox" v-model="rateFormState.isInactive" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" v-model="rateForm.disable" class="rounded border-slate-300 text-sky-500" />
                   Không sử dụng
                 </label>
-                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                  <input type="checkbox" v-model="rateFormState.isAllowManual" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" v-model="rateForm.allow_change_rate" class="rounded border-slate-300 text-sky-500" />
                   Cho phép nhập giá
                 </label>
-                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                  <input type="checkbox" v-model="rateFormState.isPushChannel" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" v-model="rateForm.is_channel_manager" class="rounded border-slate-300 text-sky-500" />
                   Đẩy lên Channel Manager
                 </label>
+              </div>
+
+              <!-- Row 4: Apply form (chỉ hiện khi Giá theo ngày) -->
+              <div v-if="isGiaTheoNgay" class="flex flex-wrap gap-3 pt-2 border-t border-slate-100 items-end">
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Ngày áp dụng</label>
+                  <div class="flex items-center gap-1">
+                    <input type="date" v-model="applyForm.from"
+                      class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
+                    <span class="text-slate-400 text-xs">~</span>
+                    <input type="date" v-model="applyForm.to"
+                      class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
+                  </div>
+                </div>
+                <!-- Checkbox ngày trong tuần -->
+                <div class="flex items-center gap-1 flex-wrap">
+                  <button
+                    v-for="(label, idx) in dayLabels" :key="idx"
+                    @click="toggleDay(idx)"
+                    class="px-2 py-1 rounded text-xs font-bold border cursor-pointer"
+                    :class="isDaySelected(idx) ? 'bg-sky-500 text-white border-sky-500' : 'bg-white text-slate-500 border-slate-200'"
+                  >{{ label }}</button>
+                </div>
+                <!-- Loại giá (mã con) -->
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 mb-1">Loại giá</label>
+                  <select v-model="applyForm.code"
+                    class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold bg-white min-w-[100px]">
+                    <option value="">Chọn mã</option>
+                    <option v-for="p in ratePlans" :key="p.id" :value="p.code">{{ p.code }}</option>
+                  </select>
+                </div>
+                <button @click="handleApply" :disabled="loading"
+                  class="px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer disabled:opacity-50">
+                  Áp dụng
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Bottom Room rate matrix values with full table grid lines -->
-        <div class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
-          <div class="flex-1 overflow-auto">
-            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
+        <!-- Bottom: Grid giá tĩnh HOẶC Bảng theo ngày -->
+
+        <!-- BẢNG THEO NGÀY (Giá theo ngày = true) -->
+        <div v-if="isGiaTheoNgay" class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
+          <!-- Filter ngày xem -->
+          <div class="flex items-center gap-3 pb-3 border-b border-slate-100 shrink-0">
+            <span class="text-xs font-bold text-slate-500">Xem từ</span>
+            <input type="date" v-model="dailyFrom" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+            <span class="text-xs text-slate-400">~</span>
+            <input type="date" v-model="dailyTo" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+            <button @click="fetchDailies" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold border-none cursor-pointer">
+              Xem
+            </button>
+          </div>
+          <div class="flex-1 overflow-auto mt-3">
+            <table class="text-xs text-left border-collapse border border-slate-200" style="min-width: max-content;">
               <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase sticky top-0 z-10 text-center">
-                  <th class="p-2.5 text-left w-36 border border-slate-200 bg-slate-50">Loại phòng</th>
-                  <th class="p-2.5 text-left w-48 border border-slate-200 bg-slate-50">Mô tả</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Double</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Twin</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Triple</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Family</th>
-                  <th class="p-2.5 border border-slate-200 w-32">King</th>
+                <tr class="bg-slate-50 text-slate-600 font-bold uppercase sticky top-0 z-10">
+                  <th class="p-2 border border-slate-200 w-24 sticky left-0 bg-slate-50">Ngày</th>
+                  <th class="p-2 border border-slate-200 w-16 sticky left-24 bg-slate-50">Mã</th>
+                  <template v-for="rc in roomClasses" :key="rc.id">
+                    <th :colspan="roomForms.length" class="p-2 border border-slate-200 text-center">{{ rc.code }}</th>
+                  </template>
+                </tr>
+                <tr class="bg-slate-50 text-slate-500 sticky top-7 z-10">
+                  <th class="p-2 border border-slate-200 sticky left-0 bg-slate-50"></th>
+                  <th class="p-2 border border-slate-200 sticky left-24 bg-slate-50"></th>
+                  <template v-for="rc in roomClasses" :key="rc.id">
+                    <th v-for="rf in roomForms" :key="rf.id" class="p-2 border border-slate-200 w-24 text-center font-semibold">
+                      {{ rf.name }}
+                    </th>
+                  </template>
                 </tr>
               </thead>
               <tbody>
-                <tr 
-                  v-for="rt in roomTypes" 
-                  :key="rt.code"
-                  class="hover:bg-slate-50/40"
-                >
-                  <!-- Room type code -->
-                  <td class="p-2.5 font-bold text-slate-700 border border-slate-200 bg-slate-50/20">{{ rt.code }}</td>
-                  <!-- Room type description -->
-                  <td class="p-2.5 text-slate-500 font-medium border border-slate-200">{{ rt.description }}</td>
-                  
-                  <!-- Occupancies pricing inputs inside grid -->
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      v-model="rateMatrix[getMatrixKey(rt.code, 'Double')]"
+                <tr v-for="row in dailyRows" :key="row.date + row.code" class="hover:bg-slate-50/40">
+                  <td class="p-2 border border-slate-200 font-mono sticky left-0 bg-white">
+                    {{ formatDate(row.date) }}
+                    <span class="ml-1 text-sky-500 font-bold">{{ getDayLabel(row.date) }}</span>
+                  </td>
+                  <td class="p-2 border border-slate-200 font-bold text-sky-700 sticky left-24 bg-white">{{ row.code }}</td>
+                  <template v-for="rc in roomClasses" :key="rc.id">
+                    <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200 text-center text-slate-600">
+                      {{ getPrice(rc.id, rf.id) || '-' }}
+                    </td>
+                  </template>
+                </tr>
+                <tr v-if="dailyRows.length === 0">
+                  <td :colspan="2 + roomClasses.length * roomForms.length" class="p-8 text-center text-slate-400">
+                    Không có dữ liệu
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- GRID GIÁ TĨNH (Giá theo ngày = false) -->
+        <div v-else class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
+          <div class="flex-1 overflow-auto">
+            <table class="w-full text-xs text-left border-collapse border border-slate-200" style="min-width: 700px;">
+              <thead>
+                <tr class="bg-slate-50 text-slate-600 font-bold uppercase sticky top-0 z-10">
+                  <th class="p-2.5 border border-slate-200 w-28">Loại phòng</th>
+                  <th class="p-2.5 border border-slate-200 w-44">Mô tả</th>
+                  <th v-for="rf in roomForms" :key="rf.id" class="p-2.5 border border-slate-200 text-center w-28">
+                    {{ rf.name }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="rc in roomClasses" :key="rc.id" class="hover:bg-slate-50/40">
+                  <td class="p-2.5 font-bold text-slate-700 border border-slate-200 bg-slate-50/20">{{ rc.code }}</td>
+                  <td class="p-2.5 text-slate-500 font-medium border border-slate-200">{{ rc.name }}</td>
+                  <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200">
+                    <input
+                      type="number"
+                      :value="getPrice(rc.id, rf.id)"
+                      @input="setPrice(rc.id, rf.id, $event.target.value)"
+                      @blur="saveMatrix"
                       placeholder="-"
                       class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
                     />
                   </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      v-model="rateMatrix[getMatrixKey(rt.code, 'Twin')]"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      v-model="rateMatrix[getMatrixKey(rt.code, 'Triple')]"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      v-model="rateMatrix[getMatrixKey(rt.code, 'Family')]"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      v-model="rateMatrix[getMatrixKey(rt.code, 'King')]"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
+                </tr>
+                <tr v-if="roomClasses.length === 0">
+                  <td colspan="10" class="p-6 text-center text-slate-400">Chưa có loại phòng nào</td>
                 </tr>
               </tbody>
             </table>
@@ -409,148 +588,9 @@ const selectPackage = (pkg) => {
         </div>
       </div>
 
-      <!-- ================= TAB 2: GÓI DỊCH VỤ ================= -->
-      <div v-else-if="activeRateTab === 'Gói dịch vụ'" class="flex-1 flex flex-col gap-4 min-h-0">
-        
-        <!-- Top Half: Gói dịch vụ list -->
-        <div class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
-          <!-- Header with buttons -->
-          <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-            <h3 class="text-xs font-black text-slate-600 uppercase tracking-wide">Gói dịch vụ</h3>
-            <div class="flex items-center gap-1.5">
-              <!-- Search Mock Button -->
-              <button class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 cursor-pointer bg-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </button>
-              <!-- Add Button -->
-              <button class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
-                <span class="text-sm">+</span> Thêm
-              </button>
-              <!-- Edit Button -->
-              <button class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
-                Sửa
-              </button>
-              <!-- Delete Button (using scoped CSS class) -->
-              <button class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shadow-sm">
-                Xóa
-              </button>
-            </div>
-          </div>
-
-          <!-- Table Container with grid lines -->
-          <div class="flex-1 overflow-y-auto mt-3">
-            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase sticky top-0 z-10">
-                  <th class="p-2.5 border border-slate-200 w-24">Mã</th>
-                  <th class="p-2.5 border border-slate-200 w-20 text-center">Tiền tệ</th>
-                  <th class="p-2.5 border border-slate-200 w-24 text-center">Số đêm</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-right">Giá hiển thị</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày bắt đầu</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày kết thúc</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Không sử dụng</th>
-                  <th class="p-2.5 border border-slate-200">Theo ngày trong tuần</th>
-                  <th class="p-2.5 border border-slate-200">Mô tả</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr 
-                  v-for="pkg in servicePackages" 
-                  :key="pkg.id"
-                  @click="selectPackage(pkg)"
-                  class="hover:bg-slate-50/70 cursor-pointer transition-colors"
-                  :class="selectedPackage?.id === pkg.id ? 'bg-sky-50/40 font-semibold text-sky-700' : 'text-slate-700'"
-                >
-                  <td class="p-2.5 border border-slate-200 font-bold">{{ pkg.code }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center">{{ pkg.currency }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center">{{ pkg.nights }}</td>
-                  <td class="p-2.5 border border-slate-200 text-right font-semibold text-sky-600">{{ pkg.displayPrice }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-slate-500">{{ pkg.startDate }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-slate-500">{{ pkg.endDate }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center">
-                    <input 
-                      type="checkbox" 
-                      :checked="pkg.inactive" 
-                      @click.stop 
-                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400"
-                    />
-                  </td>
-                  <td class="p-2.5 border border-slate-200 text-slate-500 truncate max-w-[200px]" :title="pkg.daysOfWeek">{{ pkg.daysOfWeek }}</td>
-                  <td class="p-2.5 border border-slate-200 text-slate-600">{{ pkg.description }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Bottom Half: Chi tiết gói dịch vụ -->
-        <div class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs justify-between">
-          <!-- Header with buttons -->
-          <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-            <h3 class="text-xs font-black text-slate-600 uppercase tracking-wide">Chi tiết gói dịch vụ</h3>
-            <div class="flex items-center gap-1.5">
-              <!-- Add Button -->
-              <button class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
-                <span class="text-sm">+</span> Thêm
-              </button>
-              <!-- Edit Button -->
-              <button class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
-                Sửa
-              </button>
-              <!-- Delete Button (using scoped CSS class) -->
-              <button class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shadow-sm">
-                Xóa
-              </button>
-            </div>
-          </div>
-
-          <!-- Table Container with grid lines -->
-          <div class="flex-1 overflow-y-auto mt-3">
-            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase sticky top-0 z-10">
-                  <th class="p-2.5 border border-slate-200">Thời gian hiệu lực</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Từ ngày</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Đến ngày</th>
-                  <th class="p-2.5 border border-slate-200">Dịch vụ</th>
-                  <th class="p-2.5 border border-slate-200">Bộ phận</th>
-                  <th class="p-2.5 border border-slate-200 text-center">Gói bữa ăn</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-right">Số tiền</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Tính trên</th>
-                  <th class="p-2.5 border border-slate-200">Loại phòng</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr 
-                  v-for="detail in packageDetails" 
-                  :key="detail.id"
-                  class="border-b border-slate-100 hover:bg-slate-50/40 text-slate-700"
-                >
-                  <td class="p-2.5 border border-slate-200 font-medium">{{ detail.validity }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-slate-500">{{ detail.fromDate }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-slate-500">{{ detail.endDate }}</td>
-                  <td class="p-2.5 border border-slate-200 font-bold text-slate-800">{{ detail.service }}</td>
-                  <td class="p-2.5 border border-slate-200 text-slate-600">{{ detail.department }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center"><span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded text-[10px] font-bold uppercase">{{ detail.mealPlan }}</span></td>
-                  <td class="p-2.5 border border-slate-200 text-right font-semibold text-slate-800">{{ detail.amount }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-slate-500">{{ detail.calculatedOn }}</td>
-                  <td class="p-2.5 border border-slate-200 font-medium text-indigo-600">{{ detail.roomClass }}</td>
-                </tr>
-                <tr v-if="packageDetails.length === 0">
-                  <td colspan="9" class="p-8 text-center text-slate-400">Không có dữ liệu chi tiết</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Total Footer Row -->
-          <div class="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex justify-between items-center text-xs font-bold text-slate-700 shrink-0">
-            <span>Tổng</span>
-            <span class="text-sm text-sky-600 font-extrabold pr-32">{{ formatNumber(totalPackageDetailsAmount) }}</span>
-          </div>
-        </div>
+      <!-- ===== TAB 2: GÓI DỊCH VỤ (tạm giữ mock) ===== -->
+      <div v-else-if="activeRateTab === 'Gói dịch vụ'" class="flex-1 flex items-center justify-center text-slate-400 text-sm">
+        Gói dịch vụ — chưa triển khai
       </div>
 
     </div>
@@ -558,30 +598,11 @@ const selectPackage = (pkg) => {
 </template>
 
 <style scoped>
-/* Scoped Delete Button style to bypass tailwind overrides */
-.btn-delete {
-  background-color: #64748b !important;
-  color: #ffffff !important;
-  border: none !important;
-}
-.btn-delete:hover {
-  background-color: #475569 !important;
-}
-
-/* Scrollbar customizations */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
+.btn-delete { background-color: #64748b !important; color: #fff !important; border: none !important; }
+.btn-delete:hover { background-color: #475569 !important; }
+.btn-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 </style>
