@@ -38,11 +38,11 @@ class RatePlanDailyController extends Controller
             'days_of_week.*'   => 'integer|between:0,6',
         ]);
 
-        $planExists = RatePlan::where('rate_code', $rateCode)
+        $plan = RatePlan::where('rate_code', $rateCode)
             ->where('code', $validated['code'])
-            ->exists();
+            ->first();
 
-        if (!$planExists) {
+        if (!$plan) {
             return response()->json([
                 'success' => false,
                 'message' => 'Sub-code ' . $validated['code'] . ' not found in this rate code',
@@ -51,8 +51,18 @@ class RatePlanDailyController extends Controller
 
         // Default: apply to all days of week
         $daysOfWeek = $validated['days_of_week'] ?? [0, 1, 2, 3, 4, 5, 6];
-        $current    = Carbon::parse($validated['from']);
-        $to         = Carbon::parse($validated['to']);
+        $effectiveFrom = Carbon::parse($validated['from'])->max(Carbon::parse($plan->begin_date));
+        $effectiveTo   = Carbon::parse($validated['to'])->min(Carbon::parse($plan->end_date));
+
+        if ($effectiveFrom->gt($effectiveTo)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Apply range is outside the selected sub-code effective dates',
+            ], 422);
+        }
+
+        $current    = $effectiveFrom->copy();
+        $to         = $effectiveTo->copy();
         $count      = 0;
 
         while ($current->lte($to)) {
@@ -75,6 +85,8 @@ class RatePlanDailyController extends Controller
             'success' => true,
             'message' => "Applied {$count} days with sub-code {$validated['code']}",
             'count'   => $count,
+            'from'    => $effectiveFrom->format('Y-m-d'),
+            'to'      => $effectiveTo->format('Y-m-d'),
         ]);
     }
 

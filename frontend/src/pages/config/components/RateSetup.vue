@@ -14,6 +14,7 @@ const rateTabs = ['Mã giá phòng', 'Gói dịch vụ']
 
 // ===================== STATE =====================
 const loading = ref(false)
+const today = new Date().toISOString().split('T')[0]
 
 // --- Rate Codes ---
 const rateCodes = ref([])
@@ -203,6 +204,10 @@ const selectRatePlanRow = (plan) => {
 // Mã con đang chỉnh trong modal (thêm mới hoặc sửa)
 const modalPlanCode = computed(() =>
   selectedRatePlanRow.value?.code || ratePlanForm.code?.trim() || ''
+)
+
+const selectedApplyRatePlan = computed(() =>
+  ratePlans.value.find(plan => plan.code === applyForm.code) || null
 )
 
 // ===================== MATRIX GIÁ =====================
@@ -425,16 +430,33 @@ const handleApply = async () => {
     alert('Vui lòng chọn đầy đủ thông tin')
     return
   }
+  const selectedPlan = selectedApplyRatePlan.value
+  if (!selectedPlan) {
+    alert('Không tìm thấy mã con đã chọn')
+    return
+  }
+
+  const effectiveFrom = applyForm.from > selectedPlan.begin_date ? applyForm.from : selectedPlan.begin_date
+  const effectiveTo = applyForm.to < selectedPlan.end_date ? applyForm.to : selectedPlan.end_date
+
+  if (effectiveFrom > effectiveTo) {
+    alert(`Khoảng ngày áp dụng không nằm trong thời gian hiệu lực của mã ${selectedPlan.code}`)
+    return
+  }
+
   loading.value = true
   try {
     await http.post(`/rate-codes/${selectedRateCode.value.code}/dailies/apply`, {
       code: applyForm.code,
-      from: applyForm.from,
-      to: applyForm.to,
+      from: effectiveFrom,
+      to: effectiveTo,
       days_of_week: applyForm.days_of_week,
     })
-    // dailyFrom.value = applyForm.from
-    // dailyTo.value = applyForm.to
+
+    if (effectiveFrom !== applyForm.from || effectiveTo !== applyForm.to) {
+      alert(`Mã ${selectedPlan.code} chỉ có hiệu lực từ ${formatDate(selectedPlan.begin_date)} đến ${formatDate(selectedPlan.end_date)}. Hệ thống đã áp dụng trong khoảng thời gian hợp lệ.`)
+    }
+
     await fetchDailies()
 
     Object.assign(applyForm, {
@@ -621,10 +643,10 @@ watch(() => ratePlanForm.code, (code) => {
                 <div class="flex-1 min-w-[120px]">
                   <label class="block text-xs font-bold text-slate-500 mb-1">Từ ngày - đến ngày</label>
                   <div class="flex items-center gap-1">
-                    <input type="date" v-model="rateForm.begin_date"
+                    <input type="date" :min="today" v-model="rateForm.begin_date"
                       class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
                     <span class="text-slate-400 text-xs">~</span>
-                    <input type="date" v-model="rateForm.end_date"
+                    <input type="date" :min="today" v-model="rateForm.end_date"
                       class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
                   </div>
                 </div>
@@ -669,10 +691,10 @@ watch(() => ratePlanForm.code, (code) => {
                 <div>
                   <label class="block text-xs font-bold text-slate-500 mb-1">Ngày áp dụng</label>
                   <div class="flex items-center gap-1">
-                    <input type="date" v-model="applyForm.from"
+                    <input type="date" :min="today" v-model="applyForm.from"
                       class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
                     <span class="text-slate-400 text-xs">~</span>
-                    <input type="date" v-model="applyForm.to"
+                    <input type="date" :min="today" v-model="applyForm.to"
                       class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold" />
                   </div>
                 </div>
@@ -716,9 +738,9 @@ watch(() => ratePlanForm.code, (code) => {
           <!-- Filter ngày xem -->
           <div class="flex items-center gap-3 pb-3 border-b border-slate-100 shrink-0">
             <span class="text-xs font-bold text-slate-500">Xem từ</span>
-            <input type="date" v-model="dailyFrom" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+            <input type="date" :min="today" v-model="dailyFrom" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
             <span class="text-xs text-slate-400">~</span>
-            <input type="date" v-model="dailyTo" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+            <input type="date" :min="today" v-model="dailyTo" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
             <button @click="fetchDailies" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold border-none cursor-pointer">
               Xem
             </button>
@@ -889,10 +911,10 @@ watch(() => ratePlanForm.code, (code) => {
             <div>
               <label class="block text-xs font-bold text-slate-500 mb-1">Từ ngày - đến ngày</label>
               <div class="flex items-center gap-2">
-                <input type="date" v-model="ratePlanForm.begin_date"
+                <input type="date" :min="today" v-model="ratePlanForm.begin_date"
                   class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
                 <span class="text-slate-400 text-xs">~</span>
-                <input type="date" v-model="ratePlanForm.end_date"
+                <input type="date" :min="today" v-model="ratePlanForm.end_date"
                   class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
               </div>
             </div>
