@@ -55,7 +55,7 @@ function handleBack() {
 
 <template>
   <div class="h-full flex flex-col">
-    <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 min-h-0 text-slate-800">
+    <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 overflow-y-auto text-slate-800">
     
     <!-- Header: Dynamic Back Arrow & View Title -->
     <div class="flex items-center justify-between shrink-0">
@@ -156,7 +156,7 @@ function handleBack() {
 
     <!-- VIEW 2: DỊCH VỤ / TÁC VỤ CHI TIẾT -->
     <template v-else>
-      <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 p-6 flex flex-col min-h-0">
+      <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 p-6 overflow-auto flex flex-col min-h-0">
         <HotelDefinition 
           v-if="currentView === 'hotel'" 
           :initialTab="route.query.tab || 'THÔNG TIN KHÁCH SẠN'"

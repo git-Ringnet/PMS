@@ -58,30 +58,31 @@ const router = createRouter({
 })
 
 // Navigation guard
-router.beforeEach(async (to, from) => {
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('pms_token')
 
   if (to.meta.guest) {
     if (token) {
-      return '/'
+      next('/')
     } else {
       document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
-      return true
+      next()
     }
   } else {
     if (!token) {
-      return '/login'
+      next('/login')
     } else {
       const authStore = useAuthStore()
       if (!authStore.user) {
         try {
           await authStore.initialize()
         } catch (err) {
-          return '/login'
+          next('/login')
+          return
         }
       }
       document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
-      return true
+      next()
     }
   }
 })

@@ -127,31 +127,39 @@ class SystemDefinitionSeeder extends Seeder
             UnitOfMeasure::create($u);
         }
 
-        // 4. Room Rate Codes (using new SP1340 structure)
+        // 4. Room Rate Codes
         $rateCodes = [
             [
-                'Ma' => 'FOC',
-                'Description' => 'FOC',
-                'BeginDate' => '2018-12-31',
-                'EndDate' => '2029-12-31',
-                'IncludeBF' => true,
-                'Currency' => 'VND',
-                'Type' => 'FIT',
-                'Disable' => false,
-                'AllowChangeRate' => false,
-                'IsChannelManager' => false,
+                'code' => 'FOC',
+                'description' => 'FOC',
+                'room_class_id' => null,
+                'room_form_id' => null,
+                'adults' => 2,
+                'children' => 0,
+                'start_date' => '2018-12-31',
+                'end_date' => '2029-12-31',
+                'price' => 0.00,
+                'breakfast_price' => 0.00,
+                'extra_bed_price' => 0.00,
+                'has_breakfast' => true,
+                'is_allowed' => false,
+                'rate_type' => 'FIT',
             ],
             [
-                'Ma' => 'HU',
-                'Description' => 'House Use',
-                'BeginDate' => '2019-06-03',
-                'EndDate' => '2030-06-03',
-                'IncludeBF' => true,
-                'Currency' => 'VND',
-                'Type' => 'FIT',
-                'Disable' => false,
-                'AllowChangeRate' => false,
-                'IsChannelManager' => false,
+                'code' => 'HU',
+                'description' => 'House Use',
+                'room_class_id' => null,
+                'room_form_id' => null,
+                'adults' => 2,
+                'children' => 0,
+                'start_date' => '2019-06-03',
+                'end_date' => '2030-06-03',
+                'price' => 0.00,
+                'breakfast_price' => 0.00,
+                'extra_bed_price' => 0.00,
+                'has_breakfast' => true,
+                'is_allowed' => false,
+                'rate_type' => 'FIT',
             ]
         ];
 
