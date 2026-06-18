@@ -51,24 +51,46 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 4. Room Rate Codes
+        // 4. Room Rate Codes (Mapped from SP1340)
         Schema::create('room_rate_codes', function (Blueprint $table) {
-            $table->id();
-            $table->string('code')->unique();
-            $table->string('description')->nullable();
-            $table->foreignId('room_class_id')->nullable()->constrained('room_classes')->onDelete('cascade');
-            $table->foreignId('room_form_id')->nullable()->constrained('room_forms')->onDelete('cascade');
-            $table->integer('adults')->default(0);
-            $table->integer('children')->default(0);
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
-            $table->decimal('price', 18, 2)->default(0);
-            $table->decimal('breakfast_price', 18, 2)->default(0);
-            $table->decimal('extra_bed_price', 18, 2)->default(0);
-            $table->boolean('has_breakfast')->default(false);
-            $table->boolean('is_allowed')->default(true);
-            $table->string('rate_type')->default('FIT');
-            $table->timestamps();
+            $table->string('Ma', 20)->primary();
+            $table->string('Description', 150)->nullable();
+            $table->dateTime('CreateDate')->nullable();
+            $table->date('BeginDate')->nullable();
+            $table->date('EndDate')->nullable();
+            $table->boolean('IncludeBF')->default(false);
+            $table->string('Currency', 5)->nullable();
+            $table->string('PromotionCode', 20)->nullable();
+            $table->integer('SourceCode')->nullable();
+            $table->integer('MarketSegment')->nullable();
+            $table->string('Type', 10)->nullable();
+            $table->text('Value')->nullable();
+            $table->boolean('Disable')->default(false);
+            $table->boolean('AllowChangeRate')->default(false);
+            $table->boolean('IsChannelManager')->default(false);
+        });
+
+        // 4.1 Room Rate Plans (Mapped from SP1341)
+        Schema::create('room_rate_plans', function (Blueprint $table) {
+            $table->string('RateCode', 20);
+            $table->string('Code', 20);
+            $table->string('Description', 150)->nullable();
+            $table->date('BeginDate')->nullable();
+            $table->date('EndDate')->nullable();
+            $table->longText('Period')->nullable(); // Store JSON matrix here
+
+            $table->primary(['RateCode', 'Code']);
+            $table->foreign('RateCode')->references('Ma')->on('room_rate_codes')->onDelete('cascade');
+        });
+
+        // 4.2 Room Rate Daily Mappings (Mapped from SP1342)
+        Schema::create('room_rate_daily_mappings', function (Blueprint $table) {
+            $table->string('RateCode', 20);
+            $table->date('Date');
+            $table->string('Code', 20);
+
+            $table->primary(['RateCode', 'Date']);
+            $table->foreign('RateCode')->references('Ma')->on('room_rate_codes')->onDelete('cascade');
         });
 
         // 5. Registration Statuses
@@ -91,6 +113,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('registration_statuses');
+        Schema::dropIfExists('room_rate_daily_mappings');
+        Schema::dropIfExists('room_rate_plans');
         Schema::dropIfExists('room_rate_codes');
         Schema::dropIfExists('units_of_measure');
         Schema::dropIfExists('currencies');

@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\RoomRateCodeController;
 use App\Http\Controllers\Api\AuthController;
 
 // Public Authentication routes
@@ -15,6 +16,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+
+    // Room Rate Codes (Mapped to SP1340)
+    Route::apiResource('room-rate-codes', RoomRateCodeController::class)->parameters([
+        'room-rate-codes' => 'ma'
+    ]);
+    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan']);
+    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
 
     // Hotel settings
     Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
@@ -69,7 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
     Route::apiResource('room-rate-codes', \App\Http\Controllers\Api\RoomRateCodeController::class);
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
-
+    
     Route::post('room-rate-codes/{ma}/plans', [\App\Http\Controllers\Api\RoomRateCodeController::class, 'saveRatePlan']);
     Route::delete('room-rate-codes/{ma}/plans/{code}', [\App\Http\Controllers\Api\RoomRateCodeController::class, 'deleteRatePlan']);
     Route::post('room-rate-codes/{ma}/daily-mappings', [\App\Http\Controllers\Api\RoomRateCodeController::class, 'saveDailyMappings']);

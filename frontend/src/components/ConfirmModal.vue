@@ -26,7 +26,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <div
       v-if="uiStore.confirmState.show"
-      class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 animate-[fade_0.2s_ease-out]"
+      class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 animate-[fade_0.2s_ease-out]"
       @click="uiStore.handleConfirm(false)"
     >
       <div
