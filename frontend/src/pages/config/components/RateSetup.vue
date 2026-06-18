@@ -1,6 +1,9 @@
 <script setup>
 import { ref, reactive, watch, computed, onMounted } from 'vue'
 import http from '@/services/http'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   initialTab: { type: String, default: 'Mã giá phòng' }
@@ -76,6 +79,103 @@ const ratePlanForm = reactive({
 })
 const selectedRatePlanRow = ref(null)
 
+const fieldLabels = {
+  code: 'Mã',
+  description: 'Mô tả',
+  begin_date: 'Từ ngày',
+  end_date: 'Đến ngày',
+  currency: 'Tiền tệ',
+  period: 'Bảng giá',
+  from: 'Ngày bắt đầu',
+  to: 'Ngày kết thúc',
+  days_of_week: 'Ngày trong tuần',
+}
+
+const getErrorMessage = (err, fallback = 'Đã xảy ra lỗi') => {
+  const data = err?.response?.data
+  if (!data) return fallback
+  if (data.errors) {
+    const messages = Object.entries(data.errors).flatMap(([field, msgs]) => {
+      const label = fieldLabels[field] || field
+      return (Array.isArray(msgs) ? msgs : [msgs]).map(m => `${label}: ${m}`)
+    })
+    return messages.join(' • ')
+  }
+  return data.message || fallback
+}
+
+const validateRateForm = () => {
+  if (!rateForm.code?.trim()) {
+    uiStore.showToast('Vui lòng nhập Mã giá phòng', 'warning')
+    return false
+  }
+  if (!rateForm.begin_date) {
+    uiStore.showToast('Vui lòng chọn Từ ngày', 'warning')
+    return false
+  }
+  if (!rateForm.end_date) {
+    uiStore.showToast('Vui lòng chọn Đến ngày', 'warning')
+    return false
+  }
+  if (rateForm.begin_date > rateForm.end_date) {
+    uiStore.showToast('Từ ngày không được lớn hơn Đến ngày', 'warning')
+    return false
+  }
+  return true
+}
+
+const validateRatePlanForm = () => {
+  if (!selectedRateCode.value) {
+    uiStore.showToast('Vui lòng chọn mã giá phòng cha trước khi thêm mã con', 'warning')
+    return false
+  }
+  if (!ratePlanForm.code?.trim()) {
+    uiStore.showToast('Vui lòng nhập Mã con', 'warning')
+    return false
+  }
+  if (!ratePlanForm.begin_date) {
+    uiStore.showToast('Vui lòng chọn Từ ngày cho mã con', 'warning')
+    return false
+  }
+  if (!ratePlanForm.end_date) {
+    uiStore.showToast('Vui lòng chọn Đến ngày cho mã con', 'warning')
+    return false
+  }
+  if (ratePlanForm.begin_date > ratePlanForm.end_date) {
+    uiStore.showToast('Từ ngày mã con không được lớn hơn Đến ngày', 'warning')
+    return false
+  }
+  return true
+}
+
+const validateApplyForm = () => {
+  if (!selectedRateCode.value) {
+    uiStore.showToast('Vui lòng chọn mã giá phòng', 'warning')
+    return false
+  }
+  if (!applyForm.from) {
+    uiStore.showToast('Vui lòng chọn Ngày bắt đầu áp dụng', 'warning')
+    return false
+  }
+  if (!applyForm.to) {
+    uiStore.showToast('Vui lòng chọn Ngày kết thúc áp dụng', 'warning')
+    return false
+  }
+  if (applyForm.from > applyForm.to) {
+    uiStore.showToast('Ngày bắt đầu áp dụng không được lớn hơn ngày kết thúc', 'warning')
+    return false
+  }
+  if (!applyForm.code) {
+    uiStore.showToast('Vui lòng chọn Loại giá (mã con)', 'warning')
+    return false
+  }
+  if (!applyForm.days_of_week.length) {
+    uiStore.showToast('Vui lòng chọn ít nhất một ngày trong tuần', 'warning')
+    return false
+  }
+  return true
+}
+
 // ===================== FETCH =====================
 const fetchRateCodes = async () => {
   loading.value = true
@@ -85,6 +185,7 @@ const fetchRateCodes = async () => {
     if (rateCodes.value.length > 0) selectRateCode(rateCodes.value[0])
   } catch (e) {
     console.error(e)
+    uiStore.showToast(getErrorMessage(e, 'Không thể tải danh sách mã giá phòng'), 'error')
   } finally {
     loading.value = false
   }
@@ -141,7 +242,34 @@ const fetchDailies = async () => {
     }
 
     dailyRows.value = allRows
-  } catch (e) { console.error(e) }
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(getErrorMessage(e, 'Không thể tải dữ liệu giá theo ngày'), 'error')
+  }
+}
+
+const handleViewDailies = () => {
+  if (!selectedRateCode.value) {
+    uiStore.showToast('Vui lòng chọn mã giá phòng', 'warning')
+    return
+  }
+  if (!dailyFrom.value || !dailyTo.value) {
+    uiStore.showToast('Vui lòng chọn khoảng ngày cần xem', 'warning')
+    return
+  }
+  if (dailyFrom.value > dailyTo.value) {
+    uiStore.showToast('Ngày bắt đầu xem không được lớn hơn ngày kết thúc', 'warning')
+    return
+  }
+  fetchDailies()
+}
+
+const openRatePlanModal = () => {
+  if (!selectedRateCode.value) {
+    uiStore.showToast('Vui lòng chọn mã giá phòng trước khi quản lý mã con', 'warning')
+    return
+  }
+  isRatePlanModalOpen.value = true
 }
 
 onMounted(() => {
@@ -289,7 +417,11 @@ const saveMatrix = async () => {
       ...rateForm,
       value: buildValueArray(),
     })
-  } catch (e) { console.error(e) }
+    uiStore.showToast(`Đã lưu bảng giá cho mã ${selectedRateCode.value.code}`, 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(getErrorMessage(e, 'Lỗi lưu bảng giá'), 'error')
+  }
 }
 
 // ===================== THÊM / LƯU / XÓA =====================
@@ -322,7 +454,7 @@ const handleAdd = () => {
 }
 
 const handleSave = async () => {
-  if (!rateForm.code) { alert('Vui lòng nhập mã'); return }
+  if (!validateRateForm()) return
   loading.value = true
   try {
     const payload = { ...rateForm, value: buildValueArray() }
@@ -330,18 +462,19 @@ const handleSave = async () => {
       const res = await http.post('/rate-codes', payload)
       rateCodes.value.push(res.data.data)
       selectRateCode(res.data.data)
+      uiStore.showToast(`Thêm mã giá phòng "${rateForm.code}" thành công`, 'success')
     } else {
       const res = await http.put(`/rate-codes/${selectedRateCode.value.id}`, payload)
       const idx = rateCodes.value.findIndex(r => r.id === selectedRateCode.value.id)
       if (idx !== -1) rateCodes.value[idx] = res.data.data
       selectedRateCode.value = res.data.data
       syncForm(res.data.data)
+      uiStore.showToast(`Cập nhật mã giá phòng "${rateForm.code}" thành công`, 'success')
     }
     isNewMode.value = false
   } catch (e) {
     console.error('handleSave error:', e)
-    console.error('response data:', e.response?.data)
-    alert(e.response?.data?.message || 'Lỗi lưu dữ liệu')
+    uiStore.showToast(getErrorMessage(e, 'Lỗi lưu mã giá phòng'), 'error')
   } finally {
     loading.value = false
   }
@@ -349,7 +482,14 @@ const handleSave = async () => {
 
 const handleDelete = async () => {
   if (!selectedRateCode.value) return
-  if (!confirm(`Xóa rate code "${selectedRateCode.value.code}"?`)) return
+  const code = selectedRateCode.value.code
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Bạn có chắc muốn xóa mã giá phòng "${code}"?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy',
+  })
+  if (!confirmed) return
   loading.value = true
   try {
     await http.delete(`/rate-codes/${selectedRateCode.value.id}`)
@@ -358,29 +498,21 @@ const handleDelete = async () => {
     ratePlans.value = []
     dailyRows.value = []
     if (rateCodes.value.length > 0) selectRateCode(rateCodes.value[0])
+    uiStore.showToast(`Đã xóa mã giá phòng "${code}"`, 'success')
   } catch (e) {
-    alert('Lỗi khi xóa')
+    console.error(e)
+    uiStore.showToast(getErrorMessage(e, 'Lỗi khi xóa mã giá phòng'), 'error')
   } finally {
     loading.value = false
   }
 }
 
 const saveRatePlan = async () => {
-  if (!selectedRateCode.value) {
-    alert('Vui lòng chọn Rate Code cha!')
-    return
-  }
-  if (!ratePlanForm.code?.trim()) {
-    alert('Vui lòng nhập mã con!')
-    return
-  }
-  if (!ratePlanForm.begin_date || !ratePlanForm.end_date) {
-    alert('Vui lòng nhập từ ngày - đến ngày!')
-    return
-  }
+  if (!validateRatePlanForm()) return
 
   const planCode = ratePlanForm.code.trim()
   const rateCode = selectedRateCode.value.code
+  const isCreate = !selectedRatePlanRow.value
   const payload = {
     ...ratePlanForm,
     code: planCode,
@@ -389,50 +521,61 @@ const saveRatePlan = async () => {
 
   try {
     loading.value = true
-    if (!selectedRatePlanRow.value) {
+    if (isCreate) {
       const res = await http.post(`/rate-codes/${rateCode}/plans`, payload)
       ratePlans.value.push(res.data.data)
       selectRatePlanRow(res.data.data)
+      uiStore.showToast(`Thêm mã con "${planCode}" thành công`, 'success')
     } else {
       const planId = selectedRatePlanRow.value.id
       const res = await http.put(`/rate-codes/${rateCode}/plans/${planId}`, payload)
       const idx = ratePlans.value.findIndex(p => p.id === planId)
       if (idx !== -1) ratePlans.value[idx] = res.data.data
       selectRatePlanRow(res.data.data)
+      uiStore.showToast(`Cập nhật mã con "${planCode}" thành công`, 'success')
     }
     await fetchRatePlans(rateCode)
   } catch (e) {
     console.error(e)
-    alert(e.response?.data?.message || 'Lỗi lưu mã con')
+    uiStore.showToast(getErrorMessage(e, isCreate ? 'Lỗi thêm mã con' : 'Lỗi cập nhật mã con'), 'error')
   } finally {
     loading.value = false
   }
 }
 
 const deleteRatePlan = async () => {
-  if (!selectedRatePlanRow.value || !selectedRateCode.value) return
-  if (!confirm(`Xóa mã "${selectedRatePlanRow.value.code}"?`)) return
+  if (!selectedRatePlanRow.value || !selectedRateCode.value) {
+    uiStore.showToast('Vui lòng chọn mã con cần xóa', 'warning')
+    return
+  }
+  const planCode = selectedRatePlanRow.value.code
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Bạn có chắc muốn xóa mã con "${planCode}"?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy',
+  })
+  if (!confirmed) return
   try {
-    const planCode = selectedRatePlanRow.value.code
     await http.delete(`/rate-codes/${selectedRateCode.value.code}/plans/${selectedRatePlanRow.value.id}`)
     ratePlans.value = ratePlans.value.filter(p => p.id !== selectedRatePlanRow.value.id)
     delete plansMatrix[planCode]
     selectedRatePlanRow.value = null
     Object.assign(ratePlanForm, { code: '', description: '', begin_date: '', end_date: '' })
+    uiStore.showToast(`Đã xóa mã con "${planCode}"`, 'success')
   } catch (e) {
-    alert('Lỗi khi xóa')
+    console.error(e)
+    uiStore.showToast(getErrorMessage(e, 'Lỗi khi xóa mã con'), 'error')
   }
 }
 
 // ===================== APPLY DAILY =====================
 const handleApply = async () => {
-  if (!selectedRateCode.value || !applyForm.code || !applyForm.from || !applyForm.to) {
-    alert('Vui lòng chọn đầy đủ thông tin')
-    return
-  }
+  if (!validateApplyForm()) return
+
   const selectedPlan = selectedApplyRatePlan.value
   if (!selectedPlan) {
-    alert('Không tìm thấy mã con đã chọn')
+    uiStore.showToast('Không tìm thấy mã con đã chọn. Vui lòng chọn lại Loại giá', 'warning')
     return
   }
 
@@ -440,13 +583,16 @@ const handleApply = async () => {
   const effectiveTo = applyForm.to < selectedPlan.end_date ? applyForm.to : selectedPlan.end_date
 
   if (effectiveFrom > effectiveTo) {
-    alert(`Khoảng ngày áp dụng không nằm trong thời gian hiệu lực của mã ${selectedPlan.code}`)
+    uiStore.showToast(
+      `Khoảng ngày áp dụng không nằm trong thời gian hiệu lực của mã ${selectedPlan.code} (${formatDate(selectedPlan.begin_date)} - ${formatDate(selectedPlan.end_date)})`,
+      'warning'
+    )
     return
   }
 
   loading.value = true
   try {
-    await http.post(`/rate-codes/${selectedRateCode.value.code}/dailies/apply`, {
+    const res = await http.post(`/rate-codes/${selectedRateCode.value.code}/dailies/apply`, {
       code: applyForm.code,
       from: effectiveFrom,
       to: effectiveTo,
@@ -454,7 +600,19 @@ const handleApply = async () => {
     })
 
     if (effectiveFrom !== applyForm.from || effectiveTo !== applyForm.to) {
-      alert(`Mã ${selectedPlan.code} chỉ có hiệu lực từ ${formatDate(selectedPlan.begin_date)} đến ${formatDate(selectedPlan.end_date)}. Hệ thống đã áp dụng trong khoảng thời gian hợp lệ.`)
+      uiStore.showToast(
+        `Mã ${selectedPlan.code} chỉ có hiệu lực đến ${formatDate(selectedPlan.end_date)}. Đã áp dụng từ ${formatDate(effectiveFrom)} đến ${formatDate(effectiveTo)}.`,
+        'warning',
+        5000
+      )
+    } else {
+      const count = res.data?.count ?? 0
+      uiStore.showToast(
+        count > 0
+          ? `Áp dụng mã ${applyForm.code} thành công cho ${count} ngày`
+          : `Áp dụng mã ${applyForm.code} thành công`,
+        'success'
+      )
     }
 
     await fetchDailies()
@@ -466,7 +624,8 @@ const handleApply = async () => {
       days_of_week: [0, 1, 2, 3, 4, 5, 6]
     })
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi áp dụng')
+    console.error(e)
+    uiStore.showToast(getErrorMessage(e, 'Lỗi áp dụng giá theo ngày'), 'error')
   } finally {
     loading.value = false
   }
@@ -518,6 +677,10 @@ const getDailyCode = (dateStr) => {
 }
 
 const openAddRatePlan = () => {
+  if (!selectedRateCode.value) {
+    uiStore.showToast('Vui lòng chọn mã giá phòng cha trước', 'warning')
+    return
+  }
   selectedRatePlanRow.value = null
   const today = new Date().toISOString().split('T')[0]
   const parentEnd = selectedRateCode.value?.end_date || today
@@ -716,7 +879,7 @@ watch(() => ratePlanForm.code, (code) => {
                       <option value="">Chọn mã</option>
                       <option v-for="p in ratePlans" :key="p.id" :value="p.code">{{ p.code }}</option>
                     </select>
-                    <button @click="isRatePlanModalOpen = true"
+                    <button @click="openRatePlanModal"
                       class="w-7 h-7 flex items-center justify-center bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold border-none cursor-pointer">
                       +
                     </button>
@@ -741,7 +904,7 @@ watch(() => ratePlanForm.code, (code) => {
             <input type="date" :min="today" v-model="dailyFrom" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
             <span class="text-xs text-slate-400">~</span>
             <input type="date" :min="today" v-model="dailyTo" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
-            <button @click="fetchDailies" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold border-none cursor-pointer">
+            <button @click="handleViewDailies" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold border-none cursor-pointer">
               Xem
             </button>
           </div>
@@ -774,7 +937,7 @@ watch(() => ratePlanForm.code, (code) => {
                   <td class="p-2 border border-slate-200 font-bold text-sky-700 sticky left-24 bg-white">{{ row.code }}</td>
                   <template v-for="rc in roomClasses" :key="rc.id">
                     <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200 text-center text-slate-600">
-                      {{ getPlanPrice(row.code, rc.id, rf.id) != null ? formatMoney(getPlanPrice(row.code, rc.id, rf.id)) : '-' }}
+                      {{ getPlanPrice(row.code, rc.id, rf.id) ? formatMoney(getPlanPrice(row.code, rc.id, rf.id)) : '' }}
                     </td>
                   </template>
                 </tr>
@@ -941,7 +1104,7 @@ watch(() => ratePlanForm.code, (code) => {
                   <input
                     type="text"
                     :disabled="!modalPlanCode"
-                    :value="modalPlanCode && getPlanPrice(modalPlanCode, rc.id, rf.id) != null ? formatMoney(getPlanPrice(modalPlanCode, rc.id, rf.id)) : ''"
+                    :value="modalPlanCode && getPlanPrice(modalPlanCode, rc.id, rf.id) ? formatMoney(getPlanPrice(modalPlanCode, rc.id, rf.id)) : ''"
                     @input="setPlanPrice(modalPlanCode, rc.id, rf.id, $event.target.value)"
                     @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)) }"
                     placeholder="-"
