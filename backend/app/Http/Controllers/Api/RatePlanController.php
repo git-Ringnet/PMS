@@ -49,13 +49,31 @@ class RatePlanController extends Controller
             ], 422);
         }
 
+        $periodData = $request->input('period') ?? $request->input('value');
+
+        if (empty($periodData)) {
+            $roomClasses = \App\Models\RoomClass::all();
+            $roomForms   = \App\Models\RoomForm::all();
+            $defaultValue = [];
+            foreach ($roomClasses as $rc) {
+                foreach ($roomForms as $rf) {
+                    $defaultValue[] = [
+                        'RoomTypeId' => $rc->id,
+                        'RoomKindId' => $rf->id,
+                        'Price'      => 0.0,
+                    ];
+                }
+            }
+            $periodData = $defaultValue;
+        }
+
         $plan = RatePlan::create([
             'rate_code'   => $rateCode,
             'code'        => $validated['code'],
             'description' => $validated['description'] ?? null,
             'begin_date'  => $validated['begin_date'],
             'end_date'    => $validated['end_date'],
-            'period'      => isset($validated['period']) ? json_encode($validated['period']) : null,
+            'period'      => $periodData,
         ]);
 
         return response()->json([
@@ -95,10 +113,6 @@ class RatePlanController extends Controller
                 'success' => false,
                 'message' => 'Sub-code ' . $validated['code'] . ' already exists in this rate code',
             ], 422);
-        }
-
-        if (isset($validated['period'])) {
-            $validated['period'] = json_encode($validated['period']);
         }
 
         $ratePlan->update($validated);

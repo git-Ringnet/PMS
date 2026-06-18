@@ -40,9 +40,11 @@ const roomForms = ref([])   // dạng phòng: Double, Twin...
 // --- Grid giá tĩnh (value JSON) ---
 // matrix[roomClassId][roomFormId] = price
 const matrix = reactive({})
+// plansMatrix[ratePlanCode] = { roomClassId: { roomFormId: price } }
+const plansMatrix = reactive({})
 
 // --- Giá theo ngày ---
-const isDaily = computed(() => !!selectedRateCode.value?.type === 'daily' || rateForm.type === 'daily')
+const isDaily = computed(() => selectedRateCode.value?.type === 'daily' || rateForm.type === 'daily')
 // Dùng riêng 1 field để track checkbox "Giá theo ngày"
 const isGiaTheoNgay = ref(false)
 
@@ -106,8 +108,12 @@ const fetchRatePlans = async (code) => {
   try {
     const res = await http.get(`/rate-codes/${code}/plans`)
     ratePlans.value = res.data.data || []
-    selectedRatePlan.value = ratePlans.value[0] || null
-    if (selectedRatePlan.value) applyForm.code = selectedRatePlan.value.code
+
+    Object.keys(plansMatrix).forEach(k => delete plansMatrix[k])
+    ratePlans.value.forEach(p => {
+      plansMatrix[p.code] = {}
+      buildMatrix(p.period, plansMatrix[p.code])
+    })
   } catch (e) { console.error(e) }
 }
 
@@ -117,7 +123,23 @@ const fetchDailies = async () => {
     const res = await http.get(`/rate-codes/${selectedRateCode.value.code}/dailies`, {
       params: { from: dailyFrom.value, to: dailyTo.value }
     })
-    dailyRows.value = res.data.data || []
+    const apiRows = res.data.data || []
+
+    const allRows = []
+    const current = new Date(dailyFrom.value)
+    const end = new Date(dailyTo.value)
+
+    while (current <= end) {
+      const dateStr = current.toISOString().split('T')[0]
+      const found = apiRows.find(r => r.date === dateStr)
+      allRows.push({
+        date: dateStr,
+        code: found?.code || '',
+      })
+      current.setDate(current.getDate() + 1)
+    }
+
+    dailyRows.value = allRows
   } catch (e) { console.error(e) }
 }
 
@@ -126,14 +148,14 @@ onMounted(() => {
   fetchRoomClasses()
   fetchRoomForms()
   // Mặc định dailyFrom/To là tháng hiện tại
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  dailyFrom.value = `${y}-${m}-01`
-  const lastDay = new Date(y, now.getMonth() + 1, 0).getDate()
-  dailyTo.value = `${y}-${m}-${lastDay}`
-  applyForm.from = dailyFrom.value
-  applyForm.to = dailyTo.value
+  // const now = new Date()
+  // const y = now.getFullYear()
+  // const m = String(now.getMonth() + 1).padStart(2, '0')
+  // dailyFrom.value = `${y}-${m}-01`
+  // const lastDay = new Date(y, now.getMonth() + 1, 0).getDate()
+  // dailyTo.value = `${y}-${m}-${lastDay}`
+  // applyForm.from = dailyFrom.value
+  // applyForm.to = dailyTo.value
 })
 
 // ===================== SELECT =====================
@@ -141,8 +163,13 @@ const selectRateCode = (rc) => {
   selectedRateCode.value = rc
   isNewMode.value = false
   syncForm(rc)
-  buildMatrix(rc)
+  isGiaTheoNgay.value = rc.type === 'daily'
+  buildMatrix(rc.value, matrix)
   fetchRatePlans(rc.code)
+
+  if (rc.begin_date) dailyFrom.value = rc.begin_date
+  if (rc.end_date) dailyTo.value = rc.end_date
+
   if (isGiaTheoNgay.value) fetchDailies()
 }
 
@@ -169,17 +196,30 @@ const selectRatePlanRow = (plan) => {
     begin_date: plan.begin_date || '',
     end_date: plan.end_date || '',
   })
+  if (!plansMatrix[plan.code]) plansMatrix[plan.code] = {}
+  buildMatrix(plan.period, plansMatrix[plan.code])
 }
 
+// Mã con đang chỉnh trong modal (thêm mới hoặc sửa)
+const modalPlanCode = computed(() =>
+  selectedRatePlanRow.value?.code || ratePlanForm.code?.trim() || ''
+)
+
 // ===================== MATRIX GIÁ =====================
-const buildMatrix = (rc) => {
-  // Reset matrix
-  Object.keys(matrix).forEach(k => delete matrix[k])
-  if (!rc?.value) return
-  const arr = typeof rc.value === 'string' ? JSON.parse(rc.value) : rc.value
-  arr.forEach(item => {
-    if (!matrix[item.RoomTypeId]) matrix[item.RoomTypeId] = {}
-    matrix[item.RoomTypeId][item.RoomKindId] = item.Price
+const parseValueArray = (source) => {
+  if (!source) return []
+  if (Array.isArray(source)) return source
+  if (typeof source === 'string') {
+    try { return JSON.parse(source) } catch { return [] }
+  }
+  return []
+}
+
+const buildMatrix = (source, targetMatrix) => {
+  Object.keys(targetMatrix).forEach(k => delete targetMatrix[k])
+  parseValueArray(source).forEach(item => {
+    if (!targetMatrix[item.RoomTypeId]) targetMatrix[item.RoomTypeId] = {}
+    targetMatrix[item.RoomTypeId][item.RoomKindId] = item.Price
   })
 }
 
@@ -187,9 +227,21 @@ const getPrice = (roomClassId, roomFormId) => {
   return matrix[roomClassId]?.[roomFormId] ?? ''
 }
 
+const getPlanPrice = (planCode, roomClassId, roomFormId) => {
+  if (!planCode) return null
+  return plansMatrix[planCode]?.[roomClassId]?.[roomFormId] ?? null
+}
+
 const setPrice = (roomClassId, roomFormId, val) => {
   if (!matrix[roomClassId]) matrix[roomClassId] = {}
   matrix[roomClassId][roomFormId] = val === '' ? 0 : parseMoney(val) || 0
+}
+
+const setPlanPrice = (planCode, roomClassId, roomFormId, val) => {
+  if (!planCode) return
+  if (!plansMatrix[planCode]) plansMatrix[planCode] = {}
+  if (!plansMatrix[planCode][roomClassId]) plansMatrix[planCode][roomClassId] = {}
+  plansMatrix[planCode][roomClassId][roomFormId] = val === '' ? 0 : parseMoney(val)
 }
 
 // Build value array từ matrix để gửi lên API
@@ -201,6 +253,23 @@ const buildValueArray = () => {
         RoomTypeId: rc.id,
         RoomKindId: rf.id,
         Price: matrix[rc.id]?.[rf.id] ?? 0,
+      })
+    })
+  })
+  return arr
+}
+
+const buildPlanValueArray = (planCode) => {
+  const planMatrix = plansMatrix[planCode]
+  if (!planMatrix) return []
+
+  const arr = []
+  roomClasses.value.forEach(rc => {
+    roomForms.value.forEach(rf => {
+      arr.push({
+        RoomTypeId: rc.id,
+        RoomKindId: rf.id,
+        Price: planMatrix[rc.id]?.[rf.id] ?? 0,
       })
     })
   })
@@ -224,6 +293,17 @@ const handleAdd = () => {
   selectedRateCode.value = null
   ratePlans.value = []
   dailyRows.value = []
+  isGiaTheoNgay.value = false
+  dailyFrom.value = ''
+  dailyTo.value = ''
+
+  Object.assign(applyForm, {
+    from: '',
+    to: '',
+    code: '',
+    days_of_week: [0, 1, 2, 3, 4, 5, 6]
+  })
+
   Object.keys(matrix).forEach(k => delete matrix[k])
   const today = new Date().toISOString().split('T')[0]
   const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -281,29 +361,57 @@ const handleDelete = async () => {
 }
 
 const saveRatePlan = async () => {
-  if (!ratePlanForm.code) { alert('Vui lòng nhập mã'); return }
+  if (!selectedRateCode.value) {
+    alert('Vui lòng chọn Rate Code cha!')
+    return
+  }
+  if (!ratePlanForm.code?.trim()) {
+    alert('Vui lòng nhập mã con!')
+    return
+  }
+  if (!ratePlanForm.begin_date || !ratePlanForm.end_date) {
+    alert('Vui lòng nhập từ ngày - đến ngày!')
+    return
+  }
+
+  const planCode = ratePlanForm.code.trim()
+  const rateCode = selectedRateCode.value.code
+  const payload = {
+    ...ratePlanForm,
+    code: planCode,
+    period: buildPlanValueArray(planCode),
+  }
+
   try {
+    loading.value = true
     if (!selectedRatePlanRow.value) {
-      const res = await http.post(`/rate-codes/${selectedRateCode.value.code}/plans`, ratePlanForm)
+      const res = await http.post(`/rate-codes/${rateCode}/plans`, payload)
       ratePlans.value.push(res.data.data)
       selectRatePlanRow(res.data.data)
     } else {
-      const res = await http.put(`/rate-codes/${selectedRateCode.value.code}/plans/${selectedRatePlanRow.value.id}`, ratePlanForm)
-      const idx = ratePlans.value.findIndex(p => p.id === selectedRatePlanRow.value.id)
+      const planId = selectedRatePlanRow.value.id
+      const res = await http.put(`/rate-codes/${rateCode}/plans/${planId}`, payload)
+      const idx = ratePlans.value.findIndex(p => p.id === planId)
       if (idx !== -1) ratePlans.value[idx] = res.data.data
       selectRatePlanRow(res.data.data)
     }
+    await fetchRatePlans(rateCode)
   } catch (e) {
+    console.error(e)
     alert(e.response?.data?.message || 'Lỗi lưu mã con')
+  } finally {
+    loading.value = false
   }
 }
 
 const deleteRatePlan = async () => {
-  if (!selectedRatePlanRow.value) return
+  if (!selectedRatePlanRow.value || !selectedRateCode.value) return
   if (!confirm(`Xóa mã "${selectedRatePlanRow.value.code}"?`)) return
   try {
+    const planCode = selectedRatePlanRow.value.code
     await http.delete(`/rate-codes/${selectedRateCode.value.code}/plans/${selectedRatePlanRow.value.id}`)
     ratePlans.value = ratePlans.value.filter(p => p.id !== selectedRatePlanRow.value.id)
+    delete plansMatrix[planCode]
     selectedRatePlanRow.value = null
     Object.assign(ratePlanForm, { code: '', description: '', begin_date: '', end_date: '' })
   } catch (e) {
@@ -325,9 +433,16 @@ const handleApply = async () => {
       to: applyForm.to,
       days_of_week: applyForm.days_of_week,
     })
-    dailyFrom.value = applyForm.from
-    dailyTo.value = applyForm.to
+    // dailyFrom.value = applyForm.from
+    // dailyTo.value = applyForm.to
     await fetchDailies()
+
+    Object.assign(applyForm, {
+      from: '',
+      to: '',
+      code: '',
+      days_of_week: [0, 1, 2, 3, 4, 5, 6]
+    })
   } catch (e) {
     alert(e.response?.data?.message || 'Lỗi áp dụng')
   } finally {
@@ -336,6 +451,7 @@ const handleApply = async () => {
 }
 
 watch(isGiaTheoNgay, (val) => {
+  rateForm.type = val ? 'daily' : 'fixed'
   if (val && selectedRateCode.value) fetchDailies()
 })
 
@@ -381,8 +497,31 @@ const getDailyCode = (dateStr) => {
 
 const openAddRatePlan = () => {
   selectedRatePlanRow.value = null
-  Object.assign(ratePlanForm, { code: '', description: '', begin_date: '', end_date: '' })
+  const today = new Date().toISOString().split('T')[0]
+  const parentEnd = selectedRateCode.value?.end_date || today
+  Object.assign(ratePlanForm, {
+    code: '',
+    description: '',
+    begin_date: selectedRateCode.value?.begin_date || today,
+    end_date: parentEnd,
+  })
 }
+
+// Khởi tạo matrix rỗng khi nhập mã mới trong modal
+watch(() => ratePlanForm.code, (code) => {
+  if (selectedRatePlanRow.value) return
+  const trimmed = code?.trim()
+  if (!trimmed) return
+  if (!plansMatrix[trimmed]) {
+    plansMatrix[trimmed] = {}
+    roomClasses.value.forEach(rc => {
+      plansMatrix[trimmed][rc.id] = {}
+      roomForms.value.forEach(rf => {
+        plansMatrix[trimmed][rc.id][rf.id] = 0
+      })
+    })
+  }
+})
 </script>
 
 <template>
@@ -613,7 +752,7 @@ const openAddRatePlan = () => {
                   <td class="p-2 border border-slate-200 font-bold text-sky-700 sticky left-24 bg-white">{{ row.code }}</td>
                   <template v-for="rc in roomClasses" :key="rc.id">
                     <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200 text-center text-slate-600">
-                      {{ getPrice(rc.id, rf.id) ? formatMoney(getPrice(rc.id, rf.id)) : '' }}
+                      {{ getPlanPrice(row.code, rc.id, rf.id) != null ? formatMoney(getPlanPrice(row.code, rc.id, rf.id)) : '-' }}
                     </td>
                   </template>
                 </tr>
@@ -779,11 +918,12 @@ const openAddRatePlan = () => {
                 <td v-for="rf in roomForms" :key="rf.id" class="p-1 border-b border-slate-100">
                   <input
                     type="text"
-                    :value="getPrice(rc.id, rf.id) ? formatMoney(getPrice(rc.id, rf.id)) : ''"
-                    @input="setPrice(rc.id, rf.id, $event.target.value)"
-                    @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)); saveMatrix() }"
+                    :disabled="!modalPlanCode"
+                    :value="modalPlanCode && getPlanPrice(modalPlanCode, rc.id, rf.id) != null ? formatMoney(getPlanPrice(modalPlanCode, rc.id, rf.id)) : ''"
+                    @input="setPlanPrice(modalPlanCode, rc.id, rf.id, $event.target.value)"
+                    @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)) }"
                     placeholder="-"
-                    class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white"
+                    class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white disabled:bg-slate-50"
                   />
                 </td>
               </tr>

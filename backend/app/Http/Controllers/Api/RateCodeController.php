@@ -38,21 +38,21 @@ class RateCodeController extends Controller
         ]);
 
         if (empty($validated['value'])) {
-            $roomClasses = \App\Models\RoomClass::all();
-            $roomForms   = \App\Models\RoomForm::all();
+                $roomClasses = \App\Models\RoomClass::all();
+                $roomForms   = \App\Models\RoomForm::all();
 
-            $defaultValue = [];
-            foreach ($roomClasses as $rc) {
-                foreach ($roomForms as $rf) {
-                    $defaultValue[] = [
-                        'RoomTypeId' => $rc->id,
-                        'RoomKindId' => $rf->id,
-                        'Price'      => 0.0,
-                    ];
+                $defaultValue = [];
+                foreach ($roomClasses as $rc) {
+                    foreach ($roomForms as $rf) {
+                        $defaultValue[] = [
+                            'RoomTypeId' => $rc->id,
+                            'RoomKindId' => $rf->id,
+                            'Price'      => 0.0,
+                        ];
+                    }
                 }
+                $validated['value'] = json_encode($defaultValue);
             }
-            $validated['value'] = json_encode($defaultValue);
-        }
 
         $rateCode = RateCode::create($validated);
 
