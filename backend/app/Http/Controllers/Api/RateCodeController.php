@@ -37,6 +37,23 @@ class RateCodeController extends Controller
             'market_segment'     => 'nullable|integer',
         ]);
 
+        if (empty($validated['value'])) {
+            $roomClasses = \App\Models\RoomClass::all();
+            $roomForms   = \App\Models\RoomForm::all();
+
+            $defaultValue = [];
+            foreach ($roomClasses as $rc) {
+                foreach ($roomForms as $rf) {
+                    $defaultValue[] = [
+                        'RoomTypeId' => $rc->id,
+                        'RoomKindId' => $rf->id,
+                        'Price'      => 0.0,
+                    ];
+                }
+            }
+            $validated['value'] = json_encode($defaultValue);
+        }
+
         $rateCode = RateCode::create($validated);
 
         return response()->json([

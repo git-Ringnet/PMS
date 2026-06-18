@@ -64,6 +64,15 @@ const dailyRows = ref([])
 const dailyFrom = ref('')
 const dailyTo = ref('')
 
+const isRatePlanModalOpen = ref(false)
+const ratePlanForm = reactive({
+  code: '',
+  description: '',
+  begin_date: '',
+  end_date: '',
+})
+const selectedRatePlanRow = ref(null)
+
 // ===================== FETCH =====================
 const fetchRateCodes = async () => {
   loading.value = true
@@ -152,6 +161,16 @@ const syncForm = (rc) => {
   })
 }
 
+const selectRatePlanRow = (plan) => {
+  selectedRatePlanRow.value = plan
+  Object.assign(ratePlanForm, {
+    code: plan.code,
+    description: plan.description || '',
+    begin_date: plan.begin_date || '',
+    end_date: plan.end_date || '',
+  })
+}
+
 // ===================== MATRIX GIÁ =====================
 const buildMatrix = (rc) => {
   // Reset matrix
@@ -170,7 +189,7 @@ const getPrice = (roomClassId, roomFormId) => {
 
 const setPrice = (roomClassId, roomFormId, val) => {
   if (!matrix[roomClassId]) matrix[roomClassId] = {}
-  matrix[roomClassId][roomFormId] = val === '' ? 0 : parseFloat(val) || 0
+  matrix[roomClassId][roomFormId] = val === '' ? 0 : parseMoney(val) || 0
 }
 
 // Build value array từ matrix để gửi lên API
@@ -222,7 +241,7 @@ const handleSave = async () => {
   loading.value = true
   try {
     const payload = { ...rateForm, value: buildValueArray() }
-    if (isNewMode.value) {
+    if (isNewMode.value || !selectedRateCode.value) {
       const res = await http.post('/rate-codes', payload)
       rateCodes.value.push(res.data.data)
       selectRateCode(res.data.data)
@@ -235,6 +254,8 @@ const handleSave = async () => {
     }
     isNewMode.value = false
   } catch (e) {
+    console.error('handleSave error:', e)
+    console.error('response data:', e.response?.data)
     alert(e.response?.data?.message || 'Lỗi lưu dữ liệu')
   } finally {
     loading.value = false
@@ -256,6 +277,37 @@ const handleDelete = async () => {
     alert('Lỗi khi xóa')
   } finally {
     loading.value = false
+  }
+}
+
+const saveRatePlan = async () => {
+  if (!ratePlanForm.code) { alert('Vui lòng nhập mã'); return }
+  try {
+    if (!selectedRatePlanRow.value) {
+      const res = await http.post(`/rate-codes/${selectedRateCode.value.code}/plans`, ratePlanForm)
+      ratePlans.value.push(res.data.data)
+      selectRatePlanRow(res.data.data)
+    } else {
+      const res = await http.put(`/rate-codes/${selectedRateCode.value.code}/plans/${selectedRatePlanRow.value.id}`, ratePlanForm)
+      const idx = ratePlans.value.findIndex(p => p.id === selectedRatePlanRow.value.id)
+      if (idx !== -1) ratePlans.value[idx] = res.data.data
+      selectRatePlanRow(res.data.data)
+    }
+  } catch (e) {
+    alert(e.response?.data?.message || 'Lỗi lưu mã con')
+  }
+}
+
+const deleteRatePlan = async () => {
+  if (!selectedRatePlanRow.value) return
+  if (!confirm(`Xóa mã "${selectedRatePlanRow.value.code}"?`)) return
+  try {
+    await http.delete(`/rate-codes/${selectedRateCode.value.code}/plans/${selectedRatePlanRow.value.id}`)
+    ratePlans.value = ratePlans.value.filter(p => p.id !== selectedRatePlanRow.value.id)
+    selectedRatePlanRow.value = null
+    Object.assign(ratePlanForm, { code: '', description: '', begin_date: '', end_date: '' })
+  } catch (e) {
+    alert('Lỗi khi xóa')
   }
 }
 
@@ -294,6 +346,19 @@ const formatDate = (d) => {
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`
 }
 
+// Hàm format số thành dạng 1,000,000
+const formatMoney = (val) => {
+  if (val === '' || val === null || val === undefined) return ''
+  const num = parseFloat(String(val).replace(/,/g, ''))
+  if (isNaN(num)) return ''
+  return new Intl.NumberFormat('en-US').format(num)
+}
+
+// Hàm parse ngược lại khi lưu
+const parseMoney = (val) => {
+  return parseFloat(String(val).replace(/,/g, '')) || 0
+}
+
 const getDayLabel = (dateStr) => {
   const days = ['CN','T2','T3','T4','T5','T6','T7']
   return days[new Date(dateStr).getDay()]
@@ -312,6 +377,11 @@ const isDaySelected = (dayIndex) => applyForm.days_of_week.includes(dayIndex)
 const getDailyCode = (dateStr) => {
   const found = dailyRows.value.find(r => r.date === dateStr)
   return found?.code || ''
+}
+
+const openAddRatePlan = () => {
+  selectedRatePlanRow.value = null
+  Object.assign(ratePlanForm, { code: '', description: '', begin_date: '', end_date: '' })
 }
 </script>
 
@@ -479,11 +549,17 @@ const getDailyCode = (dateStr) => {
                 <!-- Loại giá (mã con) -->
                 <div>
                   <label class="block text-xs font-bold text-slate-500 mb-1">Loại giá</label>
-                  <select v-model="applyForm.code"
-                    class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold bg-white min-w-[100px]">
-                    <option value="">Chọn mã</option>
-                    <option v-for="p in ratePlans" :key="p.id" :value="p.code">{{ p.code }}</option>
-                  </select>
+                  <div class="flex items-center gap-1">
+                    <select v-model="applyForm.code"
+                      class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold bg-white min-w-[100px]">
+                      <option value="">Chọn mã</option>
+                      <option v-for="p in ratePlans" :key="p.id" :value="p.code">{{ p.code }}</option>
+                    </select>
+                    <button @click="isRatePlanModalOpen = true"
+                      class="w-7 h-7 flex items-center justify-center bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold border-none cursor-pointer">
+                      +
+                    </button>
+                  </div>
                 </div>
                 <button @click="handleApply" :disabled="loading"
                   class="px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer disabled:opacity-50">
@@ -497,7 +573,7 @@ const getDailyCode = (dateStr) => {
         <!-- Bottom: Grid giá tĩnh HOẶC Bảng theo ngày -->
 
         <!-- BẢNG THEO NGÀY (Giá theo ngày = true) -->
-        <div v-if="isGiaTheoNgay" class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
+        <div v-if="isGiaTheoNgay" class="bg-white border border-slate-200 rounded-xl p-4 flex flex-col shadow-xs" style="height: 420px;">
           <!-- Filter ngày xem -->
           <div class="flex items-center gap-3 pb-3 border-b border-slate-100 shrink-0">
             <span class="text-xs font-bold text-slate-500">Xem từ</span>
@@ -537,7 +613,7 @@ const getDailyCode = (dateStr) => {
                   <td class="p-2 border border-slate-200 font-bold text-sky-700 sticky left-24 bg-white">{{ row.code }}</td>
                   <template v-for="rc in roomClasses" :key="rc.id">
                     <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200 text-center text-slate-600">
-                      {{ getPrice(rc.id, rf.id) || '-' }}
+                      {{ getPrice(rc.id, rf.id) ? formatMoney(getPrice(rc.id, rf.id)) : '' }}
                     </td>
                   </template>
                 </tr>
@@ -570,10 +646,10 @@ const getDailyCode = (dateStr) => {
                   <td class="p-2.5 text-slate-500 font-medium border border-slate-200">{{ rc.name }}</td>
                   <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200">
                     <input
-                      type="number"
-                      :value="getPrice(rc.id, rf.id)"
+                      type="text"
+                      :value="getPrice(rc.id, rf.id) ? formatMoney(getPrice(rc.id, rf.id)) : ''"
                       @input="setPrice(rc.id, rf.id, $event.target.value)"
-                      @blur="saveMatrix"
+                      @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)); saveMatrix() }"
                       placeholder="-"
                       class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
                     />
@@ -593,6 +669,128 @@ const getDailyCode = (dateStr) => {
         Gói dịch vụ — chưa triển khai
       </div>
 
+    </div>
+  </div>
+
+  <!-- ===== MODAL: Chọn mã loại giá ===== -->
+  <div v-if="isRatePlanModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl mx-4 overflow-hidden" style="max-height: 85vh;">
+      <!-- Header -->
+      <div class="px-6 py-4 bg-[#8dcbf4] text-white font-black text-sm flex items-center justify-between">
+        <span>Mã con — {{ selectedRateCode?.code }}</span>
+        <button @click="isRatePlanModalOpen = false" class="text-white bg-transparent border-none cursor-pointer text-xl">&times;</button>
+      </div>
+
+      <!-- Body -->
+      <div class="p-4 flex flex-col gap-4 overflow-y-auto" style="max-height: calc(85vh - 60px);">
+        <!-- Top: bảng trái + form phải -->
+        <div class="flex gap-4" style="height: 280px;">
+          <!-- Bảng danh sách mã con -->
+          <div class="w-[45%] border border-slate-200 rounded-xl overflow-hidden flex flex-col">
+            <div class="overflow-y-auto flex-1">
+              <table class="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr class="bg-slate-50 text-slate-600 font-bold uppercase sticky top-0">
+                    <th class="p-2.5 border-b border-slate-200 w-20">Mã</th>
+                    <th class="p-2.5 border-b border-slate-200">Mô tả</th>
+                    <th class="p-2.5 border-b border-slate-200 w-24 text-center">Từ ngày</th>
+                    <th class="p-2.5 border-b border-slate-200 w-24 text-center">Đến ngày</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="plan in ratePlans" :key="plan.id"
+                    @click="selectRatePlanRow(plan)"
+                    class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
+                    :class="selectedRatePlanRow?.id === plan.id ? 'bg-sky-50 text-sky-700 font-semibold' : 'text-slate-700'"
+                  >
+                    <td class="p-2.5 font-bold">{{ plan.code }}</td>
+                    <td class="p-2.5">{{ plan.description }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ formatDate(plan.begin_date) }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ formatDate(plan.end_date) }}</td>
+                  </tr>
+                  <tr v-if="ratePlans.length === 0">
+                    <td colspan="4" class="p-6 text-center text-slate-400">Chưa có mã con nào</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Form phải -->
+          <div class="flex-1 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+            <!-- Buttons -->
+            <div class="flex items-center justify-end gap-2 pb-3 border-b border-slate-100">
+              <button @click="openAddRatePlan"
+                class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer">
+                + Thêm
+              </button>
+              <button @click="saveRatePlan"
+                class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer">
+                Lưu
+              </button>
+              <button @click="deleteRatePlan" :disabled="!selectedRatePlanRow"
+                class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer disabled:opacity-40">
+                Xóa
+              </button>
+            </div>
+
+            <!-- Fields -->
+            <div class="flex gap-3">
+              <div class="w-1/3">
+                <label class="block text-xs font-bold text-slate-500 mb-1">Mã</label>
+                <input type="text" v-model="ratePlanForm.code" :disabled="!!selectedRatePlanRow"
+                  class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold disabled:bg-slate-50" />
+              </div>
+              <div class="flex-1">
+                <label class="block text-xs font-bold text-slate-500 mb-1">Mô tả</label>
+                <input type="text" v-model="ratePlanForm.description"
+                  class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-500 mb-1">Từ ngày - đến ngày</label>
+              <div class="flex items-center gap-2">
+                <input type="date" v-model="ratePlanForm.begin_date"
+                  class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+                <span class="text-slate-400 text-xs">~</span>
+                <input type="date" v-model="ratePlanForm.end_date"
+                  class="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom: grid giá -->
+        <div class="border border-slate-200 rounded-xl overflow-auto" style="max-height: 300px;">
+          <table class="w-full text-xs text-left border-collapse" style="min-width: 600px;">
+            <thead>
+              <tr class="bg-slate-50 text-slate-600 font-bold uppercase sticky top-0">
+                <th class="p-2.5 border-b border-slate-200 w-28">Loại phòng</th>
+                <th class="p-2.5 border-b border-slate-200 w-40">Mô tả</th>
+                <th v-for="rf in roomForms" :key="rf.id" class="p-2.5 border-b border-slate-200 text-center w-24">
+                  {{ rf.name }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="rc in roomClasses" :key="rc.id" class="hover:bg-slate-50/40">
+                <td class="p-2.5 font-bold text-slate-700 border-b border-slate-100 bg-slate-50/20">{{ rc.code }}</td>
+                <td class="p-2.5 text-slate-500 border-b border-slate-100">{{ rc.name }}</td>
+                <td v-for="rf in roomForms" :key="rf.id" class="p-1 border-b border-slate-100">
+                  <input
+                    type="text"
+                    :value="getPrice(rc.id, rf.id) ? formatMoney(getPrice(rc.id, rf.id)) : ''"
+                    @input="setPrice(rc.id, rf.id, $event.target.value)"
+                    @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)); saveMatrix() }"
+                    placeholder="-"
+                    class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </template>
