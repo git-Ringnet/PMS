@@ -340,10 +340,10 @@ function toggleSidebar() {
       </nav>
 
       <!-- Right Side: User Info / Date / Time (Right) -->
-      <div class="flex items-center justify-end gap-4 text-sm">
+      <div class="flex items-center justify-end gap-1.5 text-sm whitespace-nowrap shrink-0">
         <!-- Search icon button -->
-        <button class="p-1 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer">
-          <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <button class="p-0.5 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center shrink-0">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </button>
@@ -351,47 +351,47 @@ function toggleSidebar() {
         <!-- Dark Mode Toggle Button -->
         <button 
           @click="toggleDarkMode" 
-          class="p-1 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center"
+          class="p-0.5 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center shrink-0"
           title="Bật/Tắt Chế độ tối"
         >
           <!-- Moon Icon (for Light Mode) -->
-          <svg v-if="!isDark" class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <svg v-if="!isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
           </svg>
           <!-- Sun Icon (for Dark Mode) -->
-          <svg v-else class="w-4.5 h-4.5 text-yellow-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <svg v-else class="w-3.5 h-3.5 text-yellow-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M14 12a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
         </button>
 
         <!-- HKT 1 Dropdown -->
-        <div class="flex items-center gap-1 text-slate-700 hover:text-slate-900 cursor-pointer font-bold">
-          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <div class="flex items-center gap-0.5 text-slate-700 hover:text-slate-900 cursor-pointer font-bold shrink-0 whitespace-nowrap">
+          <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          <span class="text-[13px]">HKT 1</span>
-          <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <span class="text-[11.5px] leading-none">HKT 1</span>
+          <svg class="w-2.5 h-2.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </div>
 
         <!-- User Profile Dropdown -->
-        <div class="relative" ref="dropdownRef">
+        <div class="relative shrink-0" ref="dropdownRef">
           <div 
             @click="isDropdownOpen = !isDropdownOpen" 
-            class="flex items-center gap-2 text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-3.5 py-1.5 rounded-full text-[13px] font-bold cursor-pointer transition-colors select-none"
+            class="flex items-center gap-1 text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-2 py-0.5 rounded-full text-[11.5px] font-bold cursor-pointer transition-colors select-none whitespace-nowrap"
           >
             <img 
               v-if="currentUser?.avatar" 
               :src="currentUser.avatar" 
               alt="Avatar" 
-              class="w-5 h-5 rounded-full object-cover border border-slate-300"
+              class="w-3.5 h-3.5 rounded-full object-cover border border-slate-300 shrink-0"
             />
-            <svg v-else class="w-3.5 h-3.5 text-slate-500" fill="currentColor" viewBox="0 0 24 24">
+            <svg v-else class="w-3 h-3 text-slate-500 shrink-0" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
             </svg>
-            <span>{{ currentUser?.name || 'Khách' }}</span>
-            <svg class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200" :class="isDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <span class="leading-none">{{ currentUser?.name || 'Khách' }}</span>
+            <svg class="w-2.5 h-2.5 text-slate-400 transition-transform duration-200 shrink-0" :class="isDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
           </div>
@@ -431,14 +431,14 @@ function toggleSidebar() {
         </div>
 
         <!-- Shift & Date Time in Header (Mockup style) -->
-        <div class="flex items-center gap-3 text-slate-600 dark:text-slate-300 font-semibold text-[13px] whitespace-nowrap px-1.5">
+        <div class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-bold text-[11px] whitespace-nowrap px-0.5 shrink-0">
           <span>Ca: 2</span>
           <span>{{ formattedTimeVi }}</span>
         </div>
 
         <!-- Vietnamese Flag -->
-        <div class="w-6 h-4.5 bg-red-600 flex items-center justify-center rounded-sm shadow-sm relative overflow-hidden shrink-0 border border-red-700/10">
-          <svg class="w-2.5 h-2.5 text-yellow-400 fill-current" viewBox="0 0 24 24">
+        <div class="w-4.5 h-3 bg-red-600 flex items-center justify-center rounded-xs shadow-xs relative overflow-hidden shrink-0 border border-red-700/10">
+          <svg class="w-1.5 h-1.5 text-yellow-400 fill-current" viewBox="0 0 24 24">
             <path d="M12 .587l3.668 7.431 8.2 1.192-5.934 5.787 1.4 8.168L12 18.896l-7.334 3.857 1.4-8.168L.132 9.21l8.2-1.192L12 .587z"/>
           </svg>
         </div>

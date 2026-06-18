@@ -77,7 +77,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
     Route::apiResource('room-rate-codes', \App\Http\Controllers\Api\RoomRateCodeController::class);
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
-    
     Route::post('room-rate-codes/{ma}/plans', [\App\Http\Controllers\Api\RoomRateCodeController::class, 'saveRatePlan']);
     Route::delete('room-rate-codes/{ma}/plans/{code}', [\App\Http\Controllers\Api\RoomRateCodeController::class, 'deleteRatePlan']);
     Route::post('room-rate-codes/{ma}/daily-mappings', [\App\Http\Controllers\Api\RoomRateCodeController::class, 'saveDailyMappings']);
@@ -92,5 +91,4 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
     Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
 });
-
 
