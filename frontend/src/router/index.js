@@ -50,12 +50,6 @@ const routes = [
     component: () => import('@/pages/config/ConfigPage.vue'),
     meta: { title: 'Cấu hình hệ thống - PMS' },
   },
-  {
-    path: '/system',
-    name: 'SystemConfig',
-    component: () => import('@/pages/system/SystemPage.vue'),
-    meta: { title: 'Cấu hình hệ thống - Provista', noLayout: true },
-  },
 ]
 
 const router = createRouter({

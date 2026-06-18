@@ -28,9 +28,6 @@ class DatabaseSeeder extends Seeder
             SystemDefinitionSeeder::class,
             CompanyAndPartnerSeeder::class,
             SystemDateRollSeeder::class,
-            SystemBranchSeeder::class,
-            InfoBusinessSeeder::class,
-            EmployeeSeeder::class,
         ]);
     }
 }
