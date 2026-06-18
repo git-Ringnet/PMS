@@ -34,6 +34,28 @@ const rateTabs = ['Mã giá phòng', 'Gói dịch vụ']
 const rateCodes = ref([])
 const selectedRateCode = ref(null)
 
+const fetchRoomData = async () => {
+  try {
+    const [classesRes, formsRes] = await Promise.all([
+      http.get('/room-classes'),
+      http.get('/room-forms')
+    ])
+    if (classesRes.status === 200) {
+      roomTypes.value = classesRes.data.data
+        .filter(item => item.is_active !== false && item.is_active !== 0 && item.is_active !== '0')
+        .map(item => ({
+        code: item.code,
+        description: item.name
+      }))
+    }
+    if (formsRes.status === 200) {
+      occupancies.value = formsRes.data.data.map(item => item.name)
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 const fetchRateCodes = async (preventAutoSelect = false) => {
   try {
     const res = await http.get('/room-rate-codes')
@@ -49,6 +71,7 @@ const fetchRateCodes = async (preventAutoSelect = false) => {
 }
 
 onMounted(() => {
+  fetchRoomData()
   fetchRateCodes()
 })
 
@@ -117,7 +140,7 @@ const batchDaysOfWeek = reactive({
 })
 const dailyMappingsList = ref([])
 
-const occupancies = ['Double', 'Twin', 'Triple', 'Family', 'King']
+const occupancies = ref([])
 
 const availableRatePlans = computed(() => {
   if (!selectedRateCode.value || !selectedRateCode.value.rate_plans) return [];
@@ -532,18 +555,7 @@ const handleDelete = async () => {
 }
 
 // Room Types Matrix list
-const roomTypes = ref([
-  { code: 'SUPD', description: 'Superior Double' },
-  { code: 'SUPT', description: 'Superior Twin' },
-  { code: 'SUPTR', description: 'Superior Triple' },
-  { code: 'DLXD', description: 'Deluxe Double City view' },
-  { code: 'DLXT', description: 'Deluxe Twin City View' },
-  { code: 'DLXDB', description: 'Deluxe Double with Balcony' },
-  { code: 'DLXTB', description: 'Deluxe Twin with Balcony' },
-  { code: 'FAM', description: 'Family City View' },
-  { code: 'JST', description: 'Suite' },
-  { code: 'DP', description: 'DỰ PHÒNG' }
-])
+const roomTypes = ref([])
 
 
 const getMatrixKey = (roomCode, occupancy) => {
@@ -801,11 +813,7 @@ const selectPackage = (pkg) => {
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase sticky top-0 z-10 text-center">
                   <th class="p-2.5 text-left w-36 border border-slate-200 bg-slate-50">Loại phòng</th>
                   <th class="p-2.5 text-left w-48 border border-slate-200 bg-slate-50">Mô tả</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Double</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Twin</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Triple</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Family</th>
-                  <th class="p-2.5 border border-slate-200 w-32">King</th>
+                  <th v-for="occ in occupancies" :key="occ" class="p-2.5 border border-slate-200 w-32">{{ occ }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -820,47 +828,11 @@ const selectPackage = (pkg) => {
                   <td class="p-2.5 text-slate-500 font-medium border border-slate-200">{{ rt.description }}</td>
                   
                   <!-- Occupancies pricing inputs inside grid -->
-                  <td class="p-1 border border-slate-200">
+                  <td v-for="occ in occupancies" :key="rt.code + '-' + occ" class="p-1 border border-slate-200">
                     <input 
                       type="text" 
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Double')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Double')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Twin')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Twin')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Triple')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Triple')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Family')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Family')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
-                    />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input 
-                      type="text" 
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'King')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'King')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
+                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, occ)], rateFormState.Currency)"
+                      @input="e => rateMatrix[getMatrixKey(rt.code, occ)] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
                       placeholder="-"
                       class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white transition-colors"
                     />
