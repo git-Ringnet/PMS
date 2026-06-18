@@ -48,13 +48,12 @@ const matrix = reactive({})
 const plansMatrix = reactive({})
 
 // --- Giá theo ngày ---
-const isDaily = computed(() => selectedRateCode.value?.type === 'daily' || rateForm.type === 'daily')
 // Dùng riêng 1 field để track checkbox "Giá theo ngày"
 const isGiaTheoNgay = ref(false)
+let syncingGiaTheoNgay = false
 
 // --- Rate Plans (mã con BB1/BB2...) ---
 const ratePlans = ref([])
-const selectedRatePlan = ref(null)
 
 // --- Apply form (khi Giá theo ngày) ---
 const applyForm = reactive({
@@ -292,7 +291,9 @@ const selectRateCode = (rc) => {
   selectedRateCode.value = rc
   isNewMode.value = false
   syncForm(rc)
+  syncingGiaTheoNgay = true
   isGiaTheoNgay.value = rc.type === 'daily'
+  syncingGiaTheoNgay = false
   buildMatrix(rc.value, matrix)
   fetchRatePlans(rc.code)
 
@@ -363,6 +364,11 @@ const getPrice = (roomClassId, roomFormId) => {
 const getPlanPrice = (planCode, roomClassId, roomFormId) => {
   if (!planCode) return null
   return plansMatrix[planCode]?.[roomClassId]?.[roomFormId] ?? null
+}
+
+const formatCellPrice = (price) => {
+  if (price === '' || price === null || price === undefined || Number(price) === 0) return ''
+  return formatMoney(price)
 }
 
 const setPrice = (roomClassId, roomFormId, val) => {
@@ -631,10 +637,39 @@ const handleApply = async () => {
   }
 }
 
-watch(isGiaTheoNgay, (val) => {
+watch(isGiaTheoNgay, async (val) => {
   rateForm.type = val ? 'daily' : 'fixed'
+  if (syncingGiaTheoNgay) return
+
   if (val && selectedRateCode.value) fetchDailies()
+  await persistRateType(val)
 })
+
+const persistRateType = async (isDaily) => {
+  if (!selectedRateCode.value || isNewMode.value) return
+  try {
+    const res = await http.put(`/rate-codes/${selectedRateCode.value.id}`, {
+      ...rateForm,
+      type: isDaily ? 'daily' : 'fixed',
+      value: buildValueArray(),
+    })
+    const idx = rateCodes.value.findIndex(r => r.id === selectedRateCode.value.id)
+    if (idx !== -1) rateCodes.value[idx] = res.data.data
+    selectedRateCode.value = res.data.data
+    syncForm(res.data.data)
+    uiStore.showToast(
+      isDaily ? 'Đã bật giá theo ngày' : 'Đã tắt giá theo ngày',
+      'success'
+    )
+  } catch (e) {
+    console.error(e)
+    syncingGiaTheoNgay = true
+    isGiaTheoNgay.value = !isDaily
+    rateForm.type = isGiaTheoNgay.value ? 'daily' : 'fixed'
+    syncingGiaTheoNgay = false
+    uiStore.showToast(getErrorMessage(e, 'Lỗi lưu loại giá'), 'error')
+  }
+}
 
 // ===================== FORMAT =====================
 const formatDate = (d) => {
@@ -668,13 +703,6 @@ const toggleDay = (dayIndex) => {
 }
 
 const isDaySelected = (dayIndex) => applyForm.days_of_week.includes(dayIndex)
-
-// Lấy giá từ dailyRows cho 1 ngày + loại phòng + dạng phòng
-// (Hiện tại daily chỉ lưu code mã con, không lưu giá riêng)
-const getDailyCode = (dateStr) => {
-  const found = dailyRows.value.find(r => r.date === dateStr)
-  return found?.code || ''
-}
 
 const openAddRatePlan = () => {
   if (!selectedRateCode.value) {
@@ -937,7 +965,7 @@ watch(() => ratePlanForm.code, (code) => {
                   <td class="p-2 border border-slate-200 font-bold text-sky-700 sticky left-24 bg-white">{{ row.code }}</td>
                   <template v-for="rc in roomClasses" :key="rc.id">
                     <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200 text-center text-slate-600">
-                      {{ getPlanPrice(row.code, rc.id, rf.id) ? formatMoney(getPlanPrice(row.code, rc.id, rf.id)) : '' }}
+                      {{ formatCellPrice(getPlanPrice(row.code, rc.id, rf.id)) }}
                     </td>
                   </template>
                 </tr>
@@ -971,7 +999,7 @@ watch(() => ratePlanForm.code, (code) => {
                   <td v-for="rf in roomForms" :key="rf.id" class="p-1 border border-slate-200">
                     <input
                       type="text"
-                      :value="getPrice(rc.id, rf.id) ? formatMoney(getPrice(rc.id, rf.id)) : ''"
+                      :value="formatCellPrice(getPrice(rc.id, rf.id))"
                       @input="setPrice(rc.id, rf.id, $event.target.value)"
                       @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)); saveMatrix() }"
                       placeholder="-"
@@ -1104,7 +1132,7 @@ watch(() => ratePlanForm.code, (code) => {
                   <input
                     type="text"
                     :disabled="!modalPlanCode"
-                    :value="modalPlanCode && getPlanPrice(modalPlanCode, rc.id, rf.id) ? formatMoney(getPlanPrice(modalPlanCode, rc.id, rf.id)) : ''"
+                    :value="modalPlanCode ? formatCellPrice(getPlanPrice(modalPlanCode, rc.id, rf.id)) : ''"
                     @input="setPlanPrice(modalPlanCode, rc.id, rf.id, $event.target.value)"
                     @blur="(e) => { e.target.value = formatMoney(parseMoney(e.target.value)) }"
                     placeholder="-"
