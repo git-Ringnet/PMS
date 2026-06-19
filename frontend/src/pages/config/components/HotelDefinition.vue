@@ -603,11 +603,19 @@ const openAddShiftModal = () => {
 
 const openEditShiftModal = (shift) => {
   isEditMode.value = true
+  const formatTime = (timeStr) => {
+    if (!timeStr) return ''
+    const parts = timeStr.split(':')
+    if (parts.length >= 2) {
+      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`
+    }
+    return timeStr
+  }
   Object.assign(shiftFormState, {
     id: shift.id,
     name: shift.name,
-    start_time: shift.start_time,
-    end_time: shift.end_time
+    start_time: formatTime(shift.start_time),
+    end_time: formatTime(shift.end_time)
   })
   isShiftModalOpen.value = true
 }
@@ -2142,12 +2150,12 @@ onMounted(async () => {
           <div class="grid grid-cols-2 gap-4">
             <div class="flex flex-col gap-1.5">
               <span>Thời gian bắt đầu*</span>
-              <input type="text" v-model="shiftFormState.start_time" placeholder="HH:MM (ví dụ 06:00)"
+              <input type="time" v-model="shiftFormState.start_time"
                 class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
             </div>
             <div class="flex flex-col gap-1.5">
               <span>Thời gian kết thúc*</span>
-              <input type="text" v-model="shiftFormState.end_time" placeholder="HH:MM (ví dụ 13:59)"
+              <input type="time" v-model="shiftFormState.end_time"
                 class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
             </div>
           </div>

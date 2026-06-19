@@ -2,14 +2,75 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
+import http from '@/services/http'
 
 const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
+const timeOffset = ref(0)
 
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
+
+const shifts = ref([])
+const activeShiftName = ref('2')
+
+function isTimeInShift(currentTime, startTimeStr, endTimeStr) {
+  if (!startTimeStr || !endTimeStr) return false
+  const [startH, startM] = startTimeStr.split(':').map(Number)
+  const [endH, endM] = endTimeStr.split(':').map(Number)
+  
+  const currentH = currentTime.getHours()
+  const currentM = currentTime.getMinutes()
+  const currentS = currentTime.getSeconds()
+  
+  const currentSeconds = currentH * 3600 + currentM * 60 + currentS
+  const startSeconds = startH * 3600 + startM * 60
+  const endSeconds = endH * 3600 + endM * 60 + 59
+  
+  if (startSeconds <= endSeconds) {
+    return currentSeconds >= startSeconds && currentSeconds <= endSeconds
+  } else {
+    return currentSeconds >= startSeconds || currentSeconds <= endSeconds
+  }
+}
+
+const fetchShifts = async () => {
+  try {
+    const res = await http.get('/shifts')
+    if (res.data && res.data.data) {
+      shifts.value = res.data.data
+      updateActiveShift()
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách ca làm việc:', err)
+  }
+}
+
+const fetchServerTime = async () => {
+  try {
+    const res = await http.get('/system-time')
+    if (res.data && res.data.time) {
+      const serverTime = new Date(res.data.time)
+      const clientTime = new Date()
+      timeOffset.value = serverTime.getTime() - clientTime.getTime()
+      currentDate.value = new Date(Date.now() + timeOffset.value)
+      updateActiveShift()
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải giờ hệ thống:', err)
+  }
+}
+
+const updateActiveShift = () => {
+  if (shifts.value.length === 0) return
+  const now = currentDate.value
+  const activeShift = shifts.value.find(s => isTimeInShift(now, s.start_time, s.end_time))
+  if (activeShift) {
+    activeShiftName.value = activeShift.name
+  }
+}
 const isDropdownOpen = ref(false)
 const dropdownRef = ref(null)
 const isDark = ref(false)
@@ -39,6 +100,8 @@ function toggleDarkMode() {
   }
 }
 
+let timeInterval = null
+
 onMounted(() => {
   window.addEventListener('click', closeDropdown)
   
@@ -50,10 +113,22 @@ onMounted(() => {
     isDark.value = false
     document.documentElement.classList.remove('dark')
   }
+  
+  fetchServerTime()
+  fetchShifts()
+  
+  // Cập nhật giờ và ca làm việc mỗi giây
+  timeInterval = setInterval(() => {
+    currentDate.value = new Date(Date.now() + timeOffset.value)
+    updateActiveShift()
+  }, 1000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
+  if (timeInterval) {
+    clearInterval(timeInterval)
+  }
 })
 
 const menuItems = computed(() => {
@@ -216,6 +291,7 @@ const formattedTimeVi = computed(() => {
     day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
+    second: '2-digit',
     hour12: true
   })
   
@@ -225,17 +301,15 @@ const formattedTimeVi = computed(() => {
   const year = parts.find(p => p.type === 'year').value
   const hour = parts.find(p => p.type === 'hour').value
   const minute = parts.find(p => p.type === 'minute').value
+  const second = parts.find(p => p.type === 'second').value
   const dayPeriod = parts.find(p => p.type === 'dayPeriod').value // "AM" or "PM"
   
   const dateStr = `${day}/${month}/${year}`
   const period = dayPeriod === 'PM' ? 'CH' : 'SA'
-  return `${dateStr} ${hour}:${minute} ${period}`
+  return `${dateStr} ${hour}:${minute}:${second} ${period}`
 })
 
-// Update time every minute
-setInterval(() => {
-  currentDate.value = new Date()
-}, 60000)
+
 
 function isActive(menuRoute) {
   const [path, query] = menuRoute.split('?')
@@ -432,7 +506,7 @@ function toggleSidebar() {
 
         <!-- Shift & Date Time in Header (Mockup style) -->
         <div class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-bold text-[11px] whitespace-nowrap px-0.5 shrink-0">
-          <span>Ca: 2</span>
+          <span>Ca: {{ activeShiftName }}</span>
           <span>{{ formattedTimeVi }}</span>
         </div>
 
