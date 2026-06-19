@@ -8,38 +8,48 @@ const roomStatistics = ref(false);
 const today = new Date();
 const dateRange = ref([today, today]);
 const manageRoomTableRows = ref([
-    "Tổng Phòng",
-    "Phòng Khóa Hư Hỏng",
-    "Phòng Khóa Dịch Vụ",
-    "Tổng Phòng Có Thể Bán",
-    "Đặt Phòng Đảm Bảo",
-    "Đặt Phòng Chưa Đảm Bảo",
-    "Đăng ký series",
-    "Allotment",
-    "Phòng Ở",
-    "Phòng Ở (Không Gồm Nội Bộ)",
-    "Phòng Ở (Không Gồm Nội Bộ, MP)",
-    "Phòng Miễn Phí",
-    "Phòng Nội Bộ",
-    "Công Suất Phòng",
-    "Công Suất (Không Gồm Nội Bộ)",
-    "Giá Phòng Trung Bình (Không Gồm Nội Bộ)",
-    "Giá Phòng Trung Bình (Không Gồm Nội Bộ, MP)",
-    "Khách Ở",
-    "Phòng Đến",
-    "Khách Đến",
-    "Phòng Đi",
-    "Khách Đi",
-    "Doanh Phu Tiền Phòng (Gồm Ăn Sáng)",
-    "Thêm Giường",
-    "Phòng Khách Đi-Đến Liên Tục",
-    "Phòng Nghỉ Sớm",
-    "Phòng Trả Sớm",
-    "Phòng Khách Không Đến",
-    "Phòng Hủy",
-    "Khách Đến Không Đặt Phòng Trước",
-    "Phòng Còn Trống",
-])
+  { title: "Tổng Phòng", style: "bold" },
+  { title: "Phòng Khóa Hư Hỏng", style: "normal" },
+  { title: "Phòng Khóa Dịch Vụ", style: "normal" },
+  { title: "Tổng Phòng Có Thể Bán", style: "bold" },
+  { title: "Đặt Phòng Đảm Bảo", style: "normal" },
+  { title: "Đặt Phòng Chưa Đảm Bảo", style: "normal" },
+  { title: "Đăng ký series", style: "normal" },
+  { title: "Allotment", style: "normal" },
+  { title: "Phòng Ở", style: "bold-red" },
+  { title: "Phòng Ở (Không Gồm Nội Bộ)", style: "normal" },
+  { title: "Phòng Ở (Không Gồm Nội Bộ, MP)", style: "normal" },
+  { title: "Phòng Miễn Phí", style: "bold" },
+  { title: "Phòng Nội Bộ", style: "bold" },
+  { title: "Công Suất Phòng", style: "normal" },
+  { title: "Công Suất (Không Gồm Nội Bộ)", style: "normal" },
+  { title: "Giá Phòng Trung Bình (Không Gồm Nội Bộ)", style: "normal" },
+  { title: "Giá Phòng Trung Bình (Không Gồm Nội Bộ, MP)", style: "normal" },
+  { title: "Khách Ở", style: "normal" },
+  { title: "Phòng Đến", style: "bold-red" },
+  { title: "Khách Đến", style: "normal" },
+  { title: "Phòng Đi", style: "bold-red" },
+  { title: "Khách Đi", style: "normal" },
+  { title: "Doanh Phu Tiền Phòng (Gồm Ăn Sáng)", style: "bold" },
+  { title: "Thêm Giường", style: "normal" },
+  { title: "Phòng Khách Đi-Đến Liên Tục", style: "normal" },
+  { title: "Phòng Nghỉ Sớm", style: "normal" },
+  { title: "Phòng Trả Sớm", style: "normal" },
+  { title: "Phòng Khách Không Đến", style: "normal" },
+  { title: "Phòng Hủy", style: "normal" },
+  { title: "Khách Đến Không Đặt Phòng Trước", style: "normal" },
+  { title: "Phòng Còn Trống", style: "bold-red" },
+]);
+
+//==================== APPLY STYLE FOR TABLE ROWS ====================//
+const tbody = document.querySelector("#manageRoomTable tbody");
+
+// Hàm xác định class dựa trên style
+const getRowClass = (style) => {
+  if (style === "bold") return "font-bold";
+  if (style === "bold-red") return "font-bold text-red-600";
+  return "";
+};
 </script>
 
 <template>
@@ -94,14 +104,17 @@ const manageRoomTableRows = ref([
           class="w-5 h-5 rounded-full bg-white flex items-center justify-center"
         >
           <svg
-            class="w-3 h-3 text-sky-400"
+            class="w-3 h-3 text-sky-500"
             fill="none"
             stroke="currentColor"
-            stroke-width="2"
+            stroke-width="2.5"
             viewBox="0 0 24 24"
           >
-            <circle cx="11" cy="11" r="6" />
-            <line x1="3" y1="21" x2="7.35" y2="16.65" />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3 21l5.197-5.197m0 0A7.5 7.5 0 1018.804 5.196a7.5 7.5 0 00-10.607 10.607z"
+            />
           </svg>
         </span>
         Xem
@@ -126,49 +139,37 @@ const manageRoomTableRows = ref([
     </div>
 
     <!-- MAIN CONTENT -->
-    <div class="overflow-x-auto">
-      <table class="w-full text-left border-collapse border border-gray-300">
-        <thead>
-          <tr class="bg-gray-100 border-b border-gray-300">
-            <th class="p-3 border-r border-gray-300"></th>
-            <th class="p-3 border-r border-gray-300 text-center">
-              T2<br />15/06
-            </th>
-            <th class="p-3 text-center">Tổng cộng</th>
-          </tr>
-        </thead>
-        <tbody class="text-sm">
-          <tr class="border-b border-gray-300 font-bold">
-            <td class="p-3 border-r border-gray-300">Tổng Phòng</td>
-            <td class="p-3 border-r border-gray-300 text-center">131</td>
-            <td class="p-3 text-center">131</td>
-          </tr>
-          <tr class="border-b border-gray-300">
-            <td class="p-3 border-r border-gray-300 pl-6">
-              Phòng Khóa Hư Hỏng
-            </td>
-            <td class="p-3 border-r border-gray-300 text-center">1</td>
-            <td class="p-3 text-center">1</td>
-          </tr>
-          <tr class="border-b border-gray-300">
-            <td class="p-3 border-r border-gray-300 pl-6">
-              Phòng Khóa Dịch Vụ
-            </td>
-            <td class="p-3 border-r border-gray-300 text-center">1</td>
-            <td class="p-3 text-center">1</td>
-          </tr>
-          <tr class="border-b border-gray-300 font-bold">
-            <td class="p-3 border-r border-gray-300">Tổng Phòng Có Thể Bán</td>
-            <td class="p-3 border-r border-gray-300 text-center">130</td>
-            <td class="p-3 text-center">130</td>
-          </tr>
-          <tr class="border-b border-gray-300 font-bold text-red-600">
-            <td class="p-3 border-r border-gray-300">Phòng Ở</td>
-            <td class="p-3 border-r border-gray-300 text-center">88</td>
-            <td class="p-3 text-center">88</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="h-9/10">
+      <div class="flex flex-col h-[500px] border border-gray-300">
+        <div class="flex bg-gray-200 border-b border-gray-300 font-bold">
+          <div class="p-3 w-1/2 border-r border-gray-300"></div>
+          <div class="p-3 w-1/4 border-r border-gray-300 text-center">
+            T2<br />15/06
+          </div>
+          <div class="p-3 w-1/4 text-center">Tổng cộng</div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto">
+          <div
+            v-for="(row, index) in manageRoomTableRows"
+            :key="index"
+            :class="[
+              'group flex border-b bg-white border-gray-300',
+              getRowClass(row.style),
+            ]"
+          >
+            <div class="p-3 w-1/2 border-r border-gray-300">
+              {{ row.title }}
+            </div>
+            <div class="p-3 w-1/4 border-r border-gray-300 text-center group-hover:bg-blue-50 transition-colors">
+              {{ row.value }}
+            </div>
+            <div class="p-3 w-1/4 text-center group-hover:bg-blue-50 transition-colors">
+              {{ row.value }}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
