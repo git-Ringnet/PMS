@@ -2,20 +2,146 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { fetchSystemBranches } from '@/services/company-service'
+import http from '@/services/http'
+import { t, currentLang } from '@/utils/i18n'
 
 const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
+const timeOffset = ref(0)
 
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
+
+const shifts = ref([])
+const activeShiftName = ref('2')
+
+function isTimeInShift(currentTime, startTimeStr, endTimeStr) {
+  if (!startTimeStr || !endTimeStr) return false
+  const [startH, startM] = startTimeStr.split(':').map(Number)
+  const [endH, endM] = endTimeStr.split(':').map(Number)
+  
+  const currentH = currentTime.getHours()
+  const currentM = currentTime.getMinutes()
+  const currentS = currentTime.getSeconds()
+  
+  const currentSeconds = currentH * 3600 + currentM * 60 + currentS
+  const startSeconds = startH * 3600 + startM * 60
+  const endSeconds = endH * 3600 + endM * 60 + 59
+  
+  if (startSeconds <= endSeconds) {
+    return currentSeconds >= startSeconds && currentSeconds <= endSeconds
+  } else {
+    return currentSeconds >= startSeconds || currentSeconds <= endSeconds
+  }
+}
+
+const fetchShifts = async () => {
+  try {
+    const res = await http.get('/shifts')
+    if (res.data && res.data.data) {
+      shifts.value = res.data.data
+      updateActiveShift()
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách ca làm việc:', err)
+  }
+}
+
+const fetchServerTime = async () => {
+  try {
+    const res = await http.get('/system-time')
+    if (res.data && res.data.time) {
+      const serverTime = new Date(res.data.time)
+      const clientTime = new Date()
+      timeOffset.value = serverTime.getTime() - clientTime.getTime()
+      currentDate.value = new Date(Date.now() + timeOffset.value)
+      updateActiveShift()
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải giờ hệ thống:', err)
+  }
+}
+
+const updateActiveShift = () => {
+  if (shifts.value.length === 0) return
+  const now = currentDate.value
+  const activeShift = shifts.value.find(s => isTimeInShift(now, s.start_time, s.end_time))
+  if (activeShift) {
+    activeShiftName.value = activeShift.name
+  }
+}
 const isDropdownOpen = ref(false)
 const dropdownRef = ref(null)
 const isDark = ref(false)
 
+// Branch selector state
+const selectedBranch = ref(null)
+const branchesList = ref([])
+const isBranchDropdownOpen = ref(false)
+const branchDropdownRef = ref(null)
+const isSwitchingBranch = ref(sessionStorage.getItem('switching_branch') === 'true')
+const switchingToName = ref(sessionStorage.getItem('switching_to_name') || '')
+
+// Language selector state
+const isLangDropdownOpen = ref(false)
+const langDropdownRef = ref(null)
+
+const loadBranches = async () => {
+  if (!authStore.token) return
+  try {
+    const res = await fetchSystemBranches()
+    branchesList.value = res.data.data || []
+    
+    // Khôi phục chi nhánh đã lưu từ localStorage hoặc lấy chi nhánh đầu tiên
+    const savedBranchId = localStorage.getItem('selected_branch_id')
+    if (savedBranchId && branchesList.value.some(b => b.id === Number(savedBranchId))) {
+      selectedBranch.value = branchesList.value.find(b => b.id === Number(savedBranchId))
+    } else if (branchesList.value.length > 0) {
+      const defaultBranch = branchesList.value.find(b => b.code === 'HKT1') || branchesList.value[0]
+      selectedBranch.value = defaultBranch
+      localStorage.setItem('selected_branch_id', defaultBranch.id)
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách chi nhánh:', err)
+  }
+}
+
+function handleSelectBranch(branch) {
+  selectedBranch.value = branch
+  localStorage.setItem('selected_branch_id', branch.id)
+  isBranchDropdownOpen.value = false
+  
+  sessionStorage.setItem('switching_branch', 'true')
+  sessionStorage.setItem('switching_to_name', branch.name)
+  isSwitchingBranch.value = true
+  
+  setTimeout(() => {
+    window.location.reload()
+  }, 100)
+}
+
+function handleSelectLang(lang) {
+  currentLang.value = lang
+  localStorage.setItem('pms_lang', lang)
+  isLangDropdownOpen.value = false
+  
+  document.documentElement.setAttribute('lang', lang)
+  
+  // Hiển thị màn hình chờ chuyển tiếp mượt mà khi đổi ngôn ngữ
+  sessionStorage.setItem('switching_branch', 'true')
+  sessionStorage.setItem('switching_to_name', lang === 'vi' ? 'Tiếng Việt' : 'English')
+  isSwitchingBranch.value = true
+  
+  setTimeout(() => {
+    window.location.reload()
+  }, 100)
+}
+
 async function handleLogout() {
-  if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
+  if (confirm(t('header.logoutConfirm'))) {
     isDropdownOpen.value = false
     await authStore.logout()
     router.push('/login')
@@ -25,6 +151,12 @@ async function handleLogout() {
 function closeDropdown(e) {
   if (isDropdownOpen.value && dropdownRef.value && !dropdownRef.value.contains(e.target)) {
     isDropdownOpen.value = false
+  }
+  if (isBranchDropdownOpen.value && branchDropdownRef.value && !branchDropdownRef.value.contains(e.target)) {
+    isBranchDropdownOpen.value = false
+  }
+  if (isLangDropdownOpen.value && langDropdownRef.value && !langDropdownRef.value.contains(e.target)) {
+    isLangDropdownOpen.value = false
   }
 }
 
@@ -39,8 +171,13 @@ function toggleDarkMode() {
   }
 }
 
+let timeInterval = null
+
 onMounted(() => {
   window.addEventListener('click', closeDropdown)
+  
+  // Thiết lập thuộc tính lang của HTML document
+  document.documentElement.setAttribute('lang', currentLang.value)
   
   const savedTheme = localStorage.getItem('theme')
   if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -50,90 +187,109 @@ onMounted(() => {
     isDark.value = false
     document.documentElement.classList.remove('dark')
   }
+  
+  fetchServerTime()
+  fetchShifts()
+  loadBranches().finally(() => {
+    setTimeout(() => {
+      isSwitchingBranch.value = false
+      sessionStorage.removeItem('switching_branch')
+      sessionStorage.removeItem('switching_to_name')
+    }, 450)
+  })
+  
+  // Cập nhật giờ và ca làm việc mỗi giây
+  timeInterval = setInterval(() => {
+    currentDate.value = new Date(Date.now() + timeOffset.value)
+    updateActiveShift()
+  }, 1000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
+  if (timeInterval) {
+    clearInterval(timeInterval)
+  }
 })
 
 const menuItems = computed(() => {
   if (route.path.startsWith('/frontdesk')) {
     //trang lễ tân frontdesk
     return [
-      { name: 'Giao phòng', route: '/frontdesk' },
-      { name: 'Kiểm tra phòng trống', route: '/frontdesk?tab=available' },
-      { name: 'Quản lý hóa đơn', route: '/frontdesk?tab=invoices' },
-      { name: 'Thông tin khách hàng', route: '/frontdesk?tab=customers' },
-      { name: 'Sang ngày', route: '/frontdesk?tab=day-close' },
-      { name: 'Báo cáo', route: '/reports' },
-      { name: 'Channel Manager', route: '/config' },
+      { name: t('menu.checkIn'), route: '/frontdesk' },
+      { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
+      { name: t('menu.invoiceManage'), route: '/frontdesk?tab=invoices' },
+      { name: t('menu.customerInfo'), route: '/frontdesk?tab=customers' },
+      { name: t('menu.dayClose'), route: '/frontdesk?tab=day-close' },
+      { name: t('menu.reports'), route: '/reports' },
+      { name: t('menu.channelManager'), route: '/config' },
     ]
   }
   //trang buồng phòng housekeeping
   if (route.path.startsWith('/housekeeping')) {
     return [
-      { name: 'Minibar', route: '/housekeeping?tab=minibar' },
-      { name: 'Giặt ủi', route: '/housekeeping?tab=laundry' },
-      { name: 'Hàng đền bù', route: '/housekeeping?tab=compensation' },
-      { name: 'Báo cáo', route: '/reports' },
+      { name: t('menu.minibar'), route: '/housekeeping?tab=minibar' },
+      { name: t('menu.laundry'), route: '/housekeeping?tab=laundry' },
+      { name: t('menu.compensation'), route: '/housekeeping?tab=compensation' },
+      { name: t('menu.reports'), route: '/reports' },
     ]
   }
   //trang báo cáo reports
   if (route.path.startsWith('/reports')) {
     return [
-      { name: 'Báo cáo doanh thu', route: '/reports?type=revenue' },
-      { name: 'Báo cáo thống kê', route: '/reports?type=stats' },
-      { name: 'Báo cáo hủy/xóa', route: '/reports?type=cancel' },
-      { name: 'Quản lý', route: '/reports?type=manage' },
+      { name: t('menu.revReport'), route: '/reports?type=revenue' },
+      { name: t('menu.statReport'), route: '/reports?type=stats' },
+      { name: t('menu.cancelReport'), route: '/reports?type=cancel' },
+      { name: t('menu.management'), route: '/reports?type=manage' },
     ]
   }
   // trang PMS chính
   if (route.path.startsWith('/config')) {
     return [
-      { name: 'Đặt phòng', route: '/reservation' },
-      { name: 'Lễ tân', route: '/frontdesk' },
-      { name: 'Buồng phòng', route: '/housekeeping' },
-      { name: 'Báo cáo quản lý', route: '/reports' },
-      { name: 'Cấu hình hệ thống', route: '/config' },
+      { name: t('menu.reservation'), route: '/reservation' },
+      { name: t('menu.frontdesk'), route: '/frontdesk' },
+      { name: t('menu.housekeeping'), route: '/housekeeping' },
+      { name: t('menu.mgtReports'), route: '/reports' },
+      { name: t('menu.sysConfig'), route: '/config' },
     ]
   }
   // trang đặt phòng
   return [
     {
-      name: 'Đăng ký',
+      name: t('menu.registration'),
       route: '/reservation',
       dropdown: [
-        { name: 'TẠO ĐĂNG KÝ', tab: 'create-res' },
-        { name: 'ALLOTMENT', tab: 'allotment' },
-        { name: 'CHI TIẾT ALLOTMENT', tab: 'allotment-detail' },
-        { name: 'BÁO CÁO PHÂN BỔ PHÒNG ALLOTMENT', tab: 'allotment-report' }
+        { name: t('menu.createReg'), tab: 'create-res' },
+        { name: t('menu.allotment'), tab: 'allotment' },
+        { name: t('menu.allotmentDetail'), tab: 'allotment-detail' },
+        { name: t('menu.allotmentReport'), tab: 'allotment-report' }
       ]
     },
     {
-      name: 'Kiểm tra phòng trống',
+      name: t('menu.checkVacancy'),
       route: '/reservation?tab=available',
       dropdown: [
-        { name: 'PHÒNG TRỐNG', tab: 'available' },
-        { name: 'KẾ HOẠCH PHÒNG', tab: 'room-plan' },
-        { name: 'QUẢN LÝ PHÒNG', tab: 'manage-rooms' },
-        { name: 'PHÒNG KHÓA', tab: 'lock-room' }
+        { name: t('menu.vacantRoom'), tab: 'available' },
+        { name: t('menu.roomPlan'), tab: 'room-plan' },
+        { name: t('menu.roomManage'), tab: 'manage-rooms' },
+        { name: t('menu.lockRoom'), tab: 'lock-room' }
       ]
     },
     {
-      name: 'Báo cáo',
+      name: t('menu.reports'),
       route: '/reservation?tab=reports',
       dropdown: [
-        { name: 'BÁO CÁO ĐĂNG KÝ', tab: 'report-reg', hasChevron: true },
-        { name: 'BÁO CÁO THỐNG KÊ', tab: 'report-stats', hasChevron: true },
-        { name: 'BÁO CÁO PHÒNG', tab: 'report-rooms', hasChevron: true },
-        { name: 'BÁO CÁO HỦY PHÒNG', tab: 'report-cancel', hasChevron: true }
+        { name: t('menu.regReport'), tab: 'report-reg', hasChevron: true },
+        { name: t('menu.statReport'), tab: 'report-stats', hasChevron: true },
+        { name: t('menu.roomReport'), tab: 'report-rooms', hasChevron: true },
+        { name: t('menu.cancelReportTitle'), tab: 'report-cancel', hasChevron: true }
       ]
     },
     {
-      name: 'Channel Manager',
+      name: t('menu.channelManager'),
       route: '/reservation?tab=channel-manager',
       dropdown: [
-        { name: 'BÁO CÁO ĐĂNG KÝ CHANNEL MANAGER', tab: 'channel-manager' }
+        { name: t('menu.channelManagerRegReport'), tab: 'channel-manager' }
       ]
     }
   ]
@@ -146,33 +302,33 @@ const subMenuItems = computed(() => {
   
   if (route.path.startsWith('/reservation')) {
     return [
-      { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
-      { name: 'Phòng Trống', icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
-      { name: 'Kế Hoạch Phòng', icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
-      { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
-      { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
-      { name: 'Khóa Phòng', icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
-      { name: 'D.S Công Việc', icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
-      { name: 'Công Ty', icon: 'building', tab: 'company', active: currentTab === 'company' },
-      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
-      { name: 'Tìm Kiếm Chung', icon: 'search', tab: 'search', active: currentTab === 'search' },
+      { name: t('submenu.roomMap'), icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
+      { name: t('submenu.vacantRooms'), icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
+      { name: t('submenu.roomPlan'), icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
+      { name: t('submenu.createReg'), icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
+      { name: t('submenu.roomManage'), icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
+      { name: t('submenu.lockRoom'), icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
+      { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
+      { name: t('submenu.company'), icon: 'building', tab: 'company', active: currentTab === 'company' },
+      { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
     ]
   }
   
   if (route.path.startsWith('/frontdesk')) {
     return [
-      { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
-      { name: 'Phòng Trống', icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
-      { name: 'Kế Hoạch Phòng', icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
-      { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
-      { name: 'Trả Phòng', icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
-      { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
-      { name: 'Tìm Kiếm Chung', icon: 'search', tab: 'search', active: currentTab === 'search' },
-      { name: 'Sang Ngày', icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
-      { name: 'D.S Công Việc', icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
-      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.roomMap'), icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
+      { name: t('submenu.vacantRooms'), icon: 'check-circle', tab: 'available', active: currentTab === 'available' },
+      { name: t('submenu.roomPlan'), icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
+      { name: t('submenu.createReg'), icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
+      { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
+      { name: t('submenu.roomManage'), icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
+      { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
+      { name: t('submenu.dayClose'), icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
+      { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
+      { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
     ]
   }
   
@@ -182,12 +338,12 @@ const subMenuItems = computed(() => {
   
   if (route.path.startsWith('/reports')) {
     return [
-      { name: 'Tổng Quan', icon: 'pie-chart', tab: 'overview', active: currentTab === 'overview' },
-      { name: 'Quản Lý Phòng', icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
-      { name: 'Tạo Đăng Ký', icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
-      { name: 'Trả Phòng', icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
-      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.overview'), icon: 'pie-chart', tab: 'overview', active: currentTab === 'overview' },
+      { name: t('submenu.roomManage'), icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
+      { name: t('submenu.createReg'), icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
+      { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
+      { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
     ]
   }
   
@@ -204,6 +360,7 @@ const formattedTimeVi = computed(() => {
     day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
+    second: '2-digit',
     hour12: true
   })
   
@@ -213,17 +370,17 @@ const formattedTimeVi = computed(() => {
   const year = parts.find(p => p.type === 'year').value
   const hour = parts.find(p => p.type === 'hour').value
   const minute = parts.find(p => p.type === 'minute').value
+  const second = parts.find(p => p.type === 'second').value
   const dayPeriod = parts.find(p => p.type === 'dayPeriod').value // "AM" or "PM"
   
   const dateStr = `${day}/${month}/${year}`
-  const period = dayPeriod === 'PM' ? 'CH' : 'SA'
-  return `${dateStr} ${hour}:${minute} ${period}`
+  const period = currentLang.value === 'vi'
+    ? (dayPeriod === 'PM' ? 'CH' : 'SA')
+    : dayPeriod
+  return `${dateStr} ${hour}:${minute}:${second} ${period}`
 })
 
-// Update time every minute
-setInterval(() => {
-  currentDate.value = new Date()
-}, 60000)
+
 
 function isActive(menuRoute) {
   const [path, query] = menuRoute.split('?')
@@ -268,11 +425,25 @@ function toggleSidebar() {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen overflow-hidden bg-slate-50">
+  <!-- Fullscreen Branch Transition Overlay -->
+  <transition name="fade">
+    <div v-if="isSwitchingBranch" class="fixed inset-0 bg-slate-50 dark:bg-black z-[99999] flex flex-col items-center justify-center">
+      <div class="loader">
+        <div class="inner one"></div>
+        <div class="inner two"></div>
+        <div class="inner three"></div>
+      </div>
+      <p class="text-xs font-bold text-slate-500 dark:text-slate-400 mt-20 animate-pulse">
+        {{ t('header.loadingBranch', { name: switchingToName }) }}
+      </p>
+    </div>
+  </transition>
+
+  <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
     <!-- Top Header Bar (Light Theme) -->
     <header 
-      class="grid grid-cols-[1fr_auto_1fr] items-center h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-colors duration-200"
-      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? 'bg-[#e0f2fe]' : 'bg-white'"
+      class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-colors duration-200 w-full max-w-full"
+      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? 'bg-[#97d5ff]' : 'bg-white'"
     >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start">
@@ -340,7 +511,7 @@ function toggleSidebar() {
         <button 
           @click="toggleDarkMode" 
           class="p-0.5 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center shrink-0"
-          title="Bật/Tắt Chế độ tối"
+          :title="t('header.toggleDark')"
         >
           <!-- Moon Icon (for Light Mode) -->
           <svg v-if="!isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -352,15 +523,39 @@ function toggleSidebar() {
           </svg>
         </button>
 
-        <!-- HKT 1 Dropdown -->
-        <div class="flex items-center gap-0.5 text-slate-700 hover:text-slate-900 cursor-pointer font-bold shrink-0 whitespace-nowrap">
-          <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-          <span class="text-[11.5px] leading-none">HKT 1</span>
-          <svg class="w-2.5 h-2.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+        <!-- Branch Dropdown -->
+        <div class="relative shrink-0" ref="branchDropdownRef">
+          <div 
+            @click="isBranchDropdownOpen = !isBranchDropdownOpen" 
+            class="flex items-center gap-0.5 text-slate-700 hover:text-slate-900 cursor-pointer font-bold shrink-0 whitespace-nowrap select-none"
+          >
+            <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            <span class="text-[11.5px] leading-none">{{ selectedBranch?.code || 'HKT 1' }}</span>
+            <svg class="w-2.5 h-2.5 text-slate-400 transition-transform duration-200" :class="isBranchDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+
+          <!-- Dropdown Options -->
+          <div 
+            v-if="isBranchDropdownOpen && branchesList.length > 0" 
+            class="absolute left-0 mt-2 w-52 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-[100] dark:bg-[#080808] dark:border-[#1c1c1c]"
+          >
+            <div 
+              v-for="branch in branchesList" 
+              :key="branch.id"
+              @click="handleSelectBranch(branch)"
+              class="px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center justify-between transition-colors font-semibold"
+              :class="selectedBranch?.id === branch.id ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
+            >
+              <span>{{ branch.name }} ({{ branch.code }})</span>
+              <svg v-if="selectedBranch?.id === branch.id" class="w-3.5 h-3.5 text-[#0ea5e9]" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
         </div>
 
         <!-- User Profile Dropdown -->
@@ -378,7 +573,7 @@ function toggleSidebar() {
             <svg v-else class="w-3 h-3 text-slate-500 shrink-0" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
             </svg>
-            <span class="leading-none">{{ currentUser?.name || 'Khách' }}</span>
+            <span class="leading-none">{{ currentUser?.name || t('header.guest') }}</span>
             <svg class="w-2.5 h-2.5 text-slate-400 transition-transform duration-200 shrink-0" :class="isDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
@@ -390,7 +585,7 @@ function toggleSidebar() {
             class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-[100]"
           >
             <div class="px-4 py-2 border-b border-slate-100 mb-1.5">
-              <p class="text-xs font-bold text-slate-800 truncate">{{ currentUser?.name || 'Chưa Đăng Nhập' }}</p>
+              <p class="text-xs font-bold text-slate-800 truncate">{{ currentUser?.name || t('header.notLoggedIn') }}</p>
               <p class="text-[10px] text-slate-500 truncate mt-0.5">{{ currentUser?.email || currentUser?.zalo_id || 'guest@pms.com' }}</p>
             </div>
 
@@ -401,7 +596,7 @@ function toggleSidebar() {
               <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
-              <span>Trang chủ Portal</span>
+              <span>{{ t('header.portalHome') }}</span>
             </button>
 
             <div class="border-t border-slate-100 my-1"></div>
@@ -413,22 +608,78 @@ function toggleSidebar() {
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
-              <span>Đăng xuất</span>
+              <span>{{ t('header.logout') }}</span>
             </button>
           </div>
         </div>
 
         <!-- Shift & Date Time in Header (Mockup style) -->
         <div class="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 font-bold text-[11px] whitespace-nowrap px-0.5 shrink-0">
-          <span>Ca: 2</span>
+          <span>{{ t('header.shift') }}: {{ activeShiftName }}</span>
           <span>{{ formattedTimeVi }}</span>
         </div>
 
-        <!-- Vietnamese Flag -->
-        <div class="w-4.5 h-3 bg-red-600 flex items-center justify-center rounded-xs shadow-xs relative overflow-hidden shrink-0 border border-red-700/10">
-          <svg class="w-1.5 h-1.5 text-yellow-400 fill-current" viewBox="0 0 24 24">
-            <path d="M12 .587l3.668 7.431 8.2 1.192-5.934 5.787 1.4 8.168L12 18.896l-7.334 3.857 1.4-8.168L.132 9.21l8.2-1.192L12 .587z"/>
-          </svg>
+        <!-- Language Selector Dropdown -->
+        <div class="relative shrink-0 flex items-center" ref="langDropdownRef">
+          <button 
+            @click="isLangDropdownOpen = !isLangDropdownOpen"
+            class="focus:outline-none flex items-center cursor-pointer bg-transparent border-none p-0 transition-transform duration-200 hover:scale-105 active:scale-95"
+            :title="t('header.selectLanguage')"
+          >
+            <!-- Việt Nam Flag -->
+            <svg v-if="currentLang === 'vi'" class="w-5 h-3.5 rounded-sm shadow-xs border border-red-700/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="30" height="20" fill="#DA251D"/>
+              <path d="M15 4L16.2361 8.23607H20.6762L17.0863 10.8427L18.3224 15.0788L14.7325 12.4722L11.1427 15.0788L12.3788 10.8427L8.78885 8.23607H13.229L15 4Z" fill="#FFFF00"/>
+            </svg>
+            <!-- UK Flag -->
+            <svg v-else class="w-5 h-3.5 rounded-sm shadow-xs border border-slate-300/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="30" height="20" fill="#012169"/>
+              <path d="M0 0L30 20M30 0L0 20" stroke="#FFFFFF" stroke-width="3"/>
+              <path d="M0 0L30 20M30 0L0 20" stroke="#C8102E" stroke-width="1.5"/>
+              <path d="M15 0V20M0 10H30" stroke="#FFFFFF" stroke-width="5"/>
+              <path d="M15 0V20M0 10H30" stroke="#C8102E" stroke-width="3"/>
+            </svg>
+          </button>
+
+          <!-- Dropdown Options -->
+          <div 
+            v-if="isLangDropdownOpen" 
+            class="absolute right-0 mt-2 top-full w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-[100] dark:bg-[#080808] dark:border-[#1c1c1c] overflow-hidden"
+          >
+            <!-- Tiếng Việt -->
+            <div 
+              @click="handleSelectLang('vi')"
+              class="px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center gap-2 transition-colors font-semibold"
+              :class="currentLang === 'vi' ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
+            >
+              <svg class="w-4 h-2.5 rounded-xs shrink-0 border border-red-700/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="30" height="20" fill="#DA251D"/>
+                <path d="M15 4L16.2361 8.23607H20.6762L17.0863 10.8427L18.3224 15.0788L14.7325 12.4722L11.1427 15.0788L12.3788 10.8427L8.78885 8.23607H13.229L15 4Z" fill="#FFFF00"/>
+              </svg>
+              <span>Tiếng Việt</span>
+              <svg v-if="currentLang === 'vi'" class="w-3 h-3 text-[#0ea5e9] ml-auto" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <!-- English -->
+            <div 
+              @click="handleSelectLang('en')"
+              class="px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center gap-2 transition-colors font-semibold"
+              :class="currentLang === 'en' ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
+            >
+              <svg class="w-4 h-2.5 rounded-xs shrink-0 border border-slate-300/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="30" height="20" fill="#012169"/>
+                <path d="M0 0L30 20M30 0L0 20" stroke="#FFFFFF" stroke-width="3"/>
+                <path d="M0 0L30 20M30 0L0 20" stroke="#C8102E" stroke-width="1.5"/>
+                <path d="M15 0V20M0 10H30" stroke="#FFFFFF" stroke-width="5"/>
+                <path d="M15 0V20M0 10H30" stroke="#C8102E" stroke-width="3"/>
+              </svg>
+              <span>English</span>
+              <svg v-if="currentLang === 'en'" class="w-3 h-3 text-[#0ea5e9] ml-auto" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -472,7 +723,7 @@ function toggleSidebar() {
 
         <!-- Notification Badge specifically for "D.S Công Việc" -->
         <span
-          v-if="item.name === 'D.S Công Việc'"
+          v-if="item.tab === 'shift-work'"
           class="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold border border-white"
         >
           2
@@ -481,7 +732,7 @@ function toggleSidebar() {
     </div>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-auto">
+    <main class="flex-1 min-h-0 min-w-0 overflow-hidden">
       <slot />
     </main>
   </div>
