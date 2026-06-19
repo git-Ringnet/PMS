@@ -9,16 +9,16 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   
   /* PMS Brand Colors */
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  --color-primary-50: #f0f8ff;
+  --color-primary-100: #e0f2ff;
+  --color-primary-200: #c7e8ff;
+  --color-primary-300: #97d5ff; /* RGB(151, 213, 255) */
+  --color-primary-400: #66c0ff;
+  --color-primary-500: #33abff;
+  --color-primary-600: #0096ff;
+  --color-primary-700: #0078cc;
+  --color-primary-800: #005b99;
+  --color-primary-900: #003d66;
   
   --color-accent-50: #fdf2f8;
   --color-accent-500: #ec4899;
@@ -77,7 +77,7 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f0f4f8;
+  background: #ffffff;
   color: #1e293b;
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
@@ -91,59 +91,72 @@ body {
 
 /* ===== Dark Mode Global Overrides ===== */
 html.dark body {
-  background-color: #0b0f19;
-  color: #e2e8f0;
+  background-color: #000000;
+  color: #f4f4f5;
 }
 
 /* Redefine Theme Variables for Dark Mode */
 html.dark {
-  --color-surface-50: #0b0f19;
-  --color-surface-100: #111827;
-  --color-surface-200: #1f2937;
-  --color-surface-300: #374151;
-  --color-surface-400: #4b5563;
-  --color-surface-500: #9ca3af;
-  --color-surface-600: #d1d5db;
-  --color-surface-700: #e5e7eb;
-  --color-surface-800: #f3f4f6;
+  --color-surface-50: #000000;
+  --color-surface-100: #000000;
+  --color-surface-200: #080808;
+  --color-surface-300: #121212;
+  --color-surface-400: #1c1c1c;
+  --color-surface-500: #71717a;
+  --color-surface-600: #a1a1aa;
+  --color-surface-700: #e4e4e7;
+  --color-surface-800: #f4f4f5;
   --color-surface-900: #ffffff;
 
-  --color-pms-blue-row: #1e293b;
-  --color-pms-blue-row-hover: #2d3748;
-  --color-pms-blue-row-border: #4a5568;
-  --color-pms-blue-light: #111827;
+  --color-pms-blue-row: #000000;
+  --color-pms-blue-row-hover: #080808;
+  --color-pms-blue-row-border: #121212;
+  --color-pms-blue-light: #000000;
 }
 
 /* Background elements mapping */
 html.dark .bg-white {
-  background-color: #111827 !important;
+  background-color: #000000 !important;
 }
 
 html.dark .bg-slate-50,
 html.dark .bg-gray-50,
 html.dark .bg-zinc-50,
 html.dark .bg-neutral-50 {
-  background-color: #0b0f19 !important;
+  background-color: #000000 !important;
 }
 
 html.dark .bg-slate-100,
 html.dark .bg-gray-100,
 html.dark .bg-zinc-100,
 html.dark .bg-neutral-100 {
-  background-color: #1f2937 !important;
+  background-color: #080808 !important;
+}
+
+html.dark .bg-slate-200,
+html.dark .bg-gray-200,
+html.dark .bg-zinc-200,
+html.dark .bg-neutral-200 {
+  background-color: #121212 !important;
+}
+
+html.dark .bg-slate-300,
+html.dark .bg-gray-300,
+html.dark .bg-zinc-300,
+html.dark .bg-neutral-300 {
+  background-color: #1c1c1c !important;
 }
 
 /* Light blue / Sky backgrounds mapping */
 html.dark .bg-sky-50,
 html.dark .bg-blue-50,
-html.dark .bg-sky-100,
-html.dark .bg-blue-100,
 html.dark .bg-pms-blue-light {
-  background-color: #1a2238 !important;
+  background-color: #080808 !important;
 }
 
-html.dark .bg-pms-blue-row {
-  background-color: #1e293b !important;
+html.dark .bg-sky-100,
+html.dark .bg-blue-100 {
+  background-color: #121212 !important;
 }
 
 /* Navbar / text color overrides */
@@ -181,7 +194,7 @@ html.dark .text-slate-500,
 html.dark .text-gray-500,
 html.dark .text-zinc-500,
 html.dark .text-neutral-500 {
-  color: #6b7280 !important;
+  color: #71717a !important;
 }
 
 /* Borders mapping */
@@ -197,15 +210,21 @@ html.dark .border-zinc-300,
 html.dark .border-neutral-200,
 html.dark .border-neutral-100,
 html.dark .border-neutral-300 {
-  border-color: #374151 !important;
+  border-color: #1c1c1c !important;
 }
 
 /* Hover states override */
-html.dark .hover\:bg-slate-100:hover {
-  background-color: #374151 !important;
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-gray-100:hover,
+html.dark .hover\:bg-zinc-100:hover,
+html.dark .hover\:bg-neutral-100:hover {
+  background-color: #121212 !important;
 }
-html.dark .hover\:bg-slate-200:hover {
-  background-color: #4b5563 !important;
+html.dark .hover\:bg-slate-200:hover,
+html.dark .hover\:bg-gray-200:hover,
+html.dark .hover\:bg-zinc-200:hover,
+html.dark .hover\:bg-neutral-200:hover {
+  background-color: #1c1c1c !important;
 }
 
 /* Dropdowns & Modals */
@@ -217,13 +236,13 @@ html.dark .shadow-lg {
 html.dark input,
 html.dark select,
 html.dark textarea {
-  background-color: #1f2937 !important;
+  background-color: #080808 !important;
   color: #ffffff !important;
-  border-color: #4b5563 !important;
+  border-color: #1c1c1c !important;
 }
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #6b7280 !important;
+  color: #71717a !important;
 }
 
 /* ===== Scrollbar Styling ===== */
@@ -271,14 +290,170 @@ html.dark textarea::placeholder {
   opacity: 0;
 }
 
-/* ===== Room Map Grid ===== */
+/* ===== Room Map Grid & Cards ===== */
 .room-card {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  cursor: pointer;
+  border-radius: 14px;
+  padding: 14px;
+  min-height: 110px;
+  width: 128px; /* w-32 */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  user-select: none;
+  border: 1px solid #f1f5f9;
+  background: #ffffff;
+  color: #334155;
+  box-shadow: 
+    0 1px 2px 0 rgba(0, 0, 0, 0.02),
+    0 2px 4px 0 rgba(0, 0, 0, 0.02),
+    0 4px 12px 0 rgba(148, 163, 184, 0.04); /* Thin, soft slate shadow */
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, box-shadow, border-color, background-color, opacity;
 }
 
-.room-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.15);
+.room-card:not(.occupied-room):hover {
+  transform: translateY(-4px) scale(1.025) !important; /* Gentle lift and scale */
+  z-index: 20;
+  border-color: #97d5ff; /* Brand color border */
+  box-shadow: 
+    0 8px 16px -4px rgba(151, 213, 255, 0.2),
+    0 2px 6px -2px rgba(151, 213, 255, 0.1) !important; /* Soft light blue shadow */
+}
+
+/* Occupied Rooms style */
+.room-card.occupied-room {
+  background: linear-gradient(135deg, #e0f2ff 0%, #97d5ff 100%);
+  border-color: #7ec0f3;
+  color: #1e293b;
+  box-shadow: 
+    0 2px 4px -1px rgba(151, 213, 255, 0.1),
+    0 4px 10px -2px rgba(151, 213, 255, 0.15);
+}
+
+.room-card.occupied-room:hover {
+  transform: translateY(-4px) scale(1.025) !important;
+  z-index: 20;
+  background: linear-gradient(135deg, #f0f8ff 0%, #7bc4ff 100%);
+  border-color: #33abff;
+  box-shadow: 
+    0 8px 16px -4px rgba(51, 171, 255, 0.25),
+    0 2px 6px -2px rgba(51, 171, 255, 0.15) !important;
+}
+
+/* --- Ripple Wave Physics on Siblings (Gentle & Subtle) --- */
+
+/* 1. Sibling immediately after hovered card (shifts right slightly) */
+.room-card:hover + .room-card {
+  transform: translateX(5px) scale(0.99) !important;
+  opacity: 0.97;
+  z-index: 15;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
+}
+
+/* 2. Sibling two steps after hovered card (shifts right barely visible) */
+.room-card:hover + .room-card + .room-card {
+  transform: translateX(2px) scale(0.995) !important;
+  opacity: 0.99;
+  z-index: 12;
+}
+
+/* 3. Sibling immediately before hovered card (shifts left slightly) */
+.room-card:has(+ .room-card:hover) {
+  transform: translateX(-5px) scale(0.99) !important;
+  opacity: 0.97;
+  z-index: 15;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
+}
+
+/* 4. Sibling two steps before hovered card (shifts left barely visible) */
+.room-card:has(+ .room-card + .room-card:hover) {
+  transform: translateX(-2px) scale(0.995) !important;
+  opacity: 0.99;
+  z-index: 12;
+}
+
+/* Floor Pill style */
+.floor-pill {
+  width: 96px; /* w-24 */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #e0f2ff 0%, #97d5ff 100%);
+  color: #003d66; /* blue-950 */
+  border-radius: 14px;
+  padding: 12px 8px;
+  font-weight: 900;
+  font-size: 12px;
+  user-select: none;
+  position: sticky;
+  left: 10px;
+  z-index: 10;
+  border: 1px solid #7ec0f3;
+  box-shadow: 
+    0 2px 4px -1px rgba(151, 213, 255, 0.1),
+    0 4px 8px -2px rgba(151, 213, 255, 0.15);
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, box-shadow, border-color, background-color;
+}
+
+.floor-pill:hover {
+  transform: translateY(-2px) scale(1.02);
+  border-color: #33abff;
+  background: linear-gradient(135deg, #f0f8ff 0%, #7bc4ff 100%);
+  box-shadow: 
+    0 6px 12px -2px rgba(51, 171, 255, 0.2),
+    0 2px 4px -1px rgba(51, 171, 255, 0.1);
+}
+
+/* Dark Mode Overrides for Cards & Pills (Softer glow) */
+html.dark .room-card {
+  background-color: #080808;
+  border-color: #1c1c1c;
+  color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .room-card:not(.occupied-room):hover {
+  border-color: #0096ff;
+  background-color: #0d0d0d;
+  box-shadow: 
+    0 8px 16px -4px rgba(0, 150, 255, 0.2),
+    0 0 10px rgba(0, 150, 255, 0.15) !important;
+}
+
+html.dark .room-card.occupied-room {
+  background: linear-gradient(135deg, #021526 0%, #003d66 100%);
+  border-color: #005b99;
+  color: #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .room-card.occupied-room:hover {
+  background: linear-gradient(135deg, #032544 0%, #005b99 100%);
+  border-color: #33abff;
+  box-shadow: 
+    0 8px 16px -4px rgba(51, 171, 255, 0.25),
+    0 0 12px rgba(51, 171, 255, 0.2) !important;
+}
+
+html.dark .floor-pill {
+  background: linear-gradient(135deg, #021526 0%, #003d66 100%);
+  border-color: #005b99;
+  color: #e2e8f0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+html.dark .floor-pill:hover {
+  background: linear-gradient(135deg, #032544 0%, #005b99 100%);
+  border-color: #33abff;
+  box-shadow: 
+    0 10px 15px -3px rgba(51, 171, 255, 0.25),
+    0 0 15px rgba(51, 171, 255, 0.2);
 }
 
 /* ===== Premium 3D Rotating Rings Loader ===== */
