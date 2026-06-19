@@ -29,11 +29,11 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    async login(email, password) {
+    async login(username, password) {
       try {
         this.loading = true
         this.error = null
-        const response = await http.post('/login', { email, password })
+        const response = await http.post('/login', { username, password })
         const { token, user } = response.data
         
         this.token = token

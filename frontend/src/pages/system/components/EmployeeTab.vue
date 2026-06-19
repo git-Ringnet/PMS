@@ -58,6 +58,7 @@ const emptyForm = () => ({
   employee_code: '',
   name: '',
   email: '',
+  username: '',
   password: '',
   job_title_code: '',
   job_title: '',
@@ -139,6 +140,7 @@ const handleJobChange = (val) => {
 const columns = ref([
   { id: 'employee_code', label: 'Mã NV', visible: true, sortable: true },
   { id: 'name', label: 'Tên Nhân Viên', visible: true, sortable: true },
+  { id: 'username', label: 'Username', visible: true, sortable: true },
   { id: 'signature_url', label: 'Chữ Ký', visible: true, sortable: false },
   { id: 'job_title', label: 'Vị Trí Công Việc', visible: true, sortable: true },
   { id: 'department', label: 'Bộ phận', visible: true, sortable: true },
@@ -187,6 +189,7 @@ const openEditModal = (item) => {
     employee_code: item.employee_code || '',
     name: item.name || '',
     email: item.email || '',
+    username: item.username || '',
     password: '', // blank password on edit
     job_title_code: item.job_title_code || '',
     job_title: item.job_title || '',
@@ -208,6 +211,10 @@ const openEditModal = (item) => {
 const saveItem = async () => {
   if (!form.value.name) {
     uiStore.showToast('Vui lòng nhập tên nhân viên', 'warning')
+    return
+  }
+  if (!form.value.username) {
+    uiStore.showToast('Vui lòng nhập tên đăng nhập (username)', 'warning')
     return
   }
   if (!form.value.email) {
@@ -514,6 +521,8 @@ const changePage = (page) => {
             <td v-show="isColumnVisible('employee_code')" class="p-2 border-r border-slate-200 text-slate-600 font-normal">{{ item.employee_code || '-' }}</td>
             <!-- Name -->
             <td v-show="isColumnVisible('name')" class="p-2 border-r border-slate-200 text-slate-700 font-bold">{{ item.name }}</td>
+            <!-- Username -->
+            <td v-show="isColumnVisible('username')" class="p-2 border-r border-slate-200 text-slate-600 font-semibold">{{ item.username || '-' }}</td>
             <!-- Signature -->
             <td v-show="isColumnVisible('signature_url')" class="p-1 border-r border-slate-200 text-center">
               <div class="w-8 h-8 border border-slate-200 rounded overflow-hidden mx-auto flex items-center justify-center bg-slate-50">
@@ -705,13 +714,25 @@ const changePage = (page) => {
               </div>
             </div>
 
+            <!-- Username -->
+            <div class="flex flex-col gap-1">
+              <label class="font-bold text-slate-700">Tên Đăng Nhập (Username) *</label>
+              <input 
+                v-model="form.username" 
+                type="text" 
+                placeholder="Nhập username..." 
+                class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold text-xs focus:outline-sky-500" 
+                :disabled="isEditMode"
+              />
+            </div>
+
             <!-- Email -->
             <div class="flex flex-col gap-1">
-              <label class="font-bold text-slate-700">Email</label>
+              <label class="font-bold text-slate-700">Email *</label>
               <input 
                 v-model="form.email" 
                 type="email" 
-                placeholder="Nhập email đăng nhập..." 
+                placeholder="Nhập email..." 
                 class="border border-slate-200 bg-slate-100 rounded-md p-1.5 font-semibold text-xs focus:outline-sky-500" 
                 :disabled="isEditMode"
               />
