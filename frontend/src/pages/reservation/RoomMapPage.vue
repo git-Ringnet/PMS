@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
+import { t } from '@/utils/i18n'
 import RoomDetailModal from '@/components/RoomDetailModal.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -116,7 +117,9 @@ function resetAllFilters() {
 
 // Show Warning toast for features under development
 function showDevelopmentToast(featureName) {
-  uiStore.showToast(`Tính năng "${featureName}" đang được phát triển!`, 'warning')
+  const isEn = t('roomMap.filterTitle') === 'Filters'
+  const msg = isEn ? `Feature "${featureName}" is under development!` : `Tính năng "${featureName}" đang được phát triển!`
+  uiStore.showToast(msg, 'warning')
 }
 
 // Logic for status dot on the top right
@@ -273,7 +276,9 @@ function showRoomInfo(room) {
 
 // Trigger warning toast for other options
 function triggerMenuItem(actionName) {
-  uiStore.showToast(`Tính năng "${actionName}" đang được phát triển!`, 'warning')
+  const isEn = t('roomMap.filterTitle') === 'Filters'
+  const msg = isEn ? `Feature "${actionName}" is under development!` : `Tính năng "${actionName}" đang được phát triển!`
+  uiStore.showToast(msg, 'warning')
   closeContextMenu()
 }
 
@@ -281,24 +286,31 @@ function triggerMenuItem(actionName) {
 async function changeRoomStatus(room, newStatus) {
   if (!room || newStatus === room.status) return
   
-  const statusLabel = statusItems.find(s => s.key === newStatus)?.label || newStatus
+  let statusKey = 'available'
+  if (newStatus === ROOM_STATUSES.DIRTY) statusKey = 'dirty'
+  else if (newStatus === ROOM_STATUSES.CHECKOUT) statusKey = 'cleaning'
+  else if (newStatus === ROOM_STATUSES.MAINTENANCE) statusKey = 'maintenance'
+  else if (newStatus === ROOM_STATUSES.RESERVED) statusKey = 'priorityRoom'
+  else if (newStatus === ROOM_STATUSES.OCCUPIED) statusKey = 'dnd'
+  
+  const statusLabel = t(`roomMap.${statusKey}`)
   
   // Close context menu BEFORE showing confirm dialog
   closeContextMenu()
   
   const confirmed = await uiStore.confirm({
-    title: 'Đổi trạng thái phòng',
-    message: `Bạn có chắc chắn muốn chuyển phòng ${room.room_number} sang trạng thái "${statusLabel}" không?`,
-    confirmText: 'Đồng ý',
-    cancelText: 'Hủy bỏ'
+    title: t('roomMap.changeStatusTitle'),
+    message: t('roomMap.changeStatusConfirm', { room: room.room_number, status: statusLabel }),
+    confirmText: t('roomMap.filterTitle') === 'Filters' ? 'Agree' : 'Đồng ý',
+    cancelText: t('roomMap.filterTitle') === 'Filters' ? 'Cancel' : 'Hủy bỏ'
   })
 
   if (confirmed) {
     try {
       await roomStore.updateRoomStatus(room.id, newStatus)
-      uiStore.showToast(`Đã đổi trạng thái phòng ${room.room_number} sang "${statusLabel}" thành công!`, 'success')
+      uiStore.showToast(t('roomMap.changeStatusSuccess', { room: room.room_number, status: statusLabel }), 'success')
     } catch (err) {
-      uiStore.showToast('Không thể cập nhật trạng thái phòng. Vui lòng thử lại!', 'error')
+      uiStore.showToast(t('roomMap.changeStatusError'), 'error')
     }
   }
 }
@@ -363,7 +375,7 @@ const uniqueFloors = computed(() => {
             </div>
             <div class="flex flex-col">
               <span class="text-[12px] font-black text-slate-700 leading-tight">{{ selectedDate }}</span>
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase mt-0.5">Hiện tại</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase mt-0.5">{{ t('roomMap.current') }}</span>
             </div>
           </div>
 
@@ -380,7 +392,7 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">Đã đến</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.arrivals') }}</span>
               <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ checkinStats }}</span>
             </div>
           </button>
@@ -398,7 +410,7 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">Đã đi</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.departures') }}</span>
               <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ checkoutStats }}</span>
             </div>
           </button>
@@ -416,7 +428,7 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">Đang ở</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.occupied') }}</span>
               <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ occupiedStats }}</span>
             </div>
           </button>
@@ -434,7 +446,7 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">Khóa OOO</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.lockOoo') }}</span>
               <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length }}</span>
             </div>
           </button>
@@ -450,7 +462,7 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">Khóa OOS</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.lockOos') }}</span>
               <span class="text-[13px] font-black text-slate-800 mt-0.5">0</span>
             </div>
           </div>
@@ -483,7 +495,7 @@ const uniqueFloors = computed(() => {
               </span>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">Công suất</span>
+              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.occupancy') }}</span>
               <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ occupancyRateStats }}</span>
             </div>
           </button>
@@ -494,7 +506,7 @@ const uniqueFloors = computed(() => {
           <button @click="isGridMode = false" 
             class="p-2 border rounded-lg cursor-pointer transition-colors"
             :class="!isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
-            title="Xem danh sách">
+            :title="t('roomMap.listView')">
             <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
             </svg>
@@ -502,7 +514,7 @@ const uniqueFloors = computed(() => {
           <button @click="isGridMode = true" 
             class="p-2 border rounded-lg cursor-pointer transition-colors"
             :class="isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
-            title="Xem sơ đồ lưới">
+            :title="t('roomMap.gridView')">
             <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
             </svg>
@@ -510,7 +522,7 @@ const uniqueFloors = computed(() => {
           <button @click="showFilters = !showFilters" 
             class="p-2 border rounded-lg cursor-pointer transition-colors"
             :class="showFilters ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
-            title="Ẩn/Hiện bộ lọc">
+            :title="t('roomMap.toggleFilter')">
             <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
             </svg>
@@ -563,23 +575,23 @@ const uniqueFloors = computed(() => {
           <div v-else-if="currentTab === 'allotment'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="flex justify-between items-center pb-4 border-b border-slate-100">
               <div>
-                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Cấu hình phân bổ phòng (Allotment)</h2>
-                <p class="text-xs text-slate-400 font-bold mt-1">Quản lý định mức bán phòng qua các đối tác OTA & lữ hành</p>
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.allotmentConfigTitle') }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentConfigDesc') }}</p>
               </div>
-              <button @click="showDevelopmentToast('Thêm Allotment')" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
-                + Tạo Allotment Mới
+              <button @click="showDevelopmentToast(t('roomMap.createNewAllotment'))" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
+                {{ t('roomMap.createNewAllotment') }}
               </button>
             </div>
             
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Đối tác OTA / Đại lý</th>
-                  <th class="p-2.5">Loại phòng phân bổ</th>
-                  <th class="p-2.5 text-center">Số lượng phân bổ</th>
-                  <th class="p-2.5 text-center">Đã bán</th>
-                  <th class="p-2.5 text-center">Còn trống</th>
-                  <th class="p-2.5 text-center">Trạng thái</th>
+                  <th class="p-2.5">{{ t('roomMap.partnerOta') }}</th>
+                  <th class="p-2.5">{{ t('roomMap.allotmentRoomType') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentQty') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentSold') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentRemaining') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentStatus') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -591,12 +603,12 @@ const uniqueFloors = computed(() => {
                 ]" :key="item.partner" class="hover:bg-slate-50 h-10">
                   <td class="p-2.5 text-slate-900 font-black">{{ item.partner }}</td>
                   <td class="p-2.5">{{ item.type }}</td>
-                  <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} phòng</td>
+                  <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} {{ t('roomMap.allotmentRoomsUnit') }}</td>
                   <td class="p-2.5 text-center text-sky-600">{{ item.sold }}</td>
                   <td class="p-2.5 text-center text-slate-500">{{ item.allocated - item.sold }}</td>
                   <td class="p-2.5 text-center">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Đang mở' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'">
-                      {{ item.status }}
+                      {{ item.status === 'Đang mở' ? t('roomMap.allotmentOpen') : t('roomMap.allotmentSoldOut') }}
                     </span>
                   </td>
                 </tr>
@@ -607,19 +619,19 @@ const uniqueFloors = computed(() => {
           <!-- Tab 9: CHI TIẾT ALLOTMENT Tab -->
           <div v-else-if="currentTab === 'allotment-detail'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Chi tiết phân bổ phòng (Allotment Details)</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">Danh sách phòng phân bổ cụ thể theo ngày</p>
+              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.allotmentDetailTitle') }}</h2>
+              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentDetailDesc') }}</p>
             </div>
 
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Mã Allotment</th>
-                  <th class="p-2.5">Đối tác</th>
-                  <th class="p-2.5 text-center">Số phòng</th>
-                  <th class="p-2.5 text-center">Ngày bắt đầu</th>
-                  <th class="p-2.5 text-center">Ngày kết thúc</th>
-                  <th class="p-2.5 text-center">Mở khoá</th>
+                  <th class="p-2.5">{{ t('roomMap.allotmentIdCode') }}</th>
+                  <th class="p-2.5">{{ t('roomMap.allotmentPartner') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentRoomNo') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentStartDate') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentEndDate') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentUnlock') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -635,7 +647,7 @@ const uniqueFloors = computed(() => {
                   <td class="p-2.5 text-center text-slate-500">{{ item.end }}</td>
                   <td class="p-2.5 text-center">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.active ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                      {{ item.active ? 'Đang mở' : 'Đã khóa' }}
+                      {{ item.active ? t('roomMap.allotmentOpen') : t('roomMap.allotmentLocked') }}
                     </span>
                   </td>
                 </tr>
@@ -646,15 +658,15 @@ const uniqueFloors = computed(() => {
           <!-- Tab 10: BÁO CÁO PHÂN BỔ PHÒNG ALLOTMENT -->
           <div v-else-if="currentTab === 'allotment-report'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-6 text-slate-800">
             <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo phân bổ phòng Allotment</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">Báo cáo hiệu suất bán hàng qua các kênh đại lý</p>
+              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.allotmentReportTitle') }}</h2>
+              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentReportDesc') }}</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div v-for="item in [
-                { title: 'Tổng số phòng Allotment', value: '45 phòng', color: 'text-blue-600', desc: 'Đã phân bổ trong tháng' },
-                { title: 'Phòng đã lấp đầy', value: '29 phòng', color: 'text-emerald-600', desc: 'Chiếm tỷ lệ lấp đầy 64.4%' },
-                { title: 'Doanh thu Allotment', value: '38.250.000 đ', color: 'text-indigo-600', desc: 'Thanh toán từ đại lý' }
+                { title: t('roomMap.allotmentTotalRooms'), value: '45 ' + t('roomMap.allotmentRoomsUnit'), color: 'text-blue-600', desc: t('roomMap.allotmentAllocatedMonth') },
+                { title: t('roomMap.allotmentOccupiedRooms'), value: '29 ' + t('roomMap.allotmentRoomsUnit'), color: 'text-emerald-600', desc: t('roomMap.allotmentOccupiedDesc') },
+                { title: t('roomMap.allotmentRevenueVal'), value: '38.250.000 đ', color: 'text-indigo-600', desc: t('roomMap.allotmentRevenueDesc') }
               ]" :key="item.title" class="bg-slate-50 rounded-xl p-4 border border-slate-100">
                 <span class="text-[11px] font-black uppercase text-slate-400 tracking-wide block mb-1">{{ item.title }}</span>
                 <span class="text-xl font-black block" :class="item.color">{{ item.value }}</span>
@@ -663,11 +675,11 @@ const uniqueFloors = computed(() => {
             </div>
 
             <div class="flex flex-col gap-3.5 mt-2">
-              <span class="text-xs font-black uppercase text-slate-600 tracking-wider">Hiệu suất bán theo kênh đại lý</span>
+              <span class="text-xs font-black uppercase text-slate-600 tracking-wider">{{ t('roomMap.allotmentChannelPerf') }}</span>
               <div v-for="k in [
-                { name: 'Agoda.com', percent: '80%', sold: '16/20 phòng' },
-                { name: 'Booking.com', percent: '60%', sold: '9/15 phòng' },
-                { name: 'Travel Concierge', percent: '40%', sold: '4/10 phòng' }
+                { name: 'Agoda.com', percent: '80%', sold: `16/20 ${t('roomMap.allotmentRoomsUnit')}` },
+                { name: 'Booking.com', percent: '60%', sold: `9/15 ${t('roomMap.allotmentRoomsUnit')}` },
+                { name: 'Travel Concierge', percent: '40%', sold: `4/10 ${t('roomMap.allotmentRoomsUnit')}` }
               ]" :key="k.name" class="flex flex-col gap-1.5">
                 <div class="flex justify-between text-xs font-bold text-slate-700">
                   <span>{{ k.name }}</span>
@@ -683,19 +695,19 @@ const uniqueFloors = computed(() => {
           <!-- Tab 11: BÁO CÁO ĐĂNG KÝ Tab -->
           <div v-else-if="currentTab === 'report-reg'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo đăng ký nhận phòng</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">Thông số thống kê các lượt đăng ký phòng mới</p>
+              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.regReportTitle') }}</h2>
+              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.regReportDesc') }}</p>
             </div>
 
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Mã đăng ký</th>
-                  <th class="p-2.5">Khách hàng</th>
-                  <th class="p-2.5 text-center">Số phòng</th>
-                  <th class="p-2.5 text-center">Nhận phòng</th>
-                  <th class="p-2.5 text-center">Trả phòng</th>
-                  <th class="p-2.5 text-center">Trạng thái</th>
+                  <th class="p-2.5">{{ t('roomMap.regIdCode') }}</th>
+                  <th class="p-2.5">{{ t('roomMap.regCustomer') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.regRoomNo') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.regCheckIn') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.regCheckOut') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.regStatus') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -711,7 +723,7 @@ const uniqueFloors = computed(() => {
                   <td class="p-2.5 text-center text-slate-500">{{ item.out }}</td>
                   <td class="p-2.5 text-center">
                     <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Hoạt động' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                      {{ item.status }}
+                      {{ item.status === 'Hoạt động' ? t('roomMap.regActive') : t('roomMap.regCompleted') }}
                     </span>
                   </td>
                 </tr>
@@ -722,29 +734,29 @@ const uniqueFloors = computed(() => {
           <!-- Tab 12: BÁO CÁO THỐNG KÊ Tab -->
           <div v-else-if="currentTab === 'report-stats'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo thống kê hoạt động phòng</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">Thống kê công suất phòng và các chỉ số vận hành</p>
+              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.statReportTitle') }}</h2>
+              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.statReportDesc') }}</p>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
               <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">Công suất sử dụng trung bình</span>
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">{{ t('roomMap.statAverageOccupancy') }}</span>
                 <span class="text-3xl font-black text-blue-600 tracking-tight mt-1">72.8%</span>
               </div>
               <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">Thời gian lưu trú trung bình</span>
-                <span class="text-3xl font-black text-emerald-600 tracking-tight mt-1">2.4 ngày</span>
+                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">{{ t('roomMap.statAverageStay') }}</span>
+                <span class="text-3xl font-black text-emerald-600 tracking-tight mt-1">2.4 {{ t('roomMap.statDaysUnit') }}</span>
               </div>
             </div>
 
             <table class="w-full text-left border-collapse text-xs mt-2">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Phân loại phòng</th>
-                  <th class="p-2.5 text-center">Tổng số phòng</th>
-                  <th class="p-2.5 text-center">Phòng đang ở</th>
-                  <th class="p-2.5 text-center">Phòng sửa chữa</th>
-                  <th class="p-2.5 text-center">Hiệu suất</th>
+                  <th class="p-2.5">{{ t('roomMap.statRoomCategory') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.statTotalRooms') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.statOccupiedRooms') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.statRepairRooms') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.statEfficiency') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -766,30 +778,30 @@ const uniqueFloors = computed(() => {
           <!-- Tab 13: BÁO CÁO PHÒNG Tab -->
           <div v-else-if="currentTab === 'report-rooms'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo hiện trạng phòng</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">Thông tin chi tiết về số lượng phòng sạch/dơ, sửa chữa</p>
+              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.roomsReportTitle') }}</h2>
+              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.roomsReportDesc') }}</p>
             </div>
 
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Trạng thái phòng</th>
-                  <th class="p-2.5 text-center">Số lượng</th>
-                  <th class="p-2.5 text-center">Tỷ lệ %</th>
-                  <th class="p-2.5">Ghi chú vận hành</th>
+                  <th class="p-2.5">{{ t('roomMap.roomsReportStatus') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.roomsReportQty') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.roomsReportPct') }}</th>
+                  <th class="p-2.5">{{ t('roomMap.roomsReportNotes') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
                 <tr v-for="item in [
-                  { status: 'Phòng Sạch Sẵn Sàng (Clean Vacant)', count: 42, pct: '39.3%', desc: 'Sẵn sàng tiếp đón khách mới' },
-                  { status: 'Phòng Có Khách Đang Ở (Occupied)', count: 45, pct: '42.1%', desc: 'Khách lưu trú bình thường' },
-                  { status: 'Phòng Dơ Chưa Dọn (Dirty Vacant)', count: 15, pct: '14.0%', desc: 'Cần dọn dẹp khẩn cấp' },
-                  { status: 'Phòng Đang Bảo Trì (Maintenance)', count: 5, pct: '4.6%', desc: 'Khóa sửa chữa thiết bị kỹ thuật' }
-                ]" :key="item.status" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black">{{ item.status }}</td>
-                  <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} phòng</td>
+                  { key: 'roomsCleanVacant', count: 42, pct: '39.3%' },
+                  { key: 'roomsOccupied', count: 45, pct: '42.1%' },
+                  { key: 'roomsDirtyVacant', count: 15, pct: '14.0%' },
+                  { key: 'roomsMaintenance', count: 5, pct: '4.6%' }
+                ]" :key="item.key" class="hover:bg-slate-50 h-10">
+                  <td class="p-2.5 text-slate-900 font-black">{{ t('roomMap.' + item.key) }}</td>
+                  <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} {{ t('roomMap.allotmentRoomsUnit') }}</td>
                   <td class="p-2.5 text-center text-sky-600">{{ item.pct }}</td>
-                  <td class="p-2.5 text-slate-500 font-medium">{{ item.desc }}</td>
+                  <td class="p-2.5 text-slate-500 font-medium">{{ t('roomMap.' + item.key + 'Desc') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -798,31 +810,31 @@ const uniqueFloors = computed(() => {
           <!-- Tab 14: BÁO CÁO HỦY PHÒNG Tab -->
           <div v-else-if="currentTab === 'report-cancel'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo hủy phòng đặt</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">Danh sách các booking bị hủy hoặc xóa giao dịch</p>
+              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.cancelReportTitle') }}</h2>
+              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.cancelReportDesc') }}</p>
             </div>
 
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Mã hủy</th>
-                  <th class="p-2.5">Tên khách hàng</th>
-                  <th class="p-2.5 text-center">Ngày hủy</th>
-                  <th class="p-2.5 text-right">Giá trị booking</th>
-                  <th class="p-2.5">Lý do hủy phòng</th>
+                  <th class="p-2.5">{{ t('roomMap.cancelIdCode') }}</th>
+                  <th class="p-2.5">{{ t('roomMap.cancelGuestName') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.cancelDate') }}</th>
+                  <th class="p-2.5 text-right">{{ t('roomMap.cancelValue') }}</th>
+                  <th class="p-2.5">{{ t('roomMap.cancelReason') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
                 <tr v-for="item in [
-                  { id: 'CN-201', guest: 'Mr. David Lee', date: '08-06-2026', val: '2.500.000', reason: 'Thay đổi kế hoạch du lịch cá nhân' },
-                  { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reason: 'Đặt nhầm ngày, đặt lại booking khác' },
-                  { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reason: 'Lý do gia đình đột xuất' }
+                  { id: 'CN-201', guest: 'Mr. David Lee', date: '08-06-2026', val: '2.500.000', reasonKey: 'cancelReason1' },
+                  { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reasonKey: 'cancelReason2' },
+                  { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reasonKey: 'cancelReason3' }
                 ]" :key="item.id" class="hover:bg-slate-50 h-10">
                   <td class="p-2.5 text-rose-600 font-black text-sm">{{ item.id }}</td>
                   <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
                   <td class="p-2.5 text-center text-slate-500">{{ item.date }}</td>
                   <td class="p-2.5 text-right text-slate-800 font-black">{{ item.val }} đ</td>
-                  <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ item.reason }}</td>
+                  <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ t('roomMap.' + item.reasonKey) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -832,37 +844,37 @@ const uniqueFloors = computed(() => {
           <div v-else-if="currentTab === 'channel-manager'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="flex justify-between items-center pb-4 border-b border-slate-100">
               <div>
-                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">Báo cáo đăng ký Channel Manager</h2>
-                <p class="text-xs text-slate-400 font-bold mt-1">Đồng bộ giá phòng và số lượng phòng trống lên các OTA</p>
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.channelManagerTitle') }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.channelManagerDesc') }}</p>
               </div>
-              <button @click="showDevelopmentToast('Đồng bộ OTA')" class="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
-                Đồng bộ ngay
+              <button @click="showDevelopmentToast(t('roomMap.channelManagerSyncNow'))" class="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
+                {{ t('roomMap.channelManagerSyncNow') }}
               </button>
             </div>
 
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">Kênh OTA liên kết</th>
-                  <th class="p-2.5 text-center">Số lượng phòng khả dụng</th>
-                  <th class="p-2.5 text-right">Giá phòng đang đồng bộ</th>
-                  <th class="p-2.5 text-center">Đồng bộ cuối</th>
-                  <th class="p-2.5 text-center">Trạng thái kết nối</th>
+                  <th class="p-2.5">{{ t('roomMap.channelManagerOtaLink') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.channelManagerAvailRooms') }}</th>
+                  <th class="p-2.5 text-right">{{ t('roomMap.channelManagerSyncRates') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.channelManagerLastSync') }}</th>
+                  <th class="p-2.5 text-center">{{ t('roomMap.channelManagerConnStatus') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
                 <tr v-for="item in [
-                  { channel: 'Agoda API Connection', rooms: 15, rate: '650.000 đ', time: '10 phút trước', status: 'Hoạt động' },
-                  { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', time: '5 phút trước', status: 'Hoạt động' },
-                  { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', time: '1 giờ trước', status: 'Đang kết nối lại' }
+                  { channel: 'Agoda API Connection', rooms: 15, rate: '650.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 10, status: 'active' },
+                  { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 5, status: 'active' },
+                  { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', timeKey: 'channelManagerHourAgo', timeVal: 1, status: 'reconnecting' }
                 ]" :key="item.channel" class="hover:bg-slate-50 h-10">
                   <td class="p-2.5 text-slate-900 font-black">{{ item.channel }}</td>
-                  <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} phòng</td>
+                  <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} {{ t('roomMap.allotmentRoomsUnit') }}</td>
                   <td class="p-2.5 text-right text-emerald-600 font-black">{{ item.rate }}</td>
-                  <td class="p-2.5 text-center text-slate-400">{{ item.time }}</td>
+                  <td class="p-2.5 text-center text-slate-400">{{ t('roomMap.' + item.timeKey, { n: item.timeVal }) }}</td>
                   <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Hoạt động' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
-                      {{ item.status }}
+                    <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
+                      {{ item.status === 'active' ? t('roomMap.regActive') : t('roomMap.channelManagerReconnecting') }}
                     </span>
                   </td>
                 </tr>
@@ -905,8 +917,8 @@ const uniqueFloors = computed(() => {
               >
                 <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
                 <div class="floor-pill cursor-pointer">
-                  <span>Tầng {{ floor }}</span>
-                  <span class="text-[10px] opacity-80 font-bold mt-1">({{ roomStore.roomsByFloor[floor]?.length || 0 }} phòng)</span>
+                  <span>{{ t('roomMap.floor', { floor }) }}</span>
+                  <span class="text-[10px] opacity-80 font-bold mt-1">{{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}</span>
                 </div>
 
                 <!-- Rooms horizontal flex container inside this floor -->
@@ -1011,22 +1023,22 @@ const uniqueFloors = computed(() => {
               <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1400px]">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none whitespace-nowrap">
-                    <th class="p-2 border-r border-slate-200 text-center w-[60px]">TTDK</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">Nhận phòng trễ</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[100px] leading-tight text-[10px]">Chuyển phòng kế hoạch</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">TT Phòng</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">Thêm giường</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[80px] leading-tight text-[10px]">Yêu cầu DB</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px]">Loại phòng</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">Dạng phòng</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[75px]">Phòng</th>
-                    <th class="p-2 border-r border-slate-200 w-[180px]">Tên khách</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[75px]">Mã DK</th>
-                    <th class="p-2 border-r border-slate-200 w-[240px]">Tên đăng ký</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">Ngày đến</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">Ngày đi</th>
-                    <th class="p-2 border-r border-slate-200 w-[200px]">Công ty</th>
-                    <th class="p-2 text-center w-[60px]">Tầng</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[60px]">{{ t('roomMap.status') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.lateIn') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[100px] leading-tight text-[10px]">{{ t('roomMap.planMove') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.roomStatus') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.extraBed') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[80px] leading-tight text-[10px]">{{ t('roomMap.splReq') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[85px]">{{ t('roomMap.roomType') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.roomShape') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[75px]">{{ t('roomMap.roomNum') }}</th>
+                    <th class="p-2 border-r border-slate-200 w-[180px]">{{ t('roomMap.guestName') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[75px]">{{ t('roomMap.regId') }}</th>
+                    <th class="p-2 border-r border-slate-200 w-[240px]">{{ t('roomMap.regName') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.arrivalDate') }}</th>
+                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.departureDate') }}</th>
+                    <th class="p-2 border-r border-slate-200 w-[200px]">{{ t('roomMap.company') }}</th>
+                    <th class="p-2 text-center w-[60px]">{{ t('roomMap.floorHeader') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1156,12 +1168,12 @@ const uniqueFloors = computed(() => {
         >
           <aside class="w-80 bg-white p-5 flex flex-col gap-4 overflow-y-auto h-full select-none">
             <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">Bộ lọc</h3>
+              <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">{{ t('roomMap.filterTitle') }}</h3>
               <div class="flex items-center gap-2.5">
                 <button @click="resetAllFilters" class="text-xs text-blue-500 font-bold hover:underline bg-transparent border-none cursor-pointer">
-                  Xóa bộ lọc
+                  {{ t('roomMap.clearFilter') }}
                 </button>
-                <button @click="showFilters = false" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors" title="Đóng">
+                <button @click="showFilters = false" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors" :title="t('roomMap.all') === 'All' ? 'Close' : 'Đóng'">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1172,58 +1184,58 @@ const uniqueFloors = computed(() => {
             <div class="flex flex-col gap-3.5 text-xs font-bold text-slate-600">
               <!-- Ngày filter -->
               <div class="flex flex-col gap-1.5">
-                <span>Ngày</span>
+                <span>{{ t('roomMap.date') }}</span>
                 <input type="date" v-model="rawDate" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] font-bold text-slate-700 bg-white" />
               </div>
 
               <!-- Tầng filter -->
               <div class="flex flex-col gap-1.5">
-                <span>Tầng</span>
+                <span>{{ t('roomMap.floorLabel') }}</span>
                 <select v-model="roomStore.filters.floor" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] font-bold text-slate-700 bg-white">
-                  <option :value="null">Tất cả</option>
-                  <option v-for="floor in uniqueFloors" :key="floor" :value="floor">Tầng {{ floor }}</option>
+                  <option :value="null">{{ t('roomMap.all') }}</option>
+                  <option v-for="floor in uniqueFloors" :key="floor" :value="floor">{{ t('roomMap.floor', { floor }) }}</option>
                 </select>
               </div>
 
               <!-- Loại phòng filter -->
               <div class="flex flex-col gap-1.5">
-                <span>Loại phòng</span>
+                <span>{{ t('roomMap.roomTypeLabel') }}</span>
                 <select v-model="roomStore.filters.roomType" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] font-bold text-slate-700 bg-white">
-                  <option :value="null">Tất cả</option>
+                  <option :value="null">{{ t('roomMap.all') }}</option>
                   <option v-for="type in uniqueRoomTypes" :key="type" :value="type">{{ type }}</option>
                 </select>
               </div>
 
               <!-- Trạng thái lưu trú checkboxes -->
               <div class="flex flex-col gap-2 pt-2">
-                <span>Trạng thái lưu trú</span>
+                <span>{{ t('roomMap.statusLabel') }}</span>
                 <div class="flex flex-col gap-2">
                   <label v-for="st in [
-                    { key: ROOM_STATUSES.AVAILABLE, label: 'Phòng trống' },
-                    { key: ROOM_STATUSES.OCCUPIED, label: 'Phòng có khách ở' },
-                    { key: ROOM_STATUSES.RESERVED, label: 'Phòng đến' },
-                    { key: ROOM_STATUSES.CHECKOUT, label: 'Phòng đi' },
-                    { key: ROOM_STATUSES.MAINTENANCE, label: 'Phòng khóa (OOO)' }
+                    { key: ROOM_STATUSES.AVAILABLE, labelKey: 'filterVacant' },
+                    { key: ROOM_STATUSES.OCCUPIED, labelKey: 'filterOccupied' },
+                    { key: ROOM_STATUSES.RESERVED, labelKey: 'filterArrival' },
+                    { key: ROOM_STATUSES.CHECKOUT, labelKey: 'filterDeparture' },
+                    { key: ROOM_STATUSES.MAINTENANCE, labelKey: 'filterLocked' }
                   ]" :key="st.key" class="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
                     <input type="checkbox" :checked="roomStore.filters.status === st.key" 
                       @change="toggleStatusFilter(st.key)"
                       class="rounded border-slate-300 text-sky-600 focus:ring-[#97d5ff] h-4.5 w-4.5" />
-                    <span>{{ st.label }}</span>
+                    <span>{{ t('roomMap.' + st.labelKey) }}</span>
                   </label>
                 </div>
               </div>
 
               <!-- Trạng thái buồng phòng -->
               <div class="flex flex-col gap-1.5 pt-2">
-                <span>Trạng thái buồng phòng</span>
+                <span>{{ t('roomMap.housekeepingStatus') }}</span>
                 <select class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white cursor-not-allowed font-bold text-slate-400" disabled>
-                  <option value="all">Tất cả</option>
+                  <option value="all">{{ t('roomMap.all') }}</option>
                 </select>
               </div>
             </div>
 
             <button @click="resetAllFilters" class="mt-auto w-full py-3 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer">
-              Áp dụng bộ lọc
+              {{ t('roomMap.applyFilters') }}
             </button>
           </aside>
         </div>
@@ -1255,7 +1267,7 @@ const uniqueFloors = computed(() => {
             <line x1="12" y1="16" x2="12" y2="12" />
             <line x1="12" y1="8" x2="12.01" y2="8" />
           </svg>
-          <span>Thông tin</span>
+          <span>{{ t('roomMap.info') }}</span>
         </button>
 
         <!-- Đăng ký -->
@@ -1269,7 +1281,7 @@ const uniqueFloors = computed(() => {
             <line x1="19" y1="8" x2="19" y2="14" />
             <line x1="16" y1="11" x2="22" y2="11" />
           </svg>
-          <span>Đăng ký</span>
+          <span>{{ t('roomMap.registration') }}</span>
         </button>
 
         <!-- Hóa đơn -->
@@ -1283,7 +1295,7 @@ const uniqueFloors = computed(() => {
             <line x1="16" y1="13" x2="8" y2="13" />
             <line x1="16" y1="17" x2="8" y2="17" />
           </svg>
-          <span>Hóa đơn</span>
+          <span>{{ t('roomMap.invoice') }}</span>
         </button>
 
         <!-- Nhóm hóa đơn -->
@@ -1296,7 +1308,7 @@ const uniqueFloors = computed(() => {
             <path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5" />
             <path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6" />
           </svg>
-          <span>Nhóm hóa đơn</span>
+          <span>{{ t('roomMap.groupInvoice') }}</span>
         </button>
 
         <div class="h-px bg-slate-300 my-1"></div>
@@ -1309,7 +1321,7 @@ const uniqueFloors = computed(() => {
           <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 2.1a9 9 0 0 0-9 0L5 4M3 9V4h5M7 21.9a9 9 0 0 0 9 0l3-2.1M21 15v5h-5" />
           </svg>
-          <span>Chuyển Phòng</span>
+          <span>{{ t('roomMap.roomMove') }}</span>
         </button>
 
         <!-- Thông báo -->
@@ -1321,7 +1333,7 @@ const uniqueFloors = computed(() => {
             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
           </svg>
-          <span>Thông báo</span>
+          <span>{{ t('roomMap.notifications') }}</span>
         </button>
 
         <!-- In phiếu ăn sáng -->
@@ -1336,7 +1348,7 @@ const uniqueFloors = computed(() => {
             <line x1="10" y1="2" x2="10" y2="4" />
             <line x1="14" y1="2" x2="14" y2="4" />
           </svg>
-          <span>In phiếu ăn sáng</span>
+          <span>{{ t('roomMap.printBreakfast') }}</span>
         </button>
 
         <!-- In mẫu đăng ký -->
@@ -1349,7 +1361,7 @@ const uniqueFloors = computed(() => {
             <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
             <rect x="6" y="14" width="12" height="8" />
           </svg>
-          <span>In mẫu đăng ký</span>
+          <span>{{ t('roomMap.printRegForm') }}</span>
         </button>
 
         <!-- Chuyển tình trạng phòng (Submenu Trigger) -->
@@ -1361,7 +1373,7 @@ const uniqueFloors = computed(() => {
               <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
               </svg>
-              <span>Chuyển tình trạng phòng</span>
+              <span>{{ t('roomMap.changeRoomStatus') }}</span>
             </div>
             <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6" />
@@ -1381,7 +1393,7 @@ const uniqueFloors = computed(() => {
               <svg class="w-5 h-5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M2 12l5.25 5 2.625-3M8 12l5.25 5L22 7" />
               </svg>
-              <span>Sẵn sàng</span>
+              <span>{{ t('roomMap.available') }}</span>
             </button>
 
             <!-- Phòng bẩn -->
@@ -1393,7 +1405,7 @@ const uniqueFloors = computed(() => {
                 <path d="M19 19L5 5M12 12l2.5-2.5m1.5-1.5l1.5-1.5M7.5 7.5L5 5" />
                 <path d="M5.5 19.5c.6.6 1.4 1 2.3 1H10l9-9c1-1 1-2.6 0-3.5l-1.5-1.5c-1-1-2.6-1-3.5 0l-9 9v2.2c0 .9.4 1.7 1 2.3Z" />
               </svg>
-              <span>Phòng bẩn</span>
+              <span>{{ t('roomMap.dirty') }}</span>
             </button>
 
             <!-- Lau dọn -->
@@ -1404,7 +1416,7 @@ const uniqueFloors = computed(() => {
               <svg class="w-5 h-5 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
               </svg>
-              <span>Lau dọn</span>
+              <span>{{ t('roomMap.cleaning') }}</span>
             </button>
 
             <!-- Dịch vụ dọn phòng -->
@@ -1419,7 +1431,7 @@ const uniqueFloors = computed(() => {
                 <path d="M17 6v15M15 21h4" />
                 <rect x="3" y="16" width="3" height="4" rx="0.5" />
               </svg>
-              <span>Dịch vụ dọn phòng</span>
+              <span>{{ t('roomMap.maintenance') }}</span>
             </button>
 
             <!-- Phòng ưu tiên -->
@@ -1431,7 +1443,7 @@ const uniqueFloors = computed(() => {
                 <line x1="12" y1="17" x2="12" y2="22" />
                 <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.56A2 2 0 0 1 15 9.2V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4.2a2 2 0 0 1-.78 1.24l-2.78 3.56a2 2 0 0 0-.44 1.24V17z" />
               </svg>
-              <span>Phòng ưu tiên</span>
+              <span>{{ t('roomMap.priorityRoom') }}</span>
             </button>
 
             <!-- Phòng không làm phiền -->
@@ -1443,7 +1455,7 @@ const uniqueFloors = computed(() => {
                 <circle cx="12" cy="12" r="10" />
                 <line x1="8" y1="12" x2="16" y2="12" />
               </svg>
-              <span>Phòng không làm phiền</span>
+              <span>{{ t('roomMap.dnd') }}</span>
             </button>
           </div>
         </div>

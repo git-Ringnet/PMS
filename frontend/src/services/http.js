@@ -16,6 +16,12 @@ http.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    
+    // Đính kèm ngôn ngữ hiện tại của người dùng vào header
+    const lang = localStorage.getItem('pms_lang') || 'vi'
+    config.headers['Accept-Language'] = lang
+    config.headers['X-Language'] = lang
+    
     return config
   },
   (error) => Promise.reject(error)
