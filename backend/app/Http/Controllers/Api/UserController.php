@@ -16,12 +16,13 @@ class UserController extends Controller
     {
         $query = User::query();
 
-        // Search name, email, employee_code
+        // Search name, email, employee_code, username
         if ($request->has('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhere('username', 'like', "%{$search}%")
                   ->orWhere('employee_code', 'like', "%{$search}%");
             });
         }
@@ -30,7 +31,7 @@ class UserController extends Controller
         $sortField = $request->get('sort_field', 'id');
         $sortDir = $request->get('sort_dir', 'desc');
         
-        $validSortFields = ['id', 'name', 'email', 'employee_code', 'job_title', 'department', 'birth_date', 'phone', 'address', 'created_at'];
+        $validSortFields = ['id', 'name', 'username', 'email', 'employee_code', 'job_title', 'department', 'birth_date', 'phone', 'address', 'created_at'];
         if (in_array($sortField, $validSortFields)) {
             $query->orderBy($sortField, $sortDir);
         } else {
@@ -60,6 +61,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'employee_code' => 'nullable|string|max:100|unique:users,employee_code',
             'name' => 'required|string|max:255',
+            'username' => 'required|string|max:255|unique:users,username',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:6',
             'department_code' => 'nullable|string|max:100',
@@ -73,6 +75,8 @@ class UserController extends Controller
             'is_active_user' => 'nullable|boolean',
         ], [
             'name.required' => 'Họ tên nhân viên không được để trống.',
+            'username.required' => 'Tên đăng nhập không được để trống.',
+            'username.unique' => 'Tên đăng nhập đã được sử dụng bởi nhân viên khác.',
             'email.required' => 'Email không được để trống.',
             'email.unique' => 'Email đã được sử dụng bởi nhân viên khác.',
             'password.required' => 'Mật khẩu không được để trống.',
@@ -118,6 +122,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'employee_code' => 'nullable|string|max:100|unique:users,employee_code,' . $id,
             'name' => 'required|string|max:255',
+            'username' => 'required|string|max:255|unique:users,username,' . $id,
             'email' => 'required|string|email|max:255|unique:users,email,' . $id,
             'password' => 'nullable|string|min:6',
             'department_code' => 'nullable|string|max:100',
@@ -131,6 +136,8 @@ class UserController extends Controller
             'is_active_user' => 'nullable|boolean',
         ], [
             'name.required' => 'Họ tên nhân viên không được để trống.',
+            'username.required' => 'Tên đăng nhập không được để trống.',
+            'username.unique' => 'Tên đăng nhập đã được sử dụng bởi nhân viên khác.',
             'email.required' => 'Email không được để trống.',
             'email.unique' => 'Email đã được sử dụng bởi nhân viên khác.',
             'password.min' => 'Mật khẩu phải chứa ít nhất 6 ký tự.',

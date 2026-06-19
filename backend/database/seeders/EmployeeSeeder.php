@@ -17,6 +17,7 @@ class EmployeeSeeder extends Seeder
             [
                 'employee_code' => 'NB0058',
                 'name' => 'Thảo Vy',
+                'username' => 'thaovy',
                 'job_title_code' => 'RL017',
                 'job_title' => 'Trưởng Bộ Phận',
                 'department_code' => 'FO',
@@ -31,6 +32,7 @@ class EmployeeSeeder extends Seeder
             [
                 'employee_code' => 'NB0057',
                 'name' => 'HKM',
+                'username' => 'hkm',
                 'job_title_code' => 'RL016',
                 'job_title' => 'Trưởng HK',
                 'department_code' => 'HK',
@@ -45,6 +47,7 @@ class EmployeeSeeder extends Seeder
             [
                 'employee_code' => 'NB0056',
                 'name' => 'FBM',
+                'username' => 'fbm',
                 'job_title_code' => 'RL015',
                 'job_title' => 'Trưởng nhà hàng',
                 'department_code' => 'FB',
@@ -59,6 +62,7 @@ class EmployeeSeeder extends Seeder
             [
                 'employee_code' => 'NB0055',
                 'name' => 'DEMO NAVY',
+                'username' => 'demonavy',
                 'job_title_code' => 'RL001',
                 'job_title' => 'Tổng giám đốc',
                 'department_code' => 'MGMT',
@@ -78,6 +82,7 @@ class EmployeeSeeder extends Seeder
                 [
                     'employee_code' => $emp['employee_code'],
                     'name' => $emp['name'],
+                    'username' => $emp['username'],
                     'job_title_code' => $emp['job_title_code'],
                     'job_title' => $emp['job_title'],
                     'department_code' => $emp['department_code'],

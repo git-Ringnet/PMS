@@ -17,6 +17,12 @@ Route::middleware('auth:sanctum')->group(function () {
         return $request->user();
     });
 
+    Route::get('/system-time', function () {
+        return response()->json([
+            'time' => now()->timezone('Asia/Ho_Chi_Minh')->toIso8601String()
+        ]);
+    });
+
     // Room Rate Codes (Mapped to SP1340)
     Route::apiResource('room-rate-codes', RoomRateCodeController::class)->parameters([
         'room-rate-codes' => 'ma'

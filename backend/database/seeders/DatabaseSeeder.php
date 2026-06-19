@@ -17,10 +17,15 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        User::updateOrCreate(
+            ['email' => 'test@example.com'],
+            [
+                'name' => 'Test User',
+                'username' => 'testuser',
+                'password' => \Illuminate\Support\Facades\Hash::make('PmsPass@123'),
+                'email_verified_at' => now(),
+            ]
+        );
 
         $this->call([
             SystemConfigurationSeeder::class,
