@@ -177,19 +177,7 @@ const subMenuItems = computed(() => {
   }
   
   if (route.path.startsWith('/housekeeping')) {
-    return [
-      { name: 'Sơ đồ Phòng', icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
-      { name: 'Kế Hoạch Phòng', icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
-      { name: 'In Phân Công Phòng', icon: 'printer', tab: 'print-tasks', active: currentTab === 'print-tasks' },
-      { name: 'Thêm Dv Buồng Phòng', icon: 'plus-circle', tab: 'add-service', active: currentTab === 'add-service' },
-      { name: 'Quản Lý Đồ Thất Lạc', icon: 'briefcase', tab: 'lost-found', active: currentTab === 'lost-found' },
-      { name: 'Tồn Kho', icon: 'box', tab: 'inventory', active: currentTab === 'inventory' },
-      { name: 'Khóa Phòng', icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
-      { name: 'Tìm Kiếm Hóa Đơn', icon: 'search', tab: 'invoice-search', active: currentTab === 'invoice-search' },
-      { name: 'Tạo Menu', icon: 'settings', tab: 'create-menu', active: currentTab === 'create-menu' },
-      { name: 'Lịch Sử Thao Tác', icon: 'clock', tab: 'history', active: currentTab === 'history' },
-      { name: 'Báo Cáo', icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-    ]
+    return [] // Navigation handled by HousekeepingPage sidebar
   }
   
   if (route.path.startsWith('/reports')) {

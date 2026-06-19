@@ -83,7 +83,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // System Administration routes
     Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
+    Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+    Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class);
+    Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive']);
+    Route::get('/products/export', [\App\Http\Controllers\Api\ProductController::class, 'exportExcel']);
+    Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);
+    Route::apiResource('products', \App\Http\Controllers\Api\ProductController::class);
+    Route::apiResource('inventories', \App\Http\Controllers\Api\InventoryController::class);
     Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature']);
     Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature']);
     Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);

@@ -35,7 +35,7 @@ const routes = [
   {
     path: '/housekeeping',
     name: 'Housekeeping',
-    component: () => import('@/pages/reservation/RoomMapPage.vue'),
+    component: () => import('@/pages/housekeeping/HousekeepingPage.vue'),
     meta: { title: 'Buồng phòng - PMS' },
   },
   {
