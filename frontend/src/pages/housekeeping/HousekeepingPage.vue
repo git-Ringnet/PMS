@@ -22,6 +22,7 @@ import RoomMapPage from '@/pages/reservation/RoomMapPage.vue'
 import RoomPlanPage from '@/pages/reservation/RoomPlanPage.vue'
 import LockRoomPage from '@/pages/reservation/LockRoomPage.vue'
 import ReportsPage from '@/pages/reports/ReportsPage.vue'
+import { t } from '@/utils/i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,23 +31,23 @@ const router = useRouter()
 const sidebarCollapsed = ref(false)
 const showDashboard = ref(true)
 
-const tabs = [
-  { key: 'room-map', label: 'Sơ Đồ Phòng', icon: LayoutGrid, component: RoomMapPage, group: 'phong' },
-  { key: 'room-plan', label: 'Kế Hoạch Phòng', icon: CalendarRange, component: RoomPlanPage, group: 'phong' },
-  { key: 'lock-room', label: 'Khóa Phòng', icon: Lock, component: LockRoomPage, group: 'phong' },
-  { key: 'print-tasks', label: 'In Phân Công', icon: Printer, component: PrintTasksTab, group: 'service' },
-  { key: 'add-service', label: 'Dịch Vụ BP', icon: Receipt, component: PostBillHousekeepingTab, group: 'service' },
-  { key: 'invoice-search', label: 'Tra Cứu HĐ', icon: FileSearch, component: SearchInvoiceTab, group: 'service' },
-  { key: 'inventory', label: 'Tồn Kho', icon: Warehouse, component: InventoryTab, group: 'kho' },
-  { key: 'create-menu', label: 'Menu SP', icon: UtensilsCrossed, component: CreateMenuTab, group: 'kho' },
-  { key: 'lost-found', label: 'Đồ Thất Lạc', icon: PackageSearch, component: LostAndFound, group: 'other' },
-  { key: 'history', label: 'Lịch Sử', icon: History, component: OperationHistoryTab, group: 'other' },
-  { key: 'reports', label: 'Báo Cáo', icon: BarChart3, component: ReportsPage, group: 'report' },
-]
+const tabs = computed(() => [
+  { key: 'room-map', label: t('submenu.roomMap'), icon: LayoutGrid, component: RoomMapPage, group: 'phong' },
+  { key: 'room-plan', label: t('submenu.roomPlan'), icon: CalendarRange, component: RoomPlanPage, group: 'phong' },
+  { key: 'lock-room', label: t('submenu.lockRoom'), icon: Lock, component: LockRoomPage, group: 'phong' },
+  { key: 'print-tasks', label: t('submenu.printRoomAssign'), icon: Printer, component: PrintTasksTab, group: 'service' },
+  { key: 'add-service', label: t('submenu.addService'), icon: Receipt, component: PostBillHousekeepingTab, group: 'service' },
+  { key: 'invoice-search', label: t('submenu.invoiceSearch'), icon: FileSearch, component: SearchInvoiceTab, group: 'service' },
+  { key: 'inventory', label: t('submenu.inventory'), icon: Warehouse, component: InventoryTab, group: 'kho' },
+  { key: 'create-menu', label: t('submenu.createMenu'), icon: UtensilsCrossed, component: CreateMenuTab, group: 'kho' },
+  { key: 'lost-found', label: t('submenu.lostFound'), icon: PackageSearch, component: LostAndFound, group: 'other' },
+  { key: 'history', label: t('submenu.actionHistory'), icon: History, component: OperationHistoryTab, group: 'other' },
+  { key: 'reports', label: t('submenu.reports'), icon: BarChart3, component: ReportsPage, group: 'report' },
+])
 
 const activeTabKey = computed(() => route.query.tab || 'room-map')
 
-const activeTab = computed(() => tabs.find(t => t.key === activeTabKey.value) || tabs[0])
+const activeTab = computed(() => tabs.value.find(t => t.key === activeTabKey.value) || tabs.value[0])
 
 const activeComponent = computed(() => activeTab.value.component)
 
@@ -104,7 +105,7 @@ function handleKeyDown(e) {
   if (e.ctrlKey && e.key >= '0' && e.key <= '9') {
     e.preventDefault()
     const idx = e.key === '0' ? 9 : parseInt(e.key) - 1
-    if (tabs[idx]) switchTab(tabs[idx].key)
+    if (tabs.value[idx]) switchTab(tabs.value[idx].key)
   }
   // Ctrl+F focus search (if exists in active tab)
   if (e.ctrlKey && e.key === 'f') {
