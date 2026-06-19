@@ -1,214 +1,292 @@
 <template>
-  <div class="flex flex-col h-full bg-gray-50/50 p-4 font-sans text-sm">
+  <div class="flex flex-col h-full bg-slate-50/50 p-4 font-sans text-sm">
     <!-- Top Controls -->
-    <div class="grid grid-cols-1 md:grid-cols-8 gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+    <div class="grid grid-cols-1 md:grid-cols-8 gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-slate-200">
       <div class="col-span-1 md:col-span-2 flex flex-col">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Chọn phòng</label>
-        <select v-model="form.roomId" class="bg-yellow-50 border border-yellow-200 text-gray-700 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <label class="text-xs font-semibold text-slate-500 mb-1">Chọn phòng</label>
+        <select v-model="form.roomId" class="bg-amber-50/60 border border-amber-200 text-slate-700 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all">
           <option value="">Chọn phòng</option>
           <option v-for="room in mockRooms" :key="room.id" :value="room.id">{{ room.name }}</option>
         </select>
       </div>
       
       <div class="col-span-1 md:col-span-1 flex flex-col">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Ngày</label>
-        <input type="date" v-model="form.date" class="border border-gray-300 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <label class="text-xs font-semibold text-slate-500 mb-1">Ngày</label>
+        <input type="date" v-model="form.date" class="border border-slate-300 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-white transition-all" />
       </div>
 
       <div class="col-span-1 md:col-span-1 flex flex-col">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Tăng Giá</label>
+        <label class="text-xs font-semibold text-slate-500 mb-1">Tăng Giá</label>
         <div class="relative">
-          <input type="number" v-model="form.surcharge" class="w-full border border-gray-300 rounded p-1.5 pr-6 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-100/50" />
-          <span class="absolute right-2 top-1.5 text-gray-400">%</span>
+          <input type="number" v-model="form.surcharge" class="w-full border border-slate-300 rounded p-1.5 pr-6 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-slate-100/50 transition-all" />
+          <span class="absolute right-2 top-1.5 text-slate-400 font-semibold">%</span>
         </div>
       </div>
 
       <div class="col-span-1 md:col-span-1 flex flex-col">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Giảm giá</label>
+        <label class="text-xs font-semibold text-slate-500 mb-1">Giảm giá</label>
         <div class="relative">
-          <input type="number" v-model="form.discount" class="w-full border border-gray-300 rounded p-1.5 pr-6 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-100/50" />
-          <span class="absolute right-2 top-1.5 text-gray-400">%</span>
+          <input type="number" v-model="form.discount" class="w-full border border-slate-300 rounded p-1.5 pr-6 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-slate-100/50 transition-all" />
+          <span class="absolute right-2 top-1.5 text-slate-400 font-semibold">%</span>
         </div>
       </div>
 
       <div class="col-span-1 md:col-span-1 flex flex-col">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Mã hóa đơn</label>
-        <input type="text" v-model="form.invoiceCode" class="border border-gray-300 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <label class="text-xs font-semibold text-slate-500 mb-1">Mã hóa đơn</label>
+        <input type="text" v-model="form.invoiceCode" class="border border-slate-300 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-white transition-all" />
       </div>
 
       <div class="col-span-1 md:col-span-1 flex flex-col items-center justify-center">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Miễn phí</label>
-        <input type="checkbox" v-model="form.isFree" class="w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" />
+        <label class="text-xs font-semibold text-slate-500 mb-1">Miễn phí</label>
+        <input type="checkbox" v-model="form.isFree" class="w-4 h-4 text-sky-500 border-slate-300 rounded focus:ring-sky-500 cursor-pointer" />
       </div>
 
       <div class="col-span-1 md:col-span-1 flex flex-col">
-        <label class="text-xs font-semibold text-gray-500 mb-1">Ghi chú</label>
-        <input type="text" v-model="form.note" placeholder="Ghi chú" class="border border-gray-300 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <label class="text-xs font-semibold text-slate-500 mb-1">Ghi chú</label>
+        <input type="text" v-model="form.note" placeholder="Ghi chú" class="border border-slate-300 rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-white transition-all" />
       </div>
     </div>
 
     <div class="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">
       <!-- Left Panel: Products -->
-      <div class="w-full lg:w-1/2 flex flex-col bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+      <div class="w-full lg:w-[42%] flex flex-col bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
         <!-- Tabs & Search -->
-        <div class="flex items-center border-b border-gray-200 p-2 gap-4">
+        <div class="flex items-center border-b border-slate-250 p-2 gap-4">
           <div class="flex space-x-4 px-2">
             <button 
               v-for="tab in tabs" 
               :key="tab"
               @click="activeTab = tab"
+              class="pb-1 font-semibold transition-all border-b-2 cursor-pointer text-xs uppercase tracking-wider"
               :class="[
-                'pb-2 font-medium transition-colors border-b-2',
-                activeTab === tab ? 'text-sky-500 border-sky-500' : 'text-gray-500 border-transparent hover:text-gray-700'
+                activeTab === tab ? 'text-[var(--hk-primary-dark)] border-[var(--hk-primary-dark)] font-bold' : 'text-slate-500 border-transparent hover:text-slate-700'
               ]"
             >
               {{ tab }}
             </button>
           </div>
-          <div class="flex-1 relative flex items-center">
+          <div class="flex-1 relative flex items-center search-container">
             <input 
               v-model="searchQuery" 
               type="text" 
-              class="w-full border border-gray-300 rounded-l p-1.5 focus:outline-none focus:ring-1 focus:ring-sky-400" 
+              placeholder="Tìm sản phẩm..."
+              @focus="showSuggestions = true"
+              data-hk-search
+              class="w-full border border-slate-300 rounded-l p-1.5 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary-dark)] text-xs bg-white" 
             />
-            <button class="bg-sky-400 text-white px-3 py-1.5 rounded-r hover:bg-sky-500 transition-colors">
+            <button class="bg-[var(--hk-primary-dark)] hover:brightness-95 text-white px-3 py-1.5 rounded-r transition-all cursor-pointer">
               <Search class="w-4 h-4" />
             </button>
+            
+            <!-- Autocomplete suggestions dropdown -->
+            <Transition name="hk-dropdown">
+              <div v-if="showSuggestions && searchSuggestions.length > 0" class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-md z-40 max-h-60 overflow-y-auto">
+                <div 
+                  v-for="p in searchSuggestions" 
+                  :key="'suggest-'+p.id" 
+                  @click="selectSuggestion(p)"
+                  class="p-2.5 hover:bg-slate-50 cursor-pointer flex items-center justify-between border-b border-slate-100 last:border-0"
+                >
+                  <span class="font-medium text-slate-700 text-xs" v-html="highlightKeyword(p.name, searchQuery)"></span>
+                  <span class="text-[var(--hk-primary-dark)] font-bold text-xs">{{ formatCurrency(p.price) }}</span>
+                </div>
+              </div>
+            </Transition>
           </div>
         </div>
 
-        <!-- Product List Accordion -->
-        <div class="flex-1 overflow-y-auto p-4 bg-gray-50/30">
-          <div v-if="filteredGroups.length === 0" class="flex flex-col items-center justify-center h-full text-gray-400">
-            <Inbox class="w-12 h-12 mb-2 opacity-50" />
-            <p>No data</p>
+        <!-- Filters Sub-row -->
+        <div class="flex flex-wrap items-center gap-3 p-2.5 bg-slate-50 border-b border-slate-200 text-xs text-slate-650 shrink-0">
+          <!-- Multi-select Group Filter -->
+          <div class="relative group-filter-wrapper">
+            <button @click="showGroupDropdown = !showGroupDropdown" class="bg-white border border-slate-300 rounded px-2.5 py-1 flex items-center gap-1 hover:bg-slate-50 transition-colors cursor-pointer font-medium text-slate-600">
+              <span>Nhóm: {{ selectedGroupLabel }}</span>
+              <ChevronDown class="w-3.5 h-3.5 text-slate-400" />
+            </button>
+            <Transition name="hk-dropdown">
+              <div v-if="showGroupDropdown" class="absolute top-full left-0 mt-1 bg-white border border-slate-200 shadow-lg rounded-md p-2 z-30 min-w-[170px] flex flex-col gap-1">
+                <label v-for="gName in availableGroups" :key="gName" class="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded cursor-pointer font-medium text-slate-700">
+                  <input type="checkbox" :value="gName" v-model="filterGroups" class="rounded text-[var(--hk-primary-dark)] focus:ring-[var(--hk-primary)] w-3.5 h-3.5 cursor-pointer" />
+                  <span>{{ gName }}</span>
+                </label>
+                <div class="border-t border-slate-100 mt-1 pt-1.5 flex justify-between text-[10px]">
+                  <button @click="filterGroups = []" class="text-slate-500 hover:text-slate-700 font-semibold px-1 py-0.5 cursor-pointer">Reset</button>
+                  <button @click="showGroupDropdown = false" class="bg-[var(--hk-primary-dark)] text-white font-semibold px-2 py-0.5 rounded shadow-sm hover:brightness-95 cursor-pointer">OK</button>
+                </div>
+              </div>
+            </Transition>
           </div>
 
-          <div v-for="group in filteredGroups" :key="group.name" class="mb-4">
-            <div class="flex items-center mb-2 w-full text-left">
-              <input type="checkbox" v-model="groupChecked[group.name]" @change="handleGroupCheck(group, $event.target.checked)" class="mr-2 rounded text-sky-500 focus:ring-sky-400 w-4 h-4 cursor-pointer" />
-              <button 
-                @click="toggleGroup(group.name)"
-                class="flex flex-1 items-center text-gray-700 font-medium hover:text-sky-600 transition-colors focus:outline-none"
-              >
-                {{ group.name }}
-                <component :is="expandedGroups[group.name] ? ChevronUp : ChevronDown" class="w-4 h-4 ml-1 text-gray-400" />
-              </button>
-            </div>
-            
-            <div v-show="expandedGroups[group.name]" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 py-2 border-t border-gray-100">
-              <div 
-                v-for="product in group.items" 
-                :key="product.id"
-                @click="addProduct(product)"
-                class="flex flex-col items-center cursor-pointer group p-2 hover:bg-white hover:shadow-sm rounded transition-all"
-              >
-                <div class="w-24 h-24 bg-gray-100 rounded flex items-center justify-center mb-2 relative overflow-hidden border border-gray-200 group-hover:border-sky-300">
-                  <Image class="w-10 h-10 text-gray-300" />
-                  <div class="absolute bottom-0 left-0 right-0 bg-sky-400/90 text-white text-[11px] text-center py-1 font-medium">
-                    {{ formatCurrency(product.price) }}
-                  </div>
-                  <!-- Dấu tick nếu đã chọn -->
-                  <button 
-                    v-if="isProductSelected(product.id)"
-                    @click.stop="removeProductById(product.id)"
-                    class="absolute top-1 right-1 bg-sky-500 text-white rounded-full p-1 z-10 hover:bg-red-500 transition-colors shadow-sm"
-                    title="Bỏ chọn"
-                  >
-                    <Check class="w-4 h-4" />
-                  </button>
+          <!-- Price range -->
+          <div class="flex items-center gap-1">
+            <span>Giá từ:</span>
+            <input type="number" placeholder="Min" v-model.number="priceRange.min" class="w-16 border border-slate-300 rounded p-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white placeholder-slate-400 text-slate-750" />
+            <span>đến</span>
+            <input type="number" placeholder="Max" v-model.number="priceRange.max" class="w-16 border border-slate-300 rounded p-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white placeholder-slate-400 text-slate-750" />
+          </div>
+
+          <!-- Sort dropdown -->
+          <div class="flex items-center gap-1 ml-auto">
+            <span>Sắp xếp:</span>
+            <select v-model="sortOrder" class="border border-slate-300 rounded p-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white cursor-pointer text-slate-700 font-medium">
+              <option value="name_asc">Tên A-Z</option>
+              <option value="name_desc">Tên Z-A</option>
+              <option value="price_asc">Giá tăng dần</option>
+              <option value="price_desc">Giá giảm dần</option>
+              <option value="id_desc">Mới nhất</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 bg-slate-50/20 hk-scroll">
+          <template v-if="isLoading">
+            <div class="mb-4 animate-pulse">
+              <div class="h-4 bg-slate-200 rounded w-28 mb-3"></div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4">
+                <div v-for="i in 3" :key="'skeleton-'+i" class="flex flex-col items-center p-2.5 bg-slate-200/40 rounded">
+                  <div class="w-24 h-24 bg-slate-200 rounded flex items-center justify-center mb-2"></div>
+                  <div class="h-3 bg-slate-200 rounded w-16 mx-auto"></div>
                 </div>
-                <span class="text-sm text-center font-medium text-gray-700 group-hover:text-sky-600 line-clamp-2" :title="product.name">
-                  {{ product.name }}
-                </span>
               </div>
             </div>
-          </div>
+          </template>
+
+          <template v-else>
+            <div v-if="filteredGroups.length === 0" class="flex flex-col items-center justify-center h-full text-slate-400">
+              <Inbox class="w-12 h-12 mb-2 opacity-50 text-slate-350" />
+              <p class="font-medium text-slate-400 text-[13px]">Không có sản phẩm phù hợp</p>
+            </div>
+
+            <div v-for="group in filteredGroups" :key="group.name" class="mb-4">
+              <div class="flex items-center mb-2 w-full text-left">
+                <input type="checkbox" v-model="groupChecked[group.name]" @change="handleGroupCheck(group, $event.target.checked)" class="mr-2 rounded text-[var(--hk-primary-dark)] focus:ring-[var(--hk-primary)] w-4 h-4 cursor-pointer" />
+                <button 
+                  @click="toggleGroup(group.name)"
+                  class="flex flex-1 items-center text-slate-750 font-bold text-xs hover:text-[var(--hk-primary-dark)] transition-colors focus:outline-none cursor-pointer uppercase tracking-wider"
+                >
+                  {{ group.name }}
+                  <component :is="expandedGroups[group.name] ? ChevronUp : ChevronDown" class="w-4 h-4 ml-1 text-slate-400" />
+                </button>
+              </div>
+              
+              <Transition name="hk-expand">
+                <div v-show="expandedGroups[group.name]" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4 py-2 border-t border-slate-100">
+                  <div 
+                    v-for="product in group.items" 
+                    :key="product.id"
+                    @click="addProduct(product)"
+                    class="flex flex-col items-center p-2.5 hover:bg-white rounded transition-all prod-card relative cursor-pointer"
+                  >
+                    <div class="w-24 h-24 bg-slate-50 rounded flex items-center justify-center mb-2 relative overflow-hidden border border-slate-200">
+                      <Image class="w-9 h-9 text-slate-300" />
+                      <div class="absolute bottom-0 left-0 right-0 text-slate-800 text-[11px] text-center py-1 font-bold" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+                        {{ formatCurrency(product.price) }}
+                      </div>
+                      <!-- Dấu tick nếu đã chọn -->
+                      <button 
+                        v-if="isProductSelected(product.id)"
+                        @click.stop="removeProductById(product.id)"
+                        class="absolute top-1 right-1 bg-emerald-500 text-white rounded-full p-1 z-15 hover:bg-rose-500 transition-colors shadow-md border border-white animate-bounce-in"
+                        title="Bỏ chọn"
+                      >
+                        <Check class="w-3.5 h-3.5" stroke-width="3" />
+                      </button>
+                    </div>
+                    <span class="text-xs text-center font-bold text-slate-750 line-clamp-2" :title="product.name">
+                      {{ product.name }}
+                    </span>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+          </template>
         </div>
       </div>
 
       <!-- Right Panel: Invoice/Table -->
-      <div class="w-full lg:w-1/2 flex flex-col bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-        <div class="p-2 border-b border-gray-200">
+      <div class="w-full lg:w-[58%] flex flex-col bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-2.5 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
           <button 
             @click="sendToRoom"
-            class="bg-sky-400 text-white px-4 py-1.5 rounded flex items-center text-sm font-medium hover:bg-sky-500 transition-colors shadow-sm"
+            :disabled="isSending"
+            class="btn-primary px-4 py-2 rounded-lg flex items-center text-xs font-bold shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Send class="w-4 h-4 mr-2" />
-            Gửi về phòng
+            <span v-if="isSending" class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+            <Send v-else class="w-4 h-4 mr-2" />
+            {{ isSending ? 'Đang gửi...' : 'Gửi về phòng' }}
           </button>
         </div>
         
-        <div class="flex-1 overflow-auto">
-          <table class="w-full text-left border-collapse">
-            <thead class="bg-gray-100/80 sticky top-0 text-gray-600 border-b border-gray-200 z-10">
+        <div class="flex-1 overflow-auto hk-scroll">
+          <table class="w-full text-left border-collapse whitespace-nowrap min-w-max text-xs">
+            <thead class="bg-slate-100/90 sticky top-0 text-slate-600 border-b border-slate-200 z-10 font-bold uppercase tracking-wider text-[11px]">
               <tr>
-                <th class="p-2 font-medium w-10 border-r border-gray-200"></th>
-                <th class="p-2 font-medium w-14 text-center">STT</th>
-                <th class="p-2 font-medium">Sản phẩm</th>
-                <th class="p-2 font-medium w-32">Ghi chú</th>
-                <th class="p-2 font-medium text-right w-24">Giá</th>
-                <th class="p-2 font-medium text-center w-20">Số lượng</th>
-                <th class="p-2 font-medium text-center w-28 cursor-pointer hover:bg-gray-200 select-none transition-colors" @click="toggleSurchargeMode">
+                <th class="p-2.5 w-10 border-r border-slate-200"></th>
+                <th class="p-2.5 w-14 text-center">STT</th>
+                <th class="p-2.5">Sản phẩm</th>
+                <th class="p-2.5 w-32">Ghi chú</th>
+                <th class="p-2.5 text-right w-24">Giá</th>
+                <th class="p-2.5 text-center w-20">Số lượng</th>
+                <th class="p-2.5 text-center w-28 cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSurchargeMode">
                   {{ isSurchargeMode ? 'Phần trăm phụ thu' : 'Phần trăm giảm giá' }}
                 </th>
-                <th class="p-2 font-medium text-right w-28">
+                <th class="p-2.5 text-right w-28">
                   {{ isSurchargeMode ? 'Tiền phụ thu' : 'Tiền giảm giá' }}
                 </th>
-                <th class="p-2 font-medium text-right w-24 text-sky-700">Tổng cộng</th>
-                <th class="p-2 font-medium w-8 border-l border-gray-200"></th>
+                <th class="p-2.5 text-right w-24 text-[var(--hk-primary-dark)] font-black">Tổng cộng</th>
+                <th class="p-2.5 w-8 border-l border-slate-200"></th>
               </tr>
             </thead>
             <tbody v-if="selectedItems.length > 0">
               <template v-for="(items, tabName) in groupedSelectedItems" :key="tabName">
                 <!-- Group Header -->
-                <tr class="bg-gray-50 border-b border-gray-100 font-medium">
-                  <td class="p-2 text-center border-r border-gray-200 w-10">
-                    <button @click="toggleTableGroup(tabName)" class="bg-sky-100 hover:bg-sky-200 rounded p-1 transition-colors w-6 h-6 flex items-center justify-center">
-                      <div v-if="tableExpandedGroups[tabName] !== false" class="w-3 h-0.5 bg-sky-500 rounded-sm"></div>
+                <tr class="bg-slate-50 border-b border-slate-100 font-bold">
+                  <td class="p-2 text-center border-r border-slate-200 w-10">
+                    <button @click="toggleTableGroup(tabName)" class="bg-[var(--hk-primary-light)] hover:bg-[var(--hk-primary)] text-slate-800 rounded p-1 transition-colors w-6 h-6 flex items-center justify-center cursor-pointer">
+                      <div v-if="tableExpandedGroups[tabName] !== false" class="w-3 h-0.5 bg-sky-700 rounded-sm"></div>
                       <div v-else class="relative w-3 h-3 flex items-center justify-center">
-                        <div class="absolute w-3 h-0.5 bg-sky-500 rounded-sm"></div>
-                        <div class="absolute h-3 w-0.5 bg-sky-500 rounded-sm"></div>
+                        <div class="absolute w-3 h-0.5 bg-sky-700 rounded-sm"></div>
+                        <div class="absolute h-3 w-0.5 bg-sky-700 rounded-sm"></div>
                       </div>
                     </button>
                   </td>
-                  <td colspan="9" class="p-2 text-gray-700">{{ getTabCode(tabName) }}</td>
+                  <td colspan="9" class="p-2.5 text-slate-700 text-xs font-black uppercase">{{ getTabCode(tabName) }}</td>
                 </tr>
                 <!-- Items -->
-                <tr v-for="item in items" :key="item.uuid" v-show="tableExpandedGroups[tabName] !== false" class="border-b border-gray-100 hover:bg-gray-50/50">
-                  <td class="p-2 border-r border-gray-200 w-10"></td>
-                  <td class="p-2 text-center text-gray-500">{{ item.id }}</td>
-                  <td class="p-2 text-gray-700">{{ item.name }}</td>
+                <tr v-for="item in items" :key="item.uuid" v-show="tableExpandedGroups[tabName] !== false" class="border-b border-slate-100 hover:bg-slate-50/50">
+                  <td class="p-2 border-r border-slate-200 w-10"></td>
+                  <td class="p-2 text-center text-slate-500">{{ item.id }}</td>
+                  <td class="p-2 text-slate-700 font-semibold">{{ item.name }}</td>
                   <td class="p-2">
                     <div v-if="item.editingNote">
                       <textarea 
                         v-model="item.note" 
                         @keydown.enter.prevent="item.editingNote = false"
                         @blur="item.editingNote = false"
-                        class="w-full border-b border-gray-200 bg-transparent focus:outline-none focus:border-sky-400 text-xs resize-none"
+                        class="w-full border-b border-slate-350 bg-transparent focus:outline-none focus:border-[var(--hk-primary)] text-[11px] resize-none"
                         rows="2"
                         autofocus
                       ></textarea>
                     </div>
-                    <div v-else @click="item.editingNote = true" class="text-xs text-gray-600 cursor-pointer min-h-[20px] whitespace-pre-wrap break-words border-b border-dashed border-gray-200 hover:border-sky-400 pb-1">
+                    <div v-else @click="item.editingNote = true" class="text-[11px] text-slate-500 cursor-pointer min-h-[20px] whitespace-pre-wrap break-words border-b border-dashed border-slate-200 hover:border-[var(--hk-primary)] pb-0.5">
                       {{ item.note || 'Thêm ghi chú...' }}
                     </div>
                   </td>
-                  <td class="p-2 text-right">{{ formatCurrency(item.price) }}</td>
+                  <td class="p-2 text-right font-medium text-slate-700">{{ formatCurrency(item.price) }}</td>
                   <td class="p-2 text-center">
-                    <input type="number" min="1" v-model="item.quantity" class="w-12 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-sky-400" />
+                    <input type="number" min="1" v-model="item.quantity" class="w-12 border border-slate-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] p-0.5" />
                   </td>
                   <td class="p-2 text-center">
-                    <input type="number" min="0" max="100" v-model="item.percent" class="w-16 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-sky-400" />
+                    <input type="number" min="0" max="100" v-model="item.percent" class="w-16 border border-slate-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] p-0.5" />
                   </td>
-                  <td class="p-2 text-right bg-gray-50/50 text-gray-600">
+                  <td class="p-2 text-right bg-slate-50/50 text-slate-500">
                     <span v-if="getLineModifier(item) > 0 && !isSurchargeMode">-</span>{{ formatCurrency(getLineModifier(item)) }}
                   </td>
-                  <td class="p-2 text-right font-medium text-sky-600">
+                  <td class="p-2 text-right font-bold text-[var(--hk-primary-dark)]">
                     {{ formatCurrency(getLineTotal(item)) }}
                   </td>
-                  <td class="p-2 text-center border-l border-gray-100">
-                    <button @click="removeProductById(item.id)" class="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded transition-colors">
+                  <td class="p-2 text-center border-l border-slate-100">
+                    <button @click="removeProductById(item.id)" class="text-rose-400 hover:text-rose-600 hover:bg-rose-50 p-1 rounded transition-colors cursor-pointer">
                       <Trash2 class="w-4 h-4" />
                     </button>
                   </td>
@@ -217,10 +295,10 @@
             </tbody>
             <tbody v-else>
               <tr>
-                <td colspan="9" class="p-12 text-center text-gray-400">
-                  <div class="flex flex-col items-center justify-center">
-                    <Inbox class="w-12 h-12 mb-2 opacity-50" />
-                    <p>No data</p>
+                <td colspan="10" class="p-16 text-center text-slate-400">
+                  <div class="flex flex-col items-center justify-center gap-2">
+                    <Inbox class="w-12 h-12 opacity-40 text-slate-300 animate-bounce" />
+                    <p class="font-medium text-slate-400">Chưa chọn sản phẩm/dịch vụ nào</p>
                   </div>
                 </td>
               </tr>
@@ -229,11 +307,11 @@
         </div>
 
         <!-- Footer Total -->
-        <div class="bg-gray-100 p-3 flex justify-between font-bold text-gray-800 border-t border-gray-200">
+        <div class="bg-slate-100 p-3.5 flex justify-between font-bold text-slate-750 border-t border-slate-200">
           <span>Tổng cộng</span>
           <div class="flex gap-8">
-            <span>Số lượng: <span class="text-sky-600">{{ totalQuantity }}</span></span>
-            <span>Tổng tiền: <span class="text-sky-600">{{ formatCurrency(totalAmount) }}</span></span>
+            <span>Số lượng: <span class="text-[var(--hk-primary-dark)]">{{ totalQuantity }}</span></span>
+            <span>Tổng tiền: <span class="text-[var(--hk-primary-dark)]">{{ formatCurrency(animatedTotalAmount) }} VNĐ</span></span>
           </div>
         </div>
       </div>
@@ -242,8 +320,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Search, ChevronDown, ChevronUp, Image, Trash2, Send, Inbox, Check } from '@lucide/vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 // Mock Data
 const mockRooms = [
@@ -281,20 +362,124 @@ const form = ref({
 
 const activeTab = ref('Minibar')
 const searchQuery = ref('')
+const debouncedQuery = ref('')
 const expandedGroups = ref({})
 const tableExpandedGroups = ref({})
 const groupChecked = ref({})
 const selectedItems = ref([])
 const isSurchargeMode = ref(false)
+const isSending = ref(false)
+
+// Suggestions state
+const showSuggestions = ref(false)
+
+// Group & Price & Sort filter states
+const showGroupDropdown = ref(false)
+const filterGroups = ref([])
+const priceRange = ref({ min: null, max: null })
+const sortOrder = ref('name_asc')
+
+const isLoading = ref(false)
+const triggerSearchLoading = () => {
+  isLoading.value = true
+  setTimeout(() => {
+    isLoading.value = false
+  }, 400)
+}
+
+watch([searchQuery, activeTab, () => priceRange.value.min, () => priceRange.value.max, sortOrder, filterGroups], () => {
+  triggerSearchLoading()
+}, { deep: true })
+
+// Debounce search query
+let debounceTimeout = null
+watch(searchQuery, (newVal) => {
+  if (debounceTimeout) clearTimeout(debounceTimeout)
+  debounceTimeout = setTimeout(() => {
+    debouncedQuery.value = newVal
+  }, 200)
+})
+
+// Suggestions computation
+const searchSuggestions = computed(() => {
+  if (!searchQuery.value) return []
+  const q = searchQuery.value.toLowerCase()
+  return mockCatalog.filter(p => p.tab === activeTab.value && p.name.toLowerCase().includes(q)).slice(0, 5)
+})
+
+const selectSuggestion = (product) => {
+  addProduct(product)
+  searchQuery.value = ''
+  showSuggestions.value = false
+}
+
+const highlightKeyword = (text, keyword) => {
+  if (!keyword) return text
+  const escKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`(${escKeyword})`, 'gi')
+  return text.replace(regex, '<mark class="bg-amber-100 text-amber-950 font-semibold px-0.5 rounded">$1</mark>')
+}
+
+const availableGroups = computed(() => {
+  const groups = new Set()
+  mockCatalog.forEach(p => {
+    if (p.tab === activeTab.value) {
+      groups.add(p.group)
+    }
+  })
+  return Array.from(groups)
+})
+
+const selectedGroupLabel = computed(() => {
+  if (filterGroups.value.length === 0) return 'Tất cả'
+  if (filterGroups.value.length === 1) return filterGroups.value[0]
+  return `${filterGroups.value.length} nhóm`
+})
+
+// Reset group selections when changing tab
+watch(activeTab, () => {
+  filterGroups.value = []
+})
 
 // Computed
 const filteredGroups = computed(() => {
   const groupsMap = {}
   
-  mockCatalog.forEach(product => {
-    if (product.tab !== activeTab.value) return
-    if (searchQuery.value && !product.name.toLowerCase().includes(searchQuery.value.toLowerCase())) return
-    
+  // Apply filtering
+  let filteredCatalog = mockCatalog.filter(product => {
+    // Tab filter
+    if (product.tab !== activeTab.value) return false
+    // Search query filter (debounced)
+    if (debouncedQuery.value && !product.name.toLowerCase().includes(debouncedQuery.value.toLowerCase())) return false
+    // Group filter
+    if (filterGroups.value.length > 0 && !filterGroups.value.includes(product.group)) return false
+    // Price range filter
+    if (priceRange.value.min !== null && priceRange.value.min !== '' && product.price < priceRange.value.min) return false
+    if (priceRange.value.max !== null && priceRange.value.max !== '' && product.price > priceRange.value.max) return false
+    return true
+  })
+
+  // Apply sorting
+  filteredCatalog.sort((a, b) => {
+    if (sortOrder.value === 'name_asc') {
+      return a.name.localeCompare(b.name)
+    }
+    if (sortOrder.value === 'name_desc') {
+      return b.name.localeCompare(a.name)
+    }
+    if (sortOrder.value === 'price_asc') {
+      return a.price - b.price
+    }
+    if (sortOrder.value === 'price_desc') {
+      return b.price - a.price
+    }
+    if (sortOrder.value === 'id_desc') {
+      return b.id - a.id
+    }
+    return 0
+  })
+
+  filteredCatalog.forEach(product => {
     if (!groupsMap[product.group]) {
       groupsMap[product.group] = []
       if (expandedGroups.value[product.group] === undefined) {
@@ -339,6 +524,25 @@ const totalQuantity = computed(() => {
 const totalAmount = computed(() => {
   return selectedItems.value.reduce((sum, item) => sum + getLineTotal(item), 0)
 })
+
+// Smooth Count-Up Animation for total amount
+const animatedTotalAmount = ref(0)
+watch(totalAmount, (newVal) => {
+  const start = animatedTotalAmount.value
+  const end = newVal
+  const duration = 250 // ms
+  const startTime = performance.now()
+
+  const step = (now) => {
+    const elapsed = now - startTime
+    const progress = Math.min(elapsed / duration, 1)
+    animatedTotalAmount.value = Math.round(start + (end - start) * progress)
+    if (progress < 1) {
+      requestAnimationFrame(step)
+    }
+  }
+  requestAnimationFrame(step)
+}, { immediate: true })
 
 // Watchers for global Surcharge / Discount
 watch(() => form.value.surcharge, (newVal) => {
@@ -395,16 +599,13 @@ const addProduct = (product) => {
 
 const handleGroupCheck = (group, checked) => {
   if (checked) {
-    // Add all products in the group
     group.items.forEach(product => {
-      // Ensure it's added at least once
       const existing = selectedItems.value.find(i => i.id === product.id)
       if (!existing) {
         addProduct(product)
       }
     })
   } else {
-    // Remove all products in the group
     selectedItems.value = selectedItems.value.filter(item => item.group !== group.name)
   }
 }
@@ -421,46 +622,137 @@ const toggleTableGroup = (tabName) => {
   tableExpandedGroups.value[tabName] = tableExpandedGroups.value[tabName] === false ? true : false
 }
 
-const sendToRoom = () => {
+const sendToRoom = async () => {
   if (!form.value.roomId) {
-    alert('Vui lòng chọn phòng trước khi gửi.')
+    uiStore.showToast('Vui lòng chọn phòng trước khi gửi.', 'warning')
     return
   }
   if (selectedItems.value.length === 0) {
-    alert('Vui lòng chọn ít nhất 1 sản phẩm/dịch vụ.')
+    uiStore.showToast('Vui lòng chọn ít nhất 1 sản phẩm/dịch vụ.', 'warning')
     return
   }
-  console.log('Sending payload:', {
-    form: form.value,
-    items: selectedItems.value,
-    total: totalAmount.value
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận gửi bill',
+    message: `Bạn có chắc chắn muốn gửi hóa đơn trị giá ${formatCurrency(totalAmount.value)} VNĐ về phòng không?`
   })
-  alert('Đã gửi về phòng thành công (Mock)')
-  // Reset
-  selectedItems.value = []
-  form.value.note = ''
-  form.value.invoiceCode = ''
-  groupChecked.value = {}
+  if (!confirmed) return
+
+  isSending.value = true
+  setTimeout(() => {
+    isSending.value = false
+    console.log('Sending payload:', {
+      form: form.value,
+      items: selectedItems.value,
+      total: totalAmount.value
+    })
+    uiStore.showToast('Đã gửi hóa đơn về phòng thành công!', 'success')
+    // Reset
+    selectedItems.value = []
+    form.value.note = ''
+    form.value.invoiceCode = ''
+    groupChecked.value = {}
+  }, 800)
 }
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('vi-VN').format(value)
 }
+
+// Click outside handling for suggestions & filters dropdown
+const handleOutsideClick = (e) => {
+  if (!e.target.closest('.search-container')) {
+    showSuggestions.value = false
+  }
+  if (!e.target.closest('.group-filter-wrapper')) {
+    showGroupDropdown.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleOutsideClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutsideClick)
+})
 </script>
 
 <style scoped>
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Product Card visual lift feedback */
+.prod-card {
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+.prod-card:hover {
+  transform: translateY(-2.5px);
+  box-shadow: 0 8px 20px -6px rgba(148, 163, 184, 0.16);
+  border-color: var(--hk-primary);
 }
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+.prod-card:active {
+  transform: scale(0.96);
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+
+/* Animated checkmark bounce in */
+.animate-bounce-in {
+  animation: bounceIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+@keyframes bounceIn {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.2) rotate(10deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+/* Primary actions colors styling */
+.btn-primary {
+  background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5));
+  color: #0f172a;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: none;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(151, 213, 255, 0.4);
+  filter: brightness(1.03);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Accordion expand/collapse transition */
+.hk-expand-enter-active,
+.hk-expand-leave-active {
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  overflow: hidden;
+  max-height: 500px;
+}
+.hk-expand-enter-from,
+.hk-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* Autocomplete suggestion highlights */
+mark {
+  background-color: rgba(254, 243, 199, 0.8) !important;
+}
+
+/* Custom Dropdown Transition */
+.hk-dropdown-enter-active {
+  animation: hkDropIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hk-dropdown-leave-active {
+  animation: hkDropIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) reverse;
+}
+@keyframes hkDropIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>
+

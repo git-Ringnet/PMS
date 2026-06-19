@@ -1,53 +1,204 @@
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
+import axios from 'axios'
+
+const route = useRoute()
+import { 
+  Plus, Trash2, Printer, Search, Calendar, 
+  MapPin, User, ArrowUpDown, X, Package, 
+  Save, FolderOpen, CheckCircle, Info, Image as ImageIcon
+} from '@lucide/vue'
 
 const uiStore = useUiStore()
 
-// --- Mock Data ---
-const mockData = ref([
-  {
-    id: 1,
-    image: 'https://images.unsplash.com/photo-1606229365485-93a3b8ee0385?w=150&q=80',
-    category: 'Macbook Air M1',
-    foundTime: '14:30',
-    foundDate: '2026-06-16',
-    location: 'Phòng 302',
-    finder: 'Nguyễn Văn A (Dọn phòng)',
-    keeper: 'Lễ tân',
-    handledDate: '2026-06-17',
-    handledTime: '15:00',
-    method: 'Trả khách',
-    returner: 'Trần Thị B (Lễ tân)',
-    receiver: 'John Doe',
-    remarks: 'Khách quay lại lấy sau khi check-out'
-  },
-  {
-    id: 2,
-    image: '',
-    category: 'Ví da Nam',
-    foundTime: '09:15',
-    foundDate: '2026-06-17',
-    location: 'Hành lang tầng 4',
-    finder: 'Lê C (Bảo vệ)',
-    keeper: 'Kho buồng phòng',
-    handledDate: '',
-    handledTime: '',
-    method: 'Lưu kho',
-    returner: '',
-    receiver: '',
-    remarks: 'Đang chờ khách liên hệ'
+// --- API URL ---
+const API_URL = '/api/lost-and-found'
+
+// --- Data ---
+const mockData = ref([])
+
+const fetchItems = async () => {
+  try {
+    isLoading.value = true
+    // Sử dụng token từ localStorage như router
+    const token = localStorage.getItem('pms_token')
+    const response = await axios.get(API_URL, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    mockData.value = response.data
+  } catch (error) {
+    uiStore.showToast('Không thể tải dữ liệu đồ thất lạc', 'error')
+    console.error(error)
+  } finally {
+    isLoading.value = false
   }
-])
+}
+
+// --- Filter & Search States ---
+const searchQuery = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
+const selectedMethod = ref('Tất cả')
+const selectedLocation = ref('')
+const selectedFinder = ref('')
+const sortBy = ref('newest')
+
+onMounted(() => {
+  fetchItems()
+  
+  if (route.query.selectedMethod) {
+    selectedMethod.value = route.query.selectedMethod
+  }
+  if (route.query.openAdd === 'true') {
+    openAddModal()
+  }
+})
+
+watch(() => route.query.selectedMethod, (newVal) => {
+  selectedMethod.value = newVal || 'Tất cả'
+})
+
+watch(() => route.query.openAdd, (newVal) => {
+  if (newVal === 'true') {
+    openAddModal()
+  }
+})
+
+const isLoading = ref(false)
+const triggerSearchLoading = () => {
+  isLoading.value = true
+  setTimeout(() => {
+    isLoading.value = false
+  }, 400)
+}
+
+watch([searchQuery, dateFrom, dateTo, selectedMethod, selectedLocation, selectedFinder, sortBy], () => {
+  triggerSearchLoading()
+})
+
+const uniqueLocations = computed(() => {
+  const locs = mockData.value.map(item => item.where_found).filter(Boolean)
+  return [...new Set(locs)]
+})
+
+const uniqueFinders = computed(() => {
+  const finders = mockData.value.map(item => item.who_found).filter(Boolean)
+  return [...new Set(finders)]
+})
+
+const hasActiveFilters = computed(() => {
+  return searchQuery.value.trim() !== '' || 
+         dateFrom.value !== '' || 
+         dateTo.value !== '' || 
+         selectedMethod.value !== 'Tất cả' || 
+         selectedLocation.value !== '' || 
+         selectedFinder.value !== ''
+})
+
+const resetFilters = () => {
+  searchQuery.value = ''
+  dateFrom.value = ''
+  dateTo.value = ''
+  selectedMethod.value = 'Tất cả'
+  selectedLocation.value = ''
+  selectedFinder.value = ''
+}
+
+// --- Filtered Data ---
+const filteredData = computed(() => {
+  let result = [...mockData.value]
+
+  // 1. Search Query (category, location, finder)
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.toLowerCase().trim()
+    result = result.filter(item => {
+      return (item.item_found && item.item_found.toLowerCase().includes(q)) ||
+             (item.where_found && item.where_found.toLowerCase().includes(q)) ||
+             (item.who_found && item.who_found.toLowerCase().includes(q))
+    })
+  }
+
+  // 2. Date Range (foundDate)
+  if (dateFrom.value) {
+    result = result.filter(item => item.date_found >= dateFrom.value)
+  }
+  if (dateTo.value) {
+    result = result.filter(item => item.date_found <= dateTo.value)
+  }
+
+  // 3. Status/Method Chip
+  if (selectedMethod.value !== 'Tất cả') {
+    if (selectedMethod.value === 'Chưa xử lý') {
+      result = result.filter(item => !item.date_handling && item.method_handling !== 'Trả khách')
+    } else {
+      result = result.filter(item => item.method_handling === selectedMethod.value)
+    }
+  }
+
+  // 4. Location Dropdown
+  if (selectedLocation.value) {
+    result = result.filter(item => item.where_found === selectedLocation.value)
+  }
+
+  // 5. Finder Dropdown
+  if (selectedFinder.value) {
+    result = result.filter(item => item.who_found === selectedFinder.value)
+  }
+
+  // 6. Sorting
+  const getStatusWeight = (item) => {
+    if (!item.method_handling) return 0; // chưa có
+    if (item.method_handling === 'Lưu kho') return 1;
+    if (item.method_handling === 'Trả khách') return 2;
+    if (item.method_handling === 'Hủy') return 3;
+    return 4;
+  };
+
+  result.sort((a, b) => {
+    const weightA = getStatusWeight(a);
+    const weightB = getStatusWeight(b);
+    
+    // Đẩy "Trả khách" và "Hủy" xuống dưới
+    if (weightA !== weightB) {
+      return weightA - weightB;
+    }
+
+    if (sortBy.value === 'newest') {
+      const dateTimeA = new Date(`${a.date_found}T${a.time_found || '00:00'}`)
+      const dateTimeB = new Date(`${b.date_found}T${b.time_found || '00:00'}`)
+      return dateTimeB - dateTimeA
+    } else if (sortBy.value === 'oldest') {
+      const dateTimeA = new Date(`${a.date_found}T${a.time_found || '00:00'}`)
+      const dateTimeB = new Date(`${b.date_found}T${b.time_found || '00:00'}`)
+      return dateTimeA - dateTimeB
+    } else if (sortBy.value === 'status') {
+      return (a.method_handling || '').localeCompare(b.method_handling || '')
+    }
+    return 0
+  })
+
+  return result
+})
 
 // --- Table State ---
 const selectedRows = ref([])
 const toggleAll = (e) => {
   if (e.target.checked) {
-    selectedRows.value = mockData.value.map(item => item.id)
+    selectedRows.value = filteredData.value.map(item => item.id)
   } else {
     selectedRows.value = []
   }
+}
+
+// --- Lightbox Image State ---
+const lightboxImage = ref(null)
+const openLightbox = (url) => {
+  lightboxImage.value = url
+}
+const closeLightbox = () => {
+  lightboxImage.value = null
 }
 
 // --- Modal State ---
@@ -58,17 +209,17 @@ const previewImage = ref(null)
 const formState = reactive({
   id: null,
   image: '',
-  category: '',
-  foundTime: '',
-  foundDate: '',
-  location: '',
-  finder: '',
-  keeper: '',
-  handledDate: '',
-  handledTime: '',
-  method: '',
-  returner: '',
-  receiver: '',
+  item_found: '',
+  time_found: '',
+  date_found: '',
+  where_found: '',
+  who_found: '',
+  received: '',
+  date_handling: '',
+  time_handling: '',
+  method_handling: '',
+  delieved_handling: '',
+  received_handling: '',
   remarks: ''
 })
 
@@ -88,17 +239,17 @@ const openAddModal = () => {
   Object.assign(formState, {
     id: null,
     image: '',
-    category: '',
-    foundTime: currentTime,
-    foundDate: currentDate,
-    location: '',
-    finder: '',
-    keeper: '',
-    handledDate: '',
-    handledTime: '',
-    method: 'Lưu kho',
-    returner: '',
-    receiver: '',
+    item_found: '',
+    time_found: currentTime,
+    date_found: currentDate,
+    where_found: '',
+    who_found: '',
+    received: '',
+    date_handling: '',
+    time_handling: '',
+    method_handling: '',
+    delieved_handling: '',
+    received_handling: '',
     remarks: ''
   })
   initialFormString.value = JSON.stringify(formState)
@@ -121,35 +272,54 @@ const closeModal = async () => {
   showModal.value = false
 }
 
-const handleSave = () => {
-  if (!formState.category) {
-    uiStore.showToast('Vui lòng nhập tên danh mục/mặt hàng', 'warning')
+const handleSave = async () => {
+  // Bắt buộc nhập các trường thông tin tìm thấy và thông tin món đồ
+  if (!formState.item_found || !formState.time_found || !formState.date_found || !formState.where_found || !formState.who_found || !formState.received) {
+    uiStore.showToast('Vui lòng nhập đầy đủ thông tin bắt buộc (*)', 'warning')
     return
   }
-  
-  if (isEditing.value) {
-    const idx = mockData.value.findIndex(x => x.id === formState.id)
-    if (idx !== -1) {
-      // simulate uploading image if previewImage exists
-      if (previewImage.value) {
-         formState.image = previewImage.value
-      }
-      mockData.value[idx] = JSON.parse(JSON.stringify(formState))
-      uiStore.showToast('Cập nhật thành công', 'success')
+
+  // Bắt buộc nhập tiến trình xử lý nếu là Trả khách
+  if (formState.method_handling === 'Trả khách') {
+    if (!formState.date_handling || !formState.time_handling || !formState.delieved_handling || !formState.received_handling) {
+      uiStore.showToast('Vui lòng nhập đầy đủ Ngày, Giờ, Người trả và Người nhận ở Tiến trình xử lý', 'warning')
+      return
     }
-  } else {
-    formState.id = Date.now()
-    if (previewImage.value) {
-       formState.image = previewImage.value
+  }
+
+  // Bắt buộc nhập tiến trình xử lý nếu là Hủy (trừ người nhận)
+  if (formState.method_handling === 'Hủy') {
+    if (!formState.date_handling || !formState.time_handling || !formState.delieved_handling) {
+      uiStore.showToast('Vui lòng nhập đầy đủ Ngày, Giờ và Người xử lý ở Tiến trình xử lý', 'warning')
+      return
     }
-    mockData.value.push(JSON.parse(JSON.stringify(formState)))
-    uiStore.showToast('Thêm mới thành công', 'success')
   }
   
-  // Update clean state after save
-  initialFormString.value = JSON.stringify(formState)
-  previewImage.value = null
-  showModal.value = false
+  try {
+    const token = localStorage.getItem('pms_token')
+    const headers = { Authorization: `Bearer ${token}` }
+    
+    // Gán ảnh nếu có
+    if (previewImage.value) {
+      formState.image = previewImage.value
+    }
+    
+    if (isEditing.value) {
+      await axios.put(`${API_URL}/${formState.id}`, formState, { headers })
+      uiStore.showToast('Cập nhật thành công', 'success')
+    } else {
+      await axios.post(API_URL, formState, { headers })
+      uiStore.showToast('Thêm mới thành công', 'success')
+    }
+    
+    await fetchItems()
+    initialFormString.value = JSON.stringify(formState)
+    previewImage.value = null
+    showModal.value = false
+  } catch (error) {
+    uiStore.showToast('Có lỗi xảy ra khi lưu dữ liệu', 'error')
+    console.error(error)
+  }
 }
 
 const handleDelete = async () => {
@@ -157,10 +327,24 @@ const handleDelete = async () => {
   const confirmed = await uiStore.confirm({ message: `Bạn có chắc muốn xóa ${selectedRows.value.length} mục đã chọn không?` })
   if (!confirmed) return
   
-  mockData.value = mockData.value.filter(item => !selectedRows.value.includes(item.id))
-  selectedRows.value = []
-  uiStore.showToast('Xóa thành công', 'success')
+  try {
+    const token = localStorage.getItem('pms_token')
+    const headers = { Authorization: `Bearer ${token}` }
+    
+    // Xóa từng mục được chọn (nếu có API bulk delete thì tốt hơn, nhưng ở đây gọi từng cái)
+    for (const id of selectedRows.value) {
+      await axios.delete(`${API_URL}/${id}`, { headers })
+    }
+    
+    selectedRows.value = []
+    await fetchItems()
+    uiStore.showToast('Xóa thành công', 'success')
+  } catch (error) {
+    uiStore.showToast('Có lỗi xảy ra khi xóa', 'error')
+    console.error(error)
+  }
 }
+
 
 // Image upload simulation
 const onFileChange = (e) => {
@@ -182,40 +366,154 @@ const removeImage = () => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+  <div class="h-full flex flex-col bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden font-sans">
     
     <!-- TOOLBAR -->
-    <div class="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50 shrink-0">
-      <div class="flex items-center gap-3">
-        <button @click="openAddModal" class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors cursor-pointer border-none flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-          Thêm mới
-        </button>
-        <button 
-          @click="handleDelete"
-          :disabled="selectedRows.length === 0"
-          class="px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors cursor-pointer border-none flex items-center gap-2"
-          :class="selectedRows.length > 0 ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed'"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-          Xóa ({{ selectedRows.length }})
-        </button>
+    <div class="p-4 border-b border-slate-200 bg-slate-50 shrink-0 flex flex-col gap-4">
+      <!-- Row 1: Actions & Search & Sort -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <button @click="openAddModal" class="px-4 py-2 bg-[var(--hk-primary-dark)] hover:brightness-95 text-slate-800 rounded-lg text-sm font-bold shadow-sm transition-all cursor-pointer border-none flex items-center gap-2">
+            <Plus class="w-4 h-4" />
+            Thêm mới
+          </button>
+
+          <button 
+            @click="handleDelete"
+            :disabled="selectedRows.length === 0"
+            class="px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all cursor-pointer border-none flex items-center gap-2"
+            :class="selectedRows.length > 0 ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed'"
+          >
+            <Trash2 class="w-4 h-4" />
+            Xóa ({{ selectedRows.length }})
+          </button>
+        </div>
+
+        <div class="flex items-center gap-3 flex-1 max-w-lg">
+          <!-- Text search -->
+          <div class="relative flex-1">
+            <Search class="w-4 h-4 text-slate-450 absolute left-3 top-2.5 pointer-events-none" />
+            <input 
+              type="text" 
+              data-hk-search
+              v-model="searchQuery" 
+              placeholder="Tìm tên món đồ, địa điểm, người tìm..."
+              class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-white transition-all shadow-xs"
+            />
+          </div>
+
+          <!-- Sort dropdown -->
+          <div class="flex items-center gap-1.5 shrink-0">
+            <ArrowUpDown class="w-4 h-4 text-slate-400" />
+            <select 
+              v-model="sortBy"
+              class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all cursor-pointer font-medium"
+            >
+              <option value="newest">Mới nhất</option>
+              <option value="oldest">Cũ nhất</option>
+              <option value="status">Theo trạng thái</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button class="px-4 py-2 bg-white hover:bg-slate-100 text-slate-750 border border-slate-300 rounded-lg text-sm font-bold shadow-sm transition-all cursor-pointer flex items-center gap-2">
+            <Printer class="w-4 h-4 text-slate-500" />
+            In danh sách
+          </button>
+        </div>
       </div>
-      <div class="flex items-center gap-3">
-        <button class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-sm font-bold shadow-sm transition-colors cursor-pointer flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-          In danh sách
-        </button>
+
+      <!-- Row 2: Status chips & Date Pickers & Location/Finder selects -->
+      <div class="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-200/80">
+        <!-- Status chips -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Trạng thái:</span>
+          <button 
+            v-for="chip in [
+              { label: 'Tất cả', value: 'Tất cả' },
+              { label: 'Lưu kho', value: 'Lưu kho' },
+              { label: 'Trả khách', value: 'Trả khách' },
+              { label: 'Hủy', value: 'Hủy' },
+              { label: 'Chưa xử lý', value: 'Chưa xử lý' }
+            ]"
+            :key="chip.value"
+            @click="selectedMethod = chip.value"
+            class="px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 border cursor-pointer"
+            :class="selectedMethod === chip.value
+              ? 'bg-[var(--hk-primary-light)] text-slate-800 border-[var(--hk-primary)] shadow-sm font-bold scale-[1.02]' 
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
+          >
+            {{ chip.label }}
+          </button>
+        </div>
+
+        <!-- Date Range & Location / Finder select filters -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <!-- Date pickers -->
+          <div class="flex items-center gap-1.5">
+            <Calendar class="w-4 h-4 text-slate-400" />
+            <input 
+              type="date" 
+              v-model="dateFrom" 
+              class="border border-slate-350 rounded-lg px-2 py-1 text-xs text-slate-650 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-white transition-all shadow-xs" 
+            />
+            <span class="text-slate-400 text-xs">—</span>
+            <input 
+              type="date" 
+              v-model="dateTo" 
+              class="border border-slate-350 rounded-lg px-2 py-1 text-xs text-slate-650 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] bg-white transition-all shadow-xs" 
+            />
+          </div>
+
+          <!-- Location Dropdown -->
+          <div class="flex items-center gap-1.5">
+            <MapPin class="w-4 h-4 text-slate-400" />
+            <select 
+              v-model="selectedLocation"
+              class="border border-slate-350 rounded-lg px-2 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all cursor-pointer min-w-[120px]"
+            >
+              <option value="">Tất cả địa điểm</option>
+              <option v-for="loc in uniqueLocations" :key="loc" :value="loc">{{ loc }}</option>
+            </select>
+          </div>
+
+          <!-- Finder Dropdown -->
+          <div class="flex items-center gap-1.5">
+            <User class="w-4 h-4 text-slate-400" />
+            <select 
+              v-model="selectedFinder"
+              class="border border-slate-350 rounded-lg px-2 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all cursor-pointer min-w-[140px]"
+            >
+              <option value="">Tất cả người tìm</option>
+              <option v-for="finder in uniqueFinders" :key="finder" :value="finder">{{ finder }}</option>
+            </select>
+          </div>
+
+          <!-- Clear Filters -->
+          <button 
+            v-if="hasActiveFilters" 
+            @click="resetFilters" 
+            class="text-xs text-rose-500 hover:text-rose-600 font-bold px-2 py-1.5 transition-colors cursor-pointer border-none bg-transparent"
+          >
+            Reset bộ lọc
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- DATA TABLE -->
-    <div class="flex-1 overflow-auto bg-white p-4 print:p-0">
-      <table class="w-full text-sm text-left border-collapse border border-slate-200 min-w-[1200px]">
-        <thead>
-          <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase sticky top-0 z-10 shadow-sm print:shadow-none">
+    <div class="flex-1 overflow-auto bg-white p-4 print:p-0 hk-scroll">
+      <table class="w-full text-sm text-left border-collapse border border-slate-200 min-w-[1200px] relative">
+        <thead class="sticky top-0 z-20 bg-white shadow-sm print:shadow-none">
+          <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase">
             <th rowspan="2" class="p-2 border border-slate-200 w-10 text-center print:hidden">
-              <input type="checkbox" @change="toggleAll" :checked="selectedRows.length === mockData.length && mockData.length > 0" class="rounded text-sky-500 w-4 h-4 cursor-pointer" />
+              <input 
+                type="checkbox" 
+                @change="toggleAll" 
+                :checked="filteredData.length > 0 && selectedRows.length === filteredData.length" 
+                class="rounded text-sky-500 w-4 h-4 cursor-pointer" 
+              />
             </th>
             <th colspan="3" class="p-2 border border-slate-200 text-center text-[11px]">Vật phẩm</th>
             <th colspan="4" class="p-2 border border-slate-200 text-center text-[11px]">Thông tin liên quan đến vật phẩm được tìm thấy</th>
@@ -223,7 +521,7 @@ const removeImage = () => {
             <th colspan="5" class="p-2 border border-slate-200 text-center text-[11px] bg-emerald-50">Xử lý</th>
             <th rowspan="2" class="p-2 border border-slate-200 text-center text-[11px] w-48">Ghi Chú</th>
           </tr>
-          <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold text-xs sticky top-[37px] z-10 shadow-sm print:shadow-none">
+          <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold text-xs">
             <th class="p-2 border border-slate-200 w-10 text-center">STT</th>
             <th class="p-2 border border-slate-200 w-14 text-center">Img</th>
             <th class="p-2 border border-slate-200 min-w-[120px]">Tên danh mục</th>
@@ -235,73 +533,140 @@ const removeImage = () => {
             <th class="p-2 border border-slate-200 w-24 text-center bg-emerald-50/50">Ngày xử lý</th>
             <th class="p-2 border border-slate-200 w-16 text-center bg-emerald-50/50">Giờ xử lý</th>
             <th class="p-2 border border-slate-200 min-w-[110px] text-center bg-emerald-50/50">Phương Thức</th>
-            <th class="p-2 border border-slate-200 min-w-[120px] bg-emerald-50/50">Tên Người Trả</th>
+            <th class="p-2 border border-slate-200 min-w-[120px] bg-emerald-50/50">Người Xử Lý</th>
             <th class="p-2 border border-slate-200 min-w-[120px] bg-emerald-50/50">Tên Người Nhận</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="mockData.length === 0">
-            <td colspan="15" class="p-8 text-center text-slate-500 font-medium bg-slate-50">Không có dữ liệu đồ thất lạc.</td>
+          <!-- Loading Skeleton rows -->
+          <template v-if="isLoading">
+            <tr v-for="i in 3" :key="'skeleton-'+i" class="animate-pulse">
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-4 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-6 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-8 w-8 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-28 bg-slate-200 rounded"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-10 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-16 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-20 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-24 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-24 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-16 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-10 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200 text-center"><div class="h-4 w-16 bg-slate-200 rounded mx-auto"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-24 bg-slate-200 rounded"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-24 bg-slate-200 rounded"></div></td>
+              <td class="p-2 border border-slate-200"><div class="h-4 w-32 bg-slate-200 rounded"></div></td>
+            </tr>
+          </template>
+
+          <!-- Empty State -->
+          <tr v-else-if="filteredData.length === 0">
+            <td colspan="15" class="p-16 text-center text-slate-500 font-medium bg-slate-50">
+              <div class="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+                  <Package class="w-6 h-6" />
+                </div>
+                <p class="text-sm font-bold text-slate-700">Không tìm thấy dữ liệu đồ thất lạc</p>
+                <p class="text-xs text-slate-500">Thử thay đổi từ khóa hoặc bộ lọc của bạn xem sao.</p>
+                <button v-if="hasActiveFilters" @click="resetFilters" class="mt-2 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer">
+                  Xóa bộ lọc
+                </button>
+              </div>
+            </td>
           </tr>
+
+          <!-- Data Rows -->
           <tr 
-            v-for="(item, index) in mockData" 
+            v-for="(item, index) in filteredData" 
             :key="item.id"
             @dblclick="openEditModal(item)"
-            class="border-b border-slate-100 hover:bg-sky-50/50 transition-colors group cursor-pointer text-sm"
+            class="border-b border-slate-100 transition-colors group cursor-pointer text-sm"
+            :class="selectedRows.includes(item.id) ? 'bg-[rgba(151,213,255,0.15)] hover:bg-[rgba(151,213,255,0.2)]' : 'odd:bg-white even:bg-slate-50/30 hover:bg-[rgba(151,213,255,0.1)]'"
           >
             <td class="p-2 border border-slate-200 text-center print:hidden" @click.stop>
               <input type="checkbox" :value="item.id" v-model="selectedRows" class="rounded text-sky-500 w-4 h-4 cursor-pointer" />
             </td>
             <td class="p-2 border border-slate-200 text-center font-semibold text-slate-500">{{ index + 1 }}</td>
             <td class="p-1 border border-slate-200 text-center">
-              <div v-if="item.image" class="w-10 h-10 mx-auto rounded overflow-hidden border border-slate-200">
+              <div 
+                v-if="item.image" 
+                @click.stop="openLightbox(item.image)"
+                class="w-10 h-10 mx-auto rounded overflow-hidden border border-slate-200 hover:scale-105 transition-transform cursor-zoom-in"
+                title="Click để phóng to ảnh"
+              >
                 <img :src="item.image" class="w-full h-full object-cover" />
               </div>
               <div v-else class="w-10 h-10 mx-auto rounded bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                <ImageIcon class="w-5 h-5 text-slate-350" />
               </div>
             </td>
-            <td class="p-2 border border-slate-200 font-bold text-slate-800">{{ item.category }}</td>
-            <td class="p-2 border border-slate-200 text-center text-slate-600 font-semibold">{{ item.foundTime }}</td>
-            <td class="p-2 border border-slate-200 text-center text-slate-600">{{ item.foundDate }}</td>
-            <td class="p-2 border border-slate-200 text-slate-700">{{ item.location }}</td>
-            <td class="p-2 border border-slate-200 text-slate-700">{{ item.finder }}</td>
-            <td class="p-2 border border-slate-200 text-slate-700">{{ item.keeper }}</td>
-            <td class="p-2 border border-slate-200 text-center text-emerald-600">{{ item.handledDate }}</td>
-            <td class="p-2 border border-slate-200 text-center text-emerald-600 font-semibold">{{ item.handledTime }}</td>
+            <td class="p-2 border border-slate-200 font-bold text-slate-800">{{ item.item_found }}</td>
+            <td class="p-2 border border-slate-200 text-center text-slate-650 font-semibold">{{ item.time_found }}</td>
+            <td class="p-2 border border-slate-200 text-center text-slate-650">{{ item.date_found }}</td>
+            <td class="p-2 border border-slate-200 text-slate-700">{{ item.where_found }}</td>
+            <td class="p-2 border border-slate-200 text-slate-700">{{ item.who_found }}</td>
+            <td class="p-2 border border-slate-200 text-slate-700">{{ item.received }}</td>
+            <td class="p-2 border border-slate-200 text-center text-emerald-600">{{ item.date_handling || '-' }}</td>
+            <td class="p-2 border border-slate-200 text-center text-emerald-600 font-semibold">{{ item.time_handling || '-' }}</td>
             <td class="p-2 border border-slate-200 text-center">
-              <span v-if="item.method === 'Trả khách'" class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[11px] font-bold uppercase">{{ item.method }}</span>
-              <span v-else-if="item.method === 'Lưu kho'" class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[11px] font-bold uppercase">{{ item.method }}</span>
-              <span v-else-if="item.method" class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[11px] font-bold uppercase">{{ item.method }}</span>
+              <span v-if="item.method_handling === 'Trả khách'" class="inline-flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-250 rounded text-[11px] font-bold uppercase shadow-[0_0_8px_rgba(16,185,129,0.15)]">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 shadow-[0_0_4px_rgba(16,185,129,0.5)]"></span>
+                {{ item.method_handling }}
+              </span>
+              <span v-else-if="item.method_handling === 'Lưu kho'" class="inline-flex items-center px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-250 rounded text-[11px] font-bold uppercase">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse mr-1.5 shadow-[0_0_4px_rgba(245,158,11,0.5)]"></span>
+                {{ item.method_handling }}
+              </span>
+              <span v-else-if="item.method_handling === 'Hủy'" class="inline-flex items-center px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded text-[11px] font-bold uppercase">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5"></span>
+                {{ item.method_handling }}
+              </span>
+              <span v-else-if="item.method_handling" class="inline-flex items-center px-2 py-0.5 bg-slate-50 text-slate-650 border border-slate-200 rounded text-[11px] font-bold uppercase">
+                {{ item.method_handling }}
+              </span>
+              <span v-else class="text-slate-400 italic text-xs">Chưa có</span>
             </td>
-            <td class="p-2 border border-slate-200 text-slate-700">{{ item.returner }}</td>
-            <td class="p-2 border border-slate-200 text-slate-700 font-semibold">{{ item.receiver }}</td>
+            <td class="p-2 border border-slate-200 text-slate-700">{{ item.delieved_handling || '-' }}</td>
+            <td class="p-2 border border-slate-200 text-slate-700 font-semibold">{{ item.received_handling || '-' }}</td>
             <td class="p-2 border border-slate-200 text-slate-500 text-xs" :title="item.remarks">
-              <div class="line-clamp-2">{{ item.remarks }}</div>
+              <div class="line-clamp-2">{{ item.remarks || '-' }}</div>
             </td>
           </tr>
         </tbody>
       </table>
-      <div class="mt-4 text-xs text-slate-500 italic print:hidden">Mẹo: Click đúp vào một dòng để xem hoặc cập nhật thông tin.</div>
+      <div class="mt-4 text-xs text-slate-500 italic print:hidden">Mẹo: Click đúp vào một dòng để xem hoặc cập nhật thông tin. Click vào hình ảnh để phóng to.</div>
     </div>
+
+    <!-- LIGHTBOX PREVIEW -->
+    <Teleport to="body">
+      <div v-if="lightboxImage" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden" @click="closeLightbox">
+        <div class="relative max-w-4xl max-h-[90vh] flex items-center justify-center animate-fade-in" @click.stop>
+          <img :src="lightboxImage" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain border border-white/10" />
+          <button @click="closeLightbox" class="absolute -top-12 right-0 text-white hover:text-slate-350 bg-black/40 hover:bg-black/60 p-2 rounded-full transition-all border-none cursor-pointer">
+            <X class="w-6 h-6" />
+          </button>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- ADD/EDIT MODAL -->
     <Teleport to="body">
-      <div v-if="showModal" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 print:hidden">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="closeModal"></div>
-        
-        <!-- Modal Content -->
-        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-full flex flex-col overflow-hidden animate-fade-in-up">
+      <Transition name="hk-modal">
+        <div v-if="showModal" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 print:hidden">
+          <!-- Backdrop -->
+          <div class="absolute inset-0 bg-black/50 backdrop-blur-xs" @click="closeModal"></div>
+          
+          <!-- Modal Content -->
+          <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-full flex flex-col overflow-hidden">
           
           <!-- Header -->
-          <div class="flex items-center justify-between px-6 py-4 bg-sky-500 text-white shrink-0">
-            <h3 class="font-bold text-lg m-0 flex items-center gap-2">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+          <div class="flex items-center justify-between px-6 py-4 text-slate-800 shrink-0" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+            <h3 class="font-bold text-lg m-0 flex items-center gap-2 text-slate-800">
+              <Package class="w-6 h-6 text-slate-700" />
               {{ isEditing ? 'Cập nhật Đồ Thất Lạc' : 'Thêm mới Đồ Thất Lạc' }}
             </h3>
-            <button @click="closeModal" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors cursor-pointer bg-transparent border-none text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            <button @click="closeModal" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/10 transition-colors cursor-pointer bg-transparent border-none text-slate-700">
+              <X class="w-5 h-5" />
             </button>
           </div>
 
@@ -314,13 +679,13 @@ const removeImage = () => {
                 <!-- Khối 1: Thông tin món đồ -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
                   <h4 class="text-sm font-bold text-sky-600 uppercase mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                    <ImageIcon class="w-4 h-4 text-sky-500" />
                     Thông tin món đồ
                   </h4>
                   <div class="space-y-4">
                     <div>
                       <label class="block text-xs font-bold text-slate-600 mb-1">Mặt hàng / Tên danh mục <span class="text-red-500">*</span></label>
-                      <input type="text" v-model="formState.category" placeholder="Ví dụ: Áo khoác, Điện thoại..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 font-semibold text-slate-800" />
+                      <input type="text" v-model="formState.item_found" placeholder="Ví dụ: Áo khoác, Điện thoại..." class="w-full px-3 py-2 border border-slate-355 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] font-semibold text-slate-800" />
                     </div>
                     
                     <div>
@@ -328,11 +693,11 @@ const removeImage = () => {
                       <div class="flex items-start gap-4">
                         <div class="w-24 h-24 shrink-0 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl overflow-hidden flex items-center justify-center relative group">
                           <img v-if="previewImage || formState.image" :src="previewImage || formState.image" class="w-full h-full object-cover" />
-                          <svg v-else class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          <Package v-else class="w-8 h-8 text-slate-350" />
                           
                           <div v-if="previewImage || formState.image" class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button @click="removeImage" class="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 border-none cursor-pointer">
-                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            <button @click="removeImage" class="p-1 bg-rose-500 text-white rounded-full hover:bg-rose-600 border-none cursor-pointer">
+                              <X class="w-4 h-4" />
                             </button>
                           </div>
                         </div>
@@ -351,31 +716,31 @@ const removeImage = () => {
                 <!-- Khối 2: Thông tin tìm thấy -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
                   <h4 class="text-sm font-bold text-sky-600 uppercase mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <Search class="w-4 h-4 text-sky-500" />
                     Thông tin Tìm thấy
                   </h4>
                   <div class="space-y-4">
                     <div class="flex gap-4">
                       <div class="w-1/2">
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Giờ tìm thấy</label>
-                        <input type="time" v-model="formState.foundTime" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Giờ tìm thấy <span class="text-red-500">*</span></label>
+                        <input type="time" v-model="formState.time_found" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                       </div>
                       <div class="w-1/2">
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Ngày tìm thấy</label>
-                        <input type="date" v-model="formState.foundDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Ngày tìm thấy <span class="text-red-500">*</span></label>
+                        <input type="date" v-model="formState.date_found" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                       </div>
                     </div>
                     <div>
-                      <label class="block text-xs font-bold text-slate-600 mb-1">Địa điểm</label>
-                      <input type="text" v-model="formState.location" placeholder="Ví dụ: Phòng 101, Hồ bơi..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                      <label class="block text-xs font-bold text-slate-600 mb-1">Địa điểm <span class="text-red-500">*</span></label>
+                      <input type="text" v-model="formState.where_found" placeholder="Ví dụ: Phòng 101, Hồ bơi..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                     </div>
                     <div>
-                      <label class="block text-xs font-bold text-slate-600 mb-1">Người tìm thấy</label>
-                      <input type="text" v-model="formState.finder" placeholder="Tên nhân viên..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                      <label class="block text-xs font-bold text-slate-600 mb-1">Người tìm thấy <span class="text-red-500">*</span></label>
+                      <input type="text" v-model="formState.who_found" placeholder="Tên nhân viên..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                     </div>
                     <div>
-                      <label class="block text-xs font-bold text-slate-600 mb-1">Người nhận (Người giữ / Vị trí cất giữ)</label>
-                      <input type="text" v-model="formState.keeper" placeholder="Ví dụ: Lễ tân, Kho..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                      <label class="block text-xs font-bold text-slate-600 mb-1">Người nhận (Người giữ / Vị trí cất giữ) <span class="text-red-500">*</span></label>
+                      <input type="text" v-model="formState.received" placeholder="Ví dụ: Lễ tân, Kho..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                     </div>
                   </div>
                 </div>
@@ -386,13 +751,13 @@ const removeImage = () => {
                 <!-- Khối 3: Xử lý -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
                   <h4 class="text-sm font-bold text-emerald-600 uppercase mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <CheckCircle class="w-4 h-4 text-emerald-500" />
                     Tiến trình Xử lý
                   </h4>
                   <div class="space-y-4">
                     <div>
                       <label class="block text-xs font-bold text-slate-600 mb-1">Phương thức xử lý</label>
-                      <select v-model="formState.method" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500 font-semibold" :class="formState.method === 'Trả khách' ? 'text-emerald-700' : formState.method === 'Lưu kho' ? 'text-amber-700' : 'text-slate-800'">
+                      <select v-model="formState.method_handling" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)] font-semibold" :class="formState.method_handling === 'Trả khách' ? 'text-emerald-700' : formState.method_handling === 'Lưu kho' ? 'text-amber-700' : 'text-slate-800'">
                         <option value="">-- Chọn phương thức --</option>
                         <option value="Lưu kho">Lưu kho chờ xử lý</option>
                         <option value="Trả khách">Trả lại cho khách</option>
@@ -401,21 +766,21 @@ const removeImage = () => {
                     </div>
                     <div class="flex gap-4">
                       <div class="w-1/2">
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Ngày xử lý</label>
-                        <input type="date" v-model="formState.handledDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Ngày xử lý <span v-if="formState.method_handling === 'Trả khách' || formState.method_handling === 'Hủy'" class="text-red-500">*</span></label>
+                        <input type="date" v-model="formState.date_handling" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                       </div>
                       <div class="w-1/2">
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Giờ xử lý</label>
-                        <input type="time" v-model="formState.handledTime" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Giờ xử lý <span v-if="formState.method_handling === 'Trả khách' || formState.method_handling === 'Hủy'" class="text-red-500">*</span></label>
+                        <input type="time" v-model="formState.time_handling" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                       </div>
                     </div>
                     <div>
-                      <label class="block text-xs font-bold text-slate-600 mb-1">Người bàn giao (Người trả)</label>
-                      <input type="text" v-model="formState.returner" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500" />
+                      <label class="block text-xs font-bold text-slate-600 mb-1">Người bàn giao (Người xử lý) <span v-if="formState.method_handling === 'Trả khách' || formState.method_handling === 'Hủy'" class="text-red-500">*</span></label>
+                      <input type="text" v-model="formState.delieved_handling" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)]" />
                     </div>
                     <div>
-                      <label class="block text-xs font-bold text-slate-600 mb-1">Tên người nhận (Khách hàng)</label>
-                      <input type="text" v-model="formState.receiver" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500 font-bold" />
+                      <label class="block text-xs font-bold text-slate-600 mb-1">Tên người nhận (Khách hàng) <span v-if="formState.method_handling === 'Trả khách'" class="text-red-500">*</span></label>
+                      <input type="text" v-model="formState.received_handling" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)] font-bold" />
                     </div>
                   </div>
                 </div>
@@ -423,11 +788,11 @@ const removeImage = () => {
                 <!-- Khối 4: Ghi chú -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex-1 flex flex-col">
                   <h4 class="text-sm font-bold text-slate-700 uppercase mb-4 flex items-center gap-2 border-b border-slate-100 pb-2 shrink-0">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    <Info class="w-4 h-4 text-slate-500" />
                     Ghi chú thêm
                   </h4>
                   <div class="flex-1 min-h-[100px]">
-                    <textarea v-model="formState.remarks" placeholder="Ghi chú các thông tin quan trọng..." class="w-full h-full min-h-[100px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-sky-500 focus:border-sky-500 resize-none"></textarea>
+                    <textarea v-model="formState.remarks" placeholder="Ghi chú các thông tin quan trọng..." class="w-full h-full min-h-[100px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-[var(--hk-primary-dark)] focus:border-[var(--hk-primary)] resize-none"></textarea>
                   </div>
                 </div>
 
@@ -440,15 +805,16 @@ const removeImage = () => {
             <button @click="closeModal" class="px-5 py-2.5 rounded-lg text-sm font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-800 transition-colors cursor-pointer shadow-sm">
               Đóng
             </button>
-            <button @click="handleSave" class="px-6 py-2.5 rounded-lg text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 border-none transition-colors cursor-pointer shadow-sm flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+            <button @click="handleSave" class="px-6 py-2.5 rounded-lg text-sm font-bold text-slate-900 bg-[var(--hk-primary-dark)] hover:brightness-95 border-none transition-colors cursor-pointer shadow-sm flex items-center gap-2">
+              <Save class="w-4 h-4" />
               Lưu Thông Tin
             </button>
           </div>
           
         </div>
       </div>
-    </Teleport>
+    </Transition>
+  </Teleport>
   </div>
 </template>
 
@@ -462,9 +828,18 @@ const removeImage = () => {
   animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .custom-scrollbar::-webkit-scrollbar {
