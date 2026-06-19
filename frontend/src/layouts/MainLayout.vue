@@ -354,11 +354,11 @@ function toggleSidebar() {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen overflow-hidden bg-slate-50">
+  <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
     <!-- Top Header Bar (Light Theme) -->
     <header 
-      class="grid grid-cols-[1fr_auto_1fr] items-center h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-colors duration-200"
-      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? 'bg-[#e0f2fe]' : 'bg-white'"
+      class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-colors duration-200 w-full max-w-full"
+      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? 'bg-[#97d5ff]' : 'bg-white'"
     >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start">
@@ -567,7 +567,7 @@ function toggleSidebar() {
     </div>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-auto">
+    <main class="flex-1 min-h-0 min-w-0 overflow-hidden">
       <slot />
     </main>
   </div>
