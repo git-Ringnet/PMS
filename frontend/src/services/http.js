@@ -35,7 +35,9 @@ http.interceptors.response.use(
       switch (error.response.status) {
         case 401:
           localStorage.removeItem('pms_token')
-          window.location.href = '/login'
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
           break
         case 403:
           console.error('Không có quyền truy cập')
