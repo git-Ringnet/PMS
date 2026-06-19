@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -287,12 +287,13 @@ onMounted(() => {
 })
 
 // ===================== SELECT =====================
-const selectRateCode = (rc) => {
+const selectRateCode = async (rc) => {
   selectedRateCode.value = rc
   isNewMode.value = false
   syncForm(rc)
   syncingGiaTheoNgay = true
   isGiaTheoNgay.value = rc.type === 'daily'
+  await nextTick()
   syncingGiaTheoNgay = false
   buildMatrix(rc.value, matrix)
   fetchRatePlans(rc.code)
@@ -431,12 +432,11 @@ const saveMatrix = async () => {
 }
 
 // ===================== THÊM / LƯU / XÓA =====================
-const handleAdd = () => {
+const handleAdd = async () => {
   isNewMode.value = true
   selectedRateCode.value = null
   ratePlans.value = []
   dailyRows.value = []
-  isGiaTheoNgay.value = false
   dailyFrom.value = ''
   dailyTo.value = ''
 
@@ -448,6 +448,10 @@ const handleAdd = () => {
   })
 
   Object.keys(matrix).forEach(k => delete matrix[k])
+  syncingGiaTheoNgay = true
+  isGiaTheoNgay.value = false
+  await nextTick()
+  syncingGiaTheoNgay = false
   const today = new Date().toISOString().split('T')[0]
   const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   Object.assign(rateForm, {
@@ -657,10 +661,6 @@ const persistRateType = async (isDaily) => {
     if (idx !== -1) rateCodes.value[idx] = res.data.data
     selectedRateCode.value = res.data.data
     syncForm(res.data.data)
-    uiStore.showToast(
-      isDaily ? 'Đã bật giá theo ngày' : 'Đã tắt giá theo ngày',
-      'success'
-    )
   } catch (e) {
     console.error(e)
     syncingGiaTheoNgay = true

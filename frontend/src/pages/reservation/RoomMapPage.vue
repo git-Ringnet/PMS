@@ -10,6 +10,8 @@ import RoomPlanPage from './RoomPlanPage.vue'
 import ShiftWorkPage from './ShiftWorkPage.vue'
 import LockRoomPage from './LockRoomPage.vue'
 import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
+import CheckOutPage from '@/pages/frontdesk/components/CheckOut.vue'
+import ManageRooms from '../frontdesk/components/ManageRooms.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -316,7 +318,7 @@ watch(() => contextMenu.value.show, (newVal) => {
 <template>
   <div class="flex h-full overflow-hidden">
     <!-- Left Slim Sidebar (Visual Match with circular badges) -->
-    <aside v-if="currentTab !== 'available' && currentTab !== 'room-plan' && currentTab !== 'shift-work' && currentTab !== 'company' && currentTab !== 'lock-room'" class="w-[118px] shrink-0 border-r border-slate-200 bg-white flex flex-col items-center py-3 overflow-y-auto z-20">
+    <aside v-if="currentTab !== 'available' && currentTab !== 'room-plan' && currentTab !== 'shift-work' && currentTab !== 'company' && currentTab !== 'lock-room' && currentTab !== 'checkout' && currentTab !== 'manage-rooms'" class="w-[118px] shrink-0 border-r border-slate-200 bg-white flex flex-col items-center py-3 overflow-y-auto z-20">
       <!-- Date Display (Editable input when isFuture is true, else static today's date text) -->
       <div class="mb-3 w-full px-2 flex flex-col items-center gap-1 shrink-0">
         <input 
@@ -503,6 +505,15 @@ watch(() => contextMenu.value.show, (newVal) => {
     <div v-else-if="currentTab === 'lock-room'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
       <LockRoomPage />
     </div>
+
+    <!-- Frontdesk Tabs - Start -->
+    <div v-else-if="currentTab === 'checkout'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
+      <CheckOutPage />
+    </div>
+    <div v-else-if="currentTab === 'manage-rooms'" class="flex-1 p-4 bg-slate-100 overflow-hidden">
+      <ManageRooms />
+    </div>
+    <!-- Frontdesk Tabs - End -->
 
     <!-- Main Content Area (ALLOTMENT Tab) -->
     <div v-else-if="currentTab === 'allotment'" class="flex-1 p-6 bg-slate-100 overflow-y-auto">
