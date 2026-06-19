@@ -5,16 +5,22 @@ import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
+<<<<<<< HEAD
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import { useUiStore } from '@/stores/ui-store'
+=======
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
 
 const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
 const timeOffset = ref(0)
+<<<<<<< HEAD
 const systemDate = ref('')
 const dbShift = ref('')
+=======
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
 
 const authStore = useAuthStore()
 
@@ -177,6 +183,7 @@ const fetchServerTime = async () => {
   }
 }
 
+<<<<<<< HEAD
 const fetchSystemDate = async () => {
   try {
     const res = await http.get('/system-date')
@@ -197,6 +204,9 @@ const updateActiveShift = () => {
     activeShiftName.value = dbShift.value
     return
   }
+=======
+const updateActiveShift = () => {
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
   if (shifts.value.length === 0) return
   const now = currentDate.value
   const activeShift = shifts.value.find(s => isTimeInShift(now, s.start_time, s.end_time))
@@ -289,12 +299,15 @@ function closeDropdown(e) {
   if (isLangDropdownOpen.value && langDropdownRef.value && !langDropdownRef.value.contains(e.target)) {
     isLangDropdownOpen.value = false
   }
+<<<<<<< HEAD
   if (isColorPickerOpen.value && colorPickerRef.value && !colorPickerRef.value.contains(e.target)) {
     if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'color') {
       return
     }
     isColorPickerOpen.value = false
   }
+=======
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
 }
 
 function toggleDarkMode() {
@@ -325,6 +338,7 @@ onMounted(() => {
     document.documentElement.classList.remove('dark')
   }
   
+<<<<<<< HEAD
   // Initialize color customization tabs/values
   const savedBg = authStore.settings?.topbar_color || '#006bdb'
   if (savedBg.includes('linear-gradient')) {
@@ -354,6 +368,9 @@ onMounted(() => {
   
   fetchServerTime()
   fetchSystemDate()
+=======
+  fetchServerTime()
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
   fetchShifts()
   loadBranches().finally(() => {
     setTimeout(() => {
@@ -482,7 +499,11 @@ const subMenuItems = computed(() => {
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.company'), icon: 'building', tab: 'company', active: currentTab === 'company' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+<<<<<<< HEAD
       // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+=======
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
       { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
     ]
   }
@@ -496,10 +517,17 @@ const subMenuItems = computed(() => {
       { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
       { name: t('submenu.roomManage'), icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
       { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
+<<<<<<< HEAD
       { name: t('submenu.dayClose'), icon: 'calendar-range', action: 'dayClose', active: false },
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
       // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+=======
+      { name: t('submenu.dayClose'), icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
+      { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
+      { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
     ]
   }
   
@@ -514,7 +542,11 @@ const subMenuItems = computed(() => {
       { name: t('submenu.createReg'), icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
       { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+<<<<<<< HEAD
       // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+=======
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
     ]
   }
   
@@ -544,6 +576,7 @@ const formattedTimeVi = computed(() => {
   const second = parts.find(p => p.type === 'second').value
   const dayPeriod = parts.find(p => p.type === 'dayPeriod').value // "AM" or "PM"
   
+<<<<<<< HEAD
   let dateStr = ''
   if (systemDate.value) {
     const sParts = systemDate.value.split('-')
@@ -555,6 +588,9 @@ const formattedTimeVi = computed(() => {
     dateStr = `${day}/${month}/${year}`
   }
 
+=======
+  const dateStr = `${day}/${month}/${year}`
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
   const period = currentLang.value === 'vi'
     ? (dayPeriod === 'PM' ? 'CH' : 'SA')
     : dayPeriod
@@ -672,9 +708,14 @@ function toggleSidebar() {
   <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
     <!-- Top Header Bar (Light Theme) -->
     <header 
+<<<<<<< HEAD
       class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
       :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? '' : 'bg-white'"
       :style="{ background: (route.path !== '/pms' && route.path !== '/' && route.path !== '/login') ? headerBgColor : '' }"
+=======
+      class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-colors duration-200 w-full max-w-full"
+      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? 'bg-[#97d5ff]' : 'bg-white'"
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
     >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start">
@@ -747,8 +788,12 @@ function toggleSidebar() {
         <!-- Dark Mode Toggle Button -->
         <button 
           @click="toggleDarkMode" 
+<<<<<<< HEAD
           class="p-0.5 rounded bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center shrink-0"
           :class="isHeaderBgDark ? 'text-white hover:bg-white/15' : 'text-gray-900 dark:text-white hover:bg-black/10'"
+=======
+          class="p-0.5 hover:bg-slate-100 rounded text-slate-600 bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center shrink-0"
+>>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
           :title="t('header.toggleDark')"
         >
           <!-- Moon Icon (for Light Mode) -->
@@ -761,6 +806,7 @@ function toggleSidebar() {
           </svg>
         </button>
 
+<<<<<<< HEAD
         <!-- Color Palette Button (Topbar Custom Background Color Popover) -->
         <div class="relative shrink-0 flex items-center" ref="colorPickerRef">
           <button 
@@ -939,7 +985,6 @@ function toggleSidebar() {
             </div>
           </div>
         </div>
-
         <!-- Branch Dropdown -->
         <div class="relative shrink-0" ref="branchDropdownRef">
           <div 
