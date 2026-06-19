@@ -113,11 +113,28 @@ const paginatedStandardRates = computed(() => {
 })
 const totalRatePages = computed(() => Math.ceil(standardRates.value.length / ratePageSize.value) || 1)
 
+const roomSearchQuery = ref('')
+
+const filteredRooms = computed(() => {
+  if (!roomSearchQuery.value) return rooms.value
+  const query = roomSearchQuery.value.trim().toLowerCase()
+  return rooms.value.filter(r => 
+    r.room_number.toLowerCase().includes(query) ||
+    (r.room_class?.name || '').toLowerCase().includes(query) ||
+    (r.room_form?.name || '').toLowerCase().includes(query) ||
+    (r.floor && String(r.floor).toLowerCase().includes(query))
+  )
+})
+
+watch(roomSearchQuery, () => {
+  roomPage.value = 1
+})
+
 const paginatedRooms = computed(() => {
   const start = (roomPage.value - 1) * roomPageSize.value
-  return rooms.value.slice(start, start + roomPageSize.value)
+  return filteredRooms.value.slice(start, start + roomPageSize.value)
 })
-const totalRoomPages = computed(() => Math.ceil(rooms.value.length / roomPageSize.value) || 1)
+const totalRoomPages = computed(() => Math.ceil(filteredRooms.value.length / roomPageSize.value) || 1)
 
 const roomFormState = reactive({
   room_number: '',
@@ -135,6 +152,8 @@ const roomFormState = reactive({
   notes: ''
 })
 
+let bc = null
+
 // Load initial data
 onMounted(async () => {
   fetchRoomClasses()
@@ -144,10 +163,16 @@ onMounted(async () => {
   await fetchConfigs()
   isLoaded.value = true
   document.addEventListener('click', closeAllPopovers)
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('pms-room-updates')
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeAllPopovers)
+  if (bc) {
+    bc.close()
+  }
 })
 
 // API Functions
@@ -185,6 +210,40 @@ const fetchRooms = async () => {
   } catch (err) {
     console.error('Lỗi khi tải danh sách phòng:', err)
   }
+}
+
+const getErrorMessage = (err, defaultMsg = 'Có lỗi xảy ra') => {
+  if (err.response?.status === 422 && err.response?.data?.errors) {
+    const errors = err.response.data.errors
+    const messages = []
+    
+    for (const key in errors) {
+      if (Array.isArray(errors[key])) {
+        errors[key].forEach(msg => {
+          let translated = msg
+          // Translate common Laravel validation messages to Vietnamese
+          if (msg.toLowerCase().includes('already been taken') || msg.toLowerCase().includes('đã tồn tại') || msg.toLowerCase().includes('đã được chọn')) {
+            if (key === 'room_number') {
+              translated = 'Số phòng đã tồn tại trong hệ thống'
+            } else if (key === 'code') {
+              translated = 'Mã đã tồn tại trong hệ thống'
+            } else if (key === 'name') {
+              translated = 'Tên đã tồn tại trong hệ thống'
+            } else {
+              translated = 'Dữ liệu này đã tồn tại trong hệ thống'
+            }
+          } else if (msg.toLowerCase().includes('field is required') || msg.toLowerCase().includes('bắt buộc')) {
+            translated = 'Trường thông tin này là bắt buộc'
+          }
+          messages.push(translated)
+        })
+      }
+    }
+    if (messages.length > 0) {
+      return messages.join(', ')
+    }
+  }
+  return err.response?.data?.message || err.message || defaultMsg
 }
 
 // Room CRUD functions
@@ -246,9 +305,13 @@ const saveRoom = async () => {
     }
     isRoomModalOpen.value = false
     fetchRooms()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi lưu phòng', 'error')
+    const errorMsg = getErrorMessage(err, 'Có lỗi xảy ra khi lưu phòng')
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
   }
@@ -266,6 +329,9 @@ const deleteRoom = async (roomId) => {
     await http.delete(`/rooms/${roomId}`)
     uiStore.showToast('Xóa phòng thành công!', 'success')
     fetchRooms()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
     uiStore.showToast('Không thể xóa phòng này', 'error')
@@ -372,9 +438,12 @@ const saveRoomClass = async () => {
     }
     isRoomClassModalOpen.value = false
     fetchRoomClasses()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
-    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu loại phòng'
+    const errorMsg = getErrorMessage(err, 'Có lỗi xảy ra khi lưu loại phòng')
     uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
@@ -394,6 +463,9 @@ const deleteRoomClass = async (id) => {
     uiStore.showToast('Xóa loại phòng thành công!', 'success')
     fetchRoomClasses()
     fetchRooms()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
     const errorMsg = err.response?.data?.message || 'Không thể xóa loại phòng này'
@@ -438,9 +510,12 @@ const saveRoomForm = async () => {
     }
     isRoomFormModalOpen.value = false
     fetchRoomForms()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
-    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu dạng phòng'
+    const errorMsg = getErrorMessage(err, 'Có lỗi xảy ra khi lưu dạng phòng')
     uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
@@ -460,6 +535,9 @@ const deleteRoomForm = async (id) => {
     uiStore.showToast('Xóa dạng phòng thành công!', 'success')
     fetchRoomForms()
     fetchRooms()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
     const errorMsg = err.response?.data?.message || 'Không thể xóa dạng phòng này'
@@ -508,9 +586,12 @@ const saveStandardRate = async () => {
     }
     isStandardRateModalOpen.value = false
     fetchStandardRates()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
-    const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu giá phòng chuẩn'
+    const errorMsg = getErrorMessage(err, 'Có lỗi xảy ra khi lưu giá phòng chuẩn')
     uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
@@ -529,6 +610,9 @@ const deleteStandardRate = async (id) => {
     await http.delete(`/standard-rates/${id}`)
     uiStore.showToast('Xóa giá phòng chuẩn thành công!', 'success')
     fetchStandardRates()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
     uiStore.showToast('Không thể xóa giá phòng chuẩn', 'error')
@@ -549,6 +633,9 @@ const toggleRoomClassActive = async (rc) => {
     uiStore.showToast('Cập nhật trạng thái sử dụng thành công!', 'success')
     fetchRooms()
     fetchStandardRates()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
     const errorMsg = err.response?.data?.message || 'Không thể cập nhật trạng thái sử dụng'
@@ -583,9 +670,7 @@ const roomColumns = ref([
   { id: 'floor', label: 'Tầng', visible: true },
   { id: 'grid_row', label: 'Hàng', visible: true },
   { id: 'grid_column', label: 'Cột', visible: true },
-  { id: 'linked_room', label: 'Liên kết', visible: true },
   { id: 'is_internal', label: 'Phòng nội bộ', visible: true },
-  { id: 'owner_room', label: 'Phòng chủ sở hữu', visible: true },
   { id: 'notes', label: 'Ghi chú', visible: true },
   { id: 'action', label: 'Hành động', visible: true },
 ])
@@ -693,7 +778,7 @@ const groupedRooms = computed(() => {
     classMap[rc.id] = {
       roomClass: rc,
       rooms: [],
-      count: rooms.value.filter(r => r.room_class_id === rc.id).length
+      count: filteredRooms.value.filter(r => r.room_class_id === rc.id).length
     }
   })
   
@@ -702,7 +787,7 @@ const groupedRooms = computed(() => {
   classMap[noClassId] = {
     roomClass: { id: noClassId, name: 'Chưa phân loại', code: '-' },
     rooms: [],
-    count: rooms.value.filter(r => !r.room_class_id).length
+    count: filteredRooms.value.filter(r => !r.room_class_id).length
   }
   
   // Group only the paginated rooms to preserve page size limits
@@ -712,7 +797,7 @@ const groupedRooms = computed(() => {
       classMap[classId] = {
         roomClass: r.room_class || { id: classId, name: `Loại phòng ${classId}`, code: '' },
         rooms: [],
-        count: rooms.value.filter(r => r.room_class_id === classId).length
+        count: filteredRooms.value.filter(r => r.room_class_id === classId).length
       }
     }
     classMap[classId].rooms.push(r)
@@ -745,6 +830,9 @@ const toggleRoomInternal = async (room) => {
     await http.put(`/rooms/${room.id}`, payload)
     room.is_internal = updatedVal
     uiStore.showToast('Cập nhật trạng thái phòng nội bộ thành công!', 'success')
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error(err)
     const errorMsg = err.response?.data?.message || 'Không thể cập nhật trạng thái phòng nội bộ'
@@ -1077,6 +1165,26 @@ const toggleRoomInternal = async (room) => {
               </label>
             </div>
           </div>
+
+          <!-- Search Input -->
+          <div class="relative flex items-center border border-slate-200 rounded-lg bg-white px-3 py-1.5 shadow-3xs focus-within:border-sky-400 focus-within:ring-1 focus-within:ring-sky-400 transition-colors w-[260px]">
+            <svg class="w-4 h-4 text-slate-400 mr-2 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input 
+              v-model="roomSearchQuery"
+              type="text"
+              placeholder="Tìm số phòng, loại phòng..."
+              class="border-none outline-none text-xs font-semibold text-slate-700 placeholder-slate-400 w-full bg-transparent p-0"
+            />
+            <button 
+              v-if="roomSearchQuery"
+              @click="roomSearchQuery = ''"
+              class="text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer font-black text-xs shrink-0 ml-1.5"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         
         <div class="overflow-x-auto border border-slate-200 rounded-lg shadow-sm">
@@ -1098,9 +1206,7 @@ const toggleRoomInternal = async (room) => {
                 <th v-if="isRoomColumnVisible('floor')" class="p-3">Tầng</th>
                 <th v-if="isRoomColumnVisible('grid_row')" class="p-3 text-center">Hàng</th>
                 <th v-if="isRoomColumnVisible('grid_column')" class="p-3 text-center">Cột</th>
-                <th v-if="isRoomColumnVisible('linked_room')" class="p-3">Liên kết</th>
                 <th v-if="isRoomColumnVisible('is_internal')" class="p-3">Phòng nội bộ</th>
-                <th v-if="isRoomColumnVisible('owner_room')" class="p-3">Phòng chủ sở hữu</th>
                 <th v-if="isRoomColumnVisible('notes')" class="p-3">Ghi chú</th>
                 <th v-if="isRoomColumnVisible('action')" class="p-3 text-right">Hành động</th>
               </tr>
@@ -1140,15 +1246,13 @@ const toggleRoomInternal = async (room) => {
                   <td v-if="isRoomColumnVisible('floor')" class="p-3"></td>
                   <td v-if="isRoomColumnVisible('grid_row')" class="p-3"></td>
                   <td v-if="isRoomColumnVisible('grid_column')" class="p-3"></td>
-                  <td v-if="isRoomColumnVisible('linked_room')" class="p-3"></td>
                   <td v-if="isRoomColumnVisible('is_internal')" class="p-3"></td>
-                  <td v-if="isRoomColumnVisible('owner_room')" class="p-3"></td>
                   <td v-if="isRoomColumnVisible('notes')" class="p-3"></td>
                   <td v-if="isRoomColumnVisible('action')" class="p-3"></td>
                 </tr>
                 
                 <!-- Expanded Sub-rows (Rooms in Group) -->
-                <template v-if="expandedRoomClasses[g.roomClass.id]">
+                <template v-if="expandedRoomClasses[g.roomClass.id] || roomSearchQuery">
                   <tr 
                     v-for="r in g.rooms" 
                     :key="r.id" 
@@ -1195,22 +1299,12 @@ const toggleRoomInternal = async (room) => {
                       {{ r.grid_column }}
                     </td>
                     
-                    <!-- Liên kết -->
-                    <td v-if="isRoomColumnVisible('linked_room')" class="p-3 text-slate-500 font-medium">
-                      {{ r.linked_room || '-' }}
-                    </td>
-                    
                     <!-- Phòng nội bộ (Toggle switch instead of badge) -->
                     <td v-if="isRoomColumnVisible('is_internal')" class="p-3" @click.stop>
                       <label class="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" :checked="r.is_internal" @change="toggleRoomInternal(r)" class="sr-only peer" />
                         <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
                       </label>
-                    </td>
-                    
-                    <!-- Phòng chủ sở hữu -->
-                    <td v-if="isRoomColumnVisible('owner_room')" class="p-3 text-slate-500 font-medium">
-                      {{ r.owner_room || '-' }}
                     </td>
                     
                     <!-- Ghi chú -->
@@ -1242,7 +1336,7 @@ const toggleRoomInternal = async (room) => {
         <!-- Pagination controls with total room count in footer -->
         <div class="flex items-center justify-between mt-4 select-none">
           <div class="text-sm font-bold text-slate-700">
-            Tổng số phòng <span class="ml-2 font-black text-base">{{ rooms.length }}</span>
+            Tổng số phòng <span class="ml-2 font-black text-base">{{ filteredRooms.length }}</span>
           </div>
           <div class="flex items-center gap-2">
             <button 
@@ -1376,28 +1470,12 @@ const toggleRoomInternal = async (room) => {
         <!-- Section 3: Others -->
         <div class="flex flex-col gap-3">
           <h3 class="text-xs font-black text-sky-600 border-b border-sky-100 pb-1 uppercase tracking-wide">Khác*</h3>
-          <div class="flex flex-col gap-1.5">
-            <span>Phòng chủ sở hữu</span>
-            <select v-model="roomFormState.owner_room" class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-500 text-sm">
-              <option value="">Không có</option>
-              <option value="Chủ sở hữu A">Chủ sở hữu A</option>
-              <option value="Chủ sở hữu B">Chủ sở hữu B</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-2 gap-4 items-center">
-            <div class="flex flex-col gap-1.5">
-              <span>Liên kết</span>
-              <input type="text" v-model="roomFormState.linked_room" class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
-            </div>
-            <div class="flex flex-col gap-2 pt-5 select-none">
-              <div class="flex items-center justify-between">
-                <span>Phòng nội bộ</span>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" v-model="roomFormState.is_internal" class="sr-only peer">
-                  <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
-                </label>
-              </div>
-            </div>
+          <div class="flex items-center justify-between select-none py-1.5">
+            <span>Phòng nội bộ</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" v-model="roomFormState.is_internal" class="sr-only peer">
+              <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+            </label>
           </div>
           <div class="flex flex-col gap-1.5">
             <span>Ghi chú</span>

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import QrcodeVue from 'qrcode.vue'
 
 const props = defineProps({
   initialTab: {
@@ -23,8 +24,9 @@ watch(() => props.initialTab, (newVal) => {
   }
 })
 
-watch(activeHotelTab, (newVal) => {
+watch(activeHotelTab, async (newVal) => {
   emit('update:activeTab', newVal)
+  await loadTabData(newVal)
 })
 
 const hotelTabs = [
@@ -841,7 +843,6 @@ const getImageUrl = (path) => {
 }
 
 const logoInput = ref(null)
-const qrInput = ref(null)
 
 const onLogoSelected = async (event) => {
   const file = event.target.files[0]
@@ -894,56 +895,15 @@ const removeLogo = async () => {
   }
 }
 
-const onQrSelected = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-
-  const formData = new FormData()
-  formData.append('qr_code', file)
-
-  loading.value = true
-  try {
-    const res = await http.post('/hotel-settings/qr-code', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-    if (res.data && res.data.data) {
-      hotelForm.qr_code_url = res.data.data.qr_code_url
-      uiStore.showToast('Tải lên mã QR thành công!', 'success')
-    }
-  } catch (err) {
-    console.error('Lỗi khi tải lên mã QR:', err)
-    uiStore.showToast('Không thể tải lên mã QR', 'error')
-  } finally {
-    loading.value = false
-    if (qrInput.value) qrInput.value.value = ''
+// Computed QR code value mirroring connection settings
+const qrCodeValue = computed(() => {
+  const config = {
+    domain: window.location.host,
+    isSecureDomain: window.location.protocol === 'https:',
+    password: '123'
   }
-}
-
-const removeQrCode = async () => {
-  const confirmed = await uiStore.confirm({
-    title: 'Xác nhận xóa mã QR',
-    message: 'Bạn có chắc chắn muốn xóa mã QR thanh toán?',
-    confirmText: 'Xóa',
-    cancelText: 'Hủy'
-  })
-  if (!confirmed) return
-
-  loading.value = true
-  try {
-    const res = await http.delete('/hotel-settings/qr-code')
-    if (res.data && res.data.data) {
-      hotelForm.qr_code_url = res.data.data.qr_code_url
-      uiStore.showToast('Xóa mã QR thành công!', 'success')
-    }
-  } catch (err) {
-    console.error('Lỗi khi xóa mã QR:', err)
-    uiStore.showToast('Không thể xóa mã QR', 'error')
-  } finally {
-    loading.value = false
-  }
-}
+  return JSON.stringify(config)
+})
 
 // API Functions
 const fetchHotelSettings = async () => {
@@ -1034,19 +994,57 @@ const formatCurrency = (val) => {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val)
 }
 
+const formatInputNumber = (val) => {
+  if (val === null || val === undefined || val === '') return ''
+  const clean = String(val).replace(/\D/g, '')
+  if (!clean) return ''
+  return Number(clean).toLocaleString('en-US')
+}
+
+const parseInputNumber = (val) => {
+  if (val === null || val === undefined || val === '') return 0
+  const clean = String(val).replace(/\D/g, '')
+  return clean ? parseInt(clean, 10) : 0
+}
+
 // Initial fetches
 const isLoaded = ref(false)
 
+const loadedTabs = reactive({
+  'THÔNG TIN KHÁCH SẠN': false,
+  'DỊCH VỤ KHÁCH SẠN': false,
+  'CA LÀM VIỆC': false,
+  'CẤU HÌNH': false,
+  'CHI NHÁNH': false,
+  'MẪU': false
+})
+
+const loadTabData = async (tab) => {
+  if (loadedTabs[tab]) return
+
+  try {
+    if (tab === 'THÔNG TIN KHÁCH SẠN') {
+      await fetchHotelSettings()
+    } else if (tab === 'DỊCH VỤ KHÁCH SẠN') {
+      await fetchHotelServices()
+    } else if (tab === 'CA LÀM VIỆC') {
+      await fetchShifts()
+    } else if (tab === 'CẤU HÌNH') {
+      await fetchHotelConfigs()
+    } else if (tab === 'CHI NHÁNH') {
+      await fetchBranches()
+    } else if (tab === 'MẪU') {
+      await fetchTemplates()
+    }
+    loadedTabs[tab] = true
+  } catch (err) {
+    console.error(`Lỗi khi tải dữ liệu cho tab ${tab}:`, err)
+  }
+}
+
 onMounted(async () => {
   try {
-    await Promise.all([
-      fetchHotelSettings(),
-      fetchHotelServices(),
-      fetchShifts(),
-      fetchHotelConfigs(),
-      fetchBranches(),
-      fetchTemplates()
-    ])
+    await loadTabData(activeHotelTab.value)
   } catch (err) {
     console.error('Lỗi khi tải dữ liệu định nghĩa khách sạn:', err)
   } finally {
@@ -1088,8 +1086,7 @@ onMounted(async () => {
         <div class="flex justify-start">
           <button @click="saveHotelSettings"
             class="px-4 py-1.5 bg-sky-100 hover:bg-sky-200 border border-sky-300 hover:border-sky-400 text-sky-600 hover:text-sky-700 font-bold rounded-lg text-sm flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors">
-            <svg class="w-4 h-4 text-sky-600" fill="none" stroke="currentColor" stroke-width="2"
-              viewBox="0 0 24 24">
+            <svg class="w-4 h-4 text-sky-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M17 21v-8H7v8" />
@@ -1186,19 +1183,22 @@ onMounted(async () => {
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Giá ăn sáng người lớn</span>
-              <input type="number" v-model="hotelForm.breakfast_adult_rate"
+              <input type="text" :value="formatInputNumber(hotelForm.breakfast_adult_rate)"
+                @input="e => { hotelForm.breakfast_adult_rate = parseInputNumber(e.target.value); e.target.value = formatInputNumber(hotelForm.breakfast_adult_rate); }"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Giá ăn sáng trẻ em</span>
-              <input type="number" v-model="hotelForm.breakfast_child_rate"
+              <input type="text" :value="formatInputNumber(hotelForm.breakfast_child_rate)"
+                @input="e => { hotelForm.breakfast_child_rate = parseInputNumber(e.target.value); e.target.value = formatInputNumber(hotelForm.breakfast_child_rate); }"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
             <div class="grid grid-cols-3 items-center gap-2 text-sm font-bold text-slate-600">
               <span>Giá Thêm Giường</span>
-              <input type="number" v-model="hotelForm.extra_bed_rate"
+              <input type="text" :value="formatInputNumber(hotelForm.extra_bed_rate)"
+                @input="e => { hotelForm.extra_bed_rate = parseInputNumber(e.target.value); e.target.value = formatInputNumber(hotelForm.extra_bed_rate); }"
                 class="col-span-2 border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 font-bold text-sm" />
             </div>
 
@@ -1224,14 +1224,14 @@ onMounted(async () => {
           <!-- Col 3: Logo and QR -->
           <div class="lg:col-span-3 flex flex-col items-center">
             <!-- Logo Box (Card style) -->
-            <div
-              class="w-full bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
+            <div class="w-full bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
               <div class="p-3 bg-slate-50 border-b border-slate-100 text-center font-bold text-slate-700 text-sm">
                 Hình ảnh
               </div>
               <div class="p-6 flex flex-col items-center justify-center gap-4">
                 <!-- Logo Image -->
-                <div v-if="hotelForm.logo_url" class="w-24 h-24 rounded-full overflow-hidden shadow-inner border border-slate-200">
+                <div v-if="hotelForm.logo_url"
+                  class="w-24 h-24 rounded-full overflow-hidden shadow-inner border border-slate-200">
                   <img :src="getImageUrl(hotelForm.logo_url)" alt="Logo" class="w-full h-full object-cover" />
                 </div>
                 <div v-else
@@ -1243,10 +1243,12 @@ onMounted(async () => {
                 </div>
                 <!-- Action buttons -->
                 <div class="flex items-center gap-4 text-slate-400">
-                  <label class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer flex items-center justify-center">
+                  <label
+                    class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer flex items-center justify-center">
                     <input type="file" ref="logoInput" @change="onLogoSelected" class="hidden" accept="image/*" />
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                     </svg>
                   </label>
                   <a v-if="hotelForm.logo_url" :href="getImageUrl(hotelForm.logo_url)" target="_blank"
@@ -1257,7 +1259,8 @@ onMounted(async () => {
                         d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                     </svg>
                   </a>
-                  <button v-if="hotelForm.logo_url" @click="removeLogo" class="p-1 text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer">
+                  <button v-if="hotelForm.logo_url" @click="removeLogo"
+                    class="p-1 text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer">
                     <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round"
                         d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1269,38 +1272,9 @@ onMounted(async () => {
 
             <!-- QR Box -->
             <div class="flex flex-col items-center p-2 mt-4 gap-2">
-              <div v-if="hotelForm.qr_code_url" class="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-white p-2 shadow-2xs">
-                <img :src="getImageUrl(hotelForm.qr_code_url)" alt="QR Code" class="w-full h-full object-contain" />
-              </div>
-              <svg v-else class="w-32 h-32 text-slate-700 bg-white p-2 rounded-xl border border-slate-100 shadow-2xs"
-                fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  d="M0 0h6v6H0V0zm1 1v4h4V1H1zm7-1h6v6H8V0zm1 1v4h4V1H9zm7-1h6v6h-6V0zm1 1v4h4V1h-4zM0 8h6v6H0V8zm1 1v4h4V9H1zm7 0h6v6H8V9zm1 1v4h4v-4H9zm7-1h1v1h-1V9zm1 1h1v1h-1v-1zm-1 1h1v1h-1v-1zm2-2h1v1h-1V9zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1zm-1 3h1v1h-1v-1zm-1-1h1v1h-1v-1zm-1 1h1v1h-1v-1zm2-1h1v1h-1v-1zm1 1h1v1h-1v-1zm-6 2h1v1H8v-1zm1 1h1v1H9v-1zm-1 1h1v1H8v-1zm2-3h1v1h-1v-1zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1zm3 0h1v1h-1v-1zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1zm-6 3h1v1h-1v-1zm1 1h1v1H9v-1zm-1 1h1v1H8v-1zm2-3h1v1h-1v-1zm0 2h1v1h-1v-1zm1-1h1v1h-1v-1z" />
-              </svg>
-              <span class="text-xs text-slate-500 font-extrabold tracking-wider">MÃ QR THANH TOÁN / ĐẶT PHÒNG</span>
-              
-              <!-- QR Action Buttons -->
-              <div class="flex items-center gap-4 text-slate-400 mt-1">
-                <label class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer flex items-center justify-center">
-                  <input type="file" ref="qrInput" @change="onQrSelected" class="hidden" accept="image/*" />
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                  </svg>
-                </label>
-                <a v-if="hotelForm.qr_code_url" :href="getImageUrl(hotelForm.qr_code_url)" target="_blank"
-                  class="p-1 text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer flex items-center justify-center">
-                  <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                </a>
-                <button v-if="hotelForm.qr_code_url" @click="removeQrCode" class="p-1 text-red-500 hover:text-red-700 bg-transparent border-none cursor-pointer">
-                  <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+              <div
+                class="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-white p-2 shadow-2xs flex items-center justify-center">
+                <qrcode-vue :value="qrCodeValue" :size="112" level="M" />
               </div>
             </div>
           </div>
@@ -1353,7 +1327,8 @@ onMounted(async () => {
             <tbody>
               <tr
                 v-for="s in hotelServices.filter(item => !searchServiceQuery || (item.code && item.code.toLowerCase().includes(searchServiceQuery.toLowerCase())) || (item.name && item.name.toLowerCase().includes(searchServiceQuery.toLowerCase())))"
-                :key="s.id" @click="openEditServiceModal(s)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
+                :key="s.id" @click="openEditServiceModal(s)"
+                class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ s.code }}</td>
                 <td class="p-3 font-bold text-slate-700">{{ s.name }}</td>
                 <td class="p-3 text-center font-bold text-slate-600">{{ s.service_charge }}</td>
@@ -1431,7 +1406,8 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="sh in shifts" :key="sh.id" @click="openEditShiftModal(sh)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
+              <tr v-for="sh in shifts" :key="sh.id" @click="openEditShiftModal(sh)"
+                class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ sh.name }}</td>
                 <td class="p-3 font-bold text-slate-600 font-mono">{{ sh.start_time }}</td>
                 <td class="p-3 font-bold text-slate-600 font-mono">{{ sh.end_time }}</td>
@@ -1489,10 +1465,12 @@ onMounted(async () => {
             <tbody>
               <tr
                 v-for="cfg in hotelConfigs.filter(item => !searchConfigQuery || (item.name && item.name.toLowerCase().includes(searchConfigQuery.toLowerCase())) || (item.description && item.description.toLowerCase().includes(searchConfigQuery.toLowerCase())))"
-                :key="cfg.id" @click="openEditConfigModal(cfg)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
+                :key="cfg.id" @click="openEditConfigModal(cfg)"
+                class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ cfg.name }}</td>
                 <td class="p-3 font-bold text-sky-700 font-mono">{{ cfg.value || '-' }}</td>
-                <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed max-w-xs">{{ cfg.description || '-' }}</td>
+                <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed max-w-xs">{{ cfg.description || '-'
+                }}</td>
                 <td class="p-3 text-right">
                   <div class="flex items-center justify-end gap-1">
                     <button @click.stop="deleteConfig(cfg.id)"
@@ -1555,11 +1533,13 @@ onMounted(async () => {
             <tbody>
               <tr
                 v-for="b in branches.filter(item => !searchBranchQuery || (item.code && item.code.toLowerCase().includes(searchBranchQuery.toLowerCase())) || (item.name && item.name.toLowerCase().includes(searchBranchQuery.toLowerCase())))"
-                :key="b.id" @click="openEditBranchModal(b)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
+                :key="b.id" @click="openEditBranchModal(b)"
+                class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                 <td class="p-3 font-bold text-slate-800">{{ b.code }}</td>
                 <td class="p-3 font-bold text-slate-700">{{ b.name }}</td>
                 <td class="p-3 font-semibold text-sky-700 text-xs break-all select-all">{{ b.api_url || '-' }}</td>
-                <td class="p-3 font-semibold text-sky-700 text-xs break-all select-all">{{ b.api_report_url || '-' }}</td>
+                <td class="p-3 font-semibold text-sky-700 text-xs break-all select-all">{{ b.api_report_url || '-' }}
+                </td>
                 <td class="p-3 text-center">
                   <label @click.stop class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" :checked="b.is_master" @change="toggleBranchMaster(b)"
@@ -1593,7 +1573,9 @@ onMounted(async () => {
       <div v-else-if="activeHotelTab === 'MẪU'" class="flex gap-6 items-stretch">
         <!-- Left panel: Group list -->
         <div class="w-1/4 bg-slate-50 rounded-xl p-4 border border-slate-200/80 flex flex-col gap-1.5">
-          <span class="text-xs font-black text-slate-400 uppercase tracking-widest px-2 pb-2 block border-b border-slate-200">Nhóm Mẫu</span>
+          <span
+            class="text-xs font-black text-slate-400 uppercase tracking-widest px-2 pb-2 block border-b border-slate-200">Nhóm
+            Mẫu</span>
           <button v-for="grp in templateGroups" :key="grp" @click="activeTemplateGroup = grp"
             class="w-full text-left px-3 py-2 rounded-lg font-bold text-xs border-none bg-transparent cursor-pointer transition-colors"
             :class="activeTemplateGroup === grp ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100' : 'text-slate-600 hover:bg-slate-100'">
@@ -1644,7 +1626,9 @@ onMounted(async () => {
       <div v-else-if="activeHotelTab === 'BỘ PHẬN DỊCH VỤ'" class="flex gap-6 items-stretch">
         <!-- Left: Departments -->
         <div class="w-1/4 bg-slate-50 rounded-xl p-4 border border-slate-200/80 flex flex-col gap-1.5">
-          <span class="text-xs font-black text-slate-400 uppercase tracking-widest px-2 pb-2 block border-b border-slate-200">Bộ phận</span>
+          <span
+            class="text-xs font-black text-slate-400 uppercase tracking-widest px-2 pb-2 block border-b border-slate-200">Bộ
+            phận</span>
           <button v-for="dept in departments" :key="dept" @click="activeDepartment = dept"
             class="w-full text-left px-3 py-2 rounded-lg font-bold text-xs border-none bg-transparent cursor-pointer transition-colors"
             :class="activeDepartment === dept ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100' : 'text-slate-600 hover:bg-slate-100'">
@@ -1678,16 +1662,20 @@ onMounted(async () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="s in (departmentServices[activeDepartment] || []).filter(item => !searchDeptServiceQuery || item.name.toLowerCase().includes(searchDeptServiceQuery.toLowerCase()))" :key="s.id"
-                  @click="openEditDeptServiceModal(s)" class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
+                <tr
+                  v-for="s in (departmentServices[activeDepartment] || []).filter(item => !searchDeptServiceQuery || item.name.toLowerCase().includes(searchDeptServiceQuery.toLowerCase()))"
+                  :key="s.id" @click="openEditDeptServiceModal(s)"
+                  class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
                   <td class="p-3 font-bold text-slate-800">{{ s.name }}</td>
                   <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed">{{ s.description || '-' }}</td>
                   <td class="p-3 text-right">
                     <div class="flex items-center justify-end gap-1">
                       <button @click.stop="deleteDeptService(s.id)"
                         class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
-                        <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5"
+                          viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
                     </div>
@@ -1710,7 +1698,8 @@ onMounted(async () => {
             <span class="text-xs font-black text-slate-600 uppercase">Chọn báo cáo tổng hợp:</span>
             <select v-model="selectedReportId"
               class="border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-sm font-bold text-slate-700 focus:outline-sky-500 cursor-pointer min-w-[200px]">
-              <option v-for="rep in synthesisReports" :key="rep.id" :value="rep.id">{{ rep.code }} - {{ rep.name }}</option>
+              <option v-for="rep in synthesisReports" :key="rep.id" :value="rep.id">{{ rep.code }} - {{ rep.name }}
+              </option>
             </select>
           </div>
           <div class="flex items-center gap-2">
@@ -1734,7 +1723,8 @@ onMounted(async () => {
         <!-- Inner Config content split: Left forms and Right lines table -->
         <div class="flex flex-col lg:flex-row gap-6 items-stretch">
           <!-- Left side layout: Configure Report Line Form -->
-          <div class="w-full lg:w-1/3 bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-inner flex flex-col gap-4">
+          <div
+            class="w-full lg:w-1/3 bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-inner flex flex-col gap-4">
             <span class="text-xs font-black text-slate-500 uppercase tracking-wide border-b border-slate-200 pb-2">
               {{ selectedReportLineId ? 'Cấu hình dòng báo cáo' : 'Thêm dòng báo cáo' }}
             </span>
@@ -1814,7 +1804,8 @@ onMounted(async () => {
               <select v-model="reportLineFormState.service_code"
                 class="border border-slate-200 bg-white rounded px-2 py-1.5 focus:outline-sky-500 cursor-pointer">
                 <option value="">-- Bỏ trống --</option>
-                <option v-for="srv in hotelServices" :key="srv.id" :value="srv.code">{{ srv.code }} - {{ srv.name }}</option>
+                <option v-for="srv in hotelServices" :key="srv.id" :value="srv.code">{{ srv.code }} - {{ srv.name }}
+                </option>
               </select>
             </div>
 
@@ -1843,7 +1834,8 @@ onMounted(async () => {
             <div class="flex flex-col gap-1 text-xs font-bold text-slate-600">
               <span>Màu sắc hiển thị</span>
               <div class="flex gap-2">
-                <input type="color" v-model="reportLineFormState.color" class="w-8 h-8 rounded cursor-pointer border-none bg-transparent" />
+                <input type="color" v-model="reportLineFormState.color"
+                  class="w-8 h-8 rounded cursor-pointer border-none bg-transparent" />
                 <input type="text" v-model="reportLineFormState.color"
                   class="border border-slate-200 rounded px-2 py-1.5 focus:outline-sky-500 flex-1 font-mono uppercase font-bold" />
               </div>
@@ -1875,9 +1867,8 @@ onMounted(async () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="line in synthesisReportLines.filter(l => l.report_id === selectedReportId)"
-                    :key="line.id" @click="selectReportLine(line)"
-                    class="border-b border-slate-100 cursor-pointer transition-colors"
+                  <tr v-for="line in synthesisReportLines.filter(l => l.report_id === selectedReportId)" :key="line.id"
+                    @click="selectReportLine(line)" class="border-b border-slate-100 cursor-pointer transition-colors"
                     :class="selectedReportLineId === line.id ? 'bg-sky-50 ring-1 ring-inset ring-sky-200' : 'hover:bg-slate-50/55'">
                     <td class="p-3 text-slate-400 text-center font-mono">{{ line.id }}</td>
                     <td class="p-3 text-center font-extrabold text-slate-700 font-mono">{{ line.line_no }}</td>
@@ -1886,7 +1877,9 @@ onMounted(async () => {
                       {{ line.line_desc }}
                     </td>
                     <td class="p-3 text-center">
-                      <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 font-black text-[10px] text-slate-500">{{ line.level }}</span>
+                      <span
+                        class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 font-black text-[10px] text-slate-500">{{
+                          line.level }}</span>
                     </td>
                     <td class="p-3 text-center font-black text-slate-700 font-mono">{{ line.operator }}</td>
                     <td class="p-3 text-slate-500 font-mono font-semibold">{{ line.line_id_pm || '-' }}</td>
@@ -2108,7 +2101,8 @@ onMounted(async () => {
         <div class="bg-slate-50 px-6 py-4 flex items-center justify-end gap-2 border-t border-slate-100">
           <button @click="isServiceModalOpen = false"
             class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold text-sm cursor-pointer transition-colors flex items-center gap-1.5 border-none">
-            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2.5"
+              viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round"
                 d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -2253,12 +2247,14 @@ onMounted(async () => {
           </div>
           <div class="flex flex-col gap-1.5">
             <span>API Connection URL</span>
-            <input type="text" v-model="branchFormState.api_url" placeholder="https://hotel.hktsolution.vn/branches-total"
+            <input type="text" v-model="branchFormState.api_url"
+              placeholder="https://hotel.hktsolution.vn/branches-total"
               class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
           </div>
           <div class="flex flex-col gap-1.5">
             <span>API Report Connection URL</span>
-            <input type="text" v-model="branchFormState.api_report_url" placeholder="https://hotel.hktsolution.vn/rppms1/"
+            <input type="text" v-model="branchFormState.api_report_url"
+              placeholder="https://hotel.hktsolution.vn/rppms1/"
               class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
           </div>
           <div class="flex items-center justify-between border border-slate-100 rounded-lg p-3 bg-slate-50 mt-2">
@@ -2285,7 +2281,8 @@ onMounted(async () => {
           <button @click="saveBranch"
             class="px-5 py-2.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer shadow-sm transition-colors flex items-center gap-1.5">
             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-4-4H8z" />
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-4-4H8z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 14a3 3 0 100-6 3 3 0 000 6z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 4v4h6V4" />
             </svg>
