@@ -836,7 +836,7 @@ const getImageUrl = (path) => {
     return path
   }
   const isDev = import.meta.env.DEV
-  const backendUrl = 'http://localhost:8000'
+  const backendUrl = import.meta.env.VITE_PROXY_TARGET || 'http://localhost:8000'
   return isDev ? `${backendUrl}/${path}` : `/${path}`
 }
 
