@@ -28,6 +28,7 @@ class PaymentMethodController extends Controller
             'bank_name' => 'nullable|string|max:255',
             'service_charge' => 'nullable|numeric|min:0',
             'department' => 'nullable|string|max:255',
+            'payment_group' => 'nullable|integer|in:1,2,3,4,5',
             'is_free' => 'nullable|boolean',
             'is_inactive' => 'nullable|boolean',
         ]);
@@ -67,6 +68,7 @@ class PaymentMethodController extends Controller
             'bank_name' => 'nullable|string|max:255',
             'service_charge' => 'nullable|numeric|min:0',
             'department' => 'nullable|string|max:255',
+            'payment_group' => 'nullable|integer|in:1,2,3,4,5',
             'is_free' => 'nullable|boolean',
             'is_inactive' => 'nullable|boolean',
         ]);
