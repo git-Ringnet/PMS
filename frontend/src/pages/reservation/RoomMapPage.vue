@@ -32,6 +32,42 @@ const rawDate = ref(new Date().toISOString().split('T')[0])
 // Bottom toggle state: isGridMode (true = Bảng, false = Lưới)
 const isGridMode = ref(true)
 
+// Auto scale / zoom layout state
+const autoScale = ref(localStorage.getItem('pms_room_map_auto_scale') !== 'false')
+const manualScale = ref(parseFloat(localStorage.getItem('pms_room_map_scale') || '1.0'))
+const scaleFactor = ref(1.0)
+
+function calculateScale() {
+  if (autoScale.value) {
+    const width = window.innerWidth
+    if (width < 1440) {
+      scaleFactor.value = Math.max(0.78, width / 1440)
+    } else {
+      scaleFactor.value = 1.0
+    }
+  } else {
+    scaleFactor.value = manualScale.value
+  }
+}
+
+function toggleAutoScale() {
+  autoScale.value = !autoScale.value
+  localStorage.setItem('pms_room_map_auto_scale', String(autoScale.value))
+  calculateScale()
+}
+
+function adjustManualScale(direction) {
+  if (direction === 'in') {
+    manualScale.value = Math.min(1.2, manualScale.value + 0.05)
+  } else if (direction === 'out') {
+    manualScale.value = Math.max(0.7, manualScale.value - 0.05)
+  } else {
+    manualScale.value = 1.0
+  }
+  localStorage.setItem('pms_room_map_scale', String(manualScale.value))
+  calculateScale()
+}
+
 function formatDate(date) {
   const d = new Date(date)
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
@@ -324,10 +360,14 @@ onMounted(async () => {
   isLoaded.value = true
   
   window.addEventListener('click', closeContextMenu)
+  
+  calculateScale()
+  window.addEventListener('resize', calculateScale)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('resize', calculateScale)
 })
 
 watch(() => contextMenu.value.show, (newVal) => {
@@ -352,7 +392,7 @@ const uniqueFloors = computed(() => {
 <template>
   <div class="flex h-full w-full overflow-hidden bg-white">
     <!-- Main Content Area Wrapper -->
-    <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white">
+    <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white" :style="{ zoom: scaleFactor }">
       
       <!-- TOP HORIZONTAL METRICS BAR (Only displayed for Room Map tab) -->
       <div v-if="currentTab === 'room-map'" class="bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
@@ -374,8 +414,8 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[12px] font-black text-slate-700 leading-tight">{{ selectedDate }}</span>
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase mt-0.5">{{ t('roomMap.current') }}</span>
+              <span class="text-[12px] font-semibold text-gray-900 leading-tight">{{ selectedDate }}</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase mt-0.5">{{ t('roomMap.current') }}</span>
             </div>
           </div>
 
@@ -392,8 +432,8 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.arrivals') }}</span>
-              <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ checkinStats }}</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.arrivals') }}</span>
+              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ checkinStats }}</span>
             </div>
           </button>
 
@@ -410,8 +450,8 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.departures') }}</span>
-              <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ checkoutStats }}</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.departures') }}</span>
+              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ checkoutStats }}</span>
             </div>
           </button>
 
@@ -428,8 +468,8 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.occupied') }}</span>
-              <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ occupiedStats }}</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.occupied') }}</span>
+              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ occupiedStats }}</span>
             </div>
           </button>
 
@@ -446,8 +486,8 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.lockOoo') }}</span>
-              <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length }}</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.lockOoo') }}</span>
+              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length }}</span>
             </div>
           </button>
 
@@ -462,8 +502,8 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.lockOos') }}</span>
-              <span class="text-[13px] font-black text-slate-800 mt-0.5">0</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.lockOos') }}</span>
+              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">0</span>
             </div>
           </div>
 
@@ -490,43 +530,79 @@ const uniqueFloors = computed(() => {
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
               </svg>
-              <span class="relative z-10 text-[9px] font-black text-slate-800 leading-none">
+              <span class="relative z-10 text-[9px] font-semibold text-gray-900 leading-none">
                 {{ occupancyRateStats }}
               </span>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-slate-400 font-extrabold uppercase leading-tight">{{ t('roomMap.occupancy') }}</span>
-              <span class="text-[13px] font-black text-slate-800 mt-0.5">{{ occupancyRateStats }}</span>
+              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.occupancy') }}</span>
+              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ occupancyRateStats }}</span>
             </div>
           </button>
         </div>
 
-        <!-- View Mode switchers -->
-        <div class="flex items-center gap-1.5 shrink-0">
-          <button @click="isGridMode = false" 
-            class="p-2 border rounded-lg cursor-pointer transition-colors"
-            :class="!isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
-            :title="t('roomMap.listView')">
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-            </svg>
-          </button>
-          <button @click="isGridMode = true" 
-            class="p-2 border rounded-lg cursor-pointer transition-colors"
-            :class="isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
-            :title="t('roomMap.gridView')">
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
-            </svg>
-          </button>
-          <button @click="showFilters = !showFilters" 
-            class="p-2 border rounded-lg cursor-pointer transition-colors"
-            :class="showFilters ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
-            :title="t('roomMap.toggleFilter')">
-            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
-            </svg>
-          </button>
+        <!-- View Mode & Zoom switchers -->
+        <div class="flex items-center gap-2.5 shrink-0">
+          <!-- Zoom Layout Controls -->
+          <div class="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5 select-none shrink-0 font-semibold text-[11.5px] text-slate-700">
+            <!-- Auto Scale Toggle Button -->
+            <button 
+              @click="toggleAutoScale" 
+              class="px-2.5 py-1 rounded-md cursor-pointer transition-all duration-200 text-[11px] border-none"
+              :class="autoScale ? 'bg-sky-500 text-white font-bold shadow-xs' : 'bg-transparent text-slate-500 hover:bg-slate-100'"
+              title="Tự động thu phóng để vừa khít màn hình"
+            >
+              Auto Fit
+            </button>
+            
+            <!-- Manual Zoom Controls (Disabled if Auto Scale is enabled) -->
+            <div class="flex items-center gap-0.5 pl-1 pr-0.5" :class="autoScale ? 'opacity-40 pointer-events-none' : ''">
+              <button 
+                @click="adjustManualScale('out')" 
+                class="w-5.5 h-5.5 rounded-md hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
+                title="Thu nhỏ"
+              >
+                -
+              </button>
+              <span class="w-9 text-center font-bold text-slate-800 text-[10.5px] tabular-nums">
+                {{ Math.round(scaleFactor * 100) }}%
+              </span>
+              <button 
+                @click="adjustManualScale('in')" 
+                class="w-5.5 h-5.5 rounded-md hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
+                title="Phóng to"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1">
+            <button @click="isGridMode = false" 
+              class="p-2 border rounded-lg cursor-pointer transition-colors"
+              :class="!isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
+              :title="t('roomMap.listView')">
+              <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+            </button>
+            <button @click="isGridMode = true" 
+              class="p-2 border rounded-lg cursor-pointer transition-colors"
+              :class="isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
+              :title="t('roomMap.gridView')">
+              <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+              </svg>
+            </button>
+            <button @click="showFilters = !showFilters" 
+              class="p-2 border rounded-lg cursor-pointer transition-colors"
+              :class="showFilters ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
+              :title="t('roomMap.toggleFilter')">
+              <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -941,32 +1017,32 @@ const uniqueFloors = computed(() => {
                       ></span>
                     </div>
 
-                    <!-- Room Number (Top Left) -->
-                    <div class="font-black text-[18px] leading-tight">
-                      <span :class="isRoomNumberRed(room) ? 'text-red-600' : 'text-slate-800'">
+                    <!-- Room Number (Centered) -->
+                    <div class="font-bold text-[18px] leading-tight text-center w-full">
+                      <span :class="isRoomNumberRed(room) ? 'text-red-600' : 'text-gray-900'">
                         {{ room.room_number }}
                       </span>
                     </div>
 
-                    <!-- Room details/guest name (Middle/Bottom Left) -->
-                    <div class="mt-2 text-[11px] font-bold text-slate-700 leading-tight">
-                      <div v-if="room.status === ROOM_STATUSES.OCCUPIED" class="flex flex-col gap-0.5">
-                        <span class="truncate text-slate-800 font-extrabold max-w-[90px]">
+                    <!-- Room details/guest name (Centered) -->
+                    <div class="mt-2 text-[11px] font-bold text-gray-900 leading-tight text-center w-full">
+                      <div v-if="room.status === ROOM_STATUSES.OCCUPIED" class="flex flex-col items-center gap-0.5 w-full">
+                        <span class="truncate text-gray-900 font-bold max-w-full">
                           {{ getMockGuestName(room) }}
                         </span>
-                        <span class="text-[10px] text-slate-500 font-semibold flex items-center gap-0.5">
+                        <span class="text-[10px] text-gray-900 font-bold flex items-center justify-center gap-0.5">
                           👤 2
                         </span>
                       </div>
-                      <div v-else-if="room.status === ROOM_STATUSES.RESERVED" class="flex flex-col gap-0.5">
-                        <span class="truncate text-slate-600 font-extrabold max-w-[90px]">
+                      <div v-else-if="room.status === ROOM_STATUSES.RESERVED" class="flex flex-col items-center gap-0.5 w-full">
+                        <span class="truncate text-gray-900 font-bold max-w-full">
                           {{ getMockGuestName(room) }}
                         </span>
-                        <span class="text-[10px] text-slate-500 font-semibold flex items-center gap-0.5">
+                        <span class="text-[10px] text-gray-900 font-bold flex items-center justify-center gap-0.5">
                           👤 2
                         </span>
                       </div>
-                      <div v-else class="text-[10px] text-slate-400 font-extrabold uppercase">
+                      <div v-else class="text-[10px] text-gray-900 font-bold uppercase text-center w-full">
                         {{ room.room_type || room.room_class?.code }}
                       </div>
                     </div>
