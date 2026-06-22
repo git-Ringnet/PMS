@@ -39,6 +39,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
 
     // Room configurations
+    Route::get('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'index']);
+    Route::post('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'store']);
+    Route::put('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'update']);
+    Route::delete('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'destroy']);
+
     Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index']);
     Route::post('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'store']);
     Route::put('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'update']);

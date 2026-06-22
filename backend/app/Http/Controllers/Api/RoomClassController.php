@@ -13,7 +13,7 @@ class RoomClassController extends Controller
      */
     public function index()
     {
-        $classes = RoomClass::all();
+        $classes = RoomClass::with('roomClassGroup')->get();
         return RoomClassResource::collection($classes);
     }
 
@@ -27,7 +27,7 @@ class RoomClassController extends Controller
             'code' => 'required|string|max:255|unique:room_classes,code',
             'color' => 'nullable|string|max:7',
             'is_active' => 'nullable',
-            'group' => 'nullable|string|max:255',
+            'room_class_group_id' => 'nullable|exists:room_class_groups,id',
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
         ]);
@@ -39,15 +39,23 @@ class RoomClassController extends Controller
             $imagePath = $request->file('image')->store('room_classes', 'public');
         }
 
+        $groupId = $validated['room_class_group_id'] ?? null;
+        if (!$groupId) {
+            $groupId = \App\Models\RoomClassGroup::where('code', 'hotel')->value('id')
+                ?? \App\Models\RoomClassGroup::first()?->id;
+        }
+
         $roomClass = RoomClass::create([
             'name' => $validated['name'],
             'code' => $validated['code'],
             'color' => $validated['color'] ?? '#ffffff',
             'is_active' => $isActive,
-            'group' => $validated['group'] ?? 'hotel',
+            'room_class_group_id' => $groupId,
             'notes' => $validated['notes'] ?? null,
             'image_path' => $imagePath,
         ]);
+
+        $roomClass->load('roomClassGroup');
 
         return new RoomClassResource($roomClass);
     }
@@ -64,7 +72,7 @@ class RoomClassController extends Controller
             'code' => 'required|string|max:255|unique:room_classes,code,' . $roomClass->id,
             'color' => 'nullable|string|max:7',
             'is_active' => 'nullable',
-            'group' => 'nullable|string|max:255',
+            'room_class_group_id' => 'nullable|exists:room_class_groups,id',
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
         ]);
@@ -95,14 +103,22 @@ class RoomClassController extends Controller
             $roomClass->image_path = $request->file('image')->store('room_classes', 'public');
         }
 
+        $groupId = $validated['room_class_group_id'] ?? $roomClass->room_class_group_id;
+        if (!$groupId) {
+            $groupId = \App\Models\RoomClassGroup::where('code', 'hotel')->value('id')
+                ?? \App\Models\RoomClassGroup::first()?->id;
+        }
+
         $roomClass->update([
             'name' => $validated['name'],
             'code' => $validated['code'],
             'color' => $validated['color'] ?? $roomClass->color,
             'is_active' => $isActive,
-            'group' => $validated['group'] ?? $roomClass->group,
+            'room_class_group_id' => $groupId,
             'notes' => $validated['notes'] ?? $roomClass->notes,
         ]);
+
+        $roomClass->load('roomClassGroup');
 
         return new RoomClassResource($roomClass);
     }

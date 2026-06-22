@@ -20,6 +20,7 @@ class RoomConstraintsTest extends TestCase
         
         $user = User::create([
             'name' => 'Test User',
+            'username' => 'testuser',
             'email' => 'test@example.com',
             'password' => bcrypt('password'),
         ]);

@@ -250,6 +250,9 @@ const submitBulkLock = async () => {
       isBulkModalOpen.value = false
       selectedRoomIds.value = []
       fetchRooms()
+      if (bc) {
+        bc.postMessage('rooms-updated')
+      }
     }
   } catch (err) {
     console.error('Lỗi khóa phòng hàng loạt:', err)
@@ -275,6 +278,9 @@ const submitBulkUnlock = async () => {
       fetchRooms()
       if (activeHistoryRoom.value) {
         showHistory(activeHistoryRoom.value)
+      }
+      if (bc) {
+        bc.postMessage('rooms-updated')
       }
     }
   } catch (err) {
@@ -326,6 +332,9 @@ const saveInlineEdits = async () => {
     editedLocks.value = {}
     selectedRoomIds.value = []
     fetchRooms()
+    if (bc) {
+      bc.postMessage('rooms-updated')
+    }
   } catch (err) {
     console.error('Lỗi khi lưu thông tin chỉnh sửa:', err)
     uiStore.showToast('Có lỗi xảy ra khi lưu thông tin chỉnh sửa', 'error')
@@ -378,13 +387,33 @@ const closeAllPopovers = (e) => {
   }
 }
 
+let bc = null
+
+const handleTabFocus = () => {
+  fetchRooms()
+}
+
 onMounted(() => {
   fetchRooms()
   document.addEventListener('click', closeAllPopovers)
+  window.addEventListener('focus', handleTabFocus)
+  
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('pms-room-updates')
+    bc.onmessage = (event) => {
+      if (event.data === 'rooms-updated') {
+        fetchRooms()
+      }
+    }
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeAllPopovers)
+  window.removeEventListener('focus', handleTabFocus)
+  if (bc) {
+    bc.close()
+  }
 })
 </script>
 

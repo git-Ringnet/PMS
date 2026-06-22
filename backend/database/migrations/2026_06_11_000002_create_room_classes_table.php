@@ -17,7 +17,12 @@ return new class extends Migration
             $table->string('code')->unique(); // Tên viết tắt
             $table->string('color')->default('#ffffff'); // Màu sắc
             $table->boolean('is_active')->default(true); // Có sử dụng
-            $table->string('group')->default('hotel'); // Nhóm loại phòng
+            $table->foreignId('room_class_group_id')
+                ->nullable()
+                ->constrained('room_class_groups')
+                ->nullOnDelete(); // Nhóm loại phòng
+            $table->text('notes')->nullable();
+            $table->string('image_path')->nullable();
             $table->timestamps();
         });
     }

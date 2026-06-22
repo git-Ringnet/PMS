@@ -7,8 +7,8 @@ import { computed } from 'vue'
 
 const route = useRoute()
 
-// Trang không dùng layout (như Home, Login)
-const noLayout = computed(() => !!route.meta.noLayout)
+// Trang không dùng layout (như Home, Login). Nếu route chưa load xong (!route.name), mặc định không render layout để tránh gọi API thừa.
+const noLayout = computed(() => !route.name || !!route.meta.noLayout)
 </script>
 
 <template>

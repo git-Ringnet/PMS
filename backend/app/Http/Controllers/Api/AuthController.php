@@ -18,13 +18,13 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $credentials = $request->validate([
-            'email' => 'required|email',
+            'username' => 'required|string',
             'password' => 'required|string',
         ]);
 
         if (!Auth::attempt($credentials)) {
             return response()->json([
-                'message' => 'Email hoặc mật khẩu không chính xác.'
+                'message' => 'Tên đăng nhập hoặc mật khẩu không chính xác.'
             ], 422);
         }
 

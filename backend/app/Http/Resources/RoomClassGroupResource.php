@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class RoomClassResource extends JsonResource
+class RoomClassGroupResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -18,13 +18,7 @@ class RoomClassResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'code' => $this->code,
-            'color' => $this->color,
             'is_active' => (bool) $this->is_active,
-            'room_class_group_id' => $this->room_class_group_id,
-            'group' => $this->roomClassGroup?->name,
-            'notes' => $this->notes,
-            'image_path' => $this->image_path,
-            'image_url' => $this->image_path ? asset('storage/' . $this->image_path) : null,
         ];
     }
 }

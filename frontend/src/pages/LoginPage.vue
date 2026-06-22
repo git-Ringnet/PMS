@@ -6,20 +6,20 @@ import { useAuthStore } from '@/stores/auth-store'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const email = ref('test@example.com')
-const password = ref('password')
+const username = ref('testuser')
+const password = ref('PmsPass@123')
 const loading = ref(false)
 const errorMessage = ref('')
 
 async function handleLogin() {
-  if (!email.value || !password.value) {
-    errorMessage.value = 'Vui lòng nhập đầy đủ email và mật khẩu.'
+  if (!username.value || !password.value) {
+    errorMessage.value = 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.'
     return
   }
   try {
     loading.value = true
     errorMessage.value = ''
-    await authStore.login(email.value, password.value)
+    await authStore.login(username.value, password.value)
     router.push('/')
   } catch (err) {
     errorMessage.value = authStore.error || 'Đăng nhập thất bại. Vui lòng kiểm tra lại.'
@@ -65,19 +65,19 @@ async function handleLogin() {
       <!-- Forms Wrapper -->
       <form @submit.prevent="handleLogin" class="flex flex-col gap-4">
         
-        <!-- Standard Email & Password -->
+        <!-- Standard Username & Password -->
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[11px] font-bold text-slate-400 tracking-wider">EMAIL ĐĂNG NHẬP</label>
+            <label class="text-[11px] font-bold text-slate-400 tracking-wider">TÊN ĐĂNG NHẬP (USERNAME)</label>
             <div class="relative flex items-center">
               <input
-                v-model="email"
-                type="email"
-                placeholder="test@example.com"
+                v-model="username"
+                type="text"
+                placeholder="Nhập tên đăng nhập..."
                 class="w-full h-11 px-4 pl-10 rounded-xl bg-white/5 border border-white/10 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-[#0ea5e9] focus:ring-1 focus:ring-[#0ea5e9]/30 transition-all"
               />
               <svg class="w-4 h-4 text-slate-500 absolute left-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
           </div>
@@ -117,7 +117,7 @@ async function handleLogin() {
       <div class="mt-6 pt-5 border-t border-white/10 flex flex-col gap-1 items-center">
         <span class="text-[10px] font-bold text-slate-500 tracking-wider">TÀI KHOẢN DÙNG THỬ (TEST)</span>
         <span class="text-xs text-slate-300 font-semibold tracking-wide bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 mt-1 select-all cursor-pointer" title="Click để chọn">
-          test@example.com / password
+          testuser / PmsPass@123
         </span>
       </div>
 
