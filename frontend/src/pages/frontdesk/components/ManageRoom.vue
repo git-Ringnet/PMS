@@ -67,15 +67,13 @@ const getRowClass = (style) => {
             : 'bg-slate-200 pl-7 pr-2.5'
         "
       >
-        <!-- Text -->
         <span
           class="text-[11px] font-bold flex-1 text-center transition-all duration-200"
           :class="roomStatistics === true ? 'text-white' : 'text-slate-500'"
         >
-          {{ roomStatistics === false ? "Thống kê phòng" : "??" }}
+          Thống kê phòng
         </span>
 
-        <!-- Thumb -->
         <div
           class="absolute top-[3px] w-[22px] h-[22px] bg-white rounded-full shadow transition-all duration-200"
           :class="roomStatistics === true ? 'right-[3px]' : 'left-[3px]'"
@@ -140,35 +138,47 @@ const getRowClass = (style) => {
 
     <!-- MAIN CONTENT -->
     <div class="h-9/10">
-      <div class="flex flex-col h-[500px] border border-gray-300">
-        <div class="flex bg-gray-200 border-b border-gray-300 font-bold">
-          <div class="p-3 w-1/2 border-r border-gray-300"></div>
-          <div class="p-3 w-1/4 border-r border-gray-300 text-center">
-            T2<br />15/06
-          </div>
-          <div class="p-3 w-1/4 text-center">Tổng cộng</div>
-        </div>
+      <div class="w-fit h-[500px] border border-gray-300 overflow-y-auto">
+        <table class="border-collapse border-spacing-0">
+          <thead class="sticky top-0 z-10">
+            <tr class="bg-gray-200 font-bold">
+              <th class="p-3 w-64 border-b border-r border-gray-300"></th>
+              <th
+                class="p-3 w-32 border-b border-r border-gray-300 text-center"
+              >
+                T2<br />15/06
+              </th>
+              <th class="p-3 w-32 border-b border-gray-300 text-center">
+                Tổng cộng
+              </th>
+            </tr>
+          </thead>
 
-        <div class="flex-1 overflow-y-auto">
-          <div
-            v-for="(row, index) in manageRoomTableRows"
-            :key="index"
-            :class="[
-              'group flex border-b bg-white border-gray-300',
-              getRowClass(row.style),
-            ]"
-          >
-            <div class="p-3 w-1/2 border-r border-gray-300">
-              {{ row.title }}
-            </div>
-            <div class="p-3 w-1/4 border-r border-gray-300 text-center group-hover:bg-blue-50 transition-colors">
-              {{ row.value }}
-            </div>
-            <div class="p-3 w-1/4 text-center group-hover:bg-blue-50 transition-colors">
-              {{ row.value }}
-            </div>
-          </div>
-        </div>
+          <tbody>
+            <tr
+              v-for="(row, index) in manageRoomTableRows"
+              :key="index"
+              :class="[
+                'group bg-white border-b border-gray-300',
+                getRowClass(row.style),
+              ]"
+            >
+              <td class="p-3 w-64 border-r border-gray-300">
+                {{ row.title }}
+              </td>
+              <td
+                class="p-3 w-32 border-r border-gray-300 text-center group-hover:bg-blue-50 transition-colors"
+              >
+                {{ row.value }}
+              </td>
+              <td
+                class="p-3 w-32 text-center group-hover:bg-blue-50 transition-colors"
+              >
+                {{ row.value }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
