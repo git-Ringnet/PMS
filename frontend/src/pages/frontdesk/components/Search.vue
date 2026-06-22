@@ -157,6 +157,28 @@ const dateRange = ref([today, today]);
 const activeModal = ref(null);
 const selectedStayStatus = ref(null);
 const selectedSearchBy = ref([]);
+const selectedFilters = ref([
+  "check",
+   "ma-bk",
+  "ma-tham-chieu",
+  "ten-dang-ky",
+  "cong-ty",
+  "thi-truong",
+  "ngay-den",
+   "ngay-di",
+  "dem",
+  "lp-khoi-tao",
+  "lp-thuc-te",
+  "tong",
+  "dat-coc",
+  "tinh-trang-luu-tru",
+  "tinh-trang-luu-tru",
+  "lien-he",
+  "ghi-chu",
+  "ngay-dang-ky",
+  "nguoi-ban",
+  "nguoi-tao",
+]);
 const isHoveringSelect = ref(false);
 const roomTypeMockData = ref({});
 
@@ -534,7 +556,6 @@ const vClickOutside = {
 const toggleModal = (modalName) => {
   activeModal.value = activeModal.value === modalName ? null : modalName;
 };
-
 const closeModal = () => {
   activeModal.value = null;
 };
