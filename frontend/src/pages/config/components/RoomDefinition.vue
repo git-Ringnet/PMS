@@ -32,6 +32,7 @@ const roomTabs = [
 ]
 
 // Data States
+const roomClassGroups = ref([])
 const roomClasses = ref([])
 const roomForms = ref([])
 const standardRates = ref([])
@@ -58,7 +59,7 @@ const roomClassFormState = reactive({
   code: '',
   color: '#ffffff',
   is_active: true,
-  group: 'hotel',
+  room_class_group_id: '',
   notes: '',
   image: null,
   imagePreview: null
@@ -156,6 +157,7 @@ let bc = null
 
 // Load initial data
 onMounted(async () => {
+  fetchRoomClassGroups()
   fetchRoomClasses()
   fetchRoomForms()
   fetchStandardRates()
@@ -176,6 +178,15 @@ onBeforeUnmount(() => {
 })
 
 // API Functions
+const fetchRoomClassGroups = async () => {
+  try {
+    const res = await http.get('/room-class-groups')
+    roomClassGroups.value = res.data.data || []
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách nhóm loại phòng:', err)
+  }
+}
+
 const fetchRoomClasses = async () => {
   try {
     const res = await http.get('/room-classes')
@@ -347,7 +358,7 @@ const openAddRoomClassModal = () => {
     code: '',
     color: '#ffffff',
     is_active: true,
-    group: 'hotel',
+    room_class_group_id: roomClassGroups.value[0]?.id || '',
     notes: '',
     image: null,
     imagePreview: null
@@ -366,7 +377,7 @@ const openEditRoomClassModal = (rc) => {
     code: rc.code,
     color: rc.color || '#ffffff',
     is_active: rc.is_active,
-    group: rc.group || 'hotel',
+    room_class_group_id: rc.room_class_group_id || '',
     notes: rc.notes || '',
     image: null,
     imagePreview: rc.image_url || null
@@ -386,6 +397,16 @@ const triggerRoomClassImageUpload = () => {
 const handleRoomClassImageUpload = (e) => {
   const file = e.target.files[0]
   if (!file) return
+
+  // Kiểm tra định dạng file có phải là ảnh hay không
+  if (!file.type.startsWith('image/')) {
+    uiStore.showToast('Vui lòng chỉ chọn các định dạng file ảnh!', 'warning')
+    if (roomClassImageInput.value) {
+      roomClassImageInput.value.value = ''
+    }
+    return
+  }
+
   roomClassFormState.image = file
   const reader = new FileReader()
   reader.onload = (event) => {
@@ -414,7 +435,9 @@ const saveRoomClass = async () => {
     formData.append('code', roomClassFormState.code)
     formData.append('color', roomClassFormState.color)
     formData.append('is_active', roomClassFormState.is_active ? '1' : '0')
-    formData.append('group', roomClassFormState.group)
+    if (roomClassFormState.room_class_group_id) {
+      formData.append('room_class_group_id', roomClassFormState.room_class_group_id)
+    }
     formData.append('notes', roomClassFormState.notes)
     if (roomClassFormState.image) {
       formData.append('image', roomClassFormState.image)
@@ -1500,10 +1523,10 @@ const toggleRoomInternal = async (room) => {
 
         <div class="flex flex-col gap-1.5">
           <span class="font-bold text-slate-600 uppercase text-xs">Nhóm loại phòng</span>
-          <select v-model="roomClassFormState.group"
+          <select v-model="roomClassFormState.room_class_group_id"
             class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-400 text-sm">
-            <option value="" disabled>Select Value</option>
-            <option value="hotel">HOTEL</option>
+            <option value="" disabled>Chọn nhóm loại phòng</option>
+            <option v-for="g in roomClassGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
           </select>
         </div>
 
