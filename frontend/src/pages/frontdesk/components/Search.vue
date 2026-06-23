@@ -11,141 +11,137 @@ const childTabs = ref([
 ]);
 const stayStatus = ref([
   { title: "Total", code: "total" },
-  { title: "Checked in", code: "checked-in" },
-  { title: "Checked out", code: "checked-out" },
-  { title: "In House", code: "in-house" },
+  { title: "Checked in", code: "checkedIn" },
+  { title: "Checked out", code: "checkedOut" },
+  { title: "In House", code: "inHouse" },
   { title: "Arrival", code: "arrival" },
   { title: "Departure", code: "departure" },
   { title: "Cancel", code: "cancel" },
 ]);
 const searchByOptions = ref([
   { title: "Tất cả", code: "all" },
-  { title: "Booking Code", code: "booking-code" },
-  { title: "Ref Code", code: "ref-code" },
-  { title: "Booking Name", code: "booking-name" },
-  { title: "Booking Status", code: "booking-status" },
+  { title: "Booking Code", code: "bookingCode" },
+  { title: "Ref Code", code: "refCode" },
+  { title: "Booking Name", code: "bookingName" },
+  { title: "Booking Status", code: "bookingStatus" },
   { title: "Contact", code: "contact" },
   { title: "Booker", code: "booker" },
   { title: "Company", code: "company" },
-  { title: "Market Segment", code: "market-segment" },
-  { title: "Source Code", code: "source-code" },
-  { title: "Reg Date", code: "reg-date" },
-  { title: "User Sale", code: "user-sale" },
+  { title: "Market Segment", code: "marketSegment" },
+  { title: "Source Code", code: "sourceCode" },
+  { title: "Reg Date", code: "regDate" },
+  { title: "User Sale", code: "userSale" },
 ]);
 const filterOptions = ref([
   { title: "Check", code: "check" },
-  { title: "Mã BK", code: "ma-bk" },
-  { title: "Mã Tham Chiếu", code: "ma-tham-chieu" },
-  { title: "Tên Đăng Ký", code: "ten-dang-ky" },
-  { title: "Công Ty", code: "cong-ty" },
-  { title: "Thị Trường", code: "thi-truong" },
-  { title: "Ngày Đến", code: "ngay-den" },
-  { title: "Ngày Đi", code: "ngay-di" },
-  { title: "Đêm", code: "dem" },
-  { title: "LP Khởi Tạo", code: "lp-khoi-tao" },
-  { title: "LP Thực Tế", code: "lp-thuc-te" },
-  { title: "Tổng", code: "tong" },
-  { title: "Đặt Cọc", code: "dat-coc" },
-  { title: "Tình Trạng Lưu Trú", code: "tinh-trang-luu-tru" },
-  { title: "Tình Trạng Lưu Trú", code: "tinh-trang-luu-tru" },
-  { title: "Liên Hệ", code: "lien-he" },
-  { title: "Ghi Chú", code: "ghi-chu" },
-  { title: "Ngày Đăng Ký", code: "ngay-dang-ky" },
-  { title: "Người Bán", code: "nguoi-ban" },
-  { title: "Người Tạo", code: "nguoi-tao" },
+  { title: "Mã BK", code: "bookingCode" },
+  { title: "Mã Tham Chiếu", code: "refCode" },
+  { title: "Tên Đăng Ký", code: "regName" },
+  { title: "Công Ty", code: "company" },
+  { title: "Thị Trường", code: "market" },
+  { title: "Ngày Đến", code: "checkIn" },
+  { title: "Ngày Đi", code: "checkOut" },
+  { title: "Đêm", code: "nights" },
+  { title: "LP Khởi Tạo", code: "origRoomType" },
+  { title: "LP Thực Tế", code: "actualRoomType" },
+  { title: "Tổng", code: "total" },
+  { title: "Đặt Cọc", code: "deposit" },
+  { title: "Tình Trạng Lưu Trú", code: "stayStatus1" },
+  { title: "Tình Trạng Lưu Trú", code: "stayStatus2" },
+  { title: "Liên Hệ", code: "contact" },
+  { title: "Ghi Chú", code: "note" },
+  { title: "Ngày Đăng Ký", code: "regDate" },
+  { title: "Người Bán", code: "salesPerson" },
+  { title: "Người Tạo", code: "creator" },
 ]);
 const registerTableColumns = ref([
-  { title: "", code: "more", isSort: false },
-  { title: "Check", code: "check", isSort: false },
-  { title: "Mã BK", code: "ma-bk", isSort: true },
-  { title: "Mã Tham Chiếu", code: "ma-tham-chieu", isSort: false },
-  { title: "Tên Đăng Ký", code: "ten-dang-ky", isSort: false },
-  { title: "Công Ty", code: "cong-ty", isSort: false },
-  { title: "Thị Trường", code: "thi-truong", isSort: false },
-  { title: "Ngày Đến", code: "ngay-den", isSort: true },
-  { title: "Ngày Đi", code: "ngay-di", isSort: true },
-  { title: "Đêm", code: "dem", isSort: true },
-  { title: "LP Khởi Tạo", code: "lp-khoi-tao", isSort: false },
-  { title: "LP Thực Tế", code: "lp-thuc-te", isSort: false },
-  { title: "Tổng", code: "tong", isSort: false },
-  { title: "Đặt Cọc", code: "dat-coc", isSort: false },
-  { title: "Tình Trạng Lưu Trú", code: "tinh-trang-luu-tru", isSort: false },
-  { title: "Tình Trạng Lưu Trú", code: "tinh-trang-luu-tru", isSort: false },
-  { title: "Liên Hệ", code: "lien-he", isSort: false },
-  { title: "Ghi Chú", code: "ghi-chu", isSort: false },
-  { title: "Ngày Đăng Ký", code: "ngay-dang-ky", isSort: true },
-  { title: "Người Bán", code: "nguoi-ban", isSort: true },
-  { title: "Người Tạo", code: "nguoi-tao", isSort: false },
+  { title: "Mã BK", code: "bookingCode", isSort: true },
+  { title: "Mã Tham Chiếu", code: "refCode", isSort: false },
+  { title: "Tên Đăng Ký", code: "regName", isSort: false },
+  { title: "Công Ty", code: "company", isSort: false },
+  { title: "Thị Trường", code: "market", isSort: false },
+  { title: "Ngày Đến", code: "checkIn", isSort: true },
+  { title: "Ngày Đi", code: "checkOut", isSort: true },
+  { title: "Đêm", code: "nights", isSort: true },
+  { title: "LP Khởi Tạo", code: "origRoomType", isSort: false },
+  { title: "LP Thực Tế", code: "actualRoomType", isSort: false },
+  { title: "Tổng", code: "total", isSort: false },
+  { title: "Đặt Cọc", code: "deposit", isSort: false },
+  { title: "Tình Trạng Lưu Trú", code: "stayStatus1", isSort: false },
+  { title: "Tình Trạng Lưu Trú", code: "stayStatus2", isSort: false },
+  { title: "Liên Hệ", code: "contact", isSort: false },
+  { title: "Ghi Chú", code: "note", isSort: false },
+  { title: "Ngày Đăng Ký", code: "regDate", isSort: true },
+  { title: "Người Bán", code: "salesPerson", isSort: true },
+  { title: "Người Tạo", code: "creator", isSort: false },
 ]);
 const roomTypeTableColumns = ref([
-  { title: "Loại Phòng", code: "loai-phong" },
-  { title: "#Phòng", code: "#-phong" },
-  { title: "#N.Lớn", code: "#-nguoi-lon" },
-  { title: "#T.Em", code: "#-tre-em" },
-  { title: "Ngày Đến", code: "ngay-den" },
-  { title: "Ngày Đi", code: "ngay-di" },
-  { title: "Mã Giá Phòng", code: "ma-gia-phong" },
-  { title: "Giá Phòng", code: "gia-phong" },
-  { title: "Tổng", code: "tong" },
+  { title: "Loại Phòng", code: "roomType" },
+  { title: "#Phòng", code: "roomCount" },
+  { title: "#N.Lớn", code: "adultsCount" },
+  { title: "#T.Em", code: "childrenCount" },
+  { title: "Ngày Đến", code: "checkIn" },
+  { title: "Ngày Đi", code: "checkOut" },
+  { title: "Mã Giá Phòng", code: "rateCode" },
+  { title: "Giá Phòng", code: "rate" },
+  { title: "Tổng", code: "total" },
 ]);
 const roomTableColumns = ref([
-  { title: "Check", code: "check" },
-  { title: "Phòng", code: "phong" },
-  { title: "Tình Trạng Phòng", code: "tinh-trang-phong" },
-  { title: "Tên Khách", code: "ten-khach" },
-  { title: "Ngày Đến", code: "ngay-den" },
-  { title: "Ngày Đi", code: "ngay-di" },
-  { title: "Số Đêm", code: "so-dem" },
-  { title: "Giá Phòng", code: "gia-phong" },
-  { title: "Mã Giá Phòng", code: "ma-gia-phong" },
-  { title: "Thêm Giường", code: "them-giuong" },
-  { title: "Giá TG", code: "gia-tg" },
-  { title: "Người Lớn", code: "nguoi-lon" },
-  { title: "Trẻ Em", code: "tre-em" },
-  { title: "Ghi Chú", code: "ghi-chu" },
-  { title: "Tổng Dịch Vụ", code: "tong-dich-vu" },
-  { title: "Thanh Toán", code: "thanh-toan" },
-  { title: "Giờ Đến", code: "gio-den" },
-  { title: "Giờ Đi", code: "gio-di" },
-  { title: "Ngày Đăng Ký", code: "ngay-dang-ky" },
+  { title: "Phòng", code: "roomNumber" },
+  { title: "Tình Trạng Phòng", code: "roomStatus" },
+  { title: "Tên Khách", code: "guestName" },
+  { title: "Ngày Đến", code: "checkIn" },
+  { title: "Ngày Đi", code: "checkOut" },
+  { title: "Số Đêm", code: "nights" },
+  { title: "Giá Phòng", code: "rate" },
+  { title: "Mã Giá Phòng", code: "rateCode" },
+  { title: "Thêm Giường", code: "extraBed" },
+  { title: "Giá TG", code: "extraBedPrice" },
+  { title: "Người Lớn", code: "adults" },
+  { title: "Trẻ Em", code: "children" },
+  { title: "Ghi Chú", code: "note" },
+  { title: "Tổng Dịch Vụ", code: "totalService" },
+  { title: "Thanh Toán", code: "payment" },
+  { title: "Giờ Đến", code: "checkInTime" },
+  { title: "Giờ Đi", code: "checkOutTime" },
+  { title: "Ngày Đăng Ký", code: "regDate" },
 ]);
 const guestTableColumns = ref([
-  { title: "Check", code: "check" },
-  { title: "Đăng Ký", code: "dang-ky" },
-  { title: "Phòng", code: "phong" },
-  { title: "Tên Khách", code: "ten-khach" },
-  { title: "Ngày Đến", code: "ngay-den" },
-  { title: "Ngày Đi", code: "ngay-di" },
-  { title: "Số Đêm", code: "so-dem" },
-  { title: "Giá Phòng", code: "gia-phong" },
-  { title: "Mã Giá Phòng", code: "ma-gia-phong" },
-  { title: "Công Ty DL", code: "cong-ty-dl" },
-  { title: "Loại Giấy Tờ", code: "loai-giay-to" },
-  { title: "Số Giấy Tờ", code: "so-giay-to" },
+  { title: "Đăng Ký", code: "regCode" },
+  { title: "Phòng", code: "roomNumber" },
+  { title: "Tên Khách", code: "guestName" },
+  { title: "Ngày Đến", code: "checkIn" },
+  { title: "Ngày Đi", code: "checkOut" },
+  { title: "Số Đêm", code: "nights" },
+  { title: "Giá Phòng", code: "rate" },
+  { title: "Mã Giá Phòng", code: "rateCode" },
+  { title: "Công Ty DL", code: "travelAgency" },
+  { title: "Loại Giấy Tờ", code: "idType" },
+  { title: "Số Giấy Tờ", code: "idNumber" },
   { title: "Email", code: "email" },
-  { title: "SĐT", code: "sdt" },
-  { title: "Ngày Sinh", code: "ngay-sinh" },
-  { title: "Quốc Tịch", code: "quoc-tich" },
-  { title: "Tỉnh Thành", code: "tinh-thanh" },
-  { title: "Địa Chỉ", code: "dia-chi" },
+  { title: "SĐT", code: "phone" },
+  { title: "Ngày Sinh", code: "dob" },
+  { title: "Quốc Tịch", code: "nationality" },
+  { title: "Tỉnh Thành", code: "city" },
+  { title: "Địa Chỉ", code: "address" },
   { title: "Visa", code: "visa" },
-  { title: "Ngày Hết Hạn", code: "ngay-het-han" },
-  { title: "Ngày Nhập Cảnh", code: "ngay-nhap-canh" },
-  { title: "Cửa Khẩu", code: "cua-khau" },
+  { title: "Ngày Hết Hạn", code: "visaExpiry" },
+  { title: "Ngày Nhập Cảnh", code: "entryDate" },
+  { title: "Cửa Khẩu", code: "portOfEntry" },
 ]);
 const guestHistoryTableColumns = ref([
   { title: "No", code: "no" },
-  { title: "Mã đăng ký", code: "ma-dang-ky" },
-  { title: "Tên đăng ký", code: "ten-dang-ky" },
-  { title: "Ngày đến", code: "ngay-den" },
-  { title: "Ngày đi", code: "ngay-di" },
-  { title: "Số đêm", code: "so-dem" },
-  { title: "Loại phòng", code: "loai-phong" },
-  { title: "Phòng", code: "phong" },
-  { title: "Giá phòng", code: "gia-phong" },
-  { title: "Doanh thu phòng", code: "doanh-thu-phong" },
-  { title: "Doanh thu khác", code: "doanh-thu-khac" },
-  { title: "Tổng doanh thu", code: "tong-doanh-thu" },
+  { title: "Mã đăng ký", code: "regCode" },
+  { title: "Tên đăng ký", code: "regName" },
+  { title: "Ngày đến", code: "checkIn" },
+  { title: "Ngày đi", code: "checkOut" },
+  { title: "Số đêm", code: "nights" },
+  { title: "Loại phòng", code: "roomType" },
+  { title: "Phòng", code: "roomNumber" },
+  { title: "Giá phòng", code: "rate" },
+  { title: "Doanh thu phòng", code: "roomRevenue" },
+  { title: "Doanh thu khác", code: "otherRevenue" },
+  { title: "Tổng doanh thu", code: "totalRevenue" },
 ]);
 const today = new Date();
 
@@ -159,31 +155,35 @@ const selectedStayStatus = ref(null);
 const selectedSearchBy = ref([]);
 const selectedFilters = ref([
   "check",
-   "ma-bk",
-  "ma-tham-chieu",
-  "ten-dang-ky",
-  "cong-ty",
-  "thi-truong",
-  "ngay-den",
-   "ngay-di",
-  "dem",
-  "lp-khoi-tao",
-  "lp-thuc-te",
-  "tong",
-  "dat-coc",
-  "tinh-trang-luu-tru",
-  "tinh-trang-luu-tru",
-  "lien-he",
-  "ghi-chu",
-  "ngay-dang-ky",
-  "nguoi-ban",
-  "nguoi-tao",
+  "bookingCode",
+  "refCode",
+  "regName",
+  "company",
+  "market",
+  "checkIn",
+  "checkOut",
+  "nights",
+  "origRoomType",
+  "actualRoomType",
+  "total",
+  "deposit",
+  "stayStatus1",
+  "stayStatus2",
+  "contact",
+  "note",
+  "regDate",
+  "salesPerson",
+  "creator",
 ]);
 const isHoveringSelect = ref(false);
 const roomTypeMockData = ref({});
+const selectedRegister = ref([]);
+const selectedRoomBooking = ref([]);
+const selectedGuest = ref([]);
 
 //======================= MOCK DATA ========================//
-// Register Tab
+
+//---Register Tab---//
 const guestNames = [
   "Walkin Guest",
   "Anh Kha",
@@ -217,70 +217,69 @@ const statuses = [
 ];
 const sellers = ["Nguyễn Văn A", "Trần Thị B", "Lê Văn C", "Phạm Thị D"];
 
-const generateMockData = (count) => {
-  const data = [];
-  for (let i = 1; i <= count; i++) {
-    const dem = Math.floor(Math.random() * 6);
-    const tong = dem * 490000 * (Math.floor(Math.random() * 3) + 1);
-    data.push({
+const generateRegisterMockData = (count) => {
+  return Array.from({ length: count }, (_, i) => {
+    const dem = Math.floor(Math.random() * 6) + 1;
+    const total = dem * 490000;
+    return {
       _expanded: false,
-      check: false,
-      "ma-bk": `GAL${i}`,
-      "ma-tham-chieu": Math.random() > 0.7 ? `REF${1000 + i}` : "",
-      "ten-dang-ky": guestNames[i % guestNames.length],
-      "cong-ty": companies[i % companies.length],
-      "thi-truong": markets[i % markets.length],
-      "ngay-den": `${String((i % 28) + 1).padStart(2, "0")}/04/2025`,
-      "ngay-di": `${String(((i + dem) % 28) + 1).padStart(2, "0")}/04/2025`,
-      dem,
-      "lp-khoi-tao": dem > 0 ? `DLXD (${(i % 3) + 1})` : "",
-      "lp-thuc-te": dem > 0 ? `DLXD (${(i % 3) + 1})` : "",
-      tong,
-      "dat-coc": Math.random() > 0.6 ? Math.floor(tong * 0.3) : 0,
-      "tinh-trang-luu-tru": statuses[i % statuses.length],
-      "lien-he":
+      bookingCode: `GAL${i}`,
+      refCode: Math.random() > 0.7 ? `REF${1000 + i}` : "",
+      regName: guestNames[i % guestNames.length],
+      company: companies[i % companies.length],
+      market: markets[i % markets.length],
+      checkIn: `${String((i % 28) + 1).padStart(2, "0")}/04/2025`,
+      checkOut: `${String(((i + dem) % 28) + 1).padStart(2, "0")}/04/2025`,
+      nights: dem,
+      origRoomType: dem > 0 ? `DLXD (${(i % 3) + 1})` : "",
+      actualRoomType: dem > 0 ? `DLXD (${(i % 3) + 1})` : "",
+      total: total,
+      deposit: Math.random() > 0.6 ? Math.floor(total * 0.3) : 0,
+      stayStatus1: statuses[i % statuses.length],
+      stayStatus2: statuses[i % statuses.length],
+      contact:
         Math.random() > 0.3 ? `09${String(10000000 + i).slice(0, 8)}` : "",
-      "ghi-chu": Math.random() > 0.8 ? "Khách VIP" : "",
-      "ngay-dang-ky": `${String((i % 28) + 1).padStart(2, "0")}/03/2025`,
-      "nguoi-ban": sellers[i % sellers.length],
-      "nguoi-tao": "admin",
-    });
-  }
-  return data;
+      note: Math.random() > 0.8 ? "Khách VIP" : "",
+      regDate: `${String((i % 28) + 1).padStart(2, "0")}/03/2025`,
+      salesPerson: sellers[i % sellers.length],
+      creator: "admin",
+    };
+  });
 };
+const registerTableData = ref(generateRegisterMockData(50));
+
 const generateRoomTypeMockData = () => {
   const roomTypes = ["DLXD", "DLXDB", "SUPT", "DLXT", "FAM", "JST"];
   const rateCodes = ["DLXD01", "DLXDB01", "SUPT01", "DLXT01", "FAM01"];
 
   registerTableData.value.forEach((row) => {
-    if (roomTypeMockData[row["ma-bk"]]) return; // skip nếu đã có data thủ công
+    if (roomTypeMockData.value[row.bookingCode]) return;
 
-    const count = Math.floor(Math.random() * 3); // 0, 1, hoặc 2
-    const rooms = [];
+    const count = Math.floor(Math.random() * 3);
 
-    for (let i = 0; i < count; i++) {
+    const rooms = Array.from({ length: count }, () => {
       const gia = (Math.floor(Math.random() * 10) + 5) * 100000;
-      const dem = row.dem || 1;
-      rooms.push({
-        "loai-phong": roomTypes[Math.floor(Math.random() * roomTypes.length)],
-        "#-phong": 1,
-        "#-nguoi-lon": Math.floor(Math.random() * 2) + 1,
-        "#-tre-em": Math.floor(Math.random() * 2),
-        "ngay-den": row["ngay-den"],
-        "ngay-di": row["ngay-di"],
-        "ma-gia-phong": rateCodes[Math.floor(Math.random() * rateCodes.length)],
-        "gia-phong": gia,
-        tong: gia * dem,
-      });
-    }
+      const dem = row.nights || 1;
 
-    roomTypeMockData.value[row["ma-bk"]] = rooms;
+      return {
+        roomType: roomTypes[Math.floor(Math.random() * roomTypes.length)],
+        roomCount: 1,
+        adultsCount: Math.floor(Math.random() * 2) + 1,
+        childrenCount: Math.floor(Math.random() * 2),
+        checkIn: row.checkIn,
+        checkOut: row.checkOut,
+        rateCode: rateCodes[Math.floor(Math.random() * rateCodes.length)],
+        rate: gia,
+        total: gia * dem,
+      };
+    });
+
+    roomTypeMockData.value[row.bookingCode] = rooms;
   });
 };
-const registerTableData = ref(generateMockData(50));
 generateRoomTypeMockData();
 
-// Room Tab
+//---Room Tab---//
 const roomStatuses = ["Phòng đã trả", "Đang ở", "Chờ nhận", "Đã đặt", "Trống"];
 const roomTabGuestNames = [
   "Nguyễn Văn An",
@@ -302,9 +301,8 @@ const notes = [
   "",
 ];
 const generateRoomTableData = (bookingCount) => {
-  const data = [];
-
-  for (let i = 1; i <= bookingCount; i++) {
+  return Array.from({ length: bookingCount }, (_, i) => {
+    // Logic tính toán ngày
     const checkIn = new Date(2025, 4 + (i % 3), (i % 28) + 1);
     const nights = Math.floor(Math.random() * 5) + 1;
     const checkOut = new Date(checkIn);
@@ -313,65 +311,58 @@ const generateRoomTableData = (bookingCount) => {
     const formatDate = (d) =>
       `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 
-    const guestName = roomTabGuestNames[i % roomTabGuestNames.length];
     const fromDate = formatDate(checkIn);
     const toDate = formatDate(checkOut);
+    const regDate = formatDate(
+      new Date(checkIn.getTime() - 7 * 24 * 60 * 60 * 1000),
+    );
 
+    // Tạo danh sách phòng con cho mỗi booking
     const roomCount = Math.floor(Math.random() * 3) + 1;
-    const rooms = [];
+    const rooms = Array.from({ length: roomCount }, (_, r) => {
+      const rate = (Math.floor(Math.random() * 10) + 5) * 100000;
+      const extraBed = Math.random() > 0.7 ? 1 : 0;
+      const extraBedPrice = extraBed ? 150000 : 0;
+      const totalService = (rate + extraBedPrice) * nights;
 
-    for (let r = 0; r < roomCount; r++) {
-      const giaPhong = (Math.floor(Math.random() * 10) + 5) * 100000;
-      const themGiuong = Math.random() > 0.7 ? 1 : 0;
-      const giaTG = themGiuong ? 150000 : 0;
-      const nguoiLon = Math.floor(Math.random() * 2) + 1;
-      const treEm = Math.floor(Math.random() * 3);
-      const tongDichVu = (giaPhong + giaTG) * nights;
-      const thanhToan = Math.random() > 0.5 ? Math.floor(tongDichVu * 0.5) : 0;
-
-      rooms.push({
-        check: false,
-        phong: String(100 + i * 10 + r),
-        "tinh-trang-phong":
+      return {
+        roomNumber: String(100 + i * 10 + r),
+        roomStatus:
           roomStatuses[Math.floor(Math.random() * roomStatuses.length)],
-        "ten-khach": guestNames[(i + r) % guestNames.length],
-        "ngay-den": fromDate,
-        "ngay-di": toDate,
-        "so-dem": nights,
-        "gia-phong": giaPhong,
-        "ma-gia-phong": rateCodes[Math.floor(Math.random() * rateCodes.length)],
-        "them-giuong": themGiuong,
-        "gia-tg": giaTG,
-        "nguoi-lon": nguoiLon,
-        "tre-em": treEm,
-        "ghi-chu": Math.random() > 0.7 ? "View biển" : "",
-        "tong-dich-vu": tongDichVu,
-        "thanh-toan": thanhToan,
-        "gio-den":
+        guestName: guestNames[(i + r) % guestNames.length],
+        checkIn: fromDate,
+        checkOut: toDate,
+        nights: nights,
+        rate: rate,
+        rateCode: rateCodes[Math.floor(Math.random() * rateCodes.length)],
+        extraBed: extraBed,
+        extraBedPrice: extraBedPrice,
+        adults: Math.floor(Math.random() * 2) + 1,
+        children: Math.floor(Math.random() * 3),
+        note: Math.random() > 0.7 ? "View biển" : "",
+        totalService: totalService,
+        payment: Math.random() > 0.5 ? Math.floor(totalService * 0.5) : 0,
+        checkInTime:
           Math.random() > 0.3
             ? `${String(10 + (i % 8)).padStart(2, "0")}:00`
             : "",
-        "gio-di": Math.random() > 0.3 ? "12:00" : "",
-        "ngay-dang-ky": formatDate(
-          new Date(checkIn.getTime() - 7 * 24 * 60 * 60 * 1000),
-        ),
-      });
-    }
+        checkOutTime: Math.random() > 0.3 ? "12:00" : "",
+        regDate: regDate,
+      };
+    });
 
-    data.push({
+    return {
       id: `GAL${100 + i}`,
-      bookingHeader: `Booking GAL${100 + i}: ${guestName} _ ${fromDate}~${toDate} _ Room Night: ${nights}`,
+      bookingHeader: `Booking GAL${100 + i}: ${roomTabGuestNames[i % roomTabGuestNames.length]} _ ${fromDate}~${toDate}`,
       note: notes[i % notes.length],
       _expanded: true,
-      rooms,
-    });
-  }
-
-  return data;
+      rooms: rooms,
+    };
+  });
 };
 const roomTableData = ref(generateRoomTableData(50));
 
-// Guest Tab
+//---Guest Tab---//
 const guestTabGuestNames = [
   "Mr. Guest 1",
   "Mr. Guest 2",
@@ -417,31 +408,25 @@ const borders = [
   "",
 ];
 const generateGuestTableData = (count) => {
-  const data = [];
-
   const formatDate = (d) =>
     `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 
-  for (let i = 1; i <= count; i++) {
+  return Array.from({ length: count }, (_, i) => {
     const checkIn = new Date(2025, 4 + (i % 3), (i % 28) + 1);
     const nights = Math.floor(Math.random() * 5) + 1;
     const checkOut = new Date(checkIn);
     checkOut.setDate(checkOut.getDate() + nights);
 
-    const birthYear = 1970 + Math.floor(Math.random() * 35);
     const birthDate = new Date(
-      birthYear,
+      1970 + Math.floor(Math.random() * 35),
       Math.floor(Math.random() * 12),
       Math.floor(Math.random() * 28) + 1,
     );
-
-    const expYear = 2026 + Math.floor(Math.random() * 5);
     const expDate = new Date(
-      expYear,
+      2026 + Math.floor(Math.random() * 5),
       Math.floor(Math.random() * 12),
       Math.floor(Math.random() * 28) + 1,
     );
-
     const entryDate = new Date(checkIn);
     entryDate.setDate(entryDate.getDate() - Math.floor(Math.random() * 3));
 
@@ -450,47 +435,40 @@ const generateGuestTableData = (count) => {
       ? "Việt Nam"
       : nationalities[Math.floor(Math.random() * nationalities.length)];
 
-    data.push({
-      check: false,
-      "dang-ky": `GAL${100 + i}`,
-      phong: String(100 + i * 3),
-      "ten-khach": guestTabGuestNames[i % guestTabGuestNames.length],
-      "ngay-den": formatDate(checkIn),
-      "ngay-di": formatDate(checkOut),
-      "so-dem": nights,
-      "gia-phong": (Math.floor(Math.random() * 10) + 5) * 100000,
-      "ma-gia-phong": rateCodes[Math.floor(Math.random() * rateCodes.length)],
-      "cong-ty-dl":
+    return {
+      regCode: `GAL${100 + i}`,
+      roomNumber: String(100 + i * 3),
+      guestName: guestTabGuestNames[i % guestTabGuestNames.length],
+      checkIn: formatDate(checkIn),
+      checkOut: formatDate(checkOut),
+      nights: nights,
+      rate: (Math.floor(Math.random() * 10) + 5) * 100000,
+      rateCode: rateCodes[Math.floor(Math.random() * rateCodes.length)],
+      travelAgency:
         travelCompanies[Math.floor(Math.random() * travelCompanies.length)],
-      "loai-giay-to": isVietnam
-        ? Math.random() > 0.5
-          ? "CCCD"
-          : "CMND"
-        : "Hộ chiếu",
-      "so-giay-to": String(Math.floor(Math.random() * 900000000) + 100000000),
+      idType: isVietnam ? (Math.random() > 0.5 ? "CCCD" : "CMND") : "Hộ chiếu",
+      idNumber: String(Math.floor(Math.random() * 900000000) + 100000000),
       email: Math.random() > 0.4 ? `guest${i}@email.com` : "",
-      sdt: Math.random() > 0.3 ? `09${String(10000000 + i).slice(0, 8)}` : "",
-      "ngay-sinh": formatDate(birthDate),
-      "quoc-tich": nationality,
-      "tinh-thanh": isVietnam
+      phone: Math.random() > 0.3 ? `09${String(10000000 + i).slice(0, 8)}` : "",
+      dob: formatDate(birthDate),
+      nationality: nationality,
+      city: isVietnam
         ? provinces[Math.floor(Math.random() * provinces.length)]
         : "",
-      "dia-chi": isVietnam
+      address: isVietnam
         ? `${Math.floor(Math.random() * 200) + 1} Đường Lê Lợi`
         : "",
       visa:
         !isVietnam && Math.random() > 0.5
           ? `VN${String(Math.floor(Math.random() * 900000) + 100000)}`
           : "",
-      "ngay-het-han": !isVietnam ? formatDate(expDate) : "",
-      "ngay-nhap-canh": !isVietnam ? formatDate(entryDate) : "",
-      "cua-khau": !isVietnam
+      visaExpiry: !isVietnam ? formatDate(expDate) : "",
+      entryDate: !isVietnam ? formatDate(entryDate) : "",
+      portOfEntry: !isVietnam
         ? borders[Math.floor(Math.random() * borders.length)]
         : "",
-    });
-  }
-
-  return data;
+    };
+  });
 };
 const guestTableData = ref(generateGuestTableData(30));
 
@@ -534,7 +512,12 @@ const displaySearchBy = computed(() => {
   return count;
 });
 const totalAmount = computed(() =>
-  registerTableData.value.reduce((sum, row) => sum + (row["tong"] || 0), 0),
+  registerTableData.value.reduce((sum, row) => sum + (row.total || 0), 0),
+);
+const allRoomValues = computed(() =>
+  roomTableData.value.flatMap((booking) =>
+    booking.rooms.map((room) => `${booking.id}-${room.roomNumber}`),
+  ),
 );
 
 //======================= Mounted ========================//
@@ -581,6 +564,29 @@ const updateSelection = (changedCode) => {
     ) {
       selectedSearchBy.value.push("all");
     }
+  }
+};
+const handleChooseAllRegister = () => {
+  if (selectedRegister.value.length === registerTableData.value.length) {
+    selectedRegister.value = [];
+  } else {
+    selectedRegister.value = registerTableData.value.map(
+      (row) => row.bookingCode,
+    );
+  }
+};
+const handleChooseAllRoomBooking = () => {
+  if (selectedRoomBooking.value.length === allRoomValues.value.length) {
+    selectedRoomBooking.value = [];
+  } else {
+    selectedRoomBooking.value = allRoomValues.value;
+  }
+};
+const handleChooseAllGuest = () => {
+  if (selectedGuest.value.length === guestTableData.value.length) {
+    selectedGuest.value = [];
+  } else {
+    selectedGuest.value = guestTableData.value.map((row) => row.regCode);
   }
 };
 </script>
@@ -753,8 +759,8 @@ const updateSelection = (changedCode) => {
         </button>
 
         <!-- SEARCH BY -->
-        <div class="relative w-40">
-          <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center w-40">
+          <div class="relative">
             <div
               @click.stop="toggleModal('search-by')"
               class="h-9 w-full px-3 py-1 border border-gray-300 rounded flex items-center justify-between cursor-pointer bg-white"
@@ -766,7 +772,7 @@ const updateSelection = (changedCode) => {
                 fill="currentColor"
               >
                 <path
-                  v-if="!isSearchByDropdownOpen"
+                  v-if="activeModal !== 'search-by'"
                   d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
                 />
                 <path
@@ -776,6 +782,58 @@ const updateSelection = (changedCode) => {
               </svg>
             </div>
 
+            <!-- DROPDOWN -->
+            <div
+              v-if="activeModal === 'search-by'"
+              v-click-outside="closeModal"
+              class="absolute mt-1 w-50 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-50 p-2"
+            >
+              <div class="relative mb-2">
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  class="w-full pl-3 pr-8 py-1.5 border border-gray-300 rounded text-[13px] focus:outline-none"
+                />
+                <svg
+                  class="absolute right-2 top-2 w-4 h-4 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-width="2"
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </div>
+
+              <div class="max-h-60 overflow-y-auto space-y-1">
+                <label
+                  v-for="opt in searchByOptions"
+                  :key="opt.code"
+                  class="flex items-center gap-3 px-2 py-1.5 hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="selectedSearchBy"
+                    :value="opt.code"
+                    @change="updateSelection(opt.code)"
+                    class="rounded border-gray-300 w-5 h-5"
+                  />
+                  <span class="text-[13px] text-gray-700">{{ opt.title }}</span>
+                </label>
+              </div>
+
+              <button
+                @click="closeModal"
+                class="w-full mt-2 bg-sky-400 hover:bg-sky-500 text-white py-1.5 rounded text-[13px] font-bold"
+              >
+                Lưu
+              </button>
+            </div>
+          </div>
+
+          <div class="relative">
             <div @click.stop="toggleModal('filter')" class="cursor-pointer">
               <svg
                 width="24"
@@ -797,77 +855,28 @@ const updateSelection = (changedCode) => {
                 <circle cx="8" cy="18" r="2" fill="currentColor" />
               </svg>
             </div>
-          </div>
 
-          <!-- DROPDOWN -->
-          <div
-            v-if="activeModal === 'search-by'"
-            v-click-outside="closeModal"
-            class="absolute mt-1 w-50 bg-white border border-gray-300 rounded-lg shadow-xl z-50 p-2"
-          >
-            <div class="relative mb-2">
-              <input
-                v-model="searchQuery"
-                type="text"
-                class="w-full pl-3 pr-8 py-1.5 border border-gray-300 rounded text-[13px] focus:outline-none"
-              />
-              <svg
-                class="absolute right-2 top-2 w-4 h-4 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-width="2"
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            </div>
-
-            <div class="max-h-60 overflow-y-auto space-y-1">
-              <label
-                v-for="opt in searchByOptions"
-                :key="opt.code"
-                class="flex items-center gap-3 px-2 py-1.5 hover:bg-gray-50 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  v-model="selectedSearchBy"
-                  :value="opt.code"
-                  @change="updateSelection(opt.code)"
-                  class="rounded border-gray-300 w-5 h-5"
-                />
-                <span class="text-[13px] text-gray-700">{{ opt.title }}</span>
-              </label>
-            </div>
-
-            <button
-              @click="closeModal"
-              class="w-full mt-2 bg-sky-400 hover:bg-sky-500 text-white py-1.5 rounded text-[13px] font-bold"
+            <!-- DROPDOWN -->
+            <div
+              v-if="activeModal === 'filter'"
+              v-click-outside="closeModal"
+              class="absolute mt-1 w-64 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-50 p-3"
             >
-              Lưu
-            </button>
-          </div>
-
-          <div
-            v-if="activeModal === 'filter'"
-            v-click-outside="closeModal"
-            class="absolute mt-1 w-64 right-0 bg-white border border-gray-300 rounded-lg shadow-xl z-50 p-3"
-          >
-            <div class="max-h-60 overflow-y-auto space-y-2">
-              <label
-                v-for="col in filterOptions"
-                :key="col.code"
-                class="flex items-center gap-3 py-1 hover:bg-gray-50 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  v-model="selectedFilters"
-                  :value="col.code"
-                  class="w-4 h-4 rounded border-gray-300 text-sky-500 focus:ring-sky-500 w-5 h-5"
-                />
-                <span class="text-[13px] text-gray-700">{{ col.title }}</span>
-              </label>
+              <div class="max-h-60 overflow-y-auto space-y-2">
+                <label
+                  v-for="col in filterOptions"
+                  :key="col.code"
+                  class="flex items-center gap-3 py-1 hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="selectedFilters"
+                    :value="col.code"
+                    class="rounded border-gray-300 text-sky-500 focus:ring-sky-500 w-5 h-5"
+                  />
+                  <span class="text-[13px] text-gray-700">{{ col.title }}</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -882,35 +891,45 @@ const updateSelection = (changedCode) => {
             class="border-separate border-spacing-0 text-xs w-max min-w-full"
           >
             <thead class="sticky top-0 z-10">
-              <tr class="bg-slate-100">
+              <tr class="bg-[#edebeb]">
+                <th
+                  class="border-b border-r border-gray-300 py-2 w-px px-1 text-center text-center font-bold whitespace-nowrap"
+                ></th>
+                <th
+                  class="border-b border-r border-gray-300 py-2 w-px px-1 text-center text-center font-bold whitespace-nowrap"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="
+                      selectedRegister.length === registerTableData.length &&
+                      registerTableData.length > 0
+                    "
+                    :indeterminate="
+                      selectedRegister.length > 0 &&
+                      selectedRegister.length < registerTableData.length
+                    "
+                    @change="handleChooseAllRegister()"
+                    class="w-5 h-5"
+                  />
+                </th>
                 <th
                   v-for="col in registerTableColumns"
                   :key="col.code"
-                  class="border-b border-r border-gray-300 py-2 text-center font-bold whitespace-nowrap"
-                  :class="
-                    col.code === 'check' || col.code === 'more'
-                      ? 'w-px px-1 text-center'
-                      : 'px-3'
-                  "
+                  class="border-b border-r border-gray-300 py-2 px-3 text-center font-bold whitespace-nowrap"
                 >
-                  <template v-if="col.code === 'check'">
-                    <input type="checkbox" class="w-5 h-5" />
-                  </template>
-                  <template v-else>
-                    <span class="inline-flex items-center gap-1">
-                      {{ col.title }}
-                      <svg
-                        v-if="col.isSort"
-                        class="w-3 h-3"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
-                      </svg>
-                    </span>
-                  </template>
+                  <span class="inline-flex items-center gap-1">
+                    {{ col.title }}
+                    <svg
+                      v-if="col.isSort"
+                      class="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
+                    </svg>
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -918,21 +937,9 @@ const updateSelection = (changedCode) => {
             <tbody>
               <template v-for="(row, index) in registerTableData" :key="index">
                 <tr class="group hover:bg-sky-50 bg-white">
-                  <td
-                    v-for="col in registerTableColumns"
-                    :key="col.code"
-                    class="border-b border-r border-gray-300 py-2 whitespace-nowrap align-center"
-                    :class="
-                      col.code === 'check' || col.code === 'more'
-                        ? 'w-px px-1 text-center'
-                        : 'px-3'
-                    "
-                  >
-                    <template
-                      v-if="
-                        col.code === 'more' &&
-                        roomTypeMockData[row['ma-bk']]?.length
-                      "
+                  <template v-if="roomTypeMockData[row.bookingCode]?.length">
+                    <td
+                      class="border-b border-r border-gray-300 py-2 w-px px-1 text-center whitespace-nowrap align-center"
                     >
                       <button
                         class="flex items-center justify-center w-5 h-5 mx-auto bg-sky-500 cursor-pointer"
@@ -953,20 +960,36 @@ const updateSelection = (changedCode) => {
                           ></span>
                         </div>
                       </button>
-                    </template>
-                    <template v-if="col.code === 'check'">
-                      <input
-                        type="checkbox"
-                        v-model="row.check"
-                        class="w-5 h-5 block mx-auto cursor-pointer"
-                      />
-                    </template>
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td class="border-b border-r border-gray-300"></td>
+                  </template>
+                  <td
+                    class="border-b border-r border-gray-300 py-2 w-px px-1 text-center whitespace-nowrap align-center"
+                  >
+                    <input
+                      type="checkbox"
+                      v-model="selectedRegister"
+                      :value="row.bookingCode"
+                      class="w-5 h-5 block mx-auto"
+                    />
+                  </td>
+                  <td
+                    v-for="col in registerTableColumns"
+                    :key="col.code"
+                    class="border-b border-r border-gray-300 py-2 px-3 whitespace-nowrap align-center"
+                  >
                     <template
-                      v-else-if="col.code === 'tong' || col.code === 'dat-coc'"
+                      v-if="col.code === 'total' || col.code === 'deposit'"
                     >
                       {{ row[col.code].toLocaleString("vi-VN") }}
                     </template>
-                    <template v-else-if="col.code === 'tinh-trang-luu-tru'">
+                    <template
+                      v-else-if="
+                        col.code === 'stayStatus1' || col.code === 'stayStatus2'
+                      "
+                    >
                       <span
                         class="inline-block px-2 py-1 rounded text-[11px] font-semibold border border-gray-300"
                         :style="{ backgroundColor: row[col.code].bgColor }"
@@ -985,7 +1008,7 @@ const updateSelection = (changedCode) => {
                     <div class="flex justify-center">
                       <table class="border-separate border-spacing-0 text-xs">
                         <thead>
-                          <tr class="bg-slate-200">
+                          <tr class="bg-[#edebeb]">
                             <th
                               v-for="col in roomTypeTableColumns"
                               :key="col.code"
@@ -997,11 +1020,11 @@ const updateSelection = (changedCode) => {
                         </thead>
                         <tbody>
                           <template
-                            v-if="roomTypeMockData[row['ma-bk']]?.length"
+                            v-if="roomTypeMockData[row.bookingCode]?.length"
                           >
                             <tr
                               v-for="(room, rIdx) in roomTypeMockData[
-                                row['ma-bk']
+                                row.bookingCode
                               ]"
                               :key="rIdx"
                               class="bg-white hover:bg-sky-50"
@@ -1013,8 +1036,7 @@ const updateSelection = (changedCode) => {
                               >
                                 <template
                                   v-if="
-                                    col.code === 'gia-phong' ||
-                                    col.code === 'tong'
+                                    col.code === 'rate' || col.code === 'total'
                                   "
                                 >
                                   {{ room[col.code].toLocaleString("vi-VN") }}
@@ -1032,24 +1054,24 @@ const updateSelection = (changedCode) => {
                               </td>
                               <td class="border border-gray-300 px-3 py-2">
                                 {{
-                                  roomTypeMockData[row["ma-bk"]].reduce(
-                                    (s, r) => s + r["#-phong"],
+                                  roomTypeMockData[row.bookingCode].reduce(
+                                    (s, r) => s + r.roomCount,
                                     0,
                                   )
                                 }}
                               </td>
                               <td class="border border-gray-300 px-3 py-2">
                                 {{
-                                  roomTypeMockData[row["ma-bk"]].reduce(
-                                    (s, r) => s + r["#-nguoi-lon"],
+                                  roomTypeMockData[row.bookingCode].reduce(
+                                    (s, r) => s + r.adultsCount,
                                     0,
                                   )
                                 }}
                               </td>
                               <td class="border border-gray-300 px-3 py-2">
                                 {{
-                                  roomTypeMockData[row["ma-bk"]].reduce(
-                                    (s, r) => s + r["#-tre-em"],
+                                  roomTypeMockData[row.bookingCode].reduce(
+                                    (s, r) => s + r.childrenCount,
                                     0,
                                   )
                                 }}
@@ -1076,7 +1098,7 @@ const updateSelection = (changedCode) => {
                     </div>
                   </td>
                   <td
-                    :colspan="registerTableColumns.length - 14"
+                    :colspan="registerTableColumns.length - 12"
                     class="border-b border-gray-300 px-6 py-3"
                   ></td>
                 </tr>
@@ -1090,7 +1112,7 @@ const updateSelection = (changedCode) => {
                   Tổng: {{ registerTableData.length }}
                 </td>
                 <td
-                  v-for="col in registerTableColumns.slice(2)"
+                  v-for="col in registerTableColumns.slice(3)"
                   :key="col.code"
                   class="border-r border-gray-300 px-3 py-2"
                 ></td>
@@ -1109,17 +1131,31 @@ const updateSelection = (changedCode) => {
             class="border-separate border-spacing-0 text-xs w-max min-w-full"
           >
             <thead class="sticky top-0 z-10">
-              <tr class="bg-slate-100">
+              <tr class="bg-[#edebeb]">
+                <th
+                  class="border-b border-r border-gray-300 py-2 w-px px-1 text-center font-bold whitespace-nowrap"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="
+                      selectedRoomBooking.length ===
+                        allRoomValues.length &&
+                      selectedRoomBooking.length > 0
+                    "
+                    :indeterminate="
+                      selectedRoomBooking.length > 0 &&
+                      selectedRoomBooking.length < allRoomValues.length
+                    "
+                    @change="handleChooseAllRoomBooking()"
+                    class="w-5 h-5"
+                  />
+                </th>
                 <th
                   v-for="col in roomTableColumns"
                   :key="col.code"
-                  class="border-b border-r border-gray-300 py-2 text-center font-bold whitespace-nowrap"
-                  :class="col.code === 'check' ? 'w-px px-1' : 'px-3'"
+                  class="border-b border-r border-gray-300 py-2 px-3 text-center font-bold whitespace-nowrap"
                 >
-                  <template v-if="col.code === 'check'">
-                    <input type="checkbox" class="w-5 h-5" />
-                  </template>
-                  <template v-else>{{ col.title }}</template>
+                  {{ col.title }}
                 </th>
               </tr>
             </thead>
@@ -1169,26 +1205,26 @@ const updateSelection = (changedCode) => {
                     class="bg-slate-300 border border-white"
                   >
                     <td
+                      class="border-b border-r border-white py-2 w-px px-1 text-center whitespace-nowrap"
+                    >
+                      <input
+                        type="checkbox"
+                        v-model="selectedRoomBooking"
+                        :value="`${booking.id}-${room.roomNumber}`"
+                        class="w-5 h-5 block mx-auto"
+                      />
+                    </td>
+                    <td
                       v-for="col in roomTableColumns"
                       :key="col.code"
-                      class="border-b border-r border-white py-2 whitespace-nowrap"
-                      :class="
-                        col.code === 'check' ? 'w-px px-1 text-center' : 'px-3'
-                      "
+                      class="border-b border-r border-white py-2 px-3 whitespace-nowrap"
                     >
-                      <template v-if="col.code === 'check'">
-                        <input
-                          type="checkbox"
-                          v-model="room.check"
-                          class="w-5 h-5 block mx-auto"
-                        />
-                      </template>
                       <template
-                        v-else-if="
-                          col.code === 'gia-phong' ||
-                          col.code === 'gia-tg' ||
-                          col.code === 'tong-dich-vu' ||
-                          col.code === 'thanh-toan'
+                        v-if="
+                          col.code === 'rate' ||
+                          col.code === 'extraBedPrice' ||
+                          col.code === 'totalService' ||
+                          col.code === 'payment'
                         "
                       >
                         {{ room[col.code].toLocaleString("vi-VN") }}
@@ -1226,17 +1262,24 @@ const updateSelection = (changedCode) => {
             class="border-separate border-spacing-0 text-xs w-max min-w-full"
           >
             <thead class="sticky top-0 z-10">
-              <tr class="bg-slate-100">
+              <tr class="bg-[#edebeb]">
+                <th
+                  class="border-b border-r border-gray-300 py-2 w-px px-1 text-center font-bold whitespace-nowrap"
+                >
+                  <input
+                    :checked="selectedGuest.length > 0 && selectedGuest.length === guestTableData.length"
+                    :indeterminate="selectedGuest.length > 0 && selectedGuest.length < guestTableData.length"
+                    @change="handleChooseAllGuest()"
+                    type="checkbox"
+                    class="w-5 h-5"
+                  />
+                </th>
                 <th
                   v-for="col in guestTableColumns"
                   :key="col.code"
-                  class="border-b border-r border-gray-300 py-2 text-center font-bold whitespace-nowrap"
-                  :class="col.code === 'check' ? 'w-px px-1' : 'px-3'"
+                  class="border-b border-r border-gray-300 py-2 px-3 text-center font-bold whitespace-nowrap"
                 >
-                  <template v-if="col.code === 'check'">
-                    <input type="checkbox" class="w-5 h-5" />
-                  </template>
-                  <template v-else>{{ col.title }}</template>
+                  {{ col.title }}
                 </th>
               </tr>
             </thead>
@@ -1249,23 +1292,22 @@ const updateSelection = (changedCode) => {
                 @click.stop="toggleModal('guest-modal')"
               >
                 <td
+                  class="border-b border-r border-white py-2 w-px px-1 text-center whitespace-nowrap group hover:cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="selectedGuest"
+                    :value="guest.regCode"
+                    class="w-5 h-5 block mx-auto"
+                    @click.stop
+                  />
+                </td>
+                <td
                   v-for="col in guestTableColumns"
                   :key="col.code"
-                  class="border-b border-r border-white py-2 whitespace-nowrap group hover:cursor-pointer"
-                  :class="
-                    col.code === 'check' ? 'w-px px-1 text-center' : 'px-3'
-                  "
+                  class="border-b border-r border-white py-2 px-3 whitespace-nowrap group hover:cursor-pointer"
                 >
-                  <template v-if="col.code === 'check'">
-                    <input
-                      type="checkbox"
-                      v-model="guest.check"
-                      class="w-5 h-5 block mx-auto"
-                    />
-                  </template>
-                  <template v-else>
-                    {{ guest[col.code] }}
-                  </template>
+                  {{ guest[col.code] }}
                 </td>
               </tr>
 
@@ -1273,7 +1315,7 @@ const updateSelection = (changedCode) => {
               <tr class="sticky bottom-0 z-10 bg-white font-bold">
                 <td class="border-r border-gray-300 px-3 py-2"></td>
                 <td class="border-r font-bold border-gray-300 px-3 py-2">
-                  Tổng: {{ guestTableColumns.length }}
+                  Tổng: {{ guestTableData.length }}
                 </td>
                 <td
                   v-for="i in guestTableColumns.slice(2)"
@@ -1561,28 +1603,27 @@ const updateSelection = (changedCode) => {
             <h2 class="text-base font-bold text-slate-800 mb-3">
               Guest History
             </h2>
-            <div class="border border-slate-200 rounded-md overflow-hidden">
+            <div class="border border-slate-300 rounded-md overflow-hidden">
               <div class="overflow-x-auto max-h-[300px] overflow-y-auto">
                 <table
                   class="border-separate border-spacing-0 text-xs w-max min-w-full"
                 >
                   <thead class="sticky top-0 z-10">
-                    <tr
-                      class="bg-slate-100"
-                    >
+                    <tr class="bg-[#edebeb]">
                       <th
                         v-for="column in guestHistoryTableColumns"
-                        class="px-3 py-2 text-left font-bold border-b border-r border-slate-200"
+                        class="px-3 py-2 text-left font-bold border-b border-r border-slate-300"
                       >
-                        <td>
-                          {{ column.title }}
-                        </td>
+                        {{ column.title }}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr class="text-slate-400">
-                      <td colspan="6" class="px-3 py-6 text-center">
+                      <td
+                        :colspan="guestHistoryTableColumns.length"
+                        class="px-3 py-6 text-center"
+                      >
                         Không có dữ liệu
                       </td>
                     </tr>
