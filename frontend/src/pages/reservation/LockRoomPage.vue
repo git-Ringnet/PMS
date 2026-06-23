@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import RoomIcon from '@/components/RoomIcon.vue'
 
 const uiStore = useUiStore()
 
@@ -439,9 +440,7 @@ onBeforeUnmount(() => {
             :disabled="editMode"
             class="px-3 py-1.5 bg-[#8dcbf4]/20 hover:bg-[#8dcbf4]/35 text-[#0369a1] border border-[#8dcbf4]/40 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed text-xs"
           >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-            </svg>
+            <RoomIcon name="ooo-outline" class="w-3.5 h-3.5" />
             Phòng OOO
           </button>
 
@@ -451,9 +450,7 @@ onBeforeUnmount(() => {
             :disabled="editMode"
             class="px-3 py-1.5 bg-[#8dcbf4]/20 hover:bg-[#8dcbf4]/35 text-[#0369a1] border border-[#8dcbf4]/40 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed text-xs"
           >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-            </svg>
+            <RoomIcon name="oos" class="w-3.5 h-3.5" />
             Phòng OOS
           </button>
 
@@ -463,9 +460,7 @@ onBeforeUnmount(() => {
             :disabled="editMode"
             class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed text-xs"
           >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-            </svg>
+            <RoomIcon name="unlock-outline" class="w-3.5 h-3.5" />
             Mở khóa
           </button>
 

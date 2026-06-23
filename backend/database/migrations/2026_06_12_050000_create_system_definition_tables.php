@@ -21,6 +21,7 @@ return new class extends Migration
             $table->string('bank_name')->nullable();
             $table->decimal('service_charge', 8, 2)->default(0);
             $table->string('department')->nullable();
+            $table->integer('payment_group')->nullable()->comment('1: TIỀN MẶT, 2: THẺ CK, 3: VOUCHER, 4: CÔNG NỢ, 5: MIỄN PHÍ');
             $table->boolean('is_free')->default(false);
             $table->boolean('is_inactive')->default(false);
             $table->timestamps();

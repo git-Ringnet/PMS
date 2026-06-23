@@ -128,21 +128,15 @@ const unitForm = reactive({
 // 4. Room Rate Code Modal
 const isRateModalOpen = ref(false)
 const rateForm = reactive({
-  id: null,
-  code: '',
-  description: '',
-  room_class_id: '',
-  room_form_id: '',
-  adults: 2,
-  children: 0,
-  start_date: '',
-  end_date: '',
-  price: 0,
-  breakfast_price: 0,
-  extra_bed_price: 0,
-  has_breakfast: true,
-  is_allowed: true,
-  rate_type: 'FIT'
+  Ma: '',
+  Description: '',
+  BeginDate: '',
+  EndDate: '',
+  Currency: 'VND',
+  IncludeBF: false,
+  Disable: false,
+  AllowChangeRate: false,
+  IsChannelManager: false
 })
 
 // 5. Registration Status Modal
@@ -547,58 +541,43 @@ const toggleUnitFlag = async (item, field) => {
 const openAddRate = () => {
   isEditMode.value = false
   Object.assign(rateForm, {
-    id: null,
-    code: '',
-    description: '',
-    room_class_id: roomClasses.value[0]?.id || '',
-    room_form_id: roomForms.value[0]?.id || '',
-    adults: 2,
-    children: 0,
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    price: 0,
-    breakfast_price: 0,
-    extra_bed_price: 0,
-    has_breakfast: true,
-    is_allowed: true,
-    rate_type: 'FIT'
+    Ma: '',
+    Description: '',
+    BeginDate: new Date().toISOString().split('T')[0],
+    EndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    Currency: 'VND',
+    IncludeBF: false,
+    Disable: false,
+    AllowChangeRate: false,
+    IsChannelManager: false
   })
   isRateModalOpen.value = true
 }
 const openEditRate = (item) => {
   isEditMode.value = true
   Object.assign(rateForm, {
-    id: item.id,
-    code: item.code,
-    description: item.description || '',
-    room_class_id: item.room_class_id || '',
-    room_form_id: item.room_form_id || '',
-    adults: item.adults,
-    children: item.children,
-    start_date: item.start_date || '',
-    end_date: item.end_date || '',
-    price: item.price,
-    breakfast_price: item.breakfast_price,
-    extra_bed_price: item.extra_bed_price,
-    has_breakfast: !!item.has_breakfast,
-    is_allowed: !!item.is_allowed,
-    rate_type: item.rate_type || 'FIT'
+    Ma: item.Ma,
+    Description: item.Description || '',
+    BeginDate: item.BeginDate || '',
+    EndDate: item.EndDate || '',
+    Currency: item.Currency || 'VND',
+    IncludeBF: !!item.IncludeBF,
+    Disable: !!item.Disable,
+    AllowChangeRate: !!item.AllowChangeRate,
+    IsChannelManager: !!item.IsChannelManager
   })
   isRateModalOpen.value = true
 }
 const saveRate = async () => {
-  if (!rateForm.code) {
+  if (!rateForm.Ma) {
     uiStore.showToast('Vui lòng nhập mã giá phòng', 'warning')
     return
   }
   loading.value = true
   try {
     const payload = { ...rateForm }
-    if (!payload.room_class_id) delete payload.room_class_id
-    if (!payload.room_form_id) delete payload.room_form_id
-
     if (isEditMode.value) {
-      await http.put(`/room-rate-codes/${rateForm.id}`, payload)
+      await http.put(`/room-rate-codes/${rateForm.Ma}`, payload)
       uiStore.showToast('Cập nhật mã giá phòng thành công!', 'success')
     } else {
       await http.post('/room-rate-codes', payload)
@@ -606,7 +585,7 @@ const saveRate = async () => {
     }
     isRateModalOpen.value = false
     const res = await http.get('/room-rate-codes')
-    roomRateCodes.value = res.data.data
+    roomRateCodes.value = res.data.data || []
   } catch (err) {
     console.error(err)
     uiStore.showToast(err.response?.data?.message || 'Lỗi lưu mã giá phòng', 'error')
@@ -614,7 +593,7 @@ const saveRate = async () => {
     loading.value = false
   }
 }
-const deleteRate = async (id) => {
+const deleteRate = async (ma) => {
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận xóa',
     message: 'Bạn có chắc muốn xóa mã giá phòng này?',
@@ -622,19 +601,22 @@ const deleteRate = async (id) => {
     cancelText: 'Hủy'
   })
   if (!confirmed) return
+  loading.value = true
   try {
-    await http.delete(`/room-rate-codes/${id}`)
+    await http.delete(`/room-rate-codes/${ma}`)
     uiStore.showToast('Xóa mã giá phòng thành công!', 'success')
-    roomRateCodes.value = roomRateCodes.value.filter(x => x.id !== id)
+    roomRateCodes.value = roomRateCodes.value.filter(x => x.Ma !== ma)
   } catch (err) {
     console.error(err)
     uiStore.showToast('Lỗi khi xóa mã giá phòng', 'error')
+  } finally {
+    loading.value = false
   }
 }
 const toggleRateFlag = async (item, field) => {
   try {
     const updatedVal = !item[field]
-    await http.put(`/room-rate-codes/${item.id}`, {
+    await http.put(`/room-rate-codes/${item.Ma}`, {
       ...item,
       [field]: updatedVal
     })
@@ -794,8 +776,8 @@ const filteredRates = computed(() => {
   const query = searchQueries.rate.toLowerCase()
   return roomRateCodes.value.filter(x => 
     !query || 
-    x.code.toLowerCase().includes(query) || 
-    (x.description && x.description.toLowerCase().includes(query))
+    (x.Ma && x.Ma.toLowerCase().includes(query)) || 
+    (x.Description && x.Description.toLowerCase().includes(query))
   )
 })
 const paginatedRates = computed(() => {
@@ -1104,55 +1086,50 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
                 <th class="p-3">Mã</th>
                 <th class="p-3">Mô tả</th>
-                <th class="p-3">Loại phòng</th>
-                <th class="p-3">Dạng phòng</th>
+                <th class="p-3">Tiền tệ</th>
                 <th class="p-3">Ngày bắt đầu</th>
-                <th class="p-3">Ngày cuối</th>
-                <th class="p-3 text-center">Người lớn</th>
-                <th class="p-3 text-center">Trẻ em</th>
-                <th class="p-3 text-right">Giá</th>
-                <th class="p-3 text-right">Giá thêm giường</th>
-                <th class="p-3 text-right">Giá ăn sáng</th>
-                <th class="p-3 text-center">Cho phép</th>
+                <th class="p-3">Ngày kết thúc</th>
                 <th class="p-3 text-center">Ăn sáng</th>
-                <th class="p-3 text-center">GIT/FIT</th>
+                <th class="p-3 text-center">Cho phép nhập giá</th>
+                <th class="p-3 text-center">Không sử dụng</th>
+                <th class="p-3 text-center">Channel Manager</th>
                 <th class="p-3 text-right">Hành động</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in paginatedRates" :key="item.id" @click="openEditRate(item)"
+              <tr v-for="item in paginatedRates" :key="item.Ma" @click="openEditRate(item)"
                 class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
-                <td class="p-3 font-bold text-slate-800">{{ item.code }}</td>
-                <td class="p-3 font-bold text-slate-700">{{ item.description || '-' }}</td>
-                <td class="p-3 text-slate-600 font-semibold">{{ item.room_class?.name || '-' }}</td>
-                <td class="p-3 text-slate-600 font-semibold">{{ item.room_form?.name || '-' }}</td>
-                <td class="p-3 text-slate-500 font-semibold font-mono">{{ formatDate(item.start_date) || '-' }}</td>
-                <td class="p-3 text-slate-500 font-semibold font-mono">{{ formatDate(item.end_date) || '-' }}</td>
-                <td class="p-3 text-center font-bold text-slate-600">{{ item.adults }}</td>
-                <td class="p-3 text-center font-bold text-slate-600">{{ item.children }}</td>
-                <td class="p-3 text-right font-bold text-sky-700">{{ formatCurrency(item.price) }}</td>
-                <td class="p-3 text-right font-bold text-sky-700">{{ formatCurrency(item.extra_bed_price) }}</td>
-                <td class="p-3 text-right font-bold text-sky-700">{{ formatCurrency(item.breakfast_price) }}</td>
+                <td class="p-3 font-bold text-slate-800">{{ item.Ma }}</td>
+                <td class="p-3 font-bold text-slate-700">{{ item.Description || '-' }}</td>
+                <td class="p-3 text-slate-600 font-semibold">{{ item.Currency || 'VND' }}</td>
+                <td class="p-3 text-slate-500 font-semibold font-mono">{{ formatDate(item.BeginDate) || '-' }}</td>
+                <td class="p-3 text-slate-500 font-semibold font-mono">{{ formatDate(item.EndDate) || '-' }}</td>
                 <td class="p-3 text-center">
                   <label @click.stop class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" :checked="item.is_allowed" @change="toggleRateFlag(item, 'is_allowed')" class="sr-only peer" />
+                    <input type="checkbox" :checked="item.IncludeBF" @change="toggleRateFlag(item, 'IncludeBF')" class="sr-only peer" />
                     <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
                   </label>
                 </td>
                 <td class="p-3 text-center">
                   <label @click.stop class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" :checked="item.has_breakfast" @change="toggleRateFlag(item, 'has_breakfast')" class="sr-only peer" />
+                    <input type="checkbox" :checked="item.AllowChangeRate" @change="toggleRateFlag(item, 'AllowChangeRate')" class="sr-only peer" />
                     <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
                   </label>
                 </td>
                 <td class="p-3 text-center">
-                  <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase"
-                    :class="item.rate_type === 'GIT' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-800'">
-                    {{ item.rate_type }}
-                  </span>
+                  <label @click.stop class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" :checked="item.Disable" @change="toggleRateFlag(item, 'Disable')" class="sr-only peer" />
+                    <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </td>
+                <td class="p-3 text-center">
+                  <label @click.stop class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" :checked="item.IsChannelManager" @change="toggleRateFlag(item, 'IsChannelManager')" class="sr-only peer" />
+                    <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
                 </td>
                 <td class="p-3 text-right">
-                  <button @click.stop="deleteRate(item.id)" class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
+                  <button @click.stop="deleteRate(item.Ma)" class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
@@ -1552,9 +1529,9 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
 
     <!-- Modal 4: MÃ GIÁ PHÒNG -->
     <div v-if="isRateModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none animate-in">
-      <div class="bg-white rounded-2xl shadow-xl border border-slate-100 w-full overflow-hidden" style="max-width: 700px;">
+      <div class="bg-white rounded-2xl shadow-xl border border-slate-100 w-full overflow-hidden" style="max-width: 600px;">
         <div class="px-6 py-4 bg-[#8dcbf4] text-white font-black text-sm flex items-center justify-between">
-          <span>Thêm rate code</span>
+          <span>{{ isEditMode ? 'Chỉnh sửa rate code' : 'Thêm rate code' }}</span>
           <button @click="isRateModalOpen = false" class="text-white hover:text-sky-100 bg-transparent border-none cursor-pointer text-lg">&times;</button>
         </div>
         <div class="p-6 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
@@ -1563,92 +1540,61 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
           <div class="grid grid-cols-2 gap-4">
             <div class="flex flex-col gap-1">
               <label class="text-xs font-bold text-slate-500">Mã</label>
-              <input type="text" v-model="rateForm.code" :disabled="isEditMode" placeholder="Mã"
+              <input type="text" v-model="rateForm.Ma" :disabled="isEditMode" placeholder="Mã"
                 class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold" />
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-bold text-slate-500">Mô tả</label>
-              <input type="text" v-model="rateForm.description" placeholder="Mô tả"
+              <input type="text" v-model="rateForm.Description" placeholder="Mô tả"
                 class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold" />
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-500">Loại phòng</label>
-              <select v-model="rateForm.room_class_id"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold bg-white">
-                <option value="">Loại phòng</option>
-                <option v-for="c in roomClasses" :key="c.id" :value="c.id">{{ c.name }}</option>
-              </select>
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-500">Dạng phòng</label>
-              <select v-model="rateForm.room_form_id"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold bg-white">
-                <option value="">Dạng phòng</option>
-                <option v-for="f in roomForms" :key="f.id" :value="f.id">{{ f.name }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-500">Người lớn</label>
-              <input type="number" v-model="rateForm.adults"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold" />
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-500">Trẻ em</label>
-              <input type="number" v-model="rateForm.children"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold" />
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-500">Ngày bắt đầu</label>
-              <input type="date" v-model="rateForm.start_date"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold font-mono" />
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-500">Ngày cuối</label>
-              <input type="date" v-model="rateForm.end_date"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold font-mono" />
-            </div>
-          </div>
-
           <div class="grid grid-cols-3 gap-4">
-            <div class="flex flex-col gap-1 col-span-1">
-              <label class="text-xs font-bold text-slate-500">Giá</label>
-              <input type="number" v-model="rateForm.price"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold" />
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-500">Từ ngày</label>
+              <input type="date" v-model="rateForm.BeginDate"
+                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold font-mono" />
             </div>
-            <div class="flex flex-col gap-1 col-span-1">
-              <label class="text-xs font-bold text-slate-500">Giá ăn sáng</label>
-              <input type="number" v-model="rateForm.breakfast_price"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold" />
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-500">Đến ngày</label>
+              <input type="date" v-model="rateForm.EndDate"
+                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold font-mono" />
             </div>
-            <div class="flex flex-col gap-1 col-span-1">
-              <label class="text-xs font-bold text-slate-500">Giá thêm giường</label>
-              <input type="number" v-model="rateForm.extra_bed_price"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold" />
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-500">Tiền tệ</label>
+              <input type="text" v-model="rateForm.Currency" placeholder="VND"
+                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold" />
             </div>
           </div>
 
-          <div class="flex items-center gap-6 mt-2">
-            <div class="flex items-center gap-2">
+          <div class="grid grid-cols-2 gap-4 mt-2">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
               <span class="text-xs font-bold text-slate-500">Ăn sáng</span>
               <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" v-model="rateForm.has_breakfast" class="sr-only peer" />
-                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+                <input type="checkbox" v-model="rateForm.IncludeBF" class="sr-only peer" />
+                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
               </label>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-bold text-slate-500">Cho phép</span>
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-slate-500">Cho phép nhập giá</span>
               <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" v-model="rateForm.is_allowed" class="sr-only peer" />
-                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+                <input type="checkbox" v-model="rateForm.AllowChangeRate" class="sr-only peer" />
+                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+              </label>
+            </div>
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-slate-500">Không sử dụng</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" v-model="rateForm.Disable" class="sr-only peer" />
+                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
+              </label>
+            </div>
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-slate-500">Đẩy lên Channel Manager</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" v-model="rateForm.IsChannelManager" class="sr-only peer" />
+                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
               </label>
             </div>
           </div>

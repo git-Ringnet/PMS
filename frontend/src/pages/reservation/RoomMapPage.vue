@@ -6,6 +6,7 @@ import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { t } from '@/utils/i18n'
 import RoomDetailModal from '@/components/RoomDetailModal.vue'
+import RoomIcon from '@/components/RoomIcon.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
 import ShiftWorkPage from './ShiftWorkPage.vue'
@@ -13,6 +14,7 @@ import LockRoomPage from './LockRoomPage.vue'
 import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
+import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -494,12 +496,7 @@ const uniqueFloors = computed(() => {
           <!-- Khóa OOS card -->
           <div class="bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 transform-gpu">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100/80 border border-slate-200/40 flex items-center justify-center text-slate-400 shadow-xs shrink-0">
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="4" y="10" width="16" height="11" rx="2" fill="#F3F4F6" stroke="#4B5563" stroke-width="2"/>
-                <path d="M8 10V6C8 3.79086 9.79086 2 12 2C14.2091 2 16 3.79086 16 6V10" stroke="#4B5563" stroke-width="2" stroke-linecap="round"/>
-                <circle cx="12" cy="15" r="1.5" fill="#4B5563"/>
-                <path d="M12 16.5V18.5" stroke="#4B5563" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
+              <RoomIcon name="oos" class="w-5 h-5 text-[#4B5563]" />
             </div>
             <div class="flex flex-col">
               <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.lockOos') }}</span>
@@ -543,6 +540,9 @@ const uniqueFloors = computed(() => {
 
         <!-- View Mode & Zoom switchers -->
         <div class="flex items-center gap-2.5 shrink-0">
+          <!-- Help / Guide Trigger -->
+          <HelpGuidePopover />
+
           <!-- Zoom Layout Controls -->
           <div class="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5 select-none shrink-0 font-semibold text-[11.5px] text-slate-700">
             <!-- Auto Scale Toggle Button -->
@@ -1050,44 +1050,22 @@ const uniqueFloors = computed(() => {
                     <!-- Status Icon (Bottom Right) -->
                     <div class="flex items-center justify-end text-slate-400 mt-auto">
                       <!-- Sẵn sàng (available) checkmark -->
-                      <svg v-if="room.status === ROOM_STATUSES.AVAILABLE" class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="2" width="20" height="20" rx="10" fill="#E8F5E9"/>
-                        <path d="M7.5 12L10.5 15L16.5 9" stroke="#2E7D32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
+                      <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="available" class="w-5 h-5" />
                       
                       <!-- Phòng bẩn (dirty) -->
-                      <svg v-else-if="room.status === ROOM_STATUSES.DIRTY" class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M19.5 4.5L14.5 9.5M4.5 14.5L9.5 19.5" stroke="#78350F" stroke-width="2" stroke-linecap="round"/>
-                        <path d="M13 11L18 6" stroke="#D97706" stroke-width="2" stroke-linecap="round"/>
-                        <path d="M5.5 18.5L9 15L6.5 12.5L3 16C2.5 16.5 2.5 17.5 3 18C3.5 18.5 4.5 18.5 5.5 18.5Z" fill="#F59E0B" stroke="#B45309" stroke-width="1.5"/>
-                        <path d="M7 16.5L8.5 15M5 14.5L6.5 13" stroke="#B45309" stroke-width="1"/>
-                      </svg>
+                      <RoomIcon v-else-if="room.status === ROOM_STATUSES.DIRTY" name="dirty" class="w-5 h-5 text-amber-600" />
                       
                       <!-- Lau dọn (checkout) -->
-                      <svg v-else-if="room.status === ROOM_STATUSES.CHECKOUT" class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M9 2L10.5 6.5L15 8L10.5 9.5L9 14L7.5 9.5L3 8L7.5 6.5L9 2Z" fill="#22D3EE" stroke="#0891B2" stroke-width="1"/>
-                        <path d="M17 11L18 13.5L20.5 14.5L18 15.5L17 18L16 15.5L13.5 14.5L16 13.5L17 11Z" fill="#FBBF24" stroke="#D97706" stroke-width="1"/>
-                      </svg>
+                      <RoomIcon v-else-if="room.status === ROOM_STATUSES.CHECKOUT" name="checkout" class="w-5 h-5" />
                       
                       <!-- Dịch vụ dọn phòng (maintenance) -->
-                      <svg v-else-if="room.status === ROOM_STATUSES.MAINTENANCE" class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M14.7 13.3L21 7M19.5 5.5L21 7L19.5 8.5" stroke="#EA580C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M14.7 13.3C13.8 14.2 12.4 14.2 11.5 13.3C10.6 12.4 10.6 11 11.5 10.1C12.4 9.2 13.8 9.2 14.7 10.1" stroke="#EA580C" stroke-width="2" stroke-linecap="round"/>
-                        <path d="M4 20L9.5 14.5" stroke="#475569" stroke-width="2.5" stroke-linecap="round"/>
-                        <path d="M8 13L11 16" stroke="#475569" stroke-width="2.5" stroke-linecap="round"/>
-                        <rect x="3" y="15" width="4" height="5" rx="1" fill="#94A3B8" stroke="#475569" stroke-width="1.5"/>
-                      </svg>
+                      <RoomIcon v-else-if="room.status === ROOM_STATUSES.MAINTENANCE" name="maintenance" class="w-5 h-5" />
                       
                       <!-- Phòng ưu tiên (reserved) checkmark -->
-                      <svg v-else-if="room.status === ROOM_STATUSES.RESERVED" class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="2" width="20" height="20" rx="10" fill="#ECFDF5"/>
-                        <path d="M12 17V7M7 12H17" stroke="#059669" stroke-width="2.5" stroke-linecap="round"/>
-                      </svg>
+                      <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" name="reserved" class="w-5 h-5" />
                       
                       <!-- Phòng không làm phiền (occupied) checkmark -->
-                      <svg v-else-if="room.status === ROOM_STATUSES.OCCUPIED" class="w-4.5 h-4.5 text-sky-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M2 12l5.25 5 2.625-3M8 12l5.25 5L22 7" />
-                      </svg>
+                      <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="w-4.5 h-4.5 text-sky-700" />
                     </div>
                   </div>
                 </div>
@@ -1144,41 +1122,22 @@ const uniqueFloors = computed(() => {
                     <td class="p-2 border-r border-slate-200 text-center text-slate-600">
                       <div class="flex items-center justify-center">
                         <!-- Sẵn sàng -->
-                        <svg v-if="room.status === ROOM_STATUSES.AVAILABLE" class="w-5 h-5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M2 12l5.25 5 2.625-3M8 12l5.25 5L22 7" />
-                        </svg>
+                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="w-5 h-5 text-blue-500" />
                         
                         <!-- Phòng bẩn -->
-                        <svg v-else-if="room.status === ROOM_STATUSES.DIRTY" class="w-4.5 h-4.5 text-[#0369a1]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M19 19L5 5M12 12l2.5-2.5m1.5-1.5l1.5-1.5M7.5 7.5L5 5" />
-                          <path d="M5.5 19.5c.6.6 1.4 1 2.3 1H10l9-9c1-1 1-2.6 0-3.5l-1.5-1.5c-1-1-2.6-1-3.5 0l-9 9v2.2c0 .9.4 1.7 1 2.3Z" />
-                        </svg>
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.DIRTY" name="dirty" class="w-4.5 h-4.5 text-amber-600" />
                         
                         <!-- Lau dọn -->
-                        <svg v-else-if="room.status === ROOM_STATUSES.CHECKOUT" class="w-4.5 h-4.5 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-                        </svg>
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.CHECKOUT" name="star-outline" class="w-4.5 h-4.5 text-cyan-500" />
                         
                         <!-- Dịch vụ dọn phòng -->
-                        <svg v-else-if="room.status === ROOM_STATUSES.MAINTENANCE" class="w-5 h-5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <circle cx="10" cy="5" r="2" />
-                          <path d="M7 21v-7a3 3 0 0 1 6 0v7" />
-                          <path d="M5 11h10" />
-                          <path d="M17 6v15M15 21h4" />
-                          <rect x="3" y="16" width="3" height="4" rx="0.5" />
-                        </svg>
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.MAINTENANCE" name="maintenance-list" class="w-5 h-5 text-blue-500" />
                         
                         <!-- Phòng ưu tiên -->
-                        <svg v-else-if="room.status === ROOM_STATUSES.RESERVED" class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <line x1="12" y1="17" x2="12" y2="22" />
-                          <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.56A2 2 0 0 1 15 9.2V5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4.2a2 2 0 0 1-.78 1.24l-2.78 3.56a2 2 0 0 0-.44 1.24V17z" />
-                        </svg>
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" name="bell-outline" class="w-4.5 h-4.5 text-sky-500" />
                         
                         <!-- Phòng không làm phiền -->
-                        <svg v-else-if="room.status === ROOM_STATUSES.OCCUPIED" class="w-4.5 h-4.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                          <circle cx="12" cy="12" r="10" />
-                          <line x1="8" y1="12" x2="16" y2="12" />
-                        </svg>
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="minus-circle" class="w-4.5 h-4.5 text-slate-500" />
                       </div>
                     </td>
                     <!-- Thêm giường -->
