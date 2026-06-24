@@ -256,7 +256,7 @@ class HotelDefinitionSeeder extends Seeder
             ['group' => 'Registration Card', 'name' => 'Registration Card Main', 'report' => 'RegistrationCardGalliot'],
             ['group' => 'Deposit', 'name' => 'Deposit Main', 'report' => 'DepositReceiptGalliot'],
             ['group' => 'Room Morning Worksheet', 'name' => 'Room Morning Worksheet Main', 'report' => 'RoomMorningWorksheetGalliot'],
-            ['group' => 'Invoice', 'name' => 'Invoice Main', 'report' => 'InvoiceGalliot'],
+            ['group' => 'Invoice', 'name' => 'Invoice Galliot', 'report' => 'InvoiceGalliot'],
             ['group' => 'Total revenue report', 'name' => 'Total revenue report Main', 'report' => 'TotalRevenueGalliot'],
             ['group' => 'Breakfast Ticket', 'name' => 'Breakfast Ticket Main', 'report' => 'BreakfastTicketGalliot'],
             ['group' => 'Report', 'name' => 'Report Main', 'report' => 'GeneralReportGalliot'],

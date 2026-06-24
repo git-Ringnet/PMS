@@ -5,6 +5,7 @@ import HotelDefinition from './components/HotelDefinition.vue'
 import RoomDefinition from './components/RoomDefinition.vue'
 import SystemDefinition from './components/SystemDefinition.vue'
 import RateSetup from './components/RateSetup.vue'
+import DesignTemplate from './components/DesignTemplateTab.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -72,7 +73,8 @@ function handleBack() {
               currentView === 'menu' ? 'Cấu hình hệ thống' : 
               currentView === 'hotel' ? 'Định nghĩa khách sạn' : 
               currentView === 'room' ? 'Định nghĩa phòng' : 
-              currentView === 'system' ? 'Định nghĩa hệ thống' : 'Thiết lập giá'
+              currentView === 'system' ? 'Định nghĩa hệ thống' : 
+              currentView === 'rate' ? 'Thiết lập giá' : 'Thiết kế biểu mẫu'
             }}
           </span>
         </button>
@@ -149,6 +151,19 @@ function handleBack() {
             <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Định nghĩa channel manager</span>
           </div>
 
+          <!-- Card 6: Thiết kế biểu mẫu -->
+          <div 
+            @click="currentView = 'design-template'"
+            class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
+          >
+            <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <svg class="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21l5.096-.813a2 2 0 001.414-.586L21 14.172a2 2 0 000-2.828l-2.828-2.828a2 2 0 00-2.828 0L9.813 12.071a2 2 0 00-.586 1.414zM10.5 11.5L14 15M3 6h18M3 10h12M3 14h6" />
+              </svg>
+            </div>
+            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Thiết kế biểu mẫu</span>
+          </div>
+
 
         </div>
       </div>
@@ -176,6 +191,9 @@ function handleBack() {
           v-else-if="currentView === 'rate'" 
           :initialTab="route.query.tab || 'Mã giá phòng'"
           @update:activeTab="updateActiveTab"
+        />
+        <DesignTemplate 
+          v-else-if="currentView === 'design-template'" 
         />
       </div>
     </template>
