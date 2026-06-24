@@ -133,7 +133,16 @@ class SystemConfigurationSeeder extends Seeder
                 $formName = 'Double';
                 $guests = 2;
 
-                if ($col == 1 || $col == 2) {
+                // Phân bổ loại phòng và hạng phòng
+                $classCode = 'SUPD';
+                $formName = 'Double';
+                $guests = 2;
+
+                if ($roomNumber === '404') {
+                    $classCode = 'SUPT';
+                    $formName = 'Twin';
+                    $guests = 2;
+                } elseif ($col == 1 || $col == 2) {
                     $classCode = 'DLXD';
                     $formName = 'Double';
                     $guests = 2;
@@ -186,6 +195,23 @@ class SystemConfigurationSeeder extends Seeder
         }
 
         foreach ($roomsData as $r) {
+            // Random status distribution for testing:
+            // 50% available, 22% occupied, 10% dirty, 9% reserved, 9% checkout
+            $statusRand = rand(1, 100);
+            if ($r['room_number'] === '404') {
+                $statusVal = 'checkout';
+            } elseif ($statusRand <= 50) {
+                $statusVal = 'available';
+            } elseif ($statusRand <= 72) {
+                $statusVal = 'occupied';
+            } elseif ($statusRand <= 82) {
+                $statusVal = 'dirty';
+            } elseif ($statusRand <= 91) {
+                $statusVal = 'reserved';
+            } else {
+                $statusVal = 'checkout';
+            }
+
             Room::create([
                 'room_number' => $r['room_number'],
                 'room_class_id' => $classModels[$r['class']]->id,
@@ -197,7 +223,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_row' => $r['row'],
                 'grid_column' => $r['col'],
                 'is_internal' => false,
-                'status' => 'available',
+                'status' => $statusVal,
                 'notes' => 'Phòng tự động tạo bằng seeder',
             ]);
         }

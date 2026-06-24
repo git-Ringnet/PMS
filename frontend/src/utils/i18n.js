@@ -262,8 +262,8 @@ const translations = {
       helpShortcutClean: 'Phòng sạch',
       helpShortcutDirty: 'Phòng bẩn',
       helpDnd: 'Phòng không làm phiền',
-      helpInHouse: 'Có người trong phòng',
       helpHkRequest: 'Yêu cầu dọn phòng',
+      helpHkService: 'Dịch vụ dọn phòng',
       helpGuestCheckedInToday: 'Phòng khách đã nhận trong ngày',
       helpGuestArrivingTomorrow: 'Phòng khách đến vào ngày mai'
     }
@@ -522,8 +522,8 @@ const translations = {
       helpShortcutClean: 'Clean Room',
       helpShortcutDirty: 'Dirty Room',
       helpDnd: 'Do Not Disturb',
-      helpInHouse: 'Occupied / In-House',
       helpHkRequest: 'Housekeeping Request',
+      helpHkService: 'Housekeeping Service',
       helpGuestCheckedInToday: 'Guest checked in today',
       helpGuestArrivingTomorrow: 'Guest arriving tomorrow'
     }

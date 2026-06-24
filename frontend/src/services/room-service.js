@@ -50,6 +50,8 @@ function generateMockRooms() {
       const type = typeKeys[Math.floor(Math.random() * typeKeys.length)]
       const maxGuests = Math.floor(Math.random() * 4) + 1
 
+      const lockType = status === ROOM_STATUSES.MAINTENANCE ? (parseInt(roomNumber) % 2 === 0 ? 'OOO' : 'OOS') : null
+
       rooms.push({
         id: parseInt(roomNumber),
         room_number: roomNumber,
@@ -64,6 +66,7 @@ function generateMockRooms() {
         notes: '',
         is_clean: status !== ROOM_STATUSES.DIRTY,
         has_issue: status === ROOM_STATUSES.MAINTENANCE,
+        lock_type: lockType,
       })
     }
   }
