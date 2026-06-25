@@ -153,6 +153,169 @@ class TemplateRendererService
         ];
 
         $isNavy = $templateName && str_contains(strtolower($templateName), 'navy');
+        $isNavyDalat = $isNavy && $templateName && (
+            str_contains(strtolower($templateName), 'dalat') ||
+            str_contains(strtolower($templateName), 'da lat') ||
+            str_contains(strtolower($templateName), 'đà lạt')
+        );
+        $isNavyNhatrang = $isNavy && $templateName && (
+            str_contains(strtolower($templateName), 'nha trang') ||
+            str_contains(strtolower($templateName), 'nhatrang')
+        );
+
+        if ($group === 'Booking Confirmation' && $isNavyNhatrang) {
+            $hotelMock = [
+                'name' => 'NAVY HOTEL NHA TRANG',
+                'address' => '18-20 Tran Hung Dao, Loc Tho, Nha Trang',
+                'phone' => '0258.3599.088',
+                'fax' => '',
+                'email' => 'info@navyhotel.vn',
+                'website' => 'www.navyhotel.vn',
+                'logo' => '<img src="/uploads/templates/navy_nhatrang_logo.png" style="height: 70px;" alt="Logo">',
+            ];
+
+            $customerMock = [
+                'name' => 'MR VIACHASLAU FILIPCHUK',
+                'phone' => '',
+                'fax' => '',
+                'email' => '',
+                'id_card' => '',
+            ];
+
+            $bookingMock = [
+                'code' => 'NV1836',
+                'date' => '23/06/2026',
+                'checkin_date' => '23/06/2026',
+                'checkout_date' => '07/07/2026',
+                'adults' => 2,
+                'children' => 0,
+                'nights' => 14,
+                'lines' => [
+                    [
+                        'checkin' => '23/06/2026',
+                        'checkout' => '06/07/2026',
+                        'service' => 'Deluxe Triple City View',
+                        'quantity' => '1',
+                        'guests' => '2',
+                        'unit_price' => '800,000',
+                        'amount' => '10,400,000',
+                    ],
+                    [
+                        'checkin' => '06/07/2026',
+                        'checkout' => '07/07/2026',
+                        'service' => 'Deluxe Triple City View',
+                        'quantity' => '1',
+                        'guests' => '2',
+                        'unit_price' => '0',
+                        'amount' => '0',
+                    ],
+                ],
+            ];
+
+            $paymentMock = [
+                'total' => '10,400,000',
+                'deposit' => '0',
+                'balance' => '10,400,000',
+                'method' => 'Bank transfer',
+            ];
+
+            $confirmationMock = [
+                'from' => '',
+                'company' => 'AMEGA TRAVEL',
+                'printed_at' => 'Tuesday, 23/06/2026 09:29:27 AM',
+                'payment_method' => 'Bank transfer',
+                'guarantee_status' => 'EXPECTED CONFIRM',
+                'notes' => 'Reservation No.900027592/Amega',
+                'breakfast_yes_box' => '☐',
+                'breakfast_no_box' => '☐',
+                'vat_yes_box' => '☑',
+                'vat_no_box' => '☐',
+            ];
+
+            return [
+                'hotel' => $hotelMock,
+                'customer' => $customerMock,
+                'booking' => $bookingMock,
+                'payment' => $paymentMock,
+                'confirmation' => $confirmationMock,
+            ];
+        }
+
+        if ($group === 'Booking Confirmation' && $isNavyDalat) {
+            $hotelMock = [
+                'name' => 'NAVY HOTEL ĐÀ LẠT',
+                'address' => '25 Phù Đổng Thiên Vương, Phường Lâm Viên- Đà Lạt, Tỉnh Lâm Đồng',
+                'phone' => '02633 553 105',
+                'email' => 'info@navydalat.vn',
+                'website' => 'www.navydalat.vn',
+                'logo' => '<img src="/uploads/templates/navy_dalat_logo.png" style="height: 70px;" alt="Logo">',
+            ];
+
+            $customerMock = [
+                'name' => 'Thái Văn Hiền',
+                'phone' => '0901234567',
+                'email' => 'hien@gmail.com',
+                'id_card' => '',
+            ];
+
+            $bookingMock = [
+                'code' => 'NVD271',
+                'date' => '22/06/2026',
+                'checkin_date' => '22/06/2026',
+                'checkout_date' => '23/06/2026',
+                'adults' => 2,
+                'children' => 0,
+                'nights' => 1,
+                'lines' => [
+                    [
+                        'checkin' => '22/06/2026',
+                        'checkout' => '23/06/2026',
+                        'service' => 'Deluxe Twin',
+                        'room_number' => '107',
+                        'quantity' => '1',
+                        'nights' => '1',
+                        'guests' => '2',
+                        'unit_price' => '780,000',
+                        'amount' => '780,000',
+                    ],
+                ],
+            ];
+
+            $paymentMock = [
+                'total' => '780,000',
+                'deposit' => '780,000',
+                'balance' => '0',
+                'method' => 'Bank transfer thanh toán 100% 10 ngày trước ngày nhận phòng',
+            ];
+
+            $confirmationMock = [
+                'contact_person' => '',
+                'confirmed_by' => 'Hoàng Thị Thu Trang',
+                'contact_phone' => '',
+                'contact_email' => '',
+                'company' => 'TONG CONG TY TAN CANG SAI GON',
+                'tour_code' => '',
+                'notes' => 'TCL',
+                'room_note' => '1 Twin',
+                'payment_method' => 'Bank transfer thanh toán 100% 10 ngày trước ngày nhận phòng',
+                'bank_account_name' => 'CHI NHÁNH CÔNG TY CỔ PHẦN DỊCH VỤ BAY VÀ DU LỊCH BIỂN TÂN CẢNG TẠI ĐÀ LẠT',
+                'bank_account_number' => '7451100001168',
+                'bank_name' => 'MB Bank - chi nhánh Lâm Đồng',
+                'transfer_content' => 'Thanh toán tiền phòng cho booking NVD271',
+                'invoice_company' => '',
+                'invoice_address' => '',
+                'invoice_tax_code' => '',
+                'invoice_email' => '',
+            ];
+
+            return [
+                'hotel' => $hotelMock,
+                'customer' => $customerMock,
+                'booking' => $bookingMock,
+                'payment' => $paymentMock,
+                'confirmation' => $confirmationMock,
+            ];
+        }
 
         if ($group === 'Invoice' && !$isNavy) {
             // Galliot Invoice Mock Data
@@ -283,6 +446,17 @@ class TemplateRendererService
             'room' => $roomMock,
             'payment' => $paymentMock,
             'registration' => $registrationMock,
+            // Receipt fields at top level for easy access
+            'date' => '20260328-503282-',
+            'guest_name' => 'NGUYEN VAN A',
+            'phone' => '0901234567',
+            'amount' => '2,500,000 đ',
+            'amount_in_words' => 'Hai triệu năm trăm ngàn đồng chẵn',
+            'content' => 'Thanh toán tiền đặt cọc phòng',
+            'payment_method' => 'Tiền mặt / Cash',
+            'booking_code' => '20260328-503282-',
+            'room_no' => '408',
+            'phone_no' => '0988246336',
         ];
     }
 

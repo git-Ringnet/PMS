@@ -17,6 +17,7 @@ const templateGroups = [
   'Booking Confirmation',
   'Registration Card',
   'Deposit',
+  'Receipt',
   'Room Morning Worksheet',
   'Invoice',
   'Total revenue report',

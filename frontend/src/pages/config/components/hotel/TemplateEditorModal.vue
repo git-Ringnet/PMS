@@ -230,16 +230,10 @@ const loadVersions = async () => {
   }
 }
 
-// Render Preview
+// Render Preview — read from DB; design-tab edits require explicit save first
 const loadPreview = async () => {
   loadingPreview.value = true
   try {
-    // Generate compiled HTML first locally and sync
-    compileHtml()
-    
-    // Call preview API with currently compiled template content
-    await saveTemplateDraft()
-    
     const res = await http.get(`/templates/${props.templateId}/preview`)
     if (res.data && res.data.html) {
       previewHtml.value = res.data.html

@@ -251,9 +251,13 @@ class HotelDefinitionSeeder extends Seeder
             ['group' => 'Booking Confirmation', 'name' => 'Booking Confirmation Main', 'report' => 'BookingConfirmationGalliot'],
             ['group' => 'Booking Confirmation', 'name' => 'Booking Confirmation Sub', 'report' => 'BookingConfirmationGalliotVN'],
             ['group' => 'Booking Confirmation', 'name' => 'Booking Confirmation For Sales', 'report' => 'BookingConfirmationForSalesTulip'],
+            ['group' => 'Booking Confirmation', 'name' => 'Booking Confirmation Navy Da Lat', 'report' => 'BookingConfirmationNavyDalat'],
+            ['group' => 'Booking Confirmation', 'name' => 'Booking Confirmation Navy Nha Trang', 'report' => 'BookingConfirmationNavyNhatrang'],
             
             // Other groups
             ['group' => 'Registration Card', 'name' => 'Registration Card Main', 'report' => 'RegistrationCardGalliot'],
+            ['group' => 'Registration Card', 'name' => 'Registration Card Navy', 'report' => 'RegistrationCardNavy'],
+            ['group' => 'Receipt', 'name' => 'Navy Hotel Receipt', 'report' => 'ReceiptNavy'],
             ['group' => 'Deposit', 'name' => 'Deposit Main', 'report' => 'DepositReceiptGalliot'],
             ['group' => 'Room Morning Worksheet', 'name' => 'Room Morning Worksheet Main', 'report' => 'RoomMorningWorksheetGalliot'],
             ['group' => 'Invoice', 'name' => 'Invoice Galliot', 'report' => 'InvoiceGalliot'],
