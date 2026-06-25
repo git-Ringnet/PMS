@@ -15,8 +15,7 @@ const editMode = ref(false)
 const editedLocks = ref({}) // map room_id -> lock details for inline editing
 
 // Floor expansion state
-// Expand floor 7 by default to match screenshot view
-const expandedFloors = ref([7])
+const expandedFloors = ref([])
 
 // History Log panel state
 const activeHistoryRoom = ref(null)

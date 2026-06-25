@@ -273,6 +273,14 @@ onBeforeUnmount(() => {
             <span class="select-text">{{ t('roomMap.helpHkRequest') }}</span>
           </div>
 
+          <!-- 10b. Dịch vụ dọn phòng -->
+          <div class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
+            <div class="w-4 h-4 flex items-center justify-center shrink-0 text-slate-600">
+              <RoomIcon name="housekeeping-service" class="w-4.5 h-4.5" />
+            </div>
+            <span class="select-text">{{ t('roomMap.helpHkService') }}</span>
+          </div>
+
           <!-- 11. Phòng khách đã nhận trong ngày -->
           <div class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
             <span class="text-rose-500 font-extrabold w-[22px] text-center shrink-0 select-text">101</span>
