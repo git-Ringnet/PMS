@@ -26,6 +26,7 @@ const paymentForm = reactive({
   bank_name: '',
   service_charge: 0,
   department: '',
+  payment_group: null,
   is_free: false,
   is_inactive: false
 })
@@ -58,6 +59,7 @@ const openAddPayment = () => {
     bank_name: '',
     service_charge: 0,
     department: '',
+    payment_group: null,
     is_free: false,
     is_inactive: false
   })
@@ -75,6 +77,7 @@ const openEditPayment = (item) => {
     bank_name: item.bank_name || '',
     service_charge: item.service_charge,
     department: item.department || '',
+    payment_group: item.payment_group || null,
     is_free: !!item.is_free,
     is_inactive: !!item.is_inactive
   })
@@ -198,6 +201,7 @@ const totalPaymentPages = computed(() => Math.ceil(filteredPaymentMethods.value.
           <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
             <th class="p-3">Code</th>
             <th class="p-3">Tên</th>
+            <th class="p-3">Nhóm thanh toán</th>
             <th class="p-3">Tài khoản</th>
             <th class="p-3">Tên tài khoản</th>
             <th class="p-3">Tên ngân hàng</th>
@@ -213,6 +217,14 @@ const totalPaymentPages = computed(() => Math.ceil(filteredPaymentMethods.value.
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
             <td class="p-3 font-bold text-slate-800">{{ item.code }}</td>
             <td class="p-3 font-bold text-slate-700">{{ item.name }}</td>
+            <td class="p-3 text-slate-600 font-semibold">
+              <span v-if="item.payment_group === 1" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">Tiền mặt</span>
+              <span v-else-if="item.payment_group === 2" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">Thẻ CK</span>
+              <span v-else-if="item.payment_group === 3" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">Voucher</span>
+              <span v-else-if="item.payment_group === 4" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">Công nợ</span>
+              <span v-else-if="item.payment_group === 5" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-700 border border-slate-200">Miễn phí</span>
+              <span v-else class="text-slate-400 italic">-</span>
+            </td>
             <td class="p-3 text-slate-600 font-semibold">{{ item.account || '-' }}</td>
             <td class="p-3 text-slate-600 font-semibold">{{ item.account_name || '-' }}</td>
             <td class="p-3 text-slate-600 font-semibold">{{ item.bank_name || '-' }}</td>
@@ -297,13 +309,27 @@ const totalPaymentPages = computed(() => Math.ceil(filteredPaymentMethods.value.
                 class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold" />
             </div>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-500">Department</label>
-            <select v-model="paymentForm.department"
-              class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold bg-white">
-              <option value="">Chọn: 0</option>
-              <option v-for="dept in departments" :key="dept" :value="dept">{{ dept }}</option>
-            </select>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-500">Department</label>
+              <select v-model="paymentForm.department"
+                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold bg-white w-full">
+                <option value="">Chọn: 0</option>
+                <option v-for="dept in departments" :key="dept" :value="dept">{{ dept }}</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-500">Nhóm thanh toán</label>
+              <select v-model="paymentForm.payment_group"
+                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-bold bg-white w-full">
+                <option :value="null">Chọn nhóm</option>
+                <option :value="1">Tiền mặt</option>
+                <option :value="2">Thẻ / Chuyển khoản</option>
+                <option :value="3">Voucher</option>
+                <option :value="4">Công nợ (City ledger)</option>
+                <option :value="5">Miễn phí</option>
+              </select>
+            </div>
           </div>
           <div class="flex items-center gap-6 mt-2">
             <div class="flex items-center gap-2">
