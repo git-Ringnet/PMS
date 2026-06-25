@@ -7,20 +7,20 @@ const uiStore = useUiStore()
 const loading = ref(false)
 const templates = ref([])
 
-// Template groups with Vietnamese labels
+// Template groups
 const templateGroups = [
-  { group: 'Booking Confirmation', label: 'Xác nhận đặt phòng' },
-  { group: 'Registration Card', label: 'Thẻ đăng ký' },
-  { group: 'Deposit', label: 'Phiếu đặt cọc' },
-  { group: 'Room Morning Worksheet', label: 'Bảng kê phòng buổi sáng' },
-  { group: 'Invoice', label: 'Hóa đơn thanh toán' },
-  { group: 'Total revenue report', label: 'Báo cáo doanh thu tổng hợp' },
-  { group: 'Breakfast Ticket', label: 'Vé ăn sáng' },
-  { group: 'Report', label: 'Báo cáo chung' }
+  'Booking Confirmation',
+  'Registration Card',
+  'Deposit',
+  'Room Morning Worksheet',
+  'Invoice',
+  'Total revenue report',
+  'Breakfast Ticket',
+  'Report'
 ]
 
 // Active tab state
-const activeGroup = ref(templateGroups[0].group)
+const activeGroup = ref(templateGroups[0])
 
 // Filtered templates for the active tab
 const filteredTemplates = computed(() => {
@@ -60,7 +60,7 @@ const onSelectDefault = async (templateId) => {
   try {
     const res = await http.post(`/templates/${templateId}/make-default`)
     if (res.data && res.data.success) {
-      const activeLabel = templateGroups.find(g => g.group === activeGroup.value)?.label || activeGroup.value
+      const activeLabel = activeGroup.value
       uiStore.showToast(`Đã gán mặc định cho nhóm "${activeLabel}" thành công!`, 'success')
       await fetchTemplates()
     } else {
@@ -69,6 +69,29 @@ const onSelectDefault = async (templateId) => {
   } catch (err) {
     console.error(err)
     uiStore.showToast('Lỗi khi gán mẫu mặc định', 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
+const onRemoveDefault = async (template) => {
+  const confirmed = await uiStore.confirm({
+    message: `Bạn có chắc muốn hủy mặc định cho mẫu "${template.name}"?`
+  })
+  if (!confirmed) return
+
+  loading.value = true
+  try {
+    const res = await http.post(`/templates/${template.id}/remove-default`)
+    if (res.data && res.data.success) {
+      uiStore.showToast(`Đã hủy mặc định cho nhóm "${activeGroup.value}"!`, 'success')
+      await fetchTemplates()
+    } else {
+      uiStore.showToast(res.data.message || 'Lỗi khi hủy mẫu mặc định', 'error')
+    }
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast('Lỗi khi hủy mẫu mặc định', 'error')
   } finally {
     loading.value = false
   }
@@ -107,28 +130,28 @@ onMounted(() => {
       <div class="flex flex-wrap gap-0">
         <button
           v-for="g in templateGroups"
-          :key="g.group"
-          @click="activeGroup = g.group"
+          :key="g"
+          @click="activeGroup = g"
           class="group relative px-4 py-2.5 text-xs font-bold border-none bg-transparent cursor-pointer transition-all duration-200 whitespace-nowrap"
-          :class="activeGroup === g.group
+          :class="activeGroup === g
             ? 'text-sky-700'
             : 'text-slate-400 hover:text-slate-600'"
         >
           <span class="flex items-center gap-1.5">
-            {{ g.label }}
+            {{ g }}
             <span
-              v-if="getGroupCount(g.group) > 0"
+              v-if="getGroupCount(g) > 0"
               class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black leading-none transition-colors duration-200"
-              :class="activeGroup === g.group
+              :class="activeGroup === g
                 ? 'bg-sky-100 text-sky-700'
                 : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-slate-500'"
             >
-              {{ getGroupCount(g.group) }}
+              {{ getGroupCount(g) }}
             </span>
           </span>
           <!-- Active tab indicator -->
           <span
-            v-if="activeGroup === g.group"
+            v-if="activeGroup === g"
             class="absolute bottom-0 left-2 right-2 h-[2.5px] bg-sky-500 rounded-t-full"
           ></span>
         </button>
@@ -220,10 +243,21 @@ onMounted(() => {
                 </svg>
                 Chọn làm mặc định
               </button>
-              <span v-else class="inline-flex items-center gap-1 text-emerald-600 text-[11px] font-bold">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Đang áp dụng
-              </span>
+              <div v-else class="inline-flex items-center gap-2">
+                <span class="inline-flex items-center gap-1 text-emerald-600 text-[11px] font-bold">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Đang áp dụng
+                </span>
+                <button
+                  @click="onRemoveDefault(t)"
+                  class="px-3 py-1.5 border border-amber-200 hover:border-amber-300 hover:bg-amber-50 text-amber-600 hover:text-amber-700 font-bold rounded-lg text-[11px] cursor-pointer transition-all duration-200 bg-white inline-flex items-center gap-1.5 shadow-3xs"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Hủy mặc định
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>

@@ -278,6 +278,32 @@ class TemplateController extends Controller
     }
 
     /**
+     * Remove default status from a template in its group.
+     */
+    public function removeDefault($id)
+    {
+        $template = Template::find($id);
+        if (!$template) {
+            return response()->json(['message' => 'Template not found'], 404);
+        }
+
+        if (!$template->is_default) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mẫu biểu này hiện không phải mặc định.'
+            ], 400);
+        }
+
+        $template->update(['is_default' => false]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã hủy mẫu mặc định thành công',
+            'data' => new TemplateResource($template->fresh())
+        ]);
+    }
+
+    /**
      * Retrieve the version history for a template.
      */
     public function versions($id)
