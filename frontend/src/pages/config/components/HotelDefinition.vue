@@ -7,7 +7,7 @@ import HotelConfigTab from './hotel/HotelConfigTab.vue'
 import BranchTab from './hotel/BranchTab.vue'
 import TemplateTab from './hotel/TemplateTab.vue'
 import ServiceDepartmentTab from './hotel/ServiceDepartmentTab.vue'
-import SynthesisReportTab from './hotel/SynthesisReportTab.vue'
+// import SynthesisReportTab from './hotel/SynthesisReportTab.vue'
 
 const props = defineProps({
   initialTab: {
@@ -37,8 +37,7 @@ const hotelTabs = [
   'CẤU HÌNH',
   'CHI NHÁNH',
   'MẪU',
-  'BỘ PHẬN DỊCH VỤ',
-  'THIẾT LẬP BÁO CÁO TỔNG HỢP'
+  'BỘ PHẬN DỊCH VỤ'
 ]
 </script>
 
@@ -68,7 +67,6 @@ const hotelTabs = [
       <BranchTab v-else-if="activeHotelTab === 'CHI NHÁNH'" />
       <TemplateTab v-else-if="activeHotelTab === 'MẪU'" />
       <ServiceDepartmentTab v-else-if="activeHotelTab === 'BỘ PHẬN DỊCH VỤ'" />
-      <SynthesisReportTab v-else-if="activeHotelTab === 'THIẾT LẬP BÁO CÁO TỔNG HỢP'" />
       
       <!-- Fallback block for remaining tabs -->
       <div v-else class="text-center py-12 flex flex-col items-center justify-center gap-3">

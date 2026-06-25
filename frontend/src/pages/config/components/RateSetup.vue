@@ -276,7 +276,8 @@ const saveModalPlan = async () => {
       await fetchRateCodes(); // Refresh to get updated plans
       const updatedCode = rateCodes.value.find(r => r.Ma === selectedRateCode.value.Ma);
       if (updatedCode) {
-         selectedRateCode.value.rate_plans = updatedCode.rate_plans; // Update in place to avoid watch trigger
+         selectedRateCode.value.rate_plans = updatedCode.rate_plans;
+         loadRateMatrixFromPlans(selectedRateCode.value.Ma, updatedCode.rate_plans);
          const plans = updatedCode.rate_plans || [];
          modalRatePlans.value = JSON.parse(JSON.stringify(plans.filter(p => p.Code !== 'DEFAULT')));
          
@@ -303,7 +304,8 @@ const deleteModalPlan = async () => {
       await fetchRateCodes();
       const updatedCode = rateCodes.value.find(r => r.Ma === selectedRateCode.value.Ma);
       if (updatedCode) {
-         selectedRateCode.value.rate_plans = updatedCode.rate_plans; // Update in place
+         selectedRateCode.value.rate_plans = updatedCode.rate_plans;
+         loadRateMatrixFromPlans(selectedRateCode.value.Ma, updatedCode.rate_plans);
          const plans = updatedCode.rate_plans || [];
          modalRatePlans.value = JSON.parse(JSON.stringify(plans.filter(p => p.Code !== 'DEFAULT')));
       }
@@ -311,6 +313,25 @@ const deleteModalPlan = async () => {
   } catch (e) {
     console.error(e);
   }
+}
+
+const loadRateMatrixFromPlans = (rateCodeMa, plans) => {
+  for (const key in rateMatrix) delete rateMatrix[key];
+  if (!plans?.length) return;
+
+  plans.forEach(plan => {
+    if (!plan.Period) return;
+    try {
+      const parsed = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period;
+      for (const k in parsed) {
+        let newKey = k;
+        if (k.startsWith(rateCodeMa + '_')) {
+          newKey = plan.Code + '_' + k.substring(rateCodeMa.length + 1);
+        }
+        rateMatrix[newKey] = parsed[k];
+      }
+    } catch (e) {}
+  });
 }
 
 const getDayLabel = (dayOfWeek) => {
@@ -359,6 +380,7 @@ const applyBatchUpdate = async () => {
   const confirmed = await uiStore.confirm({ message: 'Bạn có chắc chắn muốn áp dụng thông tin giá theo ngày không?' });
   if (!confirmed) return;
 
+  let appliedCount = 0;
   let currentDate = new Date(from);
   while (currentDate <= to) {
     const dayOfWeek = currentDate.getDay();
@@ -371,11 +393,19 @@ const applyBatchUpdate = async () => {
       } else {
         dailyMappingsList.value.push({ Date: dateStr, Code: batchRateType.value });
       }
+      appliedCount++;
     }
     currentDate.setDate(currentDate.getDate() + 1);
   }
   
+  if (appliedCount === 0) {
+    uiStore.showToast('Không có ngày nào được chọn theo thứ trong tuần để áp dụng.', 'warning');
+    return;
+  }
+
   dailyMappingsList.value.sort((a, b) => a.Date.localeCompare(b.Date));
+  dailyMappingsList.value = dailyMappingsList.value.map(m => ({ ...m }));
+  uiStore.showToast('Áp dụng loại giá thành công!', 'success');
 }
 
 const initialRateStateString = ref('');
@@ -402,27 +432,7 @@ watch(selectedRateCode, (newVal) => {
       IncludeBF: newVal.IncludeBF || false
     })
     
-    // Reset Matrix
-    for (const key in rateMatrix) delete rateMatrix[key];
-    
-    // Load Matrix if plan exists
-    if (newVal.rate_plans && newVal.rate_plans.length > 0) {
-      newVal.rate_plans.forEach(plan => {
-        if (plan.Period) {
-          try {
-            const parsed = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period;
-            for (const k in parsed) {
-              // Legacy key format: test1_SUPD_Double -> DEFAULT_SUPD_Double
-              let newKey = k;
-              if (k.startsWith(newVal.Ma + '_')) {
-                  newKey = plan.Code + '_' + k.substring(newVal.Ma.length + 1);
-              }
-              rateMatrix[newKey] = parsed[k];
-            }
-          } catch (e) {}
-        }
-      });
-    }
+    loadRateMatrixFromPlans(newVal.Ma, newVal.rate_plans);
     
     // Load Daily Mappings
     dailyMappingsList.value = newVal.daily_mappings ? JSON.parse(JSON.stringify(newVal.daily_mappings)) : [];
@@ -897,7 +907,7 @@ const selectPackage = (pkg) => {
               <tbody>
                 <tr 
                   v-for="mapping in dailyMappingsList" 
-                  :key="mapping.Date"
+                  :key="`${mapping.Date}-${mapping.Code}`"
                   class="border-b border-slate-100 hover:bg-slate-50/50 transition-colors"
                   :class="{
                     'bg-sky-50/30': getDayOfWeekFromDate(mapping.Date) === 0,
@@ -915,7 +925,7 @@ const selectPackage = (pkg) => {
                     {{ mapping.Code }}
                   </td>
                   <template v-for="rt in roomTypes" :key="'val-' + rt.code">
-                    <td v-for="occ in occupancies" :key="rt.code + '-' + occ + '-' + mapping.Date" class="p-0.5 border border-slate-100">
+                    <td v-for="occ in occupancies" :key="`${mapping.Date}-${mapping.Code}-${rt.code}-${occ}`" class="p-0.5 border border-slate-100">
                       <span class="block text-center text-[11px] font-semibold text-slate-600 py-1">
                         {{ formatCurrencyInput(rateMatrix[`${mapping.Code}_${rt.code}_${occ}`], rateFormState.Currency) || '-' }}
                       </span>
