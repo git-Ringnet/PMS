@@ -85,7 +85,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault']);
     Route::get('templates/{id}/versions', [\App\Http\Controllers\Api\TemplateController::class, 'versions']);
     Route::post('templates/{id}/rollback', [\App\Http\Controllers\Api\TemplateController::class, 'rollback']);
-    Route::get('templates/{id}/preview', [\App\Http\Controllers\Api\TemplateController::class, 'preview']);
+    Route::match(['get', 'post'], 'templates/{id}/preview', [\App\Http\Controllers\Api\TemplateController::class, 'preview']);
     Route::post('templates/{id}/render', [\App\Http\Controllers\Api\TemplateController::class, 'render']);
     Route::post('templates/upload-image', [\App\Http\Controllers\Api\TemplateController::class, 'uploadImage']);
     Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);

@@ -26,6 +26,24 @@ const loading = ref(false)
 const saving = ref(false)
 const template = ref(null)
 const activeTab = ref('design') // 'design' | 'preview' | 'css' | 'versions'
+const activeTextarea = ref(null)
+const editingContent = ref('')
+const editorMode = ref('visual') // 'visual' | 'code'
+
+// Active cell editing states for static tables to prevent cursor jumps
+const activeCell = ref(null)
+const editingCellContent = ref('')
+
+const onCellFocus = (cell) => {
+  activeCell.value = cell
+  editingCellContent.value = cell.content || ''
+}
+
+const onCellBlur = () => {
+  activeCell.value = null
+  editingCellContent.value = ''
+  compileHtml()
+}
 
 // Version control state
 const versions = ref([])
@@ -230,11 +248,22 @@ const loadVersions = async () => {
   }
 }
 
-// Render Preview — read from DB; design-tab edits require explicit save first
+// Render Preview — read current unsaved canvas blocks and styling live
 const loadPreview = async () => {
+  if (!template.value) return
   loadingPreview.value = true
+  compileHtml() // Ensure latest blocks layout is compiled to content_html
   try {
-    const res = await http.get(`/templates/${props.templateId}/preview`)
+    const res = await http.post(`/templates/${props.templateId}/preview`, {
+      content_html: template.value.content_html,
+      css: template.value.css || '',
+      page_size: template.value.page_size || 'A4',
+      page_orientation: template.value.page_orientation || 'portrait',
+      margin_top: template.value.margin_top ?? 10,
+      margin_bottom: template.value.margin_bottom ?? 10,
+      margin_left: template.value.margin_left ?? 10,
+      margin_right: template.value.margin_right ?? 10
+    })
     if (res.data && res.data.html) {
       previewHtml.value = res.data.html
     }
@@ -294,7 +323,7 @@ const addSubBlock = (parentBlock, colIdx, type) => {
   if (type === 'text') {
     subBlock.content = 'Nhấp để sửa văn bản...'
   } else if (type === 'image') {
-    subBlock.content = 'hotel.logo'
+    subBlock.content = ''
     subBlock.imageUrl = ''
   } else if (type === 'spacer') {
     subBlock.height = 15
@@ -308,6 +337,12 @@ const addSubBlock = (parentBlock, colIdx, type) => {
   parentBlock.columns[colIdx].blocks.push(subBlock)
   selectedBlockId.value = id
   compileHtml()
+  
+  if (type === 'image') {
+    setTimeout(() => {
+      triggerCanvasImageUpload(subBlock)
+    }, 150)
+  }
 }
 
 const deleteSubBlock = (parentBlock, colIdx, subBlockId) => {
@@ -396,6 +431,42 @@ const handleImageUpload = async (event) => {
   }
 }
 
+const triggerCanvasImageUpload = (block) => {
+  const input = document.getElementById('file_input_' + block.id)
+  if (input) {
+    input.click()
+  }
+}
+
+const handleCanvasImageUpload = async (event, block) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  const formData = new FormData()
+  formData.append('image', file)
+  
+  uiStore.showToast('Đang tải ảnh lên...', 'info')
+  try {
+    const res = await http.post('/templates/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    
+    if (res.data && res.data.success) {
+      block.imageUrl = res.data.url
+      block.content = '' // Clear variables link when custom image is uploaded
+      compileHtml()
+      uiStore.showToast('Tải ảnh lên thành công!', 'success')
+    }
+  } catch (err) {
+    console.error('Lỗi upload ảnh:', err)
+    uiStore.showToast('Không thể tải ảnh lên. Vui lòng thử lại.', 'error')
+  } finally {
+    event.target.value = ''
+  }
+}
+
 // Manage block addition
 const addBlock = (type) => {
   const band = selectedBand.value
@@ -422,7 +493,7 @@ const addBlock = (type) => {
   if (type === 'text') {
     newBlock.content = 'Nhấp vào đây để sửa nội dung...'
   } else if (type === 'image') {
-    newBlock.content = 'hotel.logo' // bindings variable or direct image tag
+    newBlock.content = '' // bindings variable or direct image tag
     newBlock.imageUrl = ''
     newBlock.style.textAlign = 'center'
   } else if (type === 'divider') {
@@ -430,13 +501,13 @@ const addBlock = (type) => {
   } else if (type === 'spacer') {
     newBlock.height = 20 // mm or px
   } else if (type === 'table') {
+    newBlock.isNew = true
     newBlock.dataSource = 'booking.services'
-    newBlock.columns = [
-      { header: 'Tên dịch vụ', value: 'service.name', width: '50%' },
-      { header: 'Đơn giá', value: 'service.price', width: '20%' },
-      { header: 'Số lượng', value: 'service.quantity', width: '10%' },
-      { header: 'Thành tiền', value: 'service.amount', width: '20%' }
-    ]
+    newBlock.tableType = 'dynamic'
+    newBlock.rowsCount = 3
+    newBlock.colsCount = 2
+    newBlock.selectedFields = ['service.name', 'service.price', 'service.quantity', 'service.amount']
+    newBlock.columns = []
     newBlock.style.marginTop = '10px'
     newBlock.style.marginBottom = '10px'
   } else if (type === 'columns') {
@@ -482,6 +553,13 @@ const addBlock = (type) => {
   
   blocks.value[band].push(newBlock)
   selectedBlockId.value = id
+  compileHtml()
+  
+  if (type === 'image') {
+    setTimeout(() => {
+      triggerCanvasImageUpload(newBlock)
+    }, 150)
+  }
 }
 
 // Reorder blocks
@@ -507,6 +585,47 @@ const deleteBlock = (band, id) => {
   }
 }
 
+const onTextareaFocus = (e) => {
+  activeTextarea.value = e.target
+}
+
+const insertHTMLAtCursor = (html) => {
+  let sel, range;
+  if (window.getSelection) {
+    sel = window.getSelection();
+    if (sel.getRangeAt && sel.rangeCount) {
+      range = sel.getRangeAt(0);
+      range.deleteContents();
+      
+      const el = document.createElement("div");
+      el.innerHTML = html;
+      const frag = document.createDocumentFragment();
+      let node, lastNode;
+      while ((node = el.firstChild)) {
+        lastNode = frag.appendChild(node);
+      }
+      range.insertNode(frag);
+      
+      if (lastNode) {
+        range = range.cloneRange();
+        range.setStartAfter(lastNode);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  }
+}
+
+const formatText = (command, value = null) => {
+  document.execCommand(command, false, value)
+  // Sync HTML to active contenteditable element by dispatching input event
+  const activeEl = document.activeElement
+  if (activeEl && activeEl.getAttribute('contenteditable') === 'true') {
+    activeEl.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+}
+
 // Insert dynamic variable at cursor position or append to content
 const insertVariable = (value) => {
   const block = selectedBlock.value
@@ -516,14 +635,316 @@ const insertVariable = (value) => {
   }
   
   const placeholder = `{{${value}}}`
+  // Inline styled span tag showing as a beautiful blue pill (User-friendly Tag)
+  const varHtml = `<span class="pms-variable" style="background-color: #f0f9ff; color: #0369a1; padding: 2px 6px; border-radius: 4px; border: 1px solid #bae6fd; font-family: monospace; font-size: 11px; margin: 0 2px; display: inline-block; user-select: all;" contenteditable="false" data-val="${value}">${placeholder}</span>`
   
   if (block.type === 'text') {
-    // Basic rich text insertion - append for simplicity
-    if (!block.content) block.content = ''
-    block.content += ' ' + placeholder
+    const activeEl = document.activeElement
+    if (activeEl && activeEl.getAttribute('contenteditable') === 'true') {
+      insertHTMLAtCursor(varHtml)
+      block.content = activeEl.innerHTML
+    } else if (activeTextarea.value) {
+      const textarea = activeTextarea.value
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const text = block.content || ''
+      block.content = text.substring(0, start) + placeholder + text.substring(end)
+      setTimeout(() => {
+        textarea.focus()
+        textarea.selectionStart = textarea.selectionEnd = start + placeholder.length
+      }, 50)
+    } else {
+      if (!block.content) block.content = ''
+      block.content += ' ' + placeholder
+    }
   } else if (block.type === 'image') {
     block.content = value
   }
+  compileHtml()
+}
+
+// Quick HTML Formatting Tag insertion at cursor
+const insertHtmlTag = (openTag, closeTag) => {
+  const block = selectedBlock.value
+  if (!block || !['text', 'static-table'].includes(block.type)) {
+    uiStore.showToast('Vui lòng chọn một khối văn bản hoặc ô bảng trước khi định dạng', 'warning')
+    return
+  }
+
+  const activeEl = document.activeElement
+  if (activeEl && activeEl.getAttribute('contenteditable') === 'true') {
+    // If editable div has focus, use selection wrap
+    let sel = window.getSelection()
+    if (sel.rangeAt && sel.rangeCount) {
+      let range = sel.getRangeAt(0)
+      let selectedText = range.toString()
+      let wrapperHtml = openTag + selectedText + closeTag
+      insertHTMLAtCursor(wrapperHtml)
+      // Dispatch input event to trigger Vue listener to sync model and compile HTML!
+      activeEl.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  } else if (activeTextarea.value) {
+    const textarea = activeTextarea.value
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const text = block.content || ''
+    const selectedText = text.substring(start, end)
+    const replacement = openTag + selectedText + closeTag
+    block.content = text.substring(0, start) + replacement + text.substring(end)
+    
+    setTimeout(() => {
+      textarea.focus()
+      textarea.selectionStart = start + openTag.length
+      textarea.selectionEnd = start + openTag.length + selectedText.length
+    }, 50)
+  } else {
+    block.content = (block.content || '') + openTag + closeTag
+  }
+  compileHtml()
+}
+
+// Add predefined block: Hotel Info
+const addHotelInfoBlock = () => {
+  const band = selectedBand.value
+  const id = `${band}_b_${Date.now()}`
+  const newBlock = {
+    id,
+    type: 'columns',
+    columns: [
+      {
+        width: '25%',
+        blocks: [
+          {
+            id: `${band}_hotel_logo_${Date.now()}`,
+            type: 'image',
+            content: 'hotel.logo',
+            imageUrl: '',
+            style: {
+              textAlign: 'center',
+              fontSize: '12px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              paddingLeft: '0px',
+              paddingRight: '0px',
+              marginTop: '0px',
+              marginBottom: '2px',
+              color: '#1e293b',
+              fontWeight: 'normal',
+              whiteSpace: 'pre-wrap'
+            }
+          }
+        ]
+      },
+      {
+        width: '75%',
+        blocks: [
+          {
+            id: `${band}_hotel_info_${Date.now()}`,
+            type: 'text',
+            content: '<h2 style="margin:0;font-size:16px;font-weight:bold;">{{hotel.name}}</h2>\n<p style="margin:2px 0;font-size:11px;">Đ/C: {{hotel.address}}</p>\n<p style="margin:2px 0;font-size:11px;">SĐT: {{hotel.phone}} | Email: {{hotel.email}}</p>',
+            style: {
+              textAlign: 'left',
+              fontSize: '12px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              paddingLeft: '0px',
+              paddingRight: '0px',
+              marginTop: '0px',
+              marginBottom: '2px',
+              color: '#1e293b',
+              fontWeight: 'normal',
+              whiteSpace: 'pre-wrap'
+            }
+          }
+        ]
+      }
+    ],
+    style: {
+      textAlign: 'left',
+      fontSize: '13px',
+      paddingTop: '5px',
+      paddingBottom: '5px',
+      paddingLeft: '0px',
+      paddingRight: '0px',
+      marginTop: '10px',
+      marginBottom: '15px',
+      color: '#1e293b',
+      fontWeight: 'normal',
+      whiteSpace: 'pre-wrap'
+    }
+  }
+  blocks.value[band].push(newBlock)
+  selectedBlockId.value = id
+  compileHtml()
+}
+
+// Add predefined block: Customer & Booking Info
+const addCustomerInfoBlock = () => {
+  const band = selectedBand.value
+  const id = `${band}_b_${Date.now()}`
+  const newBlock = {
+    id,
+    type: 'columns',
+    columns: [
+      {
+        width: '50%',
+        blocks: [
+          {
+            id: `${band}_cust_${Date.now()}`,
+            type: 'text',
+            content: '<b>Khách hàng:</b> {{customer.name}}<br><b>Số điện thoại:</b> {{customer.phone}}<br><b>Địa chỉ email:</b> {{customer.email}}',
+            style: {
+              textAlign: 'left',
+              fontSize: '11px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              paddingLeft: '0px',
+              paddingRight: '0px',
+              marginTop: '0px',
+              marginBottom: '2px',
+              color: '#1e293b',
+              fontWeight: 'normal',
+              whiteSpace: 'pre-wrap'
+            }
+          }
+        ]
+      },
+      {
+        width: '50%',
+        blocks: [
+          {
+            id: `${band}_book_${Date.now()}`,
+            type: 'text',
+            content: '<b>Mã đặt phòng:</b> {{booking.code}}<br><b>Ngày đến:</b> {{booking.checkin_date}}<br><b>Ngày đi:</b> {{booking.checkout_date}} ({{booking.nights}} đêm)',
+            style: {
+              textAlign: 'left',
+              fontSize: '11px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              paddingLeft: '0px',
+              paddingRight: '0px',
+              marginTop: '0px',
+              marginBottom: '2px',
+              color: '#1e293b',
+              fontWeight: 'normal',
+              whiteSpace: 'pre-wrap'
+            }
+          }
+        ]
+      }
+    ],
+    style: {
+      textAlign: 'left',
+      fontSize: '13px',
+      paddingTop: '8px',
+      paddingBottom: '8px',
+      paddingLeft: '0px',
+      paddingRight: '0px',
+      marginTop: '10px',
+      marginBottom: '10px',
+      color: '#1e293b',
+      fontWeight: 'normal',
+      whiteSpace: 'pre-wrap',
+      borderBottom: '1px solid #e2e8f0'
+    }
+  }
+  blocks.value[band].push(newBlock)
+  selectedBlockId.value = id
+  compileHtml()
+}
+
+// Add predefined block: Signature
+const addSignatureBlock = () => {
+  const band = selectedBand.value
+  const id = `${band}_b_${Date.now()}`
+  const newBlock = {
+    id,
+    type: 'columns',
+    columns: [
+      {
+        width: '50%',
+        blocks: [
+          {
+            id: `${band}_sig1_${Date.now()}`,
+            type: 'text',
+            content: '<p style="text-align:center;margin:0;"><b>Khách ký nhận</b><br><span style="font-size:10px;color:#94a3b8;font-style:italic;">(Ký và ghi rõ họ tên)</span></p>',
+            style: {
+              textAlign: 'center',
+              fontSize: '12px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              paddingLeft: '0px',
+              paddingRight: '0px',
+              marginTop: '0px',
+              marginBottom: '2px',
+              color: '#1e293b',
+              fontWeight: 'normal',
+              whiteSpace: 'pre-wrap'
+            }
+          }
+        ]
+      },
+      {
+        width: '50%',
+        blocks: [
+          {
+            id: `${band}_sig2_${Date.now()}`,
+            type: 'text',
+            content: '<p style="text-align:center;margin:0;"><b>Nhân viên thực hiện</b><br><span style="font-size:10px;color:#94a3b8;font-style:italic;">(Ký và ghi rõ họ tên)</span></p>',
+            style: {
+              textAlign: 'center',
+              fontSize: '12px',
+              paddingTop: '2px',
+              paddingBottom: '2px',
+              paddingLeft: '0px',
+              paddingRight: '0px',
+              marginTop: '0px',
+              marginBottom: '2px',
+              color: '#1e293b',
+              fontWeight: 'normal',
+              whiteSpace: 'pre-wrap'
+            }
+          }
+        ]
+      }
+    ],
+    style: {
+      textAlign: 'left',
+      fontSize: '13px',
+      paddingTop: '5px',
+      paddingBottom: '5px',
+      paddingLeft: '0px',
+      paddingRight: '0px',
+      marginTop: '30px',
+      marginBottom: '40px',
+      color: '#1e293b',
+      fontWeight: 'normal',
+      whiteSpace: 'pre-wrap'
+    }
+  }
+  blocks.value[band].push(newBlock)
+  selectedBlockId.value = id
+  compileHtml()
+}
+
+// Table columns helpers
+const addTableColumn = (block) => {
+  const fields = getListFields(block.dataSource)
+  block.columns.push({
+    header: 'Cột mới',
+    value: fields[0]?.value || '',
+    width: 'auto'
+  })
+  compileHtml()
+}
+
+const deleteTableColumn = (block, colIdx) => {
+  if (block.columns.length <= 1) {
+    uiStore.showToast('Không thể xóa cột cuối cùng của bảng', 'warning')
+    return
+  }
+  block.columns.splice(colIdx, 1)
+  compileHtml()
 }
 
 // Compile blocks JSON structures to plain HTML
@@ -557,7 +978,39 @@ const compileHtml = () => {
 }
 
 const compileBlockToHtml = (b) => {
-  const styles = Object.entries(b.style || {})
+  const originalStyles = b.style || {}
+  const compiledStyles = { ...originalStyles }
+  
+  if (compiledStyles.borderSide && compiledStyles.borderSide !== 'all') {
+    const side = compiledStyles.borderSide
+    const sideCap = side.charAt(0).toUpperCase() + side.slice(1)
+    
+    if (compiledStyles.borderStyle) {
+      compiledStyles[`border${sideCap}Style`] = compiledStyles.borderStyle
+      delete compiledStyles.borderStyle
+    }
+    if (compiledStyles.borderWidth) {
+      compiledStyles[`border${sideCap}Width`] = compiledStyles.borderWidth
+      delete compiledStyles.borderWidth
+    }
+    if (compiledStyles.borderColor) {
+      compiledStyles[`border${sideCap}Color`] = compiledStyles.borderColor
+      delete compiledStyles.borderColor
+    }
+    
+    const otherSides = ['top', 'bottom', 'left', 'right'].filter(s => s !== side)
+    otherSides.forEach(s => {
+      const sCap = s.charAt(0).toUpperCase() + s.slice(1)
+      compiledStyles[`border${sCap}Style`] = 'none'
+    })
+    
+    delete compiledStyles.borderSide
+  } else {
+    delete compiledStyles.borderSide
+  }
+  
+  const styles = Object.entries(compiledStyles)
+    .filter(([k, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${v}`)
     .join('; ')
   
@@ -570,25 +1023,68 @@ const compileBlockToHtml = (b) => {
   } else if (b.type === 'image') {
     if (b.imageUrl) {
       blockHtml += `  <img src="${b.imageUrl}" style="max-height: 80px; max-width: 100%;" alt="Image">\n`
+    } else if (b.content) {
+      blockHtml += `  {{${b.content}}}\n`
     } else {
-      blockHtml += `  {{${b.content || 'hotel.logo'}}}\n`
+      blockHtml += '  <!-- empty image block -->\n'
     }
   } else if (b.type === 'table') {
-    blockHtml += '  <table style="width: 100%; border-collapse: collapse;">\n'
+    const tableStyle = b.tableStyle || 'grid'
+    let thStyle = 'padding: 6px 8px; font-weight: bold;'
+    let tdStyle = 'padding: 6px 8px;'
+    
+    if (tableStyle === 'grid') {
+      thStyle += ' border-bottom: 2px solid #cbd5e1; border-right: 1px solid #cbd5e1;'
+      tdStyle += ' border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;'
+    } else if (tableStyle === 'horizontal') {
+      thStyle += ' border-bottom: 2px solid #cbd5e1;'
+      tdStyle += ' border-bottom: 1px solid #e2e8f0;'
+    } else {
+      thStyle += ' border: none;'
+      tdStyle += ' border: none;'
+    }
+
+    blockHtml += '  <table style="width: 100%; border-collapse: collapse; border: none;">\n'
     blockHtml += '    <thead>\n      <tr>\n'
     b.columns.forEach(col => {
-      blockHtml += `        <th style="border-bottom: 2px solid #cbd5e1; padding: 6px 8px; font-weight: bold; width: ${col.width || 'auto'};">${col.header}</th>\n`
+      blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; text-align: ${col.align || 'left'};">${col.header}</th>\n`
     })
     blockHtml += '      </tr>\n    </thead>\n'
     blockHtml += '    <tbody>\n'
     
-    // Add detail loop marker
     blockHtml += `      <tr class="pms-detail-row" data-source="${b.dataSource}">\n`
     b.columns.forEach(col => {
-      blockHtml += `        <td style="border-bottom: 1px solid #e2e8f0; padding: 6px 8px;">{{${col.value}}}</td>\n`
+      blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
+    blockHtml += '    </tbody>\n'
+    blockHtml += '  </table>\n'
+  } else if (b.type === 'static-table') {
+    const tableStyle = b.tableStyle || 'grid'
+    let tdStyle = 'padding: 6px 8px;'
     
+    if (tableStyle === 'grid') {
+      tdStyle += ' border: 1px solid #cbd5e1;'
+    } else if (tableStyle === 'horizontal') {
+      tdStyle += ' border-bottom: 1px solid #cbd5e1; border-top: 1px solid #cbd5e1;'
+    } else {
+      tdStyle += ' border: none;'
+    }
+
+    blockHtml += '  <table style="width: 100%; border-collapse: collapse; border: none;">\n'
+    blockHtml += '    <tbody>\n'
+    if (b.rows) {
+      b.rows.forEach(row => {
+        blockHtml += '      <tr>\n'
+        if (row.cells) {
+          row.cells.forEach((cell, colIdx) => {
+            const col = b.columns && b.columns[colIdx] ? b.columns[colIdx] : {}
+            blockHtml += `        <td style="${tdStyle} width: ${col.width || 'auto'};">${cell.content || ''}</td>\n`
+          })
+        }
+        blockHtml += '      </tr>\n'
+      })
+    }
     blockHtml += '    </tbody>\n'
     blockHtml += '  </table>\n'
   } else if (b.type === 'columns') {
@@ -609,6 +1105,187 @@ const compileBlockToHtml = (b) => {
   
   blockHtml += '</div>\n'
   return blockHtml
+}
+
+const getBlockStyle = (b) => {
+  if (!b.style) return {}
+  const originalStyles = b.style
+  const compiledStyles = { ...originalStyles }
+  
+  if (compiledStyles.borderSide && compiledStyles.borderSide !== 'all') {
+    const side = compiledStyles.borderSide
+    const sideCap = side.charAt(0).toUpperCase() + side.slice(1)
+    
+    if (compiledStyles.borderStyle) {
+      compiledStyles[`border${sideCap}Style`] = compiledStyles.borderStyle
+      delete compiledStyles.borderStyle
+    }
+    if (compiledStyles.borderWidth) {
+      compiledStyles[`border${sideCap}Width`] = compiledStyles.borderWidth
+      delete compiledStyles.borderWidth
+    }
+    if (compiledStyles.borderColor) {
+      compiledStyles[`border${sideCap}Color`] = compiledStyles.borderColor
+      delete compiledStyles.borderColor
+    }
+    
+    const otherSides = ['top', 'bottom', 'left', 'right'].filter(s => s !== side)
+    otherSides.forEach(s => {
+      const sCap = s.charAt(0).toUpperCase() + s.slice(1)
+      compiledStyles[`border${sCap}Style`] = 'none'
+    })
+    
+    delete compiledStyles.borderSide
+  } else {
+    delete compiledStyles.borderSide
+  }
+  
+  return compiledStyles
+}
+
+const getTableCellStyle = (block, col) => {
+  const align = col.align || 'left'
+  const borderStyle = block.tableStyle || 'grid'
+  
+  if (borderStyle === 'horizontal') {
+    return {
+      textAlign: align,
+      borderBottom: '1px solid #e2e8f0',
+      borderRight: 'none',
+      padding: '8px'
+    }
+  } else if (borderStyle === 'none') {
+    return {
+      textAlign: align,
+      border: 'none',
+      padding: '8px'
+    }
+  } else {
+    return {
+      textAlign: align,
+      borderBottom: '1px solid #cbd5e1',
+      borderRight: '1px solid #cbd5e1',
+      padding: '8px'
+    }
+  }
+}
+
+const getTableHeaderStyle = (block, col) => {
+  const align = col.align || 'left'
+  const borderStyle = block.tableStyle || 'grid'
+  
+  if (borderStyle === 'horizontal') {
+    return {
+      textAlign: align,
+      borderBottom: '2px solid #cbd5e1',
+      borderRight: 'none',
+      padding: '8px',
+      fontWeight: 'bold'
+    }
+  } else if (borderStyle === 'none') {
+    return {
+      textAlign: align,
+      border: 'none',
+      padding: '8px',
+      fontWeight: 'bold'
+    }
+  } else {
+    return {
+      textAlign: align,
+      borderBottom: '2px solid #cbd5e1',
+      borderRight: '1px solid #cbd5e1',
+      padding: '8px',
+      fontWeight: 'bold'
+    }
+  }
+}
+
+const onBorderSideChange = (block) => {
+  if (!block.style.borderStyle) {
+    block.style.borderStyle = 'solid'
+  }
+  if (!block.style.borderWidth) {
+    block.style.borderWidth = '1px'
+  }
+  if (!block.style.borderColor) {
+    block.style.borderColor = '#cbd5e1'
+  }
+  compileHtml()
+}
+
+const confirmTableSetup = (block) => {
+  if (block.tableType === 'dynamic') {
+    const allFields = getListFields(block.dataSource)
+    block.columns = block.selectedFields.map(val => {
+      const found = allFields.find(f => f.value === val)
+      return {
+        header: found ? found.label : 'Cột',
+        value: val,
+        width: 'auto',
+        align: 'left'
+      }
+    })
+    if (block.columns.length === 0) {
+      block.columns = [{ header: 'Cột mới', value: '', width: 'auto', align: 'left' }]
+    }
+  } else {
+    block.type = 'static-table'
+    block.columns = Array.from({ length: block.colsCount }, () => ({
+      width: `${Math.round(100 / block.colsCount)}%`
+    }))
+    block.rows = Array.from({ length: block.rowsCount }, () => ({
+      cells: Array.from({ length: block.colsCount }, () => ({
+        content: 'Nội dung ô...'
+      }))
+    }))
+  }
+  block.isNew = false
+  compileHtml()
+}
+
+const addStaticRow = (block) => {
+  const colsCount = block.columns.length
+  block.rows.push({
+    cells: Array.from({ length: colsCount }, () => ({ content: 'Nội dung ô...' }))
+  })
+  compileHtml()
+}
+
+const deleteStaticRow = (block, rowIndex) => {
+  if (block.rows.length <= 1) {
+    uiStore.showToast('Không thể xóa hàng duy nhất của bảng', 'warning')
+    return
+  }
+  block.rows.splice(rowIndex, 1)
+  compileHtml()
+}
+
+const addStaticColumn = (block) => {
+  block.columns.push({ width: 'auto' })
+  const newColsCount = block.columns.length
+  block.columns.forEach(col => {
+    col.width = `${Math.round(100 / newColsCount)}%`
+  })
+  block.rows.forEach(row => {
+    row.cells.push({ content: 'Nội dung ô...' })
+  })
+  compileHtml()
+}
+
+const deleteStaticColumn = (block, colIndex) => {
+  if (block.columns.length <= 1) {
+    uiStore.showToast('Không thể xóa cột duy nhất của bảng', 'warning')
+    return
+  }
+  block.columns.splice(colIndex, 1)
+  const newColsCount = block.columns.length
+  block.columns.forEach(col => {
+    col.width = `${Math.round(100 / newColsCount)}%`
+  })
+  block.rows.forEach(row => {
+    row.cells.splice(colIndex, 1)
+  })
+  compileHtml()
 }
 
 // Quick Save Draft (no version comment required, keeps user in sync)
@@ -721,6 +1398,17 @@ watch(() => props.isOpen, (newVal) => {
 watch(activeTab, (newVal) => {
   if (newVal === 'preview') {
     loadPreview()
+  }
+})
+
+watch(selectedBlockId, (newId) => {
+  if (newId) {
+    const block = selectedBlock.value
+    if (block) {
+      editingContent.value = block.content || ''
+    }
+  } else {
+    editingContent.value = ''
   }
 })
 
@@ -869,6 +1557,34 @@ const selectBand = (band) => {
               </div>
             </div>
 
+            <!-- PREDEFINED BLOCKS -->
+            <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-slate-200 shadow-3xs">
+              <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-100 block">Khối Dựng Sẵn (Templates)</span>
+              <div class="flex flex-col gap-1.5 pt-2">
+                <button @click="addHotelInfoBlock" class="flex items-center gap-2.5 p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all text-left w-full">
+                  <span class="text-base shrink-0">🏢</span>
+                  <div class="leading-tight">
+                    <p class="font-bold text-slate-700 text-[10px]">Thông tin Khách sạn</p>
+                    <p class="text-[9px] text-slate-400 font-medium font-sans">Logo + Tên + Địa chỉ (2 cột)</p>
+                  </div>
+                </button>
+                <button @click="addCustomerInfoBlock" class="flex items-center gap-2.5 p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all text-left w-full">
+                  <span class="text-base shrink-0">👤</span>
+                  <div class="leading-tight">
+                    <p class="font-bold text-slate-700 text-[10px]">Thông tin Khách & Đặt phòng</p>
+                    <p class="text-[9px] text-slate-400 font-medium font-sans">Thông tin khách hàng & checkin/out</p>
+                  </div>
+                </button>
+                <button @click="addSignatureBlock" class="flex items-center gap-2.5 p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all text-left w-full">
+                  <span class="text-base shrink-0">✍️</span>
+                  <div class="leading-tight">
+                    <p class="font-bold text-slate-700 text-[10px]">Khối Chữ ký phê duyệt</p>
+                    <p class="text-[9px] text-slate-400 font-medium font-sans">Khách ký nhận + Lễ tân thực hiện</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             <!-- FIELD LIST (DATA VARIABLES) -->
             <div class="flex flex-col gap-2 flex-1">
               <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-200 block">Danh Sách Trường Dữ Liệu (Field List)</span>
@@ -971,21 +1687,152 @@ const selectBand = (band) => {
                     </div>
 
                     <!-- Block Visual Content -->
-                    <div v-if="b.type === 'text'">
-                      <textarea v-if="selectedBlockId === b.id" 
-                        v-model="b.content" 
-                        rows="3" 
-                        class="w-full text-xs border border-sky-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-700 font-semibold font-mono"
-                        placeholder="Nhập nội dung..."></textarea>
-                      <div v-else class="min-h-[20px] text-slate-700 leading-relaxed font-semibold" v-html="b.content"></div>
+                    <div v-if="b.type === 'text'" :style="getBlockStyle(b)">
+                      <div v-if="selectedBlockId === b.id" 
+                        contenteditable="true"
+                        @input="b.content = $event.target.innerHTML; compileHtml()"
+                        @focus="onTextareaFocus"
+                        class="w-full focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[20px] outline-none"
+                        v-html="editingContent"></div>
+                      <div v-else class="min-h-[20px]" v-html="b.content"></div>
                     </div>
                     <div v-else-if="b.type === 'divider'" v-html="b.content"></div>
+                    <!-- Table Setup and Rendering -->
+                    <div v-else-if="b.type === 'table'" class="w-full overflow-x-auto text-left">
+                      <!-- New Table Configuration Card -->
+                      <div v-if="b.isNew" class="p-4 border border-sky-200 bg-sky-50/50 rounded-xl flex flex-col gap-3">
+                        <p class="text-xs font-bold text-sky-800 flex items-center gap-1 select-none">
+                          📊 Cấu hình bảng dữ liệu mới
+                        </p>
+                        <div class="grid grid-cols-2 gap-3 select-none">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">Loại bảng:</span>
+                            <div class="flex gap-4 mt-1">
+                              <label class="flex items-center gap-1 text-xs font-bold text-slate-600 cursor-pointer">
+                                <input type="radio" v-model="b.tableType" value="dynamic" />
+                                Lặp dữ liệu
+                              </label>
+                              <label class="flex items-center gap-1 text-xs font-bold text-slate-600 cursor-pointer">
+                                <input type="radio" v-model="b.tableType" value="static" />
+                                Bảng tĩnh tự nhập
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Configuration fields for Dynamic Table -->
+                        <div v-if="b.tableType === 'dynamic'" class="flex flex-col gap-2.5">
+                          <div class="flex items-center gap-2 select-none">
+                            <span class="text-xs text-slate-500 font-semibold">Nguồn dữ liệu:</span>
+                            <select v-model="b.dataSource" class="text-xs border border-slate-200 rounded p-1 font-bold text-slate-700">
+                              <option v-for="f in fieldList.lists" :key="f.value" :value="f.value">
+                                {{ f.label }}
+                              </option>
+                            </select>
+                          </div>
+                          
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase select-none">Chọn các cột hiển thị:</span>
+                            <div class="flex flex-wrap gap-2 pt-1 select-none">
+                              <label v-for="f in getListFields(b.dataSource)" :key="f.value" class="flex items-center gap-1 text-xs px-2 py-1 bg-white border border-slate-200 rounded-md font-semibold text-slate-600 cursor-pointer">
+                                <input type="checkbox" v-model="b.selectedFields" :value="f.value" />
+                                {{ f.label }}
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Configuration fields for Static Table -->
+                        <div v-else class="grid grid-cols-2 gap-3">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500 font-semibold select-none">Số hàng:</span>
+                            <input type="number" v-model.number="b.rowsCount" min="1" max="20" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono focus:outline-sky-500" />
+                          </div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500 font-semibold select-none">Số cột:</span>
+                            <input type="number" v-model.number="b.colsCount" min="1" max="10" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono focus:outline-sky-500" />
+                          </div>
+                        </div>
+                        
+                        <div class="flex justify-end pt-1">
+                          <button @click.stop="confirmTableSetup(b)" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-black rounded-lg cursor-pointer flex items-center gap-1 shadow-3xs uppercase border-none">
+                            <Check class="w-3.5 h-3.5" /> Tạo bảng biểu
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <!-- Configured Dynamic Table -->
+                      <div v-else>
+                        <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
+                          🔗 Bảng lặp nguồn: {{ b.dataSource }}
+                        </p>
+                        <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                          <thead>
+                            <tr class="font-bold">
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                                <input type="text" v-model="col.header" class="w-full bg-transparent border-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" :class="col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'" />
+                                <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
+                              </th>
+                              <th class="p-1 text-center w-8 bg-slate-100 select-none" style="border-bottom: 2px solid #cbd5e1;">
+                                <button @click.stop="addTableColumn(b)" class="w-5 h-5 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded border-none cursor-pointer text-xs font-bold flex items-center justify-center">+</button>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr class="bg-white">
+                              <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                                {{ col.value }}
+                              </td>
+                              <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- Configured Static Table rendering -->
+                    <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
+                      <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                        <tbody>
+                          <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
+                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx"
+                              :style="getTableCellStyle(b, b.columns[cIdx] || {})"
+                              class="relative group/td p-0">
+                              <!-- ContentEditable Cell directly on Canvas -->
+                              <div contenteditable="true"
+                                @focus="onCellFocus(cell)"
+                                @blur="onCellBlur"
+                                @input="cell.content = $event.target.innerHTML; compileHtml()"
+                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-slate-700"
+                                v-html="activeCell === cell ? editingCellContent : cell.content"></div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
                     </div>
-                    <div v-else-if="b.type === 'image'" class="text-center py-2 bg-slate-50 border border-dashed border-slate-200 rounded flex justify-center items-center overflow-hidden min-h-[40px]">
-                      <img v-if="b.imageUrl" :src="b.imageUrl" class="max-h-20 max-w-full" alt="Image" />
-                      <span v-else class="font-bold text-slate-500 font-mono text-xs">[Ảnh liên kết: {{ b.content }}]</span>
+                    <div v-else-if="b.type === 'image'" class="relative group/img-wrapper select-none">
+                      <div v-if="b.imageUrl" class="text-center py-2 bg-slate-50/50 rounded flex justify-center items-center min-h-[40px] relative">
+                        <img :src="b.imageUrl" class="max-h-20 max-w-full" alt="Image" />
+                        <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/img-wrapper:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded">
+                          <label class="px-2 py-1 bg-white hover:bg-slate-100 text-slate-800 text-[10px] font-bold rounded cursor-pointer shadow-sm">
+                            Thay đổi
+                            <input type="file" @change="handleCanvasImageUpload($event, b)" accept="image/*" class="hidden" />
+                          </label>
+                          <button @click.stop="b.imageUrl = ''; b.content = ''; compileHtml()" class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded cursor-pointer border-none shadow-sm">
+                            Xóa
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="text-center py-3 bg-sky-50/50 border border-dashed border-sky-300 rounded flex flex-col justify-center items-center min-h-[60px] cursor-pointer" @click.stop="triggerCanvasImageUpload(b)">
+                        <span class="text-base">🖼️</span>
+                        <span v-if="b.content" class="font-bold text-sky-800 font-mono text-[10px] mt-1">[Biến liên kết: {{ b.content }}]</span>
+                        <span v-else class="font-bold text-slate-500 text-[10px] mt-1">[Chưa có ảnh - Click để tải lên]</span>
+                        <span class="text-[9px] text-slate-400 mt-0.5">Click để chọn tệp hình ảnh</span>
+                        <input type="file" :id="'file_input_' + b.id" @change="handleCanvasImageUpload($event, b)" accept="image/*" class="hidden" />
+                      </div>
                     </div>
                     
                     <!-- Columns layout block -->
@@ -1022,12 +1869,34 @@ const selectBand = (band) => {
                           
                           <!-- Content for subblock -->
                           <div v-if="subBlock.type === 'text'">
-                            <textarea v-if="selectedBlockId === subBlock.id" v-model="subBlock.content" rows="2" class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 font-semibold font-mono" placeholder="Nội dung..."></textarea>
-                            <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px]" v-html="subBlock.content"></div>
+                            <div v-if="selectedBlockId === subBlock.id"
+                              contenteditable="true"
+                              @input="subBlock.content = $event.target.innerHTML; compileHtml()"
+                              @focus="onTextareaFocus"
+                              class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 min-h-[30px] bg-white outline-none font-sans font-medium"
+                              v-html="editingContent"></div>
+                            <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px] font-sans" v-html="subBlock.content"></div>
                           </div>
-                          <div v-else-if="subBlock.type === 'image'" class="text-center py-1 bg-slate-50 border border-dashed border-slate-200 rounded flex justify-center items-center min-h-[30px]">
-                            <img v-if="subBlock.imageUrl" :src="subBlock.imageUrl" class="max-h-12 max-w-full" alt="Image" />
-                            <span v-else class="font-bold text-slate-500 font-mono text-[9px]">[Ảnh: {{ subBlock.content }}]</span>
+                          <div v-else-if="subBlock.type === 'image'" class="relative group/subimg-wrapper select-none">
+                            <div v-if="subBlock.imageUrl" class="text-center py-1 bg-slate-50/50 rounded flex justify-center items-center min-h-[30px] relative">
+                              <img :src="subBlock.imageUrl" class="max-h-12 max-w-full" alt="Image" />
+                              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/subimg-wrapper:opacity-100 transition-opacity flex items-center justify-center gap-1 rounded">
+                                <label class="px-1.5 py-0.5 bg-white hover:bg-slate-100 text-slate-800 text-[9px] font-bold rounded cursor-pointer shadow-sm">
+                                  Thay
+                                  <input type="file" @change="handleCanvasImageUpload($event, subBlock)" accept="image/*" class="hidden" />
+                                </label>
+                                <button @click.stop="subBlock.imageUrl = ''; subBlock.content = ''; compileHtml()" class="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-bold rounded cursor-pointer border-none shadow-sm">
+                                  Xóa
+                                </button>
+                              </div>
+                            </div>
+                            <div v-else class="text-center py-2 bg-sky-50/50 border border-dashed border-sky-300 rounded flex flex-col justify-center items-center min-h-[50px] cursor-pointer" @click.stop="triggerCanvasImageUpload(subBlock)">
+                              <span class="text-sm">🖼️</span>
+                              <span v-if="subBlock.content" class="font-bold text-sky-800 font-mono text-[9px] mt-0.5">[{{ subBlock.content }}]</span>
+                              <span v-else class="font-bold text-slate-500 text-[9px] mt-0.5">[Chọn ảnh]</span>
+                              <span class="text-[8px] text-slate-400">Tải ảnh</span>
+                              <input type="file" :id="'file_input_' + subBlock.id" @change="handleCanvasImageUpload($event, subBlock)" accept="image/*" class="hidden" />
+                            </div>
                           </div>
                           <div v-else-if="subBlock.type === 'spacer'" class="border border-dashed border-slate-100 bg-slate-50/50 rounded flex items-center justify-center text-[9px] text-slate-400 italic" :style="{ height: `${subBlock.height || 15}px` }">
                             Khoảng trống {{ subBlock.height || 15 }}px
@@ -1096,40 +1965,152 @@ const selectBand = (band) => {
                     </div>
 
                     <!-- Table Block Rendering -->
-                    <div v-if="b.type === 'table'" class="w-full overflow-x-auto">
-                      <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
-                        🔗 Bảng lặp nguồn: {{ b.dataSource }}
-                      </p>
-                      <table class="w-full text-xs text-left border-collapse border border-slate-200">
-                        <thead>
-                          <tr class="bg-slate-50 font-bold border-b border-slate-200">
-                            <th v-for="col in b.columns" :key="col.header" class="p-2 border-r border-slate-200" :style="{ width: col.width }">
-                              {{ col.header }}
-                            </th>
-                          </tr>
-                        </thead>
+                    <div v-if="b.type === 'table'" class="w-full overflow-x-auto text-left">
+                      <!-- New Table Configuration Card -->
+                      <div v-if="b.isNew" class="p-4 border border-sky-200 bg-sky-50/50 rounded-xl flex flex-col gap-3">
+                        <p class="text-xs font-bold text-sky-800 flex items-center gap-1 select-none">
+                          📊 Cấu hình bảng dữ liệu mới
+                        </p>
+                        <div class="grid grid-cols-2 gap-3 select-none">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">Loại bảng:</span>
+                            <div class="flex gap-4 mt-1">
+                              <label class="flex items-center gap-1 text-xs font-bold text-slate-600 cursor-pointer">
+                                <input type="radio" v-model="b.tableType" value="dynamic" />
+                                Lặp dữ liệu
+                              </label>
+                              <label class="flex items-center gap-1 text-xs font-bold text-slate-600 cursor-pointer">
+                                <input type="radio" v-model="b.tableType" value="static" />
+                                Bảng tĩnh tự nhập
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Configuration fields for Dynamic Table -->
+                        <div v-if="b.tableType === 'dynamic'" class="flex flex-col gap-2.5">
+                          <div class="flex items-center gap-2 select-none">
+                            <span class="text-xs text-slate-500 font-semibold">Nguồn dữ liệu:</span>
+                            <select v-model="b.dataSource" class="text-xs border border-slate-200 rounded p-1 font-bold text-slate-700">
+                              <option v-for="f in fieldList.lists" :key="f.value" :value="f.value">
+                                {{ f.label }}
+                              </option>
+                            </select>
+                          </div>
+                          
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase select-none">Chọn các cột hiển thị:</span>
+                            <div class="flex flex-wrap gap-2 pt-1 select-none">
+                              <label v-for="f in getListFields(b.dataSource)" :key="f.value" class="flex items-center gap-1 text-xs px-2 py-1 bg-white border border-slate-200 rounded-md font-semibold text-slate-600 cursor-pointer">
+                                <input type="checkbox" v-model="b.selectedFields" :value="f.value" />
+                                {{ f.label }}
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Configuration fields for Static Table -->
+                        <div v-else class="grid grid-cols-2 gap-3">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500 font-semibold select-none">Số hàng:</span>
+                            <input type="number" v-model.number="b.rowsCount" min="1" max="20" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono focus:outline-sky-500" />
+                          </div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500 font-semibold select-none">Số cột:</span>
+                            <input type="number" v-model.number="b.colsCount" min="1" max="10" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono focus:outline-sky-500" />
+                          </div>
+                        </div>
+                        
+                        <div class="flex justify-end pt-1">
+                          <button @click.stop="confirmTableSetup(b)" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-black rounded-lg cursor-pointer flex items-center gap-1 shadow-3xs uppercase border-none">
+                            <Check class="w-3.5 h-3.5" /> Tạo bảng biểu
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <!-- Configured Dynamic Table -->
+                      <div v-else>
+                        <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
+                          🔗 Bảng lặp nguồn: {{ b.dataSource }}
+                        </p>
+                        <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                          <thead>
+                            <tr class="font-bold">
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                                <input type="text" v-model="col.header" class="w-full bg-transparent border-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" :class="col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'" />
+                                <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
+                              </th>
+                              <th class="p-1 text-center w-8 bg-slate-100 select-none" style="border-bottom: 2px solid #cbd5e1;">
+                                <button @click.stop="addTableColumn(b)" class="w-5 h-5 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded border-none cursor-pointer text-xs font-bold flex items-center justify-center">+</button>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr class="bg-white">
+                              <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                                {{ col.value }}
+                              </td>
+                              <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    
+                    <!-- Other Block Types -->
+                    <div v-if="b.type === 'text'" :style="getBlockStyle(b)">
+                      <div v-if="selectedBlockId === b.id" 
+                        contenteditable="true"
+                        @input="b.content = $event.target.innerHTML; compileHtml()"
+                        @focus="onTextareaFocus"
+                        class="w-full focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[20px] outline-none"
+                        v-html="editingContent"></div>
+                      <div v-else class="min-h-[20px]" v-html="b.content"></div>
+                    </div>
+                    <div v-else-if="b.type === 'divider'" v-html="b.content"></div>
+                    <!-- Configured Static Table rendering -->
+                    <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
+                      <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                         <tbody>
-                          <tr class="bg-white border-b border-slate-100">
-                            <td v-for="col in b.columns" :key="col.value" class="p-2 border-r border-slate-200 font-mono text-[10px] text-slate-400">
-                              {{ col.value }}
+                          <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
+                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx"
+                              :style="getTableCellStyle(b, b.columns[cIdx] || {})"
+                              class="relative group/td p-0">
+                              <!-- ContentEditable Cell directly on Canvas -->
+                              <div contenteditable="true"
+                                @focus="onCellFocus(cell)"
+                                @blur="onCellBlur"
+                                @input="cell.content = $event.target.innerHTML; compileHtml()"
+                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-slate-700"
+                                v-html="activeCell === cell ? editingCellContent : cell.content"></div>
                             </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
-                    
-                    <!-- Other Block Types -->
-                    <div v-if="b.type === 'text'">
-                      <textarea v-if="selectedBlockId === b.id" 
-                        v-model="b.content" 
-                        rows="3" 
-                        class="w-full text-xs border border-sky-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-700 font-semibold font-mono"
-                        placeholder="Nhập nội dung..."></textarea>
-                      <div v-else class="min-h-[20px] text-slate-700 leading-relaxed font-semibold" v-html="b.content"></div>
-                    </div>
-                    <div v-else-if="b.type === 'divider'" v-html="b.content"></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
+                    </div>
+                    <div v-else-if="b.type === 'image'" class="relative group/img-wrapper select-none">
+                      <div v-if="b.imageUrl" class="text-center py-2 bg-slate-50/50 rounded flex justify-center items-center min-h-[40px] relative">
+                        <img :src="b.imageUrl" class="max-h-20 max-w-full" alt="Image" />
+                        <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/img-wrapper:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded">
+                          <label class="px-2 py-1 bg-white hover:bg-slate-100 text-slate-800 text-[10px] font-bold rounded cursor-pointer shadow-sm">
+                            Thay đổi
+                            <input type="file" @change="handleCanvasImageUpload($event, b)" accept="image/*" class="hidden" />
+                          </label>
+                          <button @click.stop="b.imageUrl = ''; b.content = ''; compileHtml()" class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded cursor-pointer border-none shadow-sm">
+                            Xóa
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="text-center py-3 bg-sky-50/50 border border-dashed border-sky-300 rounded flex flex-col justify-center items-center min-h-[60px] cursor-pointer" @click.stop="triggerCanvasImageUpload(b)">
+                        <span class="text-base">🖼️</span>
+                        <span v-if="b.content" class="font-bold text-sky-800 font-mono text-[10px] mt-1">[Biến liên kết: {{ b.content }}]</span>
+                        <span v-else class="font-bold text-slate-500 text-[10px] mt-1">[Chưa có ảnh - Click để tải lên]</span>
+                        <span class="text-[9px] text-slate-400 mt-0.5">Click để chọn tệp hình ảnh</span>
+                        <input type="file" :id="'file_input_' + b.id" @change="handleCanvasImageUpload($event, b)" accept="image/*" class="hidden" />
+                      </div>
                     </div>
 
                     <!-- Columns layout block -->
@@ -1166,12 +2147,34 @@ const selectBand = (band) => {
                           
                           <!-- Content for subblock -->
                           <div v-if="subBlock.type === 'text'">
-                            <textarea v-if="selectedBlockId === subBlock.id" v-model="subBlock.content" rows="2" class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 font-semibold font-mono" placeholder="Nội dung..."></textarea>
-                            <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px]" v-html="subBlock.content"></div>
+                            <div v-if="selectedBlockId === subBlock.id"
+                              contenteditable="true"
+                              @input="subBlock.content = $event.target.innerHTML; compileHtml()"
+                              @focus="onTextareaFocus"
+                              class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 min-h-[30px] bg-white outline-none font-sans font-medium"
+                              v-html="editingContent"></div>
+                            <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px] font-sans" v-html="subBlock.content"></div>
                           </div>
-                          <div v-else-if="subBlock.type === 'image'" class="text-center py-1 bg-slate-50 border border-dashed border-slate-200 rounded flex justify-center items-center min-h-[30px]">
-                            <img v-if="subBlock.imageUrl" :src="subBlock.imageUrl" class="max-h-12 max-w-full" alt="Image" />
-                            <span v-else class="font-bold text-slate-500 font-mono text-[9px]">[Ảnh: {{ subBlock.content }}]</span>
+                          <div v-else-if="subBlock.type === 'image'" class="relative group/subimg-wrapper select-none">
+                            <div v-if="subBlock.imageUrl" class="text-center py-1 bg-slate-50/50 rounded flex justify-center items-center min-h-[30px] relative">
+                              <img :src="subBlock.imageUrl" class="max-h-12 max-w-full" alt="Image" />
+                              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/subimg-wrapper:opacity-100 transition-opacity flex items-center justify-center gap-1 rounded">
+                                <label class="px-1.5 py-0.5 bg-white hover:bg-slate-100 text-slate-800 text-[9px] font-bold rounded cursor-pointer shadow-sm">
+                                  Thay
+                                  <input type="file" @change="handleCanvasImageUpload($event, subBlock)" accept="image/*" class="hidden" />
+                                </label>
+                                <button @click.stop="subBlock.imageUrl = ''; subBlock.content = ''; compileHtml()" class="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-bold rounded cursor-pointer border-none shadow-sm">
+                                  Xóa
+                                </button>
+                              </div>
+                            </div>
+                            <div v-else class="text-center py-2 bg-sky-50/50 border border-dashed border-sky-300 rounded flex flex-col justify-center items-center min-h-[50px] cursor-pointer" @click.stop="triggerCanvasImageUpload(subBlock)">
+                              <span class="text-sm">🖼️</span>
+                              <span v-if="subBlock.content" class="font-bold text-sky-800 font-mono text-[9px] mt-0.5">[{{ subBlock.content }}]</span>
+                              <span v-else class="font-bold text-slate-500 text-[9px] mt-0.5">[Chọn ảnh]</span>
+                              <span class="text-[8px] text-slate-400">Tải ảnh</span>
+                              <input type="file" :id="'file_input_' + subBlock.id" @change="handleCanvasImageUpload($event, subBlock)" accept="image/*" class="hidden" />
+                            </div>
                           </div>
                           <div v-else-if="subBlock.type === 'spacer'" class="border border-dashed border-slate-100 bg-slate-50/50 rounded flex items-center justify-center text-[9px] text-slate-400 italic" :style="{ height: `${subBlock.height || 15}px` }">
                             Khoảng trống {{ subBlock.height || 15 }}px
@@ -1240,21 +2243,152 @@ const selectBand = (band) => {
                     </div>
 
                     <!-- Block Visual Content -->
-                    <div v-if="b.type === 'text'">
-                      <textarea v-if="selectedBlockId === b.id" 
-                        v-model="b.content" 
-                        rows="3" 
-                        class="w-full text-xs border border-sky-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-700 font-semibold font-mono"
-                        placeholder="Nhập nội dung..."></textarea>
-                      <div v-else class="min-h-[20px] text-slate-700 leading-relaxed font-semibold" v-html="b.content"></div>
+                    <div v-if="b.type === 'text'" :style="getBlockStyle(b)">
+                      <div v-if="selectedBlockId === b.id" 
+                        contenteditable="true"
+                        @input="b.content = $event.target.innerHTML; compileHtml()"
+                        @focus="onTextareaFocus"
+                        class="w-full focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[20px] outline-none"
+                        v-html="editingContent"></div>
+                      <div v-else class="min-h-[20px]" v-html="b.content"></div>
                     </div>
                     <div v-else-if="b.type === 'divider'" v-html="b.content"></div>
+                    <!-- Table Setup and Rendering -->
+                    <div v-else-if="b.type === 'table'" class="w-full overflow-x-auto text-left">
+                      <!-- New Table Configuration Card -->
+                      <div v-if="b.isNew" class="p-4 border border-sky-200 bg-sky-50/50 rounded-xl flex flex-col gap-3">
+                        <p class="text-xs font-bold text-sky-800 flex items-center gap-1 select-none">
+                          📊 Cấu hình bảng dữ liệu mới
+                        </p>
+                        <div class="grid grid-cols-2 gap-3 select-none">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase">Loại bảng:</span>
+                            <div class="flex gap-4 mt-1">
+                              <label class="flex items-center gap-1 text-xs font-bold text-slate-600 cursor-pointer">
+                                <input type="radio" v-model="b.tableType" value="dynamic" />
+                                Lặp dữ liệu
+                              </label>
+                              <label class="flex items-center gap-1 text-xs font-bold text-slate-600 cursor-pointer">
+                                <input type="radio" v-model="b.tableType" value="static" />
+                                Bảng tĩnh tự nhập
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Configuration fields for Dynamic Table -->
+                        <div v-if="b.tableType === 'dynamic'" class="flex flex-col gap-2.5">
+                          <div class="flex items-center gap-2 select-none">
+                            <span class="text-xs text-slate-500 font-semibold">Nguồn dữ liệu:</span>
+                            <select v-model="b.dataSource" class="text-xs border border-slate-200 rounded p-1 font-bold text-slate-700">
+                              <option v-for="f in fieldList.lists" :key="f.value" :value="f.value">
+                                {{ f.label }}
+                              </option>
+                            </select>
+                          </div>
+                          
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase select-none">Chọn các cột hiển thị:</span>
+                            <div class="flex flex-wrap gap-2 pt-1 select-none">
+                              <label v-for="f in getListFields(b.dataSource)" :key="f.value" class="flex items-center gap-1 text-xs px-2 py-1 bg-white border border-slate-200 rounded-md font-semibold text-slate-600 cursor-pointer">
+                                <input type="checkbox" v-model="b.selectedFields" :value="f.value" />
+                                {{ f.label }}
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Configuration fields for Static Table -->
+                        <div v-else class="grid grid-cols-2 gap-3">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500 font-semibold select-none">Số hàng:</span>
+                            <input type="number" v-model.number="b.rowsCount" min="1" max="20" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono focus:outline-sky-500" />
+                          </div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500 font-semibold select-none">Số cột:</span>
+                            <input type="number" v-model.number="b.colsCount" min="1" max="10" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono focus:outline-sky-500" />
+                          </div>
+                        </div>
+                        
+                        <div class="flex justify-end pt-1">
+                          <button @click.stop="confirmTableSetup(b)" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-black rounded-lg cursor-pointer flex items-center gap-1 shadow-3xs uppercase border-none">
+                            <Check class="w-3.5 h-3.5" /> Tạo bảng biểu
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <!-- Configured Dynamic Table -->
+                      <div v-else>
+                        <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
+                          🔗 Bảng lặp nguồn: {{ b.dataSource }}
+                        </p>
+                        <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                          <thead>
+                            <tr class="font-bold">
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                                <input type="text" v-model="col.header" class="w-full bg-transparent border-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" :class="col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'" />
+                                <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
+                              </th>
+                              <th class="p-1 text-center w-8 bg-slate-100 select-none" style="border-bottom: 2px solid #cbd5e1;">
+                                <button @click.stop="addTableColumn(b)" class="w-5 h-5 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded border-none cursor-pointer text-xs font-bold flex items-center justify-center">+</button>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr class="bg-white">
+                              <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                                {{ col.value }}
+                              </td>
+                              <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- Configured Static Table rendering -->
+                    <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
+                      <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                        <tbody>
+                          <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
+                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx"
+                              :style="getTableCellStyle(b, b.columns[cIdx] || {})"
+                              class="relative group/td p-0">
+                              <!-- ContentEditable Cell directly on Canvas -->
+                              <div contenteditable="true"
+                                @focus="onCellFocus(cell)"
+                                @blur="onCellBlur"
+                                @input="cell.content = $event.target.innerHTML; compileHtml()"
+                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-slate-700"
+                                v-html="activeCell === cell ? editingCellContent : cell.content"></div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
                     </div>
-                    <div v-else-if="b.type === 'image'" class="text-center py-2 bg-slate-50 border border-dashed border-slate-200 rounded flex justify-center items-center overflow-hidden min-h-[40px]">
-                      <img v-if="b.imageUrl" :src="b.imageUrl" class="max-h-20 max-w-full" alt="Image" />
-                      <span v-else class="font-bold text-slate-500 font-mono text-xs">[Ảnh liên kết: {{ b.content }}]</span>
+                    <div v-else-if="b.type === 'image'" class="relative group/img-wrapper select-none">
+                      <div v-if="b.imageUrl" class="text-center py-2 bg-slate-50/50 rounded flex justify-center items-center min-h-[40px] relative">
+                        <img :src="b.imageUrl" class="max-h-20 max-w-full" alt="Image" />
+                        <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/img-wrapper:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded">
+                          <label class="px-2 py-1 bg-white hover:bg-slate-100 text-slate-800 text-[10px] font-bold rounded cursor-pointer shadow-sm">
+                            Thay đổi
+                            <input type="file" @change="handleCanvasImageUpload($event, b)" accept="image/*" class="hidden" />
+                          </label>
+                          <button @click.stop="b.imageUrl = ''; b.content = ''; compileHtml()" class="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded cursor-pointer border-none shadow-sm">
+                            Xóa
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="text-center py-3 bg-sky-50/50 border border-dashed border-sky-300 rounded flex flex-col justify-center items-center min-h-[60px] cursor-pointer" @click.stop="triggerCanvasImageUpload(b)">
+                        <span class="text-base">🖼️</span>
+                        <span v-if="b.content" class="font-bold text-sky-800 font-mono text-[10px] mt-1">[Biến liên kết: {{ b.content }}]</span>
+                        <span v-else class="font-bold text-slate-500 text-[10px] mt-1">[Chưa có ảnh - Click để tải lên]</span>
+                        <span class="text-[9px] text-slate-400 mt-0.5">Click để chọn tệp hình ảnh</span>
+                        <input type="file" :id="'file_input_' + b.id" @change="handleCanvasImageUpload($event, b)" accept="image/*" class="hidden" />
+                      </div>
                     </div>
 
                     <!-- Columns layout block -->
@@ -1291,12 +2425,34 @@ const selectBand = (band) => {
                           
                           <!-- Content for subblock -->
                           <div v-if="subBlock.type === 'text'">
-                            <textarea v-if="selectedBlockId === subBlock.id" v-model="subBlock.content" rows="2" class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 font-semibold font-mono" placeholder="Nội dung..."></textarea>
-                            <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px]" v-html="subBlock.content"></div>
+                            <div v-if="selectedBlockId === subBlock.id"
+                              contenteditable="true"
+                              @input="subBlock.content = $event.target.innerHTML; compileHtml()"
+                              @focus="onTextareaFocus"
+                              class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 min-h-[30px] bg-white outline-none font-sans font-medium"
+                              v-html="editingContent"></div>
+                            <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px] font-sans" v-html="subBlock.content"></div>
                           </div>
-                          <div v-else-if="subBlock.type === 'image'" class="text-center py-1 bg-slate-50 border border-dashed border-slate-200 rounded flex justify-center items-center min-h-[30px]">
-                            <img v-if="subBlock.imageUrl" :src="subBlock.imageUrl" class="max-h-12 max-w-full" alt="Image" />
-                            <span v-else class="font-bold text-slate-500 font-mono text-[9px]">[Ảnh: {{ subBlock.content }}]</span>
+                          <div v-else-if="subBlock.type === 'image'" class="relative group/subimg-wrapper select-none">
+                            <div v-if="subBlock.imageUrl" class="text-center py-1 bg-slate-50/50 rounded flex justify-center items-center min-h-[30px] relative">
+                              <img :src="subBlock.imageUrl" class="max-h-12 max-w-full" alt="Image" />
+                              <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover/subimg-wrapper:opacity-100 transition-opacity flex items-center justify-center gap-1 rounded">
+                                <label class="px-1.5 py-0.5 bg-white hover:bg-slate-100 text-slate-800 text-[9px] font-bold rounded cursor-pointer shadow-sm">
+                                  Thay
+                                  <input type="file" @change="handleCanvasImageUpload($event, subBlock)" accept="image/*" class="hidden" />
+                                </label>
+                                <button @click.stop="subBlock.imageUrl = ''; subBlock.content = ''; compileHtml()" class="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[9px] font-bold rounded cursor-pointer border-none shadow-sm">
+                                  Xóa
+                                </button>
+                              </div>
+                            </div>
+                            <div v-else class="text-center py-2 bg-sky-50/50 border border-dashed border-sky-300 rounded flex flex-col justify-center items-center min-h-[50px] cursor-pointer" @click.stop="triggerCanvasImageUpload(subBlock)">
+                              <span class="text-sm">🖼️</span>
+                              <span v-if="subBlock.content" class="font-bold text-sky-800 font-mono text-[9px] mt-0.5">[{{ subBlock.content }}]</span>
+                              <span v-else class="font-bold text-slate-500 text-[9px] mt-0.5">[Chọn ảnh]</span>
+                              <span class="text-[8px] text-slate-400">Tải ảnh</span>
+                              <input type="file" :id="'file_input_' + subBlock.id" @change="handleCanvasImageUpload($event, subBlock)" accept="image/*" class="hidden" />
+                            </div>
                           </div>
                           <div v-else-if="subBlock.type === 'spacer'" class="border border-dashed border-slate-100 bg-slate-50/50 rounded flex items-center justify-center text-[9px] text-slate-400 italic" :style="{ height: `${subBlock.height || 15}px` }">
                             Khoảng trống {{ subBlock.height || 15 }}px
@@ -1383,7 +2539,7 @@ const selectBand = (band) => {
                     <input type="color" v-model="selectedBlock.style.color" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
                   </div>
                   <div class="flex flex-col gap-1">
-                    <span class="text-[10px] text-slate-400 font-bold uppercase">Đậm:</span>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Đậm (Tất cả):</span>
                     <button @click="selectedBlock.style.fontWeight = selectedBlock.style.fontWeight === 'bold' ? 'normal' : 'bold'"
                       class="h-8 rounded-lg border font-bold text-xs flex items-center justify-center cursor-pointer transition-colors"
                       :class="selectedBlock.style.fontWeight === 'bold' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-600'">
@@ -1392,23 +2548,91 @@ const selectBand = (band) => {
                   </div>
                 </div>
 
+                <!-- Formatting Toolbar for Highlighted Selection -->
+                <div class="flex flex-col gap-1.5 mt-2 pt-2 border-t border-slate-100">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase">Định dạng chữ bôi đen:</span>
+                  <div class="flex flex-wrap gap-1 bg-slate-100 p-1.5 rounded-lg border border-slate-200 select-none">
+                    <button @mousedown.prevent="formatText('bold')" class="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs font-bold cursor-pointer text-slate-700 active:scale-95 transition-transform" title="In đậm (Ctrl+B)">B</button>
+                    <button @mousedown.prevent="formatText('italic')" class="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs italic cursor-pointer text-slate-700 active:scale-95 transition-transform" title="In nghiêng (Ctrl+I)">I</button>
+                    <button @mousedown.prevent="formatText('underline')" class="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs underline cursor-pointer text-slate-700 active:scale-95 transition-transform" title="Gạch chân (Ctrl+U)">U</button>
+                    <button @mousedown.prevent="insertHtmlTag('<br>', '')" class="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs cursor-pointer text-slate-600 active:scale-95 transition-transform" title="Xuống dòng">br</button>
+                    <button @mousedown.prevent="insertHtmlTag('<b>', '</b>')" class="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[11px] font-bold cursor-pointer text-slate-600 active:scale-95 transition-transform" title="Thẻ Bold">&lt;b&gt;</button>
+                  </div>
+                </div>
+
                 <!-- Paddings & Margins -->
                 <div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-100">
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Top:</span>
-                    <input type="text" v-model="selectedBlock.style.paddingTop" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.paddingTop" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Bottom:</span>
-                    <input type="text" v-model="selectedBlock.style.paddingBottom" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.paddingBottom" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Top:</span>
-                    <input type="text" v-model="selectedBlock.style.marginTop" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.marginTop" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Bottom:</span>
-                    <input type="text" v-model="selectedBlock.style.marginBottom" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.marginBottom" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                </div>
+
+                <!-- Borders & Backgrounds -->
+                <div class="flex flex-col gap-2.5 mt-2 pt-2 border-t border-slate-100">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase">Khung viền & Nền</span>
+                  
+                  <!-- Background Color picker -->
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-500">Màu nền:</span>
+                    <div class="flex items-center gap-1">
+                      <input type="color" v-model="selectedBlock.style.backgroundColor" @change="compileHtml" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
+                      <button @click="selectedBlock.style.backgroundColor = ''; compileHtml()" class="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-500 rounded border-none cursor-pointer">Xóa</button>
+                    </div>
+                  </div>
+
+                  <!-- Border apply side dropdown -->
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-500">Cạnh áp dụng viền:</span>
+                    <select v-model="selectedBlock.style.borderSide" @change="onBorderSideChange(selectedBlock)" class="text-xs border border-slate-200 rounded px-1.5 py-0.5 focus:outline-sky-500">
+                      <option value="all">Tất cả các cạnh</option>
+                      <option value="top">Cạnh trên</option>
+                      <option value="bottom">Cạnh dưới</option>
+                      <option value="left">Cạnh trái</option>
+                      <option value="right">Cạnh phải</option>
+                    </select>
+                  </div>
+
+                  <!-- Border style dropdown -->
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-500">Kiểu đường viền:</span>
+                    <select v-model="selectedBlock.style.borderStyle" @change="compileHtml" class="text-xs border border-slate-200 rounded px-1.5 py-0.5 focus:outline-sky-500">
+                      <option value="none">Không viền (none)</option>
+                      <option value="solid">Đường liền (solid)</option>
+                      <option value="dashed">Đường đứt nét (dashed)</option>
+                      <option value="dotted">Đường chấm (dotted)</option>
+                      <option value="double">Đường đôi (double)</option>
+                    </select>
+                  </div>
+
+                  <!-- Border width input -->
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-500">Độ dày viền:</span>
+                    <input type="text" v-model="selectedBlock.style.borderWidth" @input="compileHtml" class="w-20 text-center text-xs border border-slate-200 rounded py-0.5" placeholder="1px" />
+                  </div>
+
+                  <!-- Border color picker -->
+                  <div class="flex items-center justify-between" v-if="selectedBlock.style.borderStyle && selectedBlock.style.borderStyle !== 'none'">
+                    <span class="text-xs text-slate-500">Màu đường viền:</span>
+                    <input type="color" v-model="selectedBlock.style.borderColor" @change="compileHtml" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
+                  </div>
+
+                  <!-- Border radius input -->
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-500">Bo góc bo viền:</span>
+                    <input type="text" v-model="selectedBlock.style.borderRadius" @input="compileHtml" class="w-20 text-center text-xs border border-slate-200 rounded py-0.5" placeholder="0px" />
                   </div>
                 </div>
 
@@ -1417,9 +2641,40 @@ const selectBand = (band) => {
               <!-- CONTENT EDITORS BY BLOCK TYPE -->
               
               <!-- 1. Text content editor -->
-              <div v-if="selectedBlock.type === 'text'" class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold text-slate-400 uppercase">Nội dung HTML Văn Bản:</span>
-                <textarea v-model="selectedBlock.content" rows="10" 
+              <div v-if="selectedBlock.type === 'text'" class="flex flex-col gap-2">
+                <div class="flex justify-between items-center select-none">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase">Soạn thảo văn bản:</span>
+                  <div class="flex bg-slate-100 p-0.5 rounded-md text-[9px] font-bold">
+                    <button @click="editorMode = 'visual'" class="px-2 py-0.5 rounded transition-all cursor-pointer border-none" :class="editorMode === 'visual' ? 'bg-white shadow-3xs text-sky-600 font-bold' : 'text-slate-400'">Trực quan</button>
+                    <button @click="editorMode = 'code'" class="px-2 py-0.5 rounded transition-all cursor-pointer border-none" :class="editorMode === 'code' ? 'bg-white shadow-3xs text-sky-600 font-bold' : 'text-slate-400'">HTML Code</button>
+                  </div>
+                </div>
+                
+                <!-- Quick HTML format buttons -->
+                <div v-if="editorMode === 'visual'" class="flex flex-wrap gap-1 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+                  <button @mousedown.prevent="formatText('bold')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] font-bold cursor-pointer text-slate-700 active:scale-95 transition-transform" title="In đậm">B</button>
+                  <button @mousedown.prevent="formatText('italic')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] italic cursor-pointer text-slate-700 active:scale-95 transition-transform" title="In nghiêng">I</button>
+                  <button @mousedown.prevent="formatText('underline')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] underline cursor-pointer text-slate-700 active:scale-95 transition-transform" title="Gạch chân">U</button>
+                  <button @mousedown.prevent="insertHtmlTag('<br>', '')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] cursor-pointer text-slate-600 active:scale-95 transition-transform" title="Xuống dòng">br</button>
+                  <button @mousedown.prevent="insertHtmlTag('<p>', '</p>')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] cursor-pointer text-slate-600 active:scale-95 transition-transform" title="Đoạn văn">p</button>
+                  <button @mousedown.prevent="insertHtmlTag('<span style=\'font-size:16px;font-weight:bold;\'>', '</span>')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] cursor-pointer text-slate-700 active:scale-95 transition-transform" title="Chữ lớn">Lớn</button>
+                  <button @mousedown.prevent="insertHtmlTag('<span style=\'color:#ef4444;font-weight:bold;\'>', '</span>')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] cursor-pointer text-red-600 font-bold active:scale-95 transition-transform" title="Chữ đỏ">Đỏ</button>
+                  <button @mousedown.prevent="formatText('justifyCenter')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] cursor-pointer text-slate-600 active:scale-95 transition-transform" title="Căn giữa">Giữa</button>
+                  <button @mousedown.prevent="formatText('justifyLeft')" class="px-2 py-0.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-[10px] cursor-pointer text-slate-600 active:scale-95 transition-transform" title="Căn trái">Trái</button>
+                </div>
+
+                <!-- Visual Editor -->
+                <div v-if="editorMode === 'visual'"
+                  contenteditable="true"
+                  @input="selectedBlock.content = $event.target.innerHTML; compileHtml()"
+                  @focus="onTextareaFocus"
+                  class="w-full text-xs border border-slate-200 rounded-xl p-3 focus:outline-sky-500 font-sans leading-relaxed min-h-[200px] bg-white outline-none"
+                  v-html="editingContent"
+                ></div>
+
+                <!-- Source HTML Code Editor -->
+                <textarea v-else v-model="selectedBlock.content" rows="10" 
+                  @focus="onTextareaFocus"
                   class="w-full text-xs border border-slate-200 rounded-xl p-3 focus:outline-sky-500 font-mono leading-relaxed" 
                   placeholder="Viết nội dung văn bản (hỗ trợ các thẻ <b>, <i>, <p>...)"></textarea>
               </div>
@@ -1440,7 +2695,7 @@ const selectBand = (band) => {
                       📷 Chọn tệp ảnh
                       <input type="file" @change="handleImageUpload" accept="image/*" class="hidden" />
                     </label>
-                    <button v-if="selectedBlock.imageUrl" @click="selectedBlock.imageUrl = ''; compileHtml()" 
+                    <button v-if="selectedBlock.imageUrl" @click="selectedBlock.imageUrl = ''; selectedBlock.content = ''; compileHtml()" 
                       class="px-2.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold rounded-lg cursor-pointer transition-colors">
                       Xóa ảnh
                     </button>
@@ -1457,18 +2712,31 @@ const selectBand = (band) => {
                 <!-- 3c. Dynamic binding variable selector -->
                 <div class="flex flex-col gap-1" v-if="!selectedBlock.imageUrl">
                   <span class="text-[10px] font-bold text-slate-400 uppercase">Hoặc liên kết biến dữ liệu ảnh:</span>
-                  <input type="text" v-model="selectedBlock.content" placeholder="hotel.logo" class="w-full text-xs border border-slate-200 rounded-lg p-2 bg-slate-50 font-mono font-bold" readonly />
+                  <div class="flex gap-2">
+                    <input type="text" :value="selectedBlock.content" placeholder="Chưa có liên kết biến (Ví dụ: hotel.logo)" class="flex-1 text-xs border border-slate-200 rounded-lg p-2 bg-slate-50 font-mono font-bold" readonly />
+                    <button v-if="selectedBlock.content" @click="selectedBlock.content = ''; compileHtml()" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold rounded-lg cursor-pointer">Xóa</button>
+                  </div>
                 </div>
               </div>
 
               <!-- 4. Table Block column and fields mapping configuration -->
-              <div v-else-if="selectedBlock.type === 'table'" class="flex flex-col gap-3">
+              <div v-else-if="selectedBlock.type === 'table' && !selectedBlock.isNew" class="flex flex-col gap-3">
                 <div class="flex flex-col gap-1">
                   <span class="text-[10px] font-bold text-slate-400 uppercase">Nguồn dữ liệu bảng lặp:</span>
                   <select v-model="selectedBlock.dataSource" class="w-full text-xs border border-slate-200 rounded-lg p-2 focus:outline-sky-500 font-semibold">
                     <option value="booking.services">Lặp dịch vụ (booking.services)</option>
                     <option value="booking.rooms">Lặp danh sách phòng (booking.rooms)</option>
                     <option value="booking.payments">Lặp thanh toán (booking.payments)</option>
+                  </select>
+                </div>
+
+                <!-- Table Style option -->
+                <div class="flex flex-col gap-1">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase">Kiểu hiển thị đường kẻ:</span>
+                  <select v-model="selectedBlock.tableStyle" @change="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg p-2 focus:outline-sky-500 font-semibold">
+                    <option value="grid">Lưới đầy đủ (grid)</option>
+                    <option value="horizontal">Chỉ kẻ dòng ngang (horizontal)</option>
+                    <option value="none">Không kẻ đường viền (none)</option>
                   </select>
                 </div>
 
@@ -1496,6 +2764,16 @@ const selectBand = (band) => {
                         <input type="text" v-model="col.header" class="text-xs border border-slate-200 rounded px-1.5 py-0.5 font-bold" />
                       </div>
                       
+                      <!-- Alignment -->
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-[9px] font-bold text-slate-400">Căn lề cột:</span>
+                        <select v-model="col.align" @change="compileHtml" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-semibold">
+                          <option value="left">Căn trái (Left)</option>
+                          <option value="center">Căn giữa (Center)</option>
+                          <option value="right">Căn phải (Right)</option>
+                        </select>
+                      </div>
+                      
                       <!-- Col Value binding selector -->
                       <div class="flex flex-col gap-0.5">
                         <span class="text-[9px] font-bold text-slate-400">Biến dữ liệu ánh xạ:</span>
@@ -1511,6 +2789,53 @@ const selectBand = (band) => {
                         <span class="text-[9px] font-bold text-slate-400">Độ rộng (%):</span>
                         <input type="text" v-model="col.width" class="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 font-mono" placeholder="20% hoặc auto" />
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4b. Static Table configuration -->
+              <div v-else-if="selectedBlock.type === 'static-table'" class="flex flex-col gap-3">
+                <span class="text-[10px] font-bold text-slate-400 uppercase">Quản lý dòng & cột:</span>
+                <div class="grid grid-cols-2 gap-2">
+                  <button @click="addStaticRow(selectedBlock)" class="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg border border-sky-200 cursor-pointer">
+                    + Thêm hàng
+                  </button>
+                  <button @click="addStaticColumn(selectedBlock)" class="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-lg border border-sky-200 cursor-pointer">
+                    + Thêm cột
+                  </button>
+                </div>
+
+                <div class="flex flex-col gap-1">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase">Kiểu hiển thị đường kẻ:</span>
+                  <select v-model="selectedBlock.tableStyle" @change="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg p-2 focus:outline-sky-500 font-semibold">
+                    <option value="grid">Lưới đầy đủ (grid)</option>
+                    <option value="horizontal">Chỉ kẻ dòng ngang (horizontal)</option>
+                    <option value="none">Không kẻ đường viền (none)</option>
+                  </select>
+                </div>
+
+                <!-- Custom width inputs for columns -->
+                <div class="flex flex-col gap-2 mt-2">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase">Độ rộng các cột:</span>
+                  <div class="flex flex-col gap-2 max-h-[150px] overflow-y-auto">
+                    <div v-for="(col, cIdx) in selectedBlock.columns" :key="cIdx" class="flex justify-between items-center p-2 bg-white border border-slate-200 rounded-lg text-xs">
+                      <span class="font-bold text-slate-600">Cột {{ cIdx + 1 }}:</span>
+                      <div class="flex items-center gap-1.5">
+                        <input type="text" v-model="col.width" @input="compileHtml" class="w-16 text-center text-xs border border-slate-200 rounded p-1 font-mono" placeholder="50%" />
+                        <button @click="deleteStaticColumn(selectedBlock, cIdx)" class="px-1.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-[10px] border border-red-200 cursor-pointer font-bold">×</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Rows delete helper -->
+                <div class="flex flex-col gap-2 mt-2">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase">Danh sách các hàng:</span>
+                  <div class="flex flex-col gap-2 max-h-[150px] overflow-y-auto">
+                    <div v-for="(row, rIdx) in selectedBlock.rows" :key="rIdx" class="flex justify-between items-center p-2 bg-white border border-slate-200 rounded-lg text-xs">
+                      <span class="font-bold text-slate-600">Hàng {{ rIdx + 1 }}:</span>
+                      <button @click="deleteStaticRow(selectedBlock, rIdx)" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-[10px] border border-red-200 cursor-pointer">Xóa hàng</button>
                     </div>
                   </div>
                 </div>

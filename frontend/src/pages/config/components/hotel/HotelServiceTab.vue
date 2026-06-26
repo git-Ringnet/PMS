@@ -14,10 +14,10 @@ const serviceFormState = reactive({
   id: null,
   code: '',
   name: '',
-  service_charge: 5,
+  service_charge: 0,
   tax: 8,
   special_tax: 0,
-  include_service_charge: true,
+  include_service_charge: false,
   include_tax: true,
   include_special_tax: true,
   folio: 1,
@@ -47,10 +47,10 @@ const openAddServiceModal = () => {
     id: null,
     code: '',
     name: '',
-    service_charge: 5,
+    service_charge: 0,
     tax: 8,
     special_tax: 0,
-    include_service_charge: true,
+    include_service_charge: false,
     include_tax: true,
     include_special_tax: true,
     folio: 1,
@@ -90,11 +90,16 @@ const saveService = async () => {
   }
   loading.value = true
   try {
+    const payload = {
+      ...serviceFormState,
+      service_charge: 0,
+      include_service_charge: false,
+    }
     if (isEditMode.value) {
-      await http.put(`/hotel-services/${serviceFormState.id}`, serviceFormState)
+      await http.put(`/hotel-services/${serviceFormState.id}`, payload)
       uiStore.showToast('Cập nhật dịch vụ thành công!', 'success')
     } else {
-      await http.post('/hotel-services', serviceFormState)
+      await http.post('/hotel-services', payload)
       uiStore.showToast('Thêm dịch vụ mới thành công!', 'success')
     }
     isServiceModalOpen.value = false
@@ -191,10 +196,8 @@ onMounted(() => {
           <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
             <th class="p-3 whitespace-nowrap">Mã</th>
             <th class="p-3 min-w-[200px]">Tên dịch vụ đầy đủ</th>
-            <th class="p-3 text-center whitespace-nowrap">Phí phục vụ (%)</th>
             <th class="p-3 text-center whitespace-nowrap">Thuế (%)</th>
             <th class="p-3 text-center whitespace-nowrap">Thuế đặc biệt (%)</th>
-            <th class="p-3 text-center whitespace-nowrap">Bao gồm phí dịch vụ</th>
             <th class="p-3 text-center whitespace-nowrap">Bao gồm thuế</th>
             <th class="p-3 text-center whitespace-nowrap">Bao gồm thuế đặc biệt</th>
             <th class="p-3 text-center whitespace-nowrap">Folio</th>
@@ -212,18 +215,8 @@ onMounted(() => {
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
             <td class="p-3 font-bold text-slate-800">{{ s.code }}</td>
             <td class="p-3 font-bold text-slate-700">{{ s.name }}</td>
-            <td class="p-3 text-center font-bold text-slate-600">{{ s.service_charge }}</td>
             <td class="p-3 text-center font-bold text-slate-600">{{ s.tax }}</td>
             <td class="p-3 text-center font-bold text-slate-600">{{ s.special_tax }}</td>
-            <td class="p-3 text-center">
-              <label @click.stop class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" :checked="s.include_service_charge"
-                  @change="toggleServiceFlag(s, 'include_service_charge')" class="sr-only peer" />
-                <div
-                  class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
-                </div>
-              </label>
-            </td>
             <td class="p-3 text-center">
               <label @click.stop class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="s.include_tax" @change="toggleServiceFlag(s, 'include_tax')"
@@ -260,7 +253,7 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="hotelServices.length === 0">
-            <td colspan="14" class="p-6 text-center text-slate-400 italic">Không tìm thấy dịch vụ nào.</td>
+            <td colspan="12" class="p-6 text-center text-slate-400 italic">Không tìm thấy dịch vụ nào.</td>
           </tr>
         </tbody>
       </table>
@@ -321,13 +314,8 @@ onMounted(() => {
 
             <!-- Right Column -->
             <div class="flex flex-col gap-4">
-              <!-- Row 1: Phí phục vụ, Thuế, Thuế đặc biệt numbers -->
-              <div class="grid grid-cols-3 gap-3">
-                <div class="flex flex-col gap-1.5">
-                  <span>Phí phục vụ</span>
-                  <input type="number" v-model="serviceFormState.service_charge"
-                    class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm font-semibold bg-white" />
-                </div>
+              <!-- Row 1: Thuế, Thuế đặc biệt -->
+              <div class="grid grid-cols-2 gap-3">
                 <div class="flex flex-col gap-1.5">
                   <span>Thuế</span>
                   <input type="number" v-model="serviceFormState.tax"
@@ -341,16 +329,7 @@ onMounted(() => {
               </div>
 
               <!-- Row 2: Toggles -->
-              <div class="grid grid-cols-3 gap-3 py-1">
-                <div class="flex flex-col gap-1.5">
-                  <span>Phí phục vụ</span>
-                  <label class="relative inline-flex items-center cursor-pointer mt-1">
-                    <input type="checkbox" v-model="serviceFormState.include_service_charge" class="sr-only peer">
-                    <div
-                      class="w-10 h-5.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-500">
-                    </div>
-                  </label>
-                </div>
+              <div class="grid grid-cols-2 gap-3 py-1">
                 <div class="flex flex-col gap-1.5">
                   <span>Thuế</span>
                   <label class="relative inline-flex items-center cursor-pointer mt-1">
