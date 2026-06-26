@@ -25,7 +25,44 @@ const currentTab = computed(() => route.query.tab || 'room-map')
 const showDetailModal = ref(false)
 const isLoaded = ref(false)
 const showSearch = ref(false)
-const showFilters = ref(true)
+const showFilters = ref(false)
+const showSettings = ref(false)
+
+const settings = ref({
+  iconSizes: {
+    group1: parseInt(localStorage.getItem('pms_icon_size_g1') || '20'), // lock, birthday, honeymoon, extra-bed
+    group2: parseInt(localStorage.getItem('pms_icon_size_g2') || '20'), // clean, double-check, dirty
+    group3: parseInt(localStorage.getItem('pms_icon_size_g3') || '10'), // status dots (emerald/red)
+    group4: parseInt(localStorage.getItem('pms_icon_size_g4') || '16'), // walkin / guest count
+    group5: parseInt(localStorage.getItem('pms_icon_size_g5') || '20'), // priority, DND
+  },
+  exactPosition: localStorage.getItem('pms_exact_position') === 'true',
+  floorOrientation: localStorage.getItem('pms_floor_orientation') || 'Ngang',
+  roomWidth: parseInt(localStorage.getItem('pms_room_width') || '200'),
+  roomHeight: parseInt(localStorage.getItem('pms_room_height') || '110')
+})
+
+function saveSettings() {
+  localStorage.setItem('pms_icon_size_g1', String(settings.value.iconSizes.group1))
+  localStorage.setItem('pms_icon_size_g2', String(settings.value.iconSizes.group2))
+  localStorage.setItem('pms_icon_size_g3', String(settings.value.iconSizes.group3))
+  localStorage.setItem('pms_icon_size_g4', String(settings.value.iconSizes.group4))
+  localStorage.setItem('pms_icon_size_g5', String(settings.value.iconSizes.group5))
+  localStorage.setItem('pms_exact_position', String(settings.value.exactPosition))
+  localStorage.setItem('pms_floor_orientation', settings.value.floorOrientation)
+  localStorage.setItem('pms_room_width', String(settings.value.roomWidth))
+  localStorage.setItem('pms_room_height', String(settings.value.roomHeight))
+  showSettings.value = false
+  uiStore.showToast('Cài đặt hiển thị đã được lưu thành công!', 'success')
+}
+
+function handleClickOutsideSettings(event) {
+  const settingsBtn = document.querySelector('.settings-btn-trigger')
+  const settingsPopover = document.querySelector('.settings-popover-panel')
+  if (showSettings.value && settingsPopover && !settingsPopover.contains(event.target) && settingsBtn && !settingsBtn.contains(event.target)) {
+    showSettings.value = false
+  }
+}
 
 // Top toggle state: isFuture (false = Hiện tại, true = Tương Lai)
 const isFuture = ref(false)
@@ -200,6 +237,28 @@ function shouldShowBroom(room) {
 // Show Sparkles icon for clean vacant rooms
 function shouldShowSparkles(room) {
   return room.is_clean && room.status !== ROOM_STATUSES.OCCUPIED && room.status !== ROOM_STATUSES.DIRTY && (room.id % 2 === 0)
+}
+
+function getStatusIconSize(room) {
+  if (room.status === ROOM_STATUSES.MAINTENANCE) {
+    return settings.value.iconSizes.group1
+  }
+  if (room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean) {
+    return settings.value.iconSizes.group2
+  }
+  if (shouldShowSparkles(room)) {
+    return settings.value.iconSizes.group2
+  }
+  if (room.status === ROOM_STATUSES.AVAILABLE) {
+    return settings.value.iconSizes.group2
+  }
+  if (room.status === ROOM_STATUSES.RESERVED) {
+    return settings.value.iconSizes.group5
+  }
+  if (room.status === ROOM_STATUSES.OCCUPIED) {
+    return settings.value.iconSizes.group2
+  }
+  return 20
 }
 
 // Guest names list matching image 2
@@ -390,6 +449,13 @@ async function changeRoomStatus(room, newStatus, lockType = null) {
 }
 
 onMounted(async () => {
+  // Migration to set default roomWidth to 200px for existing local storage sessions
+  if (localStorage.getItem('pms_room_width_migrated_200') !== 'true') {
+    settings.value.roomWidth = 200
+    localStorage.setItem('pms_room_width', '200')
+    localStorage.setItem('pms_room_width_migrated_200', 'true')
+  }
+
   // Run data fetches in parallel to minimize load latency
   await Promise.all([
     roomStore.fetchRooms(),
@@ -398,6 +464,7 @@ onMounted(async () => {
   isLoaded.value = true
   
   window.addEventListener('click', closeContextMenu)
+  window.addEventListener('click', handleClickOutsideSettings)
   
   calculateScale()
   window.addEventListener('resize', calculateScale)
@@ -405,6 +472,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
 })
 
@@ -433,7 +501,7 @@ const uniqueFloors = computed(() => {
     <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white" :style="{ zoom: scaleFactor }">
       
       <!-- TOP HORIZONTAL METRICS BAR (Only displayed for Room Map tab) -->
-      <div v-if="currentTab === 'room-map'" class="bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
+      <div v-if="currentTab === 'room-map'" class="relative bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
         <div class="flex items-center gap-3 overflow-x-auto px-1.5 py-1 scrollbar-thin">
           <!-- Date card -->
           <div class="bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 transform-gpu">
@@ -634,6 +702,154 @@ const uniqueFloors = computed(() => {
               <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
               </svg>
+            </button>
+            <button @click="showSettings = !showSettings" 
+              class="p-2 border rounded-lg cursor-pointer transition-colors settings-btn-trigger"
+              :class="showSettings ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
+              title="Cài đặt hiển thị">
+              <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.645-.869L9.594 3.94z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Settings Dropdown Popover -->
+          <div v-if="showSettings" 
+            class="absolute right-6 top-16 w-72 bg-white rounded-xl shadow-2xl border border-slate-200/80 p-5 z-[50] flex flex-col gap-4 font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
+            
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
+              <button @click="showSettings = false" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors" title="Đóng">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Icon Sizing section -->
+            <div class="flex flex-col gap-3">
+              <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Icon</span>
+              
+              <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-slate-700">
+                  <div class="flex items-center gap-2">
+                    <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
+                    <RoomIcon name="birthday" class="w-5 h-5 text-pink-500" />
+                    <RoomIcon name="honeymoon" class="w-5 h-5 text-red-500" />
+                    <RoomIcon name="extra-bed" class="w-5 h-5 text-slate-600" />
+                  </div>
+                  <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group1 }}px</span>
+                </div>
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+              </div>
+
+              <!-- Group 2: Clean, Double check, Dirty -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-slate-700">
+                  <div class="flex items-center gap-2">
+                    <RoomIcon name="clean" class="w-5 h-5 text-emerald-500" />
+                    <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
+                    <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
+                  </div>
+                  <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group2 }}px</span>
+                </div>
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+              </div>
+
+              <!-- Group 3: Green status dot, Red status dot, Split dot -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white/20 shadow-xs"></span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-red-500 border border-white/20 shadow-xs"></span>
+                    <span class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
+                  </div>
+                  <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group3 }}px</span>
+                </div>
+                <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
+              </div>
+
+              <!-- Group 4: Walkin -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-slate-700">
+                  <div class="flex items-center gap-2">
+                    <RoomIcon name="walkin" class="w-5 h-5 text-slate-600" />
+                  </div>
+                  <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group4 }}px</span>
+                </div>
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+              </div>
+
+              <!-- Group 5: Priority, DND -->
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between text-slate-700">
+                  <div class="flex items-center gap-2">
+                    <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
+                    <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
+                  </div>
+                  <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group5 }}px</span>
+                </div>
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+              </div>
+            </div>
+
+            <hr class="border-slate-100" />
+
+            <!-- Exact Position Toggle -->
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-700">Vị trí chính xác</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" v-model="settings.exactPosition" class="sr-only peer" />
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+              </label>
+            </div>
+
+            <!-- Floor Orientation Toggle -->
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-700">Hướng của tầng</span>
+              <div class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px] font-black">
+                <button @click="settings.floorOrientation = 'Ngang'"
+                  class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
+                  :class="settings.floorOrientation === 'Ngang' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
+                  Ngang
+                </button>
+                <button @click="settings.floorOrientation = 'Dọc'"
+                  class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
+                  :class="settings.floorOrientation === 'Dọc' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
+                  Dọc
+                </button>
+              </div>
+            </div>
+
+            <hr class="border-slate-100" />
+
+            <!-- Room Width Slider -->
+            <div class="flex flex-col gap-1.5 text-xs font-bold text-slate-700">
+              <div class="flex justify-between">
+                <span class="text-left">Chiều dài phòng</span>
+                <span class="text-slate-500">{{ settings.roomWidth }}px</span>
+              </div>
+              <input type="range" min="120" max="300" v-model.number="settings.roomWidth" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 120) / (300 - 120) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 120) / (300 - 120) * 100) + '%, #e2e8f0 100%)' }" />
+            </div>
+
+            <!-- Room Height Slider -->
+            <div class="flex flex-col gap-1.5 text-xs font-bold text-slate-700">
+              <div class="flex justify-between">
+                <span class="text-left">Chiều cao phòng</span>
+                <span class="text-slate-500">{{ settings.roomHeight }}px</span>
+              </div>
+              <input type="range" min="80" max="200" v-model.number="settings.roomHeight" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 100%)' }" />
+            </div>
+
+            <!-- Save Button -->
+            <button @click="saveSettings" 
+              class="mt-2 w-full py-2.5 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Lưu
             </button>
           </div>
         </div>
@@ -1017,38 +1233,62 @@ const uniqueFloors = computed(() => {
             </div>
 
             <!-- Room Grid view (Lưới sơ đồ) -->
-            <div v-else-if="isGridMode" class="flex-1 overflow-x-auto pt-2.5 pl-2.5 pr-2.5 pb-4 scrollbar-thin flex flex-col gap-3.5 animate-room-grid">
+            <!-- Room Grid view (Lưới sơ đồ) -->
+            <div v-else-if="isGridMode" 
+              class="flex-1 overflow-auto pt-2.5 pl-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
+              :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-3.5' : 'flex flex-row gap-5 items-start'"
+            >
               <div
                 v-for="(floor, floorIdx) in sortedFloors"
                 :key="floor"
-                class="flex gap-4 floor-row-animate"
+                class="floor-row-animate"
+                :class="settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2'"
                 :style="{ animationDelay: `${floorIdx * 65}ms` }"
               >
                 <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
-                <div class="floor-pill cursor-pointer">
+                <div class="floor-pill cursor-pointer"
+                  :style="settings.floorOrientation === 'Dọc' ? {
+                    width: settings.roomWidth + 'px',
+                    height: 'auto',
+                    position: 'static',
+                    padding: '8px 4px',
+                    flexDirection: 'row',
+                    gap: '6px'
+                  } : {}"
+                >
                   <span>{{ t('roomMap.floor', { floor }) }}</span>
-                  <span class="text-[10px] opacity-80 font-bold mt-1">{{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}</span>
+                  <span class="text-[10px] opacity-80 font-bold mt-1" :style="settings.floorOrientation === 'Dọc' ? { marginTop: '0px' } : {}">
+                    {{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}
+                  </span>
                 </div>
 
-                <!-- Rooms horizontal flex container inside this floor -->
-                <div class="flex gap-1.5">
+                <!-- Rooms horizontal/vertical flex container inside this floor -->
+                <div :class="settings.floorOrientation === 'Ngang' ? 'flex gap-1.5' : 'flex flex-col gap-1.5'">
                   <div
                     v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]"
                     :key="room.id"
                     class="room-card room-card-animate"
-                    :style="{ animationDelay: `${(floorIdx * 80) + (roomIdx * 20)}ms` }"
+                    :style="{ 
+                      animationDelay: `${(floorIdx * 80) + (roomIdx * 20)}ms`,
+                      width: settings.roomWidth + 'px',
+                      height: settings.roomHeight + 'px',
+                      minHeight: settings.roomHeight + 'px',
+                      maxHeight: settings.roomHeight + 'px'
+                    }"
                     :class="{ 'occupied-room': room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT }"
                     @click="handleRoomClick(room)"
                     @contextmenu.prevent="handleContextMenu($event, room)"
                   >
                     <!-- Status Indicator Dot (Top Left - Check-in Today) -->
                     <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
-                      <span class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-emerald-500 relative pulse-dot-ring"></span>
+                      <span class="rounded-full block border border-white/20 shadow-sm bg-emerald-500 relative"
+                        :style="{ width: settings.iconSizes.group3 + 'px', height: settings.iconSizes.group3 + 'px' }"></span>
                     </div>
 
                     <!-- Status Indicator Dot (Top Right - Check-out Today) -->
                     <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5">
-                      <span class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-red-500 relative pulse-dot-ring"></span>
+                      <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
+                        :style="{ width: settings.iconSizes.group3 + 'px', height: settings.iconSizes.group3 + 'px' }"></span>
                     </div>
 
                     <!-- Room Content (Centered) -->
@@ -1071,41 +1311,54 @@ const uniqueFloors = computed(() => {
                       </div>
                     </div>
 
-                    <!-- Bottom row: Icons -->
-                    <div class="flex items-center justify-between mt-auto w-full pt-1.5">
-                      <!-- Bottom Left Corner: Guest Count and Extra Bed -->
-                      <div class="flex items-center gap-1.5 text-slate-500">
-                        <template v-if="getGuestCount(room) > 0">
-                          <span class="flex items-center gap-0.5 font-bold text-[10.5px] text-gray-900 leading-none">
-                            <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" class="w-4 h-4 text-gray-600" />
-                            {{ getGuestCount(room) }}
-                          </span>
-                        </template>
-                        <template v-if="hasExtraBed(room) && (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || hasArrivalToday(room))">
-                          <RoomIcon name="extra-bed" class="w-4.5 h-4.5 text-gray-600 pl-0.5" />
-                        </template>
-                      </div>
+                    <!-- Bottom row: Icons (Absolute Positioned to allow overflow boundaries) -->
+                    <!-- Bottom Left Corner: Guest Count and Extra Bed -->
+                    <div class="absolute flex items-center gap-1.5 text-slate-500 pointer-events-none overflow-visible shrink-0"
+                      :style="{
+                        left: (10 - (settings.iconSizes.group4 - 16)) + 'px',
+                        bottom: (6 - (settings.iconSizes.group4 - 16)) + 'px'
+                      }"
+                    >
+                      <template v-if="getGuestCount(room) > 0">
+                        <span class="flex items-center gap-0.5 font-bold text-[10.5px] text-gray-900 leading-none">
+                          <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" class="text-gray-600" :style="{ width: settings.iconSizes.group4 + 'px', height: settings.iconSizes.group4 + 'px' }" />
+                          {{ getGuestCount(room) }}
+                        </span>
+                      </template>
+                      <template v-if="hasExtraBed(room) && (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || hasArrivalToday(room))">
+                        <RoomIcon name="extra-bed" class="text-gray-600 pl-0.5" :style="{ width: settings.iconSizes.group1 + 'px', height: settings.iconSizes.group1 + 'px' }" />
+                      </template>
+                    </div>
 
-                      <!-- Bottom Right Corner: Status Icon -->
-                      <div class="flex items-center justify-end text-slate-400">
-                        <!-- OOO or OOS lock icon -->
-                        <template v-if="room.status === ROOM_STATUSES.MAINTENANCE">
-                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-emerald-500" />
-                          <RoomIcon v-else name="ooo" class="w-5 h-5 text-amber-500" />
-                        </template>
+                    <!-- Bottom Right Corner: Status Icon -->
+                    <div class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0"
+                      :style="{
+                        right: (10 - (getStatusIconSize(room) - 20)) + 'px',
+                        bottom: (6 - (getStatusIconSize(room) - 20)) + 'px'
+                      }"
+                    >
+                      <!-- OOO or OOS lock icon -->
+                      <template v-if="room.status === ROOM_STATUSES.MAINTENANCE">
+                        <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-emerald-500" :style="{ width: settings.iconSizes.group1 + 'px', height: settings.iconSizes.group1 + 'px' }" />
+                        <RoomIcon v-else name="ooo" class="text-amber-500" :style="{ width: settings.iconSizes.group1 + 'px', height: settings.iconSizes.group1 + 'px' }" />
+                      </template>
 
-                        <!-- Housekeeping (broom) icon -->
-                        <template v-else-if="room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean">
-                          <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
-                        </template>
+                      <!-- Housekeeping (broom) icon -->
+                      <template v-else-if="room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean">
+                        <RoomIcon name="dirty" class="text-amber-600" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                      </template>
 
-                        <!-- Other statuses (e.g. available, reserved) -->
-                        <template v-else>
-                          <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="available" class="w-5 h-5" />
-                          <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" name="reserved" class="w-5 h-5" />
-                          <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="w-4.5 h-4.5 text-sky-700" />
-                        </template>
-                      </div>
+                      <!-- Sparkles (clean) icon -->
+                      <template v-else-if="shouldShowSparkles(room)">
+                        <RoomIcon name="clean" class="text-emerald-500" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                      </template>
+
+                      <!-- Other statuses (e.g. available, reserved) -->
+                      <template v-else>
+                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="available" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :class="room.id % 2 === 0 ? '' : 'text-slate-500'" :style="{ width: settings.iconSizes.group5 + 'px', height: settings.iconSizes.group5 + 'px' }" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="text-sky-700" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -1177,7 +1430,7 @@ const uniqueFloors = computed(() => {
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.MAINTENANCE" name="maintenance-list" class="w-5 h-5 text-blue-500" />
                         
                         <!-- Phòng ưu tiên -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" name="priority" class="w-5 h-5 text-sky-500" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :class="room.id % 2 === 0 ? 'w-5 h-5' : 'w-5 h-5 text-slate-500'" />
                         
                         <!-- Phòng không làm phiền -->
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="dnd" class="w-5 h-5 text-slate-500" />
@@ -1585,20 +1838,6 @@ const uniqueFloors = computed(() => {
   }
 }
 
-@keyframes pulseRing {
-  0% {
-    transform: scale(0.85);
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1.4);
-    opacity: 0;
-  }
-}
-
 .floor-row-animate {
   animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -1609,19 +1848,6 @@ const uniqueFloors = computed(() => {
 
 .pulse-dot-ring {
   position: relative;
-}
-
-.pulse-dot-ring::after {
-  content: '';
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  right: -1px;
-  bottom: -1px;
-  border-radius: 50%;
-  background-color: inherit;
-  animation: pulseRing 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-  pointer-events: none;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
