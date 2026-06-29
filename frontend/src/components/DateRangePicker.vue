@@ -192,10 +192,53 @@ const applyRange = () => {
     emit('update:endDate', end)
     emit('change', { start, end })
   }
+=======
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+
+const props = defineProps({
+  modelValue: {
+    type: Object,
+    default: () => ({ start: '24/06/2026', end: '24/06/2026' })
+  }
+})
+
+const emit = defineEmits(['update:modelValue'])
+
+const isOpen = ref(false)
+const popoverRef = ref(null)
+
+const toggleOpen = () => {
+  isOpen.value = !isOpen.value
+}
+
+const closePopover = (e) => {
+  if (popoverRef.value && !popoverRef.value.contains(e.target)) {
+    isOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closePopover)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closePopover)
+})
+
+const quickLinks = [
+  'Hôm nay', 'Hôm qua', '7 ngày trước', 'Tuần này', 'Tháng này', 
+  'Kì này', 'Năm này', 'Ngày mai', '7 ngày tới', '30 ngày tới', 
+  '30 ngày trước', 'Tháng trước'
+]
+
+const handleOk = () => {
+  isOpen.value = false
+>>>>>>> 64dca7e (feat(fnb): tích hợp phân hệ F&B (Food & Beverage) hoàn chỉnh)
 }
 </script>
 
 <template>
+<<<<<<< HEAD
   <div class="flex items-center gap-2">
     <!-- Presets Dropdown -->
     <div class="flex items-center border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900 px-3 py-1 shadow-sm h-[32px]">
@@ -322,3 +365,4 @@ const applyRange = () => {
   border-radius: 6px !important;
 }
 </style>
+
