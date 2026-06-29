@@ -26,6 +26,7 @@ class SystemDefinitionSeeder extends Seeder
                 'bank_name' => 'Complimentary',
                 'service_charge' => 0.00,
                 'department' => '',
+                'payment_group' => 5, // 5: MIỄN PHÍ
                 'is_free' => true,
                 'is_inactive' => true,
             ],
@@ -37,6 +38,7 @@ class SystemDefinitionSeeder extends Seeder
                 'bank_name' => 'Cash',
                 'service_charge' => 0.00,
                 'department' => '',
+                'payment_group' => 1, // 1: TIỀN MẶT
                 'is_free' => false,
                 'is_inactive' => false,
             ],
@@ -48,6 +50,7 @@ class SystemDefinitionSeeder extends Seeder
                 'bank_name' => 'City ledger',
                 'service_charge' => 0.00,
                 'department' => '',
+                'payment_group' => 4, // 4: CÔNG NỢ
                 'is_free' => false,
                 'is_inactive' => false,
             ],
@@ -59,6 +62,7 @@ class SystemDefinitionSeeder extends Seeder
                 'bank_name' => 'Bank transfer',
                 'service_charge' => 0.00,
                 'department' => 'Reception/ Lê Tân, Restaurant/Nhà Hàng',
+                'payment_group' => 2, // 2: THẺ CK
                 'is_free' => false,
                 'is_inactive' => false,
             ],
@@ -70,6 +74,7 @@ class SystemDefinitionSeeder extends Seeder
                 'bank_name' => 'Voucher',
                 'service_charge' => 0.00,
                 'department' => '',
+                'payment_group' => 3, // 3: VOUCHER
                 'is_free' => false,
                 'is_inactive' => false,
             ],
@@ -81,6 +86,7 @@ class SystemDefinitionSeeder extends Seeder
                 'bank_name' => 'Credit Card',
                 'service_charge' => 0.00,
                 'department' => '',
+                'payment_group' => 2, // 2: THẺ CK
                 'is_free' => false,
                 'is_inactive' => false,
             ],

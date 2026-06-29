@@ -39,6 +39,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
 
     // Room configurations
+    Route::get('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'index']);
+    Route::post('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'store']);
+    Route::put('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'update']);
+    Route::delete('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'destroy']);
+
     Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index']);
     Route::post('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'store']);
     Route::put('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'update']);
@@ -75,6 +80,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('hotel-services', \App\Http\Controllers\Api\HotelServiceController::class);
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
+    Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);
+    Route::post('templates/{id}/make-default', [\App\Http\Controllers\Api\TemplateController::class, 'makeDefault']);
+    Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault']);
+    Route::get('templates/{id}/versions', [\App\Http\Controllers\Api\TemplateController::class, 'versions']);
+    Route::post('templates/{id}/rollback', [\App\Http\Controllers\Api\TemplateController::class, 'rollback']);
+    Route::match(['get', 'post'], 'templates/{id}/preview', [\App\Http\Controllers\Api\TemplateController::class, 'preview']);
+    Route::post('templates/{id}/render', [\App\Http\Controllers\Api\TemplateController::class, 'render']);
+    Route::post('templates/upload-image', [\App\Http\Controllers\Api\TemplateController::class, 'uploadImage']);
     Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
 
     // System configuration routes

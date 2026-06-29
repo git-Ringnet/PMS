@@ -13,7 +13,13 @@ const translations = {
       shift: 'Ca',
       loadingBranch: 'Đang tải dữ liệu chi nhánh {name}...',
       guest: 'Khách',
-      notLoggedIn: 'Chưa Đăng Nhập'
+      notLoggedIn: 'Chưa Đăng Nhập',
+      customizeTopbar: 'Tùy chỉnh màu nền Topbar',
+      solidColor: 'Màu đơn lẻ',
+      gradientColor: 'Màu Gradient',
+      chooseSolidColor: 'Chọn màu đơn',
+      chooseGradientColor: 'Tạo màu Gradient',
+      presets: 'Mẫu có sẵn'
     },
     menu: {
       checkIn: 'Giao phòng',
@@ -229,7 +235,37 @@ const translations = {
       channelManagerConnStatus: 'Trạng thái kết nối',
       channelManagerMinsAgo: '{n} phút trước',
       channelManagerHourAgo: '{n} giờ trước',
-      channelManagerReconnecting: 'Đang kết nối lại'
+      channelManagerReconnecting: 'Đang kết nối lại',
+      
+      // Help Guide
+      helpTitle: 'Trợ giúp',
+      helpRoomStatuses: 'Trạng thái phòng',
+      helpShortcuts: 'Các phím tắt',
+      helpArrival: 'Phòng đến',
+      helpDeparture: 'Phòng đi',
+      helpWalkin: 'Khách lẻ',
+      helpMoreThan2Guests: 'Hơn 2 khách',
+      helpDirty: 'Phòng bẩn',
+      helpClean: 'Phòng sạch',
+      helpOoo: 'Phòng OOO',
+      helpOos: 'Phòng OOS',
+      helpPriority: 'Ưu tiên',
+      helpPriorityPaid: 'Ưu tiên tính phí',
+      helpExtraBed: 'Thêm giường',
+      helpBirthday: 'Ngày sinh',
+      helpHoneymoon: 'Trăng mật',
+      helpShortcutInvoice: 'Hóa đơn',
+      helpShortcutGroupInvoice: 'Nhóm hóa đơn',
+      helpShortcutCreateReg: 'Tạo ĐK',
+      helpShortcutInfo: 'Thông tin',
+      helpShortcutAvailable: 'Sẵn sàng',
+      helpShortcutClean: 'Phòng sạch',
+      helpShortcutDirty: 'Phòng bẩn',
+      helpDnd: 'Phòng không làm phiền',
+      helpHkRequest: 'Yêu cầu dọn phòng',
+      helpHkService: 'Dịch vụ dọn phòng',
+      helpGuestCheckedInToday: 'Phòng khách đã nhận trong ngày',
+      helpGuestArrivingTomorrow: 'Phòng khách đến vào ngày mai'
     }
   },
   en: {
@@ -242,7 +278,13 @@ const translations = {
       shift: 'Shift',
       loadingBranch: 'Loading branch data {name}...',
       guest: 'Guest',
-      notLoggedIn: 'Not Logged In'
+      notLoggedIn: 'Not Logged In',
+      customizeTopbar: 'Customize Topbar',
+      solidColor: 'Solid Color',
+      gradientColor: 'Gradient Color',
+      chooseSolidColor: 'Choose Solid Color',
+      chooseGradientColor: 'Create Gradient',
+      presets: 'Presets'
     },
     menu: {
       checkIn: 'Check-in',
@@ -453,7 +495,37 @@ const translations = {
       channelManagerConnStatus: 'Connection Status',
       channelManagerMinsAgo: '{n} mins ago',
       channelManagerHourAgo: '{n} hour ago',
-      channelManagerReconnecting: 'Reconnecting'
+      channelManagerReconnecting: 'Reconnecting',
+      
+      // Help Guide
+      helpTitle: 'Help Guide',
+      helpRoomStatuses: 'Room Statuses',
+      helpShortcuts: 'Keyboard Shortcuts',
+      helpArrival: 'Arrival Room',
+      helpDeparture: 'Departure Room',
+      helpWalkin: 'Walk-in Guest',
+      helpMoreThan2Guests: 'More than 2 Guests',
+      helpDirty: 'Dirty Room',
+      helpClean: 'Clean Room',
+      helpOoo: 'Out of Order (OOO)',
+      helpOos: 'Out of Service (OOS)',
+      helpPriority: 'Priority',
+      helpPriorityPaid: 'Priority with Fee',
+      helpExtraBed: 'Extra Bed',
+      helpBirthday: 'Birthday',
+      helpHoneymoon: 'Honeymoon',
+      helpShortcutInvoice: 'Invoice',
+      helpShortcutGroupInvoice: 'Group Invoice',
+      helpShortcutCreateReg: 'Create Reg',
+      helpShortcutInfo: 'Information',
+      helpShortcutAvailable: 'Available',
+      helpShortcutClean: 'Clean Room',
+      helpShortcutDirty: 'Dirty Room',
+      helpDnd: 'Do Not Disturb',
+      helpHkRequest: 'Housekeeping Request',
+      helpHkService: 'Housekeeping Service',
+      helpGuestCheckedInToday: 'Guest checked in today',
+      helpGuestArrivingTomorrow: 'Guest arriving tomorrow'
     }
   }
 }

@@ -57,18 +57,25 @@ class SystemConfigurationSeeder extends Seeder
             'qr_code_url' => 'assets/hotel-qr.png',
         ]);
 
+        // Seed Room Class Groups
+        $hotelGroup = \App\Models\RoomClassGroup::create([
+            'name' => 'Khách sạn',
+            'code' => 'hotel',
+            'is_active' => true,
+        ]);
+
         // 2. Seed Room Classes (Tên loại phòng - from Screenshot 2)
         $classes = [
-            ['name' => 'Superior Double', 'code' => 'SUPD', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Superior Twin', 'code' => 'SUPT', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Superior Triple', 'code' => 'SUPTR', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Deluxe Double City view', 'code' => 'DLXD', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Deluxe Twin City View', 'code' => 'DLXT', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Deluxe Double with Balcony', 'code' => 'DLXDB', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Deluxe Twin with Balcony', 'code' => 'DLXTB', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Family City View', 'code' => 'FAM', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'Suite', 'code' => 'JST', 'color' => '#ffffff', 'is_active' => true, 'group' => 'hotel'],
-            ['name' => 'DỰ PHÒNG', 'code' => 'DP', 'color' => '#ffffff', 'is_active' => false, 'group' => 'hotel'],
+            ['name' => 'Superior Double', 'code' => 'SUPD', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Twin', 'code' => 'SUPT', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Triple', 'code' => 'SUPTR', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Double City view', 'code' => 'DLXD', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Twin City View', 'code' => 'DLXT', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Double with Balcony', 'code' => 'DLXDB', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Twin with Balcony', 'code' => 'DLXTB', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Family City View', 'code' => 'FAM', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Suite', 'code' => 'JST', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'DỰ PHÒNG', 'code' => 'DP', 'color' => '#ffffff', 'is_active' => false, 'room_class_group_id' => $hotelGroup->id],
         ];
 
         $classModels = [];
@@ -126,7 +133,16 @@ class SystemConfigurationSeeder extends Seeder
                 $formName = 'Double';
                 $guests = 2;
 
-                if ($col == 1 || $col == 2) {
+                // Phân bổ loại phòng và hạng phòng
+                $classCode = 'SUPD';
+                $formName = 'Double';
+                $guests = 2;
+
+                if ($roomNumber === '404') {
+                    $classCode = 'SUPT';
+                    $formName = 'Twin';
+                    $guests = 2;
+                } elseif ($col == 1 || $col == 2) {
                     $classCode = 'DLXD';
                     $formName = 'Double';
                     $guests = 2;
@@ -179,6 +195,23 @@ class SystemConfigurationSeeder extends Seeder
         }
 
         foreach ($roomsData as $r) {
+            // Random status distribution for testing:
+            // 50% available, 22% occupied, 10% dirty, 9% reserved, 9% checkout
+            $statusRand = rand(1, 100);
+            if ($r['room_number'] === '404') {
+                $statusVal = 'checkout';
+            } elseif ($statusRand <= 50) {
+                $statusVal = 'available';
+            } elseif ($statusRand <= 72) {
+                $statusVal = 'occupied';
+            } elseif ($statusRand <= 82) {
+                $statusVal = 'dirty';
+            } elseif ($statusRand <= 91) {
+                $statusVal = 'reserved';
+            } else {
+                $statusVal = 'checkout';
+            }
+
             Room::create([
                 'room_number' => $r['room_number'],
                 'room_class_id' => $classModels[$r['class']]->id,
@@ -190,7 +223,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_row' => $r['row'],
                 'grid_column' => $r['col'],
                 'is_internal' => false,
-                'status' => 'available',
+                'status' => $statusVal,
                 'notes' => 'Phòng tự động tạo bằng seeder',
             ]);
         }

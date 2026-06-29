@@ -29,7 +29,13 @@ export const useRoomStore = defineStore('room', () => {
       result = result.filter(r => r.floor === filters.value.floor)
     }
     if (filters.value.status) {
-      result = result.filter(r => r.status === filters.value.status)
+      if (filters.value.status === 'OOO') {
+        result = result.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS')
+      } else if (filters.value.status === 'OOS') {
+        result = result.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS')
+      } else {
+        result = result.filter(r => r.status === filters.value.status)
+      }
     }
     if (filters.value.roomType) {
       result = result.filter(r => r.room_type === filters.value.roomType)
@@ -108,7 +114,7 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
-  async function updateRoomStatus(roomId, status) {
+  async function updateRoomStatus(roomId, status, lockType = null) {
     error.value = null
     try {
       await roomService.updateRoomStatus(roomId, status)
@@ -116,6 +122,7 @@ export const useRoomStore = defineStore('room', () => {
       const room = rooms.value.find(r => r.id === roomId)
       if (room) {
         room.status = status
+        room.lock_type = lockType
       }
     } catch (err) {
       error.value = 'Không thể cập nhật trạng thái phòng.'
