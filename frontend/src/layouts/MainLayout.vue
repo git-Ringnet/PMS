@@ -92,7 +92,7 @@ function updateCustomGradient() {
 
 // Compute if header bg is dark to set high-contrast white text
 const isHeaderBgDark = computed(() => {
-  if (route.path === '/pms' || route.path === '/' || route.path === '/login') {
+  if (['/pms', '/fnb', '/', '/login'].includes(route.path)) {
     return false
   }
   const bg = headerBgColor.value
@@ -387,6 +387,54 @@ const menuItems = computed(() => {
       { name: t('menu.sysConfig'), route: '/config' },
     ]
   }
+  // trang F&B
+  if (route.path.startsWith('/fnb')) {
+    return [
+      { name: 'Nhà Hàng', route: '/fnb/restaurant' },
+      { name: 'PARTY', route: '/fnb/party' },
+      { name: 'Tìm kiếm đơn hàng', route: '/fnb/search' },
+      { 
+        name: 'Báo cáo', 
+        route: '/fnb/report',
+        dropdown: [
+          { name: 'XÁC NHẬN KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast' },
+          { name: 'BÁO CÁO QUẢN LÝ', route: '/fnb/report', tab: 'management' },
+          { name: 'BÁO CÁO DOANH THU THEO HOÁ ĐƠN', route: '/fnb/report', tab: 'invoice' },
+          { 
+            name: 'BÁO CÁO DOANH THU SẢN PHẨM', 
+            route: '/fnb/report',
+            children: [
+              { name: 'BÁO CÁO DOANH THU SẢN PHẨM', route: '/fnb/report', tab: 'product' },
+              { name: 'BÁO CÁO DOANH THU SẢN PHẨM THEO NGÀY', route: '/fnb/report', tab: 'product-by-day' },
+              { name: 'BÁO CÁO DOANH THU HÀNG BÁN THEO SẢN PHẨM', route: '/fnb/report', tab: 'product-by-item' }
+            ]
+          },
+          { name: 'BÁO CÁO THU NGÂN FB', route: '/fnb/report', tab: 'cashier' },
+          { name: 'BÁO CÁO KHÁCH ĐẾN', route: '/fnb/report', tab: 'guest-arrival' },
+          { name: 'BÁO CÁO KHÁCH ĐI', route: '/fnb/report', tab: 'guest-departure' },
+          { name: 'BÁO CÁO KHÁCH Ở', route: '/fnb/report', tab: 'guest-staying' },
+          { name: 'BÁO CÁO CHI TIẾT ĐƠN FB', route: '/fnb/report', tab: 'order-detail' },
+          { name: 'BÁO CÁO TỔNG DOANH THU', route: '/fnb/report', tab: 'total-revenue' },
+          { name: 'BÁO CÁO DOANH THU CHI TIẾT', route: '/fnb/report', tab: 'revenue-detail' },
+          { name: 'BÁO CÁO DỰ KIẾN KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast-forecast' },
+          { name: 'BÁO CÁO KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast-report' },
+          { name: 'BÁO CÁO HOÁ ĐƠN THANH TOÁN VỀ PHÒNG', route: '/fnb/report', tab: 'room-charge-invoice' },
+          { name: 'BÁO CÁO LOẠI HOÁ ĐƠN', route: '/fnb/report', tab: 'invoice-type' },
+          { name: 'BÁO CÁO DỰ ĐOÁN BÁN PHÒNG', route: '/fnb/report', tab: 'room-sales-forecast' }
+        ]
+      },
+      {
+        name: 'Khác',
+        route: '/fnb/other',
+        dropdown: [
+          { name: 'GHI LOG', tab: 'log' },
+          { name: 'KHO', tab: 'inventory' },
+          { name: 'IN VAT', tab: 'vat' },
+          { name: 'CÀI ĐẶT', tab: 'settings' }
+        ]
+      }
+    ]
+  }
   // trang đặt phòng
   return [
     {
@@ -544,13 +592,25 @@ function handleSubMenuClick(item) {
 }
 
 function handleDropdownClick(sub) {
-  if (sub.tab) {
-    router.push({ path: '/reservation', query: { tab: sub.tab } })
+  if (sub.route) {
+    // If the item has an explicit route (e.g. report tabs), use that route with optional tab query
+    const query = sub.tab ? { tab: sub.tab } : {}
+    router.push({ path: sub.route, query })
+  } else if (sub.tab) {
+    if (route.path.startsWith('/fnb')) {
+      router.push({ path: '/fnb/other', query: { tab: sub.tab } })
+    } else {
+      router.push({ path: '/reservation', query: { tab: sub.tab } })
+    }
   }
 }
 
 function goHome() {
-  router.push('/pms')
+  if (route.path.startsWith('/fnb')) {
+    router.push('/fnb')
+  } else {
+    router.push('/pms')
+  }
 }
 
 function toggleSidebar() {
@@ -577,8 +637,8 @@ function toggleSidebar() {
     <!-- Top Header Bar (Light Theme) -->
     <header 
       class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
-      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? '' : 'bg-white'"
-      :style="{ background: (route.path !== '/pms' && route.path !== '/' && route.path !== '/login') ? headerBgColor : '' }"
+      :class="!['/pms', '/fnb', '/', '/login'].includes(route.path) ? '' : 'bg-white'"
+      :style="{ background: !['/pms', '/fnb', '/', '/login'].includes(route.path) ? headerBgColor : '' }"
     >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start">
@@ -597,7 +657,7 @@ function toggleSidebar() {
       </div>
 
       <!-- Main Navigation (Center) -->
-      <nav v-if="route.path !== '/pms'" class="flex items-center gap-1.5">
+      <nav v-if="!['/pms', '/fnb', '/', '/login'].includes(route.path)" class="flex items-center gap-1.5">
         <div
           v-for="item in menuItems"
           :key="item.route"
@@ -621,17 +681,36 @@ function toggleSidebar() {
             <!-- Tip decoration arrow -->
             <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"></div>
             
-            <button
+            <div
               v-for="sub in item.dropdown"
               :key="sub.name"
-              @click="handleDropdownClick(sub)"
-              class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+              class="relative group/sub"
             >
-              <span>{{ sub.name }}</span>
-              <svg v-if="sub.hasChevron" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-            </button>
+              <button
+                @click="!sub.children && handleDropdownClick(sub)"
+                class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+              >
+                <span>{{ sub.name }}</span>
+                <svg v-if="sub.hasChevron || sub.children" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              
+              <!-- Nested Menu -->
+              <div
+                v-if="sub.children"
+                class="absolute top-0 left-full mt-0 w-72 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5 z-[101] opacity-0 invisible group-hover/sub:opacity-100 group-hover/sub:visible transition-all duration-150 transform translate-x-1 group-hover/sub:translate-x-0 text-slate-800"
+              >
+                <button
+                  v-for="child in sub.children"
+                  :key="child.name"
+                  @click="handleDropdownClick(child)"
+                  class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+                >
+                  <span>{{ child.name }}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </nav>
