@@ -5,12 +5,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import CompanyInfoTab from './components/CompanyInfoTab.vue'
 import BranchManageTab from './components/BranchManageTab.vue'
 import EmployeeTab from './components/EmployeeTab.vue'
+import ActivityLogTab from './components/ActivityLogTab.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 
-const activeTab = ref('company') // 'company', 'branch', 'employee'
+const activeTab = ref('company') // 'company', 'branch', 'employee', 'activity_log'
 const isDropdownOpen = ref(false)
 
 // Collapsible states for sidebar groups
@@ -195,6 +196,17 @@ onMounted(() => {
                 - Nhân viên
               </button>
 
+              <!-- Lịch sử thao tác -->
+              <button 
+                @click="selectTab('activity_log')"
+                class="w-full text-left px-4 py-2 border-none bg-transparent cursor-pointer transition-colors text-xs font-semibold"
+                :class="activeTab === 'activity_log' 
+                  ? 'bg-sky-100 text-sky-700 font-bold border-l-2 border-sky-500' 
+                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'"
+              >
+                - Lịch sử thao tác
+              </button>
+
               <!-- Tài khoản ngân hàng -->
               <button 
                 disabled
@@ -268,6 +280,7 @@ onMounted(() => {
           <CompanyInfoTab v-if="activeTab === 'company'" />
           <BranchManageTab v-else-if="activeTab === 'branch'" />
           <EmployeeTab v-else-if="activeTab === 'employee'" />
+          <ActivityLogTab v-else-if="activeTab === 'activity_log'" />
         </transition>
       </main>
     </div>

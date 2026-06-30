@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
+import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1071,8 +1072,9 @@ function toggleSidebar() {
     </div>
 
     <!-- Main Content Area -->
-    <main class="flex-1 min-h-0 min-w-0 overflow-hidden">
-      <slot />
+    <main class="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col bg-white">
+      <ActivityLogTab v-if="route.query.tab === 'history'" />
+      <slot v-else />
     </main>
   </div>
 </template>

@@ -109,5 +109,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update']);
     Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
     Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
+
+    // Activity Log routes
+    Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
+    Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
 });
 

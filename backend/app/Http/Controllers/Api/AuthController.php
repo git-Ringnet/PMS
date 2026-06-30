@@ -23,6 +23,8 @@ class AuthController extends Controller
         ]);
 
         if (!Auth::attempt($credentials)) {
+            $attemptedUser = User::where('username', $request->input('username'))->first();
+            \App\Services\ActivityLogService::logLogin($request, $attemptedUser, false);
             return response()->json([
                 'message' => 'Tên đăng nhập hoặc mật khẩu không chính xác.'
             ], 422);
@@ -30,6 +32,7 @@ class AuthController extends Controller
 
         $user = Auth::user();
         $token = $user->createToken('auth_token')->plainTextToken;
+        \App\Services\ActivityLogService::logLogin($request, $user, true);
 
         return response()->json([
             'token' => $token,
@@ -37,14 +40,14 @@ class AuthController extends Controller
         ]);
     }
 
-
-
     /**
      * Logout and revoke tokens.
      */
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        \App\Services\ActivityLogService::logLogout($request, $user);
+        $user->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Đăng xuất thành công.'
