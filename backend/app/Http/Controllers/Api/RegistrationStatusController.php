@@ -9,9 +9,13 @@ use Illuminate\Http\Request;
 
 class RegistrationStatusController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $statuses = RegistrationStatus::all();
+        $query = RegistrationStatus::query();
+        if ($request->has('is_availability')) {
+            $query->where('is_availability', filter_var($request->is_availability, FILTER_VALIDATE_BOOLEAN));
+        }
+        $statuses = $query->get();
         return response()->json([
             'success' => true,
             'data' => RegistrationStatusResource::collection($statuses)

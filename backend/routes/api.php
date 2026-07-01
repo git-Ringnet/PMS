@@ -68,6 +68,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/room-locks/bulk-unlock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUnlock']);
     Route::apiResource('room-locks', \App\Http\Controllers\Api\RoomLockController::class);
 
+    // Room availability grid
+    Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+
     // Company settings
     Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class);
     Route::apiResource('customer-sources', \App\Http\Controllers\Api\CustomerSourceController::class);
