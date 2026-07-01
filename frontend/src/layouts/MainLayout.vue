@@ -446,7 +446,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.company'), icon: 'building', tab: 'company', active: currentTab === 'company' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
       { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
     ]
   }
@@ -463,7 +463,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.dayClose'), icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
     ]
   }
   
@@ -478,7 +478,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.lockRoom'), icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
       { name: t('submenu.invoiceSearch'), icon: 'search', tab: 'invoice-search', active: currentTab === 'invoice-search' },
       { name: t('submenu.createMenu'), icon: 'settings', tab: 'create-menu', active: currentTab === 'create-menu' },
-      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
     ]
   }
@@ -490,7 +490,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.createReg'), icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
       { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
     ]
   }
   

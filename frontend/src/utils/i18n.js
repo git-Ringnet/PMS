@@ -98,7 +98,7 @@ const translations = {
       // table headers
       status: 'TTDK',
       lateIn: 'Nhận phòng trễ',
-      planMove: 'Chuyển phòng kế hoạch',
+      planMove: 'C.phòng kế hoạch',
       roomStatus: 'TT Phòng',
       extraBed: 'Thêm giường',
       splReq: 'Yêu cầu DB',
@@ -142,7 +142,7 @@ const translations = {
       changeStatusConfirm: 'Bạn có chắc chắn muốn chuyển phòng {room} sang trạng thái "{status}" không?',
       changeStatusSuccess: 'Đã đổi trạng thái phòng {room} sang "{status}" thành công!',
       changeStatusError: 'Không thể cập nhật trạng thái phòng. Vui lòng thử lại!',
-      
+
       // Sub-tabs specific text
       allotmentConfigTitle: 'Cấu hình phân bổ phòng (Allotment)',
       allotmentConfigDesc: 'Quản lý định mức bán phòng qua các đối tác OTA & lữ hành',
@@ -156,7 +156,7 @@ const translations = {
       allotmentOpen: 'Đang mở',
       allotmentSoldOut: 'Đã hết',
       allotmentRoomsUnit: 'phòng',
-      
+
       allotmentDetailTitle: 'Chi tiết phân bổ phòng (Allotment Details)',
       allotmentDetailDesc: 'Danh sách phòng phân bổ cụ thể theo ngày',
       allotmentIdCode: 'Mã Allotment',
@@ -166,7 +166,7 @@ const translations = {
       allotmentEndDate: 'Ngày kết thúc',
       allotmentUnlock: 'Mở khoá',
       allotmentLocked: 'Đã khóa',
-      
+
       allotmentReportTitle: 'Báo cáo phân bổ phòng Allotment',
       allotmentReportDesc: 'Báo cáo hiệu suất bán hàng qua các kênh đại lý',
       allotmentTotalRooms: 'Tổng số phòng Allotment',
@@ -176,7 +176,7 @@ const translations = {
       allotmentRevenueVal: 'Doanh thu Allotment',
       allotmentRevenueDesc: 'Thanh toán từ đại lý',
       allotmentChannelPerf: 'Hiệu suất bán theo kênh đại lý',
-      
+
       regReportTitle: 'Báo cáo đăng ký nhận phòng',
       regReportDesc: 'Thông số thống kê các lượt đăng ký phòng mới',
       regIdCode: 'Mã đăng ký',
@@ -187,7 +187,7 @@ const translations = {
       regStatus: 'Trạng thái',
       regActive: 'Hoạt động',
       regCompleted: 'Hoàn thành',
-      
+
       statReportTitle: 'Báo cáo thống kê hoạt động phòng',
       statReportDesc: 'Thống kê công suất phòng và các chỉ số vận hành',
       statAverageOccupancy: 'Công suất sử dụng trung bình',
@@ -198,7 +198,7 @@ const translations = {
       statOccupiedRooms: 'Phòng đang ở',
       statRepairRooms: 'Phòng sửa chữa',
       statEfficiency: 'Hiệu suất',
-      
+
       roomsReportTitle: 'Báo cáo hiện trạng phòng',
       roomsReportDesc: 'Thông tin chi tiết về số lượng phòng sạch/dơ, sửa chữa',
       roomsReportStatus: 'Trạng thái phòng',
@@ -213,7 +213,7 @@ const translations = {
       roomsDirtyVacantDesc: 'Cần dọn dẹp khẩn cấp',
       roomsMaintenance: 'Phòng Đang Bảo Trì (Maintenance)',
       roomsMaintenanceDesc: 'Khóa sửa chữa thiết bị kỹ thuật',
-      
+
       cancelReportTitle: 'Báo cáo hủy phòng đặt',
       cancelReportDesc: 'Danh sách các booking bị hủy hoặc xóa giao dịch',
       cancelIdCode: 'Mã hủy',
@@ -224,7 +224,7 @@ const translations = {
       cancelReason1: 'Thay đổi kế hoạch du lịch cá nhân',
       cancelReason2: 'Đặt nhầm ngày, đặt lại booking khác',
       cancelReason3: 'Lý do gia đình đột xuất',
-      
+
       channelManagerTitle: 'Báo cáo đăng ký Channel Manager',
       channelManagerDesc: 'Đồng bộ giá phòng và số lượng phòng trống lên các OTA',
       channelManagerSyncNow: 'Đồng bộ ngay',
@@ -236,7 +236,7 @@ const translations = {
       channelManagerMinsAgo: '{n} phút trước',
       channelManagerHourAgo: '{n} giờ trước',
       channelManagerReconnecting: 'Đang kết nối lại',
-      
+
       // Help Guide
       helpTitle: 'Trợ giúp',
       helpRoomStatuses: 'Trạng thái phòng',
@@ -403,7 +403,7 @@ const translations = {
       changeStatusConfirm: 'Are you sure you want to change room {room} status to "{status}"?',
       changeStatusSuccess: 'Room {room} status updated to "{status}" successfully!',
       changeStatusError: 'Failed to update room status. Please try again!',
-      
+
       allotmentConfigTitle: 'Room Allocation (Allotment) Configuration',
       allotmentConfigDesc: 'Manage room allotments for OTA & travel agencies',
       createNewAllotment: '+ Create New Allotment',
@@ -416,7 +416,7 @@ const translations = {
       allotmentOpen: 'Open',
       allotmentSoldOut: 'Sold Out',
       allotmentRoomsUnit: 'rooms',
-      
+
       allotmentDetailTitle: 'Room Allocation Details (Allotment Details)',
       allotmentDetailDesc: 'List of specific allocated rooms by date',
       allotmentIdCode: 'Allotment ID',
@@ -426,7 +426,7 @@ const translations = {
       allotmentEndDate: 'End Date',
       allotmentUnlock: 'Status',
       allotmentLocked: 'Locked',
-      
+
       allotmentReportTitle: 'Allotment Allocation Report',
       allotmentReportDesc: 'Sales performance report across agency channels',
       allotmentTotalRooms: 'Total Allotment Rooms',
@@ -436,7 +436,7 @@ const translations = {
       allotmentRevenueVal: 'Allotment Revenue',
       allotmentRevenueDesc: 'Payment from agencies',
       allotmentChannelPerf: 'Sales performance by agency channels',
-      
+
       regReportTitle: 'Check-in Registration Report',
       regReportDesc: 'Statistics of new room registration bookings',
       regIdCode: 'Reg Code',
@@ -447,7 +447,7 @@ const translations = {
       regStatus: 'Status',
       regActive: 'Active',
       regCompleted: 'Completed',
-      
+
       statReportTitle: 'Room Operation Statistics Report',
       statReportDesc: 'Statistics of room occupancy and operational indicators',
       statAverageOccupancy: 'Average Occupancy Rate',
@@ -458,7 +458,7 @@ const translations = {
       statOccupiedRooms: 'In-house Rooms',
       statRepairRooms: 'Out-of-Order Rooms',
       statEfficiency: 'Occupancy Rate',
-      
+
       roomsReportTitle: 'Current Room Status Report',
       roomsReportDesc: 'Detailed information about clean/dirty & repair rooms',
       roomsReportStatus: 'Room Status',
@@ -473,7 +473,7 @@ const translations = {
       roomsDirtyVacantDesc: 'Needs urgent cleaning',
       roomsMaintenance: 'Maintenance (OOO)',
       roomsMaintenanceDesc: 'Locked for technical repairs',
-      
+
       cancelReportTitle: 'Booking Cancellation Report',
       cancelReportDesc: 'List of bookings cancelled or deleted transactions',
       cancelIdCode: 'Cancel Code',
@@ -484,7 +484,7 @@ const translations = {
       cancelReason1: 'Change of personal travel plans',
       cancelReason2: 'Booked wrong dates, replaced booking',
       cancelReason3: 'Sudden family emergency',
-      
+
       channelManagerTitle: 'Channel Manager Registry Report',
       channelManagerDesc: 'Sync room rates and inventory to OTA channels',
       channelManagerSyncNow: 'Sync Now',
@@ -496,7 +496,7 @@ const translations = {
       channelManagerMinsAgo: '{n} mins ago',
       channelManagerHourAgo: '{n} hour ago',
       channelManagerReconnecting: 'Reconnecting',
-      
+
       // Help Guide
       helpTitle: 'Help Guide',
       helpRoomStatuses: 'Room Statuses',
@@ -540,12 +540,12 @@ export function t(key, params = {}) {
       return key
     }
   }
-  
+
   if (typeof result === 'string') {
     Object.keys(params).forEach(p => {
       result = result.replace(`{${p}}`, params[p])
     })
   }
-  
+
   return result
 }
