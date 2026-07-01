@@ -45,11 +45,11 @@ class RoomLockController extends Controller
         ]);
 
         // Deactivate previous active locks for this room
-        RoomLock::where('room_id', $validated['room_id'])->update(['is_active' => false]);
+        RoomLock::where('room_id', $validated['room_id'])->where('is_active', true)->update(['is_active' => false]);
 
         $validated['is_active'] = true;
         if (!isset($validated['username'])) {
-            $validated['username'] = 'NB0016';
+            $validated['username'] = $request->user()?->name ?? $request->user()?->username ?? 'NB0016';
         }
         if (!isset($validated['status'])) {
             $validated['status'] = 'New';
@@ -86,13 +86,13 @@ class RoomLockController extends Controller
         ]);
 
         $locksCreated = [];
-        $username = $validated['username'] ?? 'NB0016';
+        $username = $validated['username'] ?? $request->user()?->name ?? $request->user()?->username ?? 'NB0016';
         $status = $validated['status'] ?? 'New';
         $mPercent = $validated['maintenance_percent'] ?? 0;
 
         foreach ($validated['room_ids'] as $roomId) {
             // Deactivate previous active locks for this room
-            RoomLock::where('room_id', $roomId)->update(['is_active' => false]);
+            RoomLock::where('room_id', $roomId)->where('is_active', true)->update(['is_active' => false]);
 
             $lock = RoomLock::create([
                 'room_id' => $roomId,
@@ -131,7 +131,7 @@ class RoomLockController extends Controller
 
         foreach ($validated['room_ids'] as $roomId) {
             // Deactivate active locks
-            RoomLock::where('room_id', $roomId)->update(['is_active' => false]);
+            RoomLock::where('room_id', $roomId)->where('is_active', true)->update(['is_active' => false]);
 
             // Update room status to available
             Room::where('id', $roomId)->update(['status' => 'available']);
