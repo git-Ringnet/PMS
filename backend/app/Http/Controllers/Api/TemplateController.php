@@ -377,7 +377,7 @@ class TemplateController extends Controller
     /**
      * Preview the template using mock data.
      */
-    public function preview($id)
+    public function preview(Request $request, $id)
     {
         $template = Template::find($id);
         if (!$template) {
@@ -385,7 +385,7 @@ class TemplateController extends Controller
         }
 
         // Đọc template liên kết qua trường report nếu có
-        if ($template->report) {
+        if (!$request->has('content_html') && $template->report) {
             $linkedTemplate = Template::where('report', $template->report)->first();
             if ($linkedTemplate && $linkedTemplate->id !== $template->id) {
                 $template = $linkedTemplate;
@@ -395,17 +395,26 @@ class TemplateController extends Controller
         $renderer = app(TemplateRendererService::class);
         $mockData = $renderer->getMockData($template->group, $template->name);
         
+        $contentHtml = $request->input('content_html', $template->content_html ?? '');
+        $css = $request->input('css', $template->css ?? '');
+        $pageSize = $request->input('page_size', $template->page_size);
+        $pageOrientation = $request->input('page_orientation', $template->page_orientation);
+        $marginTop = $request->input('margin_top', $template->margin_top);
+        $marginBottom = $request->input('margin_bottom', $template->margin_bottom);
+        $marginLeft = $request->input('margin_left', $template->margin_left);
+        $marginRight = $request->input('margin_right', $template->margin_right);
+
         $html = $renderer->render(
-            $template->content_html ?? '', 
-            $template->css ?? '', 
+            $contentHtml, 
+            $css, 
             $mockData,
             [
-                'page_size' => $template->page_size,
-                'page_orientation' => $template->page_orientation,
-                'margin_top' => $template->margin_top,
-                'margin_bottom' => $template->margin_bottom,
-                'margin_left' => $template->margin_left,
-                'margin_right' => $template->margin_right,
+                'page_size' => $pageSize,
+                'page_orientation' => $pageOrientation,
+                'margin_top' => $marginTop,
+                'margin_bottom' => $marginBottom,
+                'margin_left' => $marginLeft,
+                'margin_right' => $marginRight,
             ]
         );
 

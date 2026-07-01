@@ -103,26 +103,23 @@ class RoomRateCodeController extends Controller
     public function saveDailyMappings(Request $request, $ma)
     {
         $request->validate([
-            'mappings' => 'required|array',
+            'mappings' => 'present|array',
             'mappings.*.Date' => 'required|date',
             'mappings.*.Code' => 'required|string',
         ]);
 
         DB::beginTransaction();
         try {
+            // Delete all existing daily mappings for this RateCode first
+            RoomRateDailyMapping::where('RateCode', $ma)->delete();
+
+            // Insert new daily mappings
             foreach ($request->mappings as $mapping) {
-                $existing = RoomRateDailyMapping::where('RateCode', $ma)
-                    ->where('Date', $mapping['Date'])
-                    ->first();
-                if ($existing) {
-                    $existing->update(['Code' => $mapping['Code']]);
-                } else {
-                    RoomRateDailyMapping::create([
-                        'RateCode' => $ma,
-                        'Date' => $mapping['Date'],
-                        'Code' => $mapping['Code']
-                    ]);
-                }
+                RoomRateDailyMapping::create([
+                    'RateCode' => $ma,
+                    'Date' => $mapping['Date'],
+                    'Code' => $mapping['Code']
+                ]);
             }
             DB::commit();
             return response()->json(['message' => 'Daily mappings saved']);
