@@ -71,17 +71,20 @@ const routes = [
   {
     path: '/fnb/party',
     name: 'party',
-    component: () => import('@/pages/fnb/PartyPage.vue')
+    component: () => import('@/pages/fnb/PartyPage.vue'),
+    meta: { title: 'PARTY - F&B' }
   },
   {
     path: '/fnb/search',
     name: 'search',
-    component: () => import('@/pages/fnb/SearchPage.vue')
+    component: () => import('@/pages/fnb/SearchPage.vue'),
+    meta: { title: 'Tìm kiếm đơn hàng - F&B' }
   },
   {
     path: '/fnb/other',
     name: 'fnb-other',
-    component: () => import('@/pages/fnb/OtherPages.vue')
+    component: () => import('@/pages/fnb/OtherPages.vue'),
+    meta: { title: 'Khác - F&B' }
   },
   {
     path: '/fnb/report',

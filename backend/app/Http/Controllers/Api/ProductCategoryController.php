@@ -10,7 +10,7 @@ class ProductCategoryController extends Controller
 {
     public function index()
     {
-        $categories = ProductCategory::with('products')->get();
+        $categories = ProductCategory::with(['products'])->get();
         return response()->json($categories);
     }
 

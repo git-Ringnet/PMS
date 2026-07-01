@@ -1,51 +1,82 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
+import { fetchOutlets } from "@/services/outlet-service";
 
 const router = useRouter();
 const isLoaded = ref(false);
+const activeOutlets = ref([]);
 
-const menuItems = [
-  {
-    name: "Nhà Hàng",
-    route: "/fnb/restaurant",
-    icon: "restaurant",
-    description: "Quản lý nhà hàng & khu vực ăn uống",
-  },
-  {
-    name: "PARTY",
-    route: "/fnb/party",
-    icon: "party",
-    description: "Quản lý sự kiện & tiệc",
-  },
-  {
-    name: "Tìm Kiếm Đơn Hàng",
-    route: "/fnb/search",
-    icon: "search",
-    description: "Tra cứu & tìm kiếm đơn hàng",
-  },
-  {
-    name: "Báo Cáo",
-    route: "/fnb/report",
-    icon: "chart",
-    description: "Thống kê doanh thu & báo cáo F&B",
-  },
-  {
-    name: "Khác",
-    route: "/fnb/other",
-    icon: "other",
-    description: "Các chức năng mở rộng khác",
-  },
-];
+const loadActiveOutlets = async () => {
+  try {
+    const res = await fetchOutlets();
+    activeOutlets.value = (res.data || []).filter(o => o.is_active);
+    updateMenuItems();
+  } catch (err) {
+    console.error("Lỗi khi tải danh sách outlet hoạt động:", err);
+  }
+};
+
+const menuItems = ref([]);
+
+const updateMenuItems = () => {
+  const items = [];
+  if (activeOutlets.value.length > 0) {
+    activeOutlets.value.forEach(outlet => {
+      items.push({
+        name: outlet.name,
+        route: `/fnb/restaurant?outlet_code=${outlet.code}`,
+        icon: "restaurant",
+        description: `Quản lý ${outlet.name}`,
+      });
+    });
+  }
+
+  items.push(
+    {
+      name: "PARTY",
+      route: "/fnb/party",
+      icon: "party",
+      description: "Quản lý sự kiện & tiệc",
+    },
+    {
+      name: "Tìm Kiếm Đơn Hàng",
+      route: "/fnb/search",
+      icon: "search",
+      description: "Tra cứu & tìm kiếm đơn hàng",
+    },
+    {
+      name: "Báo Cáo",
+      route: "/fnb/report",
+      icon: "chart",
+      description: "Thống kê doanh thu & báo cáo F&B",
+    },
+    {
+      name: "Khác",
+      route: "/fnb/other",
+      icon: "other",
+      description: "Các chức năng mở rộng khác",
+    },
+  );
+
+  menuItems.value = items;
+};
 
 function navigateTo(route) {
   router.push(route);
 }
 
-onMounted(() => {
+onMounted(async () => {
+  updateMenuItems();
+  await loadActiveOutlets();
+  window.addEventListener('outlet-updated', loadActiveOutlets);
   setTimeout(() => {
     isLoaded.value = true;
   }, 100);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('outlet-updated', loadActiveOutlets);
 });
 </script>
 
@@ -75,9 +106,11 @@ onMounted(() => {
               class="w-12 h-12 rounded-xl bg-white/15 flex items-center justify-center group-hover:bg-white/25 transition-all duration-300 group-hover:scale-110">
               
               <svg v-if="item.icon === 'restaurant'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
-                <path d="M7 2v20" />
-                <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+                <path d="M3 21h18" />
+                <path d="M3 7V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2" />
+                <path d="M5 21V7" />
+                <path d="M19 21V7" />
+                <path d="M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6" />
               </svg>
               
               <svg v-else-if="item.icon === 'party'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

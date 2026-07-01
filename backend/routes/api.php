@@ -116,5 +116,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update']);
     Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
     Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
+
+    Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
+    Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
+    Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
+    Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
+    Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
+    Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow']);
+    Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class);
+
+    // Dedicated F&B Menu definitions routes
+    Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive']);
+    Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class);
+    Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
 });
 

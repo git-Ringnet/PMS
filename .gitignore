@@ -32,3 +32,5 @@
 /backend/_ide_helper.php
 /backend/Homestead.json
 /backend/Homestead.yaml
+
+/old_database_struct
