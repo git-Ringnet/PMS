@@ -34,3 +34,6 @@
 /backend/Homestead.yaml
 
 /old_database_struct
+
+# Agent config files (không push lên GitHub)
+.agents/AGENTS.md

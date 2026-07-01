@@ -117,6 +117,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
     Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
 
+
     Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
     Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
     Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
@@ -129,5 +130,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive']);
     Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class);
     Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
+
+    // Activity Log routes
+    Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
+    Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
 });
 

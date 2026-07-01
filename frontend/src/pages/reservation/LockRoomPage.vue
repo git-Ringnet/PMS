@@ -10,24 +10,44 @@ const uiStore = useUiStore()
 const rooms = ref([])
 const loading = ref(false)
 const selectedRoomIds = ref([])
-const filterType = ref('all') // 'all' | 'unlocked' | 'locked'
-const editMode = ref(false)
-const editedLocks = ref({}) // map room_id -> lock details for inline editing
 
-// Floor expansion state
-const expandedFloors = ref([])
+// Filters
+const searchQuery = ref('')
+const statusFilter = ref('Tất cả trạng thái')
+const roomTypeFilter = ref('Tất cả loại phòng')
 
-// History Log panel state
+// Accordion collapsed state per floor
+const collapsedFloors = ref({})
+
+const isFloorCollapsed = (floor) => {
+  return !!collapsedFloors.value[floor]
+}
+
+const toggleFloor = (floor) => {
+  collapsedFloors.value[floor] = !collapsedFloors.value[floor]
+}
+
+// Pagination (mocked to 1 page)
+const currentPage = ref(1)
+const perPage = ref(15)
+
+// Dropdown row menu tracking
+const activeRowMenuId = ref(null)
+
+// History panel state
 const activeHistoryRoom = ref(null)
 const historyLogs = ref([])
 const loadingHistory = ref(false)
 
-// Bulk Lock Modal State
+// Lock Modal State
 const isBulkModalOpen = ref(false)
 const bulkLockType = ref('OOO') // 'OOO' | 'OOS'
+const editingLockId = ref(null) // null if creating, lock_id if editing
 const bulkForm = ref({
-  start_date: '2026-06-09', // Default start date to match screenshot date
-  end_date: '2026-06-09',   // Default end date
+  start_date: '',
+  start_time: '00:00',
+  end_date: '',
+  end_time: '23:59',
   reason: '',
   maintenance_percent: 0,
 })
@@ -37,20 +57,84 @@ const isRoomDropdownOpen = ref(false)
 const modalSelectedRoomIds = ref([])
 const roomSearchQuery = ref('')
 
-// Search states inside table headers
-const searchQueries = ref({
-  room_number: '',
-  room_form: '',
-  room_class: '',
-  start_date: '',
-  end_date: '',
+// Broadcast channel
+let bc = null
+
+const getTodayString = () => {
+  const d = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+  const parts = formatter.formatToParts(d)
+  const month = parts.find(p => p.type === 'month').value
+  const day = parts.find(p => p.type === 'day').value
+  const year = parts.find(p => p.type === 'year').value
+  return `${year}-${month}-${day}`
+}
+
+const getCurrentTimeHourMinute = () => {
+  const d = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+  const parts = formatter.formatToParts(d)
+  let hour = parts.find(p => p.type === 'hour').value
+  const minute = parts.find(p => p.type === 'minute').value
+  if (hour.length === 1) hour = '0' + hour
+  return `${hour}:${minute}`
+}
+
+const isEditingActiveLock = computed(() => {
+  if (!editingLockId.value) return false
+  const selectedRoom = rooms.value.find(r => r.lock_id === editingLockId.value)
+  if (!selectedRoom || !selectedRoom.lock_start_date) return false
+  
+  const now = new Date()
+  const startDate = new Date(selectedRoom.lock_start_date.replace(/-/g, '/'))
+  return startDate <= now
 })
 
-const isSearchRoomOpen = ref(false)
-const isSearchRoomFormOpen = ref(false)
-const isSearchRoomClassOpen = ref(false)
-const isSearchStartDateOpen = ref(false)
-const isSearchEndDateOpen = ref(false)
+onMounted(() => {
+  fetchRooms()
+  document.addEventListener('click', closeAllPopovers)
+  window.addEventListener('focus', handleTabFocus)
+  
+  if (typeof BroadcastChannel !== 'undefined') {
+    bc = new BroadcastChannel('pms-room-updates')
+    bc.onmessage = (event) => {
+      if (event.data === 'rooms-updated') {
+        fetchRooms()
+      }
+    }
+  }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeAllPopovers)
+  window.removeEventListener('focus', handleTabFocus)
+  if (bc) {
+    bc.close()
+  }
+})
+
+const handleTabFocus = () => {
+  fetchRooms()
+}
+
+const closeAllPopovers = (e) => {
+  if (!e.target.closest('.row-menu-container')) {
+    activeRowMenuId.value = null
+  }
+  if (isRoomDropdownOpen.value && !e.target.closest('.modal-room-dropdown-container')) {
+    isRoomDropdownOpen.value = false
+  }
+}
 
 // Fetch all rooms from API
 const fetchRooms = async () => {
@@ -78,47 +162,87 @@ const formatDateDisplay = (dateStr) => {
   return `${day}/${month}/${d.getFullYear()}`
 }
 
-// Floor Grouping logic
-const roomsByFloor = computed(() => {
-  const grouped = {}
-  
-  // First apply status filters & header search filters to the raw rooms list
+// Format date-time for timeline logs
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return ''
+  try {
+    const d = new Date(dateStr)
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: false
+    })
+    const parts = formatter.formatToParts(d)
+    const month = parts.find(p => p.type === 'month').value
+    const day = parts.find(p => p.type === 'day').value
+    const year = parts.find(p => p.type === 'year').value
+    let hour = parts.find(p => p.type === 'hour').value
+    const minute = parts.find(p => p.type === 'minute').value
+    if (hour.length === 1) hour = '0' + hour
+    return `${day}/${month}/${year} ${hour}:${minute}`
+  } catch (e) {
+    return dateStr
+  }
+}
+
+// Room Types dropdown populating
+const roomTypesList = computed(() => {
+  const types = rooms.value.map(r => r.room_type_name).filter(Boolean)
+  return ['Tất cả loại phòng', ...new Set(types)]
+})
+
+// Filtered rooms list
+const filteredRooms = computed(() => {
   let list = rooms.value
 
-  if (filterType.value === 'locked') {
-    list = list.filter(r => r.lock_type === 'OOO' || r.lock_type === 'OOS')
-  } else if (filterType.value === 'unlocked') {
-    list = list.filter(r => !r.lock_type)
-  }
-
-  // Apply column-level header searches
-  if (searchQueries.value.room_number) {
-    const q = searchQueries.value.room_number.toLowerCase()
+  // Search by room number
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
     list = list.filter(r => r.room_number && r.room_number.toLowerCase().includes(q))
   }
-  if (searchQueries.value.room_form) {
-    const q = searchQueries.value.room_form.toLowerCase()
-    list = list.filter(r => r.room_form?.name && r.room_form.name.toLowerCase().includes(q))
-  }
-  if (searchQueries.value.room_class) {
-    const q = searchQueries.value.room_class.toLowerCase()
-    list = list.filter(r => r.room_type_name && r.room_type_name.toLowerCase().includes(q))
-  }
-  if (searchQueries.value.start_date) {
-    const q = searchQueries.value.start_date
-    list = list.filter(r => r.lock_start_date && r.lock_start_date.includes(q))
-  }
-  if (searchQueries.value.end_date) {
-    const q = searchQueries.value.end_date
-    list = list.filter(r => r.lock_end_date && r.lock_end_date.includes(q))
+
+  // Status Filter
+  if (statusFilter.value === 'Sẵn sàng') {
+    list = list.filter(r => !r.lock_type)
+  } else if (statusFilter.value === 'Khóa OOO') {
+    list = list.filter(r => r.lock_type?.toUpperCase() === 'OOO')
+  } else if (statusFilter.value === 'Khóa OOS') {
+    list = list.filter(r => r.lock_type?.toUpperCase() === 'OOS')
   }
 
-  // Group rooms by floor
+  // Room Type Filter
+  if (roomTypeFilter.value !== 'Tất cả loại phòng') {
+    list = list.filter(r => r.room_type_name === roomTypeFilter.value)
+  }
+
+  return list
+})
+
+// Total pagination pages (mocked to 1 page)
+const totalPages = computed(() => {
+  return 1
+})
+
+// Paginated subset (returns all filtered rooms directly)
+const paginatedRooms = computed(() => {
+  return filteredRooms.value
+})
+
+// Floor grouping of paginated rooms
+const roomsByFloor = computed(() => {
+  const grouped = {}
+  const list = paginatedRooms.value
+
   list.forEach(room => {
-    if (!grouped[room.floor]) {
-      grouped[room.floor] = []
+    const fl = room.floor || 'Chưa rõ'
+    if (!grouped[fl]) {
+      grouped[fl] = []
     }
-    grouped[room.floor].push(room)
+    grouped[fl].push(room)
   })
 
   // Sort rooms within each floor by room number
@@ -131,68 +255,49 @@ const roomsByFloor = computed(() => {
 
 const sortedFloors = computed(() => {
   return Object.keys(roomsByFloor.value)
-    .map(Number)
-    .sort((a, b) => a - b)
+    .sort((a, b) => {
+      const numA = parseInt(a)
+      const numB = parseInt(b)
+      if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b)
+      return numA - numB
+    })
 })
 
-// Floor checkboxes select/deselect logic
-const isFloorAllSelected = (floor) => {
-  const floorRooms = roomsByFloor.value[floor] || []
-  if (floorRooms.length === 0) return false
-  return floorRooms.every(r => selectedRoomIds.value.includes(r.id))
-}
+// Master checkbox status
+const isAllSelected = computed(() => {
+  return paginatedRooms.value.length > 0 && paginatedRooms.value.every(r => selectedRoomIds.value.includes(r.id))
+})
 
-const toggleSelectFloor = (floor, event) => {
-  const floorRooms = roomsByFloor.value[floor] || []
-  const floorRoomIds = floorRooms.map(r => r.id)
-  
+const toggleSelectAll = (event) => {
   if (event.target.checked) {
-    floorRoomIds.forEach(id => {
+    const visibleIds = paginatedRooms.value.map(r => r.id)
+    visibleIds.forEach(id => {
       if (!selectedRoomIds.value.includes(id)) {
         selectedRoomIds.value.push(id)
       }
     })
   } else {
-    selectedRoomIds.value = selectedRoomIds.value.filter(id => !floorRoomIds.includes(id))
+    const visibleIds = paginatedRooms.value.map(r => r.id)
+    selectedRoomIds.value = selectedRoomIds.value.filter(id => !visibleIds.includes(id))
   }
 }
 
-// Toggle floor expanded list
-const toggleFloorExpanded = (floor) => {
-  const idx = expandedFloors.value.indexOf(floor)
-  if (idx > -1) {
-    expandedFloors.value.splice(idx, 1)
-  } else {
-    expandedFloors.value.push(floor)
-  }
+// Maintenance status helpers
+const getMaintenanceStatusLabel = (room) => {
+  if (!room.lock_type) return '-'
+  const pct = room.lock_maintenance_percent ?? 0
+  if (pct === 100) return 'Hoàn tất'
+  return 'Đang xử lý'
 }
 
-const isFloorExpanded = (floor) => {
-  return expandedFloors.value.includes(floor)
+const getMaintenanceStatusClass = (room) => {
+  if (!room.lock_type) return 'text-slate-400 font-normal'
+  const pct = room.lock_maintenance_percent ?? 0
+  if (pct === 100) return 'text-green-600 font-bold'
+  return 'text-sky-600 font-bold'
 }
 
-// Master toggle check all visible floors and rooms
-const isAllSelected = computed(() => {
-  const allVisibleRoomIds = []
-  Object.values(roomsByFloor.value).forEach(floorRooms => {
-    floorRooms.forEach(r => allVisibleRoomIds.push(r.id))
-  })
-  return allVisibleRoomIds.length > 0 && allVisibleRoomIds.every(id => selectedRoomIds.value.includes(id))
-})
-
-const toggleSelectAll = (event) => {
-  if (event.target.checked) {
-    const allVisibleRoomIds = []
-    Object.values(roomsByFloor.value).forEach(floorRooms => {
-      floorRooms.forEach(r => allVisibleRoomIds.push(r.id))
-    })
-    selectedRoomIds.value = allVisibleRoomIds
-  } else {
-    selectedRoomIds.value = []
-  }
-}
-
-// History Log panel loader
+// History loading & timeline transformation
 const showHistory = async (room) => {
   activeHistoryRoom.value = room
   loadingHistory.value = true
@@ -210,65 +315,64 @@ const showHistory = async (room) => {
   }
 }
 
-// Bulk action triggers
-const openBulkLockModal = (type) => {
-  bulkLockType.value = type
-  bulkForm.value.reason = ''
-  bulkForm.value.maintenance_percent = 0
+const timelineEvents = computed(() => {
+  const events = []
+  historyLogs.value.forEach(log => {
+    // 1. Lock event
+    events.push({
+      id: `lock-${log.id}`,
+      timestamp: log.created_at,
+      type: 'lock',
+      lock_type: log.lock_type,
+      start_date: log.start_date,
+      end_date: log.end_date,
+      reason: log.reason,
+      username: log.username,
+      maintenance_percent: log.maintenance_percent,
+      is_active: log.is_active
+    })
+    
+    // 2. Unlock event (if closed)
+    if (!log.is_active) {
+      events.push({
+        id: `unlock-${log.id}`,
+        timestamp: log.updated_at,
+        type: 'unlock',
+        username: log.username
+      })
+    }
+  })
   
-  // Initialize modalSelectedRoomIds with selected room IDs
-  modalSelectedRoomIds.value = [...selectedRoomIds.value]
-  isRoomDropdownOpen.value = false
-  roomSearchQuery.value = ''
-  isBulkModalOpen.value = true
+  // Sort descending by timestamp
+  return events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+})
+
+const getTimelineDotColor = (event) => {
+  if (event.type === 'unlock') return '#10b981' // green
+  if (event.lock_type?.toUpperCase() === 'OOO') return '#ef4444' // red
+  if (event.lock_type?.toUpperCase() === 'OOS') return '#f97316' // orange
+  return '#64748b' // slate
 }
 
-const submitBulkLock = async () => {
-  if (modalSelectedRoomIds.value.length === 0) {
-    uiStore.showToast('Vui lòng chọn ít nhất một phòng cần khóa!', 'warning')
-    return
-  }
-  
-  if (!bulkForm.value.reason.trim()) {
-    uiStore.showToast('Vui lòng nhập lý do khóa phòng ở ô Ghi chú!', 'warning')
-    return
-  }
-
-  try {
-    const payload = {
-      room_ids: modalSelectedRoomIds.value,
-      start_date: bulkForm.value.start_date,
-      end_date: bulkForm.value.end_date,
-      reason: bulkForm.value.reason,
-      maintenance_percent: bulkForm.value.maintenance_percent,
-      lock_type: bulkLockType.value,
-    }
-
-    const res = await http.post('/room-locks/bulk-lock', payload)
-    if (res.data && res.data.success) {
-      uiStore.showToast(`Đã khóa thành công ${modalSelectedRoomIds.value.length} phòng dạng ${bulkLockType.value}!`, 'success')
-      isBulkModalOpen.value = false
-      selectedRoomIds.value = []
-      fetchRooms()
-      if (bc) {
-        bc.postMessage('rooms-updated')
-      }
-    }
-  } catch (err) {
-    console.error('Lỗi khóa phòng hàng loạt:', err)
-    uiStore.showToast('Không thể khóa phòng. Vui lòng kiểm tra lại.', 'error')
-  }
-}
-
+const getTimelineEventLabel = (event) => {
+  if (event.type === 'unlock') return 'Mở khóa phòng'
+  if (event.lock_type?.toUpperCase() === 'OOO') return 'Khóa phòng OOO'
+  if (event.lock_type?.toUpperCase() === 'OOS') return 'Khóa phòng OOS'
+  return 'Khóa phòng'
+}// Bulk Unlock action
 const submitBulkUnlock = async () => {
   if (selectedRoomIds.value.length === 0) {
     uiStore.showToast('Vui lòng chọn ít nhất một phòng cần mở khóa!', 'warning')
     return
   }
 
-  if (!confirm(`Bạn có chắc chắn muốn mở khóa cho ${selectedRoomIds.value.length} phòng đã chọn?`)) {
-    return
-  }
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận mở khóa',
+    message: `Bạn có chắc chắn muốn mở khóa cho ${selectedRoomIds.value.length} phòng đã chọn?`,
+    confirmText: 'Mở khóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
 
   try {
     const res = await http.post('/room-locks/bulk-unlock', { room_ids: selectedRoomIds.value })
@@ -279,76 +383,95 @@ const submitBulkUnlock = async () => {
       if (activeHistoryRoom.value) {
         showHistory(activeHistoryRoom.value)
       }
-      if (bc) {
-        bc.postMessage('rooms-updated')
-      }
+      if (bc) bc.postMessage('rooms-updated')
     }
   } catch (err) {
     console.error('Lỗi mở khóa phòng:', err)
-    uiStore.showToast('Không thể mở khóa phòng', 'error')
+    const errMsg = err.response?.data?.message || 'Không thể mở khóa phòng'
+    uiStore.showToast(errMsg, 'error')
   }
 }
 
-// Inline edit mode triggers
-const enableEditMode = () => {
-  if (selectedRoomIds.value.length === 0) {
-    uiStore.showToast('Vui lòng chọn các phòng bạn muốn sửa trực tiếp trên bảng trước!', 'warning')
-    return
-  }
-
-  editMode.value = true
-  selectedRoomIds.value.forEach(id => {
-    const room = rooms.value.find(r => r.id === id)
-    if (room) {
-      editedLocks.value[id] = {
-        start_date: room.lock_start_date || '2026-06-09',
-        end_date: room.lock_end_date || '2026-06-09',
-        reason: room.lock_reason || '',
-        maintenance_percent: room.lock_maintenance_percent || 0,
-        lock_type: room.lock_type || 'OOS',
-      }
-    }
+// Single Unlock action from ⋮ menu
+const submitSingleUnlock = async (room) => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận mở khóa',
+    message: `Bạn có chắc chắn muốn mở khóa cho phòng ${room.room_number}?`,
+    confirmText: 'Mở khóa',
+    cancelText: 'Hủy'
   })
-}
+  if (!confirmed) return
 
-const saveInlineEdits = async () => {
-  loading.value = true
   try {
-    const promises = selectedRoomIds.value.map(id => {
-      const data = editedLocks.value[id]
-      return http.post('/room-locks/bulk-lock', {
-        room_ids: [id],
-        start_date: data.start_date,
-        end_date: data.end_date,
-        reason: data.reason,
-        maintenance_percent: data.maintenance_percent,
-        lock_type: data.lock_type,
-      })
-    })
-
-    await Promise.all(promises)
-    uiStore.showToast('Lưu thông tin khóa phòng thành công!', 'success')
-    editMode.value = false
-    editedLocks.value = {}
-    selectedRoomIds.value = []
-    fetchRooms()
-    if (bc) {
-      bc.postMessage('rooms-updated')
+    const res = await http.post('/room-locks/bulk-unlock', { room_ids: [room.id] })
+    if (res.data && res.data.success) {
+      uiStore.showToast(`Đã mở khóa thành công phòng ${room.room_number}!`, 'success')
+      selectedRoomIds.value = selectedRoomIds.value.filter(id => id !== room.id)
+      fetchRooms()
+      if (activeHistoryRoom.value && activeHistoryRoom.value.id === room.id) {
+        showHistory(room)
+      }
+      if (bc) bc.postMessage('rooms-updated')
     }
   } catch (err) {
-    console.error('Lỗi khi lưu thông tin chỉnh sửa:', err)
-    uiStore.showToast('Có lỗi xảy ra khi lưu thông tin chỉnh sửa', 'error')
-  } finally {
-    loading.value = false
+    console.error('Lỗi mở khóa phòng:', err)
+    const errMsg = err.response?.data?.message || 'Không thể mở khóa phòng'
+    uiStore.showToast(errMsg, 'error')
   }
 }
 
-const cancelInlineEdits = () => {
-  editMode.value = false
-  editedLocks.value = {}
+// Modals Openers
+const openBulkLockModal = (type) => {
+  editingLockId.value = null
+  bulkLockType.value = type
+  bulkForm.value.start_date = getTodayString()
+  bulkForm.value.start_time = getCurrentTimeHourMinute()
+  bulkForm.value.end_date = getTodayString()
+  bulkForm.value.end_time = '23:59'
+  bulkForm.value.reason = ''
+  bulkForm.value.maintenance_percent = 0
+  modalSelectedRoomIds.value = [...selectedRoomIds.value]
+  isRoomDropdownOpen.value = false
+  roomSearchQuery.value = ''
+  isBulkModalOpen.value = true
 }
 
-// Modal room dropdown checklist logic
+const openSingleLockModal = (room, type) => {
+  editingLockId.value = null
+  bulkLockType.value = type
+  bulkForm.value.start_date = getTodayString()
+  bulkForm.value.start_time = getCurrentTimeHourMinute()
+  bulkForm.value.end_date = getTodayString()
+  bulkForm.value.end_time = '23:59'
+  bulkForm.value.reason = ''
+  bulkForm.value.maintenance_percent = 0
+  modalSelectedRoomIds.value = [room.id]
+  isRoomDropdownOpen.value = false
+  roomSearchQuery.value = ''
+  isBulkModalOpen.value = true
+}
+
+const openEditLockModal = (room) => {
+  editingLockId.value = room.lock_id
+  bulkLockType.value = room.lock_type || 'OOS'
+  
+  const startParts = room.lock_start_date ? room.lock_start_date.split(' ') : []
+  const endParts = room.lock_end_date ? room.lock_end_date.split(' ') : []
+  
+  bulkForm.value.start_date = startParts[0] || getTodayString()
+  bulkForm.value.start_time = startParts[1] ? startParts[1].substring(0, 5) : '00:00'
+  bulkForm.value.end_date = endParts[0] || getTodayString()
+  bulkForm.value.end_time = endParts[1] ? endParts[1].substring(0, 5) : '23:59'
+  
+  bulkForm.value.reason = room.lock_reason || ''
+  bulkForm.value.maintenance_percent = room.lock_maintenance_percent || 0
+  modalSelectedRoomIds.value = [room.id]
+  isRoomDropdownOpen.value = false
+  roomSearchQuery.value = ''
+  isBulkModalOpen.value = true
+}
+
+// Modal select room helper
 const modalFilteredRooms = computed(() => {
   if (!roomSearchQuery.value) return rooms.value
   const q = roomSearchQuery.value.toLowerCase()
@@ -370,164 +493,164 @@ const toggleSelectAllModalRooms = (event) => {
   }
 }
 
-const applyModalRoomSelection = () => {
-  isRoomDropdownOpen.value = false
-}
-
-const closeAllPopovers = (e) => {
-  if (!e.target.closest('.popover-container')) {
-    isSearchRoomOpen.value = false
-    isSearchRoomFormOpen.value = false
-    isSearchRoomClassOpen.value = false
-    isSearchStartDateOpen.value = false
-    isSearchEndDateOpen.value = false
+// Modal Submit
+const submitBulkLock = async (force = false) => {
+  if (modalSelectedRoomIds.value.length === 0) {
+    uiStore.showToast('Vui lòng chọn ít nhất một phòng!', 'warning')
+    return
   }
-  if (isRoomDropdownOpen.value && !e.target.closest('.modal-room-dropdown-container')) {
-    isRoomDropdownOpen.value = false
-  }
-}
-
-let bc = null
-
-const handleTabFocus = () => {
-  fetchRooms()
-}
-
-onMounted(() => {
-  fetchRooms()
-  document.addEventListener('click', closeAllPopovers)
-  window.addEventListener('focus', handleTabFocus)
   
-  if (typeof BroadcastChannel !== 'undefined') {
-    bc = new BroadcastChannel('pms-room-updates')
-    bc.onmessage = (event) => {
-      if (event.data === 'rooms-updated') {
+  if (!bulkForm.value.reason.trim()) {
+    uiStore.showToast('Vui lòng nhập lý do khóa phòng ở ô Ghi chú!', 'warning')
+    return
+  }
+
+  try {
+    const payload = {
+      start_date: `${bulkForm.value.start_date} ${bulkForm.value.start_time || '00:00'}:00`,
+      end_date: `${bulkForm.value.end_date} ${bulkForm.value.end_time || '23:59'}:00`,
+      reason: bulkForm.value.reason,
+      maintenance_percent: parseInt(bulkForm.value.maintenance_percent) || 0,
+      lock_type: bulkLockType.value,
+      force: force,
+    }
+
+    if (editingLockId.value) {
+      payload.is_active = true
+      const res = await http.put(`/room-locks/${editingLockId.value}`, payload)
+      if (res.data && res.data.success) {
+        uiStore.showToast('Cập nhật thông tin khóa phòng thành công!', 'success')
+        isBulkModalOpen.value = false
+        selectedRoomIds.value = []
         fetchRooms()
+        if (activeHistoryRoom.value && activeHistoryRoom.value.id === modalSelectedRoomIds.value[0]) {
+          showHistory(activeHistoryRoom.value)
+        }
+        if (bc) bc.postMessage('rooms-updated')
+      }
+    } else {
+      payload.room_ids = modalSelectedRoomIds.value
+      const res = await http.post('/room-locks/bulk-lock', payload)
+      if (res.data && res.data.success) {
+        uiStore.showToast(`Đã khóa thành công ${modalSelectedRoomIds.value.length} phòng dạng ${bulkLockType.value}!`, 'success')
+        isBulkModalOpen.value = false
+        selectedRoomIds.value = []
+        fetchRooms()
+        if (bc) bc.postMessage('rooms-updated')
       }
     }
+  } catch (err) {
+    console.error('Lỗi khi lưu khóa phòng:', err)
+    
+    // Check if it is a confirmation request for booking overlap
+    if (err.response && err.response.data && err.response.data.require_confirm) {
+      const confirmed = await uiStore.confirm({
+        title: 'Xác nhận đè lịch đặt phòng',
+        message: err.response.data.message,
+        confirmText: 'Đồng ý khóa',
+        cancelText: 'Hủy'
+      })
+      if (confirmed) {
+        await submitBulkLock(true)
+      }
+    } else {
+      const errMsg = err.response?.data?.message || 'Không thể lưu thông tin khóa phòng'
+      uiStore.showToast(errMsg, 'error')
+    }
   }
-})
+}
+// Toggle active row menu
+const toggleRowMenu = (roomId, event) => {
+  if (activeRowMenuId.value === roomId) {
+    activeRowMenuId.value = null
+  } else {
+    activeRowMenuId.value = roomId
+  }
+}
 
-onBeforeUnmount(() => {
-  document.removeEventListener('click', closeAllPopovers)
-  window.removeEventListener('focus', handleTabFocus)
-  if (bc) {
-    bc.close()
-  }
-})
 </script>
 
 <template>
-  <div class="h-full flex flex-col gap-4 overflow-hidden text-xs text-slate-800">
+  <div class="h-full flex gap-4 overflow-hidden text-xs text-slate-800 p-1">
     
-    <!-- MAIN WORK AREA CARD -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[350px] flex-1">
+    <!-- LEFT SIDE: TABLE & CONTROLS -->
+    <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden flex flex-col min-h-[350px]">
       
-      <!-- Top Title Bar -->
-      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between shrink-0">
-        <h3 class="text-sm font-black text-slate-800 uppercase tracking-wider">Phòng</h3>
-      </div>
-
-      <!-- Action Toolbar (Matches screenshot) -->
-      <div class="p-3 border-b border-slate-100 flex items-center gap-2 bg-white shrink-0 flex-wrap select-none justify-between">
+      <!-- Top Filters & Actions Bar -->
+      <div class="p-3 border-b border-slate-100 flex items-center gap-3 bg-white shrink-0 flex-wrap justify-between">
         
-        <!-- Action Badges (Left) -->
+        <!-- Left Filter Inputs -->
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <!-- Search input -->
+          <div class="relative flex items-center border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors w-[190px] h-[32px]">
+            <svg class="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input 
+              v-model="searchQuery" 
+              type="text" 
+              placeholder="Tìm kiếm số phòng..." 
+              class="border-none bg-transparent w-full focus:outline-none text-xs font-semibold text-slate-700 placeholder:text-slate-400 placeholder:font-normal"
+            />
+          </div>
+
+          <!-- Status Dropdown -->
+          <select 
+            v-model="statusFilter"
+            class="border border-slate-200 rounded-lg px-3 py-1 bg-slate-50/50 hover:bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-sky-400 cursor-pointer h-[32px] min-w-[140px]"
+          >
+            <option value="Tất cả trạng thái">Tất cả trạng thái</option>
+            <option value="Sẵn sàng">Sẵn sàng</option>
+            <option value="Khóa OOO">Khóa OOO</option>
+            <option value="Khóa OOS">Khóa OOS</option>
+          </select>
+
+          <!-- Room Type Dropdown -->
+          <select 
+            v-model="roomTypeFilter"
+            class="border border-slate-200 rounded-lg px-3 py-1 bg-slate-50/50 hover:bg-slate-50 text-xs font-semibold text-slate-700 focus:outline-sky-400 cursor-pointer h-[32px] min-w-[160px]"
+          >
+            <option v-for="t in roomTypesList" :key="t" :value="t">{{ t }}</option>
+          </select>
+        </div>
+
+        <!-- Right Bulk Action Buttons -->
         <div class="flex items-center gap-2">
-          <!-- Button OOO (Padlock Blue Style) -->
-          <button 
-            @click="openBulkLockModal('OOO')"
-            :disabled="editMode"
-            class="px-3 py-1.5 bg-[#8dcbf4]/20 hover:bg-[#8dcbf4]/35 text-[#0369a1] border border-[#8dcbf4]/40 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-          >
-            <RoomIcon name="ooo-outline" class="w-3.5 h-3.5" />
-            Phòng OOO
-          </button>
-
-          <!-- Button OOS (Padlock Blue Style) -->
-          <button 
-            @click="openBulkLockModal('OOS')"
-            :disabled="editMode"
-            class="px-3 py-1.5 bg-[#8dcbf4]/20 hover:bg-[#8dcbf4]/35 text-[#0369a1] border border-[#8dcbf4]/40 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-          >
-            <RoomIcon name="oos" class="w-3.5 h-3.5" />
-            Phòng OOS
-          </button>
-
-          <!-- Button Mở khóa (Gray Style) -->
+          <!-- Unlock -->
           <button 
             @click="submitBulkUnlock"
-            :disabled="editMode"
-            class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs"
           >
-            <RoomIcon name="unlock-outline" class="w-3.5 h-3.5" />
+            <RoomIcon name="unlock-outline" class="w-3.5 h-3.5 text-emerald-600" />
             Mở khóa
           </button>
 
-          <!-- Filter segment toggle tab -->
-          <div class="flex border border-slate-200 rounded-lg overflow-hidden ml-2 shadow-xs bg-slate-50">
-            <button 
-              @click="filterType = 'all'"
-              class="px-3.5 py-1.5 font-bold transition-all border-none cursor-pointer text-xs"
-              :class="filterType === 'all' ? 'bg-[#bdecfe] text-[#0369a1]' : 'bg-white text-slate-600 hover:bg-slate-100'"
-            >
-              Tất cả
-            </button>
-            <button 
-              @click="filterType = 'unlocked'"
-              class="px-3.5 py-1.5 font-bold transition-all border-none border-l border-slate-200 cursor-pointer text-xs"
-              :class="filterType === 'unlocked' ? 'bg-[#bdecfe] text-[#0369a1]' : 'bg-white text-slate-600 hover:bg-slate-100'"
-            >
-              Chưa khóa
-            </button>
-            <button 
-              @click="filterType = 'locked'"
-              class="px-3.5 py-1.5 font-bold transition-all border-none border-l border-slate-200 cursor-pointer text-xs"
-              :class="filterType === 'locked' ? 'bg-[#bdecfe] text-[#0369a1]' : 'bg-white text-slate-600 hover:bg-slate-100'"
-            >
-              Khóa
-            </button>
-          </div>
-        </div>
-
-        <!-- Inline Edit Action Buttons (Right) -->
-        <div class="flex items-center gap-2">
+          <!-- Lock OOS -->
           <button 
-            v-if="!editMode"
-            @click="enableEditMode"
-            class="px-3.5 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-700 border border-sky-200 rounded-lg font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1.5 text-xs"
+            @click="openBulkLockModal('OOS')"
+            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs"
           >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.83 20.013a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-            </svg>
-            Sửa
+            <RoomIcon name="oos" class="w-3.5 h-3.5 text-white" />
+            Khóa phòng OOS
           </button>
-          <template v-else>
-            <button 
-              @click="saveInlineEdits"
-              class="px-3.5 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold transition-colors shadow-sm cursor-pointer border-none flex items-center gap-1.5 text-xs"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-              Lưu
-            </button>
-            <button 
-              @click="cancelInlineEdits"
-              class="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold transition-colors cursor-pointer border-none text-xs"
-            >
-              Hủy
-            </button>
-          </template>
-        </div>
 
+          <!-- Lock OOO -->
+          <button 
+            @click="openBulkLockModal('OOO')"
+            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs"
+          >
+            <RoomIcon name="ooo-outline" class="w-3.5 h-3.5 text-white" />
+            Khóa phòng OOO
+          </button>
+        </div>
       </div>
 
-      <!-- Main Room Lock List Table with Floor Grouping -->
+      <!-- Table Body Area -->
       <div class="flex-1 overflow-x-auto overflow-y-auto min-h-[200px]">
-        <table class="w-full text-left border-collapse text-xs select-none">
+        <table class="w-full text-left border-collapse text-xs">
           <thead>
-            <tr class="bg-slate-100 border-b border-slate-200 text-slate-650 font-bold select-none h-9 whitespace-nowrap sticky top-0 z-10">
-              <th class="p-2 border-r border-slate-200 text-center select-none" style="width: 45px; min-width: 45px; max-width: 45px;">
+            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold h-10 whitespace-nowrap sticky top-0 z-10 uppercase text-xs">
+              <th class="p-2.5 border-r border-slate-200 text-center w-[45px]">
                 <input 
                   type="checkbox" 
                   @change="toggleSelectAll" 
@@ -535,474 +658,340 @@ onBeforeUnmount(() => {
                   class="cursor-pointer w-4 h-4" 
                 />
               </th>
-              <th class="p-2 border-r border-slate-200 text-center w-[75px]">STT</th>
-              <th class="p-2 border-r border-slate-200 w-[100px] text-center relative popover-container select-none">
-                <div class="flex items-center justify-between gap-1.5">
-                  <span>Phòng</span>
-                  <button 
-                    @click.stop="isSearchRoomOpen = !isSearchRoomOpen; isSearchStartDateOpen = false; isSearchEndDateOpen = false" 
-                    class="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-655 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
-                    :class="{'text-sky-500 bg-sky-50 hover:bg-sky-100': searchQueries.room_number}"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                </div>
-                <!-- Search Popover -->
-                <div v-if="isSearchRoomOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] normal-case font-normal text-slate-700">
-                  <div class="relative flex items-center">
-                    <input 
-                      v-model="searchQueries.room_number" 
-                      type="text" 
-                      placeholder="Tìm số phòng..." 
-                      class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-slate-700 bg-white" 
-                      @click.stop
-                    />
-                    <button 
-                      v-if="searchQueries.room_number" 
-                      @click.stop="searchQueries.room_number = ''" 
-                      class="absolute right-2 text-slate-400 hover:text-slate-655 bg-transparent border-none cursor-pointer text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </th>
-              
-              <!-- Dạng phòng -->
-              <th class="p-2 border-r border-slate-200 w-[115px] text-center relative popover-container select-none">
-                <div class="flex items-center justify-between gap-1.5">
-                  <span>Dạng phòng</span>
-                  <button 
-                    @click.stop="isSearchRoomFormOpen = !isSearchRoomFormOpen; isSearchRoomOpen = false; isSearchRoomClassOpen = false; isSearchStartDateOpen = false; isSearchEndDateOpen = false" 
-                    class="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-655 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
-                    :class="{'text-sky-500 bg-sky-50 hover:bg-sky-100': searchQueries.room_form}"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                </div>
-                <!-- Search Popover -->
-                <div v-if="isSearchRoomFormOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] normal-case font-normal text-slate-700">
-                  <div class="relative flex items-center">
-                    <input 
-                      v-model="searchQueries.room_form" 
-                      type="text" 
-                      placeholder="Tìm dạng phòng..." 
-                      class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-slate-700 bg-white" 
-                      @click.stop
-                    />
-                    <button 
-                      v-if="searchQueries.room_form" 
-                      @click.stop="searchQueries.room_form = ''" 
-                      class="absolute right-2 text-slate-400 hover:text-slate-655 bg-transparent border-none cursor-pointer text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </th>
-
-              <!-- Loại phòng -->
-              <th class="p-2 border-r border-slate-200 w-[170px] text-center relative popover-container select-none">
-                <div class="flex items-center justify-between gap-1.5">
-                  <span>Loại phòng</span>
-                  <button 
-                    @click.stop="isSearchRoomClassOpen = !isSearchRoomClassOpen; isSearchRoomOpen = false; isSearchRoomFormOpen = false; isSearchStartDateOpen = false; isSearchEndDateOpen = false" 
-                    class="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-655 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
-                    :class="{'text-sky-500 bg-sky-50 hover:bg-sky-100': searchQueries.room_class}"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                </div>
-                <!-- Search Popover -->
-                <div v-if="isSearchRoomClassOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] normal-case font-normal text-slate-700">
-                  <div class="relative flex items-center">
-                    <input 
-                      v-model="searchQueries.room_class" 
-                      type="text" 
-                      placeholder="Tìm loại phòng..." 
-                      class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-slate-700 bg-white" 
-                      @click.stop
-                    />
-                    <button 
-                      v-if="searchQueries.room_class" 
-                      @click.stop="searchQueries.room_class = ''" 
-                      class="absolute right-2 text-slate-400 hover:text-slate-655 bg-transparent border-none cursor-pointer text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </th>
-
-              <!-- Ngày bắt đầu with search icon -->
-              <th class="p-2 border-r border-slate-200 w-[125px] text-center relative popover-container select-none">
-                <div class="flex items-center justify-between gap-1.5">
-                  <span>Ngày bắt đầu</span>
-                  <button 
-                    @click.stop="isSearchStartDateOpen = !isSearchStartDateOpen; isSearchRoomOpen = false; isSearchEndDateOpen = false" 
-                    class="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-655 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
-                    :class="{'text-sky-500 bg-sky-50 hover:bg-sky-100': searchQueries.start_date}"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                </div>
-                <!-- Search Popover -->
-                <div v-if="isSearchStartDateOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] normal-case font-normal text-slate-700">
-                  <div class="relative flex items-center">
-                    <input 
-                      v-model="searchQueries.start_date" 
-                      type="date" 
-                      class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-slate-700 bg-white" 
-                      @click.stop
-                    />
-                    <button 
-                      v-if="searchQueries.start_date" 
-                      @click.stop="searchQueries.start_date = ''" 
-                      class="absolute right-2 text-slate-400 hover:text-slate-655 bg-transparent border-none cursor-pointer text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </th>
-
-              <!-- Ngày kết thúc with search icon -->
-              <th class="p-2 border-r border-slate-200 w-[125px] text-center relative popover-container select-none">
-                <div class="flex items-center justify-between gap-1.5">
-                  <span>Ngày kết thúc</span>
-                  <button 
-                    @click.stop="isSearchEndDateOpen = !isSearchEndDateOpen; isSearchRoomOpen = false; isSearchStartDateOpen = false" 
-                    class="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-655 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
-                    :class="{'text-sky-500 bg-sky-50 hover:bg-sky-100': searchQueries.end_date}"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                </div>
-                <!-- Search Popover -->
-                <div v-if="isSearchEndDateOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] normal-case font-normal text-slate-700">
-                  <div class="relative flex items-center">
-                    <input 
-                      v-model="searchQueries.end_date" 
-                      type="date" 
-                      class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-slate-700 bg-white" 
-                      @click.stop
-                    />
-                    <button 
-                      v-if="searchQueries.end_date" 
-                      @click.stop="searchQueries.end_date = ''" 
-                      class="absolute right-2 text-slate-400 hover:text-slate-655 bg-transparent border-none cursor-pointer text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </th>
-
-              <th class="p-2 border-r border-slate-200 min-w-[200px]">Mô tả khóa</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[85px]">Bảo trì (%)</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[90px]">Trạng thái</th>
-              <th class="p-2 border-r border-slate-200 w-[95px]">Người dùng</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[90px]">Loại khóa</th>
-              <th class="p-2 text-center w-[75px]">Lịch sử</th>
+              <th class="p-2.5 border-r border-slate-200 w-[80px] text-center">Phòng</th>
+              <th class="p-2.5 border-r border-slate-200">Loại phòng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[130px]">Trạng thái phòng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày bắt đầu</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày kết thúc</th>
+              <th class="p-2.5 border-r border-slate-200 min-w-[180px]">Lý do/Mô tả</th>
+              <th class="p-2.5 border-r border-slate-200 w-[110px]">Người dùng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[85px]">Bảo trì (%)</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[125px]">Trạng thái bảo trì</th>
+              <th class="p-2.5 text-center w-[50px]"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading" class="h-24">
-              <td colspan="13" class="text-center text-slate-500 font-semibold">Đang tải danh sách phòng...</td>
+              <td colspan="11" class="text-center text-slate-500 font-semibold text-xs">Đang tải danh sách phòng...</td>
             </tr>
             <tr v-else-if="sortedFloors.length === 0" class="h-24">
-              <td colspan="13" class="text-center text-slate-400 italic">Không tìm thấy phòng nào phù hợp</td>
+              <td colspan="11" class="text-center text-slate-400 italic text-xs">Không tìm thấy phòng nào phù hợp</td>
             </tr>
             
-            <!-- Floor loop (Render floors & expanded rooms) -->
             <template v-else v-for="floor in sortedFloors" :key="floor">
-              
-              <!-- Floor Row (Header Row of each floor) -->
+              <!-- Floor separator -->
               <tr 
-                class="bg-slate-50/80 hover:bg-[#bdecfe]/35 border-b border-slate-200 font-bold h-9 transition-colors cursor-pointer"
-                :class="{'bg-[#c9eeff]': isFloorAllSelected(floor)}"
+                @click="toggleFloor(floor)"
+                class="bg-slate-50 border-b border-slate-200 font-extrabold h-9 cursor-pointer hover:bg-slate-100 transition-colors"
               >
-                <!-- Floor select checkbox -->
-                <td class="p-2 border-r border-slate-200 text-center" style="width: 45px; min-width: 45px; max-width: 45px;">
-                  <input 
-                    type="checkbox" 
-                    :checked="isFloorAllSelected(floor)"
-                    @change="toggleSelectFloor(floor, $event)"
-                    class="cursor-pointer w-4 h-4" 
-                  />
-                </td>
-                
-                <!-- STT column contains expand/collapse button & floor number -->
-                <td class="p-2 border-r border-slate-200 w-[75px]">
-                  <div class="flex items-center pl-2 gap-2">
-                    <button 
-                      @click.stop="toggleFloorExpanded(floor)"
-                      class="w-4 h-4 rounded flex items-center justify-center text-[11px] font-bold cursor-pointer border border-sky-300 bg-sky-100 text-sky-700 hover:bg-[#bae6fd] hover:text-[#0369a1] transition-colors shadow-3xs"
+                <td colspan="11" class="p-2.5 pl-4 text-slate-700 bg-slate-50/80">
+                  <div class="flex items-center gap-2 text-xs uppercase tracking-wider font-extrabold">
+                    <svg 
+                      class="w-3.5 h-3.5 text-slate-400 transform transition-transform animate-duration-150" 
+                      :class="{'rotate-[-90deg]': isFloorCollapsed(floor)}"
+                      fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"
                     >
-                      {{ isFloorExpanded(floor) ? '-' : '+' }}
-                    </button>
-                    <span class="text-slate-700 ml-1 font-bold">{{ floor }}</span>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                    TẦNG {{ floor }}
                   </div>
                 </td>
-                
-                <!-- Rest of columns empty for floor row -->
-                <td colspan="11" class="p-2 border-r border-slate-200"></td>
               </tr>
 
-              <!-- Expanded Room Rows of this floor -->
-              <template v-if="isFloorExpanded(floor)">
-                <tr 
-                  v-for="(room, idx) in roomsByFloor[floor]" 
-                  :key="room.id"
-                  class="border-b border-slate-200 hover:bg-[#bdecfe]/50 cursor-pointer h-10 transition-colors"
-                  :class="{
-                    'bg-[#c9eeff]': selectedRoomIds.includes(room.id) || room.lock_type
-                  }"
-                >
-                  <!-- Room select checkbox with indent alignment and fixed cell width -->
-                  <td class="p-2 border-r border-slate-200 text-center" style="width: 45px; min-width: 45px; max-width: 45px;">
-                    <input 
-                      type="checkbox" 
-                      :value="room.id" 
-                      v-model="selectedRoomIds" 
-                      class="cursor-pointer rounded border border-sky-400 accent-sky-600 transition-all" 
-                      style="width: 12px; height: 12px; min-width: 12px; min-height: 12px; margin-left: 10px; box-shadow: 0 0 0 1.5px rgba(14, 165, 233, 0.4);"
-                    />
-                  </td>
+              <!-- Floor Room Rows -->
+              <tr 
+                v-show="!isFloorCollapsed(floor)"
+                v-for="room in roomsByFloor[floor]" 
+                :key="room.id"
+                class="border-b border-slate-200 hover:bg-[#bdecfe]/20 h-11 transition-colors font-semibold text-slate-700 text-xs"
+                :class="{
+                  'bg-[#c9eeff]/20': selectedRoomIds.includes(room.id)
+                }"
+              >
+                <!-- Checkbox -->
+                <td class="p-2.5 border-r border-slate-200 text-center">
+                  <input 
+                    type="checkbox" 
+                    :value="room.id" 
+                    v-model="selectedRoomIds" 
+                    class="cursor-pointer rounded border border-slate-300 w-4 h-4" 
+                  />
+                </td>
 
-                  <!-- STT inside expanded floor: show index starting from 1 with tree hierarchy icon -->
-                  <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-500 w-[75px]">
-                    <div class="pl-3 flex items-center justify-center gap-1.5 text-slate-400">
-                      <span class="font-normal select-none">└─</span>
-                      <span class="text-slate-500">{{ idx + 1 }}</span>
-                    </div>
-                  </td>
+                <!-- Room Number -->
+                <td class="p-2.5 border-r border-slate-200 font-extrabold text-slate-800 text-center">{{ room.room_number }}</td>
 
-                  <!-- Room Number & descriptions -->
-                  <td class="p-2 border-r border-slate-200 text-center font-black text-slate-800 text-sm">{{ room.room_number }}</td>
-                  <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-500">{{ room.room_form?.name || '-' }}</td>
-                  <td class="p-2 border-r border-slate-200 font-bold text-slate-700 truncate" :title="room.room_type_name">{{ room.room_type_name || '-' }}</td>
+                <!-- Room Class Name -->
+                <td class="p-2.5 border-r border-slate-200 text-slate-655 font-medium">{{ room.room_type_name || '-' }}</td>
 
-                  <!-- LOCK COLUMNS (INLINE EDITABLE) -->
-                  
-                  <!-- Start Date -->
-                  <td class="p-2 border-r border-slate-200 text-center font-semibold">
-                    <input 
-                      v-if="editMode && selectedRoomIds.includes(room.id)" 
-                      type="date" 
-                      v-model="editedLocks[room.id].start_date" 
-                      class="border border-slate-300 rounded px-1 py-0.5 text-center w-full focus:outline-sky-500 font-bold text-xs" 
-                    />
-                    <span v-else>{{ formatDateDisplay(room.lock_start_date) || '-' }}</span>
-                  </td>
+                <!-- Room Status dot badge -->
+                <td class="p-2.5 border-r border-slate-200 text-center">
+                  <span 
+                    v-if="room.lock_type?.toUpperCase() === 'OOO'"
+                    class="px-2.5 py-1 rounded-full font-bold text-xs bg-red-50 text-red-600 border border-red-200 inline-flex items-center gap-1.5 shadow-3xs"
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> OOO
+                  </span>
+                  <span 
+                    v-else-if="room.lock_type?.toUpperCase() === 'OOS'"
+                    class="px-2.5 py-1 rounded-full font-bold text-xs bg-orange-50 text-orange-700 border border-orange-200 inline-flex items-center gap-1.5 shadow-3xs"
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> OOS
+                  </span>
+                  <span 
+                    v-else
+                    class="px-2.5 py-1 rounded-full font-bold text-xs bg-green-50 text-green-700 border border-green-200 inline-flex items-center gap-1.5 shadow-3xs"
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Sẵn sàng
+                  </span>
+                </td>
 
-                  <!-- End Date -->
-                  <td class="p-2 border-r border-slate-200 text-center font-semibold">
-                    <input 
-                      v-if="editMode && selectedRoomIds.includes(room.id)" 
-                      type="date" 
-                      v-model="editedLocks[room.id].end_date" 
-                      class="border border-slate-300 rounded px-1 py-0.5 text-center w-full focus:outline-sky-500 font-bold text-xs" 
-                    />
-                    <span v-else>{{ formatDateDisplay(room.lock_end_date) || '-' }}</span>
-                  </td>
+                <!-- Start Date -->
+                <td class="p-2.5 border-r border-slate-200 text-center font-normal text-slate-500">
+                  {{ formatDateDisplay(room.lock_start_date) || '-' }}
+                </td>
 
-                  <!-- Reason -->
-                  <td class="p-2 border-r border-slate-200 font-semibold">
-                    <input 
-                      v-if="editMode && selectedRoomIds.includes(room.id)" 
-                      type="text" 
-                      v-model="editedLocks[room.id].reason" 
-                      placeholder="Mô tả..."
-                      class="border border-slate-300 rounded px-2 py-0.5 w-full focus:outline-sky-500 font-bold text-xs" 
-                    />
-                    <span v-else class="truncate block max-w-[200px]" :title="room.lock_reason">{{ room.lock_reason || '-' }}</span>
-                  </td>
+                <!-- End Date -->
+                <td class="p-2.5 border-r border-slate-200 text-center font-normal text-slate-500">
+                  {{ formatDateDisplay(room.lock_end_date) || '-' }}
+                </td>
 
-                  <!-- Maintenance Percent -->
-                  <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-600">
-                    <input 
-                      v-if="editMode && selectedRoomIds.includes(room.id)" 
-                      type="number" 
-                      min="0" 
-                      max="100"
-                      v-model="editedLocks[room.id].maintenance_percent" 
-                      class="border border-slate-300 rounded px-1 py-0.5 text-center w-[55px] focus:outline-sky-500 text-xs" 
-                    />
-                    <span v-else>{{ room.lock_type ? room.lock_maintenance_percent + '%' : '-' }}</span>
-                  </td>
+                <!-- Lock Reason -->
+                <td class="p-2.5 border-r border-slate-200 font-normal text-slate-600 truncate max-w-[200px]" :title="room.lock_reason">
+                  {{ room.lock_reason || '-' }}
+                </td>
 
-                  <!-- Status -->
-                  <td class="p-2 border-r border-slate-200 text-center">
-                    <span 
-                      v-if="room.lock_status"
-                      class="px-2 py-0.5 rounded-sm font-extrabold text-[10px] uppercase border"
-                      :class="room.lock_status === 'Active' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'"
-                    >
-                      {{ room.lock_status }}
-                    </span>
-                    <span v-else class="text-slate-400 font-semibold">-</span>
-                  </td>
+                <!-- Username -->
+                <td class="p-2.5 border-r border-slate-200 font-normal text-slate-500">
+                  {{ room.lock_username || '-' }}
+                </td>
 
-                  <!-- Username -->
-                  <td class="p-2 border-r border-slate-200 font-bold text-slate-600">{{ room.lock_username || '-' }}</td>
+                <!-- Maintenance Percent -->
+                <td class="p-2.5 border-r border-slate-200 text-center font-normal text-slate-500">
+                  {{ room.lock_type ? room.lock_maintenance_percent + '%' : '-' }}
+                </td>
 
-                  <!-- Lock Type -->
-                  <td class="p-2 border-r border-slate-200 text-center font-black">
-                    <select 
-                      v-if="editMode && selectedRoomIds.includes(room.id)" 
-                      v-model="editedLocks[room.id].lock_type" 
-                      class="border border-slate-300 rounded p-0.5 w-full bg-white focus:outline-sky-500 text-xs font-bold"
-                    >
-                      <option value="OOO">OOO</option>
-                      <option value="OOS">OOS</option>
-                    </select>
-                    <span 
-                      v-else-if="room.lock_type"
-                      class="px-2.5 py-0.5 rounded font-black text-[10px] text-white shadow-3xs"
-                      :style="{ backgroundColor: room.lock_type?.trim().toUpperCase() === 'OOO' ? '#ef4444' : '#f59e0b' }"
-                    >
-                      {{ room.lock_type?.toUpperCase() }}
-                    </span>
-                    <span v-else class="text-slate-400 font-semibold">-</span>
-                  </td>
+                <!-- Maintenance status -->
+                <td class="p-2.5 border-r border-slate-200 text-center">
+                  <span :class="getMaintenanceStatusClass(room)">
+                    {{ getMaintenanceStatusLabel(room) }}
+                  </span>
+                </td>
 
-                  <!-- History log loader -->
-                  <td class="p-2 text-center">
+                <!-- Row actions (⋮ menu) -->
+                <td class="p-2.5 text-center relative row-menu-container">
+                  <button 
+                    @click.stop="toggleRowMenu(room.id, $event)"
+                    class="w-6.5 h-6.5 rounded hover:bg-slate-100 flex items-center justify-center border-none cursor-pointer text-slate-400 hover:text-slate-600 transition-colors mx-auto"
+                  >
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+                    </svg>
+                  </button>
+
+                  <!-- Popover Dropdown menu options -->
+                  <div 
+                    v-if="activeRowMenuId === room.id" 
+                    class="absolute right-2 top-8 z-40 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[125px] font-semibold text-slate-700 normal-case"
+                  >
+                    <template v-if="room.lock_type">
+                      <button 
+                        @click.stop="openEditLockModal(room); activeRowMenuId = null"
+                        class="w-full text-left px-3.5 py-2 hover:bg-slate-50 cursor-pointer border-none bg-transparent text-xs text-slate-700 flex items-center gap-2 font-semibold"
+                      >
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.83 20.013a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                        </svg>
+                        Chỉnh sửa
+                      </button>
+                      <button 
+                        @click.stop="submitSingleUnlock(room); activeRowMenuId = null"
+                        class="w-full text-left px-3.5 py-2 hover:bg-slate-50 cursor-pointer border-none bg-transparent text-xs text-emerald-600 flex items-center gap-2 font-semibold"
+                      >
+                        <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                        </svg>
+                        Mở khóa
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button 
+                        @click.stop="openSingleLockModal(room, 'OOO'); activeRowMenuId = null"
+                        class="w-full text-left px-3.5 py-2 hover:bg-slate-50 cursor-pointer border-none bg-transparent text-xs text-rose-600 flex items-center gap-2 font-semibold"
+                      >
+                        <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                        </svg>
+                        Khóa OOO
+                      </button>
+                      <button 
+                        @click.stop="openSingleLockModal(room, 'OOS'); activeRowMenuId = null"
+                        class="w-full text-left px-3.5 py-2 hover:bg-slate-50 cursor-pointer border-none bg-transparent text-xs text-orange-600 flex items-center gap-2 font-semibold"
+                      >
+                        <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                        </svg>
+                        Khóa OOS
+                      </button>
+                    </template>
                     <button 
-                      @click="showHistory(room)"
-                      class="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-blue-500 flex items-center justify-center border-none cursor-pointer shadow-3xs transition-colors mx-auto"
-                      title="Xem lịch sử khóa"
+                      @click.stop="showHistory(room); activeRowMenuId = null"
+                      class="w-full text-left px-3.5 py-2 hover:bg-slate-50 cursor-pointer border-none bg-transparent text-xs text-slate-700 flex items-center gap-2 border-t border-slate-100 font-semibold"
                     >
-                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                      <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
+                      Xem lịch sử
                     </button>
-                  </td>
-                </tr>
-              </template>
-
+                  </div>
+                </td>
+              </tr>
             </template>
           </tbody>
         </table>
       </div>
 
       <!-- Pagination Footer -->
-      <div class="px-4 py-3 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between shrink-0 select-none">
-        <span class="text-slate-500 font-semibold">Hiển thị tất cả phòng theo số tầng</span>
+      <div class="px-4 py-2.5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between shrink-0">
+        <span class="text-slate-500 font-bold text-xs">
+          Hiển thị tất cả phòng theo số tầng (Tổng số: {{ filteredRooms.length }} phòng)
+        </span>
         <div class="flex items-center gap-1.5">
-          <button class="w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold flex items-center justify-center cursor-pointer shadow-3xs disabled:opacity-50" disabled>&lt;</button>
-          <button class="w-7 h-7 rounded bg-[#bdecfe] text-[#0369a1] border border-[#7dd3fc] font-bold flex items-center justify-center shadow-3xs">1</button>
-          <button class="w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold flex items-center justify-center cursor-pointer shadow-3xs disabled:opacity-50" disabled>&gt;</button>
+          <button 
+            class="px-2.5 py-1 border border-slate-200 rounded text-xs font-bold text-slate-500 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40"
+            disabled
+          >
+            Trước
+          </button>
+          <button 
+            class="px-2.5 py-1 border rounded text-xs font-black border-sky-400 text-sky-600 bg-sky-50"
+          >
+            1
+          </button>
+          <button 
+            class="px-2.5 py-1 border border-slate-200 rounded text-xs font-bold text-slate-500 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40"
+            disabled
+          >
+            Sau
+          </button>
         </div>
       </div>
 
     </div>
 
-    <!-- BOTTOM PANEL: LOCK HISTORY -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[230px] shrink-0">
-      
-      <!-- Panel Header -->
-      <div class="px-4 py-2.5 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2 shrink-0">
-        <svg class="w-4 h-4 text-sky-600 fill-none stroke-current" stroke-width="2.5" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <h4 class="text-xs font-black text-slate-800 uppercase tracking-wider">
-          Lịch sử khóa {{ activeHistoryRoom ? `phòng ${activeHistoryRoom.room_number}` : '' }}
-        </h4>
+    <!-- RIGHT SIDEBAR: LOCK HISTORY TIMELINE -->
+    <div 
+      v-if="activeHistoryRoom" 
+      class="w-[340px] border border-slate-200 bg-white rounded-xl flex flex-col overflow-hidden shrink-0 animate-in shadow-sm relative"
+    >
+      <!-- Sidebar Header -->
+      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-sky-600 fill-none stroke-current" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span class="text-xs font-black uppercase tracking-wider">Lịch sử khóa</span>
+        </div>
+        <button 
+          @click="activeHistoryRoom = null" 
+          class="text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-sm font-semibold transition-colors"
+        >
+          ✕
+        </button>
       </div>
 
-      <!-- History Table Body -->
-      <div class="flex-1 overflow-x-auto overflow-y-auto">
-        <table class="w-full text-left border-collapse text-xs select-none">
-          <thead>
-            <tr class="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold select-none h-8 sticky top-0 z-10">
-              <th class="p-2 border-r border-slate-200 text-center w-[60px]">STT</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[120px]">Dạng phòng</th>
-              <th class="p-2 border-r border-slate-200 w-[180px]">Loại phòng</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[120px]">Ngày bắt đầu</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[120px]">Ngày kết thúc</th>
-              <th class="p-2 border-r border-slate-200 min-w-[200px]">Mô tả khóa</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[90px]">Bảo trì (%)</th>
-              <th class="p-2 border-r border-slate-200 text-center w-[100px]">Trạng thái</th>
-              <th class="p-2 border-r border-slate-200 w-[100px]">Người dùng</th>
-              <th class="p-2 text-center w-[95px]">Loại khóa</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!activeHistoryRoom">
-              <td colspan="10" class="text-center p-6 text-slate-400 italic">Vui lòng click vào biểu tượng Lịch sử (clock) ở cột cuối của phòng bất kỳ để xem lịch sử khóa của phòng đó.</td>
-            </tr>
-            <tr v-else-if="loadingHistory">
-              <td colspan="10" class="text-center p-6 text-slate-500 font-medium">Đang tải lịch sử khóa...</td>
-            </tr>
-            <tr v-else-if="historyLogs.length === 0">
-              <td colspan="10" class="text-center p-6 text-slate-400 italic">Phòng {{ activeHistoryRoom.room_number }} chưa từng có bản ghi khóa nào trong lịch sử.</td>
-            </tr>
-            <tr 
-              v-else 
-              v-for="(log, idx) in historyLogs" 
-              :key="log.id"
-              class="border-b border-slate-100 hover:bg-[#bdecfe]/35 cursor-pointer h-8 font-semibold text-slate-700 transition-colors"
-            >
-              <td class="p-2 border-r border-slate-200 text-center">{{ idx + 1 }}</td>
-              <td class="p-2 border-r border-slate-200 text-center">{{ activeHistoryRoom.room_form?.name || '-' }}</td>
-              <td class="p-2 border-r border-slate-200">{{ activeHistoryRoom.room_type_name || '-' }}</td>
-              <td class="p-2 border-r border-slate-200 text-center">{{ formatDateDisplay(log.start_date) }}</td>
-              <td class="p-2 border-r border-slate-200 text-center">{{ formatDateDisplay(log.end_date) }}</td>
-              <td class="p-2 border-r border-slate-200">{{ log.reason || '-' }}</td>
-              <td class="p-2 border-r border-slate-200 text-center">{{ log.maintenance_percent }}%</td>
-              <td class="p-2 border-r border-slate-200 text-center">
-                <span 
-                  class="px-2 py-0.5 rounded-sm font-extrabold text-[9px] uppercase border"
-                  :class="log.is_active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'"
-                >
-                  {{ log.is_active ? 'Active' : 'Closed' }}
-                </span>
-              </td>
-              <td class="p-2 border-r border-slate-200">{{ log.username }}</td>
-              <td class="p-2 text-center font-black">
-                <span 
-                  class="px-2 py-0.5 rounded font-black text-[10px] text-white"
-                  :style="{ backgroundColor: log.lock_type?.trim().toUpperCase() === 'OOO' ? '#ef4444' : '#f59e0b' }"
-                >
-                  {{ log.lock_type?.toUpperCase() }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Active Room Indicator Bar -->
+      <div class="px-4 py-2.5 bg-sky-50/40 border-b border-slate-100 flex items-center gap-2 text-sky-700 font-extrabold text-xs">
+        <svg class="w-3.5 h-3.5 text-sky-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-10.5h16.5m-16.5 3h16.5m-16.5 3h16.5M6.75 21v-3.75m.75-3h-1.5m3.75 6.75V15m.75-3h-1.5m3.75 9.75v-3.75m.75-3h-1.5m3.75 6.75V15m.75-3h-1.5m3.75 9.75V3.75c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-12 4.5h12m-12 4.5h12" />
+        </svg>
+        Phòng {{ activeHistoryRoom.room_number }}
+      </div>
+
+      <!-- Timeline Logs Scroll Area -->
+      <div class="flex-1 overflow-y-auto scrollbar-none flex flex-col p-4 gap-4">
+        <div v-if="loadingHistory" class="text-center py-10 text-slate-400 italic">Đang tải lịch sử khóa...</div>
+        <div v-else-if="timelineEvents.length === 0" class="text-center py-10 text-slate-400 italic">Chưa có lịch sử khóa phòng.</div>
+        
+        <template v-else>
+          <!-- Title Section -->
+          <div class="text-[9px] text-slate-400 font-black tracking-wider uppercase mb-1">Dữ liệu gần đây</div>
+          
+          <!-- Event Timeline list loop -->
+          <div v-for="event in timelineEvents" :key="event.id" class="flex gap-3 relative">
+            
+            <!-- Point and vertical line indicator -->
+            <div class="w-3 flex flex-col items-center shrink-0">
+              <div 
+                class="w-2.5 h-2.5 rounded-full border border-white mt-1" 
+                :style="{ backgroundColor: getTimelineDotColor(event) }"
+              ></div>
+              <div class="w-[1.5px] bg-slate-200 flex-1 my-1"></div>
+            </div>
+
+            <!-- Card item content block -->
+            <div class="flex-1 pb-4">
+              <!-- Log formatted time -->
+              <div class="text-[9px] text-slate-400 font-bold mb-1">{{ formatDateTime(event.timestamp) }}</div>
+              
+              <!-- Card details body -->
+              <div class="bg-slate-50 border border-slate-100 rounded-xl p-3 relative hover:shadow-xs transition-shadow">
+                <h5 class="text-xs font-black text-slate-800 mb-1">{{ getTimelineEventLabel(event) }}</h5>
+                
+                <!-- Details specific for lock -->
+                <div v-if="event.type === 'lock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
+                  <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateDisplay(event.start_date) }}</div>
+                  <div><span class="text-slate-400 font-normal">Ngày kết thúc:</span> {{ formatDateDisplay(event.end_date) }}</div>
+                  <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-bold">Lý do:</span> {{ event.reason || '-' }}</div>
+                </div>
+
+                <!-- Footer meta: user and badge status -->
+                <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-150/80">
+                  <div class="flex items-center gap-1 text-[9px] text-slate-400">
+                    <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                    </svg>
+                    <span>{{ event.username || 'Admin' }}</span>
+                  </div>
+                  <span 
+                    v-if="event.type === 'lock'"
+                    class="px-1.5 py-0.5 rounded-sm text-[8px] font-black uppercase"
+                    :class="event.maintenance_percent === 100 ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-sky-50 text-sky-600 border border-sky-200'"
+                  >
+                    {{ event.maintenance_percent === 100 ? 'Hoàn tất' : 'Đang xử lý' }}
+                  </span>
+                  <span 
+                    v-else
+                    class="px-1.5 py-0.5 rounded-sm text-[8px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200"
+                  >
+                    Hoàn tất
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+        </template>
       </div>
 
     </div>
 
-    <!-- BULK LOCK MODAL (TÔNG MÀU NHẠT #8dcbf4 CHUẨN CÔNG TY/DS CÔNG VIỆC) -->
+    <!-- BULK / SINGLE LOCK MODAL -->
     <div 
       v-if="isBulkModalOpen" 
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-xs select-none font-bold"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs font-bold"
       @click.self="isBulkModalOpen = false"
     >
       <div 
-        class="bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
-        style="width: 620px; max-width: 95vw; min-height: 420px; border-radius: 1rem;"
+        class="bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200 rounded-2xl w-[620px] max-w-[95vw]"
       >
-        
-        <!-- Modal Header (Tông màu xanh nhạt nhẹ nhàng #8dcbf4) -->
+        <!-- Modal Header -->
         <div 
-          class="px-5 py-3.5 flex items-center justify-between text-white border-b border-slate-100 rounded-t-2xl"
-          style="background-color: #8dcbf4;"
+          class="px-5 py-3.5 flex items-center justify-between text-white border-b border-slate-100 rounded-t-2xl bg-[#8dcbf4]"
         >
-          <h2 class="text-xs font-black uppercase tracking-wider m-0">Thêm khóa</h2>
+          <h2 class="text-xs font-black uppercase tracking-wider m-0">
+            {{ editingLockId ? 'Chỉnh sửa thông tin khóa' : 'Thêm khóa' }}
+          </h2>
           <button 
             @click="isBulkModalOpen = false" 
             class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-sm font-black transition-colors"
@@ -1011,48 +1000,63 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <!-- Modal Body Form (Layout 2 cột chuẩn thiết kế dùng inline grid cực kỳ chính xác) -->
+        <!-- Modal Body Form -->
         <div 
-          class="p-5 text-slate-700 font-bold"
-          style="display: grid; grid-template-columns: 7fr 5fr; gap: 20px;"
+          class="p-5 text-slate-700 font-bold grid grid-cols-1 md:grid-cols-[7fr_5fr] gap-5"
         >
-          
-          <!-- Column 1 (Left): 7/12 width -->
+          <!-- Left fields col -->
           <div class="flex flex-col gap-4">
-            
-            <!-- Start & End Date Selector horizontally aligned -->
+            <!-- Start Date & Time -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Ngày bắt đầu - Ngày kết thúc</span>
-              <div class="flex items-center gap-1 border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors">
+              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Bắt đầu</span>
+              <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
                 <input 
                   type="date" 
                   v-model="bulkForm.start_date" 
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent" 
-                  style="width: 110px; padding: 2px 0;"
+                  :disabled="isEditingActiveLock"
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[130px] disabled:opacity-60 disabled:cursor-not-allowed" 
                 />
-                <span class="text-slate-400 font-extrabold px-0.5">~</span>
                 <input 
-                  type="date" 
-                  v-model="bulkForm.end_date" 
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent" 
-                  style="width: 110px; padding: 2px 0;"
+                  type="time" 
+                  v-model="bulkForm.start_time" 
+                  :disabled="isEditingActiveLock"
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[90px] disabled:opacity-60 disabled:cursor-not-allowed" 
                 />
-                <svg class="w-3.5 h-3.5 text-slate-400 ml-auto mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
               </div>
             </div>
 
-            <!-- Custom Select Dropdown checkbox list for Rooms (Đã được chuyển container relative bọc quanh button để hiển thị dropdown đúng vị trí ngay bên dưới) -->
+            <!-- End Date & Time -->
+            <div class="flex flex-col gap-1">
+              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Kết thúc</span>
+              <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
+                <input 
+                  type="date" 
+                  v-model="bulkForm.end_date" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[130px]" 
+                />
+                <input 
+                  type="time" 
+                  v-model="bulkForm.end_time" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[90px]" 
+                />
+              </div>
+            </div>
+
+            <!-- Room selection selector dropdown (Only visible when not editing single lock) -->
             <div class="flex flex-col gap-1 modal-room-dropdown-container">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Phòng</span>
+              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Phòng</span>
               <div class="relative w-full">
                 <button 
-                  @click.stop="isRoomDropdownOpen = !isRoomDropdownOpen" 
-                  class="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50 text-xs font-black text-slate-700 hover:border-slate-300 cursor-pointer text-left transition-all"
+                  @click.stop="editingLockId ? null : (isRoomDropdownOpen = !isRoomDropdownOpen)" 
+                  class="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50 text-xs font-black text-slate-700 transition-all"
+                  :class="editingLockId ? 'opacity-65 cursor-not-allowed' : 'hover:border-slate-300 cursor-pointer'"
                 >
-                  <span>Chọn: {{ modalSelectedRoomIds.length }}</span>
+                  <span v-if="editingLockId">
+                    Phòng: {{ rooms.find(r => r.id === modalSelectedRoomIds[0])?.room_number }}
+                  </span>
+                  <span v-else>Chọn: {{ modalSelectedRoomIds.length }} phòng</span>
                   <svg 
+                    v-if="!editingLockId"
                     class="w-3.5 h-3.5 text-slate-400 transform transition-transform" 
                     :class="{'rotate-180': isRoomDropdownOpen}"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
@@ -1061,29 +1065,29 @@ onBeforeUnmount(() => {
                   </svg>
                 </button>
 
-                <!-- Dropdown popover list checklist (Hiển thị ngay dưới button, có z-index cao và không bị modal overflow-hidden đè) -->
+                <!-- Dropdown items checklist -->
                 <div 
-                  v-if="isRoomDropdownOpen" 
-                  class="absolute left-0 right-0 z-45 bg-white border border-slate-200 rounded-lg shadow-xl p-2.5 flex flex-col gap-2 min-w-[200px]"
+                  v-if="isRoomDropdownOpen && !editingLockId" 
+                  class="absolute left-0 right-0 z-45 bg-white border border-slate-200 rounded-lg shadow-xl p-2.5 flex flex-col gap-2 min-w-[200px] normal-case"
                   style="top: 100%; margin-top: 4px;"
                   @click.stop
                 >
-                  <!-- Search Box -->
+                  <!-- Search input -->
                   <div class="relative flex items-center border border-slate-200 rounded px-2.5 py-1 bg-slate-50/80">
                     <input 
                       type="text" 
                       v-model="roomSearchQuery" 
                       placeholder="Tìm số phòng..." 
-                      class="border-none bg-transparent w-full focus:outline-none text-xs font-semibold text-slate-650"
+                      class="border-none bg-transparent w-full focus:outline-none text-[11px] font-semibold text-slate-700"
                     />
-                    <svg class="w-3 h-3 text-slate-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2">
+                    <svg class="w-3 h-3 text-slate-400 ml-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </div>
 
-                  <!-- Checkbox Checklist Scroll Area -->
-                  <div class="overflow-y-auto flex flex-col gap-1 py-1 text-slate-700" style="max-height: 150px;">
-                    <label class="flex items-center gap-2.5 cursor-pointer hover:bg-slate-50 p-1.5 rounded text-xs select-none">
+                  <!-- Scroll list checkboxes -->
+                  <div class="overflow-y-auto flex flex-col gap-1 py-1 text-slate-700" style="max-height: 140px;">
+                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded text-xs">
                       <input 
                         type="checkbox" 
                         :checked="isAllModalRoomsSelected" 
@@ -1095,7 +1099,7 @@ onBeforeUnmount(() => {
                     <label 
                       v-for="r in modalFilteredRooms" 
                       :key="r.id" 
-                      class="flex items-center gap-2.5 cursor-pointer hover:bg-slate-50 p-1.5 rounded text-xs select-none"
+                      class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1.5 rounded text-xs"
                     >
                       <input 
                         type="checkbox" 
@@ -1107,66 +1111,62 @@ onBeforeUnmount(() => {
                     </label>
                   </div>
 
-                  <!-- Dropdown Action button -->
+                  <!-- Close button inside dropdown -->
                   <button 
-                    @click="applyModalRoomSelection"
+                    @click="isRoomDropdownOpen = false"
                     class="w-full py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded font-extrabold cursor-pointer border-none text-[11px] shadow-3xs transition-colors"
                   >
-                    Lưu
+                    Xác nhận
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- Maintenance Percent Input (styled with % suffix block) -->
+            <!-- Maintenance Progress percent -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Tiến độ bảo trì</span>
-              <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors">
+              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Tiến độ bảo trì</span>
+              <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
                 <input 
                   type="number" 
                   min="0" 
                   max="100" 
                   v-model="bulkForm.maintenance_percent" 
-                  class="border-none outline-none px-3 py-2 w-full text-xs font-bold text-slate-700 bg-transparent" 
+                  class="border-none outline-none px-3 py-1.5 w-full text-xs font-bold text-slate-700 bg-transparent" 
                 />
-                <span class="bg-slate-100 text-slate-500 font-black px-3.5 py-2 border-l border-slate-200 text-xs select-none">%</span>
+                <span class="bg-slate-100 text-slate-500 font-black px-3.5 py-1.5 border-l border-slate-200 text-xs select-none">%</span>
               </div>
             </div>
-
           </div>
 
-          <!-- Column 2 (Right): 5/12 width -->
-          <div class="flex flex-col gap-1 h-full">
-            <span class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Ghi chú *</span>
+          <!-- Right Reason note block -->
+          <div class="flex flex-col gap-1">
+            <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Ghi chú *</span>
             <textarea 
               v-model="bulkForm.reason" 
-              placeholder="Nhập ghi chú..."
-              class="w-full border border-slate-200 rounded-lg p-3 bg-slate-50/50 focus:bg-white focus:outline-sky-400 resize-none font-semibold text-xs leading-relaxed flex-1"
-              style="min-height: 180px;"
+              placeholder="Nhập ghi chú hoặc lý do bảo trì..."
+              class="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 focus:bg-white focus:outline-sky-400 resize-none font-semibold text-xs leading-relaxed h-[138px]"
             ></textarea>
           </div>
-
         </div>
 
         <!-- Modal Footer -->
-        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-2xl">
+        <div class="bg-slate-50 px-5 py-3.5 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-2xl">
           <button 
             @click="isBulkModalOpen = false" 
-            class="px-4 py-2 border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 rounded-lg font-bold text-xs cursor-pointer transition-colors"
+            class="px-4 py-1.5 border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 rounded-lg font-bold text-xs cursor-pointer transition-colors"
           >
             Đóng
           </button>
           <button 
             @click="submitBulkLock"
-            class="px-4 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-xs border-none cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+            class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-xs border-none cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
           >
             <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
             </svg>
-            Khóa phòng
+            {{ editingLockId ? 'Cập nhật' : 'Khóa phòng' }}
           </button>
         </div>
-
       </div>
     </div>
 
@@ -1174,12 +1174,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Custom animations for modal */
+/* Animations and scrollbar styling */
 .animate-in {
   animation: fadeIn 0.18s ease-out forwards;
 }
 @keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 </style>
