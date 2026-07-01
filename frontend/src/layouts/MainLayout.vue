@@ -6,13 +6,28 @@ import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
 <<<<<<< HEAD
+<<<<<<< HEAD
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import { useUiStore } from '@/stores/ui-store'
 =======
 >>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
+=======
+import { fetchOutlets } from '@/services/outlet-service'
+>>>>>>> fa038e4 (feat(fnb): Xây dựng phân hệ F&B - Định nghĩa thực đơn tách biệt hoàn toàn khỏi PMS)
 
 const route = useRoute()
 const router = useRouter()
+const activeOutlets = ref([])
+
+const loadActiveOutlets = async () => {
+  try {
+    const res = await fetchOutlets()
+    activeOutlets.value = (res.data || []).filter(o => o.is_active)
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách outlet hoạt động:', err)
+  }
+}
+
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
 const timeOffset = ref(0)
@@ -372,6 +387,7 @@ onMounted(() => {
   fetchServerTime()
 >>>>>>> b72c7f0 (fix: restore i18n and branch selector in MainLayout)
   fetchShifts()
+  loadActiveOutlets()
   loadBranches().finally(() => {
     setTimeout(() => {
       isSwitchingBranch.value = false
@@ -379,6 +395,8 @@ onMounted(() => {
       sessionStorage.removeItem('switching_to_name')
     }, 450)
   })
+  
+  window.addEventListener('outlet-updated', loadActiveOutlets)
   
   // Cập nhật giờ và ca làm việc mỗi giây
   timeInterval = setInterval(() => {
@@ -389,6 +407,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
+  window.removeEventListener('outlet-updated', loadActiveOutlets)
   if (timeInterval) {
     clearInterval(timeInterval)
   }
@@ -437,8 +456,18 @@ const menuItems = computed(() => {
   }
   // trang F&B
   if (route.path.startsWith('/fnb')) {
-    return [
-      { name: 'Nhà Hàng', route: '/fnb/restaurant' },
+    const fnbItems = []
+    
+    if (activeOutlets.value && activeOutlets.value.length > 0) {
+      activeOutlets.value.forEach(outlet => {
+        fnbItems.push({
+          name: outlet.name,
+          route: `/fnb/restaurant?outlet_code=${outlet.code}`
+        })
+      })
+    }
+
+    fnbItems.push(
       { name: 'PARTY', route: '/fnb/party' },
       { name: 'Tìm kiếm đơn hàng', route: '/fnb/search' },
       { 
@@ -481,7 +510,8 @@ const menuItems = computed(() => {
           { name: 'CÀI ĐẶT', tab: 'settings' }
         ]
       }
-    ]
+    )
+    return fnbItems
   }
   // trang đặt phòng
   return [

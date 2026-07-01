@@ -15,7 +15,7 @@ class ProductController extends Controller
 {
     public function index()
     {
-        $products = Product::with('category')->get();
+        $products = Product::with(['category'])->get();
         return response()->json($products);
     }
 
@@ -56,6 +56,7 @@ class ProductController extends Controller
 
         $product = Product::create($validated);
 
+        // Auto generation of product code if belongs to default categories
         $outlet = $product->category->outlet ?? '';
         $prefix = '';
         if ($outlet === 'Minibar') $prefix = 'MB';
@@ -106,6 +107,11 @@ class ProductController extends Controller
             }
             $path = $request->file('image')->store('products', 'public');
             $validated['image'] = $path;
+        } elseif ($request->input('remove_image') == '1') {
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
+            $validated['image'] = null;
         }
 
         $product->update($validated);
@@ -194,7 +200,6 @@ class ProductController extends Controller
             foreach ($rows as $row) {
                 if (empty($row[0]) && empty($row[1])) continue;
                 
-                // Cấu trúc cột dựa theo export: ID, Tên, Danh mục ID, Mã SP, Tiền tệ, Giá, Ghi chú
                 $productId = $row[0] ?? null;
                 $name = $row[1] ?? '';
                 $categoryId = $row[2] ?? null;

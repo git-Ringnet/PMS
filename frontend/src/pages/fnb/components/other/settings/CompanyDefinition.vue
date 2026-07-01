@@ -1,5 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
+import GenericCategoryTab from './tabs/GenericCategoryTab.vue'
+import CompanyTypeTab from './tabs/CompanyTypeTab.vue'
+import IndustryTab from './tabs/IndustryTab.vue'
 
 defineEmits(['back'])
 
@@ -90,26 +93,28 @@ const handleConfig = () => {
       </button>
     </div>
 
-    <!-- Actions toolbar -->
-    <div class="flex items-center justify-between mb-5 shrink-0">
-      <button @click="handleAddCompany" class="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm hover:shadow active:scale-[0.98] transition">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-        </svg>
-        Thêm
-      </button>
+    <!-- Tab Content -->
+    <template v-if="activeSubTab === 'Công ty'">
+      <!-- Actions toolbar -->
+      <div class="flex items-center justify-between mb-5 shrink-0">
+        <button @click="handleAddCompany" class="flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm hover:shadow active:scale-[0.98] transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Thêm
+        </button>
 
-      <!-- Advanced gear icon button -->
-      <button @click="handleConfig" class="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition active:scale-95 shadow-sm" title="Thiết lập cột">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" />
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </button>
-    </div>
+        <!-- Advanced gear icon button -->
+        <button @click="handleConfig" class="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition active:scale-95 shadow-sm" title="Thiết lập cột">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </div>
 
-    <!-- Table content enclosed in a card -->
-    <div class="flex-1 bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col">
+      <!-- Table content enclosed in a card -->
+      <div class="flex-1 bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col">
       <div class="flex-1 overflow-auto">
         <table class="w-full text-sm border-collapse whitespace-nowrap">
           <thead class="sticky top-0 z-10 bg-slate-50/90 backdrop-blur-md">
@@ -173,5 +178,10 @@ const handleConfig = () => {
         </table>
       </div>
     </div>
+    </template>
+    
+    <GenericCategoryTab v-else-if="['Thị trường', 'Nguồn khách', 'Chi nhánh', 'Loại'].includes(activeSubTab)" :type="activeSubTab" />
+    <CompanyTypeTab v-else-if="activeSubTab === 'Loại công ty (Tiền tố)'" />
+    <IndustryTab v-else-if="activeSubTab === 'Ngành nghề'" />
   </div>
 </template>
