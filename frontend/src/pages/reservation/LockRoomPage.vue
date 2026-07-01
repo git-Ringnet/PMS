@@ -45,7 +45,9 @@ const bulkLockType = ref('OOO') // 'OOO' | 'OOS'
 const editingLockId = ref(null) // null if creating, lock_id if editing
 const bulkForm = ref({
   start_date: '',
+  start_time: '00:00',
   end_date: '',
+  end_time: '23:59',
   reason: '',
   maintenance_percent: 0,
 })
@@ -72,6 +74,31 @@ const getTodayString = () => {
   const year = parts.find(p => p.type === 'year').value
   return `${year}-${month}-${day}`
 }
+
+const getCurrentTimeHourMinute = () => {
+  const d = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+  const parts = formatter.formatToParts(d)
+  let hour = parts.find(p => p.type === 'hour').value
+  const minute = parts.find(p => p.type === 'minute').value
+  if (hour.length === 1) hour = '0' + hour
+  return `${hour}:${minute}`
+}
+
+const isEditingActiveLock = computed(() => {
+  if (!editingLockId.value) return false
+  const selectedRoom = rooms.value.find(r => r.lock_id === editingLockId.value)
+  if (!selectedRoom || !selectedRoom.lock_start_date) return false
+  
+  const now = new Date()
+  const startDate = new Date(selectedRoom.lock_start_date.replace(/-/g, '/'))
+  return startDate <= now
+})
 
 onMounted(() => {
   fetchRooms()
@@ -332,9 +359,7 @@ const getTimelineEventLabel = (event) => {
   if (event.lock_type?.toUpperCase() === 'OOO') return 'Khóa phòng OOO'
   if (event.lock_type?.toUpperCase() === 'OOS') return 'Khóa phòng OOS'
   return 'Khóa phòng'
-}
-
-// Bulk Unlock action
+}// Bulk Unlock action
 const submitBulkUnlock = async () => {
   if (selectedRoomIds.value.length === 0) {
     uiStore.showToast('Vui lòng chọn ít nhất một phòng cần mở khóa!', 'warning')
@@ -362,7 +387,8 @@ const submitBulkUnlock = async () => {
     }
   } catch (err) {
     console.error('Lỗi mở khóa phòng:', err)
-    uiStore.showToast('Không thể mở khóa phòng', 'error')
+    const errMsg = err.response?.data?.message || 'Không thể mở khóa phòng'
+    uiStore.showToast(errMsg, 'error')
   }
 }
 
@@ -389,7 +415,8 @@ const submitSingleUnlock = async (room) => {
     }
   } catch (err) {
     console.error('Lỗi mở khóa phòng:', err)
-    uiStore.showToast('Không thể mở khóa phòng', 'error')
+    const errMsg = err.response?.data?.message || 'Không thể mở khóa phòng'
+    uiStore.showToast(errMsg, 'error')
   }
 }
 
@@ -398,7 +425,9 @@ const openBulkLockModal = (type) => {
   editingLockId.value = null
   bulkLockType.value = type
   bulkForm.value.start_date = getTodayString()
+  bulkForm.value.start_time = getCurrentTimeHourMinute()
   bulkForm.value.end_date = getTodayString()
+  bulkForm.value.end_time = '23:59'
   bulkForm.value.reason = ''
   bulkForm.value.maintenance_percent = 0
   modalSelectedRoomIds.value = [...selectedRoomIds.value]
@@ -411,7 +440,9 @@ const openSingleLockModal = (room, type) => {
   editingLockId.value = null
   bulkLockType.value = type
   bulkForm.value.start_date = getTodayString()
+  bulkForm.value.start_time = getCurrentTimeHourMinute()
   bulkForm.value.end_date = getTodayString()
+  bulkForm.value.end_time = '23:59'
   bulkForm.value.reason = ''
   bulkForm.value.maintenance_percent = 0
   modalSelectedRoomIds.value = [room.id]
@@ -423,8 +454,15 @@ const openSingleLockModal = (room, type) => {
 const openEditLockModal = (room) => {
   editingLockId.value = room.lock_id
   bulkLockType.value = room.lock_type || 'OOS'
-  bulkForm.value.start_date = room.lock_start_date || getTodayString()
-  bulkForm.value.end_date = room.lock_end_date || getTodayString()
+  
+  const startParts = room.lock_start_date ? room.lock_start_date.split(' ') : []
+  const endParts = room.lock_end_date ? room.lock_end_date.split(' ') : []
+  
+  bulkForm.value.start_date = startParts[0] || getTodayString()
+  bulkForm.value.start_time = startParts[1] ? startParts[1].substring(0, 5) : '00:00'
+  bulkForm.value.end_date = endParts[0] || getTodayString()
+  bulkForm.value.end_time = endParts[1] ? endParts[1].substring(0, 5) : '23:59'
+  
   bulkForm.value.reason = room.lock_reason || ''
   bulkForm.value.maintenance_percent = room.lock_maintenance_percent || 0
   modalSelectedRoomIds.value = [room.id]
@@ -456,7 +494,7 @@ const toggleSelectAllModalRooms = (event) => {
 }
 
 // Modal Submit
-const submitBulkLock = async () => {
+const submitBulkLock = async (force = false) => {
   if (modalSelectedRoomIds.value.length === 0) {
     uiStore.showToast('Vui lòng chọn ít nhất một phòng!', 'warning')
     return
@@ -469,11 +507,12 @@ const submitBulkLock = async () => {
 
   try {
     const payload = {
-      start_date: bulkForm.value.start_date,
-      end_date: bulkForm.value.end_date,
+      start_date: `${bulkForm.value.start_date} ${bulkForm.value.start_time || '00:00'}:00`,
+      end_date: `${bulkForm.value.end_date} ${bulkForm.value.end_time || '23:59'}:00`,
       reason: bulkForm.value.reason,
       maintenance_percent: parseInt(bulkForm.value.maintenance_percent) || 0,
       lock_type: bulkLockType.value,
+      force: force,
     }
 
     if (editingLockId.value) {
@@ -502,10 +541,24 @@ const submitBulkLock = async () => {
     }
   } catch (err) {
     console.error('Lỗi khi lưu khóa phòng:', err)
-    uiStore.showToast('Không thể lưu thông tin khóa phòng', 'error')
+    
+    // Check if it is a confirmation request for booking overlap
+    if (err.response && err.response.data && err.response.data.require_confirm) {
+      const confirmed = await uiStore.confirm({
+        title: 'Xác nhận đè lịch đặt phòng',
+        message: err.response.data.message,
+        confirmText: 'Đồng ý khóa',
+        cancelText: 'Hủy'
+      })
+      if (confirmed) {
+        await submitBulkLock(true)
+      }
+    } else {
+      const errMsg = err.response?.data?.message || 'Không thể lưu thông tin khóa phòng'
+      uiStore.showToast(errMsg, 'error')
+    }
   }
 }
-
 // Toggle active row menu
 const toggleRowMenu = (roomId, event) => {
   if (activeRowMenuId.value === roomId) {
@@ -953,24 +1006,39 @@ const toggleRowMenu = (roomId, event) => {
         >
           <!-- Left fields col -->
           <div class="flex flex-col gap-4">
-            <!-- Start/End dates -->
+            <!-- Start Date & Time -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Ngày bắt đầu - Ngày kết thúc</span>
-              <div class="flex items-center gap-1 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
+              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Bắt đầu</span>
+              <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
                 <input 
                   type="date" 
                   v-model="bulkForm.start_date" 
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[110px]" 
+                  :disabled="isEditingActiveLock"
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[130px] disabled:opacity-60 disabled:cursor-not-allowed" 
                 />
-                <span class="text-slate-400 font-extrabold px-0.5">~</span>
+                <input 
+                  type="time" 
+                  v-model="bulkForm.start_time" 
+                  :disabled="isEditingActiveLock"
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[90px] disabled:opacity-60 disabled:cursor-not-allowed" 
+                />
+              </div>
+            </div>
+
+            <!-- End Date & Time -->
+            <div class="flex flex-col gap-1">
+              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Kết thúc</span>
+              <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
                 <input 
                   type="date" 
                   v-model="bulkForm.end_date" 
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[110px]" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[130px]" 
                 />
-                <svg class="w-3.5 h-3.5 text-slate-400 ml-auto mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+                <input 
+                  type="time" 
+                  v-model="bulkForm.end_time" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[90px]" 
+                />
               </div>
             </div>
 
