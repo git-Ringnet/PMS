@@ -30,6 +30,28 @@ class RoomLock extends Model
         'end_date' => 'date:Y-m-d',
     ];
 
+    protected static $userNamesCache = [];
+
+    public function getUsernameAttribute($value)
+    {
+        if (empty($value)) return '';
+        
+        if (isset(self::$userNamesCache[$value])) {
+            return self::$userNamesCache[$value];
+        }
+
+        $user = \App\Models\User::where('username', $value)
+            ->orWhere('employee_code', $value)
+            ->first();
+            
+        if ($user) {
+            self::$userNamesCache[$value] = $user->name;
+            return $user->name;
+        }
+
+        return $value;
+    }
+
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class);
