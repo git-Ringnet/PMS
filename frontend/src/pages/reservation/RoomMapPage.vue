@@ -15,6 +15,7 @@ import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -1212,11 +1213,7 @@ const uniqueFloors = computed(() => {
             
             <!-- Loading State -->
             <div v-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
-              <div class="loader">
-                <div class="inner one"></div>
-                <div class="inner two"></div>
-                <div class="inner three"></div>
-              </div>
+              <LoadingOverlay :show="roomStore.loading" />
             </div>
 
             <!-- Error State -->
