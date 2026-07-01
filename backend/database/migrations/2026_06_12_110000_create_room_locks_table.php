@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('room_locks', function (Blueprint $table) {
             $table->id();
             $table->foreignId('room_id')->constrained('rooms')->onDelete('cascade');
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
+            $table->dateTime('start_date')->nullable();
+            $table->dateTime('end_date')->nullable();
             $table->string('reason')->nullable();
             $table->integer('maintenance_percent')->default(0);
             $table->string('status')->default('New');

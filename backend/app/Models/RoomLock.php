@@ -26,8 +26,8 @@ class RoomLock extends Model
         'room_id' => 'integer',
         'maintenance_percent' => 'integer',
         'is_active' => 'boolean',
-        'start_date' => 'date:Y-m-d',
-        'end_date' => 'date:Y-m-d',
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
     ];
 
     protected static $userNamesCache = [];
