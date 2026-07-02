@@ -157,4 +157,282 @@ class CompanyController extends Controller
             'message' => 'Company deleted successfully',
         ]);
     }
+
+    /**
+     * Synchronize companies with ACC accounting system.
+     */
+    public function sync(Request $request)
+    {
+        $count = Company::query()->update(['sync_acc' => true]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Đồng bộ thành công! Đã đồng bộ {$count} công ty với hệ thống kế toán ACC."
+        ]);
+    }
+
+    /**
+     * Export all companies as CSV file formatted for Excel.
+     */
+    public function export(Request $request)
+    {
+        $companies = Company::with(['customerSource', 'market', 'branch', 'booker'])->get();
+
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="companies.csv"',
+            'Pragma' => 'no-cache',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0'
+        ];
+
+        $callback = function() use ($companies) {
+            $file = fopen('php://output', 'w');
+            
+            // Add UTF-8 BOM for Vietnamese character support in Excel
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            // CSV Headers
+            fputcsv($file, [
+                'Mã',
+                'Tên',
+                'Tên giao dịch',
+                'Địa chỉ',
+                'Tax',
+                'Số điện thoại',
+                'Email',
+                'Nguồn khách',
+                'Thị trường',
+                'Công nợ tối đa',
+                'Tài khoản ngân hàng',
+                'Người đặt phòng',
+                'Mã giá phòng',
+                'Chi nhánh'
+            ]);
+
+            // CSV Rows
+            foreach ($companies as $c) {
+                fputcsv($file, [
+                    $c->code,
+                    $c->name,
+                    $c->trading_name,
+                    $c->address,
+                    $c->tax_code,
+                    $c->phone,
+                    $c->email,
+                    $c->customerSource?->name ?? '',
+                    $c->market?->name ?? '',
+                    $c->max_debt,
+                    $c->bank_account,
+                    $c->booker?->name ?? '',
+                    $c->rate_code,
+                    $c->branch?->name ?? ''
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Import companies from uploaded CSV file.
+     */
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file'
+        ]);
+
+        $file = $request->file('file');
+        $filePath = $file->getRealPath();
+
+        $handle = fopen($filePath, 'r');
+        if (!$handle) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không thể đọc file upload.'
+            ], 422);
+        }
+
+        // Check and remove BOM if present
+        $bom = fread($handle, 3);
+        if ($bom !== chr(0xEF) . chr(0xBB) . chr(0xBF)) {
+            rewind($handle);
+        }
+
+        // Read header
+        $header = fgetcsv($handle);
+        if (!$header) {
+            fclose($handle);
+            return response()->json([
+                'success' => false,
+                'message' => 'File CSV trống.'
+            ], 422);
+        }
+
+        $importedCount = 0;
+
+        // Cache lookups for speed
+        $sources = \App\Models\CustomerSource::all();
+        $markets = \App\Models\Market::all();
+        $branches = \App\Models\Branch::all();
+        $bookers = \App\Models\Booker::all();
+
+        while (($row = fgetcsv($handle)) !== false) {
+            // Skip empty rows
+            if (empty($row) || count($row) < 2 || empty(trim($row[1]))) {
+                continue;
+            }
+
+            $code = trim($row[0] ?? '');
+            $name = trim($row[1] ?? '');
+            $tradingName = trim($row[2] ?? '');
+            $address = trim($row[3] ?? '');
+            $taxCode = trim($row[4] ?? '');
+            $phone = trim($row[5] ?? '');
+            $email = trim($row[6] ?? '');
+            $sourceNameOrCode = trim($row[7] ?? '');
+            $marketNameOrCode = trim($row[8] ?? '');
+            $maxDebt = floatval(str_replace(['.', ','], '', trim($row[9] ?? '0')));
+            $bankAccount = trim($row[10] ?? '');
+            $bookerNameOrEmail = trim($row[11] ?? '');
+            $rateCode = trim($row[12] ?? '');
+            $branchNameOrCode = trim($row[13] ?? '');
+
+            // Lookup customer source
+            $sourceId = null;
+            if (!empty($sourceNameOrCode)) {
+                $src = $sources->first(fn($s) => strtolower($s->code) === strtolower($sourceNameOrCode) || strtolower($s->name) === strtolower($sourceNameOrCode));
+                if ($src) $sourceId = $src->id;
+            }
+
+            // Lookup market
+            $marketId = null;
+            if (!empty($marketNameOrCode)) {
+                $mkt = $markets->first(fn($m) => strtolower($m->code) === strtolower($marketNameOrCode) || strtolower($m->name) === strtolower($marketNameOrCode));
+                if ($mkt) $marketId = $mkt->id;
+            }
+
+            // Lookup branch
+            $branchId = null;
+            if (!empty($branchNameOrCode)) {
+                $br = $branches->first(fn($b) => strtolower($b->code) === strtolower($branchNameOrCode) || strtolower($b->name) === strtolower($branchNameOrCode));
+                if ($br) $branchId = $br->id;
+            }
+
+            // Lookup booker
+            $bookerId = null;
+            if (!empty($bookerNameOrEmail)) {
+                $bkr = $bookers->first(fn($b) => strtolower($b->name) === strtolower($bookerNameOrEmail) || strtolower($b->email) === strtolower($bookerNameOrEmail));
+                if ($bkr) $bookerId = $bkr->id;
+            }
+
+            $companyData = [
+                'name' => $name,
+                'trading_name' => $tradingName ?: null,
+                'address' => $address ?: null,
+                'tax_code' => $taxCode ?: null,
+                'phone' => $phone ?: null,
+                'email' => $email ?: null,
+                'customer_source_id' => $sourceId,
+                'market_id' => $marketId,
+                'max_debt' => $maxDebt,
+                'bank_account' => $bankAccount ?: null,
+                'booker_id' => $bookerId,
+                'rate_code' => $rateCode ?: null,
+                'branch_id' => $branchId,
+                'is_active' => true,
+            ];
+
+            // If code is provided and exists, update. Otherwise try to find by name, or create new.
+            $existingCompany = null;
+            if (!empty($code)) {
+                $existingCompany = Company::where('code', $code)->first();
+            }
+            if (!$existingCompany) {
+                $existingCompany = Company::where('name', $name)->first();
+            }
+
+            if ($existingCompany) {
+                $existingCompany->update($companyData);
+            } else {
+                if (!empty($code)) {
+                    $companyData['code'] = $code;
+                }
+                Company::create($companyData);
+            }
+
+            $importedCount++;
+        }
+
+        fclose($handle);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Nhập excel thành công! Đã xử lý {$importedCount} dòng dữ liệu công ty."
+        ]);
+    }
+
+    /**
+     * Download CSV template for company import.
+     */
+    public function template(Request $request)
+    {
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="company_template.csv"',
+            'Pragma' => 'no-cache',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0'
+        ];
+
+        $callback = function() {
+            $file = fopen('php://output', 'w');
+            
+            // Add UTF-8 BOM for Vietnamese character support in Excel
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            // CSV Headers
+            fputcsv($file, [
+                'Mã',
+                'Tên',
+                'Tên giao dịch',
+                'Địa chỉ',
+                'Tax',
+                'Số điện thoại',
+                'Email',
+                'Nguồn khách',
+                'Thị trường',
+                'Công nợ tối đa',
+                'Tài khoản ngân hàng',
+                'Người đặt phòng',
+                'Mã giá phòng',
+                'Chi nhánh'
+            ]);
+
+            // CSV Example Row
+            fputcsv($file, [
+                'CTY0001',
+                'Công ty TNHH Du lịch Việt',
+                'Viet Travel',
+                '123 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
+                '0102030405',
+                '02839999999',
+                'info@viettravel.com',
+                'AGODA',
+                'OTA',
+                '50000000',
+                '1234567890',
+                'Nguyễn Văn A',
+                'GP01',
+                'HKT1'
+            ]);
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }
