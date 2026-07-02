@@ -77,6 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('branches', \App\Http\Controllers\Api\BranchController::class);
     Route::apiResource('branches-total', \App\Http\Controllers\Api\BranchTotalController::class);
     Route::apiResource('bookers', \App\Http\Controllers\Api\BookerController::class);
+    Route::post('companies/sync', [\App\Http\Controllers\Api\CompanyController::class, 'sync']);
+    Route::get('companies/export', [\App\Http\Controllers\Api\CompanyController::class, 'export']);
+    Route::post('companies/import', [\App\Http\Controllers\Api\CompanyController::class, 'import']);
+    Route::get('companies/template', [\App\Http\Controllers\Api\CompanyController::class, 'template']);
     Route::apiResource('companies', \App\Http\Controllers\Api\CompanyController::class);
 
     // Hotel details configuration routes

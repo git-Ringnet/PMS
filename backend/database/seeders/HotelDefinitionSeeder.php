@@ -226,12 +226,18 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'AllowEarlyCheckout', 'is_visible' => false],
             ['name' => 'AllowExtendDateRoomOverDateBooking', 'value' => '1', 'description' => 'Cho phép gia hạn phòng vượt quá ngày của booking', 'is_visible' => false],
             ['name' => 'AllowInputOverAV', 'value' => '0', 'description' => 'AllowInputOverAV', 'is_visible' => false],
+            ['name' => 'AllowOverRoomTypeRoomKind', 'value' => '0', 'description' => 'Cho phép khóa phòng dẫn đến âm phòng (0: không cho, 1: cho phép kèm cảnh báo)', 'is_visible' => true],
             ['name' => 'AllowLockRoomCauseUnassignableRoomBK', 'value' => '0', 'description' => 'AllowLockRoomCauseUnassignableRoomBK', 'is_visible' => false],
             ['name' => 'AllowNegativeAmountDeposit', 'value' => '', 'description' => 'AllowNegativeAmountDeposit', 'is_visible' => false],
+            ['name' => 'OOOCheckDepartment', 'value' => '0', 'description' => 'Kiểm tra bộ phận khi mở khóa OOO (0: không kiểm tra, 1: kiểm tra)', 'is_visible' => true],
+            ['name' => 'OOSCheckDepartment', 'value' => '0', 'description' => 'Kiểm tra bộ phận khi mở khóa OOS (0: không kiểm tra, 1: kiểm tra)', 'is_visible' => true],
+            ['name' => 'OOORoleUserUnlock', 'value' => 'Admin,FOM,Sales,HKM', 'description' => 'Quyền user được phép mở khóa OOO', 'is_visible' => true],
+            ['name' => 'OOSRoleUserUnlock', 'value' => 'Admin,FOM,Sales,HKM', 'description' => 'Quyền user được phép mở khóa OOS', 'is_visible' => true],
+            ['name' => 'FrmOOO_DefineLockByTime', 'value' => '23:59', 'description' => 'Thời gian kết thúc khóa mặc định', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {
-            HotelConfig::create($cfg);
+            HotelConfig::updateOrCreate(['name' => $cfg['name']], $cfg);
         }
 
         // 4. Seed Branches

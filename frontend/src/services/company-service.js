@@ -55,3 +55,10 @@ export const uploadUserSignature = (id, formData) => http.post(`/users/${id}/sig
   headers: { 'Content-Type': 'multipart/form-data' }
 })
 export const deleteUserSignature = (id) => http.delete(`/users/${id}/signature`)
+
+export const syncCompanies = () => http.post('/companies/sync')
+export const exportCompaniesExcel = () => http.get('/companies/export', { responseType: 'blob' })
+export const importCompaniesExcel = (formData) => http.post('/companies/import', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+})
+export const companyTemplateExcel = () => http.get('/companies/template', { responseType: 'blob' })
