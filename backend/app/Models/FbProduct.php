@@ -43,6 +43,17 @@ class FbProduct extends Model
         'image',
         'note',
         'is_active',
+        'entrance_ip',
+        'entrance_gate_ticket_type',
+        'exchange_limit_hours',
+        'is_fixed_price',
+        'is_print_one_ticket',
+        'ticket_type',
+        'is_in_stock',
+        'fb_printer_ids',
+        'is_get_price_from_items',
+        'is_check_combo',
+        'combo_max_items',
     ];
 
     protected $casts = [
@@ -53,6 +64,9 @@ class FbProduct extends Model
         'no_reinvest'            => 'boolean',
         'is_contra'              => 'boolean',
         'is_combo'               => 'boolean',
+        'is_get_price_from_items'=> 'boolean',
+        'is_check_combo'         => 'boolean',
+        'combo_max_items'        => 'integer',
         'is_active'              => 'boolean',
         'flexible_price'         => 'boolean',
         'change_table'           => 'boolean',
@@ -69,6 +83,14 @@ class FbProduct extends Model
         'tax_amount'             => 'decimal:2',
         'special_tax_percent'    => 'float',
         'special_tax_amount'     => 'decimal:2',
+        'entrance_ip'            => 'string',
+        'entrance_gate_ticket_type' => 'integer',
+        'exchange_limit_hours'   => 'integer',
+        'is_fixed_price'         => 'boolean',
+        'is_print_one_ticket'    => 'boolean',
+        'ticket_type'            => 'string',
+        'is_in_stock'            => 'integer',
+        'fb_printer_ids'          => 'array',
     ];
 
     public function category()
@@ -90,4 +112,5 @@ class FbProduct extends Model
     {
         return $this->hasMany(FbCombo::class, 'parent_id');
     }
+
 }

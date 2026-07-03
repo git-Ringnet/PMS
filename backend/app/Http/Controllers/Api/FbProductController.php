@@ -58,6 +58,17 @@ class FbProductController extends Controller
             'serving_time'           => 'integer',
             'is_combo'               => 'boolean',
             'is_active'              => 'boolean',
+            'entrance_ip'            => 'nullable|string|max:255',
+            'entrance_gate_ticket_type' => 'nullable|integer',
+            'exchange_limit_hours'   => 'nullable|integer',
+            'is_fixed_price'         => 'boolean',
+            'is_print_one_ticket'    => 'boolean',
+            'ticket_type'            => 'nullable|string|max:255',
+            'is_in_stock'            => 'nullable|integer',
+            'fb_printer_ids'         => 'nullable',
+            'is_get_price_from_items'=> 'boolean',
+            'is_check_combo'         => 'boolean',
+            'combo_max_items'        => 'nullable|integer',
         ]);
 
         if ($request->hasFile('image')) {
@@ -162,6 +173,17 @@ class FbProductController extends Controller
             'serving_time'           => 'integer',
             'is_combo'               => 'boolean',
             'is_active'              => 'boolean',
+            'entrance_ip'            => 'nullable|string|max:255',
+            'entrance_gate_ticket_type' => 'nullable|integer',
+            'exchange_limit_hours'   => 'nullable|integer',
+            'is_fixed_price'         => 'boolean',
+            'is_print_one_ticket'    => 'boolean',
+            'ticket_type'            => 'nullable|string|max:255',
+            'is_in_stock'            => 'nullable|integer',
+            'fb_printer_ids'         => 'nullable',
+            'is_get_price_from_items'=> 'boolean',
+            'is_check_combo'         => 'boolean',
+            'combo_max_items'        => 'nullable|integer',
         ]);
 
         if ($request->hasFile('image')) {
@@ -263,5 +285,49 @@ class FbProductController extends Controller
         }
 
         return response()->json(['message' => 'Toggled successfully']);
+    }
+    public function bulkUpdateStatus(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer',
+            'action' => 'required|string|in:toggle_global,set_outlets',
+            'outlets' => 'nullable|array',
+            'outlets.*.outlet_id' => 'required_with:outlets|integer',
+            'outlets.*.is_active' => 'required_with:outlets|boolean',
+        ]);
+
+        $ids = $validated['ids'];
+        $action = $validated['action'];
+
+        if ($action === 'toggle_global') {
+            // We just toggle the global is_active for all provided ids
+            $products = FbProduct::whereIn('id', $ids)->get();
+            foreach ($products as $product) {
+                $product->update(['is_active' => !$product->is_active]);
+            }
+            return response()->json(['message' => 'Global active status toggled successfully']);
+        }
+
+        if ($action === 'set_outlets') {
+            $outlets = $validated['outlets'] ?? [];
+            if (empty($outlets)) {
+                return response()->json(['message' => 'No outlets provided'], 400);
+            }
+
+            foreach ($ids as $productId) {
+                foreach ($outlets as $outletData) {
+                    $outlet = \App\Models\FbProductOutlet::firstOrNew([
+                        'fb_product_id' => $productId, 
+                        'outlet_id' => $outletData['outlet_id']
+                    ]);
+                    $outlet->is_active = $outletData['is_active'];
+                    $outlet->save();
+                }
+            }
+            return response()->json(['message' => 'Outlet statuses updated successfully']);
+        }
+
+        return response()->json(['message' => 'Invalid action'], 400);
     }
 }

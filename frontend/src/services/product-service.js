@@ -29,6 +29,7 @@ export const updateProduct = (id, formData) => http.post(`/fb-products/${id}?_me
 export const deleteProduct = (id) => http.delete(`/fb-products/${id}`)
 
 export const bulkToggleActiveProducts = (ids) => http.post('/fb-products/bulk-toggle-active', { ids })
+export const bulkUpdateProductStatus = (payload) => http.post('/fb-products/bulk-update-status', payload)
 
 // ==================== UNITS OF MEASURE (Đơn vị tính) ====================
 export const fetchUnitsOfMeasure = () => http.get('/units-of-measure')
