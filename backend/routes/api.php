@@ -128,8 +128,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Dedicated F&B Menu definitions routes
     Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive']);
+    Route::post('/fb-products/bulk-update-status', [\App\Http\Controllers\Api\FbProductController::class, 'bulkUpdateStatus']);
     Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class);
     Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
+    Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class);
+    Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class);
 
     // Activity Log routes
     Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
