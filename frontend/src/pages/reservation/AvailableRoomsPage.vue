@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchAvailabilityGrid, fetchRegistrationStatuses } from '@/services/availability-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import DateRangePicker from '@/components/DateRangePicker.vue'
 
 const uiStore = useUiStore()
 
@@ -22,11 +23,21 @@ const dropdownRef = ref(null)
 
 // Default selected statuses from localStorage or initial defaults
 const savedStatuses = localStorage.getItem('pms_availability_selected_statuses')
-const defaultStatuses = savedStatuses 
-  ? JSON.parse(savedStatuses) 
-  : ['AV', 'OOO', 'OOS', 'EB', 'SOFAB']
+let initialStatuses = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+if (savedStatuses) {
+  try {
+    const parsed = JSON.parse(savedStatuses)
+    if (parsed.includes('Guaranteed') || parsed.includes('None Guaranteed') || parsed.includes('Allotment')) {
+      localStorage.removeItem('pms_availability_selected_statuses')
+    } else {
+      initialStatuses = parsed
+    }
+  } catch (e) {
+    localStorage.removeItem('pms_availability_selected_statuses')
+  }
+}
 
-const selectedStatuses = ref(defaultStatuses)
+const selectedStatuses = ref(initialStatuses)
 
 // Watch changes to selectedStatuses and save to localStorage
 watch(selectedStatuses, (newVal) => {
@@ -65,42 +76,38 @@ const days = computed(() => {
 
 // Columns displayed inside the room class grid for each day
 const activeSubColumns = computed(() => {
-  const cols = []
-  if (selectedStatuses.value.includes('AV')) cols.push('AV')
-  
-  // Show OCC sub-column if Guaranteed or None Guaranteed are checked
-  const hasOcc = selectedStatuses.value.includes('Guaranteed') || 
-                 selectedStatuses.value.includes('None Guaranteed')
-  if (hasOcc) cols.push('OCC')
-  
-  if (selectedStatuses.value.includes('OOO')) cols.push('OOO')
-  if (selectedStatuses.value.includes('OOS')) cols.push('OOS')
-  if (selectedStatuses.value.includes('EB')) cols.push('EB')
-  if (selectedStatuses.value.includes('SOFAB')) cols.push('SOFAB')
-  if (selectedStatuses.value.includes('Allotment')) cols.push('ALM')
-  
-  // Default fallback to at least AV to keep table layout correct
+  const order = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+  const cols = order.filter(code => selectedStatuses.value.includes(code))
   if (cols.length === 0) cols.push('AV')
-  
   return cols
 })
 
 // Build dynamic statuses options (only showing active ones with is_availability=true)
 const allStatusesList = computed(() => {
-  const system = [
-    { code: 'AV', label: 'AV', color: '#0284c7' },
-    { code: 'OOO', label: 'OOO', color: '#059669' },
-    { code: 'OOS', label: 'OOS', color: '#475569' },
-    { code: 'EB', label: 'EB', color: '#f43f5e' },
-    { code: 'SOFAB', label: 'SOFAB', color: '#a855f7' }
+  return [
+    { code: 'AV', label: 'AV', color: '#0284c7', activeClasses: 'bg-sky-50 border-sky-300 text-sky-700' },
+    { code: 'OCC', label: 'OCC', color: '#3b82f6', activeClasses: 'bg-indigo-50 border-indigo-300 text-indigo-700' },
+    { code: 'ALM', label: 'ALM', color: '#f59e0b', activeClasses: 'bg-amber-50 border-amber-300 text-amber-700' },
+    { code: 'OOO', label: 'OOO', color: '#10b981', activeClasses: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
+    { code: 'OOS', label: 'OOS', color: '#6b7280', activeClasses: 'bg-slate-100 border-slate-300 text-slate-700' },
+    { code: 'EB', label: 'EB', color: '#ec4899', activeClasses: 'bg-pink-50 border-pink-300 text-pink-700' },
+    { code: 'SOFAB', label: 'SOFAB', color: '#8b5cf6', activeClasses: 'bg-violet-50 border-violet-300 text-violet-700' }
   ]
-  const db = registrationStatuses.value.map(s => ({
-    code: s.name,
-    label: s.name,
-    color: s.color || '#94a3b8'
-  }))
-  return [...system, ...db]
 })
+
+function toggleStatus(code) {
+  const index = selectedStatuses.value.indexOf(code)
+  if (index > -1) {
+    if (selectedStatuses.value.length > 1) {
+      selectedStatuses.value.splice(index, 1)
+    }
+  } else {
+    const order = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+    const newList = [...selectedStatuses.value, code]
+    newList.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+    selectedStatuses.value = newList
+  }
+}
 
 function getAvailableCount(classCode, dateStr) {
   return gridData.value[classCode]?.[dateStr]?.av ?? 0
@@ -132,22 +139,14 @@ function getSumValue(subCol, dateStr) {
 }
 
 function getCellClass(subCol, val, isWeekend) {
-  let base = 'p-1.5 border-r border-slate-200 text-center font-semibold text-[12px] '
+  let base = 'p-1.5 border-r border-slate-200 text-center text-[12px] hover:bg-slate-200 transition-colors cursor-pointer '
   if (isWeekend) {
-    base += 'bg-[#cae8fc] '
+    base += 'bg-[#8cc4fb] hover:bg-[#b5defc] '
   }
-  if (val === 0) {
-    base += 'text-slate-400 font-normal'
+  if (val <= 0) {
+    base += 'text-red-500 font-light'
   } else {
-    if (subCol === 'AV') {
-      base += 'text-slate-900 font-semibold'
-    } else if (subCol === 'OOO' || subCol === 'OOS') {
-      base += 'text-amber-700 font-semibold'
-    } else if (subCol === 'OCC') {
-      base += 'text-blue-700 font-semibold'
-    } else {
-      base += 'text-slate-900 font-semibold'
-    }
+    base += 'text-gray-900 font-light'
   }
   return base
 }
@@ -220,8 +219,7 @@ onMounted(async () => {
       
       // If there is NO saved choice in localStorage, we populate selectedStatuses with all of them
       if (!localStorage.getItem('pms_availability_selected_statuses')) {
-        const dbNames = registrationStatuses.value.map(s => s.name)
-        selectedStatuses.value = ['AV', 'OOO', 'OOS', 'EB', 'SOFAB', ...dbNames]
+        selectedStatuses.value = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
       }
     }
   } catch (error) {
@@ -245,6 +243,8 @@ onUnmounted(() => {
 function showExportToast() {
   uiStore.showToast('Xuất báo cáo Excel thành công!', 'success')
 }
+
+
 </script>
 
 <template>
@@ -253,46 +253,17 @@ function showExportToast() {
     <div class="flex items-center justify-between shrink-0">
       <!-- Date pickers & Action buttons -->
       <div class="flex items-center gap-3">
-        <!-- Date Selector Inputs -->
-        <div class="flex items-center gap-2">
-          <!-- Start Date -->
-          <div class="relative flex items-center border border-slate-200 rounded-lg bg-slate-50 px-2.5 py-1 shadow-sm text-xs font-semibold text-slate-700">
-            <span class="text-slate-400 mr-1 text-[11px]">Từ:</span>
-            <input 
-              type="date" 
-              v-model="startDateYMD" 
-              @change="handleFilterSubmit"
-              class="bg-transparent border-none focus:outline-none w-[115px] text-slate-700 font-bold"
-            />
-          </div>
-
-          <!-- End Date -->
-          <div class="relative flex items-center border border-slate-200 rounded-lg bg-slate-50 px-2.5 py-1 shadow-sm text-xs font-semibold text-slate-700">
-            <span class="text-slate-400 mr-1 text-[11px]">Đến:</span>
-            <input 
-              type="date" 
-              v-model="endDateYMD" 
-              @change="handleFilterSubmit"
-              class="bg-transparent border-none focus:outline-none w-[115px] text-slate-700 font-bold"
-            />
-          </div>
-        </div>
-
-        <!-- Button Xem -->
-        <button 
-          @click="handleFilterSubmit"
-          class="flex items-center gap-1.5 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold cursor-pointer border-none shadow-sm transition-all"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          Xem
-        </button>
+        <!-- Date Range Picker -->
+        <DateRangePicker 
+          v-model:startDate="startDateYMD" 
+          v-model:endDate="endDateYMD" 
+          @change="handleFilterSubmit"
+        />
 
         <!-- Button Xuất excel -->
         <button 
           @click="showExportToast"
-          class="flex items-center gap-1.5 px-4 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-700 border border-sky-200 rounded-lg text-xs font-bold cursor-pointer transition-all shadow-xs"
+          class="flex items-center gap-1.5 px-4 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-700 border border-sky-200 rounded-lg text-xs font-semibold cursor-pointer transition-all shadow-xs"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -301,57 +272,73 @@ function showExportToast() {
         </button>
       </div>
 
-      <!-- Status Filter Dropdown on right -->
-      <div class="relative" ref="dropdownRef">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-bold text-slate-700">Lọc Trạng Thái:</span>
+      <!-- Status Filter Dropdown & Horizontal Badges -->
+      <div class="flex items-center gap-2" ref="dropdownRef">
+        <!-- Horizontal Badges (Click to toggle) -->
+        <div class="flex items-center gap-1">
           <button 
-            @click="toggleDropdown"
-            class="flex items-center justify-between gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer transition-all shadow-xs text-slate-700 min-w-[120px]"
-          >
-            <span class="truncate max-w-[120px]">
-              {{ selectedStatuses.length === allStatusesList.length ? 'Tất cả' : selectedStatuses.join(', ') || 'Trống' }}
-            </span>
-            <svg class="w-3 h-3 text-slate-400 transition-transform duration-200" :class="{ 'rotate-180': isDropdownOpen }" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-        </div>
-        
-        <div 
-          v-if="isDropdownOpen" 
-          class="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 max-h-64 overflow-y-auto"
-        >
-          <label 
             v-for="status in allStatusesList" 
             :key="status.code"
-            class="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700 select-none"
+            type="button"
+            @click="toggleStatus(status.code)"
+            class="px-2.5 py-1 text-[11px] font-semibold rounded border cursor-pointer transition-all shadow-sm flex items-center h-[28px]"
+            :class="[
+              selectedStatuses.includes(status.code) 
+                ? status.activeClasses
+                : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
+            ]"
           >
-            <input 
-              type="checkbox" 
-              :value="status.code" 
-              v-model="selectedStatuses"
-              class="hidden"
-            />
-            <!-- Custom checkbox with status background -->
-            <span 
-              class="w-4.5 h-4.5 rounded border mr-2 flex items-center justify-center transition-all shrink-0"
-              :style="{
-                backgroundColor: selectedStatuses.includes(status.code) ? status.color : '#ffffff',
-                borderColor: selectedStatuses.includes(status.code) ? 'transparent' : '#cbd5e1'
-              }"
-              :class="[
-                selectedStatuses.includes(status.code) 
-                  ? 'text-white' 
-                  : 'bg-white'
-              ]"
-            >
-              <svg v-if="selectedStatuses.includes(status.code)" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </span>
             {{ status.label }}
-          </label>
+          </button>
+        </div>
+
+        <!-- Filter Settings Button -->
+        <div class="relative">
+          <button 
+            @click="toggleDropdown"
+            class="flex items-center justify-center p-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-all shadow-xs text-gray-900 h-[28px] w-[28px]"
+          >
+            <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+            </svg>
+          </button>
+
+          <!-- Dropdown Popup -->
+          <div 
+            v-if="isDropdownOpen" 
+            class="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 max-h-64 overflow-y-auto"
+          >
+            <label 
+              v-for="status in allStatusesList" 
+              :key="status.code"
+              class="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs font-semibold text-gray-900 select-none"
+            >
+              <input 
+                type="checkbox" 
+                :value="status.code" 
+                v-model="selectedStatuses"
+                class="hidden"
+              />
+              <!-- Custom checkbox with status color -->
+              <span 
+                class="w-4.5 h-4.5 rounded border mr-2 flex items-center justify-center transition-all shrink-0"
+                :style="{
+                  backgroundColor: selectedStatuses.includes(status.code) ? status.color : '#ffffff',
+                  borderColor: selectedStatuses.includes(status.code) ? 'transparent' : '#cbd5e1'
+                }"
+                :class="[
+                  selectedStatuses.includes(status.code) 
+                    ? 'text-white' 
+                    : 'bg-white'
+                ]"
+              >
+                <svg v-if="selectedStatuses.includes(status.code)" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </span>
+              {{ status.label }}
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -361,46 +348,46 @@ function showExportToast() {
       <!-- Loading Overlay -->
       <LoadingOverlay :show="isLoading" />
 
-      <table class="w-full text-slate-900 text-left border-collapse table-fixed select-none">
+      <table class="text-slate-900 text-left border-collapse table-fixed w-max min-w-max">
         <!-- Main Column Width Definitions (Narrowed to fit more days at once) -->
         <colgroup>
-          <col class="w-[60px] sticky left-0 z-20" />
-          <col class="w-[130px] sticky left-[60px] z-20" />
-          <col class="w-[45px] sticky left-[190px] z-20" />
-          <col class="w-[55px] sticky left-[235px] z-20" />
+          <col class="w-[80px] sticky left-0 z-20" />
+          <col class="w-[170px] sticky left-[80px] z-20" />
+          <col class="w-[50px] sticky left-[250px] z-20" />
+          <col class="w-[65px] sticky left-[300px] z-20" />
           <template v-for="day in days" :key="day.fullDateStr">
-            <col v-for="subCol in activeSubColumns" :key="subCol" class="w-[35px]" />
+            <col v-for="subCol in activeSubColumns" :key="subCol" class="w-[45px]" />
           </template>
         </colgroup>
 
         <!-- Table Headers -->
         <thead>
           <!-- First Row: Weekdays -->
-          <tr class="bg-slate-100 border-b border-slate-200 text-slate-900 font-semibold select-none h-8 text-[12px]">
-            <th rowspan="2" class="p-2 border-r border-slate-200 text-center sticky left-0 z-30 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">Mã Loại</th>
-            <th rowspan="2" class="p-2 border-r border-slate-200 sticky left-[60px] z-30 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">Loại phòng</th>
-            <th rowspan="2" class="p-2 border-r border-slate-200 text-center sticky left-[190px] z-30 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">Tổng</th>
-            <th rowspan="2" class="p-2 border-r border-slate-200 text-center sticky left-[235px] z-30 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0] leading-tight text-[10px] font-semibold">SL Phòng Tối Đa</th>
+          <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 font-semibold h-8 text-[10px]">
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-left pl-3 sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Mã Loại</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Loại phòng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[250px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Tổng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[300px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] leading-tight text-[12px] font-semibold">SL Phòng Tối Đa</th>
             
             <th 
               v-for="(day, idx) in days" 
               :key="idx" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200 text-center text-[10.5px] font-semibold"
-              :class="[day.isWeekend ? 'bg-[#8cc4fb] text-slate-800' : 'bg-slate-100 text-slate-900']"
+              class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] text-gray-900' : 'bg-slate-200 text-gray-900']"
             >
               {{ day.dow }}<br/>{{ day.dateStr }}
             </th>
           </tr>
 
           <!-- Second Row: Sub-Columns (AV, OOO, OOS...) -->
-          <tr class="bg-slate-50 border-b border-slate-200 text-slate-900 font-semibold h-8 text-[12px]">
+          <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-[10px]">
             <template v-for="day in days" :key="day.fullDateStr">
               <th 
                 v-for="subCol in activeSubColumns" 
                 :key="subCol"
                 class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
-                :class="[day.isWeekend ? 'bg-[#8cc4fb] text-slate-800' : 'bg-slate-50 text-slate-500']"
+                :class="[day.isWeekend ? 'bg-[#8cc4fb] text-gray-900' : 'bg-slate-200 text-gray-900']"
               >
                 {{ subCol }}
               </th>
@@ -414,22 +401,22 @@ function showExportToast() {
           <tr 
             v-for="rc in roomClasses" 
             :key="rc.code" 
-            class="border-b border-slate-200 h-9 hover:bg-slate-50"
+            class="border-b border-slate-200 h-9"
           >
             <!-- Room Type Identifiers (Sticky on Left) -->
-            <td class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
-              <div class="flex items-center gap-1 justify-center">
-                <span class="text-slate-400 font-extrabold mr-0.5">•</span>
+            <td class="p-2 border-r border-slate-200 text-left pl-3 font-semibold text-gray-900 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+              <div class="flex items-center gap-1 justify-start">
+                <span class="text-gray-450 font-extrabold mr-0.5">•</span>
                 {{ rc.code }}
               </div>
             </td>
-            <td class="p-2 border-r border-slate-200 font-semibold text-slate-900 sticky left-[60px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]">
+            <td class="p-2 border-r border-slate-200 font-semibold text-gray-900 sticky left-[80px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]">
               {{ rc.name }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900 sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[250px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
               {{ rc.total }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[300px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
               {{ rc.max_extra_beds }}
             </td>
 
@@ -446,13 +433,13 @@ function showExportToast() {
           </tr>
 
           <!-- TỔNG Row (Sum totals) -->
-          <tr class="bg-slate-200 border-b border-slate-300 font-semibold h-9 text-slate-900 text-[12px]">
+          <tr class="bg-slate-200 border-b border-slate-300 h-9 text-gray-900 text-[12px]">
             <td class="p-2 border-r border-slate-300 text-center sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">TỔNG</td>
-            <td class="p-2 border-r border-slate-300 sticky left-[60px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1]"></td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[190px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
+            <td class="p-2 border-r border-slate-300 sticky left-[80px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1]"></td>
+            <td class="p-2 border-r border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
               {{ totals.grand_total }}
             </td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[235px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
+            <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
               {{ totals.grand_max_extra_beds }}
             </td>
 
@@ -460,10 +447,10 @@ function showExportToast() {
               <td 
                 v-for="subCol in activeSubColumns"
                 :key="subCol"
-                class="p-2 border-r border-slate-300 text-center text-[12px] font-semibold text-slate-900"
+                class="p-2 border-r border-slate-300 text-center text-[12px] font-light text-gray-900"
                 :class="[
-                  day.isWeekend ? 'bg-[#cae8fc]' : '',
-                  getSumValue(subCol, day.fullDateStr) === 0 ? 'text-slate-400 font-normal' : ''
+                  day.isWeekend ? 'bg-[#8cc4fb]' : '',
+                  getSumValue(subCol, day.fullDateStr) === 0 ? 'text-gray-400 font-light' : ''
                 ]"
               >
                 {{ getSumValue(subCol, day.fullDateStr) }}
@@ -472,50 +459,49 @@ function showExportToast() {
           </tr>
 
           <!-- THỐNG KÊ Title Header Row -->
-          <tr class="bg-slate-100 border-b border-slate-200 text-slate-900 font-semibold h-8 text-center uppercase tracking-wide text-[12px]">
-            <td colspan="4" class="p-2 sticky left-0 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0] text-left pl-4 font-semibold">THỐNG KÊ</td>
+          <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-center uppercase tracking-wide text-[12px]">
+            <td colspan="4" class="p-2 sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#e2e8f0] text-left pl-4 font-semibold">THỐNG KÊ</td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200"
-              :class="[day.isWeekend ? 'bg-[#cae8fc]' : '']"
+              class="p-1 border-r border-slate-200 bg-slate-200"
             ></td>
           </tr>
 
           <!-- 1. Tổng (Always Visible) -->
-          <tr class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Tổng</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Tổng</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
               {{ (totals.grand_total * dates.length) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
-              :class="[day.isWeekend ? 'bg-[#cae8fc]' : '']"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.total_rooms ?? 0 }}
             </td>
           </tr>
 
           <!-- 2. OOO -->
-          <tr v-if="selectedStatuses.includes('OOO')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">OOO</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">
+          <tr v-if="selectedStatuses.includes('OOO')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">OOO</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.ooo ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.ooo ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.ooo ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.ooo ?? 0 }}
@@ -523,20 +509,20 @@ function showExportToast() {
           </tr>
 
           <!-- 3. OOS -->
-          <tr v-if="selectedStatuses.includes('OOS')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">OOS</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">
+          <tr v-if="selectedStatuses.includes('OOS')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">OOS</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.oos ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.oos ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.oos ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.oos ?? 0 }}
@@ -544,38 +530,38 @@ function showExportToast() {
           </tr>
 
           <!-- 4. Tổng số phòng có thể bán (Always Visible) -->
-          <tr class="border-b border-slate-200 h-8 font-semibold text-blue-650 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-blue-600 pl-4 font-semibold">Tổng số phòng có thể bán</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-blue-600 font-semibold">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 pl-4 font-semibold">Tổng số phòng có thể bán</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.sellable ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-blue-600 font-semibold"
-              :class="[day.isWeekend ? 'bg-[#cae8fc]' : '']"
+              class="p-2 border-r border-slate-200 text-center text-gray-900 font-light"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.sellable ?? 0 }}
             </td>
           </tr>
 
           <!-- 5. Series (Always Visible) -->
-          <tr class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Series</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Series</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.series ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.series ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.series ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.series ?? 0 }}
@@ -583,20 +569,20 @@ function showExportToast() {
           </tr>
 
           <!-- 6. Allotment (Always Visible) -->
-          <tr class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Allotment</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] font-semibold">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Allotment</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.allotment ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.allotment ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.allotment ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.allotment ?? 0 }}
@@ -604,20 +590,20 @@ function showExportToast() {
           </tr>
 
           <!-- 7. Đặt phòng đảm bảo -->
-          <tr v-if="selectedStatuses.includes('Guaranteed')" class="border-b border-slate-200 h-8 font-semibold text-amber-700 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Đặt phòng đảm bảo</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-amber-700 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-amber-700 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Đặt phòng đảm bảo</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-amber-700 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.bk_guaranteed ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-amber-700 font-semibold"
+              class="p-2 border-r border-slate-200 text-center text-amber-700 font-light"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.bk_guaranteed ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.bk_guaranteed ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.bk_guaranteed ?? 0 }}
@@ -625,20 +611,20 @@ function showExportToast() {
           </tr>
 
           <!-- 8. Đặt phòng không đảm bảo -->
-          <tr v-if="selectedStatuses.includes('None Guaranteed')" class="border-b border-slate-200 h-8 font-semibold text-red-500 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Đặt phòng không đảm bảo</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-red-500 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-red-500 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Đặt phòng không đảm bảo</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-500 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.bk_nonguaranteed ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-red-500 font-semibold"
+              class="p-2 border-r border-slate-200 text-center text-red-500 font-light"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0 }}
@@ -646,18 +632,18 @@ function showExportToast() {
           </tr>
 
           <!-- 9. Tổng số phòng chiếm dụng -->
-          <tr v-if="selectedStatuses.includes('Guaranteed') || selectedStatuses.includes('None Guaranteed')" class="border-b border-slate-200 h-10 font-semibold hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Tổng số phòng chiếm dụng</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-10 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Tổng số phòng chiếm dụng</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.total_occupied ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200 text-center leading-tight text-red-600 text-[11.5px] font-semibold"
-              :class="[day.isWeekend ? 'bg-[#cae8fc]' : '']"
+              class="p-1 border-r border-slate-200 text-center leading-tight text-red-600 text-[12px] font-light"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.total_occupied ?? 0 }}<br/>
               <span class="text-[9px] font-medium text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
@@ -665,38 +651,38 @@ function showExportToast() {
           </tr>
 
           <!-- 10. Phòng trống -->
-          <tr v-if="selectedStatuses.includes('AV')" class="border-b border-slate-200 h-8 font-semibold text-red-500 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng trống</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-red-500 font-semibold">
+          <tr v-if="selectedStatuses.includes('AV')" class="group border-b border-slate-200 h-8 text-red-500 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng trống</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-500 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.av ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-red-500 font-semibold"
-              :class="[day.isWeekend ? 'bg-[#cae8fc]' : '']"
+              class="p-2 border-r border-slate-200 text-center text-red-500 font-light"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.av ?? 0 }}
             </td>
           </tr>
 
           <!-- 11. Phòng nội bộ -->
-          <tr v-if="selectedStatuses.includes('AV')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng nội bộ</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('AV')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng nội bộ</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.internal_rooms ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.internal_rooms ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.internal_rooms ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.internal_rooms ?? 0 }}
@@ -704,20 +690,20 @@ function showExportToast() {
           </tr>
 
           <!-- 12. Phòng miễn phí -->
-          <tr v-if="selectedStatuses.includes('AV')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng miễn phí</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('AV')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng miễn phí</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.free_rooms ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.free_rooms ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.free_rooms ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.free_rooms ?? 0 }}
@@ -725,20 +711,20 @@ function showExportToast() {
           </tr>
 
           <!-- 13. Tổng khách (Always Visible) -->
-          <tr class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Tổng khách</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Tổng khách</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.total_guests ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.total_guests ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.total_guests ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.total_guests ?? 0 }}
@@ -746,20 +732,20 @@ function showExportToast() {
           </tr>
 
           <!-- 14. Phòng đến (Room/Pax) -->
-          <tr v-if="selectedStatuses.includes('Guaranteed') || selectedStatuses.includes('None Guaranteed')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng đến (Room/Pax)</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng đến (Room/Pax)</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.arrivals_rooms ?? 0), 0) }}/{{ dates.reduce((sum, d) => sum + (statistics[d]?.arrivals_pax ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.arrivals_rooms ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.arrivals_rooms ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.arrivals_rooms ?? 0 }}/{{ statistics[day.fullDateStr]?.arrivals_pax ?? 0 }}
@@ -767,20 +753,20 @@ function showExportToast() {
           </tr>
 
           <!-- 15. Phòng đang ở -->
-          <tr v-if="selectedStatuses.includes('Guaranteed') || selectedStatuses.includes('None Guaranteed')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng đang ở</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng đang ở</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.inhouse ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.inhouse ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.inhouse ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.inhouse ?? 0 }}
@@ -788,20 +774,20 @@ function showExportToast() {
           </tr>
 
           <!-- 16. Thêm giường -->
-          <tr v-if="selectedStatuses.includes('EB')" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Thêm giường</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('EB')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Thêm giường</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.extra_beds ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.extra_beds ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.extra_beds ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.extra_beds ?? 0 }}
@@ -809,20 +795,20 @@ function showExportToast() {
           </tr>
 
           <!-- 17. Phòng hủy -->
-          <tr v-if="selectedStatuses.some(s => s.toLowerCase().includes('cancelled'))" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng hủy</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng hủy</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.cancellations ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.cancellations ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.cancellations ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.cancellations ?? 0 }}
@@ -830,20 +816,20 @@ function showExportToast() {
           </tr>
 
           <!-- 18. Phòng noshow -->
-          <tr v-if="selectedStatuses.some(s => s.toLowerCase().includes('noshow'))" class="border-b border-slate-200 h-8 font-semibold text-slate-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng noshow</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[190px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-slate-900 font-semibold">
+          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
+            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng noshow</td>
+            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.noshow ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[235px] bg-white shadow-[inset_-1px_0_0_#e2e8f0]"></td>
+            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-semibold text-slate-900"
+              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
               :class="[
-                day.isWeekend ? 'bg-[#cae8fc]' : '',
-                (statistics[day.fullDateStr]?.noshow ?? 0) === 0 ? 'text-slate-400 font-normal' : ''
+                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
+                (statistics[day.fullDateStr]?.noshow ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
             >
               {{ statistics[day.fullDateStr]?.noshow ?? 0 }}

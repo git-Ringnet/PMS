@@ -5,6 +5,7 @@ import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { t } from '@/utils/i18n'
+import { TEXT_THEME } from '@/utils/theme'
 import RoomDetailModal from '@/components/RoomDetailModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
@@ -54,6 +55,12 @@ const settings = ref({
   roomHeight: parseInt(localStorage.getItem('pms_room_height') || '110')
 })
 
+const cardScale = computed(() => {
+  const widthScale = settings.value.roomWidth / 200
+  const heightScale = settings.value.roomHeight / 110
+  return Math.min(widthScale, heightScale)
+})
+
 function saveSettings() {
   localStorage.setItem('pms_icon_size_g1', String(settings.value.iconSizes.group1))
   localStorage.setItem('pms_icon_size_g2', String(settings.value.iconSizes.group2))
@@ -66,6 +73,33 @@ function saveSettings() {
   localStorage.setItem('pms_room_height', String(settings.value.roomHeight))
   showSettings.value = false
   uiStore.showToast('Cài đặt hiển thị đã được lưu thành công!', 'success')
+}
+
+function resetToDefaultSettings() {
+  settings.value = {
+    iconSizes: {
+      group1: 20,
+      group2: 20,
+      group3: 10,
+      group4: 16,
+      group5: 20,
+    },
+    exactPosition: false,
+    floorOrientation: 'Ngang',
+    roomWidth: 200,
+    roomHeight: 110
+  }
+  localStorage.removeItem('pms_icon_size_g1')
+  localStorage.removeItem('pms_icon_size_g2')
+  localStorage.removeItem('pms_icon_size_g3')
+  localStorage.removeItem('pms_icon_size_g4')
+  localStorage.removeItem('pms_icon_size_g5')
+  localStorage.removeItem('pms_exact_position')
+  localStorage.removeItem('pms_floor_orientation')
+  localStorage.removeItem('pms_room_width')
+  localStorage.removeItem('pms_room_height')
+  calculateScale()
+  uiStore.showToast('Đã khôi phục cài đặt hiển thị mặc định!', 'success')
 }
 
 function handleClickOutsideSettings(event) {
@@ -252,25 +286,21 @@ function shouldShowSparkles(room) {
 }
 
 function getStatusIconSize(room) {
+  let size = 20
   if (room.status === ROOM_STATUSES.MAINTENANCE) {
-    return settings.value.iconSizes.group1
+    size = settings.value.iconSizes.group1
+  } else if (room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean) {
+    size = settings.value.iconSizes.group2
+  } else if (shouldShowSparkles(room)) {
+    size = settings.value.iconSizes.group2
+  } else if (room.status === ROOM_STATUSES.AVAILABLE) {
+    size = settings.value.iconSizes.group2
+  } else if (room.status === ROOM_STATUSES.RESERVED) {
+    size = settings.value.iconSizes.group5
+  } else if (room.status === ROOM_STATUSES.OCCUPIED) {
+    size = settings.value.iconSizes.group2
   }
-  if (room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean) {
-    return settings.value.iconSizes.group2
-  }
-  if (shouldShowSparkles(room)) {
-    return settings.value.iconSizes.group2
-  }
-  if (room.status === ROOM_STATUSES.AVAILABLE) {
-    return settings.value.iconSizes.group2
-  }
-  if (room.status === ROOM_STATUSES.RESERVED) {
-    return settings.value.iconSizes.group5
-  }
-  if (room.status === ROOM_STATUSES.OCCUPIED) {
-    return settings.value.iconSizes.group2
-  }
-  return 20
+  return Math.round(size * cardScale.value)
 }
 
 // Guest names list matching image 2
@@ -533,11 +563,11 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[12px] font-semibold text-gray-900 leading-tight">{{ selectedDate }}</span>
-              <span class="text-[10px] text-gray-900 font-semibold uppercase mt-0.5">{{ t('roomMap.current') }}</span>
+              <span class="text-[12px] leading-tight" :class="TEXT_THEME.statsValue">{{ selectedDate }}</span>
+              <span class="text-[10px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current') }}</span>
             </div>
           </button>
-
+ 
           <!-- Đã đến card -->
           <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
@@ -551,11 +581,11 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.arrivals') }}</span>
-              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ checkinStats }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.arrivals') }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkinStats }}</span>
             </div>
           </button>
-
+ 
           <!-- Đã đi card -->
           <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
@@ -569,11 +599,11 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.departures') }}</span>
-              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ checkoutStats }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.departures') }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkoutStats }}</span>
             </div>
           </button>
-
+ 
           <!-- Đang ở card -->
           <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
@@ -587,11 +617,11 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.occupied') }}</span>
-              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ occupiedStats }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.occupied') }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupiedStats }}</span>
             </div>
           </button>
-
+ 
           <!-- Khóa OOO card -->
           <button @click="handleMetricClick('OOO')" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
@@ -600,11 +630,11 @@ const uniqueFloors = computed(() => {
               <RoomIcon name="ooo" class="w-5 h-5" />
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.lockOoo') }}</span>
-              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo') }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
             </div>
           </button>
-
+ 
           <!-- Khóa OOS card -->
           <button @click="handleMetricClick('OOS')" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
@@ -613,11 +643,11 @@ const uniqueFloors = computed(() => {
               <RoomIcon name="oos" class="w-5 h-5 text-emerald-600" />
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.lockOos') }}</span>
-              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos') }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
             </div>
           </button>
-
+ 
           <!-- Công suất card -->
           <button @click="showStatsModal = true" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
@@ -641,13 +671,13 @@ const uniqueFloors = computed(() => {
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
               </svg>
-              <span class="relative z-10 text-[9px] font-semibold text-gray-900 leading-none">
+              <span class="relative z-10 text-[9px] leading-none" :class="TEXT_THEME.statsValue">
                 {{ occupancyRateStats }}
               </span>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] text-gray-900 font-semibold uppercase leading-tight">{{ t('roomMap.occupancy') }}</span>
-              <span class="text-[13px] font-semibold text-gray-900 mt-0.5">{{ occupancyRateStats }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.occupancy') }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupancyRateStats }}</span>
             </div>
           </button>
         </div>
@@ -856,14 +886,20 @@ const uniqueFloors = computed(() => {
               <input type="range" min="80" max="200" v-model.number="settings.roomHeight" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 100%)' }" />
             </div>
 
-            <!-- Save Button -->
-            <button @click="saveSettings" 
-              class="mt-2 w-full py-2.5 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Lưu
-            </button>
+            <!-- Buttons Group -->
+            <div class="flex gap-2.5 mt-2">
+              <button @click="resetToDefaultSettings" 
+                class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
+                Mặc định
+              </button>
+              <button @click="saveSettings" 
+                class="flex-1 py-2.5 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Lưu
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -872,7 +908,7 @@ const uniqueFloors = computed(() => {
       <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden">
         
         <!-- Left/Center content container -->
-        <div class="flex-1 min-w-0 overflow-hidden p-5 bg-white flex flex-col gap-4">
+        <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
           
           <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
           <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
@@ -1244,8 +1280,8 @@ const uniqueFloors = computed(() => {
             <!-- Room Grid view (Lưới sơ đồ) -->
             <!-- Room Grid view (Lưới sơ đồ) -->
             <div v-else-if="isGridMode" 
-              class="flex-1 overflow-auto pt-2.5 pl-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
-              :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-3.5' : 'flex flex-row gap-5 items-start'"
+              class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
+              :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'"
             >
               <div
                 v-for="(floor, floorIdx) in sortedFloors"
@@ -1291,13 +1327,13 @@ const uniqueFloors = computed(() => {
                     <!-- Status Indicator Dot (Top Left - Check-in Today) -->
                     <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
                       <span class="rounded-full block border border-white/20 shadow-sm bg-emerald-500 relative"
-                        :style="{ width: settings.iconSizes.group3 + 'px', height: settings.iconSizes.group3 + 'px' }"></span>
+                        :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
                     </div>
 
                     <!-- Status Indicator Dot (Top Right - Check-out Today) -->
                     <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5">
                       <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
-                        :style="{ width: settings.iconSizes.group3 + 'px', height: settings.iconSizes.group3 + 'px' }"></span>
+                        :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
                     </div>
 
                     <!-- Room Content (Centered) -->
@@ -1324,49 +1360,49 @@ const uniqueFloors = computed(() => {
                     <!-- Bottom Left Corner: Guest Count and Extra Bed -->
                     <div class="absolute flex items-center gap-1.5 text-slate-500 pointer-events-none overflow-visible shrink-0"
                       :style="{
-                        left: (10 - (settings.iconSizes.group4 - 16)) + 'px',
-                        bottom: (6 - (settings.iconSizes.group4 - 16)) + 'px'
+                        left: (10 - (settings.iconSizes.group4 - 16) * cardScale) + 'px',
+                        bottom: (6 - (settings.iconSizes.group4 - 16) * cardScale) + 'px'
                       }"
                     >
                       <template v-if="getGuestCount(room) > 0">
                         <span class="flex items-center gap-0.5 font-bold text-[10.5px] text-gray-900 leading-none">
-                          <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" class="text-gray-600" :style="{ width: settings.iconSizes.group4 + 'px', height: settings.iconSizes.group4 + 'px' }" />
+                          <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" class="text-gray-600" :style="{ width: (settings.iconSizes.group4 * cardScale) + 'px', height: (settings.iconSizes.group4 * cardScale) + 'px' }" />
                           {{ getGuestCount(room) }}
                         </span>
                       </template>
                       <template v-if="hasExtraBed(room) && (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || hasArrivalToday(room))">
-                        <RoomIcon name="extra-bed" class="text-gray-600 pl-0.5" :style="{ width: settings.iconSizes.group1 + 'px', height: settings.iconSizes.group1 + 'px' }" />
+                        <RoomIcon name="extra-bed" class="text-gray-600 pl-0.5" :style="{ width: (settings.iconSizes.group1 * cardScale) + 'px', height: (settings.iconSizes.group1 * cardScale) + 'px' }" />
                       </template>
                     </div>
 
                     <!-- Bottom Right Corner: Status Icon -->
                     <div class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0"
                       :style="{
-                        right: (10 - (getStatusIconSize(room) - 20)) + 'px',
-                        bottom: (6 - (getStatusIconSize(room) - 20)) + 'px'
+                        right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
+                        bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
                       }"
                     >
                       <!-- OOO or OOS lock icon -->
                       <template v-if="room.status === ROOM_STATUSES.MAINTENANCE">
-                        <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-emerald-500" :style="{ width: settings.iconSizes.group1 + 'px', height: settings.iconSizes.group1 + 'px' }" />
-                        <RoomIcon v-else name="ooo" class="text-amber-500" :style="{ width: settings.iconSizes.group1 + 'px', height: settings.iconSizes.group1 + 'px' }" />
+                        <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-else name="ooo" :monochrome="true" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
 
                       <!-- Housekeeping (broom) icon -->
                       <template v-else-if="room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean">
-                        <RoomIcon name="dirty" class="text-amber-600" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                        <RoomIcon name="dirty" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
 
                       <!-- Sparkles (clean) icon -->
                       <template v-else-if="shouldShowSparkles(room)">
-                        <RoomIcon name="clean" class="text-emerald-500" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                        <RoomIcon name="clean" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
 
                       <!-- Other statuses (e.g. available, reserved) -->
                       <template v-else>
-                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="text-blue-500" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :class="room.id % 2 === 0 ? '' : 'text-slate-500'" :style="{ width: settings.iconSizes.group5 + 'px', height: settings.iconSizes.group5 + 'px' }" />
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="text-sky-700" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :monochrome="room.id % 2 === 0" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
                     </div>
                   </div>
@@ -1378,7 +1414,7 @@ const uniqueFloors = computed(() => {
             <div v-else class="bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto min-h-[300px] ml-1">
               <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1400px]">
                 <thead>
-                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none whitespace-nowrap">
+                  <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap" :class="TEXT_THEME.tableHeader">
                     <th class="p-2 border-r border-slate-200 text-center w-[60px]">{{ t('roomMap.status') }}</th>
                     <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.lateIn') }}</th>
                     <th class="p-2 border-r border-slate-200 text-center w-[100px] leading-tight text-[10px]">{{ t('roomMap.planMove') }}</th>
@@ -1420,78 +1456,78 @@ const uniqueFloors = computed(() => {
                       </div>
                     </td>
                     <!-- Nhận phòng trễ -->
-                    <td class="p-2 border-r border-slate-200 text-center text-slate-400 font-bold">-</td>
+                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
                     <!-- Chuyển phòng kế hoạch -->
-                    <td class="p-2 border-r border-slate-200 text-center text-slate-400 font-bold">-</td>
+                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
                     <!-- TT Phòng (Status Icon) -->
-                    <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
                       <div class="flex items-center justify-center">
                         <!-- Sẵn sàng -->
-                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="w-5 h-5 text-blue-500" />
+                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="w-5 h-5 text-slate-600" />
                         
                         <!-- Phòng bẩn -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.DIRTY" name="dirty" class="w-5 h-5 text-amber-600" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.DIRTY" name="dirty" class="w-5 h-5 text-slate-600" />
                         
                         <!-- Lau dọn -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.CHECKOUT" name="clean" class="w-5 h-5 text-cyan-500" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.CHECKOUT" name="clean" class="w-5 h-5 text-slate-600" />
                         
                         <!-- Dịch vụ dọn phòng / Khóa phòng -->
                         <template v-else-if="room.status === ROOM_STATUSES.MAINTENANCE">
-                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-emerald-500" />
-                          <RoomIcon v-else name="ooo" class="w-5 h-5 text-amber-500" />
+                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-slate-600" />
+                          <RoomIcon v-else name="ooo" :monochrome="true" class="w-5 h-5 text-slate-600" />
                         </template>
                         
                         <!-- Phòng ưu tiên -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :class="room.id % 2 === 0 ? 'w-5 h-5' : 'w-5 h-5 text-slate-500'" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :monochrome="room.id % 2 === 0" class="w-5 h-5 text-slate-600" />
                         
                         <!-- Phòng không làm phiền -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="dnd" class="w-5 h-5 text-slate-500" />
+                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="dnd" class="w-5 h-5 text-slate-600" />
                       </div>
                     </td>
                     <!-- Thêm giường -->
-                    <td class="p-2 border-r border-slate-200 text-center text-slate-400 font-bold">-</td>
+                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
                     <!-- Yêu cầu DB -->
-                    <td class="p-2 border-r border-slate-200 text-center text-slate-400 font-bold">-</td>
+                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
                     <!-- Loại phòng -->
-                    <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-700">
+                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
                       {{ room.room_type || room.room_class?.code }}
                     </td>
                     <!-- Dạng phòng -->
-                    <td class="p-2 border-r border-slate-200 text-center text-slate-600 font-bold text-[11px]">
+                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
                       {{ getRoomTypeShape(room) }}
                     </td>
                     <!-- Phòng -->
-                    <td class="p-2 border-r border-slate-200 text-center font-black text-[13px]">
-                      <span :class="isRoomNumberRed(room) ? 'text-red-500' : 'text-slate-800'">
+                    <td class="p-2 border-r border-slate-200 text-center text-[13px]" :class="TEXT_THEME.tableCell">
+                      <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : ''">
                         {{ room.room_number }}
                       </span>
                     </td>
                     <!-- Tên khách -->
-                    <td class="p-2 border-r border-slate-200 font-bold text-slate-700 truncate">
+                    <td class="p-2 border-r border-slate-200 truncate" :class="TEXT_THEME.tableCell">
                       {{ getMockGuestName(room) }}
                     </td>
                     <!-- Mã DK -->
-                    <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-800 text-[11px]">
+                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
                       {{ getMockRegId(room) }}
                     </td>
                     <!-- Tên đăng ký -->
-                    <td class="p-2 border-r border-slate-200 text-slate-700 font-bold text-[11px] truncate">
+                    <td class="p-2 border-r border-slate-200 text-[11px] truncate" :class="TEXT_THEME.tableCell">
                       {{ getMockRegName(room) }}
                     </td>
                     <!-- Ngày đến -->
-                    <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-600 text-[11px]">
+                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
                       {{ formatDateShort(room.check_in) || (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED ? '09-06-2026' : '') }}
                     </td>
                     <!-- Ngày đi -->
-                    <td class="p-2 border-r border-slate-200 text-center font-bold text-slate-600 text-[11px]">
+                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
                       {{ formatDateShort(room.check_out) || (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED ? '14-06-2026' : '') }}
                     </td>
                     <!-- Công ty -->
-                    <td class="p-2 border-r border-slate-200 text-slate-800 font-extrabold text-[11px] truncate">
+                    <td class="p-2 border-r border-slate-200 text-[11px] truncate" :class="TEXT_THEME.tableCell">
                       {{ getMockCompany(room) }}
                     </td>
                     <!-- Tầng -->
-                    <td class="p-2 text-center font-black text-slate-800">
+                    <td class="p-2 text-center" :class="TEXT_THEME.tableCell">
                       {{ room.floor }}
                     </td>
                   </tr>
@@ -1511,9 +1547,9 @@ const uniqueFloors = computed(() => {
         >
           <aside class="w-80 bg-white p-5 flex flex-col gap-4 overflow-y-auto h-full select-none">
             <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">{{ t('roomMap.filterTitle') }}</h3>
+              <h3 class="text-sm uppercase tracking-wider" :class="TEXT_THEME.menuTitle">{{ t('roomMap.filterTitle') }}</h3>
               <div class="flex items-center gap-2.5">
-                <button @click="resetAllFilters" class="text-xs text-blue-500 font-bold hover:underline bg-transparent border-none cursor-pointer">
+                <button @click="resetAllFilters" class="text-xs text-blue-500 hover:underline bg-transparent border-none cursor-pointer font-normal">
                   {{ t('roomMap.clearFilter') }}
                 </button>
                 <button @click="showFilters = false" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors" :title="t('roomMap.all') === 'All' ? 'Close' : 'Đóng'">
@@ -1524,17 +1560,17 @@ const uniqueFloors = computed(() => {
               </div>
             </div>
             
-            <div class="flex flex-col gap-3.5 text-xs font-bold text-slate-600">
+            <div class="flex flex-col gap-3.5 text-xs">
               <!-- Ngày filter -->
               <div class="flex flex-col gap-1.5">
-                <span>{{ t('roomMap.date') }}</span>
-                <input type="date" v-model="rawDate" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] font-bold text-slate-700 bg-white" />
+                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
+                <input type="date" v-model="rawDate" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" :class="TEXT_THEME.sidebarLabel" />
               </div>
 
               <!-- Tầng filter -->
               <div class="flex flex-col gap-1.5">
-                <span>{{ t('roomMap.floorLabel') }}</span>
-                <select v-model="roomStore.filters.floor" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] font-bold text-slate-700 bg-white">
+                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.floorLabel') }}</span>
+                <select v-model="roomStore.filters.floor" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" :class="TEXT_THEME.sidebarLabel">
                   <option :value="null">{{ t('roomMap.all') }}</option>
                   <option v-for="floor in uniqueFloors" :key="floor" :value="floor">{{ t('roomMap.floor', { floor }) }}</option>
                 </select>
@@ -1542,8 +1578,8 @@ const uniqueFloors = computed(() => {
 
               <!-- Loại phòng filter -->
               <div class="flex flex-col gap-1.5">
-                <span>{{ t('roomMap.roomTypeLabel') }}</span>
-                <select v-model="roomStore.filters.roomType" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] font-bold text-slate-700 bg-white">
+                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.roomTypeLabel') }}</span>
+                <select v-model="roomStore.filters.roomType" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" :class="TEXT_THEME.sidebarLabel">
                   <option :value="null">{{ t('roomMap.all') }}</option>
                   <option v-for="type in uniqueRoomTypes" :key="type" :value="type">{{ type }}</option>
                 </select>
@@ -1551,7 +1587,7 @@ const uniqueFloors = computed(() => {
 
               <!-- Trạng thái lưu trú checkboxes -->
               <div class="flex flex-col gap-2 pt-2">
-                <span>{{ t('roomMap.statusLabel') }}</span>
+                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.statusLabel') }}</span>
                 <div class="flex flex-col gap-2">
                   <label v-for="st in [
                     { key: ROOM_STATUSES.AVAILABLE, labelKey: 'filterVacant' },
@@ -1559,7 +1595,7 @@ const uniqueFloors = computed(() => {
                     { key: ROOM_STATUSES.RESERVED, labelKey: 'filterArrival' },
                     { key: ROOM_STATUSES.CHECKOUT, labelKey: 'filterDeparture' },
                     { key: ROOM_STATUSES.MAINTENANCE, labelKey: 'filterLocked' }
-                  ]" :key="st.key" class="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
+                  ]" :key="st.key" class="flex items-center gap-2 cursor-pointer" :class="TEXT_THEME.sidebarLabel">
                     <input type="checkbox" :checked="roomStore.filters.status === st.key" 
                       @change="toggleStatusFilter(st.key)"
                       class="rounded border-slate-300 text-sky-600 focus:ring-[#97d5ff] h-4.5 w-4.5" />
@@ -1570,14 +1606,14 @@ const uniqueFloors = computed(() => {
 
               <!-- Trạng thái buồng phòng -->
               <div class="flex flex-col gap-1.5 pt-2">
-                <span>{{ t('roomMap.housekeepingStatus') }}</span>
-                <select class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white cursor-not-allowed font-bold text-slate-400" disabled>
+                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.housekeepingStatus') }}</span>
+                <select class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white cursor-not-allowed opacity-60" :class="TEXT_THEME.sidebarLabel" disabled>
                   <option value="all">{{ t('roomMap.all') }}</option>
                 </select>
               </div>
             </div>
 
-            <button @click="resetAllFilters" class="mt-auto w-full py-3 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer">
+            <button @click="resetAllFilters" class="mt-auto w-full py-3 bg-[#97d5ff] hover:bg-[#7bc4ff] text-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer font-normal">
               {{ t('roomMap.applyFilters') }}
             </button>
           </aside>
@@ -1596,14 +1632,16 @@ const uniqueFloors = computed(() => {
     <Teleport to="body">
       <div
         v-if="contextMenu.show && contextMenu.room"
-        class="fixed z-[9999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none text-slate-800 font-bold animate-[fadeIn_0.15s_ease-out]"
+        class="fixed z-[9999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
+        :class="TEXT_THEME.menuItem"
         :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
         @click.stop
       >
         <!-- Thông tin -->
         <button
           @click="showRoomInfo(contextMenu.room)"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10" />
@@ -1616,7 +1654,8 @@ const uniqueFloors = computed(() => {
         <!-- Đăng ký -->
         <button
           @click="triggerMenuItem('Đăng ký')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -1630,7 +1669,8 @@ const uniqueFloors = computed(() => {
         <!-- Hóa đơn -->
         <button
           @click="triggerMenuItem('Hóa đơn')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -1644,7 +1684,8 @@ const uniqueFloors = computed(() => {
         <!-- Nhóm hóa đơn -->
         <button
           @click="triggerMenuItem('Nhóm hóa đơn')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <ellipse cx="12" cy="5" rx="9" ry="3" />
@@ -1659,7 +1700,8 @@ const uniqueFloors = computed(() => {
         <!-- Chuyển Phòng -->
         <button
           @click="triggerMenuItem('Chuyển Phòng')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 2.1a9 9 0 0 0-9 0L5 4M3 9V4h5M7 21.9a9 9 0 0 0 9 0l3-2.1M21 15v5h-5" />
@@ -1670,7 +1712,8 @@ const uniqueFloors = computed(() => {
         <!-- Thông báo -->
         <button
           @click="triggerMenuItem('Thông báo')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -1682,7 +1725,8 @@ const uniqueFloors = computed(() => {
         <!-- In phiếu ăn sáng -->
         <button
           @click="triggerMenuItem('In phiếu ăn sáng')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
@@ -1697,7 +1741,8 @@ const uniqueFloors = computed(() => {
         <!-- In mẫu đăng ký -->
         <button
           @click="triggerMenuItem('In mẫu đăng ký')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
         >
           <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9" />
@@ -1710,7 +1755,7 @@ const uniqueFloors = computed(() => {
         <!-- Chuyển tình trạng phòng (Submenu Trigger) -->
         <div class="relative group mt-0.5">
           <div
-            class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none hover:brightness-90"
+            class="flex items-center justify-between px-3 py-2 text-xs font-normal transition-colors cursor-pointer select-none hover:brightness-90"
             :style="{
               background: 'var(--pms-custom-theme, #006bdb)',
               color: 'var(--pms-custom-theme-text, #ffffff)'
@@ -1738,7 +1783,8 @@ const uniqueFloors = computed(() => {
             <!-- Sẵn sàng -->
             <button
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
               <span>{{ t('roomMap.available') }}</span>
@@ -1747,7 +1793,8 @@ const uniqueFloors = computed(() => {
             <!-- Phòng bẩn -->
             <button
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
               <span>{{ t('roomMap.dirty') }}</span>
@@ -1756,7 +1803,8 @@ const uniqueFloors = computed(() => {
             <!-- Lau dọn -->
             <button
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="clean" class="w-5 h-5 text-cyan-500" />
               <span>{{ t('roomMap.cleaning') }}</span>
@@ -1766,7 +1814,8 @@ const uniqueFloors = computed(() => {
             <button
               v-if="contextMenu.room && contextMenu.room.status !== ROOM_STATUSES.OCCUPIED && contextMenu.room.status !== ROOM_STATUSES.CHECKOUT"
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOO')"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
               <span>Phòng OOO</span>
@@ -1776,7 +1825,8 @@ const uniqueFloors = computed(() => {
             <button
               v-if="contextMenu.room && contextMenu.room.status !== ROOM_STATUSES.OCCUPIED && contextMenu.room.status !== ROOM_STATUSES.CHECKOUT"
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOS')"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="oos" class="w-5 h-5 text-emerald-500" />
               <span>Phòng OOS</span>
@@ -1786,7 +1836,8 @@ const uniqueFloors = computed(() => {
             <button
               v-if="contextMenu.room && (contextMenu.room.status === ROOM_STATUSES.OCCUPIED || contextMenu.room.status === ROOM_STATUSES.CHECKOUT)"
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="housekeeping-service" class="w-5 h-5 text-sky-500" />
               <span>{{ t('roomMap.maintenance') }}</span>
@@ -1795,7 +1846,8 @@ const uniqueFloors = computed(() => {
             <!-- Phòng ưu tiên -->
             <button
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
               <span>{{ t('roomMap.priorityRoom') }}</span>
@@ -1804,7 +1856,8 @@ const uniqueFloors = computed(() => {
             <!-- Phòng không làm phiền -->
             <button
               @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+              :class="TEXT_THEME.menuItem"
             >
               <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
               <span>{{ t('roomMap.dnd') }}</span>
