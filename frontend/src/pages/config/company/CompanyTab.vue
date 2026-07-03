@@ -3,7 +3,8 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { 
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   fetchMarkets, fetchCustomerSources, fetchBranches, fetchBookers,
-  createMarket, createCustomerSource, createBranch, createBooker
+  createMarket, createCustomerSource, createBranch, createBooker,
+  syncCompanies, exportCompaniesExcel, importCompaniesExcel, companyTemplateExcel
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -485,6 +486,91 @@ const isSourceFiltered = computed(() => selectedSources.value.length > 0)
 const isMarketFiltered = computed(() => selectedMarkets.value.length > 0)
 const isBookerFiltered = computed(() => selectedBookers.value.length > 0)
 const isBranchFiltered = computed(() => selectedBranches.value.length > 0)
+
+const fileInput = ref(null)
+
+const handleSync = async () => {
+  loading.value = true
+  try {
+    const res = await syncCompanies()
+    uiStore.showToast(res.data.message || 'Đồng bộ dữ liệu thành công!', 'success')
+    await loadData()
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast(err.response?.data?.message || 'Không thể đồng bộ dữ liệu', 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleExport = async () => {
+  loading.value = true
+  try {
+    const res = await exportCompaniesExcel()
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', 'companies.csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    uiStore.showToast('Xuất excel thành công!', 'success')
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast('Không thể xuất dữ liệu excel', 'error')
+  } finally {
+    loading.value = false
+  }
+}
+
+const triggerImport = () => {
+  if (fileInput.value) {
+    fileInput.value.click()
+  }
+}
+
+const handleImport = async (e) => {
+  const files = e.target.files
+  if (!files || files.length === 0) return
+
+  const file = files[0]
+  e.target.value = ''
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  loading.value = true
+  try {
+    const res = await importCompaniesExcel(formData)
+    uiStore.showToast(res.data.message || 'Nhập excel thành công!', 'success')
+    await loadData()
+  } catch (err) {
+    console.error(err)
+    const errMsg = err.response?.data?.message || 'Lỗi khi nhập file excel/csv'
+    uiStore.showToast(errMsg, 'error')
+  } finally {
+    loading.value = false
+  }
+}
+const handleDownloadTemplate = async () => {
+  loading.value = true
+  try {
+    const res = await companyTemplateExcel()
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', 'company_template.csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    uiStore.showToast('Tải file mẫu thành công!', 'success')
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast('Không thể tải file mẫu excel', 'error')
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -501,24 +587,31 @@ const isBranchFiltered = computed(() => selectedBranches.value.length > 0)
           </svg>
           Thêm
         </button>
-        <button class="px-3.5 py-1.5 bg-[#10b981] hover:bg-[#059669] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
+        <button @click="handleSync" class="px-3.5 py-1.5 bg-[#10b981] hover:bg-[#059669] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           Đồng bộ
         </button>
-        <button class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
+        <button @click="handleExport" class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           Xuất excel
         </button>
-        <button class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
+        <button @click="triggerImport" class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
           Nhập excel
         </button>
+        <button @click="handleDownloadTemplate" class="px-3.5 py-1.5 bg-[#f8fafc] hover:bg-slate-100 text-slate-650 rounded-md text-xs font-bold border border-slate-200 cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors" title="Tải file CSV mẫu để nhập liệu">
+          <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Tải file mẫu
+        </button>
+        <input type="file" ref="fileInput" class="hidden" accept=".csv" @change="handleImport" />
       </div>
 
       <!-- Column Selector & Help -->

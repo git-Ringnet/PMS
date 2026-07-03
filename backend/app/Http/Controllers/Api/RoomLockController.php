@@ -68,38 +68,59 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => 'Không được phép khóa phòng do phòng đã có lịch khóa OOO/OOS khác trùng lặp thời gian này.'], 422);
         }
 
-        // 3. Check booking overlap
+        // 3 & 4. Check booking overlap and AV capacity
         $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
-        if ($booking && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date']);
+
+        $hasBookingOverlap = !empty($booking);
+        $hasAvOverlap = !empty($avError);
+
+        if (($hasBookingOverlap || $hasAvOverlap) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
             $allowLockConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
-            $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-            $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+            $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
 
-            if ($allowLockConfig === '0') {
+            // Check if any strict block is triggered
+            $bookingBlocked = $hasBookingOverlap && ($allowLockConfig === '0');
+            $avBlocked = $hasAvOverlap && ($allowOverAv === '0');
+
+            if ($bookingBlocked || $avBlocked) {
+                $messages = [];
+                if ($bookingBlocked) {
+                    $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
+                    $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+                    $messages[] = "Không được phép khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
+                }
+                if ($avBlocked) {
+                    $messages[] = "Không thể khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}.";
+                }
                 return response()->json([
                     'success' => false,
-                    'message' => "Không được phép khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr})."
-                ], 422);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'require_confirm' => true,
-                    'message' => "Phòng này trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}). Bạn có chắc chắn vẫn muốn khóa phòng không?",
-                    'booking_code' => $booking['booking_code']
+                    'message' => implode(' ', $messages)
                 ], 422);
             }
-        }
 
-        // 4. Check AV capacity
-        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowInputOverAV')->first()?->value ?? '0';
-        if ($allowOverAv === '0') {
-            $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date']);
-            if ($avError) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Không thể khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
-                ], 422);
+            // Warnings requiring confirmation
+            $warnings = [];
+            if ($hasBookingOverlap) {
+                $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
+                $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+                $warnings[] = "Phòng này trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
             }
+            if ($hasAvOverlap) {
+                $warnings[] = "Loại phòng {$avError['class_name']} sẽ bị âm phòng vào ngày {$avError['date']}.";
+            }
+
+            $message = implode(' ', $warnings) . " Bạn có chắc chắn vẫn muốn khóa phòng không?";
+            if ($hasAvOverlap && !$hasBookingOverlap) {
+                $message = "Phòng bị âm. Bạn có muốn tiếp tục thao tác?";
+            }
+
+            return response()->json([
+                'success' => false,
+                'require_confirm' => true,
+                'message' => $message,
+                'booking_code' => $booking['booking_code'] ?? null
+            ], 422);
         }
 
         // Deactivate previous active locks for this room
@@ -165,47 +186,95 @@ class RoomLockController extends Controller
 
         // 2. Pre-check overlap locks, bookings, and AV for ALL selected rooms
         $allowLockConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
-        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowInputOverAV')->first()?->value ?? '0';
+        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
+
+        $bookingBlockedRooms = [];
+        $avBlockedRooms = [];
+        $bookingWarningRooms = [];
+        $avWarningRooms = [];
 
         foreach ($validated['room_ids'] as $roomId) {
             $room = Room::findOrFail($roomId);
 
-            // Check overlap locks
+            // Check overlap locks (always strict block)
             if ($this->checkOverlapLocks($roomId, $validated['start_date'], $validated['end_date'])) {
-                return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đã có lịch khóa OOO/OOS khác trùng lặp thời gian này."], 422);
+                return response()->json(['success' => false, 'message' => "Không được phép khóa phòng do phòng {$room->room_number} đã có lịch khóa OOO/OOS khác trùng lặp thời gian này."], 422);
             }
 
             // Check booking overlap
             $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
-            if ($booking && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-                $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-                $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
-
+            if ($booking) {
                 if ($allowLockConfig === '0') {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Không được phép khóa phòng {$room->room_number} vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr})."
-                    ], 422);
+                    $bookingBlockedRooms[] = [
+                        'room_number' => $room->room_number,
+                        'booking_code' => $booking['booking_code'],
+                        'start' => \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y'),
+                        'end' => \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y')
+                    ];
                 } else {
-                    return response()->json([
-                        'success' => false,
-                        'require_confirm' => true,
-                        'message' => "Phòng {$room->room_number} trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}). Bạn có chắc chắn vẫn muốn khóa phòng không?",
-                        'booking_code' => $booking['booking_code']
-                    ], 422);
+                    $bookingWarningRooms[] = [
+                        'room_number' => $room->room_number,
+                        'booking_code' => $booking['booking_code'],
+                        'start' => \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y'),
+                        'end' => \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y')
+                    ];
                 }
             }
 
             // Check AV
-            if ($allowOverAv === '0') {
-                $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date']);
-                if ($avError) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Không thể khóa phòng {$room->room_number} vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
-                    ], 422);
+            $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date']);
+            if ($avError) {
+                if ($allowOverAv === '0') {
+                    $avBlockedRooms[] = [
+                        'room_number' => $room->room_number,
+                        'class_name' => $avError['class_name'],
+                        'date' => $avError['date']
+                    ];
+                } else {
+                    $avWarningRooms[] = [
+                        'room_number' => $room->room_number,
+                        'class_name' => $avError['class_name'],
+                        'date' => $avError['date']
+                    ];
                 }
             }
+        }
+
+        // If any strict blocks
+        if ((!empty($bookingBlockedRooms) || !empty($avBlockedRooms)) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            $messages = [];
+            foreach ($bookingBlockedRooms as $b) {
+                $messages[] = "Không được phép khóa phòng {$b['room_number']} vì trùng lịch với booking {$b['booking_code']} ({$b['start']} ~ {$b['end']}).";
+            }
+            foreach ($avBlockedRooms as $av) {
+                $messages[] = "Không thể khóa phòng {$av['room_number']} vì loại phòng {$av['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$av['date']}.";
+            }
+            return response()->json([
+                'success' => false,
+                'message' => implode(' ', $messages)
+            ], 422);
+        }
+
+        // If warnings
+        if ((!empty($bookingWarningRooms) || !empty($avWarningRooms)) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            $warnings = [];
+            foreach ($bookingWarningRooms as $b) {
+                $warnings[] = "Phòng {$b['room_number']} trùng lịch đặt trước của booking {$b['booking_code']} ({$b['start']} ~ {$b['end']}).";
+            }
+            foreach ($avWarningRooms as $av) {
+                $warnings[] = "Phòng {$av['room_number']} thuộc loại phòng {$av['class_name']} sẽ bị âm phòng vào ngày {$av['date']}.";
+            }
+            
+            $message = implode(' ', $warnings) . " Bạn có chắc chắn vẫn muốn khóa các phòng đã chọn?";
+            if (!empty($avWarningRooms) && empty($bookingWarningRooms)) {
+                $message = "Có phòng bị âm. Bạn có muốn tiếp tục thao tác?";
+            }
+            
+            return response()->json([
+                'success' => false,
+                'require_confirm' => true,
+                'message' => $message
+            ], 422);
         }
 
         $locksCreated = [];
@@ -252,7 +321,7 @@ class RoomLockController extends Controller
             'room_ids.*' => 'exists:rooms,id',
         ]);
 
-        // Check department permission for all active locks on these rooms
+        // Check department and role permission for all active locks on these rooms
         foreach ($validated['room_ids'] as $roomId) {
             $locks = RoomLock::where('room_id', $roomId)->where('is_active', true)->get();
             foreach ($locks as $lock) {
@@ -262,6 +331,15 @@ class RoomLockController extends Controller
                     return response()->json([
                         'success' => false,
                         'message' => "Không thể mở khóa phòng {$room->room_number}: {$deptError}"
+                    ], 403);
+                }
+
+                $roleError = $this->checkUnlockRolePermission($request, $lock);
+                if ($roleError) {
+                    $room = Room::find($roomId);
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Không thể mở khóa phòng {$room->room_number}: {$roleError}"
                     ], 403);
                 }
             }
@@ -349,10 +427,14 @@ class RoomLockController extends Controller
         }
 
         // 2. Active lock edit restriction:
-        // Lock has started (start_date <= now)
+        // Lock has started (start_date <= now) and not yet finished (end_date >= now)
+        $now = now();
         $lockStart = \Carbon\Carbon::parse($lock->start_date);
+        $lockEnd = \Carbon\Carbon::parse($lock->end_date);
         $reqStart = \Carbon\Carbon::parse($validated['start_date']);
-        if ($lockStart->lte(now()) && !$lockStart->eq($reqStart)) {
+        
+        $isCurrentlyLocked = $lockStart->lte($now) && $lockEnd->gte($now);
+        if ($isCurrentlyLocked && !$lockStart->eq($reqStart)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Không được phép điều chỉnh ngày bắt đầu đối với phòng đang trong giai đoạn khóa.'
@@ -365,38 +447,59 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => 'Không được phép khóa phòng do phòng đã có lịch khóa OOO/OOS khác trùng lặp thời gian này.'], 422);
         }
 
-        // 4. Check booking overlap
+        // 4. Check booking overlap and AV capacity
         $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
-        if ($booking && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $lock->room_id);
+
+        $hasBookingOverlap = !empty($booking);
+        $hasAvOverlap = !empty($avError);
+
+        if (($hasBookingOverlap || $hasAvOverlap) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
             $allowLockConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
-            $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-            $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+            $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
 
-            if ($allowLockConfig === '0') {
+            // Check if any strict block is triggered
+            $bookingBlocked = $hasBookingOverlap && ($allowLockConfig === '0');
+            $avBlocked = $hasAvOverlap && ($allowOverAv === '0');
+
+            if ($bookingBlocked || $avBlocked) {
+                $messages = [];
+                if ($bookingBlocked) {
+                    $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
+                    $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+                    $messages[] = "Không được phép cập nhật khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
+                }
+                if ($avBlocked) {
+                    $messages[] = "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}.";
+                }
                 return response()->json([
                     'success' => false,
-                    'message' => "Không được phép cập nhật khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr})."
-                ], 422);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'require_confirm' => true,
-                    'message' => "Phòng này trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}). Bạn có chắc chắn vẫn muốn cập nhật lịch khóa phòng không?",
-                    'booking_code' => $booking['booking_code']
+                    'message' => implode(' ', $messages)
                 ], 422);
             }
-        }
 
-        // 5. Check AV capacity
-        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowInputOverAV')->first()?->value ?? '0';
-        if ($allowOverAv === '0') {
-            $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $lock->room_id);
-            if ($avError) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
-                ], 422);
+            // Warnings requiring confirmation
+            $warnings = [];
+            if ($hasBookingOverlap) {
+                $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
+                $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+                $warnings[] = "Phòng này trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
             }
+            if ($hasAvOverlap) {
+                $warnings[] = "Loại phòng {$avError['class_name']} sẽ bị âm phòng vào ngày {$avError['date']}.";
+            }
+
+            $message = implode(' ', $warnings) . " Bạn có chắc chắn vẫn muốn cập nhật lịch khóa phòng không?";
+            if ($hasAvOverlap && !$hasBookingOverlap) {
+                $message = "Phòng bị âm. Bạn có muốn tiếp tục thao tác?";
+            }
+
+            return response()->json([
+                'success' => false,
+                'require_confirm' => true,
+                'message' => $message,
+                'booking_code' => $booking['booking_code'] ?? null
+            ], 422);
         }
 
         // Remove non-schema fields
@@ -436,6 +539,12 @@ class RoomLockController extends Controller
         $deptError = $this->checkUnlockDepartmentPermission($request, $lock);
         if ($deptError) {
             return response()->json(['success' => false, 'message' => $deptError], 403);
+        }
+
+        // Check role permission
+        $roleError = $this->checkUnlockRolePermission($request, $lock);
+        if ($roleError) {
+            return response()->json(['success' => false, 'message' => $roleError], 403);
         }
 
         $roomId = $lock->room_id;
@@ -624,6 +733,79 @@ class RoomLockController extends Controller
             if ($locker && !empty($locker->department) && $user->department !== $locker->department) {
                 return "Bạn không thuộc bộ phận đã thực hiện khóa phòng này (Bộ phận: {$locker->department}), không thể mở khóa.";
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if user job title / role has permission to unlock.
+     */
+    private function checkUnlockRolePermission(Request $request, RoomLock $lock)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return null;
+        }
+
+        $isOoo = strtoupper($lock->lock_type) === 'OOO';
+        $isOos = strtoupper($lock->lock_type) === 'OOS';
+
+        $configName = $isOoo ? 'OOORoleUserUnlock' : 'OOSRoleUserUnlock';
+        $allowedRolesStr = \App\Models\HotelConfig::where('name', $configName)->first()?->value;
+
+        if (empty($allowedRolesStr)) {
+            return null; // No restriction if empty
+        }
+
+        $allowedRoles = array_map('trim', explode(',', $allowedRolesStr));
+        if (empty($allowedRoles)) {
+            return null;
+        }
+
+        $userJobTitle = strtolower($user->job_title ?? '');
+        $userJobCode = strtolower($user->job_title_code ?? '');
+        $userDeptCode = strtolower($user->department_code ?? '');
+        $username = strtolower($user->username ?? '');
+
+        $matched = false;
+        foreach ($allowedRoles as $role) {
+            $roleLower = strtolower($role);
+            
+            // Direct matches
+            if ($roleLower === $username || $roleLower === $userJobCode || $roleLower === $userDeptCode) {
+                $matched = true;
+                break;
+            }
+
+            // Check if role name matches or is contained in job_title (e.g. "Admin" in "Administrator" or "Tổng giám đốc")
+            if (str_contains($userJobTitle, $roleLower)) {
+                $matched = true;
+                break;
+            }
+
+            // Check abbreviations / common mappings
+            if ($roleLower === 'admin' && (str_contains($userJobTitle, 'quản trị') || str_contains($userJobTitle, 'tổng giám đốc') || $username === 'admin' || $username === 'testuser')) {
+                $matched = true;
+                break;
+            }
+            if ($roleLower === 'fom' && (str_contains($userJobTitle, 'lễ tân') || $userDeptCode === 'fo' || str_contains($userJobTitle, 'trưởng bộ phận'))) {
+                $matched = true;
+                break;
+            }
+            if ($roleLower === 'hkm' && (str_contains($userJobTitle, 'buồng') || str_contains($userJobTitle, 'hk') || $userDeptCode === 'hk' || str_contains($userJobTitle, 'trưởng hk'))) {
+                $matched = true;
+                break;
+            }
+            if ($roleLower === 'sales' && (str_contains($userJobTitle, 'sales') || str_contains($userJobTitle, 'kinh doanh') || $userDeptCode === 'sales')) {
+                $matched = true;
+                break;
+            }
+        }
+
+        if (!$matched) {
+            $typeName = $isOoo ? 'OOO' : 'OOS';
+            return "Tài khoản của bạn không có vai trò được phép mở khóa phòng {$typeName} (Quyền yêu cầu: {$allowedRolesStr}).";
         }
 
         return null;

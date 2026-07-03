@@ -15,6 +15,7 @@ import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -23,7 +24,18 @@ const route = useRoute()
 const currentTab = computed(() => route.query.tab || 'room-map')
 
 const showDetailModal = ref(false)
+const showStatsModal = ref(false)
 const isLoaded = ref(false)
+
+function handleMetricClick(status) {
+  filterByStatus(status)
+  isGridMode.value = false
+}
+
+function handleCurrentClick() {
+  resetAllFilters()
+  isGridMode.value = true
+}
 const showSearch = ref(false)
 const showFilters = ref(false)
 const showSettings = ref(false)
@@ -504,7 +516,8 @@ const uniqueFloors = computed(() => {
       <div v-if="currentTab === 'room-map'" class="relative bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
         <div class="flex items-center gap-3 overflow-x-auto px-1.5 py-1 scrollbar-thin">
           <!-- Date card -->
-          <div class="bg-white border border-slate-200/80 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 transform-gpu">
+          <button @click="handleCurrentClick"
+            class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu border-slate-200/80">
             <div class="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="3" y="6" width="18" height="15" rx="2" fill="#F8FAFC" stroke="#6366F1" stroke-width="2"/>
@@ -523,10 +536,10 @@ const uniqueFloors = computed(() => {
               <span class="text-[12px] font-semibold text-gray-900 leading-tight">{{ selectedDate }}</span>
               <span class="text-[10px] text-gray-900 font-semibold uppercase mt-0.5">{{ t('roomMap.current') }}</span>
             </div>
-          </div>
+          </button>
 
           <!-- Đã đến card -->
-          <button @click="filterByStatus(ROOM_STATUSES.RESERVED)" 
+          <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === ROOM_STATUSES.RESERVED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
@@ -544,7 +557,7 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Đã đi card -->
-          <button @click="filterByStatus(ROOM_STATUSES.CHECKOUT)" 
+          <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === ROOM_STATUSES.CHECKOUT ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
@@ -562,7 +575,7 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Đang ở card -->
-          <button @click="filterByStatus(ROOM_STATUSES.OCCUPIED)" 
+          <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === ROOM_STATUSES.OCCUPIED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
@@ -580,7 +593,7 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Khóa OOO card -->
-          <button @click="filterByStatus('OOO')" 
+          <button @click="handleMetricClick('OOO')" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === 'OOO' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/50 flex items-center justify-center shadow-xs shrink-0">
@@ -593,7 +606,7 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Khóa OOS card -->
-          <button @click="filterByStatus('OOS')" 
+          <button @click="handleMetricClick('OOS')" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === 'OOS' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/40 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
@@ -606,9 +619,9 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Công suất card -->
-          <button @click="resetAllFilters" 
+          <button @click="showStatsModal = true" 
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
-            :class="!activeFilter ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
+            :class="showStatsModal ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
             <div class="w-8 h-8 rounded-full flex items-center justify-center text-slate-800 font-extrabold text-[10px] shrink-0 relative">
               <svg class="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                 <path
@@ -859,7 +872,7 @@ const uniqueFloors = computed(() => {
       <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden">
         
         <!-- Left/Center content container -->
-        <div class="flex-1 min-w-0 overflow-auto p-5 bg-white flex flex-col gap-4">
+        <div class="flex-1 min-w-0 overflow-hidden p-5 bg-white flex flex-col gap-4">
           
           <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
           <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
@@ -1208,15 +1221,11 @@ const uniqueFloors = computed(() => {
           </div>
 
           <!-- THE DEFAULT ROOM MAP VIEW -->
-          <div v-else class="flex-1 flex flex-col gap-4">
+          <div v-else class="flex-1 flex flex-col gap-4 min-h-0">
             
             <!-- Loading State -->
             <div v-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
-              <div class="loader">
-                <div class="inner one"></div>
-                <div class="inner two"></div>
-                <div class="inner three"></div>
-              </div>
+              <LoadingOverlay :show="roomStore.loading" />
             </div>
 
             <!-- Error State -->
@@ -1355,7 +1364,7 @@ const uniqueFloors = computed(() => {
 
                       <!-- Other statuses (e.g. available, reserved) -->
                       <template v-else>
-                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="available" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
+                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="text-blue-500" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :class="room.id % 2 === 0 ? '' : 'text-slate-500'" :style="{ width: settings.iconSizes.group5 + 'px', height: settings.iconSizes.group5 + 'px' }" />
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="text-sky-700" :style="{ width: settings.iconSizes.group2 + 'px', height: settings.iconSizes.group2 + 'px' }" />
                       </template>
@@ -1426,8 +1435,11 @@ const uniqueFloors = computed(() => {
                         <!-- Lau dọn -->
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.CHECKOUT" name="clean" class="w-5 h-5 text-cyan-500" />
                         
-                        <!-- Dịch vụ dọn phòng -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.MAINTENANCE" name="maintenance-list" class="w-5 h-5 text-blue-500" />
+                        <!-- Dịch vụ dọn phòng / Khóa phòng -->
+                        <template v-else-if="room.status === ROOM_STATUSES.MAINTENANCE">
+                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-emerald-500" />
+                          <RoomIcon v-else name="ooo" class="w-5 h-5 text-amber-500" />
+                        </template>
                         
                         <!-- Phòng ưu tiên -->
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :class="room.id % 2 === 0 ? 'w-5 h-5' : 'w-5 h-5 text-slate-500'" />
@@ -1801,6 +1813,226 @@ const uniqueFloors = computed(() => {
         </div>
       </div>
     </Teleport>
+
+    <!-- Thống kê Modal (Popup) -->
+    <div v-if="showStatsModal" class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 select-none">
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
+        <!-- Header -->
+        <div class="bg-blue-600 text-white px-5 py-3 flex items-center justify-between">
+          <h3 class="text-sm font-extrabold tracking-wide uppercase">Thống kê</h3>
+          <button @click="showStatsModal = false" class="text-white/80 hover:text-white bg-transparent border-none text-lg font-black cursor-pointer leading-none">
+            ✕
+          </button>
+        </div>
+
+        <!-- Scrollable content -->
+        <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50 flex-1">
+          <!-- 1. Tổng quan Card -->
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+            <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Tổng quan</h4>
+            <div class="flex flex-col gap-2.5 text-xs text-slate-700">
+              <div class="flex items-center justify-between">
+                <span class="font-semibold">Tổng phòng</span>
+                <span class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.length }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="font-semibold text-amber-700">OOO</span>
+                <span class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="font-semibold text-emerald-700">OOS</span>
+                <span class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
+              </div>
+              <div class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-bold text-slate-900">
+                <span>Tổng phòng có thể bán</span>
+                <span class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.length - roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Buồng phòng Card -->
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+            <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Buồng phòng</h4>
+            <table class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="text-slate-500 font-bold border-b border-slate-100">
+                  <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
+                  <th class="pb-1.5 text-right w-16 font-bold text-[11px] text-red-500">Occ</th>
+                  <th class="pb-1.5 text-right w-16 font-bold text-[11px] text-emerald-500">Vac</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 text-slate-700">
+                <tr class="h-8">
+                  <td class="font-semibold">Phòng sẵn sàng</td>
+                  <td class="text-right font-bold tabular-nums">0</td>
+                  <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.AVAILABLE && r.is_clean).length }}</td>
+                </tr>
+                <tr class="h-8">
+                  <td class="font-semibold">Phòng sạch</td>
+                  <td class="text-right font-bold tabular-nums">0</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                </tr>
+                <tr class="h-8">
+                  <td class="font-semibold">Phòng dơ</td>
+                  <td class="text-right font-bold text-red-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
+                  <td class="text-right font-bold text-red-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status !== ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 3. Trạng thái phòng Card -->
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1">
+            <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Trạng thái phòng</h4>
+            <table class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="text-slate-500 font-bold border-b border-slate-100">
+                  <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
+                  <th class="pb-1.5 text-right w-16 font-bold text-[11px]">Room</th>
+                  <th class="pb-1.5 text-right w-16 font-bold text-[11px]">Pax</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 text-slate-700">
+                <tr class="h-7.5">
+                  <td class="font-semibold">Phòng chưa trả</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Phòng đã trả</td>
+                  <td class="text-right font-bold text-red-500 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).length }}</td>
+                  <td class="text-right font-bold text-red-500 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Phòng đến</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length }}</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Phòng đến đã gán phòng</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length }}</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Phòng đã đến</td>
+                  <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).length }}</td>
+                  <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold text-sky-700">Phòng đang ở</td>
+                  <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
+                  <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Trả phòng sớm</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Phòng ở theo giờ</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Đặt phòng trong ngày</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                </tr>
+                <tr class="h-7.5">
+                  <td class="font-semibold">Khách vãng lai</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                  <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 4. Dự báo cuối ngày Card -->
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1 flex flex-col justify-between">
+            <div>
+              <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Dự báo cuối ngày</h4>
+              <table class="w-full text-xs border-collapse">
+                <thead>
+                  <tr class="text-slate-500 font-bold border-b border-slate-100">
+                    <th class="pb-1.5 text-left font-semibold">Dự báo</th>
+                    <th class="pb-1.5 text-right w-14 font-bold text-[11px]">Room</th>
+                    <th class="pb-1.5 text-right w-14 font-bold text-[11px]">Pax</th>
+                    <th class="pb-1.5 text-right w-16 font-bold text-[11px]">%</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-slate-700">
+                  <tr class="h-7">
+                    <td class="font-semibold">Khách lẻ</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-slate-400">-</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold">Khách đoàn</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400">-</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold">Phòng ở (ko b/g COMP.HU)</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomStore.occupancyRate }}%</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold">Phòng COMP</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400">-</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold">Phòng ở (ko b/g HU)</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomStore.occupancyRate }}%</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold">Phòng nội bộ</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400">-</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold text-blue-700">Phòng ở</td>
+                    <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.occupancyRate }}%</td>
+                  </tr>
+                  <tr class="h-7">
+                    <td class="font-semibold text-red-500">Phòng trống</td>
+                    <td class="text-right font-bold text-red-500 tabular-nums">{{ roomStore.rooms.length - roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED || r.status === ROOM_STATUSES.MAINTENANCE).length }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="text-right font-bold text-slate-400">-</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Forecast Sub-section -->
+            <div class="mt-4 pt-3.5 border-t border-slate-200 text-xs text-slate-700 flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border">
+              <h5 class="font-bold text-slate-900 mb-1 select-none">Dự báo</h5>
+              <div class="flex items-center justify-between">
+                <span class="font-semibold">Doanh thu</span>
+                <span class="font-bold text-emerald-600">44,724,486 đ</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="font-semibold">Giá phòng trung bình (ko b/g HU)</span>
+                <span class="font-bold text-slate-800">559,056 đ</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="font-semibold">DT bình quân/ Tổng phòng có thể bán</span>
+                <span class="font-bold text-slate-800">552,154 đ</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

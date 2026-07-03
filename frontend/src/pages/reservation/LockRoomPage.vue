@@ -8,6 +8,7 @@ const uiStore = useUiStore()
 
 // State variables
 const rooms = ref([])
+const hotelConfigs = ref([])
 const loading = ref(false)
 const selectedRoomIds = ref([])
 
@@ -57,6 +58,11 @@ const isRoomDropdownOpen = ref(false)
 const modalSelectedRoomIds = ref([])
 const roomSearchQuery = ref('')
 
+const defaultLockEndTime = computed(() => {
+  const cfg = hotelConfigs.value.find(c => c.name === 'FrmOOO_DefineLockByTime')
+  return cfg?.value || '23:59'
+})
+
 // Broadcast channel
 let bc = null
 
@@ -93,15 +99,17 @@ const getCurrentTimeHourMinute = () => {
 const isEditingActiveLock = computed(() => {
   if (!editingLockId.value) return false
   const selectedRoom = rooms.value.find(r => r.lock_id === editingLockId.value)
-  if (!selectedRoom || !selectedRoom.lock_start_date) return false
+  if (!selectedRoom || !selectedRoom.lock_start_date || !selectedRoom.lock_end_date) return false
   
   const now = new Date()
   const startDate = new Date(selectedRoom.lock_start_date.replace(/-/g, '/'))
-  return startDate <= now
+  const endDate = new Date(selectedRoom.lock_end_date.replace(/-/g, '/'))
+  return startDate <= now && endDate >= now
 })
 
 onMounted(() => {
   fetchRooms()
+  fetchHotelConfigs()
   document.addEventListener('click', closeAllPopovers)
   window.addEventListener('focus', handleTabFocus)
   
@@ -149,6 +157,20 @@ const fetchRooms = async () => {
     uiStore.showToast('Không thể tải danh sách phòng', 'error')
   } finally {
     loading.value = false
+  }
+}
+
+// Fetch hotel configs
+const fetchHotelConfigs = async () => {
+  try {
+    const res = await http.get('/hotel-configs')
+    if (res.data && res.data.success) {
+      hotelConfigs.value = res.data.data || []
+      // Apply default end_time to form
+      bulkForm.value.end_time = defaultLockEndTime.value
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải cấu hình khách sạn:', err)
   }
 }
 
@@ -427,7 +449,7 @@ const openBulkLockModal = (type) => {
   bulkForm.value.start_date = getTodayString()
   bulkForm.value.start_time = getCurrentTimeHourMinute()
   bulkForm.value.end_date = getTodayString()
-  bulkForm.value.end_time = '23:59'
+  bulkForm.value.end_time = defaultLockEndTime.value
   bulkForm.value.reason = ''
   bulkForm.value.maintenance_percent = 0
   modalSelectedRoomIds.value = [...selectedRoomIds.value]
@@ -442,7 +464,7 @@ const openSingleLockModal = (room, type) => {
   bulkForm.value.start_date = getTodayString()
   bulkForm.value.start_time = getCurrentTimeHourMinute()
   bulkForm.value.end_date = getTodayString()
-  bulkForm.value.end_time = '23:59'
+  bulkForm.value.end_time = defaultLockEndTime.value
   bulkForm.value.reason = ''
   bulkForm.value.maintenance_percent = 0
   modalSelectedRoomIds.value = [room.id]
@@ -940,8 +962,8 @@ const toggleRowMenu = (roomId, event) => {
                 
                 <!-- Details specific for lock -->
                 <div v-if="event.type === 'lock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
-                  <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateDisplay(event.start_date) }}</div>
-                  <div><span class="text-slate-400 font-normal">Ngày kết thúc:</span> {{ formatDateDisplay(event.end_date) }}</div>
+                  <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
+                  <div><span class="text-slate-400 font-normal">Ngày kết thúc:</span> {{ formatDateTime(event.end_date) }}</div>
                   <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-bold">Lý do:</span> {{ event.reason || '-' }}</div>
                 </div>
 
