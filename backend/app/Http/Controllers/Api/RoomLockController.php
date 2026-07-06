@@ -652,13 +652,21 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => $timeError], 422);
         }
 
-        // 2. Active lock edit restriction:
-        // Lock has started (start_date <= now) and not yet finished (end_date >= now)
+        // 2. Lock edit restrictions:
         $now = now();
         $lockStart = \Carbon\Carbon::parse($lock->start_date);
         $lockEnd = \Carbon\Carbon::parse($lock->end_date);
         $reqStart = \Carbon\Carbon::parse($validated['start_date']);
 
+        // Past/ended lock restriction
+        if ($lockEnd->lt($now)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không được phép chỉnh sửa lịch khóa phòng đã kết thúc trong quá khứ.'
+            ], 422);
+        }
+
+        // Active lock edit restriction (cannot edit start_date if currently active)
         $isCurrentlyLocked = $lockStart->lte($now) && $lockEnd->gte($now);
         if ($isCurrentlyLocked && !$lockStart->eq($reqStart)) {
             return response()->json([

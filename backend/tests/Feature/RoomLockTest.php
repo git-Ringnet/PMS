@@ -298,4 +298,30 @@ class RoomLockTest extends TestCase
         $response2 = $this->deleteJson("/api/room-locks/{$lock->id}");
         $response2->assertStatus(200);
     }
+
+    public function test_edit_past_lock_restrictions()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        // Create a lock in the past
+        $lock = RoomLock::create([
+            'room_number' => $this->room101->room_number,
+            'start_date' => now()->subDays(5)->format('Y-m-d H:i:s'),
+            'end_date' => now()->subDays(3)->format('Y-m-d H:i:s'),
+            'lock_type' => 'OOO',
+            'is_active' => true,
+        ]);
+
+        // Attempt to edit it
+        $response = $this->putJson("/api/room-locks/{$lock->id}", [
+            'start_date' => now()->subDays(5)->format('Y-m-d H:i:s'),
+            'end_date' => now()->subDays(2)->format('Y-m-d H:i:s'),
+            'lock_type' => 'OOO',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonFragment([
+            'message' => 'Không được phép chỉnh sửa lịch khóa phòng đã kết thúc trong quá khứ.'
+        ]);
+    }
 }
