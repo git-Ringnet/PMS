@@ -3,6 +3,10 @@ defineProps({
   name: {
     type: String,
     required: true,
+  },
+  monochrome: {
+    type: Boolean,
+    default: false,
   }
 })
 </script>
@@ -50,10 +54,10 @@ defineProps({
 
     <!-- 7. Phòng OOO -->
     <svg v-else-if="name === 'ooo'" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4" y="10" width="16" height="11" rx="2" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
-      <path d="M8 10V6C8 3.79086 9.79086 2 12 2C14.2091 2 16 3.79086 16 6V10" stroke="#D97706" stroke-width="2" stroke-linecap="round"/>
-      <circle cx="12" cy="15" r="1.5" fill="#D97706"/>
-      <path d="M12 16.5V18.5" stroke="#D97706" stroke-width="1.5" stroke-linecap="round"/>
+      <rect x="4" y="10" width="16" height="11" rx="2" :fill="monochrome ? 'none' : '#FEF3C7'" :stroke="monochrome ? 'currentColor' : '#D97706'" stroke-width="2"/>
+      <path d="M8 10V6C8 3.79086 9.79086 2 12 2C14.2091 2 16 3.79086 16 6V10" :stroke="monochrome ? 'currentColor' : '#D97706'" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="12" cy="15" r="1.5" :fill="monochrome ? 'currentColor' : '#D97706'"/>
+      <path d="M12 16.5V18.5" :stroke="monochrome ? 'currentColor' : '#D97706'" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
 
     <!-- 8. Khách lẻ (walkin) -->
@@ -83,7 +87,7 @@ defineProps({
     <!-- 10b. Ưu tiên tính phí (priority-paid) -->
     <svg v-else-if="name === 'priority-paid'" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M0 0h32v32H0z" fill="none" />
-      <path fill="#fd0404" d="M20.52 1.608a2.074 2.074 0 0 0-2.935 0l-1.11 1.11a3.62 3.62 0 0 0-.6 4.32L12.528 10.4a4.984 4.984 0 0 0-6.243.659l-.91.91a2.34 2.34 0 0 0 0 3.304l4.695 4.695l-7.687 7.688c-.51.51-.51 1.33 0 1.84s1.33.51 1.84 0l7.687-7.688l4.585 4.585c.91.91 2.394.91 3.305 0l.91-.91a4.984 4.984 0 0 0 .662-6.236l3.35-3.363a3.61 3.61 0 0 0 4.328-.59l1.11-1.11c.81-.811.81-2.125 0-2.935zM19 3.022c.03-.03.076-.03.105 0l9.64 9.64c.03.03.03.076 0 .106l-1.11 1.11c-.63.63-1.646.63-2.275 0l-.734-.733l-.014.014l-6.351-6.38l-.005.004l-.366-.365a1.62 1.62 0 0 1 0-2.286zm-1.097 4.814l6.004 6.031l-4.578 4.596l-6.003-6.03zm1.336 11.954l.003-.003l.08.081a2.983 2.983 0 0 1-.027 4.2l-.91.91a.34.34 0 0 1-.475 0L6.79 13.858a.34.34 0 0 1 0-.476l.91-.91a2.984 2.984 0 0 1 4.205-.02l.708.695l.007-.006z" />
+      <path :fill="monochrome ? 'currentColor' : '#fd0404'" d="M20.52 1.608a2.074 2.074 0 0 0-2.935 0l-1.11 1.11a3.62 3.62 0 0 0-.6 4.32L12.528 10.4a4.984 4.984 0 0 0-6.243.659l-.91.91a2.34 2.34 0 0 0 0 3.304l4.695 4.695l-7.687 7.688c-.51.51-.51 1.33 0 1.84s1.33.51 1.84 0l7.687-7.688l4.585 4.585c.91.91 2.394.91 3.305 0l.91-.91a4.984 4.984 0 0 0 .662-6.236l3.35-3.363a3.61 3.61 0 0 0 4.328-.59l1.11-1.11c.81-.811.81-2.125 0-2.935zM19 3.022c.03-.03.076-.03.105 0l9.64 9.64c.03.03.03.076 0 .106l-1.11 1.11c-.63.63-1.646.63-2.275 0l-.734-.733l-.014.014l-6.351-6.38l-.005.004l-.366-.365a1.62 1.62 0 0 1 0-2.286zm-1.097 4.814l6.004 6.031l-4.578 4.596l-6.003-6.03zm1.336 11.954l.003-.003l.08.081a2.983 2.983 0 0 1-.027 4.2l-.91.91a.34.34 0 0 1-.475 0L6.79 13.858a.34.34 0 0 1 0-.476l.91-.91a2.984 2.984 0 0 1 4.205-.02l.708.695l.007-.006z" />
     </svg>
 
     <!-- 11. Thêm giường (extra-bed) -->
