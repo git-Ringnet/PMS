@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('room_locks', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('room_id')->constrained('rooms')->onDelete('cascade');
+            $table->string('room_number');
+            $table->foreign('room_number')->references('room_number')->on('rooms')->onDelete('cascade');
             $table->dateTime('start_date')->nullable();
             $table->dateTime('end_date')->nullable();
             $table->string('reason')->nullable();
@@ -21,7 +22,9 @@ return new class extends Migration
             $table->string('status')->default('New');
             $table->string('username')->default('NB0016');
             $table->string('lock_type')->nullable(); // OOO, OOS
-            $table->boolean('is_active')->default(true);
+            $table->unsignedTinyInteger('is_active')->default(1); // 1 = active, 2 = unlocked
+            $table->string('unlock_username')->nullable();
+            $table->dateTime('unlocked_at')->nullable();
             $table->timestamps();
         });
     }

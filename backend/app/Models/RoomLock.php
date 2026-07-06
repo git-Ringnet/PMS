@@ -10,24 +10,29 @@ class RoomLock extends Model
 {
     use HasFactory;
 
+    const STATUS_ACTIVE = 1;
+    const STATUS_UNLOCKED = 2;
+
     protected $fillable = [
-        'room_id',
+        'room_number',
         'start_date',
         'end_date',
         'reason',
         'maintenance_percent',
         'status',
         'username',
+        'unlock_username',
+        'unlocked_at',
         'lock_type',
         'is_active',
     ];
 
     protected $casts = [
-        'room_id' => 'integer',
         'maintenance_percent' => 'integer',
-        'is_active' => 'boolean',
+        'is_active' => 'integer',
         'start_date' => 'datetime',
         'end_date' => 'datetime',
+        'unlocked_at' => 'datetime',
     ];
 
     protected static $userNamesCache = [];
@@ -54,6 +59,6 @@ class RoomLock extends Model
 
     public function room(): BelongsTo
     {
-        return $this->belongsTo(Room::class);
+        return $this->belongsTo(Room::class, 'room_number', 'room_number');
     }
 }

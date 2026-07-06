@@ -193,7 +193,7 @@ const handleFilterSubmit = () => {
   if (startDateYMD.value && endDateYMD.value) {
     loadAvailability(startDateYMD.value, endDateYMD.value)
   } else {
-    uiStore.showToast('Vui lòng chọn đầy đủ ngày bắt đầu và ngày kết thúc.', 'warning')
+    uiStore.showToast('Vui lòng chọn đầy đủ ngày bắt đầu và Ngày mở khóa.', 'warning')
   }
 }
 

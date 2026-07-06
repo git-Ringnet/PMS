@@ -163,7 +163,7 @@ const translations = {
       allotmentPartner: 'Đối tác',
       allotmentRoomNo: 'Số phòng',
       allotmentStartDate: 'Ngày bắt đầu',
-      allotmentEndDate: 'Ngày kết thúc',
+      allotmentEndDate: 'Ngày mở khóa',
       allotmentUnlock: 'Mở khoá',
       allotmentLocked: 'Đã khóa',
 

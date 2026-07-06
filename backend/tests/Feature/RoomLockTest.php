@@ -97,7 +97,7 @@ class RoomLockTest extends TestCase
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
         $response = $this->postJson('/api/room-locks', [
-            'room_id' => $this->room101->id,
+            'room_number' => $this->room101->room_number,
             'start_date' => '2026-07-02 12:00:00',
             'end_date' => '2026-07-02 11:00:00', // end < start
             'lock_type' => 'OOO',
@@ -116,16 +116,16 @@ class RoomLockTest extends TestCase
 
         // Create first lock
         RoomLock::create([
-            'room_id' => $this->room101->id,
+            'room_number' => $this->room101->room_number,
             'start_date' => '2026-07-02 10:00:00',
             'end_date' => '2026-07-02 12:00:00',
             'lock_type' => 'OOO',
-            'is_active' => true,
+            'is_active' => 1,
         ]);
 
         // Attempt overlapping lock
         $response = $this->postJson('/api/room-locks', [
-            'room_id' => $this->room101->id,
+            'room_number' => $this->room101->room_number,
             'start_date' => '2026-07-02 11:00:00',
             'end_date' => '2026-07-02 13:00:00',
             'lock_type' => 'OOS',
@@ -157,7 +157,7 @@ class RoomLockTest extends TestCase
         HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '0']);
 
         $response = $this->postJson('/api/room-locks', [
-            'room_id' => $room401->id,
+            'room_number' => $room401->room_number,
             'start_date' => '2026-06-10 10:00:00',
             'end_date' => '2026-06-12 12:00:00',
             'lock_type' => 'OOO',
@@ -187,7 +187,7 @@ class RoomLockTest extends TestCase
         HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '1']);
 
         $response = $this->postJson('/api/room-locks', [
-            'room_id' => $room401->id,
+            'room_number' => $room401->room_number,
             'start_date' => '2026-06-10 10:00:00',
             'end_date' => '2026-06-12 12:00:00',
             'lock_type' => 'OOO',
@@ -208,19 +208,19 @@ class RoomLockTest extends TestCase
         // Create a lock starting in past/current time relative to our fake now()
         // Wait, Laravel's now() will be current test run time, so let's use past date
         $lock = RoomLock::create([
-            'room_id' => $this->room101->id,
+            'room_number' => $this->room101->room_number,
             'start_date' => now()->subDay()->format('Y-m-d H:i:s'),
             'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
             'lock_type' => 'OOO',
             'is_active' => true,
         ]);
-
         // Attempt to edit start_date
         $response = $this->putJson("/api/room-locks/{$lock->id}", [
             'start_date' => now()->subHours(12)->format('Y-m-d H:i:s'), // changed
             'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
             'lock_type' => 'OOO',
         ]);
+
 
         $response->assertStatus(422);
         $response->assertJsonFragment([
@@ -241,7 +241,7 @@ class RoomLockTest extends TestCase
     {
         // Setup: Locked by thaovy (BỘ PHẬN LỄ TÂN)
         $lock = RoomLock::create([
-            'room_id' => $this->room101->id,
+            'room_number' => $this->room101->room_number,
             'start_date' => now()->format('Y-m-d H:i:s'),
             'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
             'lock_type' => 'OOO',
@@ -274,7 +274,7 @@ class RoomLockTest extends TestCase
     public function test_unlock_role_permission_checking()
     {
         $lock = RoomLock::create([
-            'room_id' => $this->room101->id,
+            'room_number' => $this->room101->room_number,
             'start_date' => now()->format('Y-m-d H:i:s'),
             'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
             'lock_type' => 'OOO',

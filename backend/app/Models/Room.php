@@ -47,11 +47,16 @@ class Room extends Model
 
     public function locks(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(RoomLock::class);
+        return $this->hasMany(RoomLock::class, 'room_number', 'room_number');
     }
 
     public function activeLock(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasOne(RoomLock::class)->where('is_active', true);
+        return $this->hasOne(RoomLock::class, 'room_number', 'room_number')->where('is_active', 1);
+    }
+
+    public function allActiveLocks(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(RoomLock::class, 'room_number', 'room_number')->where('is_active', 1)->orderBy('start_date');
     }
 }

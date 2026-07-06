@@ -1119,7 +1119,7 @@ const selectPackage = (pkg) => {
                   <th class="p-2.5 border border-slate-200 w-24 text-center">Số đêm</th>
                   <th class="p-2.5 border border-slate-200 w-32 text-right">Giá hiển thị</th>
                   <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày bắt đầu</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày kết thúc</th>
+                  <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày mở khóa</th>
                   <th class="p-2.5 border border-slate-200 w-32 text-center">Không sử dụng</th>
                   <th class="p-2.5 border border-slate-200">Theo ngày trong tuần</th>
                   <th class="p-2.5 border border-slate-200">Mô tả</th>
