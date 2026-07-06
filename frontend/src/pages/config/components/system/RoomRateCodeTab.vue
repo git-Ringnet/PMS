@@ -210,7 +210,7 @@ const totalRatePages = computed(() => Math.ceil(filteredRates.value.length / pag
             <th class="p-3">Mô tả</th>
             <th class="p-3">Tiền tệ</th>
             <th class="p-3">Ngày bắt đầu</th>
-            <th class="p-3">Ngày kết thúc</th>
+            <th class="p-3">Ngày mở khóa</th>
             <th class="p-3 text-center">Ăn sáng</th>
             <th class="p-3 text-center">Cho phép nhập giá</th>
             <th class="p-3 text-center">Không sử dụng</th>

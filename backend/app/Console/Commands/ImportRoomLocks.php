@@ -38,7 +38,7 @@ class ImportRoomLocks extends Command
                 $room = Room::where('room_number', $roomCode)->first();
                 if ($room) {
                     RoomLock::create([
-                        'room_id'    => $room->id,
+                        'room_number' => $room->room_number,
                         'start_date' => $fromDate,
                         'end_date'   => $toDate,
                         'reason'     => $reason,
@@ -78,7 +78,7 @@ class ImportRoomLocks extends Command
                 $room = Room::where('room_number', $roomCode)->first();
                 if ($room) {
                     RoomLock::create([
-                        'room_id'    => $room->id,
+                        'room_number' => $room->room_number,
                         'start_date' => $fromDate,
                         'end_date'   => $toDate,
                         'reason'     => $reason,

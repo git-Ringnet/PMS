@@ -236,7 +236,7 @@ class SystemConfigurationSeeder extends Seeder
         if ($room501 && $room502 && $room503) {
             // Room 501: Active OOS lock
             \App\Models\RoomLock::create([
-                'room_id' => $room501->id,
+                'room_number' => $room501->room_number,
                 'start_date' => '2026-06-09',
                 'end_date' => '2026-06-15',
                 'reason' => 'Sửa máy lạnh rò nước',
@@ -250,7 +250,7 @@ class SystemConfigurationSeeder extends Seeder
 
             // Room 502: Inactive OOS lock (History example)
             \App\Models\RoomLock::create([
-                'room_id' => $room502->id,
+                'room_number' => $room502->room_number,
                 'start_date' => '2026-05-08',
                 'end_date' => '2026-05-12',
                 'reason' => 'tháo rèm giặt',
@@ -263,7 +263,7 @@ class SystemConfigurationSeeder extends Seeder
 
             // Room 503: Active OOO lock
             \App\Models\RoomLock::create([
-                'room_id' => $room503->id,
+                'room_number' => $room503->room_number,
                 'start_date' => '2026-06-10',
                 'end_date' => '2026-06-20',
                 'reason' => 'Thay đệm giường hỏng',
