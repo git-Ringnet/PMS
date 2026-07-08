@@ -67,9 +67,15 @@ const savePromotion = async (data) => {
     }
 }
 
-const deletePromotion = async (id) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa khuyến mãi này?')) return
-    try {
+const deletePromotion = async (id, e) => {
+  if (e) e.stopPropagation()
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa khuyến mãi này?'
+  })
+  if (!confirmed) return
+  
+  try {
         isLoading.value = true
         await http.delete(`/fb-promotions/${id}`)
         uiStore.showToast('Xóa khuyến mãi thành công', 'success')

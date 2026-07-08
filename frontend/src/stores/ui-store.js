@@ -15,6 +15,15 @@ export const useUiStore = defineStore('ui', () => {
     resolve: null
   })
 
+  // Modal alert dialog configuration
+  const alertState = ref({
+    show: false,
+    title: 'Thông báo',
+    message: '',
+    confirmText: 'Đóng',
+    resolve: null
+  })
+
   /**
    * Display toast notification
    * @param {string} message - Notification text
@@ -62,12 +71,40 @@ export const useUiStore = defineStore('ui', () => {
     confirmState.value.show = false
   }
 
+  /**
+   * Promise-based alert popup trigger
+   * @param {Object|string} options - Config object or message string
+   * @returns {Promise<void>} Resolves when closed
+   */
+  function alert(options) {
+    let opts = typeof options === 'string' ? { message: options } : options
+    return new Promise((resolve) => {
+      alertState.value = {
+        show: true,
+        title: opts.title || 'Thông báo',
+        message: opts.message,
+        confirmText: opts.confirmText || 'Đóng',
+        resolve
+      }
+    })
+  }
+
+  function handleAlert() {
+    if (alertState.value.resolve) {
+      alertState.value.resolve()
+    }
+    alertState.value.show = false
+  }
+
   return {
     toasts,
     confirmState,
+    alertState,
     showToast,
     removeToast,
     confirm,
-    handleConfirm
+    handleConfirm,
+    alert,
+    handleAlert
   }
 })

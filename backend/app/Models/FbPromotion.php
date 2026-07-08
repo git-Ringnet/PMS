@@ -41,4 +41,9 @@ class FbPromotion extends Model
     {
         return $this->hasMany(FbPromotionProduct::class);
     }
+
+    public function outlet()
+    {
+        return $this->belongsTo(Outlet::class, 'outlet_id', 'id');
+    }
 }

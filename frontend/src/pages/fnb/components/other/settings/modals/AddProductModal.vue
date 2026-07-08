@@ -3,6 +3,9 @@ import { ref, computed, watch, onMounted } from 'vue'
 import http from '@/services/http'
 import JsBarcode from 'jsbarcode'
 import SelectComboItemsModal from './SelectComboItemsModal.vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   show: {
@@ -655,11 +658,11 @@ const handleAddSelectedComboItems = (selectedProducts) => {
 
 const handleSave = () => {
   if (!name.value.trim()) {
-    alert('Vui lòng nhập tên thực đơn!')
+    uiStore.alert('Vui lòng nhập tên thực đơn!')
     return
   }
   if (!productCategoryId.value) {
-    alert('Vui lòng chọn loại thực đơn!')
+    uiStore.alert('Vui lòng chọn loại thực đơn!')
     return
   }
 

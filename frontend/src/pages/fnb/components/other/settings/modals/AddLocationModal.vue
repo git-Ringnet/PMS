@@ -1,5 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   show: {
@@ -77,7 +80,7 @@ const removeImage = () => {
 
 const handleSave = () => {
   if (!name.value) {
-    alert('Vui lòng nhập tên khu vực!')
+    uiStore.alert('Vui lòng nhập tên khu vực!')
     return
   }
 

@@ -35,4 +35,9 @@ class FbTable extends Model
     {
         return $this->belongsTo(FbLocation::class, 'location_id', 'id');
     }
+
+    public function orders()
+    {
+        return $this->hasMany(FbOrder::class, 'table_id', 'id');
+    }
 }

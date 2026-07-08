@@ -5,6 +5,10 @@ const props = defineProps({
   isOpen: {
     type: Boolean,
     default: false
+  },
+  initialData: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -15,6 +19,17 @@ const form = ref({
   phone: '',
   email: '',
   address: ''
+})
+
+import { watch } from 'vue'
+
+watch(() => props.isOpen, (newVal) => {
+  if (newVal && props.initialData) {
+    form.value.name = props.initialData.name || ''
+    form.value.phone = props.initialData.phone || ''
+    form.value.email = props.initialData.email || ''
+    form.value.address = props.initialData.address || ''
+  }
 })
 
 const handleSave = () => {

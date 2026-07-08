@@ -11,7 +11,9 @@ class FbTableController extends Controller
 {
     public function index(Request $request)
     {
-        $query = FbTable::query();
+        $query = FbTable::with(['orders' => function($q) {
+            $q->whereIn('status', ['serving', 'waiting']);
+        }]);
 
         if ($request->has('location_id')) {
             $query->where('location_id', $request->query('location_id'));
@@ -21,6 +23,28 @@ class FbTableController extends Controller
         }
 
         $tables = $query->orderBy('row_index')->orderBy('col_index')->get();
+
+        // Transform tables to include aggregated order info
+        $tables->transform(function ($table) {
+            $guestCount = 0;
+            $totalAmount = 0;
+            $checkinTime = null;
+
+            foreach ($table->orders as $order) {
+                $guestCount += $order->guest_count;
+                $totalAmount += $order->total_amount;
+                if (!$checkinTime || $order->created_at < $checkinTime) {
+                    $checkinTime = $order->created_at;
+                }
+            }
+
+            $table->guest_name = $guestCount; // Using guest_name field for guest count in frontend
+            $table->checkin_time = $checkinTime ? $checkinTime->format('H:i') : null;
+            $table->total_amount = $totalAmount;
+            
+            unset($table->orders); // Remove the orders relation to avoid heavy payload
+            return $table;
+        });
 
         return response()->json([
             'success' => true,

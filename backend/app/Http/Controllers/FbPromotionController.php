@@ -10,7 +10,7 @@ class FbPromotionController extends Controller
 {
     public function index(Request $request)
     {
-        $promotions = FbPromotion::with('products.product.outletPrices')->get();
+        $promotions = FbPromotion::with(['products.product.outletPrices', 'outlet'])->get();
         return response()->json($promotions);
     }
 

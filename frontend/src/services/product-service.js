@@ -4,6 +4,9 @@ import http from './http'
 // Changed to call dedicated F&B API endpoints: /fb-product-categories
 export const fetchProductCategories = () => http.get('/fb-product-categories')
 
+export const fetchPromotions = () => http.get('/fb-promotions')
+
+
 export const createProductCategory = (formData) => http.post('/fb-product-categories', formData, {
   headers: { 'Content-Type': 'multipart/form-data' }
 })
