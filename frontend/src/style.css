@@ -310,17 +310,13 @@ html.dark textarea::placeholder {
     0 8px 20px -4px rgba(15, 23, 42, 0.12), 
     0 4px 8px -2px rgba(15, 23, 42, 0.06),
     0 0 0 1px rgba(0, 0, 0, 0.02); /* More prominent default shadow */
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease, background-color 0.25s ease, opacity 0.25s ease;
-  will-change: transform, box-shadow, border-color, background-color, opacity;
+  transition: border-color 0.25s ease, background-color 0.25s ease, opacity 0.25s ease;
+  will-change: border-color, background-color, opacity;
 }
 
 .room-card:not(.occupied-room):hover {
-  transform: translateY(-4px) scale(1.025) !important; /* Gentle lift and scale */
   z-index: 20;
   border-color: #3b82f6; /* Beautiful brand-blue border on hover */
-  box-shadow: 
-    0 16px 28px -6px rgba(59, 130, 246, 0.2),
-    0 6px 12px -3px rgba(59, 130, 246, 0.1) !important; /* Soft light blue hover shadow */
 }
 
 /* Occupied Rooms style */
@@ -335,45 +331,9 @@ html.dark textarea::placeholder {
 }
 
 .room-card.occupied-room:hover {
-  transform: translateY(-4px) scale(1.025) !important;
   z-index: 20;
   background: linear-gradient(135deg, #f0f8ff 0%, #7bc4ff 100%);
   border-color: #2563eb;
-  box-shadow: 
-    0 16px 28px -6px rgba(37, 99, 235, 0.28),
-    0 6px 12px -3px rgba(37, 99, 235, 0.18) !important;
-}
-
-/* --- Ripple Wave Physics on Siblings (Gentle & Subtle) --- */
-
-/* 1. Sibling immediately after hovered card (shifts right slightly) */
-.room-card:hover + .room-card {
-  transform: translateX(5px) scale(0.99) !important;
-  opacity: 0.97;
-  z-index: 15;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
-}
-
-/* 2. Sibling two steps after hovered card (shifts right barely visible) */
-.room-card:hover + .room-card + .room-card {
-  transform: translateX(2px) scale(0.995) !important;
-  opacity: 0.99;
-  z-index: 12;
-}
-
-/* 3. Sibling immediately before hovered card (shifts left slightly) */
-.room-card:has(+ .room-card:hover) {
-  transform: translateX(-5px) scale(0.99) !important;
-  opacity: 0.97;
-  z-index: 15;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
-}
-
-/* 4. Sibling two steps before hovered card (shifts left barely visible) */
-.room-card:has(+ .room-card + .room-card:hover) {
-  transform: translateX(-2px) scale(0.995) !important;
-  opacity: 0.99;
-  z-index: 12;
 }
 
 .floor-pill {
@@ -420,9 +380,6 @@ html.dark .room-card {
 html.dark .room-card:not(.occupied-room):hover {
   border-color: #0096ff;
   background-color: #0d0d0d;
-  box-shadow: 
-    0 8px 16px -4px rgba(0, 150, 255, 0.2),
-    0 0 10px rgba(0, 150, 255, 0.15) !important;
 }
 
 html.dark .room-card.occupied-room {
@@ -435,9 +392,6 @@ html.dark .room-card.occupied-room {
 html.dark .room-card.occupied-room:hover {
   background: linear-gradient(135deg, #032544 0%, #005b99 100%);
   border-color: #33abff;
-  box-shadow: 
-    0 8px 16px -4px rgba(51, 171, 255, 0.25),
-    0 0 12px rgba(51, 171, 255, 0.2) !important;
 }
 
 html.dark .floor-pill {

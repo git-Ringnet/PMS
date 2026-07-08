@@ -44,6 +44,19 @@ class RoomResource extends JsonResource
             'lock_maintenance_percent' => $this->activeLock?->maintenance_percent ?? 0,
             'lock_status' => $this->activeLock?->status ?? '',
             'lock_username' => $this->activeLock?->username ?? '',
+            'active_locks' => $this->relationLoaded('allActiveLocks') ? $this->allActiveLocks->map(fn($lock) => [
+                'lock_id' => $lock->id,
+                'lock_type' => $lock->lock_type,
+                'lock_start_date' => $lock->start_date instanceof \DateTimeInterface ? $lock->start_date?->format('Y-m-d H:i:s') : $lock->start_date,
+                'lock_end_date' => $lock->end_date instanceof \DateTimeInterface ? $lock->end_date?->format('Y-m-d H:i:s') : $lock->end_date,
+                'lock_reason' => $lock->reason,
+                'lock_maintenance_percent' => $lock->maintenance_percent ?? 0,
+                'lock_status' => $lock->status ?? '',
+                'lock_username' => $lock->username ?? '',
+                'unlock_username' => $lock->unlock_username ?? '',
+                'unlocked_at' => $lock->unlocked_at instanceof \DateTimeInterface ? $lock->unlocked_at?->format('Y-m-d H:i:s') : $lock->unlocked_at,
+                'is_future' => \Carbon\Carbon::parse($lock->start_date)->gt(now()),
+            ]) : [],
         ];
     }
 }

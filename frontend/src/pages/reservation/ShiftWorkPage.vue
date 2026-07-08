@@ -505,7 +505,7 @@ function handleCopyDateTo() {
   const formatted = formatDateInput(searchDateTo.value)
   navigator.clipboard.writeText(formatted)
     .then(() => {
-      uiStore.showToast(`Đã sao chép ngày kết thúc "${formatted}"!`, 'success')
+      uiStore.showToast(`Đã sao chép ngày mở khóa "${formatted}"!`, 'success')
     })
 }
 
@@ -839,7 +839,7 @@ function formatMoney(num) {
             @click="triggerDateToPicker"
             type="button"
             class="p-1 hover:bg-slate-100 rounded text-[#10b981] bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
-            title="Chọn ngày kết thúc"
+            title="Chọn ngày mở khóa"
           >
             <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -852,7 +852,7 @@ function formatMoney(num) {
             @click="handleCopyDateTo"
             type="button"
             class="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors ml-0.5 border-l border-slate-100"
-            title="Sao chép ngày kết thúc"
+            title="Sao chép ngày mở khóa"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />

@@ -1,233 +1,383 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { VueDatePicker } from '@vuepic/vue-datepicker'
+import '@vuepic/vue-datepicker/dist/main.css'
+import { vi } from 'date-fns/locale'
 
 const props = defineProps({
+  // Mode 1: v-model:startDate & v-model:endDate (YMD format strings, e.g. "2026-06-24")
+  startDate: {
+    type: String,
+    default: ''
+  },
+  endDate: {
+    type: String,
+    default: ''
+  },
+  // Mode 2: v-model (object, e.g. { start: "24/06/2026", end: "24/06/2026" })
   modelValue: {
     type: Object,
-    default: () => ({ start: '24/06/2026', end: '24/06/2026' })
+    default: null
   }
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:startDate', 'update:endDate', 'update:modelValue', 'change'])
 
-const isOpen = ref(false)
-const popoverRef = ref(null)
+// States
+const selectedRangeKey = ref('custom')
+const localStartDate = ref(null)
+const localEndDate = ref(null)
+const isDark = ref(false)
 
-const toggleOpen = () => {
-  isOpen.value = !isOpen.value
+// Formatting helpers
+const parseYMD = (ymdStr) => {
+  if (!ymdStr) return new Date()
+  const [y, m, d] = ymdStr.split('-').map(Number)
+  return new Date(y, m - 1, d)
 }
 
-const closePopover = (e) => {
-  if (popoverRef.value && !popoverRef.value.contains(e.target)) {
-    isOpen.value = false
+const parseDMY = (dmyStr) => {
+  if (!dmyStr) return new Date()
+  const [d, m, y] = dmyStr.split('/').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+const formatDateYMD = (date) => {
+  if (!date) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const formatDateDMY = (date) => {
+  if (!date) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${day}/${month}/${year}`
+}
+
+// Preset range calculations (returns YMD format strings)
+const getRanges = () => {
+  const today = new Date()
+  const getStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const todayStart = getStartOfDay(today)
+
+  const todayStr = formatDateYMD(todayStart)
+
+  const yesterday = new Date(todayStart)
+  yesterday.setDate(todayStart.getDate() - 1)
+  const yesterdayStr = formatDateYMD(yesterday)
+
+  const tomorrow = new Date(todayStart)
+  tomorrow.setDate(todayStart.getDate() + 1)
+  const tomorrowStr = formatDateYMD(tomorrow)
+
+  const day = todayStart.getDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const thisMonday = new Date(todayStart)
+  thisMonday.setDate(todayStart.getDate() + diffToMonday)
+  const thisSunday = new Date(thisMonday)
+  thisSunday.setDate(thisMonday.getDate() + 6)
+
+  const lastMonday = new Date(thisMonday)
+  lastMonday.setDate(thisMonday.getDate() - 7)
+  const lastSunday = new Date(lastMonday)
+  lastSunday.setDate(lastMonday.getDate() + 6)
+
+  const nextMonday = new Date(thisMonday)
+  nextMonday.setDate(thisMonday.getDate() + 7)
+  const nextSunday = new Date(nextMonday)
+  nextSunday.setDate(nextMonday.getDate() + 6)
+
+  const thisMonthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1)
+  const thisMonthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 0)
+
+  const lastMonthStart = new Date(todayStart.getFullYear(), todayStart.getMonth() - 1, 1)
+  const lastMonthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth(), 0)
+
+  const nextMonthStart = new Date(todayStart.getFullYear(), todayStart.getMonth() + 1, 1)
+  const nextMonthEnd = new Date(todayStart.getFullYear(), todayStart.getMonth() + 2, 0)
+
+  return {
+    today: [todayStr, todayStr],
+    thisWeek: [formatDateYMD(thisMonday), formatDateYMD(thisSunday)],
+    thisMonth: [formatDateYMD(thisMonthStart), formatDateYMD(thisMonthEnd)],
+    tomorrow: [tomorrowStr, tomorrowStr],
+    nextWeek: [formatDateYMD(nextMonday), formatDateYMD(nextSunday)],
+    nextMonth: [formatDateYMD(nextMonthStart), formatDateYMD(nextMonthEnd)],
+    yesterday: [yesterdayStr, yesterdayStr],
+    lastWeek: [formatDateYMD(lastMonday), formatDateYMD(lastSunday)],
+    lastMonth: [formatDateYMD(lastMonthStart), formatDateYMD(lastMonthEnd)]
   }
 }
 
+// Map key to label for preset options
+const rangePresets = [
+  { key: 'today', label: 'Hôm nay' },
+  { key: 'thisWeek', label: 'Tuần này' },
+  { key: 'thisMonth', label: 'Tháng này' },
+  { key: 'tomorrow', label: 'Ngày mai' },
+  { key: 'nextWeek', label: 'Tuần tiếp theo' },
+  { key: 'nextMonth', label: 'Tháng tiếp theo' },
+  { key: 'yesterday', label: 'Hôm qua' },
+  { key: 'lastWeek', label: 'Tuần trước' },
+  { key: 'lastMonth', label: 'Tháng trước' },
+  { key: 'custom', label: 'Tùy chỉnh' }
+]
+
+// Initialize selectedRangeKey based on props
+const updatePresetSelection = () => {
+  let start, end
+  if (props.modelValue) {
+    start = parseDMY(props.modelValue.start)
+    end = parseDMY(props.modelValue.end)
+  } else {
+    start = parseYMD(props.startDate)
+    end = parseYMD(props.endDate)
+  }
+
+  localStartDate.value = start
+  localEndDate.value = end
+
+  const ranges = getRanges()
+  const startStr = formatDateYMD(start)
+  const endStr = formatDateYMD(end)
+
+  const found = Object.keys(ranges).find(
+    (key) => ranges[key][0] === startStr && ranges[key][1] === endStr
+  )
+  if (found) {
+    selectedRangeKey.value = found
+  } else {
+    selectedRangeKey.value = 'custom'
+  }
+}
+
+watch(
+  () => props.modelValue,
+  () => {
+    if (props.modelValue) {
+      updatePresetSelection()
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  [() => props.startDate, () => props.endDate],
+  () => {
+    if (!props.modelValue) {
+      updatePresetSelection()
+    }
+  }
+)
+
+// Dark mode tracking
+let observer = null
 onMounted(() => {
-  document.addEventListener('click', closePopover)
+  updatePresetSelection()
+
+  // Track dark mode class
+  isDark.value = document.documentElement.classList.contains('dark')
+  observer = new MutationObserver(() => {
+    isDark.value = document.documentElement.classList.contains('dark')
+  })
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class']
+  })
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', closePopover)
+  if (observer) observer.disconnect()
 })
 
-const quickLinks = [
-  'Hôm nay', 'Hôm qua', '7 ngày trước', 'Tuần này', 'Tháng này', 
-  'Kì này', 'Năm này', 'Ngày mai', '7 ngày tới', '30 ngày tới', 
-  '30 ngày trước', 'Tháng trước'
-]
+// Triggered when dropdown preset selection changes
+const handlePresetChange = () => {
+  if (selectedRangeKey.value !== 'custom') {
+    const ranges = getRanges()
+    const [startYMD, endYMD] = ranges[selectedRangeKey.value]
+    
+    const start = parseYMD(startYMD)
+    const end = parseYMD(endYMD)
+    
+    localStartDate.value = start
+    localEndDate.value = end
 
-const handleOk = () => {
-  isOpen.value = false
+    const startDMY = formatDateDMY(start)
+    const endDMY = formatDateDMY(end)
+
+    if (props.modelValue) {
+      emit('update:modelValue', { start: startDMY, end: endDMY })
+      emit('change', { start: startDMY, end: endDMY })
+    } else {
+      emit('update:startDate', startYMD)
+      emit('update:endDate', endYMD)
+      emit('change', { start: startYMD, end: endYMD })
+    }
+  }
+}
+
+// When calendar selection changes
+const onStartDateChange = (date) => {
+  if (date) {
+    selectedRangeKey.value = 'custom'
+  }
+}
+
+const onEndDateChange = (date) => {
+  if (date) {
+    selectedRangeKey.value = 'custom'
+  }
+}
+
+// Apply the custom date picker selection
+const applyRange = () => {
+  if (localStartDate.value && localEndDate.value) {
+    const startYMD = formatDateYMD(localStartDate.value)
+    const endYMD = formatDateYMD(localEndDate.value)
+    
+    const startDMY = formatDateDMY(localStartDate.value)
+    const endDMY = formatDateDMY(localEndDate.value)
+
+    if (props.modelValue) {
+      emit('update:modelValue', { start: startDMY, end: endDMY })
+      emit('change', { start: startDMY, end: endDMY })
+    } else {
+      emit('update:startDate', startYMD)
+      emit('update:endDate', endYMD)
+      emit('change', { start: startYMD, end: endYMD })
+    }
+  }
 }
 </script>
 
 <template>
-  <div class="relative" ref="popoverRef" @click.stop>
-    <!-- Trigger Input -->
-    <div 
-      class="flex items-center border border-slate-300 rounded-md bg-white cursor-pointer hover:border-sky-500 transition-colors px-3 py-1.5 min-w-[260px]"
-      @click="toggleOpen"
-    >
-      <svg class="w-4 h-4 text-slate-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-      <span class="text-sm text-slate-700 select-none">{{ modelValue.start }} ~ {{ modelValue.end }}</span>
+  <div class="flex items-center gap-2">
+    <!-- Presets Dropdown -->
+    <div class="flex items-center border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900 px-3 py-1 shadow-sm h-[32px]">
+      <span class="text-gray-400 dark:text-zinc-500 mr-2 text-[11px] font-semibold whitespace-nowrap uppercase tracking-wider">Phạm vi ngày</span>
+      <select
+        v-model="selectedRangeKey"
+        @change="handlePresetChange"
+        class="bg-transparent border-none focus:outline-none text-xs font-semibold text-gray-900 dark:text-white cursor-pointer w-[120px]"
+      >
+        <option v-for="preset in rangePresets" :key="preset.key" :value="preset.key">
+          {{ preset.label }}
+        </option>
+      </select>
     </div>
 
-    <!-- Popover -->
-    <div 
-      v-if="isOpen"
-      class="absolute top-full left-0 mt-1 bg-white rounded-md shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-slate-200 z-50 flex flex-col w-[760px] overflow-hidden"
-    >
-      <div class="flex flex-1">
-        <!-- Sidebar -->
-        <div class="w-[140px] border-r border-slate-200 bg-white py-2 flex flex-col">
-          <div 
-            v-for="link in quickLinks" 
-            :key="link"
-            class="px-4 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50 hover:text-sky-600 cursor-pointer transition-colors"
-            :class="{'text-sky-600 bg-sky-50': link === 'Hôm nay'}"
-          >
-            {{ link }}
+    <!-- Start Date Input -->
+    <div class="flex items-center border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900 px-3 py-1 shadow-sm h-[32px] w-[140px]">
+      <span class="text-gray-400 dark:text-zinc-500 mr-1 text-[11px] font-semibold whitespace-nowrap">Từ:</span>
+      <VueDatePicker
+        v-model="localStartDate"
+        :locale="vi"
+        :dark="isDark"
+        :enable-time-picker="false"
+        auto-apply
+        @update:model-value="onStartDateChange"
+        class="custom-datepicker-single"
+      >
+        <template #trigger>
+          <div class="flex items-center justify-between w-full cursor-pointer text-xs font-semibold text-gray-900 dark:text-white select-none">
+            <span>{{ formatDateDMY(localStartDate) }}</span>
+            <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-500 shrink-0 ml-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
           </div>
-        </div>
-
-        <!-- Calendars Area -->
-        <div class="flex-1 flex flex-col">
-          <!-- Header -->
-          <div class="px-4 py-3 border-b border-slate-200 text-[14px] text-slate-800">
-            {{ modelValue.start }} ~ {{ modelValue.end }}
-          </div>
-
-          <!-- Two Calendars -->
-          <div class="flex p-4 gap-6">
-            <!-- Left Calendar -->
-            <div class="flex-1">
-              <div class="flex justify-between items-center mb-4">
-                <button class="text-slate-400 hover:text-slate-600">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <div class="text-[13px] font-medium text-slate-700">thg 6, 2026</div>
-                <button class="text-slate-400 hover:text-slate-600">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                </button>
-              </div>
-              <div class="grid grid-cols-7 gap-1 text-center text-[13px] mb-2">
-                <div class="text-slate-500 py-1">T2</div>
-                <div class="text-slate-500 py-1">T3</div>
-                <div class="text-slate-500 py-1">T4</div>
-                <div class="text-slate-500 py-1">T5</div>
-                <div class="text-slate-500 py-1">T6</div>
-                <div class="text-slate-500 py-1">T7</div>
-                <div class="text-slate-500 py-1">CN</div>
-              </div>
-              <div class="grid grid-cols-7 gap-y-2 gap-x-1 text-center text-[13px]">
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">1</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">2</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">3</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">4</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">5</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">6</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">7</div>
-                
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">8</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">9</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">10</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">11</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">12</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">13</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">14</div>
-
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">15</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">16</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">17</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">18</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">19</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">20</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">21</div>
-
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">22</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">23</div>
-                <div class="py-1 cursor-pointer bg-sky-400 text-white rounded shadow-sm">24</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">25</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">26</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">27</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">28</div>
-
-                <div class="py-1 cursor-pointer text-slate-400 border border-sky-400 rounded">29</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">30</div>
-                <div class="py-1 text-slate-300">1</div>
-                <div class="py-1 text-slate-300">2</div>
-                <div class="py-1 text-slate-300">3</div>
-                <div class="py-1 text-slate-300">4</div>
-                <div class="py-1 text-slate-300">5</div>
-              </div>
-            </div>
-
-            <div class="w-px bg-slate-200 mx-2"></div>
-
-            <!-- Right Calendar -->
-            <div class="flex-1">
-              <div class="flex justify-between items-center mb-4">
-                <button class="text-slate-400 hover:text-slate-600">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <div class="text-[13px] font-medium text-slate-700">thg 7, 2026</div>
-                <button class="text-slate-400 hover:text-slate-600">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                </button>
-              </div>
-              <div class="grid grid-cols-7 gap-1 text-center text-[13px] mb-2">
-                <div class="text-slate-500 py-1">T2</div>
-                <div class="text-slate-500 py-1">T3</div>
-                <div class="text-slate-500 py-1">T4</div>
-                <div class="text-slate-500 py-1">T5</div>
-                <div class="text-slate-500 py-1">T6</div>
-                <div class="text-slate-500 py-1">T7</div>
-                <div class="text-slate-500 py-1">CN</div>
-              </div>
-              <div class="grid grid-cols-7 gap-y-2 gap-x-1 text-center text-[13px]">
-                <div class="py-1 cursor-pointer text-slate-400 border border-sky-400 rounded">29</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">30</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">1</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">2</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">3</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">4</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">5</div>
-                
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">6</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">7</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">8</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">9</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">10</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">11</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">12</div>
-
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">13</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">14</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">15</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">16</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">17</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">18</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">19</div>
-
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">20</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">21</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">22</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">23</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">24</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">25</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">26</div>
-
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">27</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">28</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">29</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">30</div>
-                <div class="py-1 cursor-pointer hover:bg-slate-100 rounded">31</div>
-                <div class="py-1 text-slate-300">1</div>
-                <div class="py-1 text-slate-300">2</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Footer Action -->
-      <div class="border-t border-slate-200 p-3 flex justify-between items-center bg-white">
-        <div class="flex gap-2">
-          <button class="px-3 py-1.5 bg-slate-100 text-slate-700 text-sm rounded hover:bg-slate-200 transition-colors">
-            7 ngày trước
-          </button>
-          <button class="px-3 py-1.5 bg-slate-100 text-slate-700 text-sm rounded hover:bg-slate-200 transition-colors">
-            7 ngày tới
-          </button>
-        </div>
-        <button 
-          @click="handleOk"
-          class="px-5 py-1.5 bg-[#70c0e0] text-white text-sm rounded hover:bg-sky-400 transition-colors font-medium"
-        >
-          OK
-        </button>
-      </div>
+        </template>
+      </VueDatePicker>
     </div>
+
+    <!-- End Date Input -->
+    <div class="flex items-center border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900 px-3 py-1 shadow-sm h-[32px] w-[140px]">
+      <span class="text-gray-400 dark:text-zinc-500 mr-1 text-[11px] font-semibold whitespace-nowrap">Đến:</span>
+      <VueDatePicker
+        v-model="localEndDate"
+        :locale="vi"
+        :dark="isDark"
+        :enable-time-picker="false"
+        auto-apply
+        @update:model-value="onEndDateChange"
+        class="custom-datepicker-single"
+      >
+        <template #trigger>
+          <div class="flex items-center justify-between w-full cursor-pointer text-xs font-semibold text-gray-900 dark:text-white select-none">
+            <span>{{ formatDateDMY(localEndDate) }}</span>
+            <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-500 shrink-0 ml-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </div>
+        </template>
+      </VueDatePicker>
+    </div>
+
+    <!-- Apply Button -->
+    <button
+      type="button"
+      @click="applyRange"
+      class="px-3.5 py-1 bg-[#8ecefa] hover:bg-[#72b5f7] dark:bg-blue-600 dark:hover:bg-blue-700 text-slate-800 dark:text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-all border border-[#7ec0f3] dark:border-blue-700 flex items-center justify-center gap-1.5 h-[32px]"
+    >
+      <span class="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center shrink-0">
+        <svg class="w-2 h-2" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </span>
+      Áp dụng
+    </button>
   </div>
 </template>
+
+<style>
+/* Custom styled overrides for vue-datepicker to match theme */
+.dp__theme_light {
+  --dp-primary-color: #3b82f6 !important;
+  --dp-hover-color: #f1f5f9 !important;
+  --dp-hover-text-color: #1e293b !important;
+  --dp-hover-icon-color: #94a3b8 !important;
+  --dp-primary-text-color: #ffffff !important;
+  --dp-secondary-color: #cbd5e1 !important;
+  --dp-border-color: #e2e8f0 !important;
+  --dp-menu-border-color: #e2e8f0 !important;
+}
+
+.dp__theme_dark {
+  --dp-primary-color: #0096ff !important;
+  --dp-hover-color: #121212 !important;
+  --dp-hover-text-color: #ffffff !important;
+  --dp-hover-icon-color: #71717a !important;
+  --dp-primary-text-color: #ffffff !important;
+  --dp-secondary-color: #1c1c1c !important;
+  --dp-border-color: #1c1c1c !important;
+  --dp-menu-border-color: #1c1c1c !important;
+  --dp-background-color: #080808 !important;
+  --dp-text-color: #ffffff !important;
+}
+
+.dp__menu {
+  border-radius: 12px !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+  border: 1px solid var(--dp-border-color) !important;
+  font-family: inherit !important;
+}
+
+.dp__calendar_header_item {
+  font-weight: 600 !important;
+  font-size: 11px !important;
+}
+
+.dp__cell_inner {
+  font-size: 12px !important;
+  border-radius: 6px !important;
+}
+</style>

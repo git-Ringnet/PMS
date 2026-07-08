@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import RoomIcon from '@/components/RoomIcon.vue'
@@ -10,7 +10,7 @@ const uiStore = useUiStore()
 const rooms = ref([])
 const hotelConfigs = ref([])
 const loading = ref(false)
-const selectedRoomIds = ref([])
+const selectedRowKeys = ref([]) // Binds to lock_id (if locked) or room_number (if available)
 
 // Filters
 const searchQuery = ref('')
@@ -55,7 +55,7 @@ const bulkForm = ref({
 
 // Modal custom room select dropdown states
 const isRoomDropdownOpen = ref(false)
-const modalSelectedRoomIds = ref([])
+const modalSelectedRoomNumbers = ref([])
 const roomSearchQuery = ref('')
 
 const defaultLockEndTime = computed(() => {
@@ -81,30 +81,29 @@ const getTodayString = () => {
   return `${year}-${month}-${day}`
 }
 
-const getCurrentTimeHourMinute = () => {
-  const d = new Date()
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  })
-  const parts = formatter.formatToParts(d)
-  let hour = parts.find(p => p.type === 'hour').value
-  const minute = parts.find(p => p.type === 'minute').value
-  if (hour.length === 1) hour = '0' + hour
-  return `${hour}:${minute}`
-}
-
 const isEditingActiveLock = computed(() => {
   if (!editingLockId.value) return false
-  const selectedRoom = rooms.value.find(r => r.lock_id === editingLockId.value)
-  if (!selectedRoom || !selectedRoom.lock_start_date || !selectedRoom.lock_end_date) return false
+  
+  let foundLock = null
+  for (const r of rooms.value) {
+    if (r.active_locks) {
+      foundLock = r.active_locks.find(l => l.lock_id === editingLockId.value)
+      if (foundLock) break
+    }
+  }
+  
+  if (!foundLock || !foundLock.lock_start_date || !foundLock.lock_end_date) return false
   
   const now = new Date()
-  const startDate = new Date(selectedRoom.lock_start_date.replace(/-/g, '/'))
-  const endDate = new Date(selectedRoom.lock_end_date.replace(/-/g, '/'))
+  const startDate = new Date(foundLock.lock_start_date.replace(/-/g, '/'))
+  const endDate = new Date(foundLock.lock_end_date.replace(/-/g, '/'))
   return startDate <= now && endDate >= now
+})
+
+watch(() => bulkForm.value.start_date, (newVal) => {
+  if (newVal) {
+    bulkForm.value.start_time = '00:00'
+  }
 })
 
 onMounted(() => {
@@ -174,21 +173,43 @@ const fetchHotelConfigs = async () => {
   }
 }
 
+const parseDateInLocalTimezone = (dateStr) => {
+  if (!dateStr) return new Date()
+  if (dateStr.includes('T') || dateStr.includes('+') || dateStr.endsWith('Z')) {
+    return new Date(dateStr)
+  }
+  // Convert "YYYY-MM-DD HH:mm:ss" to "YYYY-MM-DDTHH:mm:ss+07:00"
+  const formatted = dateStr.replace(' ', 'T') + '+07:00'
+  return new Date(formatted)
+}
+
 // Format date to DD/MM/YYYY for display
 const formatDateDisplay = (dateStr) => {
   if (!dateStr) return ''
-  const d = new Date(dateStr)
+  const d = parseDateInLocalTimezone(dateStr)
   if (isNaN(d.getTime())) return dateStr
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  return `${day}/${month}/${d.getFullYear()}`
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    const parts = formatter.formatToParts(d)
+    const month = parts.find(p => p.type === 'month').value
+    const day = parts.find(p => p.type === 'day').value
+    const year = parts.find(p => p.type === 'year').value
+    return `${day}/${month}/${year}`
+  } catch (e) {
+    return dateStr
+  }
 }
 
 // Format date-time for timeline logs
 const formatDateTime = (dateStr) => {
   if (!dateStr) return ''
   try {
-    const d = new Date(dateStr)
+    const d = parseDateInLocalTimezone(dateStr)
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Ho_Chi_Minh',
       year: 'numeric',
@@ -244,14 +265,51 @@ const filteredRooms = computed(() => {
   return list
 })
 
+// Flatten rooms: each row is an active lock period, or room if unlocked
+const flatRows = computed(() => {
+  const list = []
+  filteredRooms.value.forEach(room => {
+    if (room.active_locks && room.active_locks.length > 0) {
+      room.active_locks.forEach(lock => {
+        list.push({
+          ...room,
+          currentLock: lock,
+          lock_id: lock.lock_id,
+          lock_type: lock.lock_type,
+          lock_start_date: lock.lock_start_date,
+          lock_end_date: lock.lock_end_date,
+          lock_reason: lock.lock_reason,
+          lock_maintenance_percent: lock.lock_maintenance_percent,
+          lock_status: lock.lock_status,
+          lock_username: lock.lock_username,
+        })
+      })
+    } else {
+      list.push({
+        ...room,
+        currentLock: null,
+        lock_id: null,
+        lock_type: null,
+        lock_start_date: null,
+        lock_end_date: null,
+        lock_reason: null,
+        lock_maintenance_percent: 0,
+        lock_status: '',
+        lock_username: '',
+      })
+    }
+  })
+  return list
+})
+
 // Total pagination pages (mocked to 1 page)
 const totalPages = computed(() => {
   return 1
 })
 
-// Paginated subset (returns all filtered rooms directly)
+// Paginated subset
 const paginatedRooms = computed(() => {
-  return filteredRooms.value
+  return flatRows.value
 })
 
 // Floor grouping of paginated rooms
@@ -267,9 +325,16 @@ const roomsByFloor = computed(() => {
     grouped[fl].push(room)
   })
 
-  // Sort rooms within each floor by room number
+  // Sort rooms: chronologically for same room
   Object.keys(grouped).forEach(fl => {
-    grouped[fl].sort((a, b) => parseInt(a.room_number) - parseInt(b.room_number))
+    grouped[fl].sort((a, b) => {
+      const roomDiff = parseInt(a.room_number) - parseInt(b.room_number)
+      if (roomDiff !== 0) return roomDiff
+      if (a.lock_start_date && b.lock_start_date) {
+        return new Date(a.lock_start_date) - new Date(b.lock_start_date)
+      }
+      return 0
+    })
   })
 
   return grouped
@@ -287,20 +352,20 @@ const sortedFloors = computed(() => {
 
 // Master checkbox status
 const isAllSelected = computed(() => {
-  return paginatedRooms.value.length > 0 && paginatedRooms.value.every(r => selectedRoomIds.value.includes(r.id))
+  const visibleKeys = paginatedRooms.value.map(r => r.currentLock ? r.currentLock.lock_id : r.room_number)
+  return visibleKeys.length > 0 && visibleKeys.every(k => selectedRowKeys.value.includes(k))
 })
 
 const toggleSelectAll = (event) => {
+  const visibleKeys = paginatedRooms.value.map(r => r.currentLock ? r.currentLock.lock_id : r.room_number)
   if (event.target.checked) {
-    const visibleIds = paginatedRooms.value.map(r => r.id)
-    visibleIds.forEach(id => {
-      if (!selectedRoomIds.value.includes(id)) {
-        selectedRoomIds.value.push(id)
+    visibleKeys.forEach(k => {
+      if (!selectedRowKeys.value.includes(k)) {
+        selectedRowKeys.value.push(k)
       }
     })
   } else {
-    const visibleIds = paginatedRooms.value.map(r => r.id)
-    selectedRoomIds.value = selectedRoomIds.value.filter(id => !visibleIds.includes(id))
+    selectedRowKeys.value = selectedRowKeys.value.filter(k => !visibleKeys.includes(k))
   }
 }
 
@@ -325,7 +390,7 @@ const showHistory = async (room) => {
   loadingHistory.value = true
   historyLogs.value = []
   try {
-    const res = await http.get(`/room-locks/history/${room.id}`)
+    const res = await http.get(`/room-locks/history/${room.room_number}`)
     if (res.data && res.data.success) {
       historyLogs.value = res.data.data || []
     }
@@ -351,16 +416,19 @@ const timelineEvents = computed(() => {
       reason: log.reason,
       username: log.username,
       maintenance_percent: log.maintenance_percent,
-      is_active: log.is_active
+      is_active: log.is_active == 1
     })
     
     // 2. Unlock event (if closed)
-    if (!log.is_active) {
+    if (log.is_active == 2 || log.is_active == 0) {
       events.push({
         id: `unlock-${log.id}`,
-        timestamp: log.updated_at,
+        timestamp: log.unlocked_at || log.updated_at,
         type: 'unlock',
-        username: log.username
+        start_date: log.start_date,
+        unlock_date: log.unlocked_at || log.updated_at,
+        username: log.username,
+        unlock_username: log.unlock_username || 'Admin'
       })
     }
   })
@@ -381,26 +449,29 @@ const getTimelineEventLabel = (event) => {
   if (event.lock_type?.toUpperCase() === 'OOO') return 'Khóa phòng OOO'
   if (event.lock_type?.toUpperCase() === 'OOS') return 'Khóa phòng OOS'
   return 'Khóa phòng'
-}// Bulk Unlock action
+}
+
+// Bulk Unlock action
 const submitBulkUnlock = async () => {
-  if (selectedRoomIds.value.length === 0) {
-    uiStore.showToast('Vui lòng chọn ít nhất một phòng cần mở khóa!', 'warning')
+  const lockIdsToUnlock = selectedRowKeys.value.filter(val => typeof val === 'number')
+  if (lockIdsToUnlock.length === 0) {
+    uiStore.showToast('Vui lòng chọn ít nhất một phòng đang khóa cần mở khóa!', 'warning')
     return
   }
 
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận mở khóa',
-    message: `Bạn có chắc chắn muốn mở khóa cho ${selectedRoomIds.value.length} phòng đã chọn?`,
+    message: `Bạn có chắc chắn muốn mở khóa cho ${lockIdsToUnlock.length} lịch khóa đã chọn?`,
     confirmText: 'Mở khóa',
     cancelText: 'Hủy'
   })
   if (!confirmed) return
 
   try {
-    const res = await http.post('/room-locks/bulk-unlock', { room_ids: selectedRoomIds.value })
+    const res = await http.post('/room-locks/bulk-unlock', { lock_ids: lockIdsToUnlock })
     if (res.data && res.data.success) {
-      uiStore.showToast(`Đã mở khóa thành công ${selectedRoomIds.value.length} phòng!`, 'success')
-      selectedRoomIds.value = []
+      uiStore.showToast(`Đã mở khóa thành công ${lockIdsToUnlock.length} lịch khóa phòng!`, 'success')
+      selectedRowKeys.value = selectedRowKeys.value.filter(k => !lockIdsToUnlock.includes(k))
       fetchRooms()
       if (activeHistoryRoom.value) {
         showHistory(activeHistoryRoom.value)
@@ -415,23 +486,24 @@ const submitBulkUnlock = async () => {
 }
 
 // Single Unlock action from ⋮ menu
-const submitSingleUnlock = async (room) => {
+const submitSingleUnlock = async (row) => {
+  if (!row.currentLock) return
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận mở khóa',
-    message: `Bạn có chắc chắn muốn mở khóa cho phòng ${room.room_number}?`,
+    message: `Bạn có chắc chắn muốn mở khóa cho phòng ${row.room_number}?`,
     confirmText: 'Mở khóa',
     cancelText: 'Hủy'
   })
   if (!confirmed) return
 
   try {
-    const res = await http.post('/room-locks/bulk-unlock', { room_ids: [room.id] })
+    const res = await http.post('/room-locks/bulk-unlock', { lock_ids: [row.currentLock.lock_id] })
     if (res.data && res.data.success) {
-      uiStore.showToast(`Đã mở khóa thành công phòng ${room.room_number}!`, 'success')
-      selectedRoomIds.value = selectedRoomIds.value.filter(id => id !== room.id)
+      uiStore.showToast(`Đã mở khóa thành công phòng ${row.room_number}!`, 'success')
+      selectedRowKeys.value = selectedRowKeys.value.filter(k => k !== row.currentLock.lock_id)
       fetchRooms()
-      if (activeHistoryRoom.value && activeHistoryRoom.value.id === room.id) {
-        showHistory(room)
+      if (activeHistoryRoom.value && activeHistoryRoom.value.id === row.id) {
+        showHistory(row)
       }
       if (bc) bc.postMessage('rooms-updated')
     }
@@ -447,12 +519,22 @@ const openBulkLockModal = (type) => {
   editingLockId.value = null
   bulkLockType.value = type
   bulkForm.value.start_date = getTodayString()
-  bulkForm.value.start_time = getCurrentTimeHourMinute()
+  bulkForm.value.start_time = '00:00'
   bulkForm.value.end_date = getTodayString()
   bulkForm.value.end_time = defaultLockEndTime.value
   bulkForm.value.reason = ''
   bulkForm.value.maintenance_percent = 0
-  modalSelectedRoomIds.value = [...selectedRoomIds.value]
+
+  // Resolve room numbers from selection
+  const roomNumbers = selectedRowKeys.value.map(val => {
+    if (typeof val === 'number') {
+      const foundRow = flatRows.value.find(r => r.currentLock?.lock_id === val)
+      return foundRow?.room_number
+    }
+    return val // room_number string
+  }).filter(Boolean)
+
+  modalSelectedRoomNumbers.value = [...new Set(roomNumbers)]
   isRoomDropdownOpen.value = false
   roomSearchQuery.value = ''
   isBulkModalOpen.value = true
@@ -462,32 +544,34 @@ const openSingleLockModal = (room, type) => {
   editingLockId.value = null
   bulkLockType.value = type
   bulkForm.value.start_date = getTodayString()
-  bulkForm.value.start_time = getCurrentTimeHourMinute()
+  bulkForm.value.start_time = '00:00'
   bulkForm.value.end_date = getTodayString()
   bulkForm.value.end_time = defaultLockEndTime.value
   bulkForm.value.reason = ''
   bulkForm.value.maintenance_percent = 0
-  modalSelectedRoomIds.value = [room.id]
+  modalSelectedRoomNumbers.value = [room.room_number]
   isRoomDropdownOpen.value = false
   roomSearchQuery.value = ''
   isBulkModalOpen.value = true
 }
 
-const openEditLockModal = (room) => {
-  editingLockId.value = room.lock_id
-  bulkLockType.value = room.lock_type || 'OOS'
+const openEditLockModal = (row) => {
+  const lock = row.currentLock
+  if (!lock) return
+  editingLockId.value = lock.lock_id
+  bulkLockType.value = lock.lock_type || 'OOS'
   
-  const startParts = room.lock_start_date ? room.lock_start_date.split(' ') : []
-  const endParts = room.lock_end_date ? room.lock_end_date.split(' ') : []
+  const startParts = lock.lock_start_date ? lock.lock_start_date.split(' ') : []
+  const endParts = lock.lock_end_date ? lock.lock_end_date.split(' ') : []
   
   bulkForm.value.start_date = startParts[0] || getTodayString()
   bulkForm.value.start_time = startParts[1] ? startParts[1].substring(0, 5) : '00:00'
   bulkForm.value.end_date = endParts[0] || getTodayString()
   bulkForm.value.end_time = endParts[1] ? endParts[1].substring(0, 5) : '23:59'
   
-  bulkForm.value.reason = room.lock_reason || ''
-  bulkForm.value.maintenance_percent = room.lock_maintenance_percent || 0
-  modalSelectedRoomIds.value = [room.id]
+  bulkForm.value.reason = lock.lock_reason || ''
+  bulkForm.value.maintenance_percent = lock.lock_maintenance_percent || 0
+  modalSelectedRoomNumbers.value = [row.room_number]
   isRoomDropdownOpen.value = false
   roomSearchQuery.value = ''
   isBulkModalOpen.value = true
@@ -504,20 +588,20 @@ const modalFilteredRooms = computed(() => {
 })
 
 const isAllModalRoomsSelected = computed(() => {
-  return rooms.value.length > 0 && modalSelectedRoomIds.value.length === rooms.value.length
+  return rooms.value.length > 0 && modalSelectedRoomNumbers.value.length === rooms.value.length
 })
 
 const toggleSelectAllModalRooms = (event) => {
   if (event.target.checked) {
-    modalSelectedRoomIds.value = rooms.value.map(r => r.id)
+    modalSelectedRoomNumbers.value = rooms.value.map(r => r.room_number)
   } else {
-    modalSelectedRoomIds.value = []
+    modalSelectedRoomNumbers.value = []
   }
 }
 
 // Modal Submit
 const submitBulkLock = async (force = false) => {
-  if (modalSelectedRoomIds.value.length === 0) {
+  if (modalSelectedRoomNumbers.value.length === 0) {
     uiStore.showToast('Vui lòng chọn ít nhất một phòng!', 'warning')
     return
   }
@@ -538,25 +622,25 @@ const submitBulkLock = async (force = false) => {
     }
 
     if (editingLockId.value) {
-      payload.is_active = true
+      payload.is_active = 1
       const res = await http.put(`/room-locks/${editingLockId.value}`, payload)
       if (res.data && res.data.success) {
         uiStore.showToast('Cập nhật thông tin khóa phòng thành công!', 'success')
         isBulkModalOpen.value = false
-        selectedRoomIds.value = []
+        selectedRowKeys.value = []
         fetchRooms()
-        if (activeHistoryRoom.value && activeHistoryRoom.value.id === modalSelectedRoomIds.value[0]) {
+        if (activeHistoryRoom.value && activeHistoryRoom.value.room_number === modalSelectedRoomNumbers.value[0]) {
           showHistory(activeHistoryRoom.value)
         }
         if (bc) bc.postMessage('rooms-updated')
       }
     } else {
-      payload.room_ids = modalSelectedRoomIds.value
+      payload.room_numbers = modalSelectedRoomNumbers.value
       const res = await http.post('/room-locks/bulk-lock', payload)
       if (res.data && res.data.success) {
-        uiStore.showToast(`Đã khóa thành công ${modalSelectedRoomIds.value.length} phòng dạng ${bulkLockType.value}!`, 'success')
+        uiStore.showToast(`Đã khóa thành công ${modalSelectedRoomNumbers.value.length} phòng dạng ${bulkLockType.value}!`, 'success')
         isBulkModalOpen.value = false
-        selectedRoomIds.value = []
+        selectedRowKeys.value = []
         fetchRooms()
         if (bc) bc.postMessage('rooms-updated')
       }
@@ -582,11 +666,11 @@ const submitBulkLock = async (force = false) => {
   }
 }
 // Toggle active row menu
-const toggleRowMenu = (roomId, event) => {
-  if (activeRowMenuId.value === roomId) {
+const toggleRowMenu = (rowKey, event) => {
+  if (activeRowMenuId.value === rowKey) {
     activeRowMenuId.value = null
   } else {
-    activeRowMenuId.value = roomId
+    activeRowMenuId.value = rowKey
   }
 }
 
@@ -684,7 +768,7 @@ const toggleRowMenu = (roomId, event) => {
               <th class="p-2.5 border-r border-slate-200">Loại phòng</th>
               <th class="p-2.5 border-r border-slate-200 text-center w-[130px]">Trạng thái phòng</th>
               <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày bắt đầu</th>
-              <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày kết thúc</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày mở khóa</th>
               <th class="p-2.5 border-r border-slate-200 min-w-[180px]">Lý do/Mô tả</th>
               <th class="p-2.5 border-r border-slate-200 w-[110px]">Người dùng</th>
               <th class="p-2.5 border-r border-slate-200 text-center w-[85px]">Bảo trì (%)</th>
@@ -724,18 +808,18 @@ const toggleRowMenu = (roomId, event) => {
               <tr 
                 v-show="!isFloorCollapsed(floor)"
                 v-for="room in roomsByFloor[floor]" 
-                :key="room.id"
+                :key="room.currentLock ? 'lock-' + room.currentLock.lock_id : 'room-' + room.id"
                 class="border-b border-slate-200 hover:bg-[#bdecfe]/20 h-11 transition-colors font-semibold text-slate-700 text-xs"
                 :class="{
-                  'bg-[#c9eeff]/20': selectedRoomIds.includes(room.id)
+                  'bg-[#c9eeff]/20': selectedRowKeys.includes(room.currentLock ? room.currentLock.lock_id : room.room_number)
                 }"
               >
                 <!-- Checkbox -->
                 <td class="p-2.5 border-r border-slate-200 text-center">
                   <input 
                     type="checkbox" 
-                    :value="room.id" 
-                    v-model="selectedRoomIds" 
+                    :value="room.currentLock ? room.currentLock.lock_id : room.room_number" 
+                    v-model="selectedRowKeys" 
                     class="cursor-pointer rounded border border-slate-300 w-4 h-4" 
                   />
                 </td>
@@ -750,15 +834,19 @@ const toggleRowMenu = (roomId, event) => {
                 <td class="p-2.5 border-r border-slate-200 text-center">
                   <span 
                     v-if="room.lock_type?.toUpperCase() === 'OOO'"
-                    class="px-2.5 py-1 rounded-full font-bold text-xs bg-red-50 text-red-600 border border-red-200 inline-flex items-center gap-1.5 shadow-3xs"
+                    class="px-2.5 py-1 rounded-full font-bold text-xs inline-flex items-center gap-1.5 shadow-3xs"
+                    :class="room.currentLock?.is_future ? 'bg-red-50/50 text-red-400 border border-red-100' : 'bg-red-50 text-red-600 border border-red-200'"
                   >
-                    <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> OOO
+                    <span class="w-1.5 h-1.5 rounded-full" :class="room.currentLock?.is_future ? 'bg-red-300' : 'bg-red-500'"></span>
+                    OOO{{ room.currentLock?.is_future ? ' (Kế hoạch)' : '' }}
                   </span>
                   <span 
                     v-else-if="room.lock_type?.toUpperCase() === 'OOS'"
-                    class="px-2.5 py-1 rounded-full font-bold text-xs bg-orange-50 text-orange-700 border border-orange-200 inline-flex items-center gap-1.5 shadow-3xs"
+                    class="px-2.5 py-1 rounded-full font-bold text-xs inline-flex items-center gap-1.5 shadow-3xs"
+                    :class="room.currentLock?.is_future ? 'bg-orange-50/50 text-orange-400 border border-orange-100' : 'bg-orange-50 text-orange-700 border border-orange-200'"
                   >
-                    <span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> OOS
+                    <span class="w-1.5 h-1.5 rounded-full" :class="room.currentLock?.is_future ? 'bg-orange-400' : 'bg-orange-500'"></span>
+                    OOS{{ room.currentLock?.is_future ? ' (Kế hoạch)' : '' }}
                   </span>
                   <span 
                     v-else
@@ -803,7 +891,7 @@ const toggleRowMenu = (roomId, event) => {
                 <!-- Row actions (⋮ menu) -->
                 <td class="p-2.5 text-center relative row-menu-container">
                   <button 
-                    @click.stop="toggleRowMenu(room.id, $event)"
+                    @click.stop="toggleRowMenu(room.currentLock ? 'lock-' + room.currentLock.lock_id : 'room-' + room.id, $event)"
                     class="w-6.5 h-6.5 rounded hover:bg-slate-100 flex items-center justify-center border-none cursor-pointer text-slate-400 hover:text-slate-600 transition-colors mx-auto"
                   >
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -813,7 +901,7 @@ const toggleRowMenu = (roomId, event) => {
 
                   <!-- Popover Dropdown menu options -->
                   <div 
-                    v-if="activeRowMenuId === room.id" 
+                    v-if="activeRowMenuId === (room.currentLock ? 'lock-' + room.currentLock.lock_id : 'room-' + room.id)" 
                     class="absolute right-2 top-8 z-40 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[125px] font-semibold text-slate-700 normal-case"
                   >
                     <template v-if="room.lock_type">
@@ -963,8 +1051,15 @@ const toggleRowMenu = (roomId, event) => {
                 <!-- Details specific for lock -->
                 <div v-if="event.type === 'lock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
                   <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
-                  <div><span class="text-slate-400 font-normal">Ngày kết thúc:</span> {{ formatDateTime(event.end_date) }}</div>
+                  <div><span class="text-slate-400 font-normal">Ngày mở khóa:</span> {{ formatDateTime(event.end_date) }}</div>
                   <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-bold">Lý do:</span> {{ event.reason || '-' }}</div>
+                </div>
+
+                <!-- Details specific for unlock -->
+                <div v-else-if="event.type === 'unlock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
+                  <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
+                  <div><span class="text-slate-400 font-normal">Ngày mở khóa:</span> {{ formatDateTime(event.unlock_date) }}</div>
+                  <div v-if="event.unlock_username" class="mt-0.5"><span class="text-slate-400 font-normal">Người mở khóa:</span> {{ event.unlock_username }}</div>
                 </div>
 
                 <!-- Footer meta: user and badge status -->
@@ -973,7 +1068,7 @@ const toggleRowMenu = (roomId, event) => {
                     <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
                     </svg>
-                    <span>{{ event.username || 'Admin' }}</span>
+                    <span>{{ event.type === 'unlock' ? (event.unlock_username || 'Admin') : (event.username || 'Admin') }}</span>
                   </div>
                   <span 
                     v-if="event.type === 'lock'"
@@ -1028,7 +1123,7 @@ const toggleRowMenu = (roomId, event) => {
         >
           <!-- Left fields col -->
           <div class="flex flex-col gap-4">
-            <!-- Start Date & Time -->
+            <!-- Start Date -->
             <div class="flex flex-col gap-1">
               <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Bắt đầu</span>
               <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
@@ -1036,30 +1131,19 @@ const toggleRowMenu = (roomId, event) => {
                   type="date" 
                   v-model="bulkForm.start_date" 
                   :disabled="isEditingActiveLock"
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[130px] disabled:opacity-60 disabled:cursor-not-allowed" 
-                />
-                <input 
-                  type="time" 
-                  v-model="bulkForm.start_time" 
-                  :disabled="isEditingActiveLock"
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[90px] disabled:opacity-60 disabled:cursor-not-allowed" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer" 
                 />
               </div>
             </div>
 
-            <!-- End Date & Time -->
+            <!-- End Date -->
             <div class="flex flex-col gap-1">
               <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Kết thúc</span>
               <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
                 <input 
                   type="date" 
                   v-model="bulkForm.end_date" 
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[130px]" 
-                />
-                <input 
-                  type="time" 
-                  v-model="bulkForm.end_time" 
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-[90px]" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full cursor-pointer" 
                 />
               </div>
             </div>
@@ -1074,9 +1158,9 @@ const toggleRowMenu = (roomId, event) => {
                   :class="editingLockId ? 'opacity-65 cursor-not-allowed' : 'hover:border-slate-300 cursor-pointer'"
                 >
                   <span v-if="editingLockId">
-                    Phòng: {{ rooms.find(r => r.id === modalSelectedRoomIds[0])?.room_number }}
+                    Phòng: {{ modalSelectedRoomNumbers[0] }}
                   </span>
-                  <span v-else>Chọn: {{ modalSelectedRoomIds.length }} phòng</span>
+                  <span v-else>Chọn: {{ modalSelectedRoomNumbers.length }} phòng</span>
                   <svg 
                     v-if="!editingLockId"
                     class="w-3.5 h-3.5 text-slate-400 transform transition-transform" 
@@ -1125,8 +1209,8 @@ const toggleRowMenu = (roomId, event) => {
                     >
                       <input 
                         type="checkbox" 
-                        :value="r.id" 
-                        v-model="modalSelectedRoomIds" 
+                        :value="r.room_number" 
+                        v-model="modalSelectedRoomNumbers" 
                         class="cursor-pointer"
                       />
                       <span class="font-bold">{{ r.room_number }} - {{ r.room_type_name || '-' }}</span>
