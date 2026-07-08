@@ -55,6 +55,11 @@ class SystemConfigurationSeeder extends Seeder
             'pos_invoice_symbol' => null,
             'logo_url' => 'assets/hotel-logo.png',
             'qr_code_url' => 'assets/hotel-qr.png',
+            'allow_over_room_type' => false,
+            'booking_hidden_bk_info' => json_encode(['PaymentMethod']), // Ví dụ: ẩn PaymentMethod
+            'booking_bf_child_set_service_id' => 'BF_CHILD',
+            'booking_auto_extra_charge_bf_child' => false,
+            'check_module_before_delete' => true,
         ]);
 
         // Seed Room Class Groups

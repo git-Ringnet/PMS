@@ -37,6 +37,9 @@ class DatabaseSeeder extends Seeder
             SystemBranchSeeder::class,
             InfoBusinessSeeder::class,
             EmployeeSeeder::class,
+            // ---- Module Đặt phòng ----
+            SpecialRequestSeeder::class,   // Danh mục yêu cầu đặc biệt (Epic 15)
+            CancelReasonSeeder::class,     // Danh mục lý do hủy phòng (Epic 9)
         ]);
     }
 }
