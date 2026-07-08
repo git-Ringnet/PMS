@@ -1,5 +1,8 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   show: {
@@ -77,7 +80,7 @@ watch(() => [props.show, props.mode, props.table], () => {
 const handleSave = () => {
   if (props.mode === 'single' || props.mode === 'edit') {
     if (!tableName.value) {
-      alert('Vui lòng nhập tên bàn!')
+      uiStore.alert('Vui lòng nhập tên bàn!')
       return
     }
     emit('saveSingle', {
@@ -90,11 +93,11 @@ const handleSave = () => {
     })
   } else {
     if (!bulkPrefix.value) {
-      alert('Vui lòng nhập tên bàn!')
+      uiStore.alert('Vui lòng nhập tên bàn!')
       return
     }
     if (bulkCount.value < 0 || bulkRow.value < 0) {
-      alert('Giá trị nhập vào phải lớn hơn hoặc bằng 0!')
+      uiStore.alert('Giá trị nhập vào phải lớn hơn hoặc bằng 0!')
       return
     }
     emit('saveBulk', {

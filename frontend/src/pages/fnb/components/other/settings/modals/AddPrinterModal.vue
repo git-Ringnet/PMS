@@ -1,5 +1,8 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   show: {
@@ -66,15 +69,15 @@ watch(() => [props.show, props.mode, props.printer], () => {
 
 const handleSave = () => {
   if (!outletId.value) {
-    alert('Vui lòng chọn Outlet!')
+    uiStore.alert('Vui lòng chọn Outlet!')
     return
   }
   if (!printerName.value) {
-    alert('Vui lòng nhập tên máy in!')
+    uiStore.alert('Vui lòng nhập tên máy in!')
     return
   }
   if (numOfPrints.value < 1) {
-    alert('Số lần in phải lớn hơn hoặc bằng 1!')
+    uiStore.alert('Số lần in phải lớn hơn hoặc bằng 1!')
     return
   }
 

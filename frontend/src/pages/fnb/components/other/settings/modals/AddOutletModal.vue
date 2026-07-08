@@ -1,6 +1,9 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { fetchDepartments, fetchHotelServices } from '@/services/outlet-service'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   isOpen: {
@@ -80,7 +83,7 @@ watch(() => props.isOpen, (newVal) => {
 
 const handleSave = () => {
   if (!form.value.code || !form.value.name) {
-    alert('Vui lòng nhập Mã và Tên!')
+    uiStore.alert('Vui lòng nhập Mã và Tên!')
     return
   }
   emit('save', { ...form.value })

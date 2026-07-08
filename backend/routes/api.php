@@ -131,6 +131,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
     Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
     Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow']);
+    Route::post('fb-tables/{from_id}/transfer/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferTable']);
+    Route::post('fb-tables/{from_id}/transfer-items/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferItems']);
     Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class);
 
     // Dedicated F&B Menu definitions routes
@@ -140,9 +142,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
     Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class);
     Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class);
+    
+    // F&B Orders (Bills)
+    Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
+    Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders']);
+    Route::get('/fnb/orders/{orderId}/print-logs', [\App\Http\Controllers\FbPrintLogController::class, 'getByOrder']);
 
     // Activity Log routes
     Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
     Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
 });
 
+
+Route::post('/test-log', function(Illuminate\Http\Request $request) { \Log::info('TEST PAYLOAD', $request->all()); return 'ok'; });

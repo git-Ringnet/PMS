@@ -1,8 +1,11 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
 import GenericCategoryTab from './tabs/GenericCategoryTab.vue'
 import CompanyTypeTab from './tabs/CompanyTypeTab.vue'
 import IndustryTab from './tabs/IndustryTab.vue'
+
+const uiStore = useUiStore()
 
 defineEmits(['back'])
 
@@ -56,14 +59,19 @@ const handleAddCompany = () => {
   }
 }
 
-const handleDeleteCompany = (id) => {
-  if (confirm(`Bạn có chắc chắn muốn xoá đối tác ${id}?`)) {
+const handleDeleteCompany = async (id) => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Bạn có chắc chắn muốn xoá đối tác ${id}?`
+  })
+  if (confirmed) {
     companies.value = companies.value.filter(c => c.id !== id)
+    uiStore.alert('Xoá thành công!')
   }
 }
 
 const handleConfig = () => {
-  alert('Đang mở cài đặt nâng cao...')
+  uiStore.alert('Đang mở cài đặt nâng cao...')
 }
 </script>
 

@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
 import OutletDefinition from './settings/OutletDefinition.vue'
 import TableDefinition from './settings/TableDefinition.vue'
 import MenuDefinition from './settings/MenuDefinition.vue'
 import CompanyDefinition from './settings/CompanyDefinition.vue'
 
+const uiStore = useUiStore()
 const currentSubView = ref(null)
 
 const settings = [
@@ -47,7 +49,7 @@ const settings = [
 
 const handleSelectSetting = (id) => {
   if (id === 'other') {
-    alert('Tính năng cài đặt cấu hình phụ trợ khác đang được phát triển...')
+    uiStore.alert('Tính năng cài đặt cấu hình phụ trợ khác đang được phát triển...')
     return
   }
   currentSubView.value = id

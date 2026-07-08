@@ -3,6 +3,7 @@ import { useRoute } from 'vue-router'
 import MainLayout from '@/layouts/MainLayout.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import AlertModal from '@/components/AlertModal.vue'
 import { computed } from 'vue'
 
 const route = useRoute()
@@ -26,4 +27,5 @@ const noLayout = computed(() => !route.name || !!route.meta.noLayout)
   <!-- Global UI Elements -->
   <ToastContainer />
   <ConfirmModal />
+  <AlertModal />
 </template>

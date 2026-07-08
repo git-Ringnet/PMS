@@ -33,3 +33,14 @@ export const updateFbTable = (id, data) => http.put(`/fb-tables/${id}`, data)
 export const deleteFbTable = (id) => http.delete(`/fb-tables/${id}`)
 export const bulkCreateFbTables = (data) => http.post('/fb-tables/bulk-create', data)
 export const deleteFbTableRow = (data) => http.post('/fb-tables/delete-row', data)
+
+// ==================== FB ORDERS (BILLS) ====================
+export const fetchActiveOrders = (tableId) => http.get(`/fnb/tables/${tableId}/active-orders`)
+export const syncOrders = (tableId, data) => http.post(`/fnb/tables/${tableId}/orders/sync`, data)
+export const transferTable = (fromId, toId) => http.post(`/fb-tables/${fromId}/transfer/${toId}`)
+
+export const transferItems = (fromId, toId, payload) => http.post(`/fb-tables/${fromId}/transfer-items/${toId}`, payload)
+export const fetchPrintLogs = (orderId) => http.get(`/fnb/orders/${orderId}/print-logs`)
+
+
+
