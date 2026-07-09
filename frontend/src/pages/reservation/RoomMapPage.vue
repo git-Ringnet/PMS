@@ -15,6 +15,7 @@ import LockRoomPage from './LockRoomPage.vue'
 import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
+import CheckInPage from './CheckInPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
@@ -180,17 +181,17 @@ watch(rawDate, async () => {
 
 // Circular widgets stats computed dynamically
 const checkinStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length
+  const count = roomStore.rooms.filter(r => r.booking_status === 'reserved').length
   return `${count}/23`
 })
 
 const checkoutStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).length
+  const count = roomStore.rooms.filter(r => r.booking_status === 'checkout').length
   return `${count}/31`
 })
 
 const occupiedStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length
+  const count = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
   return `${count}/${roomStore.rooms.length || 181}`
 })
 
@@ -1017,6 +1018,11 @@ const uniqueFloors = computed(() => {
             <CreateRegistrationPage ref="createRegRef" />
           </div>
 
+          <!-- Tab Checkin: Nhận phòng (Đến / Đã đến) -->
+          <div v-else-if="currentTab === 'checkin'" class="h-full overflow-hidden">
+            <CheckInPage :initial-date="rawDate" />
+          </div>
+
           <!-- Tab 8: ALLOTMENT Tab -->
           <div v-else-if="currentTab === 'allotment'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
             <div class="flex justify-between items-center pb-4 border-b border-slate-100">
@@ -1331,8 +1337,13 @@ const uniqueFloors = computed(() => {
           <!-- THE DEFAULT ROOM MAP VIEW -->
           <div v-else class="flex-1 flex flex-col gap-4 min-h-0">
             
+            <!-- Check-in Page view when filtering by RESERVED (Đã đến) -->
+            <div v-if="activeFilter === ROOM_STATUSES.RESERVED" class="flex-1 flex flex-col min-h-0">
+              <CheckInPage :initial-date="rawDate" />
+            </div>
+
             <!-- Loading State -->
-            <div v-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
+            <div v-else-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
               <LoadingOverlay :show="roomStore.loading" />
             </div>
 

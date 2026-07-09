@@ -403,6 +403,45 @@ class BookingRoomController extends Controller
     }
 
     // =========================================
+    // POST: Hủy nhận phòng / Undo check-in
+    // POST /bookings/{bookingId}/rooms/{roomId}/undo-checkin
+    // =========================================
+    public function undoCheckIn(Request $request, $bookingId, $roomId)
+    {
+        $bookingRoom = BookingRoom::where('booking_id', $bookingId)->with('booking')->findOrFail($roomId);
+        $booking     = $bookingRoom->booking;
+
+        // Chỉ cho phép hủy check-in nếu phòng đang Checked In (status = 1)
+        if ($bookingRoom->status !== BookingRoom::STATUS_CHECKED_IN) {
+            return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái đã check-in.'], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $bookingRoom->update([
+                'status'     => BookingRoom::STATUS_BOOKED,
+                'updated_by' => Auth::user()?->username ?? 'system',
+            ]);
+
+            // Cập nhật booking status về STATUS_RESERVATION (0) nếu trước đó là STATUS_CHECKIN (1)
+            if ($booking->status === Booking::STATUS_CHECKIN) {
+                $booking->update(['status' => Booking::STATUS_RESERVATION]);
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data'    => $bookingRoom->fresh()->load(['roomClass', 'room']),
+            'message' => 'Hủy nhận phòng thành công!',
+        ]);
+    }
+
+    // =========================================
     // PATCH: Gỡ số phòng (Epic 8)
     // PATCH /bookings/{bookingId}/rooms/{roomId}/unassign
     // =========================================

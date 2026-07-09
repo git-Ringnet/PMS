@@ -33,6 +33,7 @@ import {
   fetchVacantRooms,
   autoAssignRoom,
   checkInRoom,
+  upgradeRoom,
   unassignRoom,
   cancelBookingRoom,
   fetchHotelServices,
@@ -602,6 +603,7 @@ const columns = ref([
   { key: 'children', label: 'Trẻ em', visible: true, width: 'w-[65px]', center: true },
   { key: 'childBreakfast', label: 'Chi tiết ăn sáng trẻ', visible: true, width: 'w-[130px]', center: true },
   { key: 'breakfast', label: 'Ăn sáng', visible: true, width: 'w-[75px]', center: true },
+  { key: 'upgrade', label: 'Nâng hạng', visible: true, width: 'w-[130px]', center: true },
   { key: 'extraBed', label: 'Thêm giường', visible: true, width: 'w-[100px]', center: true },
   { key: 'extraBedPrice', label: 'Giá thêm giường', visible: true, width: 'w-[115px]', right: true },
   { key: 'hourly', label: 'Ở theo giờ', visible: true, width: 'w-[85px]', center: true },
@@ -1001,6 +1003,7 @@ function bookingToTab(b) {
         roomClassId: br.room_class_id,
         services: br.services || [],
         bookingRoomStatus: br.status !== undefined ? Number(br.status) : 0,
+        upgradeClassId: null,
       })
     })
   } else {
@@ -1056,6 +1059,7 @@ function bookingToTab(b) {
           total: Number(roomDetail.total) || totalNum,
           roomClassId: alloc.roomClassId,
           bookingRoomStatus: 0,
+          upgradeClassId: alloc.upgradeRoomClassId || null,
         })
       }
     })
@@ -1841,7 +1845,60 @@ async function triggerAction(actionName) {
       uiStore.showToast('Có lỗi xảy ra khi giao phòng!', 'error')
     }
   } else if (actionName === 'Nâng hạng phòng') {
-    uiStore.showToast('Vui lòng tích chọn phòng muốn nâng hạng trên bảng!', 'info')
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi nâng hạng phòng!', 'warning')
+      return
+    }
+    if (!tab.rooms || tab.rooms.length === 0) {
+      uiStore.showToast('Không có phòng nào để nâng hạng!', 'info')
+      return
+    }
+
+    const targetList = tab.rooms.filter(r => selectedRows.value.includes(r.id) && r.upgradeClassId)
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng và chọn hạng phòng muốn nâng lên!', 'warning')
+      return
+    }
+
+    uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
+
+    try {
+      await Promise.all(targetList.map(async (r) => {
+        if (!r.bookingRoomId) return
+        try {
+          const data = { room_class_id: r.upgradeClassId }
+          if (r.price) data.rate = Number(r.price)
+          const res = await upgradeRoom(tab.dbId, r.bookingRoomId, data)
+          if (res.data?.success) {
+            successCount++
+            r.roomNumber = ''
+            r.roomClassId = r.upgradeClassId
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
+          failCount++
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+        }
+      }))
+
+      if (successCount > 0) {
+        await loadBookings()
+        selectedRows.value = []
+        uiStore.showToast(`Nâng hạng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+      } else {
+        uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch(err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
+    }
   } else if (actionName === 'Tự động gán phòng') {
     const tab = activeTab.value
     if (!tab || !tab.dbId) {
@@ -2680,6 +2737,12 @@ defineExpose({
                             <input type="checkbox" v-model="room.breakfast" class="sr-only peer" :disabled="!isEditing">
                             <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                           </label>
+                        </template>
+                        <template v-else-if="col.key === 'upgrade'">
+                          <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[26px] pl-1.5 pr-4 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[10px]">
+                            <option :value="null">Chọn hạng</option>
+                            <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                          </select>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
                           <button @click.stop="openServicesModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
