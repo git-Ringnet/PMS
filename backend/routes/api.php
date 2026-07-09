@@ -58,6 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'destroy']);
 
     // Rooms management
+    Route::get('/rooms/vacant', [\App\Http\Controllers\Api\RoomController::class, 'vacant']);
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
@@ -67,9 +68,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/room-locks/bulk-lock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkLock']);
     Route::post('/room-locks/bulk-unlock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUnlock']);
     Route::apiResource('room-locks', \App\Http\Controllers\Api\RoomLockController::class);
-
-    // Room availability grid
-    Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
 
     // Company settings
     Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class);
@@ -120,5 +118,88 @@ Route::middleware('auth:sanctum')->group(function () {
     // Activity Log routes
     Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
     Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
-});
 
+    // =====================================================================
+    // BOOKING (Đăng ký phòng) routes
+    // =====================================================================
+
+    // #12 — Xuất Excel (đặt TRƯỚC apiResource để không bị override)
+    Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
+    Route::apiResource('bookings', \App\Http\Controllers\Api\BookingController::class);
+
+    // #19 — Nhân bản booking
+    Route::post('bookings/{id}/copy',    [\App\Http\Controllers\Api\BookingController::class, 'copy']);
+    // #22 — Khôi phục booking đã hủy
+    Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore']);
+
+    // --- Booking Rooms (SP2100) ---
+    Route::prefix('bookings/{bookingId}/rooms')->group(function () {
+        Route::get('/',              [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
+        Route::post('/',             [\App\Http\Controllers\Api\BookingRoomController::class, 'store']);
+        Route::put('/{roomId}',      [\App\Http\Controllers\Api\BookingRoomController::class, 'update']);
+        Route::post('/bulk-update',  [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate']);
+        // Epic 5 - Check-in
+        Route::patch('/{roomId}/check-in',   [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn']);
+        // Epic 6 - Nâng hạng phòng
+        Route::patch('/{roomId}/upgrade',    [\App\Http\Controllers\Api\BookingRoomController::class, 'upgrade']);
+        // Epic 8 - Gỡ số phòng
+        Route::patch('/{roomId}/unassign',   [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
+        // Epic 9 - Hủy phòng
+        Route::delete('/{roomId}/cancel',    [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
+        // Epic 3 - Auto assign room number
+        Route::post('/{roomId}/auto-assign', [\App\Http\Controllers\Api\BookingRoomController::class, 'autoAssign']);
+        // Epic 11 - Do Not Move
+        Route::post('/{roomId}/lock-move',   [\App\Http\Controllers\Api\BookingRoomController::class, 'lockMove']);
+        Route::delete('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'unlockMove']);
+    });
+
+    // --- Booking Room Services (SP2102) — Epic 4, 10, 14 ---
+    Route::prefix('booking-rooms/{roomId}/services')->group(function () {
+        Route::get('/',        [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
+        Route::post('/',       [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
+        Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete']);
+    });
+    Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
+    // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
+    Route::get('/booking-services/fo-list', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'foServiceList']);
+
+    // --- Special Requests (SP2107, SP1325) — Epic 15 ---
+    Route::get('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'catalog']);
+    Route::prefix('booking-rooms/{roomId}/special-requests')->group(function () {
+        Route::get('/',        [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'index']);
+        Route::post('/',       [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroy']);
+    });
+
+    // --- Guests & Children — Epic 7, 13 ---
+    Route::get('/guests/search', [\App\Http\Controllers\Api\GuestController::class, 'searchGuests']);
+    Route::prefix('booking-rooms/{roomId}/guests')->group(function () {
+        Route::get('/',             [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
+        Route::post('/',            [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
+        Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
+    });
+    Route::get('/bookings/{bookingId}/children',              [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
+    Route::post('/bookings/{bookingId}/children',             [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
+    Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild']);
+
+    // Breakfast details (Epic 13)
+    Route::get('/booking-children/{childId}/breakfast-details',              [\App\Http\Controllers\Api\GuestController::class, 'breakfastDetails']);
+    Route::patch('/booking-children/{childId}/breakfast-details/{detailId}', [\App\Http\Controllers\Api\GuestController::class, 'updateBreakfastDetail']);
+
+    // Cancel Reasons catalog
+    Route::get('/cancel-reasons', [\App\Http\Controllers\Api\GuestController::class, 'cancelReasons']);
+
+    // =====================================================================
+    // #18 — PAYMENTS (Đặt cọc / Deposit) routes
+    // =====================================================================
+    Route::get('/bookings/{bookingId}/payments',  [\App\Http\Controllers\Api\PaymentController::class, 'index']);
+    Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store']);
+    Route::put('/payments/{id}',                  [\App\Http\Controllers\Api\PaymentController::class, 'update']);
+    Route::delete('/payments/{id}',               [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
+    Route::post('/payments/{id}/split',           [\App\Http\Controllers\Api\PaymentController::class, 'split']);
+    Route::post('/payments/{id}/transfer',        [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
+
+    // Availability
+    Route::get('/availability',       [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+    Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
+});

@@ -34,6 +34,59 @@ class RoomController extends Controller
 
         $rooms = $query->get();
 
+        $avService = app(\App\Services\RoomAvailabilityService::class);
+        $systemDate = $avService->getSystemDate();
+        $sysDateStr = $systemDate->toDateString();
+
+        // Tải các phòng đang được đặt/đang ở hôm nay
+        $bookingRoomsToday = \App\Models\BookingRoom::whereNotNull('room_number')
+            ->whereIn('status', [
+                \App\Models\BookingRoom::STATUS_BOOKED,
+                \App\Models\BookingRoom::STATUS_CHECKED_IN
+            ])
+            ->where(function($q) use ($sysDateStr) {
+                $q->where(function($sub) use ($sysDateStr) {
+                    $sub->where('arrival_date', '<=', $sysDateStr)
+                        ->where('departure_date', '>', $sysDateStr);
+                })->orWhere('arrival_date', $sysDateStr)
+                  ->orWhere('departure_date', $sysDateStr);
+            })
+            ->with(['booking.company', 'guests.guest'])
+            ->get();
+
+        foreach ($rooms as $room) {
+            // Ưu tiên trạng thái OOO/OOS (Active Lock)
+            if ($room->activeLock) {
+                $room->status = 'maintenance';
+                continue;
+            }
+
+            $br = $bookingRoomsToday->where('room_number', $room->room_number)->first();
+            if ($br) {
+                if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
+                    if ($br->departure_date->toDateString() === $sysDateStr) {
+                        $room->status = 'checkout';
+                    } else {
+                        $room->status = 'occupied';
+                    }
+                } else if ($br->status === \App\Models\BookingRoom::STATUS_BOOKED) {
+                    if ($br->arrival_date->toDateString() === $sysDateStr) {
+                        $room->status = 'reserved';
+                    }
+                }
+
+                $primaryGuest = $br->guests->where('pivot.is_primary', 1)->first() ?? $br->guests->first();
+                $room->guest_name = $primaryGuest?->full_name ?? '';
+                $room->booking_code = $br->booking?->booking_code ?? '';
+                $room->booking_name = $br->booking?->booking_name ?? '';
+                $room->company_name = $br->booking?->company?->name ?? '';
+            } else {
+                if (!in_array($room->status, ['dirty', 'maintenance'])) {
+                    $room->status = 'available';
+                }
+            }
+        }
+
         return response()->json([
             'success' => true,
             'data' => RoomResource::collection($rooms),
@@ -198,4 +251,58 @@ class RoomController extends Controller
             'data' => $stats
         ]);
     }
+
+    /**
+     * Lấy danh sách số phòng trống của một loại phòng trong khoảng ngày
+     * GET /rooms/vacant?room_class_id=1&arrival_date=2026-07-08&departure_date=2026-07-09&exclude_booking_room_id=...
+     */
+    public function vacant(Request $request)
+    {
+        $request->validate([
+            'room_class_id' => 'required|exists:room_classes,id',
+            'arrival_date'  => 'required|date',
+            'departure_date'=> 'required|date|after:arrival_date',
+        ]);
+
+        $roomClassId   = $request->room_class_id;
+        $arrivalDate   = $request->arrival_date;
+        $departureDate = $request->departure_date;
+        $excludeId     = $request->exclude_booking_room_id;
+
+        $avService = app(\App\Services\RoomAvailabilityService::class);
+
+        // Lấy tất cả phòng của loại phòng này
+        $rooms = Room::where('room_class_id', $roomClassId)->get();
+
+        $vacantRooms = [];
+        foreach ($rooms as $room) {
+            // 1. Kiểm tra OOO/OOS lock
+            $isLocked = \App\Models\RoomLock::where('room_number', $room->room_number)
+                ->where('is_active', 1)
+                ->where('start_date', '<', $departureDate)
+                ->where('end_date', '>', $arrivalDate)
+                ->exists();
+
+            if ($isLocked) continue;
+
+            // 2. Kiểm tra có bị booking khác chiếm dụng không
+            $isOccupied = $avService->isRoomNumberOccupied(
+                $room->room_number, $arrivalDate, $departureDate, $excludeId
+            );
+
+            if (!$isOccupied) {
+                $vacantRooms[] = [
+                    'id' => $room->id,
+                    'room_number' => $room->room_number,
+                    'status' => $room->status,
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data'    => $vacantRooms,
+        ]);
+    }
 }
+

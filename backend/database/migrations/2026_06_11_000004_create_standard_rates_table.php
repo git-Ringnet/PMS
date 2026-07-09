@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('standard_rates', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('room_class_id')->constrained('room_classes')->onDelete('cascade');
-            $table->foreignId('room_form_id')->constrained('room_forms')->onDelete('cascade');
+            $table->foreignId('room_class_id')->constrained('room_classes')->onDelete('cascade'); // Liên kết tới ID Loại phòng (e.g. Superior, Deluxe...)
+            $table->foreignId('room_form_id')->constrained('room_forms')->onDelete('cascade'); // Liên kết tới ID Dạng phòng (e.g. Single, Double...)
             $table->decimal('room_price', 15, 2)->default(0); // Giá phòng
             $table->decimal('extra_bed_price', 15, 2)->default(0); // Giá thêm giường
             $table->timestamps();

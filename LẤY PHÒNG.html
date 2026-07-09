@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thông tin đăng ký - Lấy phòng</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9;
+        }
+        /* Ẩn nút tăng giảm mặc định của trình duyệt để dùng nút custom tối giản */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="p-4 flex items-start justify-center min-h-screen antialiased">
+
+    <div class="w-full max-w-[1440px] bg-white shadow-xl rounded-xl overflow-hidden border border-slate-200">
+        
+        <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 border-b border-[#1a2d42]">
+            <div class="flex items-center space-x-2">
+                <div class="bg-blue-400/20 p-1.5 rounded-lg">
+                    <i class="fa-solid fa-file-lines text-blue-200 text-xs"></i>
+                </div>
+                <span class="font-bold text-xs tracking-wide uppercase">Thông tin đăng ký</span>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2 bg-white/10 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner">
+                    <span class="text-[10px] font-medium text-slate-300 select-none">Màu BK</span>
+                    <input type="color" value="#3b82f6" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none rounded-sm">
+                </div>
+                <div class="flex items-center space-x-1.5">
+                    <span class="text-[10px] font-medium text-slate-300">Tiền phòng gửi Master</span>
+                    <div class="relative inline-block w-7 align-middle select-none">
+                        <input type="checkbox" class="absolute block w-3.5 h-3.5 rounded-full bg-white border-2 border-slate-400 appearance-none cursor-pointer top-0 bottom-0 m-auto z-10 right-0 border-blue-500 checked:bg-blue-500"/>
+                        <label class="block overflow-hidden h-3.5 rounded-full bg-slate-400 cursor-pointer"></label>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 border-l border-slate-600 pl-3">
+                    <button class="flex items-center space-x-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded-md transition text-slate-200 hover:text-white font-medium">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <span>Lịch sử booking</span>
+                    </button>
+                    <button class="text-slate-400 hover:text-white px-1"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
+                    <button class="bg-rose-500 hover:bg-rose-600 text-white p-1 rounded-md transition"><i class="fa-solid fa-xmark text-xs px-0.5"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-4 py-2 border-b border-slate-200 flex flex-wrap items-end justify-between gap-3 bg-slate-50/50">
+            <div class="flex flex-col">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Mã booking</span>
+                <span class="font-bold text-sm text-slate-900 bg-slate-200/50 px-2 py-0.5 rounded">GAL5501</span>
+            </div>
+            <div class="flex flex-col flex-1 min-w-[150px]">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Tên đăng ký <span class="text-rose-500">*</span></span>
+                <div class="font-bold text-sm text-black border border-blue-200 rounded-lg px-3 py-1 bg-blue-50/70 shadow-sm">PEGAS</div>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Mã tham chiếu</span>
+                <input type="text" placeholder="Mã tham chiếu" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 w-full md:w-28 shadow-sm">
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Ngày lưu trú</span>
+                <div class="flex items-center space-x-1.5 border border-slate-300 rounded-lg px-2.5 py-1 bg-white shadow-sm text-xs font-medium text-slate-800">
+                    <i class="fa-regular fa-calendar text-blue-500"></i>
+                    <span>01/07/2026</span>
+                    <i class="fa-solid fa-arrow-right text-slate-400 text-[9px]"></i>
+                    <span>02/07/2026</span>
+                </div>
+            </div>
+            <div class="flex flex-col text-center">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Đêm</span>
+                <div class="font-bold text-sm text-slate-900 border border-slate-300 rounded-lg px-3 py-1 bg-white shadow-sm">1</div>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Tình trạng đăng ký</span>
+                <select class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-medium text-blue-600 bg-white focus:outline-none shadow-sm cursor-pointer w-full">
+                    <option>Guaranteed</option>
+                </select>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-slate-400 font-semibold mb-0.5 uppercase tracking-wide">Ngày xác nhận</span>
+                <div class="flex items-center space-x-2 border border-slate-300 rounded-lg px-2.5 py-1 bg-white shadow-sm text-xs font-medium text-slate-800">
+                    <span>24/06/2026</span>
+                    <i class="fa-regular fa-calendar-days text-slate-400"></i>
+                    <i class="fa-regular fa-copy text-slate-400 hover:text-slate-600 cursor-pointer"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex px-4 border-b border-slate-200 bg-white">
+            <button class="px-4 py-2 text-slate-500 font-medium border-b-2 border-transparent hover:text-slate-700 text-xs transition">
+                <span>Thông tin chung</span>
+            </button>
+            <button class="px-4 py-2 text-slate-500 font-medium border-b-2 border-transparent hover:text-slate-700 text-xs transition">
+                <span>Thông tin đưa đón</span>
+            </button>
+            <button class="px-4 py-2 text-blue-600 font-semibold border-b-2 border-blue-600 text-xs">
+                <span>Lấy phòng</span>
+            </button>
+        </div>
+
+        <div class="bg-white flex flex-col w-full">
+            
+            <div class="flex justify-end px-4 py-2 bg-white">
+                <button class="text-slate-600 hover:text-blue-600 transition px-2.5 py-1.5 border border-slate-200 rounded-md bg-slate-50 hover:bg-slate-100 shadow-sm flex items-center justify-center space-x-1.5" title="Tùy chỉnh cột hiển thị">
+                    <i class="fa-solid fa-sliders text-[11px]"></i>
+                    <span class="text-[11px] font-medium">Tùy chỉnh</span>
+                </button>
+            </div>
+
+            <div class="w-full px-4 pb-4">
+                <table class="w-full border-collapse text-left text-xs table-auto">
+                    <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
+                        <tr>
+                            <th class="py-2 px-2 text-center w-[6%]">Loại/Dạng</th>
+                            <th class="py-2 px-2 text-center w-[18%]">Ngày đến ~ Ngày đi</th>
+                            <th class="py-2 px-1 text-center w-[5%]">Trống</th>
+                            <th class="py-2 px-1 text-center w-[7%]">Số lượng</th>
+                            <th class="py-2 px-1 text-center w-[10%]">Giá phòng</th>
+                            <th class="py-2 px-2 text-center w-[13%]">Mã giá phòng</th>
+                            <th class="py-2 px-2 text-center w-[10%]">Tăng/Giảm</th>
+                            <th class="py-2 px-2 text-center w-[11%]">Nâng hạng</th>
+                            <th class="py-2 px-1 text-center w-[5%]">Người lớn</th>
+                            <th class="py-2 px-1 text-center w-[5%]">Em bé</th>
+                            <th class="py-2 px-1 text-center w-[5%]">Trẻ em</th>
+                            <th class="py-2 px-1 text-center w-[9%]">Giá ăn sáng trẻ em</th>
+                            <th class="py-2 px-1 text-center w-[4%]">Ăn sáng</th>
+                        </tr>
+                    </thead>
+                    
+                    <tbody class="text-[11px] text-slate-700 font-medium">
+                        
+                        <tr class="border-b border-slate-200 hover:bg-slate-50/50 transition">
+                            <td class="py-2 px-2 font-bold text-slate-900">SUPD</td>
+                            <td class="py-2 px-2">
+                                <div class="flex items-center justify-center space-x-1.5 border border-slate-300 rounded-md px-1.5 py-1 bg-white h-[30px] shadow-sm text-center whitespace-nowrap">
+                                    <span>24/06/2026</span><span class="text-slate-400">~</span><span>26/06/2026</span>
+                                    <i class="fa-regular fa-calendar-days text-emerald-500 text-[10px]"></i>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center font-bold text-rose-600">-2</td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-2"><input type="text" value="Chọn mã giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 focus:outline-none shadow-sm bg-white"></td>
+                            <td class="py-2 px-2"><input type="text" placeholder="Nhập giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 focus:outline-none shadow-sm"></td>
+                            <td class="py-2 px-2">
+                                <div class="relative">
+                                    <select class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-400 bg-white shadow-sm cursor-pointer">
+                                        <option>Select</option>
+                                    </select>
+                                    <i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px] pointer-events-none"></i>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="2" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="90,000" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center"><input type="checkbox" checked class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300"></td>
+                        </tr>
+
+                        <tr class="border-b border-slate-200 hover:bg-slate-50/50 transition">
+                            <td class="py-2 px-2 font-bold text-slate-900">SUPT</td>
+                            <td class="py-2 px-2">
+                                <div class="flex items-center justify-center space-x-1.5 border border-slate-300 rounded-md px-1.5 py-1 bg-white h-[30px] shadow-sm text-center whitespace-nowrap">
+                                    <span>24/06/2026</span><span class="text-slate-400">~</span><span>26/06/2026</span><i class="fa-regular fa-calendar-days text-emerald-500 text-[10px]"></i>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center text-slate-800">2</td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-2"><input type="text" value="Chọn mã giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 bg-white shadow-sm"></td>
+                            <td class="py-2 px-2"><input type="text" placeholder="Nhập giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 shadow-sm"></td>
+                            <td class="py-2 px-2">
+                                <div class="relative"><select class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none text-slate-400 bg-white shadow-sm"><option>Select</option></select><i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px]"></i></div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="2" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="90,000" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center"><input type="checkbox" checked class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300"></td>
+                        </tr>
+
+                        <tr class="border-b border-slate-200 hover:bg-slate-50/50 transition">
+                            <td class="py-2 px-2 font-bold text-slate-900">SUPTR</td>
+                            <td class="py-2 px-2">
+                                <div class="flex items-center justify-center space-x-1.5 border border-slate-300 rounded-md px-1.5 py-1 bg-white h-[30px] shadow-sm text-center whitespace-nowrap">
+                                    <span>24/06/2026</span><span class="text-slate-400">~</span><span>26/06/2026</span><i class="fa-regular fa-calendar-days text-emerald-500 text-[10px]"></i>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center text-slate-800">9</td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-2"><input type="text" value="Chọn mã giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 bg-white shadow-sm"></td>
+                            <td class="py-2 px-2"><input type="text" placeholder="Nhập giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 shadow-sm"></td>
+                            <td class="py-2 px-2">
+                                <div class="relative"><select class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none text-slate-400 bg-white shadow-sm"><option>Select</option></select><i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px]"></i></div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="3" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="90,000" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center"><input type="checkbox" checked class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300"></td>
+                        </tr>
+
+                        <tr class="border-b border-slate-200 hover:bg-slate-50/50 transition">
+                            <td class="py-2 px-2 font-bold text-slate-900">DLXD</td>
+                            <td class="py-2 px-2">
+                                <div class="flex items-center justify-center space-x-1.5 border border-slate-300 rounded-md px-1.5 py-1 bg-white h-[30px] shadow-sm text-center whitespace-nowrap">
+                                    <span>24/06/2026</span><span class="text-slate-400">~</span><span>26/06/2026</span><i class="fa-regular fa-calendar-days text-emerald-500 text-[10px]"></i>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center text-slate-800">3</td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-2"><input type="text" value="Chọn mã giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 bg-white shadow-sm"></td>
+                            <td class="py-2 px-2"><input type="text" placeholder="Nhập giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-400 shadow-sm"></td>
+                            <td class="py-2 px-2">
+                                <div class="relative"><select class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none text-slate-400 bg-white shadow-sm"><option>Select</option></select><i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px]"></i></div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="2" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1">
+                                <div class="relative w-full min-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                                    <input type="text" value="90,000" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent">
+                                    <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3">
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-up text-[11px]"></i></button>
+                                        <button class="hover:text-black leading-[0.6] outline-none"><i class="fa-solid fa-caret-down text-[11px]"></i></button>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-2 px-1 text-center"><input type="checkbox" checked class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300"></td>
+                        </tr>
+
+                    </tbody>
+                    
+                    <tfoot class="bg-white font-bold text-slate-900 border-t border-slate-300 text-[11px]">
+                        <tr>
+                            <td class="py-2.5 px-2 text-left" colspan="2">Tổng: 9</td>
+                            <td class="py-2.5 px-1 text-center text-s font-semibold">38</td>
+                            <td class="py-2.5 px-1 text-center text-s font-semibold">0</td>
+                            <td class="py-2.5 px-2"></td>
+                            <td class="py-2.5 px-2"></td>
+                            <td class="py-2.5 px-2"></td>
+                            <td class="py-2.5 px-2"></td>
+                            <td class="py-2.5 px-1 text-center text-s font-semibold">21</td>
+                            <td class="py-2.5 px-1 text-center text-s font-semibold">0</td>
+                            <td class="py-2.5 px-1 text-center text-s font-semibold">0</td>
+                            <td class="py-2.5 px-2"></td>
+                            <td class="py-2.5 px-1"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            
+            <div class="p-3 px-4 border-t border-slate-200 bg-white flex justify-end rounded-b-xl">
+                <button class="bg-[#2563eb] hover:bg-blue-700 text-white font-semibold px-6 py-1.5 rounded-lg flex items-center space-x-2 transition shadow-sm text-xs">
+                    <i class="fa-regular fa-floppy-disk"></i>
+                    <span>Lưu</span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>

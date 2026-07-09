@@ -53,6 +53,14 @@ return new class extends Migration
             $table->string('pos_invoice_symbol')->nullable(); // Ký hiệu hóa đơn POS
             $table->string('logo_url')->nullable(); // Hình ảnh Logo (mở rộng)
             $table->string('qr_code_url')->nullable(); // Hình ảnh QR Code (mở rộng)
+
+            // Config parameters
+            $table->boolean('allow_over_room_type')->default(false); // Cho phép lấy âm phòng
+            $table->text('booking_hidden_bk_info')->nullable(); // Các trường cần ẩn
+            $table->string('booking_bf_child_set_service_id')->nullable(); // Mã dịch vụ ăn sáng TE
+            $table->boolean('booking_auto_extra_charge_bf_child')->default(false); // Tự động tính phụ phí
+            $table->boolean('check_module_before_delete')->default(false); // Kiểm tra module khi xóa
+            
             $table->timestamps();
         });
     }
