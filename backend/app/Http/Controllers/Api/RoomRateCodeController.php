@@ -26,6 +26,7 @@ class RoomRateCodeController extends Controller
             'EndDate' => 'nullable|date',
             'IncludeBF' => 'boolean',
             'Currency' => 'nullable|string',
+            'IsDaily' => 'boolean',
         ]);
 
         $rateCode = RoomRateCode::create($request->all());

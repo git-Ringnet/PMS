@@ -75,6 +75,36 @@ class AvailabilityController extends Controller
             $grandMaxExtraBeds += $maxExtra;
         }
 
+        // Initialize statistics array before any calculation
+        $statistics = [];
+        foreach ($dates as $dStr) {
+            $statistics[$dStr] = [
+                'total_rooms'      => $grandTotalRooms,
+                'ooo'              => 0,
+                'oos'              => 0,
+                'sellable'         => $grandTotalRooms,
+                'bk_reserved'      => 0,  // Standard Booked count (non-allotment)
+                'inhouse'          => 0,  // Standard CheckedIn count
+                'total_occupied'   => 0,  // Standard occupied + allotment
+                'av'               => $grandTotalRooms,
+                'extra_beds'       => 0,
+                'arrivals_rooms'   => 0,
+                'departures_rooms' => 0,
+                'bk_guaranteed'    => 0,
+                'bk_nonguaranteed' => 0,
+                'series'           => 0,
+                'allotment'        => 0,
+                'internal_rooms'   => 0,
+                'free_rooms'       => 0,
+                'total_guests'     => 0,
+                'arrivals_pax'     => 0,
+                'departures_pax'   => 0,
+                'cancellations'    => 0,
+                'noshow'           => 0,
+                'occupied_pct'     => 0,
+            ];
+        }
+
         // 3. Tính OOO/OOS per class per date
         $locks = RoomLock::where('is_active', true)
             ->where('start_date', '<', $endStr)
@@ -99,22 +129,30 @@ class AvailabilityController extends Controller
         }
 
         // 4. Tính booking_rooms per class per date (★ tích hợp SP2100)
+        // Lấy tất cả các booking room có status Booked (0), CheckedIn (1), CheckedOut (2), Cancelled (3)
         $bookings = BookingRoom::whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
+                BookingRoom::STATUS_CHECKED_OUT,
+                BookingRoom::STATUS_CANCELLED,
             ])
             ->where('arrival_date', '<', $endStr)
             ->where('departure_date', '>', $startStr)
-            ->select('room_class_id', 'arrival_date', 'departure_date', 'status', 'extra_bed_qty')
-            ->with('roomClass:id,code')
+            ->with([
+                'roomClass:id,code',
+                'booking.registrationStatus',
+                'booking.paymentMethod',
+                'booking.company'
+            ])
             ->get();
 
         // Tính booked/inhouse count per class per date
-        $bookedCounts   = []; // $bookedCounts[classCode][dateStr] = count
-        $inhouseCounts  = [];
-        $arrivalCounts  = []; // Arrivals: arrival_date = dStr
+        $bookedCounts    = []; // $bookedCounts[classCode][dateStr] = count
+        $inhouseCounts   = [];
+        $allotmentCounts = []; // Allotment counts
+        $arrivalCounts   = []; // Arrivals: arrival_date = dStr
         $departureCounts = [];
-        $extraBedCounts = [];
+        $extraBedCounts  = [];
 
         foreach ($bookings as $br) {
             if (!$br->roomClass) continue;
@@ -122,46 +160,111 @@ class AvailabilityController extends Controller
             $arrDate   = $br->arrival_date->toDateString();
             $depDate   = $br->departure_date->toDateString();
 
+            $parentBooking     = $br->booking;
+            $isCancelled       = ($br->status === BookingRoom::STATUS_CANCELLED);
+            $isNoShow          = ($parentBooking && $parentBooking->status === Booking::STATUS_NO_SHOW);
+            // Chỉ lấy các booking có is_availability = 1 (hoặc null thì coi như true)
+            $isAvailableStatus = $parentBooking && (!$parentBooking->registrationStatus || $parentBooking->registrationStatus->is_availability);
+
+            $isBooked          = ($br->status === BookingRoom::STATUS_BOOKED && !$isCancelled && !$isNoShow && $isAvailableStatus);
+            $isCheckedIn       = ($br->status === BookingRoom::STATUS_CHECKED_IN && !$isCancelled && !$isNoShow && $isAvailableStatus);
+            $isOccupied        = $isBooked || $isCheckedIn;
+
+            $regStatusName     = $parentBooking && $parentBooking->registrationStatus ? strtolower($parentBooking->registrationStatus->name) : '';
+            $isAllotment       = str_contains($regStatusName, 'allotment');
+            $isGIT             = $parentBooking && $parentBooking->is_git;
+
+            $isHU = $parentBooking && (
+                stripos($parentBooking->booking_name, 'House Use') !== false || 
+                stripos($parentBooking->booking_name, 'HU') !== false || 
+                ($parentBooking->company && strtolower($parentBooking->company->rate_code) === 'hu')
+            );
+            
+            $isFree = $parentBooking && (
+                ($parentBooking->paymentMethod && ($parentBooking->paymentMethod->is_free || strtolower($parentBooking->paymentMethod->code) === 'cl')) || 
+                stripos($parentBooking->booking_name, 'FOC') !== false || 
+                stripos($parentBooking->booking_name, 'Complimentary') !== false
+            );
+
+            // Dayuse booking rule
+            $isDayUse = ($arrDate === $depDate && $parentBooking && $parentBooking->is_day_use);
+
             foreach ($dates as $dStr) {
-                if ($dStr >= $arrDate && $dStr < $depDate) {
-                    if ($br->status === BookingRoom::STATUS_BOOKED) {
-                        $bookedCounts[$classCode][$dStr] = ($bookedCounts[$classCode][$dStr] ?? 0) + 1;
-                    } elseif ($br->status === BookingRoom::STATUS_CHECKED_IN) {
-                        $inhouseCounts[$classCode][$dStr] = ($inhouseCounts[$classCode][$dStr] ?? 0) + 1;
-                    }
-                    if ($br->extra_bed_qty > 0) {
-                        $extraBedCounts[$classCode][$dStr] = ($extraBedCounts[$classCode][$dStr] ?? 0) + $br->extra_bed_qty;
+                $isMatchDate = $isDayUse ? ($dStr === $arrDate) : ($dStr >= $arrDate && $dStr < $depDate);
+                
+                if ($isMatchDate) {
+                    if ($isOccupied) {
+                        if ($isAllotment) {
+                            $allotmentCounts[$classCode][$dStr] = ($allotmentCounts[$classCode][$dStr] ?? 0) + 1;
+                        } else {
+                            if ($isBooked) {
+                                $bookedCounts[$classCode][$dStr] = ($bookedCounts[$classCode][$dStr] ?? 0) + 1;
+                            } elseif ($isCheckedIn) {
+                                $inhouseCounts[$classCode][$dStr] = ($inhouseCounts[$classCode][$dStr] ?? 0) + 1;
+                            }
+                        }
+
+                        if ($br->extra_bed_qty > 0) {
+                            $extraBedCounts[$classCode][$dStr] = ($extraBedCounts[$classCode][$dStr] ?? 0) + $br->extra_bed_qty;
+                        }
+
+                        // Advanced statistics counts
+                        if ($isHU) {
+                            $statistics[$dStr]['internal_rooms']++;
+                        } elseif ($isFree) {
+                            $statistics[$dStr]['free_rooms']++;
+                        }
+
+                        if ($isAllotment) {
+                            $statistics[$dStr]['allotment']++;
+                        } else {
+                            if (str_contains($regStatusName, 'none') || str_contains($regStatusName, 'non')) {
+                                $statistics[$dStr]['bk_nonguaranteed']++;
+                            } else {
+                                $statistics[$dStr]['bk_guaranteed']++;
+                            }
+                        }
+
+                        if ($isGIT) {
+                            $statistics[$dStr]['series']++;
+                        }
+
+                        $statistics[$dStr]['total_guests'] += $br->adults;
                     }
                 }
+
+                // Event-based statistics
+                if (!$isCancelled && !$isNoShow && $isAvailableStatus) {
+                    if ($dStr === $arrDate) {
+                        $statistics[$dStr]['arrivals_pax'] += $br->adults;
+                    }
+                    if ($dStr === $depDate) {
+                        $statistics[$dStr]['departures_pax'] += $br->adults;
+                    }
+                }
+
+                if ($isCancelled && $dStr === $arrDate) {
+                    $statistics[$dStr]['cancellations']++;
+                }
+
+                if ($isNoShow && $dStr === $arrDate) {
+                    $statistics[$dStr]['noshow']++;
+                }
             }
-            // Arrivals và Departures
-            if (in_array($arrDate, $dates)) {
-                $arrivalCounts[$classCode][$arrDate] = ($arrivalCounts[$classCode][$arrDate] ?? 0) + 1;
-            }
-            if (in_array($depDate, $dates)) {
-                $departureCounts[$classCode][$depDate] = ($departureCounts[$classCode][$depDate] ?? 0) + 1;
+
+            // Grid arrival/departure counts
+            if (!$isCancelled && !$isNoShow && $isAvailableStatus) {
+                if (in_array($arrDate, $dates)) {
+                    $arrivalCounts[$classCode][$arrDate] = ($arrivalCounts[$classCode][$arrDate] ?? 0) + 1;
+                }
+                if (in_array($depDate, $dates)) {
+                    $departureCounts[$classCode][$depDate] = ($departureCounts[$classCode][$depDate] ?? 0) + 1;
+                }
             }
         }
 
         // 5. Build grid và statistics
-        $grid       = [];
-        $statistics = [];
-
-        foreach ($dates as $dStr) {
-            $statistics[$dStr] = [
-                'total_rooms'      => $grandTotalRooms,
-                'ooo'              => 0,
-                'oos'              => 0,
-                'sellable'         => $grandTotalRooms,
-                'bk_reserved'      => 0,  // Phòng đặt (Booked, chưa check-in)
-                'inhouse'          => 0,  // Phòng đang ở
-                'total_occupied'   => 0,  // Booked + Inhouse
-                'av'               => $grandTotalRooms,
-                'extra_beds'       => 0,
-                'arrivals_rooms'   => 0,  // Số phòng check-in ngày này
-                'departures_rooms' => 0,  // Số phòng check-out ngày này
-            ];
-        }
+        $grid = [];
 
         foreach ($roomClassesData as $rc) {
             $code  = $rc['code'];
@@ -169,29 +272,31 @@ class AvailabilityController extends Controller
             $grid[$code] = [];
 
             foreach ($dates as $dStr) {
-                $oooCount    = $lockCounts[$code][$dStr]['OOO'] ?? 0;
-                $oosCount    = $lockCounts[$code][$dStr]['OOS'] ?? 0;
-                $bkCount     = $bookedCounts[$code][$dStr] ?? 0;
+                $oooCount     = $lockCounts[$code][$dStr]['OOO'] ?? 0;
+                $oosCount     = $lockCounts[$code][$dStr]['OOS'] ?? 0;
+                $bkCount      = $bookedCounts[$code][$dStr] ?? 0;
                 $inhouseCount = $inhouseCounts[$code][$dStr] ?? 0;
-                $occupied    = $bkCount + $inhouseCount;
-                $ebCount     = $extraBedCounts[$code][$dStr] ?? 0;
-                $arrivals    = $arrivalCounts[$code][$dStr] ?? 0;
-                $departures  = $departureCounts[$code][$dStr] ?? 0;
+                $occupied     = $bkCount + $inhouseCount; // standard non-allotment occupied
+                $ebCount      = $extraBedCounts[$code][$dStr] ?? 0;
+                $arrivals     = $arrivalCounts[$code][$dStr] ?? 0;
+                $departures   = $departureCounts[$code][$dStr] ?? 0;
+                $almCount     = $allotmentCounts[$code][$dStr] ?? 0;
 
                 $sellable = max(0, $total - $oooCount - $oosCount);
-                $av       = max(0, $sellable - $occupied);
+                $av       = max(0, $sellable - $occupied - $almCount);
 
                 $grid[$code][$dStr] = [
                     'av'         => $av,
                     'ooo'        => $oooCount,
                     'oos'        => $oosCount,
                     'bk'         => $bkCount,    // Reserved (chưa check-in)
-                    'occ'        => $inhouseCount, // Inhouse
+                    'occ'        => $occupied,   // total non-allotment occupied
                     'total_occ'  => $occupied,
                     'eb'         => $ebCount,
                     'arr'        => $arrivals,
                     'dep'        => $departures,
                     'sellable'   => $sellable,
+                    'alm'        => $almCount,
                 ];
 
                 // Tổng hợp vào statistics
@@ -199,14 +304,14 @@ class AvailabilityController extends Controller
                 $statistics[$dStr]['oos']              += $oosCount;
                 $statistics[$dStr]['bk_reserved']      += $bkCount;
                 $statistics[$dStr]['inhouse']          += $inhouseCount;
-                $statistics[$dStr]['total_occupied']   += $occupied;
+                $statistics[$dStr]['total_occupied']   += ($occupied + $almCount);
                 $statistics[$dStr]['extra_beds']       += $ebCount;
                 $statistics[$dStr]['arrivals_rooms']   += $arrivals;
                 $statistics[$dStr]['departures_rooms'] += $departures;
             }
         }
 
-        // Tính lại sellable và av tổng
+        // Tính lại sellable, av tổng và occupied_pct
         foreach ($dates as $dStr) {
             $totalOOO = $statistics[$dStr]['ooo'];
             $totalOOS = $statistics[$dStr]['oos'];
@@ -216,7 +321,24 @@ class AvailabilityController extends Controller
 
             $statistics[$dStr]['sellable'] = $sellable;
             $statistics[$dStr]['av']       = $av;
+            $statistics[$dStr]['occupied_pct'] = $sellable > 0 ? round(($occ / $sellable) * 100) : 0;
         }
+
+        // Tính SL Phòng Tối Đa cho mỗi room class và totals
+        $grandMaxRooms = 0;
+        foreach ($roomClassesData as &$rc) {
+            $code  = $rc['code'];
+            $minAv = null;
+            foreach ($dates as $dStr) {
+                $av = $grid[$code][$dStr]['av'] ?? 0;
+                if ($minAv === null || $av < $minAv) {
+                    $minAv = $av;
+                }
+            }
+            $rc['max_rooms'] = $minAv ?? 0;
+            $grandMaxRooms += $rc['max_rooms'];
+        }
+        unset($rc);
 
         return response()->json([
             'success'      => true,

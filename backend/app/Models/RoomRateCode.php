@@ -31,6 +31,7 @@ class RoomRateCode extends Model
         'Disable',
         'AllowChangeRate',
         'IsChannelManager',
+        'IsDaily',
     ];
 
     protected $casts = [
@@ -41,6 +42,7 @@ class RoomRateCode extends Model
         'Disable' => 'boolean',
         'AllowChangeRate' => 'boolean',
         'IsChannelManager' => 'boolean',
+        'IsDaily' => 'boolean',
     ];
 
     public function ratePlans()
