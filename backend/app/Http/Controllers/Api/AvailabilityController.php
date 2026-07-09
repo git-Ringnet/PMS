@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\RoomClass;
 use App\Models\Room;
@@ -130,6 +131,7 @@ class AvailabilityController extends Controller
 
         // 4. Tính booking_rooms per class per date (★ tích hợp SP2100)
         // Lấy tất cả các booking room có status Booked (0), CheckedIn (1), CheckedOut (2), Cancelled (3)
+        // Chỉ lấy các booking có SP1311.IsAvailability = 1
         $bookings = BookingRoom::whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
@@ -138,6 +140,9 @@ class AvailabilityController extends Controller
             ])
             ->where('arrival_date', '<', $endStr)
             ->where('departure_date', '>', $startStr)
+            ->whereHas('booking.registrationStatus', function ($query) {
+                $query->where('is_availability', 1);
+            })
             ->with([
                 'roomClass:id,code',
                 'booking.registrationStatus',
@@ -160,15 +165,21 @@ class AvailabilityController extends Controller
             $arrDate   = $br->arrival_date->toDateString();
             $depDate   = $br->departure_date->toDateString();
 
-            $parentBooking     = $br->booking;
-            $isCancelled       = ($br->status === BookingRoom::STATUS_CANCELLED);
-            $isNoShow          = ($parentBooking && $parentBooking->status === Booking::STATUS_NO_SHOW);
-            // Chỉ lấy các booking có is_availability = 1 (hoặc null thì coi như true)
-            $isAvailableStatus = $parentBooking && (!$parentBooking->registrationStatus || $parentBooking->registrationStatus->is_availability);
+            $parentBooking      = $br->booking;
+            $isRoomCancelled    = ($br->status === BookingRoom::STATUS_CANCELLED);
+            $isBookingCancelled = ($parentBooking && $parentBooking->status === Booking::STATUS_DELETED);
+            $isBookingNoShow    = ($parentBooking && $parentBooking->status === Booking::STATUS_NO_SHOW);
+            
+            $isCancelled        = $isRoomCancelled || $isBookingCancelled;
+            $isNoShow           = $isBookingNoShow;
+            
+            // Chỉ lấy các booking có is_availability = 1
+            $isAvailableStatus  = $parentBooking && $parentBooking->registrationStatus && ($parentBooking->registrationStatus->is_availability == 1);
 
             $isBooked          = ($br->status === BookingRoom::STATUS_BOOKED && !$isCancelled && !$isNoShow && $isAvailableStatus);
             $isCheckedIn       = ($br->status === BookingRoom::STATUS_CHECKED_IN && !$isCancelled && !$isNoShow && $isAvailableStatus);
-            $isOccupied        = $isBooked || $isCheckedIn;
+            $isCheckedOut      = ($br->status === BookingRoom::STATUS_CHECKED_OUT && !$isCancelled && !$isNoShow && $isAvailableStatus);
+            $isOccupied        = $isBooked || $isCheckedIn || $isCheckedOut;
 
             $regStatusName     = $parentBooking && $parentBooking->registrationStatus ? strtolower($parentBooking->registrationStatus->name) : '';
             $isAllotment       = str_contains($regStatusName, 'allotment');
@@ -199,7 +210,7 @@ class AvailabilityController extends Controller
                         } else {
                             if ($isBooked) {
                                 $bookedCounts[$classCode][$dStr] = ($bookedCounts[$classCode][$dStr] ?? 0) + 1;
-                            } elseif ($isCheckedIn) {
+                            } elseif ($isCheckedIn || $isCheckedOut) {
                                 $inhouseCounts[$classCode][$dStr] = ($inhouseCounts[$classCode][$dStr] ?? 0) + 1;
                             }
                         }
@@ -350,6 +361,7 @@ class AvailabilityController extends Controller
             'statistics'   => $statistics,
             'totals'       => [
                 'grand_total'          => $grandTotalRooms,
+                'grand_max_rooms'      => $grandMaxRooms,
                 'grand_max_extra_beds' => $grandMaxExtraBeds,
             ],
         ]);

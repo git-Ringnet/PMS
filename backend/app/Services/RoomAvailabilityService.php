@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\RoomLock;
 use App\Models\SystemDateRoll;
@@ -35,7 +36,14 @@ class RoomAvailabilityService
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
+                BookingRoom::STATUS_CHECKED_OUT,
             ])
+            ->whereHas('booking', function ($q) {
+                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
+                  ->whereHas('registrationStatus', function ($subQ) {
+                      $subQ->where('is_availability', 1);
+                  });
+            })
             // Overlap condition: arrival < departure_other AND departure > arrival_other
             ->where('arrival_date', '<', $departureDate)
             ->where('departure_date', '>', $arrivalDate);
@@ -123,7 +131,14 @@ class RoomAvailabilityService
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
+                BookingRoom::STATUS_CHECKED_OUT,
             ])
+            ->whereHas('booking', function ($q) {
+                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
+                  ->whereHas('registrationStatus', function ($subQ) {
+                      $subQ->where('is_availability', 1);
+                  });
+            })
             ->where('arrival_date', '<', $departureDate)
             ->where('departure_date', '>', $arrivalDate);
 
@@ -166,7 +181,17 @@ class RoomAvailabilityService
 
         // Lấy tất cả booking_rooms overlap với khoảng ngày
         $bookings = BookingRoom::where('room_class_id', $roomClassId)
-            ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+            ->whereIn('status', [
+                BookingRoom::STATUS_BOOKED,
+                BookingRoom::STATUS_CHECKED_IN,
+                BookingRoom::STATUS_CHECKED_OUT,
+            ])
+            ->whereHas('booking', function ($q) {
+                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
+                  ->whereHas('registrationStatus', function ($subQ) {
+                      $subQ->where('is_availability', 1);
+                  });
+            })
             ->where('arrival_date', '<', $endDate)
             ->where('departure_date', '>', $startDate)
             ->get(['arrival_date', 'departure_date']);
