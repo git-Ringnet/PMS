@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -27,7 +28,16 @@ import {
   transferPayment,
   fetchCurrencies,
   fetchAvailability,
-  checkAvailability
+  checkAvailability,
+  fetchVacantRooms,
+  autoAssignRoom,
+  checkInRoom,
+  unassignRoom,
+  cancelBookingRoom,
+  fetchHotelServices,
+  fetchBookingRoomServices,
+  createBookingRoomService,
+  deleteBookingRoomServicesBulk
 } from '@/services/booking-service'
 
 const uiStore = useUiStore()
@@ -50,11 +60,14 @@ const registrationStatuses = ref([])
 const users = ref([])
 const roomClasses = ref([])
 const roomRateCodes = ref([])
+const hotelServicesList = ref([])
+const selectedServiceFilter = ref('all')
 
 // ==================== TAB MANAGEMENT ====================
 const tabs = ref([])
 const activeTabId = ref(null)
 const isLoadingBookings = ref(false)
+const isLoading = ref(true)
 
 // ==================== MODAL STATES ====================
 const isModalOpen = ref(false)
@@ -107,7 +120,76 @@ function closeModal() {
 
 // ==================== UI STATES ====================
 const showChucNangMenu = ref(false)
+function handleBlurChucNang() {
+  setTimeout(() => {
+    showChucNangMenu.value = false
+  }, 200)
+}
 const selectedRoomAction = ref('0')
+
+// ==================== REDESIGN GLOBAL SEARCH & DOCK ====================
+const isGlobalSearchOpen = ref(false)
+const globalSearchQuery = ref('')
+const globalSearchResults = ref([])
+const isSubListOpen = ref(false)
+const isPrintPrice = ref(true)
+
+const tableWrapRef = ref(null)
+const footerScrollRef = ref(null)
+
+function handleTableScroll() {
+  if (tableWrapRef.value && footerScrollRef.value) {
+    footerScrollRef.value.scrollLeft = tableWrapRef.value.scrollLeft
+  }
+}
+
+watch(globalSearchQuery, async (newVal) => {
+  if (!newVal || newVal.trim().length < 2) {
+    globalSearchResults.value = []
+    return
+  }
+  try {
+    const res = await fetchBookings({ search: newVal.trim() })
+    const list = res.data?.data || res.data || []
+    globalSearchResults.value = list
+  } catch (err) {
+    console.error(err)
+  }
+})
+
+function handleGlobalSearchResultClick(booking) {
+  isGlobalSearchOpen.value = false
+  globalSearchQuery.value = ''
+  
+  const existing = tabs.value.find(t => t.dbId === booking.id)
+  if (existing) {
+    activeTabId.value = existing.id
+  } else {
+    const newTab = { ...bookingToTab(booking) }
+    tabs.value.push(newTab)
+    activeTabId.value = newTab.id
+  }
+}
+
+function openGlobalSearch() {
+  isGlobalSearchOpen.value = true
+  setTimeout(() => {
+    const el = document.getElementById('gsInput')
+    if (el) el.focus()
+  }, 50)
+}
+
+function closeGlobalSearch() {
+  isGlobalSearchOpen.value = false
+  globalSearchQuery.value = ''
+  globalSearchResults.value = []
+}
+
+function getColWidthPx(col) {
+  if (!col || !col.width) return 'auto'
+  const match = col.width.match(/w-\[(\d+)px\]/)
+  return match ? `${match[1]}px` : 'auto'
+}
 
 // ==================== MODAL FORM ====================
 const emptyForm = () => ({
@@ -516,6 +598,54 @@ const columns = ref([
 ])
 const showTableColumnSelector = ref(false)
 const draggedColKey = ref(null)
+const expandedRooms = ref([])
+
+async function toggleRoomExpand(room) {
+  const roomId = room.id
+  const index = expandedRooms.value.indexOf(roomId)
+  if (index === -1) {
+    if (room.bookingRoomId) {
+      try {
+        const res = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = res.data?.data || []
+      } catch (err) {
+        console.error('Lỗi khi tải dịch vụ bổ sung:', err)
+      }
+    }
+    expandedRooms.value.push(roomId)
+  } else {
+    expandedRooms.value.splice(index, 1)
+  }
+}
+
+function getRoomDisplayServices(room) {
+  const list = []
+  // 1. Dịch vụ phòng nghỉ mặc định (Room Charge)
+  list.push({
+    id: `room-charge-${room.id}`,
+    service_date: room.checkIn,
+    service_name: 'Dịch vụ phòng nghỉ',
+    service_code: 'ROOM_CHARGE',
+    quantity: 1,
+    rate: room.price,
+    is_room: true
+  })
+  // 2. Các dịch vụ bổ sung
+  if (room.services && room.services.length > 0) {
+    room.services.forEach(svc => {
+      list.push({
+        id: svc.id,
+        service_date: svc.service_date,
+        service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
+        service_code: svc.service_code,
+        quantity: svc.quantity || 1,
+        rate: svc.rate || 0,
+        is_room: svc.is_room !== 0
+      })
+    })
+  }
+  return list
+}
 
 function handleDragStart(key) {
   draggedColKey.value = key
@@ -535,15 +665,39 @@ function handleDrop(targetKey) {
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
 
+const isCheckInDisabled = computed(() => {
+  const tab = activeTab.value
+  if (!tab || !tab.rooms || tab.rooms.length === 0) return true
+
+  const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+  if (selected.length > 0) {
+    return selected.every(r => r.bookingRoomStatus === 1)
+  }
+  
+  const targetList = tab.rooms.filter(r => r.roomNumber)
+  if (targetList.length === 0) return true
+  
+  return targetList.every(r => r.bookingRoomStatus === 1)
+})
+
 const filteredActiveRooms = computed(() => {
-  if (!activeTab.value) return []
-  if (!searchQuery.value) return activeTab.value.rooms
-  const q = searchQuery.value.toLowerCase()
-  return activeTab.value.rooms.filter(r =>
-    r.type.toLowerCase().includes(q) ||
-    r.guestName.toLowerCase().includes(q) ||
-    (r.roomNumber && r.roomNumber.toLowerCase().includes(q))
-  )
+  if (!activeTab.value || !activeTab.value.rooms) return []
+  let list = activeTab.value.rooms
+
+  if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
+    list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
+  }
+
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(r =>
+      r.type.toLowerCase().includes(q) ||
+      r.guestName.toLowerCase().includes(q) ||
+      (r.roomNumber && r.roomNumber.toLowerCase().includes(q))
+    )
+  }
+
+  return list
 })
 
 const selectRangeVal = computed({
@@ -664,12 +818,33 @@ function syncRoomsToAllocations(tab) {
 
 // ==================== LIFECYCLE ====================
 onMounted(async () => {
-  await Promise.all([loadDropdowns(), loadBookings()])
+  try {
+    isLoading.value = true
+    await Promise.all([loadDropdowns(), loadBookings()])
+  } catch (err) {
+    console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
+  } finally {
+    isLoading.value = false
+  }
 })
 
 async function loadDropdowns() {
   try {
-    const [mRes, csRes, bRes, cRes, pmRes, rsRes, uRes, rcRes, rrcRes, currRes] = await Promise.allSettled([
+    const [
+      mRes,
+      csRes,
+      bRes,
+      cRes,
+      pmRes,
+      rsRes,
+      uRes,
+      rcRes,
+      rrcRes,
+      currRes,
+      hsRes,
+      settingsRes,
+      sysTimeRes
+    ] = await Promise.allSettled([
       fetchMarkets(),
       fetchCustomerSources(),
       fetchBookers(),
@@ -680,6 +855,9 @@ async function loadDropdowns() {
       fetchRoomClasses(),
       fetchRoomRateCodes(),
       fetchCurrencies(),
+      fetchHotelServices(),
+      fetchHotelSettings(),
+      fetchSystemTime(),
     ])
     markets.value              = mRes.status  === 'fulfilled' ? (mRes.value.data?.data  || mRes.value.data  || []) : []
     customerSources.value      = csRes.status === 'fulfilled' ? (csRes.value.data?.data || csRes.value.data || []) : []
@@ -688,15 +866,12 @@ async function loadDropdowns() {
     paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
     registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
     users.value                = uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []
-    roomClasses.value          = rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []
+    roomClasses.value          = (rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []).filter(c => c.is_active !== false)
     roomRateCodes.value        = rrcRes.status === 'fulfilled' ? (rrcRes.value.data?.data || rrcRes.value.data || []) : []
     currenciesList.value       = currRes.status === 'fulfilled' ? (currRes.value.data?.data || currRes.value.data || []) : []
-    hotelSettings.value        = await fetchHotelSettings().then(r => r.data?.data || r.data || {}).catch(() => ({}))
-    
-    try {
-        const sysTimeRes = await fetchSystemTime();
-        systemDate.value = sysTimeRes.data?.system_date || new Date().toISOString().split('T')[0];
-    } catch(e) {}
+    hotelServicesList.value    = hsRes.status === 'fulfilled' ? (hsRes.value.data?.data  || hsRes.value.data  || []) : []
+    hotelSettings.value        = settingsRes.status === 'fulfilled' ? (settingsRes.value.data?.data || settingsRes.value.data || {}) : {}
+    systemDate.value           = sysTimeRes.status === 'fulfilled' ? (sysTimeRes.value.data?.system_date || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
   } catch (err) {
     console.error('Error loading dropdowns:', err)
   }
@@ -705,13 +880,24 @@ async function loadDropdowns() {
 async function loadBookings() {
   isLoadingBookings.value = true
   try {
-    const res = await fetchBookings({ status: 0 })
+    const prevActiveId = activeTabId.value
+    const res = await fetchBookings({ status: '0,1' })
     const list = res.data?.data || res.data || []
     tabs.value = list.map(b => bookingToTab(b))
-    if (tabs.value.length > 0) activeTabId.value = tabs.value[0].id
-    else { tabs.value = [makeBlankTab()]; activeTabId.value = tabs.value[0].id }
+    
+    if (tabs.value.some(t => t.id === prevActiveId)) {
+      activeTabId.value = prevActiveId
+    } else if (tabs.value.length > 0) {
+      activeTabId.value = tabs.value[0].id
+    } else {
+      tabs.value = [makeBlankTab()]
+      activeTabId.value = tabs.value[0].id
+    }
   } catch (err) {
-    if (tabs.value.length === 0) { tabs.value = [makeBlankTab()]; activeTabId.value = tabs.value[0].id }
+    if (tabs.value.length === 0) {
+      tabs.value = [makeBlankTab()]
+      activeTabId.value = tabs.value[0].id
+    }
     console.error('Lỗi khi tải bookings:', err)
   } finally {
     isLoadingBookings.value = false
@@ -725,6 +911,7 @@ function bookingToTab(b) {
   // Nếu API trả về booking_rooms (dữ liệu mới)
   if (b.booking_rooms && b.booking_rooms.length > 0) {
     b.booking_rooms.forEach(br => {
+      if (Number(br.status) === 3) return // Bỏ qua phòng đã hủy (STATUS_CANCELLED = 3)
       const rc = br.room_class || {}
       const physicalRoom = br.room || {}
       
@@ -771,6 +958,8 @@ function bookingToTab(b) {
         roomCode: '',
         total: totalNum,
         roomClassId: br.room_class_id,
+        services: br.services || [],
+        bookingRoomStatus: br.status !== undefined ? Number(br.status) : 0,
       })
     })
   } else {
@@ -825,8 +1014,65 @@ function bookingToTab(b) {
           roomCode: roomDetail.roomCode || '',
           total: Number(roomDetail.total) || totalNum,
           roomClassId: alloc.roomClassId,
+          bookingRoomStatus: 0,
         })
       }
+    })
+  }
+
+  const roomAllocations = []
+  if (b.booking_rooms && b.booking_rooms.length > 0) {
+    const grouped = {}
+    b.booking_rooms.forEach(br => {
+      const classId = br.room_class_id
+      if (!grouped[classId]) {
+        grouped[classId] = {
+          roomClassId: classId,
+          roomClassCode: br.room_class?.code || '',
+          roomClassName: br.room_class?.name || '',
+          arrivalDate: br.arrival_date ? br.arrival_date.substring(0, 10) : '',
+          departureDate: br.departure_date ? br.departure_date.substring(0, 10) : '',
+          quantity: 0,
+          price: Number(br.rate) || 0,
+          ratePlanCode: '',
+          discount: 'Tăng/Giảm giá',
+          upgradeRoomClassId: null,
+          adults: br.adults || 2,
+          babies: 0,
+          children: 0,
+          childBreakfastRate: 90000,
+          breakfastIncluded: true,
+        }
+      }
+      grouped[classId].quantity++
+      const childCount = br.children ? br.children.filter(c => c.age_group === 'child').length : 0
+      const babyCount = br.children ? br.children.filter(c => c.age_group === 'baby').length : 0
+      grouped[classId].children += childCount
+      grouped[classId].babies += babyCount
+    })
+    Object.values(grouped).forEach(g => {
+      roomAllocations.push(g)
+    })
+  } else {
+    const dbAlloc = b.room_allocations || []
+    dbAlloc.forEach(alloc => {
+      roomAllocations.push({
+        roomClassId: alloc.roomClassId,
+        roomClassCode: alloc.roomClassCode,
+        roomClassName: alloc.roomClassName,
+        arrivalDate: alloc.arrivalDate,
+        departureDate: alloc.departureDate,
+        quantity: Number(alloc.quantity) || 0,
+        price: Number(alloc.price) || 0,
+        ratePlanCode: alloc.ratePlanCode || '',
+        discount: alloc.discount || 'Tăng/Giảm giá',
+        upgradeRoomClassId: alloc.upgradeRoomClassId || null,
+        adults: Number(alloc.adults) || 2,
+        babies: Number(alloc.babies) || 0,
+        children: Number(alloc.children) || 0,
+        childBreakfastRate: Number(alloc.childBreakfastRate) || 90000,
+        breakfastIncluded: alloc.breakfastIncluded !== undefined ? !!alloc.breakfastIncluded : true,
+      })
     })
   }
 
@@ -837,13 +1083,14 @@ function bookingToTab(b) {
     bookingName: b.booking_name,
     statusLabel: b.registration_status?.name || '—',
     registrationStatusId: b.registration_status_id,
-    checkIn: b.arrival_date,
-    checkOut: b.departure_date,
+    checkIn: b.arrival_date ? b.arrival_date.substring(0, 10) : '',
+    checkOut: b.departure_date ? b.departure_date.substring(0, 10) : '',
     nights: b.num_of_days,
     deposit: b.payment_value || 0,
     company: b.company?.name || '—',
     companyId: b.company_id,
-    confirmDate: b.confirm_date || '',
+    confirmDate: b.confirm_date ? b.confirm_date.substring(0, 10) : '',
+    expiredDate: b.expired_date ? b.expired_date.substring(0, 10) : '',
     marketId: b.market_id,
     market: b.market?.name || '—',
     customerSourceId: b.customer_source_id,
@@ -861,7 +1108,7 @@ function bookingToTab(b) {
     note: b.note || '',
     specialRequests: b.special_requests || '',
     shuttleInfo: b.shuttle_info || [],
-    roomAllocations: b.room_allocations || [],
+    roomAllocations: roomAllocations,
     deposits: b.payments ? b.payments.map(p => ({
       id: p.id,
       date: p.date ? p.date.substring(0, 10).split('-').reverse().join('/') : '',
@@ -1151,6 +1398,7 @@ function updateAllocatedRooms(row) {
         allotmentCode: '',
         roomCode: '',
         total: (row.price || 0) * (row.nights || modalForm.value.nights || 1),
+        bookingRoomStatus: 0,
       })
     }
   } else if (diff < 0) {
@@ -1359,6 +1607,38 @@ function formatDateVi(dateStr) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
+const vacantRoomsMap = ref({})
+
+async function loadVacantRoomsForRoom(room) {
+  const roomClassId = room.roomClassId
+  const ci = parseDateVi(room.checkIn)
+  const co = parseDateVi(room.checkOut)
+  if (!roomClassId || !ci || !co) return
+
+  const cacheKey = `${roomClassId}_${ci}_${co}`
+  if (vacantRoomsMap.value[cacheKey]) return
+
+  try {
+    const res = await fetchVacantRooms({
+      room_class_id: roomClassId,
+      arrival_date: ci,
+      departure_date: co,
+      exclude_booking_room_id: room.bookingRoomId || undefined
+    })
+    vacantRoomsMap.value[cacheKey] = res.data?.data || res.data || []
+  } catch (err) {
+    console.error('Không thể tải danh sách phòng trống:', err)
+  }
+}
+
+function getVacantRoomsList(room) {
+  const ci = parseDateVi(room.checkIn)
+  const co = parseDateVi(room.checkOut)
+  const cacheKey = `${room.roomClassId}_${ci}_${co}`
+  const list = vacantRoomsMap.value[cacheKey] || []
+  return list.filter(r => r.room_number !== room.roomNumber)
+}
+
 function formatCurrencyInput(val) {
   if (val === null || val === undefined || val === '') return '';
   const currencyCode = activeCurrency.value.code || 'VND'
@@ -1449,34 +1729,249 @@ async function triggerAction(actionName) {
     } else {
       uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
     }
-  } else if (actionName === 'Thông tin đăng ký' || actionName === 'Thông tin khách hàng') {
+  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký' || actionName === 'Thông tin khách hàng') {
     openEditModal()
+  } else if (actionName === 'Hóa đơn' || actionName === 'Hoá đơn') {
+    uiStore.showToast('Đang tiến hành tạo hóa đơn...', 'success')
   } else if (actionName === 'Nhân bản') {
     uiStore.showToast('Nhân bản thông tin đăng ký thành công!', 'success')
   } else if (actionName === 'GIAO PHÒNG') {
-    uiStore.showToast('Đang tiến hành giao phòng cho khách...', 'success')
+    if (isCheckInDisabled.value) {
+      uiStore.showToast('Tất cả phòng được chọn (hoặc tất cả phòng gán số) đã được giao phòng!', 'warning')
+      return
+    }
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi giao phòng!', 'warning')
+      return
+    }
+    if (!tab.rooms || tab.rooms.length === 0) {
+      uiStore.showToast('Không có phòng nào để giao!', 'info')
+      return
+    }
+
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : tab.rooms.filter(r => r.roomNumber)
+
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng gán số phòng trước khi giao phòng!', 'warning')
+      return
+    }
+
+    uiStore.showToast('Đang tiến hành giao phòng cho khách...', 'info')
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
+
+    try {
+      await Promise.all(targetList.map(async (r) => {
+        if (!r.bookingRoomId) return
+        try {
+          const res = await checkInRoom(tab.dbId, r.bookingRoomId)
+          if (res.data?.success) {
+            successCount++
+            r.roomStatus = 'Đang ở'
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
+          failCount++
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+        }
+      }))
+
+      await loadBookings()
+      selectedRows.value = []
+
+      if (successCount > 0) {
+        uiStore.showToast(`Giao phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+      } else {
+        uiStore.showToast(`Giao phòng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch(err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi giao phòng!', 'error')
+    }
   } else if (actionName === 'Nâng hạng phòng') {
     uiStore.showToast('Vui lòng tích chọn phòng muốn nâng hạng trên bảng!', 'info')
+  } else if (actionName === 'Tự động gán phòng') {
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi gán số phòng!', 'warning')
+      return
+    }
+    if (!tab.rooms || tab.rooms.length === 0) {
+      uiStore.showToast('Không có phòng nào để gán!', 'info')
+      return
+    }
+
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : tab.rooms
+
+    uiStore.showToast('Đang tiến hành tự động gán số phòng...', 'info')
+    let successCount = 0
+    let failCount = 0
+
+    try {
+      await Promise.all(targetList.map(async (r) => {
+        if (!r.bookingRoomId) return
+        try {
+          const res = await autoAssignRoom(tab.dbId, r.bookingRoomId)
+          if (res.data?.success) {
+            r.roomNumber = res.data.room_number || ''
+            r.isPreassigned = true
+            successCount++
+          } else {
+            failCount++
+          }
+        } catch (err) {
+          console.error(err)
+          failCount++
+        }
+      }))
+
+      // Reset checkbox selection
+      selectedRows.value = []
+
+      if (successCount > 0) {
+        uiStore.showToast(`Tự động gán thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng)` : ''}`, 'success')
+      } else {
+        uiStore.showToast('Không tìm thấy số phòng trống phù hợp cho các phòng đã chọn!', 'error')
+      }
+    } catch(err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi tự động gán phòng!', 'error')
+    }
   } else if (actionName === 'Gỡ số phòng') {
     const tab = activeTab.value
     if (tab && tab.rooms) {
       const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
       const targetList = selected.length > 0 ? selected : tab.rooms
-      targetList.forEach(r => r.roomNumber = '')
-      uiStore.showToast('Đã gỡ số phòng của các phòng được chọn thành công!', 'success')
+      
+      if (tab.dbId) {
+        uiStore.showToast('Đang tiến hành gỡ số phòng...', 'info')
+        try {
+          await Promise.all(targetList.map(async (r) => {
+            if (!r.bookingRoomId) return
+            await unassignRoom(tab.dbId, r.bookingRoomId)
+            r.roomNumber = ''
+            r.isPreassigned = false
+          }))
+          uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
+        } catch(err) {
+          console.error(err)
+          uiStore.showToast('Lỗi khi gỡ số phòng trên hệ thống!', 'error')
+        }
+      } else {
+        targetList.forEach(r => {
+          r.roomNumber = ''
+          r.isPreassigned = false
+        })
+        uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
+      }
+      selectedRows.value = []
     }
   } else if (actionName === 'Hủy phòng') {
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi hủy phòng!', 'warning')
+      return
+    }
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : tab.rooms
+    if (targetList.length === 0) {
+      uiStore.showToast('Không có phòng nào để hủy!', 'info')
+      return
+    }
+
     uiStore.confirm({
       title: 'Hủy phòng',
-      message: 'Bạn có chắc chắn muốn hủy các phòng đã chọn?',
+      message: selected.length > 0 
+        ? `Bạn có chắc chắn muốn hủy ${selected.length} phòng đã chọn?` 
+        : 'Bạn có chắc chắn muốn hủy toàn bộ phòng trong đăng ký này?',
       confirmText: 'Đồng ý', cancelText: 'Hủy'
-    }).then(confirmed => {
+    }).then(async (confirmed) => {
       if (confirmed) {
-        uiStore.showToast('Hủy phòng thành công!', 'success')
+        uiStore.showToast('Đang tiến hành hủy phòng...', 'info')
+        let successCount = 0
+        let failCount = 0
+        let failMessages = []
+
+        try {
+          await Promise.all(targetList.map(async (r) => {
+            if (!r.bookingRoomId) return
+            try {
+              const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+              } else {
+                failCount++
+                failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
+              }
+            } catch (err) {
+              console.error(err)
+              failCount++
+              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
+            }
+          }))
+
+          await loadBookings()
+          selectedRows.value = []
+
+          if (successCount > 0) {
+            uiStore.showToast(`Hủy phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+          } else {
+            uiStore.showToast(`Hủy phòng thất bại: ${failMessages.join(', ')}`, 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Có lỗi xảy ra khi hủy phòng!', 'error')
+        }
       }
     })
+  } else if (actionName === 'Dịch vụ bổ sung') {
+    const tab = activeTab.value
+    if (!tab || !tab.rooms || tab.rooms.length === 0) return
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng muốn thêm dịch vụ bổ sung trên bảng!', 'warning')
+      return
+    }
+    openServicesModal(selected[0])
   } else if (actionName === 'Xóa dịch vụ bổ sung') {
-    uiStore.showToast('Đã xóa các dịch vụ bổ sung đi kèm!', 'success')
+    const tab = activeTab.value
+    if (!tab || !tab.rooms || tab.rooms.length === 0) return
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetRoom = selected.length > 0 ? selected[0] : null
+    if (!targetRoom || !targetRoom.bookingRoomId) {
+      uiStore.showToast('Vui lòng tích chọn phòng muốn xóa dịch vụ bổ sung!', 'warning')
+      return
+    }
+    
+    uiStore.confirm({
+      title: 'Xóa dịch vụ bổ sung',
+      message: `Bạn có chắc chắn muốn xóa toàn bộ dịch vụ bổ sung của phòng ${targetRoom.roomNumber || ''}?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang tiến hành xóa dịch vụ...', 'info')
+        try {
+          const res = await fetchBookingRoomServices(targetRoom.bookingRoomId)
+          const existing = res.data?.data || []
+          const ids = existing.map(x => x.id)
+          if (ids.length > 0) {
+            await deleteBookingRoomServicesBulk(targetRoom.bookingRoomId, { service_ids: ids })
+          }
+          uiStore.showToast('Đã xóa toàn bộ dịch vụ bổ sung thành công!', 'success')
+          await loadBookings()
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Lỗi khi xóa dịch vụ bổ sung!', 'error')
+        }
+      }
+    })
   } else if (actionName === 'Khóa chuyển phòng') {
     uiStore.showToast('Đã thiết lập khóa chuyển phòng!', 'success')
   } else if (actionName === 'Mở chuyển phòng') {
@@ -1516,379 +2011,394 @@ async function triggerAction(actionName) {
     uiStore.showToast(`Tính năng "${actionName}" đang được thực hiện!`, 'info')
   }
 }
+
+// ==================== DỊCH VỤ BỔ SUNG MODAL ====================
+const isServicesModalOpen = ref(false)
+const servicesModalRoom = ref(null)
+const servicesModalSearch = ref('')
+const selectedServiceCodes = ref([])
+const checkedDates = ref([])
+const serviceItems = ref([])
+
+const filteredHotelServices = computed(() => {
+  if (!servicesModalSearch.value) return hotelServicesList.value
+  const q = servicesModalSearch.value.toLowerCase()
+  return hotelServicesList.value.filter(s => 
+    s.name.toLowerCase().includes(q) || 
+    s.code.toLowerCase().includes(q)
+  )
+})
+
+const stayDatesList = computed(() => {
+  if (!servicesModalRoom.value) return []
+  return getStayDates(servicesModalRoom.value.checkIn, servicesModalRoom.value.checkOut)
+})
+
+const servicesTotalAmount = computed(() => {
+  return serviceItems.value.reduce((sum, item) => sum + (item.quantity * item.rate), 0)
+})
+
+function getStayDates(checkIn, checkOut) {
+  const dates = []
+  const start = new Date(parseDateVi(checkIn))
+  const end = new Date(parseDateVi(checkOut))
+  if (isNaN(start) || isNaN(end)) return dates
+  
+  let curr = new Date(start)
+  while (curr < end) {
+    dates.push(curr.toISOString().split('T')[0])
+    curr.setDate(curr.getDate() + 1)
+  }
+  return dates
+}
+
+
+
+function formatDateShort(dateStr) {
+  const parts = dateStr.split('-')
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}`
+  }
+  return dateStr
+}
+
+function getServiceNameFromCode(code) {
+  const svc = hotelServicesList.value.find(s => s.code === code)
+  return svc ? svc.name : code
+}
+
+async function openServicesModal(room) {
+  servicesModalRoom.value = room
+  servicesModalSearch.value = ''
+  selectedServiceCodes.value = []
+  
+  const dates = getStayDates(room.checkIn, room.checkOut)
+  checkedDates.value = [...dates]
+  
+  try {
+    const res = await fetchBookingRoomServices(room.bookingRoomId)
+    const existing = res.data?.data || []
+    
+    const items = []
+    const codes = []
+    existing.forEach(svc => {
+      if (!codes.includes(svc.service_code)) {
+        codes.push(svc.service_code)
+        items.push({
+          service_code: svc.service_code,
+          service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
+          quantity: svc.quantity || 1,
+          rate: Number(svc.rate) || 0,
+          is_room: svc.is_room !== 0
+        })
+      }
+    })
+    
+    selectedServiceCodes.value = codes
+    serviceItems.value = items
+  } catch (err) {
+    console.error(err)
+    serviceItems.value = []
+  }
+  
+  isServicesModalOpen.value = true
+}
+
+function handleServiceCheckboxChange(svc, checked) {
+  if (checked) {
+    if (!selectedServiceCodes.value.includes(svc.code)) {
+      selectedServiceCodes.value.push(svc.code)
+      serviceItems.value.push({
+        service_code: svc.code,
+        service_name: svc.name,
+        quantity: 1,
+        rate: Number(svc.price) || 0,
+        is_room: true
+      })
+    }
+  } else {
+    selectedServiceCodes.value = selectedServiceCodes.value.filter(c => c !== svc.code)
+    serviceItems.value = serviceItems.value.filter(i => i.service_code !== svc.code)
+  }
+}
+
+function toggleAllDates(event) {
+  if (event.target.checked) {
+    checkedDates.value = [...stayDatesList.value]
+  } else {
+    checkedDates.value = []
+  }
+}
+
+async function saveServices() {
+  if (!servicesModalRoom.value) return
+  const tab = activeTab.value
+  if (!tab) return
+
+  // Tìm danh sách các phòng được chọn trên bảng
+  const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+  
+  // Áp dụng hàng loạt cho tất cả các phòng được tick chọn hoặc phòng đang sửa lẻ
+  const targetRooms = selectedRooms.length > 0 ? selectedRooms : [servicesModalRoom.value]
+
+  uiStore.showToast('Đang tiến hành lưu dịch vụ bổ sung...', 'info')
+  let hasError = false
+  let lastErrorMsg = ''
+
+  for (const room of targetRooms) {
+    const roomId = room.bookingRoomId
+    if (!roomId) continue
+
+    try {
+      const res = await fetchBookingRoomServices(roomId)
+      const existing = res.data?.data || []
+
+      const toDeleteIds = []
+      existing.forEach(svc => {
+        const isCodeSelected = selectedServiceCodes.value.includes(svc.service_code)
+        let svcDateShort = svc.service_date
+        if (svcDateShort && svcDateShort.includes('T')) {
+          svcDateShort = svcDateShort.split('T')[0]
+        }
+        const isDateChecked = checkedDates.value.includes(svcDateShort)
+        if (!isCodeSelected || !isDateChecked) {
+          toDeleteIds.push(svc.id)
+        }
+      })
+
+      if (toDeleteIds.length > 0) {
+        await deleteBookingRoomServicesBulk(roomId, { service_ids: toDeleteIds })
+      }
+
+      for (const item of serviceItems.value) {
+        for (const d of checkedDates.value) {
+          await createBookingRoomService(roomId, {
+            service_code: item.service_code,
+            service_name: item.service_name,
+            service_date: d,
+            quantity: item.quantity,
+            rate: item.rate,
+            is_room: item.is_room ? 1 : 0
+          })
+        }
+      }
+
+      // Đồng bộ local services cho từng phòng
+      const updatedRes = await fetchBookingRoomServices(roomId)
+      room.services = updatedRes.data?.data || []
+    } catch (roomErr) {
+      console.error(`Lỗi khi lưu dịch vụ cho phòng ${room.roomNumber || roomId}:`, roomErr)
+      hasError = true
+      lastErrorMsg = roomErr.response?.data?.message || roomErr.message || 'Lỗi khi kết nối server.'
+    }
+  }
+
+  if (hasError) {
+    uiStore.showToast(`Lưu dịch vụ hoàn tất nhưng có lỗi xảy ra: ${lastErrorMsg}`, 'error')
+  } else {
+    uiStore.showToast('Lưu dịch vụ bổ sung thành công cho tất cả phòng đã chọn!', 'success')
+  }
+
+  isServicesModalOpen.value = false
+  await loadBookings()
+  // Reset selection sau khi thực hiện xong
+  selectedRows.value = []
+}
 </script>
 
 <template>
   <div class="h-full flex flex-col bg-slate-50 text-slate-800 animate-in select-none">
     
-    <!-- DYNAMIC TABS HEADER BAR -->
-    <div class="bg-slate-100 border-b border-slate-200 px-4 pt-1.5 flex items-end justify-between shrink-0">
-      <div class="flex items-center gap-1.5 overflow-x-auto max-w-[50%] scrollbar-none">
+    <!-- DYNAMIC TABS HEADER BAR (Redesigned Top Bar) -->
+    <div class="topbar shrink-0">
+      <!-- Tabs list -->
+      <div class="flex items-center gap-1.5 overflow-x-auto max-w-[40%] scrollbar-none">
         <button
           v-for="tab in tabs"
           :key="tab.id"
           @click="handleTabClick(tab.id)"
-          class="flex items-center gap-2 px-4 py-2 text-sm font-black rounded-t-lg transition-all duration-200 border-t border-x cursor-pointer whitespace-nowrap"
-          :class="tab.id === activeTabId
-            ? 'bg-white text-sky-700 border-slate-200 border-b-white z-10 translate-y-[1px]'
-            : 'bg-slate-100 text-slate-500 border-transparent hover:bg-slate-200/60'"
+          class="booking-tab cursor-pointer whitespace-nowrap"
+          :style="tab.id === activeTabId ? 'background: var(--navy-3); border: 1px solid rgba(255,255,255,0.15)' : 'background: rgba(255,255,255,0.06); color: #c7d2e0'"
         >
           <span>{{ tab.title }}</span>
           <span
-            @click="handleCloseTab(tab.id, $event)"
-            class="w-3.5 h-3.5 rounded-full flex items-center justify-center text-xs text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors"
+            @click.stop="handleCloseTab(tab.id, $event)"
+            class="x hover:text-white ml-1.5 transition-colors font-bold"
           >
-            &times;
+            ✕
           </span>
         </button>
 
-        <!-- ADD TAB BUTTON (+ Icon) -->
+        <!-- ADD TAB BUTTON -->
         <button
           @click="handleAddTabClick"
-          class="w-7 h-7 mb-1 bg-white hover:bg-slate-50 text-[#006bdb] rounded-lg flex items-center justify-center cursor-pointer border border-slate-200 transition-all active:scale-95 shadow-xs"
+          class="add-booking-btn"
           title="Tạo đăng ký mới"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Booking mới</span>
         </button>
       </div>
 
-      <!-- Action Buttons in Header -->
-      <div v-if="activeTab" class="flex items-center gap-2 pb-1.5 text-slate-600">
-        <button 
-          @click="triggerAction('Thông tin đăng ký')"
-          :class="isEditing ? 'bg-slate-500 hover:bg-slate-600' : 'bg-[#006bdb] hover:bg-[#0052a3]'"
-          class="px-3.5 py-1.5 text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-            <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 011.063.853l-2.036 1.018a.75.75 0 01-1.063-.853l.708-2.836-.041.02a.75.75 0 01-1.063-.853l2.036-1.018zM12 8.25a.75.75 0 110-1.5.75.75 0 010 1.5z" clip-rule="evenodd" />
-          </svg>
+      <div class="spacer"></div>
+
+      <!-- Action Buttons -->
+      <div v-if="activeTab" class="flex items-center gap-2">
+        <button class="btn" @click="triggerAction('Thông tin đăng ký')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
           Thông tin đăng ký
         </button>
         
-        <button 
-          v-if="!isEditing"
-          @click="triggerAction('Sửa')"
-          class="px-3.5 py-1.5 bg-[#006bdb] hover:bg-[#0052a3] text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-          </svg>
+        <button v-if="!isEditing" class="btn" @click="triggerAction('Sửa')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
           Sửa
         </button>
-
-        <button 
-          v-else
-          @click="triggerAction('Quay lại')"
-          class="px-3.5 py-1.5 bg-[#006bdb] hover:bg-[#0052a3] text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-          </svg>
+        <button v-else class="btn" @click="triggerAction('Quay lại')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/></svg>
           Quay lại
         </button>
 
         <button 
+          class="btn blue" 
           @click="triggerAction('Lưu')"
-          :class="isEditing ? 'bg-[#006bdb] hover:bg-[#0052a3] cursor-pointer' : 'bg-slate-300 text-slate-500 opacity-90 cursor-not-allowed'"
-          class="px-3.5 py-1.5 text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 shadow-sm border border-transparent"
           :disabled="!isEditing"
+          :class="{ 'opacity-50 cursor-not-allowed': !isEditing }"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 3H6.75A2.25 2.25 0 0 0 4.5 5.25v13.5A2.25 2.25 0 0 0 6.75 21h10.5A2.25 2.25 0 0 0 19.5 18.75V5.25l-2.25-2.25ZM7.5 3v5.25h6V3m-3 14.25a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5Z" />
-          </svg>
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
           Lưu
         </button>
 
-        <button 
-          @click="triggerAction('Nhân bản')"
-          :class="isEditing ? 'bg-slate-500 hover:bg-slate-600' : 'bg-[#006bdb] hover:bg-[#0052a3]'"
-          class="px-3.5 py-1.5 text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376A8.965 8.965 0 0012 12.75c-.131-1.178-.377-2.322-.75-3.414m9 9.375a9.015 9.015 0 01-1.5-.124M15 3.75H9v1.5H6.75c-.621 0-1.125.504-1.125 1.125v3.375c0 .621.504 1.125 1.125 1.125h1.5v1.5h1.5v-1.5h6v1.5h1.5v-1.5h1.5c.621 0 1.125-.504 1.125-1.125V7.875c0-.621-.504-1.125-1.125-1.125H15V3.75z" />
-          </svg>
+        <button class="btn" @click="triggerAction('Nhân bản')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
           Nhân bản
         </button>
 
-        <button 
-          @click="triggerAction('Xóa')"
-          :class="isEditing ? 'bg-slate-500 hover:bg-slate-600' : 'bg-[#006bdb] hover:bg-[#0052a3]'"
-          class="px-3.5 py-1.5 text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-          </svg>
-          Xóa
+        <button class="btn red" @click="triggerAction('Xóa')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+          Xoá
         </button>
 
-        <button 
-          @click="triggerAction('In')"
-          class="px-3.5 py-1.5 bg-[#006bdb] hover:bg-[#0052a3] text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.82l-.24 2.18m11.04-2.18l.24 2.18m0 0a2.25 2.25 0 104.44-.11L21 11.25M17.76 16h-.008m0 0a2.25 2.25 0 11-4.44-.11L13.5 11.25m-6.78 2.57l-.24-2.18m11.04 2.18l.24-2.18M6.72 13.82h10.56M6.72 13.82l-.24-2.18m11.04 2.18l.24-2.18m-11.04 0h11.04m-11.04 0l.24-2.18m10.56 2.18l-.24-2.18m0 0a2.25 2.25 0 10-4.44-.11L10.5 5.25m-3.78 2.57l.24-2.18" />
-          </svg>
+        <button class="btn" @click="triggerAction('In')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
           In
-          <span class="w-[1px] h-3.5 bg-white/60 ml-0.5"></span>
-          <svg class="w-3.5 h-3.5 -ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
-          </svg>
         </button>
 
-        <button 
-          @click="triggerAction('Thông báo')"
-          class="px-3.5 py-1.5 bg-[#006bdb] hover:bg-[#0052a3] text-white rounded-md text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-transparent"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-          </svg>
+        <button class="btn" @click="triggerAction('Thông báo')">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
           Thông báo
         </button>
+      </div>
+
+      <div class="topbar-divider"></div>
+
+      <button class="global-search-btn" @click="openGlobalSearch" title="Tìm kiếm toàn hệ thống">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <span>Tìm kiếm toàn hệ thống</span>
+      </button>
+
+      <!-- Hotel Service Filter + Column Selector in Top Bar -->
+      <div v-if="activeTab" class="flex items-center gap-1.5 ml-2.5 text-white/90 text-xs font-bold shrink-0">
+        <select 
+          v-model="selectedServiceFilter" 
+          class="topbar-service-select border border-white/10 rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer text-xs text-white font-bold h-7"
+          style="width: 140px !important; background-color: var(--navy) !important;"
+        >
+          <option value="all">Tất cả dịch vụ</option>
+          <option v-for="svc in hotelServicesList" :key="svc.code" :value="svc.code">
+            {{ svc.name }} ({{ svc.code }})
+          </option>
+        </select>
+
+        <!-- Column Selector in Top Bar -->
+        <div class="relative inline-block text-left">
+          <button 
+            @click="showTableColumnSelector = !showTableColumnSelector" 
+            class="flex items-center justify-center p-1.5 rounded hover:bg-white/10 transition-colors h-7 w-7 text-white/70 hover:text-white" 
+            title="Tùy chọn cột hiển thị"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+          </button>
+          
+          <div 
+            v-if="showTableColumnSelector" 
+            class="fixed inset-0 z-45 cursor-default" 
+            @click="showTableColumnSelector = false"
+          ></div>
+          
+          <div 
+            v-if="showTableColumnSelector" 
+            class="absolute right-0 mt-1.5 w-60 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1.5 max-h-80 overflow-y-auto"
+          >
+            <div class="text-[11px] font-bold text-slate-500 mb-1 px-3 border-b pb-1 select-none">ẨN/HIỆN CỘT BẢNG</div>
+            <div 
+              v-for="col in columns" 
+              :key="col.key" 
+              class="px-3.5 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-xs font-semibold text-slate-700 select-none cursor-grab active:cursor-grabbing"
+              draggable="true"
+              @dragstart="handleDragStart(col.key)"
+              @dragover.prevent
+              @drop="handleDrop(col.key)"
+            >
+              <span class="text-slate-400 font-bold cursor-grab active:cursor-grabbing text-xs leading-none">⋮⋮</span>
+              <input 
+                type="checkbox" 
+                v-model="col.visible" 
+                class="rounded text-[#006bdb] focus:ring-[#006bdb] w-3.5 h-3.5 cursor-pointer"
+              />
+              <span class="flex-1 cursor-pointer" @click="col.visible = !col.visible">{{ col.label }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- MAIN TAB CONTENT PANEL -->
-    <div v-if="activeTab" class="flex-1 flex flex-col overflow-y-auto">
+    <div v-if="activeTab" class="flex-1 flex flex-col overflow-hidden">
       
+      <!-- SUMMARY BAR Redesigned -->
       <div 
+        class="summary-bar shrink-0 cursor-pointer" 
         @click="openEditModal"
-        class="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between text-xs text-slate-500 shadow-xs shrink-0 cursor-pointer hover:bg-slate-50 transition-colors group relative"
+        :title="`Chi tiết phiếu đăng ký: ${activeTab.bookingName || 'Trống'}\nTrạng thái: ${activeTabStatusName || 'Trống'}\nNgày đến/đi: ${formatDateVi(activeTab.checkIn)} ~ ${formatDateVi(activeTab.checkOut)}\nĐặt cọc: ${(activeTab.deposit || 0).toLocaleString('vi-VN')} VND\nCông ty: ${activeTab.company || '---'}\nXác nhận: ${formatDateVi(activeTab.confirmDate) || '---'}\n\n-> Click để mở chi tiết thông tin đăng ký (Edit Modal)`"
       >
-        <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap">
-          <div>Tên đăng ký: <span class="text-slate-900 font-extrabold uppercase">{{ activeTab.bookingName || 'Trống' }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Trạng thái: <span class="font-extrabold uppercase" :class="activeTab.statusLabel === 'Allotment' ? 'text-orange-600' : 'text-sky-600'">{{ activeTabStatusName || 'Trống' }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Ngày đến: <span class="text-slate-700 font-extrabold">{{ formatDateVi(activeTab.checkIn) }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Ngày đi: <span class="text-slate-700 font-extrabold">{{ formatDateVi(activeTab.checkOut) }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Đặt cọc: <span class="text-slate-700 font-extrabold">{{ (activeTab.deposit || 0).toLocaleString('vi-VN') }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Công ty: <span class="text-slate-900 font-extrabold">{{ activeTab.company || '---' }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Thị trường: <span class="text-slate-700 font-extrabold">{{ activeTab.market || '---' }}</span></div>
-          <span class="text-slate-300">|</span>
-          <div>Xác nhận: <span class="text-slate-700 font-extrabold">{{ formatDateVi(activeTab.confirmDate) || '---' }}</span></div>
+        <div>
+          <span class="label">Tên đăng ký:</span>
+          <b class="uppercase font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
         </div>
+        <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
+        <div><span class="label">Ngày đến/đi:</span><b class="font-black text-slate-800">{{ formatDateVi(activeTab.checkIn) }} ~ {{ formatDateVi(activeTab.checkOut) }}</b></div>
+        <div><span class="label">Đặt cọc:</span><b class="font-black text-slate-800">{{ (activeTab.deposit || 0).toLocaleString('vi-VN') }}</b></div>
+        <div><span class="label">Công ty:</span><b class="font-black text-[#0f7d8c]">{{ activeTab.company || '---' }}</b></div>
+        <div><span class="label">Xác nhận:</span><b class="font-bold text-slate-500">{{ formatDateVi(activeTab.confirmDate) || '---' }}</b></div>
         
-        <!-- Hover View Details button -->
-        <button 
-          @click.stop="openEditModal"
-          class="opacity-0 group-hover:opacity-100 absolute right-4 px-3 py-1 bg-[#006bdb]/10 text-[#006bdb] rounded text-sm font-bold transition-opacity cursor-pointer hover:bg-[#006bdb]/20"
-        >
-          Xem chi tiết
-        </button>
-      </div>
-
-      <!-- SEARCH & CONTROLS ACTION PANEL -->
-      <div class="px-5 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
-        <!-- Search bar with funnel filter icon -->
-        <div class="flex items-center gap-2 max-w-[280px] w-full bg-white border border-slate-200 rounded-md px-2 py-1 shadow-xs focus-within:ring-2 focus-within:ring-sky-500/20">
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input 
-            type="text" 
-            v-model="searchQuery" 
-            placeholder="Tìm kiếm..." 
-            class="border-none bg-transparent text-sm w-full focus:outline-none font-bold text-slate-700"
-          />
-        </div>
-
-        <!-- Right Side Toolbar Actions -->
-        <div class="flex items-center gap-3 text-sm">
-          <!-- Chức năng Dropdown -->
-          <div class="relative">
-            <button 
-              @click="showChucNangMenu = !showChucNangMenu"
-              @blur="setTimeout(() => showChucNangMenu = false, 200)"
-              class="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-md text-slate-700 font-bold hover:bg-slate-50 cursor-pointer shadow-xs"
-            >
-              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
-              </svg>
-              Chức năng
-              <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-            </button>
-            <div v-if="showChucNangMenu" class="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-xl py-1.5 z-50 text-slate-800 animate-in">
-              <!-- Group 1 -->
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Cập nhật')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Cập nhật
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Tự động gán phòng')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.042 9.152c.582.448 1.148.89 1.676 1.345m-7.464-.326c.55-.429 1.13-.855 1.733-1.272m-3.415 8.78c.325.27.7.472 1.103.587l3.666 1.05a2.25 2.25 0 002.593-1.61l1.05-3.667" />
-                </svg>
-                Tự động gán phòng
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Dịch vụ bổ sung')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.251 0-4.37-.6-6.195-1.655z" />
-                </svg>
-                Dịch vụ bổ sung
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('GIAO PHÒNG')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                </svg>
-                GIAO PHÒNG
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Nâng hạng phòng')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l7.5-7.5 7.5 7.5m-15 6l7.5-7.5 7.5 7.5" />
-                </svg>
-                Nâng hạng phòng
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Thông tin khách hàng')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm-1.2 6.452a8.3 8.3 0 00-2.4 0v.09a2.051 2.051 0 002.4 0v-.09z" />
-                </svg>
-                Thông tin khách hàng
-              </button>
-
-              <hr class="border-slate-100 my-1" />
-
-              <!-- Group 2 -->
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Gỡ số phòng')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122l9.37-9.37m-1.312 13.568l2.25-2.25a2.25 2.25 0 000-3.181l-6.254-6.254a2.25 2.25 0 00-3.181 0l-2.25 2.25a2.25 2.25 0 000 3.181l6.254 6.254a2.25 2.25 0 003.181 0z" />
-                </svg>
-                Gỡ số phòng
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-rose-600" @click="triggerAction('Hủy phòng')">
-                <svg class="w-4.5 h-4.5 text-rose-500 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Hủy phòng
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Xóa dịch vụ bổ sung')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M22 10.5h-6M19 7.5v3m0 0v3m-3-3h3m-3 0h-3" />
-                </svg>
-                Xóa dịch vụ bổ sung
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Khóa chuyển phòng')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                </svg>
-                Khóa chuyển phòng
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Mở chuyển phòng')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                </svg>
-                Mở chuyển phòng
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('Xuất Excel')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125V3.375c0-.621.504-1.125 1.125-1.125h11.25c.621 0 1.125.504 1.125 1.125v1.5m-13.5 15.25v-1.5m13.5-13.75v1.5M6.75 7.5h10.5m-10.5 3h10.5m-10.5 3h10.5m-10.5 3h10.5" />
-                </svg>
-                Xuất Excel
-              </button>
-
-              <hr class="border-slate-100 my-1" />
-
-              <!-- Group 3 -->
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('In phiếu đăng ký khách')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.82l-.24 2.18m11.04-2.18l.24 2.18m0 0a2.25 2.25 0 104.44-.11L21 11.25M17.76 16h-.008m0 0a2.25 2.25 0 11-4.44-.11L13.5 11.25" />
-                </svg>
-                In phiếu đăng ký khách
-              </button>
-              <button class="w-full text-left px-4 py-2 hover:bg-slate-50 cursor-pointer flex items-center text-sm font-bold text-slate-700" @click="triggerAction('In hoá đơn tạm')">
-                <svg class="w-4.5 h-4.5 text-slate-600 mr-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879-.659c1.171-.879 3.07-.879 4.242 0 1.172.879 1.172 2.303 0 3.182s-3.07.879-4.242 0a1.75 1.75 0 01-.504-.511m.504-10.13a1.75 1.75 0 00-.504-.511m0 0l-.879-.659m.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182s-3.07-.879-4.242 0a1.75 1.75 0 01-.504-.51" />
-                </svg>
-                In hoá đơn tạm
-              </button>
-            </div>
-          </div>
-
-          <!-- Bulk Selection Dropdown -->
-          <div class="flex items-center gap-1">
-            <span class="text-slate-500 font-medium">Chọn:</span>
-            <select v-model="selectedRoomAction" class="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 font-bold focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-xs">
-              <option value="0">0</option>
-              <option value="1">1</option>
-              <option value="all">Tất cả</option>
-            </select>
-          </div>
-
-          <!-- Filter Button -->
-          <button class="p-1.5 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer shadow-xs text-slate-500" title="Lọc">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
-            </svg>
-          </button>
-
-          <!-- Settings Column Selector Popover -->
-          <div class="relative inline-block text-left">
-            <button 
-              @click="showTableColumnSelector = !showTableColumnSelector" 
-              class="p-1.5 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer shadow-xs text-slate-500 flex items-center" 
-              title="Tùy chọn"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-            </button>
-            
-            <div 
-              v-if="showTableColumnSelector" 
-              class="fixed inset-0 z-40 cursor-default" 
-              @click="showTableColumnSelector = false"
-            ></div>
-            
-            <div 
-              v-if="showTableColumnSelector" 
-              class="absolute right-0 mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1.5 max-h-80 overflow-y-auto animate-in"
-            >
-              <div 
-                v-for="col in columns" 
-                :key="col.key" 
-                class="px-3.5 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-xs font-semibold text-slate-700 select-none cursor-grab active:cursor-grabbing"
-                draggable="true"
-                @dragstart="handleDragStart(col.key)"
-                @dragover.prevent
-                @drop="handleDrop(col.key)"
-              >
-                <!-- Drag Grip Icon -->
-                <span class="text-slate-400 font-bold cursor-grab active:cursor-grabbing text-xs leading-none">⋮⋮</span>
-                
-                <input 
-                  type="checkbox" 
-                  v-model="col.visible" 
-                  class="rounded text-[#006bdb] focus:ring-[#006bdb] w-3.5 h-3.5 cursor-pointer"
-                />
-                <span class="flex-1 cursor-pointer" @click="col.visible = !col.visible">{{ col.label }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Hoa don Button -->
-          <button 
-            @click="triggerAction('Hóa đơn')"
-            class="px-4 py-1.5 bg-[#006bdb] hover:bg-[#0052a3] text-white rounded-md text-sm font-bold shadow-xs transition-colors cursor-pointer ml-1"
-          >
-            Hóa đơn
-          </button>
+        <div class="flex items-center gap-2" style="margin-left:auto;">
+          <span class="view-detail-btn text-sky-600 hover:text-sky-800 text-[10.5px] font-black bg-sky-50 px-2.5 py-1.5 rounded border border-sky-200 inline-flex items-center gap-0.5 shadow-2xs select-none transition-all duration-200">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+            Xem chi tiết
+          </span>
+          <button class="chip-plain primary font-black" style="border-radius: 20px; padding: 7px 16px; background: var(--teal) !important; color: #fff !important;" @click.stop="triggerAction('Hóa đơn')">Hoá đơn</button>
         </div>
       </div>
 
-      <!-- ROOMS DATA TABLE LIST -->
-      <div class="flex-1 p-5 overflow-y-auto overflow-x-hidden">
-        <div class="bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto min-h-[300px]">
+
+
+      <!-- MAIN LAYOUT -->
+      <div class="main-layout flex-1 flex min-h-0 relative bg-[#eef1f5]">
+        <!-- ROOMS DATA TABLE LIST -->
+        <div class="table-wrap flex-1 min-h-[300px]" id="tableWrap" ref="tableWrapRef" @scroll="handleTableScroll">
           <table class="w-full text-left border-collapse text-xs table-fixed min-w-[2450px]">
+            <colgroup>
+              <col style="width: 35px" />
+              <col style="width: 50px" />
+              <col style="width: 45px" />
+              <col v-for="col in columns.filter(c => c.visible)" :key="col.key" :style="{ width: getColWidthPx(col) }" />
+              <col style="width: 120px" />
+            </colgroup>
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold select-none whitespace-nowrap h-9 text-xs">
+                <th class="p-2 border-r border-slate-200 text-center w-[35px]"></th>
                 <th class="p-2 border-r border-slate-200 text-center w-[50px]">
                   <input type="checkbox" @change="handleRowSelectAll" :checked="selectedRows.length === activeTab.rooms.length && activeTab.rooms.length > 0" />
                 </th>
@@ -1914,16 +2424,19 @@ async function triggerAction(actionName) {
               <!-- Collapsible Section: Tình trạng Đăng Ký (3) -->
               <tr class="bg-slate-100/60 border-b border-slate-200 font-bold h-9 text-gray-900">
                 <td class="p-2 border-r border-slate-200 text-center">
-                  <span 
+                  <button 
                     @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus" 
-                    class="cursor-pointer text-slate-500 hover:text-slate-800 px-1 font-black text-sm select-none"
+                    class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
+                    style="font-size: 13px; line-height: 1;"
                   >
-                    {{ collapsedSections.registrationStatus ? '+' : '-' }}
-                  </span>
+                    {{ collapsedSections.registrationStatus ? '+' : '−' }}
+                  </button>
                 </td>
-                <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2">
+                <td class="p-2 border-r border-slate-200 text-center">
+                  <input type="checkbox" :checked="selectRangeVal === roomsTotalSummary.count" disabled />
+                </td>
+                <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2">
                   <div class="flex items-center gap-2.5">
-                    <input type="checkbox" :checked="selectRangeVal === roomsTotalSummary.count" disabled />
                     <span class="text-gray-900 text-xs font-bold uppercase tracking-wider">Tình trạng: Đăng ký ({{ roomsTotalSummary.count }})</span>
                     <!-- Range Slider for room selection -->
                     <div class="flex items-center gap-2 ml-3">
@@ -1950,14 +2463,16 @@ async function triggerAction(actionName) {
                   <!-- Group Header Row -->
                   <tr class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900">
                     <td class="p-2 border-r border-slate-200 text-center">
-                      <span 
+                      <button 
                         @click="toggleGroupCollapse(typeName)" 
-                        class="cursor-pointer text-slate-400 hover:text-slate-700 px-1 select-none"
+                        class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
+                        style="font-size: 13px; line-height: 1;"
                       >
-                        {{ collapsedSections[typeName] ? '+' : '-' }}
-                      </span>
+                        {{ collapsedSections[typeName] ? '+' : '−' }}
+                      </button>
                     </td>
-                    <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider">
+                    <td class="p-2 border-r border-slate-200 text-center"></td>
+                    <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider">
                       {{ typeName }} ({{ roomsInGroup.length }})
                     </td>
                     <td class="sticky right-0 bg-[#f8fafc] border-l border-slate-200 z-10"></td>
@@ -1965,20 +2480,33 @@ async function triggerAction(actionName) {
 
                   <!-- Rooms in Group -->
                   <template v-if="!collapsedSections[typeName]">
-                    <tr 
-                      v-for="(room, idx) in roomsInGroup" 
-                      :key="room.id"
-                      class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors h-9 group"
-                    >
-                      <td class="p-2 border-r border-slate-200 text-center">
-                        <input type="checkbox" :checked="selectedRows.includes(room.id)" @change="handleRowSelect(room.id)" />
-                      </td>
-                      <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
-                      <td v-for="col in columns.filter(c => c.visible)" 
-                          :key="col.key" 
-                          class="p-2 border-r border-slate-200" 
-                          :class="[col.center ? 'text-center' : '', col.right ? 'text-right' : '']"
+                    <template v-for="(room, idx) in roomsInGroup" :key="room.id">
+                      <tr 
+                        class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
+                        :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
+                        @click="handleRowSelect(room.id)"
+                        @dblclick.stop="openServicesModal(room)"
+                        :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('vi-VN')}đ\nDouble-click → Dịch vụ bổ sung`"
                       >
+                        <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                          <button 
+                            @click="toggleRoomExpand(room)"
+                            class="w-5 h-5 flex items-center justify-center rounded transition-colors text-white font-bold select-none cursor-pointer"
+                            :class="expandedRooms.includes(room.id) ? 'bg-[#ff9e3b] hover:bg-[#e08422]' : 'bg-[#8cc3f3] hover:bg-[#6baae6]'"
+                            style="font-size: 13px; line-height: 1;"
+                          >
+                            {{ expandedRooms.includes(room.id) ? '−' : '+' }}
+                          </button>
+                        </td>
+                        <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                          <input type="checkbox" :checked="selectedRows.includes(room.id)" @change="handleRowSelect(room.id)" />
+                        </td>
+                        <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
+                        <td v-for="col in columns.filter(c => c.visible)" 
+                            :key="col.key" 
+                            class="p-2 border-r border-slate-200" 
+                            :class="[col.center ? 'text-center' : '', col.right ? 'text-right' : '']"
+                        >
                         <template v-if="col.key === 'type'">
                           <span class="text-gray-900 font-semibold">{{ room.type }}</span>
                         </template>
@@ -1986,12 +2514,22 @@ async function triggerAction(actionName) {
                           <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomNumber'">
-                          <input 
+                          <select 
                             v-if="isEditing" 
-                            type="text" 
                             v-model="room.roomNumber" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
-                          />
+                            @focus="loadVacantRoomsForRoom(room)"
+                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
+                          >
+                            <option value="">— Gỡ số phòng —</option>
+                            <option v-if="room.roomNumber" :value="room.roomNumber">{{ room.roomNumber }}</option>
+                            <option 
+                              v-for="vRoom in getVacantRoomsList(room)" 
+                              :key="vRoom.room_number" 
+                              :value="vRoom.room_number"
+                            >
+                              {{ vRoom.room_number }} ({{ vRoom.status }})
+                            </option>
+                          </select>
                           <span v-else>{{ room.roomNumber || '-' }}</span>
                         </template>
                         <template v-else-if="col.key === 'checkIn'">
@@ -2064,7 +2602,7 @@ async function triggerAction(actionName) {
                           <span v-else>{{ room.children }}</span>
                         </template>
                         <template v-else-if="col.key === 'childBreakfast'">
-                          <button class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                          <button @click.stop="openServicesModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'breakfast'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -2073,7 +2611,7 @@ async function triggerAction(actionName) {
                           </label>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
-                          <button class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                          <button @click.stop="openServicesModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
                           <span class="text-gray-900 font-semibold">{{ room.extraBedPrice.toLocaleString('vi-VN') }}</span>
@@ -2085,7 +2623,7 @@ async function triggerAction(actionName) {
                           </label>
                         </template>
                         <template v-else-if="col.key === 'specialRequests'">
-                          <button class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Yêu cầu đặc biệt</button>
+                          <button @click.stop="openServicesModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Yêu cầu đặc biệt</button>
                         </template>
                         <template v-else-if="col.key === 'arrivalTime'">
                           <input 
@@ -2170,54 +2708,285 @@ async function triggerAction(actionName) {
                           />
                           <span v-else>{{ room.roomCode || '-' }}</span>
                         </template>
-                      </td>
-                      <td class="p-2 text-right text-gray-900 font-semibold sticky right-0 bg-white group-hover:bg-slate-50/50 border-l border-slate-200 z-10">{{ (Number(room.total) || 0).toLocaleString('vi-VN') }}</td>
-                    </tr>
+                        </td>
+                        <td class="p-2 text-right text-gray-900 font-semibold sticky right-0 bg-white group-hover:bg-sky-50/30 border-l border-slate-200 z-10" @click.stop @dblclick.stop="openServicesModal(room)">{{ (Number(room.total) || 0).toLocaleString('vi-VN') }}</td>
+                      </tr>
+
+                      <!-- Expanded Services Row -->
+                      <tr v-if="expandedRooms.includes(room.id)" :key="`services-${room.id}`" class="bg-slate-50/30">
+                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                        <td :colspan="columns.filter(c => c.visible).length + 2" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left">
+                          <div class="max-w-[750px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
+                            <table class="w-full text-left border-collapse text-[11px] table-fixed">
+                              <colgroup>
+                                <col style="width: 100px;" />
+                                <col style="width: 200px;" />
+                                <col style="width: 110px;" />
+                                <col style="width: 110px;" />
+                                <col style="width: 70px;" />
+                                <col style="width: 100px;" />
+                                <col style="width: 80px;" />
+                              </colgroup>
+                              <thead>
+                                <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 select-none">
+                                  <th class="p-2 border-r border-slate-200">Ngày</th>
+                                  <th class="p-2 border-r border-slate-200">Dịch vụ</th>
+                                  <th class="p-2 border-r border-slate-200">Mã Giá Phòng</th>
+                                  <th class="p-2 border-r border-slate-200">Tăng/giảm giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
+                                  <th class="p-2 border-r border-slate-200 text-right">Giá</th>
+                                  <th class="p-2 text-center">GIT/FIT</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr 
+                                  v-for="svc in getRoomDisplayServices(room)" 
+                                  :key="svc.id" 
+                                  class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold"
+                                >
+                                  <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
+                                  <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
+                                  <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity || 1 }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('vi-VN') }}</td>
+                                  <td class="p-2 text-center">
+                                    <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
                   </template>
                 </template>
               </template>
             </tbody>
-            <!-- Footer row with summaries -->
-            <tfoot class="border-t border-slate-300 font-bold text-gray-900 bg-slate-100 select-none">
-              <tr class="h-9">
-                <td class="p-2 border-r border-slate-200"></td>
-                <td class="p-2 border-r border-slate-200"></td>
-                <td v-for="col in columns.filter(c => c.visible)" 
-                    :key="col.key" 
-                    class="p-2 border-r border-slate-200 font-bold" 
-                    :class="[col.center ? 'text-center' : '', col.right ? 'text-right' : '']"
-                >
-                  <template v-if="col.key === 'type'">
-                    Tổng: {{ roomsTotalSummary.count }}
-                  </template>
-                  <template v-else-if="col.key === 'price'">
-                    {{ roomsTotalSummary.priceSum.toLocaleString('vi-VN') }}
-                  </template>
-                  <template v-else-if="col.key === 'adults'">
-                    {{ roomsTotalSummary.adults }}
-                  </template>
-                  <template v-else-if="col.key === 'babies'">
-                    {{ roomsTotalSummary.babies }}
-                  </template>
-                  <template v-else-if="col.key === 'children'">
-                    {{ roomsTotalSummary.children }}
-                  </template>
-                  <template v-else-if="col.key === 'extraBedPrice'">
-                    {{ roomsTotalSummary.extraBed.toLocaleString('vi-VN') }}
-                  </template>
-                  <template v-else>
-                    -
-                  </template>
-                </td>
-                <td class="p-2 text-right text-sky-700 font-bold text-sm sticky right-0 bg-[#f1f5f9] border-l border-slate-200 z-10 shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">
-                  {{ roomsTotalSummary.total.toLocaleString('vi-VN') }}
-                </td>
-              </tr>
-            </tfoot>
+          </table>
+        </div>
+
+        <!-- ACTION DOCK (Redesigned Sidebar Dock) -->
+        <aside class="dock shrink-0" id="dock">
+          <div class="dock-head"><span class="dot"></span>Chức năng</div>
+
+          <div class="dock-group">
+            <div class="dock-group-label">Cập nhật đăng ký</div>
+            <div class="dock-item" @click="triggerAction('Cập nhật')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>
+              </span>
+              <span class="lbl">Cập nhật</span>
+            </div>
+            <div class="dock-item" @click="triggerAction('Tự động gán phòng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h.01M15 9h.01M9 15h6"/></svg>
+              </span>
+              <span class="lbl">Tự động gán phòng</span>
+            </div>
+            <div class="dock-item" @click="triggerAction('Nâng hạng phòng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>
+              </span>
+              <span class="lbl">Nâng hạng phòng</span>
+            </div>
+            <div class="dock-item" @click="triggerAction('Thông tin khách hàng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0114 0v1"/></svg>
+              </span>
+              <span class="lbl">Thông tin khách hàng</span>
+            </div>
+          </div>
+
+          <div class="dock-group">
+            <div class="dock-group-label">Giao phòng</div>
+            <div 
+              class="dock-item" 
+              :class="{ 'opacity-50 pointer-events-none cursor-not-allowed': isCheckInDisabled }" 
+              @click="!isCheckInDisabled && triggerAction('GIAO PHÒNG')"
+            >
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>
+              </span>
+              <span class="lbl">Giao phòng (Check-in)</span>
+            </div>
+            <div class="dock-item" @click="triggerAction('Gỡ số phòng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </span>
+              <span class="lbl">Gỡ số phòng</span>
+            </div>
+            <div class="dock-item danger" @click="triggerAction('Hủy phòng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><circle cx="12" cy="12" r="9"/><path d="M9 15l6-6M9 9l6 6"/></svg>
+              </span>
+              <span class="lbl">Hủy phòng</span>
+            </div>
+          </div>
+
+          <div class="dock-group">
+            <div class="dock-group-label">Dịch vụ bổ sung</div>
+            <div class="dock-item" @click="triggerAction('Dịch vụ bổ sung')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+              </span>
+              <span class="lbl">Thêm dịch vụ bổ sung</span>
+            </div>
+            <div class="dock-item danger" @click="triggerAction('Xóa dịch vụ bổ sung')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+              </span>
+              <span class="lbl">Xóa dịch vụ bổ sung</span>
+            </div>
+          </div>
+
+          <div class="dock-group">
+            <div class="dock-group-label">Chọn hàng</div>
+            <div class="dock-item" @click="selectedRows = activeTab?.rooms?.map(r => r.id) || []">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="11" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><path d="M10 7h11M10 13h11M10 19h11"/></svg>
+              </span>
+              <span class="lbl">Chọn tất cả</span>
+            </div>
+            <div class="dock-item" @click="selectedRows = []">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="11" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><path d="M10 7h11M10 13h5M10 19h8"/><path d="M19 16l3 3-3 3" stroke-linecap="round"/></svg>
+              </span>
+              <span class="lbl">Bỏ chọn tất cả</span>
+            </div>
+          </div>
+
+          <div class="dock-group">
+            <div class="dock-group-label">Chuyển phòng</div>
+            <div class="dock-item" @click="triggerAction('Khóa chuyển phòng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>
+              </span>
+              <span class="lbl">Khóa chuyển phòng</span>
+            </div>
+            <div class="dock-item" @click="triggerAction('Mở chuyển phòng')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V9a4 4 0 018 0"/></svg>
+              </span>
+              <span class="lbl">Mở chuyển phòng</span>
+            </div>
+          </div>
+
+          <div class="dock-group">
+            <div class="dock-group-label">Xuất / In ấn</div>
+            <div class="dock-item" @click="triggerAction('Xuất Excel')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M8 3H4v18h16V9l-6-6H8z"/><path d="M8 13l2 2 4-4"/></svg>
+              </span>
+              <span class="lbl">Xuất Excel</span>
+            </div>
+            <div class="dock-item expandable" @click="isSubListOpen = !isSubListOpen">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
+              </span>
+              <span class="lbl">In phiếu đăng ký khách<br><span class="sub-current">Đang chọn: {{ isPrintPrice ? 'Hiện giá' : 'Không hiện giá' }}</span></span>
+              <span class="chevron" :class="{ open: isSubListOpen }">›</span>
+            </div>
+            <div class="sub-list" :class="{ open: isSubListOpen }">
+              <div class="sub-item" :class="{ selected: isPrintPrice }" @click.stop="isPrintPrice = true"><span class="sub-dot"></span>Hiện giá</div>
+              <div class="sub-item" :class="{ selected: !isPrintPrice }" @click.stop="isPrintPrice = false"><span class="sub-dot"></span>Không hiện giá</div>
+            </div>
+            <div class="dock-item" @click="triggerAction('In hoá đơn tạm')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
+              </span>
+              <span class="lbl">In hoá đơn tạm</span>
+            </div>
+          </div>
+
+          <div class="dock-foot" @click="triggerAction('Hóa đơn')">
+            <div class="dock-invoice">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+              <span class="lbl">Hoá đơn</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- PAGE FOOTER (Redesigned with Synchronized Horizontal Scroll) -->
+      <div class="page-footer shrink-0">
+        <div class="footer-scroll" id="footerScroll" ref="footerScrollRef">
+          <table class="footer-table" style="min-width: 2450px; table-layout: fixed;">
+            <colgroup>
+              <col style="width: 50px" />
+              <col style="width: 45px" />
+              <col v-for="col in columns.filter(c => c.visible)" :key="col.key" :style="{ width: getColWidthPx(col) }" />
+              <col style="width: 120px" />
+            </colgroup>
+            <tr class="h-9">
+              <td class="p-2 border-r border-slate-200 text-center w-[50px]"></td>
+              <td class="p-2 border-r border-slate-200 text-center w-[45px]"></td>
+              <td v-for="col in columns.filter(c => c.visible)" 
+                  :key="col.key" 
+                  class="p-2 border-r border-slate-200 font-bold" 
+                  :class="[col.width, col.center ? 'text-center' : '', col.right ? 'text-right' : '']"
+              >
+                <template v-if="col.key === 'type'">
+                  Tổng cộng: {{ roomsTotalSummary.count }}
+                </template>
+                <template v-else-if="col.key === 'price'">
+                  {{ roomsTotalSummary.priceSum.toLocaleString('vi-VN') }}
+                </template>
+                <template v-else-if="col.key === 'adults'">
+                  {{ roomsTotalSummary.adults }}
+                </template>
+                <template v-else-if="col.key === 'babies'">
+                  {{ roomsTotalSummary.babies }}
+                </template>
+                <template v-else-if="col.key === 'children'">
+                  {{ roomsTotalSummary.children }}
+                </template>
+                <template v-else-if="col.key === 'extraBedPrice'">
+                  {{ roomsTotalSummary.extraBed.toLocaleString('vi-VN') }}
+                </template>
+                <template v-else>
+                  -
+                </template>
+              </td>
+              <td class="p-2 text-right text-sky-700 font-bold text-sm sticky right-0 bg-[#dde3ea] border-l border-slate-200 z-10 w-[120px] shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">
+                {{ roomsTotalSummary.total.toLocaleString('vi-VN') }}
+              </td>
+            </tr>
           </table>
         </div>
       </div>
 
+    </div>
+
+    <!-- GLOBAL SYSTEM SEARCH OVERLAY -->
+    <div class="global-search-overlay" :class="{ show: isGlobalSearchOpen }" @click="closeGlobalSearch">
+      <div class="global-search-modal animate-in" @click.stop>
+        <div class="gs-input-row">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+          <input type="text" id="gsInput" v-model="globalSearchQuery" placeholder="Tìm phòng, tên khách, mã booking... trên toàn hệ thống" />
+          <button class="gs-close" @click="closeGlobalSearch">✕</button>
+        </div>
+        <div class="gs-hint">Tìm kiếm này quét toàn bộ dữ liệu hệ thống — không giới hạn trong booking đang mở.</div>
+        <div class="gs-results border-t border-slate-100">
+          <div class="gs-section-label font-black text-xs text-slate-500 mb-2" v-if="globalSearchResults.length > 0">Kết quả tìm kiếm</div>
+          <div class="gs-section-label font-bold text-slate-400 py-4 text-center italic" v-else-if="globalSearchQuery.trim().length >= 2">Không tìm thấy kết quả phù hợp</div>
+          <div class="gs-section-label font-bold text-slate-400 py-4 text-center italic" v-else>Nhập ít nhất 2 ký tự để tìm kiếm...</div>
+          
+          <div 
+            v-for="b in globalSearchResults" 
+            :key="b.id" 
+            class="gs-result border-b border-slate-50 last:border-none"
+            @click="handleGlobalSearchResultClick(b)"
+          >
+            <span class="gs-tag guest">Booking</span> 
+            <span class="font-extrabold text-slate-800">{{ b.booking_code }}</span> 
+            · {{ b.booking_name }} · {{ b.company_name || 'Khách lẻ' }}
+            <span class="gs-booking font-bold text-slate-500">Đến: {{ formatDateVi(b.check_in) }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- MOCKUP CREATE REGISTRATION MODAL (Image 2 Match) -->
@@ -3185,10 +3954,197 @@ async function triggerAction(actionName) {
         </div>
       </div>
     </Teleport>
+
+    <!-- DỊCH VỤ BỔ SUNG MODAL (Screenshot 4 Match) -->
+    <Teleport to="body">
+      <div 
+        v-if="isServicesModalOpen" 
+        class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+      >
+        <div 
+          class="bg-white rounded-xl shadow-2xl w-full max-w-[1200px] overflow-hidden border border-gray-300 flex flex-col max-h-[85vh]"
+        >
+          <!-- MODAL HEADER -->
+          <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 shrink-0 select-none">
+            <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+                <i class="fa-solid fa-bell-concierge text-blue-300"></i>
+                <span>Dịch vụ bổ sung - PHÒNG {{ servicesModalRoom?.roomNumber || 'CHƯA GÁN' }} ({{ servicesModalRoom?.type }})</span>
+            </div>
+            <div class="flex items-center space-x-2 text-gray-300">
+                <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="isServicesModalOpen = false">
+                  <i class="fa-solid fa-xmark text-red-400"></i>
+                </button>
+            </div>
+          </div>
+
+          <!-- MODAL BODY -->
+          <div class="flex flex-1 overflow-hidden min-h-[450px]">
+            <!-- LEFT PANEL: Dịch vụ -->
+            <div class="w-1/4 border-r border-slate-200 flex flex-col p-3 bg-slate-50/50">
+              <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2">Dịch vụ</div>
+              
+              <!-- Search box -->
+              <div class="relative mb-3 shrink-0">
+                <input 
+                  type="text" 
+                  v-model="servicesModalSearch" 
+                  placeholder="Tìm kiếm mã, tên..." 
+                  class="w-full pl-7 pr-3 py-1 bg-white border border-slate-200 rounded-md text-[11px] focus:outline-none focus:ring-1 focus:ring-sky-500"
+                />
+                <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-[11px]"></i>
+              </div>
+
+              <!-- Services list -->
+              <div class="flex-1 overflow-y-auto space-y-1 pr-1">
+                <label 
+                  v-for="svc in filteredHotelServices" 
+                  :key="svc.code" 
+                  class="flex items-start gap-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer transition text-[11px] text-slate-700"
+                >
+                  <input 
+                    type="checkbox" 
+                    :checked="selectedServiceCodes.includes(svc.code)"
+                    @change="e => handleServiceCheckboxChange(svc, e.target.checked)"
+                    class="mt-0.5"
+                  />
+                  <div>
+                    <div class="font-bold text-slate-800">{{ svc.name }}</div>
+                    <div class="text-[9px] text-slate-400 font-mono">{{ svc.code }} - {{ Number(svc.price).toLocaleString('vi-VN') }} VND</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- MIDDLE PANEL: Ngày -->
+            <div class="w-[15%] border-r border-slate-200 flex flex-col p-3 bg-slate-50/50">
+              <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2">Ngày</div>
+              
+              <!-- Select All dates checkbox -->
+              <label class="flex items-center gap-2 p-1.5 border-b border-slate-200 font-bold cursor-pointer text-[11px] text-slate-700 mb-2 shrink-0">
+                <input 
+                  type="checkbox" 
+                  :checked="checkedDates.length === stayDatesList.length" 
+                  @change="toggleAllDates"
+                />
+                <span>Tất cả</span>
+              </label>
+
+              <!-- Stay dates list -->
+              <div class="flex-1 overflow-y-auto space-y-1 pr-1">
+                <label 
+                  v-for="d in stayDatesList" 
+                  :key="d" 
+                  class="flex items-center gap-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer transition text-[11px] text-slate-700 font-mono"
+                >
+                  <input 
+                    type="checkbox" 
+                    :value="d" 
+                    v-model="checkedDates"
+                  />
+                  <span>{{ formatDateShort(d) }}</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- RIGHT PANEL: Dịch vụ chọn -->
+            <div class="w-[60%] flex flex-col p-3 bg-white">
+              <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2 shrink-0">Chi tiết dịch vụ bổ sung</div>
+
+              <!-- Table -->
+              <div class="flex-1 overflow-y-auto border border-slate-200 rounded-lg">
+                <table class="w-full border-collapse text-left text-[11px]">
+                  <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold h-8">
+                      <th class="p-2 pl-3">Dịch vụ</th>
+                      <th class="p-2 text-center w-24">Số lượng</th>
+                      <th class="p-2 text-right w-36">Đơn giá (VND)</th>
+                      <th class="p-2 text-center w-28">FIT/GIT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr 
+                      v-for="(item, index) in serviceItems" 
+                      :key="item.service_code"
+                      class="border-b border-slate-100 hover:bg-slate-50/50 h-10 align-middle font-medium"
+                    >
+                      <td class="p-2 pl-3 font-bold text-slate-800">
+                        {{ item.service_name }}
+                        <span class="block text-[9px] text-slate-400 font-mono font-normal">{{ item.service_code }}</span>
+                      </td>
+                      <td class="p-2 text-center">
+                        <input 
+                          type="number" 
+                          v-model.number="item.quantity" 
+                          min="0.01" 
+                          step="1"
+                          class="w-16 border border-slate-200 rounded-md px-1 py-0.5 text-center font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        />
+                      </td>
+                      <td class="p-2 text-right">
+                        <input 
+                          type="text" 
+                          :value="formatCurrencyInput(item.rate)" 
+                          @input="e => item.rate = cleanCurrencyValue(e.target.value)"
+                          class="w-28 border border-slate-200 rounded-md px-2 py-0.5 text-right font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        />
+                      </td>
+                      <td class="p-2 text-center">
+                        <!-- Toggle FIT/GIT -->
+                        <div class="flex items-center justify-center space-x-1.5">
+                          <span class="text-[9px] font-bold" :class="item.is_room ? 'text-sky-500' : 'text-slate-400'">FIT</span>
+                          <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
+                            <input 
+                              type="checkbox" 
+                              v-model="item.is_room" 
+                              :id="'fit-toggle-' + index"
+                              class="sr-only peer"
+                            />
+                            <label 
+                              :for="'fit-toggle-' + index"
+                              class="block overflow-hidden h-4 rounded-full bg-slate-300 peer-checked:bg-sky-500 cursor-pointer transition-colors duration-200"
+                            ></label>
+                            <span class="absolute block w-3 h-3 rounded-full bg-white top-0.5 left-0.5 peer-checked:translate-x-4 transition-transform duration-200 pointer-events-none"></span>
+                          </div>
+                          <span class="text-[9px] font-bold" :class="!item.is_room ? 'text-sky-500' : 'text-slate-400'">GIT</span>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-if="serviceItems.length === 0">
+                      <td colspan="4" class="p-8 text-center text-slate-400 italic">
+                        Chưa chọn dịch vụ nào. Hãy tích chọn dịch vụ ở cột bên trái!
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODAL FOOTER -->
+          <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 flex items-center justify-between">
+            <div class="bg-[#e2e8f0] px-4 py-1.5 rounded-lg text-slate-700 font-extrabold text-xs shadow-inner">
+              Tổng tiền: <span class="text-slate-900 ml-1 font-black">{{ servicesTotalAmount.toLocaleString('vi-VN') }} VND</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button 
+                @click="saveServices" 
+                class="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer shadow-sm flex items-center space-x-1.5 transition border-none"
+              >
+                <i class="fa-solid fa-floppy-disk"></i>
+                <span>Lưu</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Global Loading Overlay -->
+    <LoadingOverlay :show="isLoading" />
   </div>
 </template>
 
-<style scoped>
+<style>
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
@@ -3245,5 +4201,765 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 input[type="number"] {
   -moz-appearance: textfield;
+}
+
+:root {
+  --navy: #12233d;
+  --navy-2: #1b3357;
+  --navy-3: #22406b;
+  --teal: #0f7d8c;
+  --teal-light: #e4f4f6;
+  --ink: #1c2733;
+  --ink-soft: #5c6b7a;
+  --line: #dde3ea;
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --amber: #c8862a;
+  --amber-bg: #fbf1e2;
+  --green: #1f8a52;
+  --green-bg: #e7f6ee;
+  --danger: #c1403f;
+  --danger-bg: #fbeaea;
+  --blue: #1c5aa6;
+  --blue-bg: #eaf3ff;
+}
+
+/* ---------- TOP BAR ---------- */
+.topbar {
+  background: var(--navy);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+}
+.booking-tab {
+  background: var(--navy-2);
+  color: #8fa6c4 !important;
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.booking-tab.active {
+  background: var(--navy-3) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.booking-tab:hover {
+  background: var(--navy-3);
+  color: #fff !important;
+}
+.booking-tab .x {
+  color: #9db3d1;
+  font-size: 13px;
+  cursor: pointer;
+}
+.booking-tab .x:hover {
+  color: #ffb8b6;
+}
+.add-booking-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  color: #c7d2e0 !important;
+  padding: 8px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.add-booking-btn:hover {
+  background: var(--teal);
+  border-color: var(--teal);
+  border-style: solid;
+  color: #fff !important;
+}
+.add-booking-btn svg {
+  flex: none;
+}
+.spacer {
+  flex: 1;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #dbe4ee !important;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.btn.blue {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff !important;
+}
+.btn.red {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff !important;
+}
+.icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.global-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #dbe4ee !important;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.global-search-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff !important;
+}
+.topbar-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 2px 4px;
+}
+
+.global-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 20, 35, 0.5);
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 100;
+  padding-top: 90px;
+  backdrop-filter: blur(2px);
+}
+.global-search-overlay.show {
+  display: flex;
+}
+.global-search-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 650px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+.gs-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+.gs-input-row input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: var(--ink);
+}
+.gs-close {
+  border: none;
+  background: none;
+  font-size: 15px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.gs-hint {
+  padding: 10px 18px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  background: #f8f9fb;
+  border-bottom: 1px solid var(--line);
+}
+.gs-results {
+  padding: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.gs-section-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 8px 10px 4px;
+}
+.gs-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.gs-result:hover {
+  background: #f4f7f9;
+}
+.gs-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+.gs-tag.room {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+.gs-tag.guest {
+  background: var(--teal-light);
+  color: #0c6a77;
+}
+.gs-booking {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+/* ---------- SUMMARY ---------- */
+.summary-bar {
+  background: var(--panel);
+  padding: 10px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.summary-bar:hover {
+  background: #f1f5f9;
+  border-bottom-color: #cbd5e1;
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.02);
+}
+.summary-bar .view-detail-btn {
+  opacity: 0;
+  transform: translateX(8px);
+  pointer-events: none;
+  transition: all 0.2s ease-in-out;
+}
+.summary-bar:hover .view-detail-btn {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+.summary-bar .label {
+  color: var(--ink-soft);
+  margin-right: 4px;
+}
+.summary-bar b {
+  font-weight: 700;
+  color: var(--ink);
+}
+.topbar-service-select {
+  max-width: 140px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  padding-right: 20px !important;
+}
+.topbar-service-select option {
+  background-color: var(--navy) !important;
+  color: #fff !important;
+}
+.status-pill {
+  background: var(--green-bg);
+  color: var(--green);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 11.5px;
+  text-transform: uppercase;
+}
+
+/* ---------- SEARCH + QUICK ACTIONS ROW ---------- */
+.quick-row {
+  background: var(--panel);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #fff;
+  min-width: 240px;
+}
+.search-box input {
+  border: none;
+  outline: none;
+  font-size: 12px;
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+}
+.search-box input::placeholder {
+  color: var(--ink-soft);
+}
+.quick-row .right-group {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chip-plain {
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chip-plain:hover {
+  background: #f8fafc;
+}
+.chip-plain.primary {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+.chip-plain.primary:hover {
+  background: #0c6a77;
+}
+
+/* ---------- MAIN LAYOUT ---------- */
+.main-layout {
+  display: flex;
+  position: relative;
+}
+
+/* ---------- TABLE ---------- */
+.table-wrap {
+  background: var(--panel);
+  margin: 14px 16px 90px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  flex: 1;
+  min-width: 0;
+}
+.table-wrap table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f5f7fa;
+  color: var(--ink-soft);
+  font-weight: 700;
+  font-size: 10.8px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 9px 7px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid rgba(18, 35, 61, 0.05);
+  text-align: left;
+  white-space: nowrap;
+}
+.table-wrap tbody td {
+  padding: 7px;
+  border-bottom: 1px solid #eef1f5;
+  border-right: 1px solid rgba(18, 35, 61, 0.05);
+  white-space: nowrap;
+  vertical-align: middle;
+  font-weight: 500 !important;
+  color: #475569 !important;
+}
+.table-wrap tbody td span,
+.table-wrap tbody td input,
+.table-wrap tbody td select {
+  font-weight: 500 !important;
+  color: #475569 !important;
+}
+.table-wrap tbody tr:hover {
+  background: #f7fbfc;
+}
+tr.group-row td {
+  background: #f0f4f8;
+  font-weight: 700;
+  color: var(--navy-2);
+  padding: 8px 7px;
+}
+tr.status-row td {
+  background: #e4eaf1;
+  font-weight: 700;
+  color: var(--navy);
+  padding: 9px 7px;
+  border-bottom: 1px solid var(--line);
+}
+.toggle-mini {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #c3cdd8;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: #fff;
+  cursor: pointer;
+}
+.page-footer {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  z-index: 30;
+  background: #dde3ea;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 -6px 16px rgba(18, 35, 61, 0.14);
+  overflow: hidden;
+}
+.footer-scroll {
+  overflow: hidden;
+}
+table.footer-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+table.footer-table td {
+  padding: 10px 7px;
+  font-weight: 700;
+  color: var(--navy-2);
+  border-right: 1px solid rgba(18, 35, 61, 0.06);
+  white-space: nowrap;
+}
+table.footer-table td.f-total {
+  text-align: right;
+  color: var(--navy);
+  font-size: 13px;
+}
+.stepper-mini {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  overflow: hidden;
+  background: #fff;
+}
+.stepper-mini span {
+  width: 24px;
+  text-align: center;
+  font-size: 12px;
+}
+.stepper-mini button {
+  width: 16px;
+  border: none;
+  background: #f5f7fa;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  height: 22px;
+}
+.price-input {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 7px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  width: 140px;
+  background: #fbfcfd;
+}
+.chip {
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+.chip.blue {
+  background: var(--blue-bg);
+  border-color: #bcd7f7;
+  color: var(--blue);
+}
+.chip.teal {
+  background: var(--teal-light);
+  border-color: #bfe3e7;
+  color: #0c6a77;
+}
+.switch {
+  width: 30px;
+  height: 16px;
+  border-radius: 20px;
+  background: var(--teal);
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+}
+.switch.off {
+  background: #d7dde3;
+}
+.switch.off::after {
+  left: 2px;
+  right: auto;
+}
+.vacant {
+  color: var(--green);
+  font-weight: 700;
+}
+.stt {
+  color: var(--ink-soft);
+}
+.guest {
+  font-weight: 600;
+}
+.amount {
+  font-weight: 700;
+  color: var(--navy-2);
+}
+
+/* ---------- ACTION DOCK ---------- */
+.dock {
+  position: sticky;
+  top: 14px;
+  align-self: flex-start;
+  margin: 14px 16px 90px 0;
+  width: 52px;
+  background: var(--navy);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: width 0.22s ease;
+  z-index: 40;
+  box-shadow: 0 4px 14px rgba(18, 35, 61, 0.18);
+}
+.dock:hover {
+  width: 246px;
+}
+.dock-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+.dock-head .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--teal);
+  flex: none;
+}
+.dock-group {
+  padding: 5px 8px 1px 8px;
+}
+.dock-group-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: #7d93b3;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.dock:hover .dock-group-label {
+  opacity: 1;
+  transition-delay: 0.08s;
+}
+.dock-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: #c7d2e0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dock-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.dock-item.danger:hover {
+  background: rgba(193, 64, 63, 0.25);
+  color: #ffb8b6;
+}
+.dock-item .di {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dock-item .lbl {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+.dock:hover .dock-item .lbl {
+  opacity: 1;
+  transition-delay: 0.06s;
+}
+.dock-foot {
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 4px;
+}
+.dock-item.expandable {
+  justify-content: space-between;
+}
+.chevron {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9db3d1;
+  opacity: 0;
+  transition: opacity 0.16s ease, transform 0.18s ease;
+  flex: none;
+}
+.dock:hover .chevron {
+  opacity: 1;
+}
+.chevron.open {
+  transform: rotate(90deg);
+}
+.sub-current {
+  opacity: 0;
+  font-size: 10px;
+  color: #8fa6c4;
+  font-weight: 500;
+  transition: opacity 0.16s ease;
+  white-space: nowrap;
+}
+.dock:hover .sub-current {
+  opacity: 1;
+}
+.sub-list {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+.sub-list.open {
+  max-height: 120px;
+}
+.sub-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 8px 8px 34px;
+  border-radius: 6px;
+  color: #c7d2e0;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sub-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.sub-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid #7d93b3;
+  flex: none;
+  position: relative;
+}
+.sub-item.selected .sub-dot {
+  border-color: var(--teal);
+}
+.sub-item.selected .sub-dot::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--teal);
+}
+.sub-item.selected {
+  color: #fff;
+}
+.dock-invoice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--teal);
+  color: #fff;
+  border-radius: 7px;
+  padding: 10px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  font-weight: 700;
+  font-size: 12px;
+}
+.dock-invoice:hover {
+  background: #0c6a77;
+}
+.dock-invoice .lbl {
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+.dock:hover .dock-invoice .lbl {
+  opacity: 1;
+  transition-delay: 0.06s;
 }
 </style>

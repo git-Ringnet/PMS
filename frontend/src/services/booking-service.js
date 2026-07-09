@@ -36,10 +36,10 @@ export const deleteBooking = (id) => http.delete(`/bookings/${id}`)
 // ==================== BOOKING ROOMS (GIAO PHÒNG / CHECK-IN) ====================
 export const autoAssignRooms = (bookingId) => http.post(`/bookings/${bookingId}/auto-assign`)
 export const assignRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/assign`, data)
-export const unassignRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/unassign`)
-export const checkInRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/checkin`, data)
+export const unassignRoom = (bookingId, roomId) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/unassign`)
+export const checkInRoom = (bookingId, roomId) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/check-in`)
 export const undoCheckInRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/undo-checkin`)
-export const cancelBookingRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/cancel`, data)
+export const cancelBookingRoom = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`)
 
 // ==================== PAYMENT METHODS (PHƯƠNG THỨC THANH TOÁN) ====================
 export const fetchPaymentMethods = (params = {}) => http.get('/payment-methods', { params })
@@ -65,6 +65,13 @@ export const transferPayment = (id, data) => http.post(`/payments/${id}/transfer
 export const fetchCurrencies = (params = {}) => http.get('/currencies', { params })
 export const fetchAvailability = (params = {}) => http.get('/availability', { params })
 export const checkAvailability = (params = {}) => http.get('/availability/check', { params })
+export const fetchVacantRooms = (params = {}) => http.get('/rooms/vacant', { params })
+export const autoAssignRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/auto-assign`)
+export const fetchFOServicesList = () => http.get('/booking-services/fo-list')
+export const fetchBookingRoomServices = (roomId) => http.get(`/booking-rooms/${roomId}/services`)
+export const createBookingRoomService = (roomId, data) => http.post(`/booking-rooms/${roomId}/services`, data)
+export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/booking-rooms/${roomId}/services/bulk`, { data })
+export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
 
 
 

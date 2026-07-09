@@ -41,7 +41,11 @@ class BookingRoomServiceController extends Controller
     // =========================================
     public function foServiceList()
     {
-        $services = HotelService::where('department', 'FO')
+        $services = HotelService::where(function($q) {
+                $q->where('department', 'FO')
+                  ->orWhere('department', 'like', 'Reception%')
+                  ->orWhere('department', 'like', 'Lễ tân%');
+            })
             ->orderBy('name')
             ->get(['code', 'name', 'price', 'unit', 'short_name']);
 
@@ -69,31 +73,17 @@ class BookingRoomServiceController extends Controller
             'is_room'       => 'nullable|boolean',
         ]);
 
-        // Kiểm tra service_code phải thuộc department FO
-        $foService = HotelService::where('code', $request->service_code)
-            ->where('department', 'FO')
-            ->first();
+        // Kiểm tra service_code phải tồn tại trong hệ thống
+        $foService = HotelService::where('code', $request->service_code)->first();
 
         if (!$foService) {
-            // Kiểm tra xem service code có tồn tại không (tồn tại nhưng sai department)
-            $anyService = HotelService::where('code', $request->service_code)->exists();
             return response()->json([
                 'success' => false,
-                'message' => $anyService
-                    ? 'Dịch vụ "' . $request->service_code . '" không thuộc bộ phận Front Office (FO). Chỉ cho phép thêm dịch vụ FO tại màn hình này.'
-                    : 'Mã dịch vụ "' . $request->service_code . '" không tồn tại trong hệ thống.',
+                'message' => 'Mã dịch vụ "' . $request->service_code . '" không tồn tại trong hệ thống.',
             ], 422);
         }
 
-        $systemDate = $this->avService->getSystemDate()->toDateString();
 
-        // Không cho thêm dịch vụ ở ngày quá khứ
-        if ($request->service_date < $systemDate) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không thể thêm dịch vụ cho ngày đã qua (' . $request->service_date . ').',
-            ], 422);
-        }
 
         // Nếu trùng ngày + service_code → update giá, không cộng dồn
         $service = BookingRoomService::withTrashed()->updateOrCreate(

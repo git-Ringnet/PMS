@@ -39,6 +39,7 @@ class BookingController extends Controller
             'bookingRooms.room',
             'bookingRooms.guests.guest',
             'bookingRooms.children',
+            'bookingRooms.services',
             'payments.paymentMethod',
         ]);
 
@@ -64,9 +65,16 @@ class BookingController extends Controller
             });
         }
 
-        // Filter theo tình trạng phòng
+        // Filter theo tình trạng phòng/booking
         if ($request->has('status')) {
-            $query->where('status', $request->status);
+            $statusVal = $request->status;
+            if (is_array($statusVal)) {
+                $query->whereIn('status', $statusVal);
+            } elseif (is_string($statusVal) && str_contains($statusVal, ',')) {
+                $query->whereIn('status', explode(',', $statusVal));
+            } else {
+                $query->where('status', $statusVal);
+            }
         }
 
         // Filter theo tình trạng booking

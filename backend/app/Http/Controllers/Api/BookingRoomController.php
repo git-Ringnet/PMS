@@ -338,20 +338,20 @@ class BookingRoomController extends Controller
             ], 422);
         }
 
-        // Điều kiện 3: Trạng thái vật lý phòng phải = 'Phòng sẵn sàng' (status = 1)
+        // Điều kiện 3: Trạng thái vật lý phòng phải = 'Phòng sẵn sàng' (status = 'available')
         // Sử dụng room_number và kiểm tra room.status
         if (!empty($bookingRoom->room_number)) {
             $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
-            if ($physicalRoom && $physicalRoom->status != 1) {
+            if ($physicalRoom && $physicalRoom->status !== 'available') {
                 $statusLabels = [
-                    1 => 'Phòng sẵn sàng',
-                    2 => 'Phòng chưa dọn',
-                    3 => 'Phòng sạch',
-                    4 => 'Phòng sửa chữa (OOO)',
-                    5 => 'Phòng dịch vụ',
-                    6 => 'Turndown',
+                    'available' => 'Phòng sẵn sàng',
+                    'dirty' => 'Phòng chưa dọn (dirty)',
+                    'occupied' => 'Phòng đang có khách (occupied)',
+                    'maintenance' => 'Phòng sửa chữa (OOO)',
+                    'reserved' => 'Phòng đã đặt trước',
+                    'checkout' => 'Phòng chờ dọn (checkout)',
                 ];
-                $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? 'Trạng thái ' . $physicalRoom->status;
+                $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
                 return response()->json([
                     'success' => false,
                     'message' => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.',

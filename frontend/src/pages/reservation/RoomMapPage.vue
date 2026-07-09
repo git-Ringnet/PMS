@@ -245,34 +245,27 @@ function showDevelopmentToast(featureName) {
 
 // Logic for status dots (Top Left - Green / Top Right - Red)
 function hasArrivalToday(room) {
-  if (room.status === ROOM_STATUSES.MAINTENANCE) return false
-  if (room.room_number === '404') return true
-  return room.status === ROOM_STATUSES.RESERVED || (room.id % 5 === 0)
+  return room.status === ROOM_STATUSES.RESERVED
 }
 
 function hasDepartureToday(room) {
-  if (room.status === ROOM_STATUSES.MAINTENANCE) return false
-  if (room.room_number === '404') return true
-  return room.status === ROOM_STATUSES.CHECKOUT || (room.status === ROOM_STATUSES.OCCUPIED && room.id % 3 === 0)
+  return room.status === ROOM_STATUSES.CHECKOUT
 }
 
 function getGuestCount(room) {
-  if (room.status === ROOM_STATUSES.MAINTENANCE) return 0
-  if (room.room_number === '404') return 2
-  if (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || room.status === ROOM_STATUSES.CHECKOUT || hasArrivalToday(room)) {
+  if (room.status === ROOM_STATUSES.OCCUPIED) {
     return room.max_guests || 2
   }
   return 0
 }
 
 function hasExtraBed(room) {
-  if (room.room_number === '404') return true
-  return room.extra_beds_limit > 0 || (room.id % 2 === 0)
+  return false
 }
 
 // Room number red color warning rule
 function isRoomNumberRed(room) {
-  return room.status === ROOM_STATUSES.MAINTENANCE || room.status === ROOM_STATUSES.CHECKOUT || room.has_issue || (room.id % 7 === 0)
+  return room.status === ROOM_STATUSES.MAINTENANCE || room.status === ROOM_STATUSES.CHECKOUT || !!room.has_issue
 }
 
 // Show Broom icon for dirty rooms
@@ -282,7 +275,7 @@ function shouldShowBroom(room) {
 
 // Show Sparkles icon for clean vacant rooms
 function shouldShowSparkles(room) {
-  return room.is_clean && room.status !== ROOM_STATUSES.OCCUPIED && room.status !== ROOM_STATUSES.DIRTY && (room.id % 2 === 0)
+  return !!room.is_clean && room.status === ROOM_STATUSES.AVAILABLE
 }
 
 function getStatusIconSize(room) {
@@ -305,68 +298,22 @@ function getStatusIconSize(room) {
 
 // Guest names list matching image 2
 function getMockGuestName(room) {
-  if (room.room_number === '404') return 'Nguyễn Văn A'
-  if (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT) {
-    const names = [
-      'Nguyễn Văn A',
-      'Trần Thị B',
-      'Lê Hoàng Nam',
-      'Phạm Minh Tuấn',
-      'Walkin Guest',
-      'Đặng Hồng Nhung',
-      'Nguyễn Thị Kim Chi',
-      'Mr. Rydchuk Alexandr',
-      'Ms. Kathy Diệu Trinh',
-      'Nguyễn Thị Hồng Phương',
-    ]
-    return names[room.id % names.length]
-  }
-  if (room.status === ROOM_STATUSES.RESERVED) {
-    return 'Walkin Guest'
-  }
-  return ''
+  return room.guest_name || ''
 }
 
 // Booking ID generator
 function getMockRegId(room) {
-  if (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || room.status === ROOM_STATUSES.CHECKOUT) {
-    return room.id % 2000 + 4000
-  }
-  return ''
+  return room.booking_code || ''
 }
 
 // Booking details/registration name matching image 2
 function getMockRegName(room) {
-  if (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || room.status === ROOM_STATUSES.CHECKOUT) {
-    const agencies = [
-      'TRAVEL CONCIERGE - 2637449 (COMMITMENT)',
-      'PEGAS - 10660748',
-      'FUN & SUN TRAVEL - 11723091',
-      'Walkin Guest',
-      'Agoda - 173481589 - Rachid Boufarki',
-      'Trip.Com - 1658111816718262 - KATHY DIỆU TRINH',
-      'NGUYỄN THỊ HỒNG PHƯƠNG'
-    ]
-    return agencies[room.id % agencies.length]
-  }
-  return ''
+  return room.booking_name || ''
 }
 
 // Company list matching image 2
 function getMockCompany(room) {
-  if (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || room.status === ROOM_STATUSES.CHECKOUT) {
-    const companies = [
-      'TRAVEL CONCIERGE (COMMITMENT)',
-      'PEGAS',
-      'FUN & SUN TRAVEL',
-      'KHÁCH LẺ',
-      'AGODA',
-      'TRIP.COM',
-      'MANGO TRIP'
-    ]
-    return companies[room.id % companies.length]
-  }
-  return ''
+  return room.company_name || ''
 }
 
 // Room shape description

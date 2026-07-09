@@ -200,22 +200,8 @@ class SystemConfigurationSeeder extends Seeder
         }
 
         foreach ($roomsData as $r) {
-            // Random status distribution for testing:
-            // 50% available, 22% occupied, 10% dirty, 9% reserved, 9% checkout
-            $statusRand = rand(1, 100);
-            if ($r['room_number'] === '404') {
-                $statusVal = 'checkout';
-            } elseif ($statusRand <= 50) {
-                $statusVal = 'available';
-            } elseif ($statusRand <= 72) {
-                $statusVal = 'occupied';
-            } elseif ($statusRand <= 82) {
-                $statusVal = 'dirty';
-            } elseif ($statusRand <= 91) {
-                $statusVal = 'reserved';
-            } else {
-                $statusVal = 'checkout';
-            }
+            // Set all rooms to available for clean testing
+            $statusVal = 'available';
 
             Room::create([
                 'room_number' => $r['room_number'],
