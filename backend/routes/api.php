@@ -140,6 +140,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/bulk-update',  [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate']);
         // Epic 5 - Check-in
         Route::patch('/{roomId}/check-in',   [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn']);
+        Route::post('/{roomId}/undo-checkin', [\App\Http\Controllers\Api\BookingRoomController::class, 'undoCheckIn']);
         // Epic 6 - Nâng hạng phòng
         Route::patch('/{roomId}/upgrade',    [\App\Http\Controllers\Api\BookingRoomController::class, 'upgrade']);
         // Epic 8 - Gỡ số phòng

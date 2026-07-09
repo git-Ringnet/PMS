@@ -51,27 +51,29 @@ class RoomController extends Controller
                 })->orWhere('arrival_date', $sysDateStr)
                   ->orWhere('departure_date', $sysDateStr);
             })
-            ->with(['booking.company', 'guests.guest'])
+            ->with(['booking.company', 'booking.registrationStatus', 'booking.paymentMethod', 'guests.guest', 'children'])
             ->get();
 
         foreach ($rooms as $room) {
+            $room->booking_status = null;
+
             // Ưu tiên trạng thái OOO/OOS (Active Lock)
             if ($room->activeLock) {
                 $room->status = 'maintenance';
-                continue;
             }
 
+            // Tìm booking tương ứng
             $br = $bookingRoomsToday->where('room_number', $room->room_number)->first();
             if ($br) {
                 if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
                     if ($br->departure_date->toDateString() === $sysDateStr) {
-                        $room->status = 'checkout';
+                        $room->booking_status = 'checkout';
                     } else {
-                        $room->status = 'occupied';
+                        $room->booking_status = 'occupied';
                     }
                 } else if ($br->status === \App\Models\BookingRoom::STATUS_BOOKED) {
                     if ($br->arrival_date->toDateString() === $sysDateStr) {
-                        $room->status = 'reserved';
+                        $room->booking_status = 'reserved';
                     }
                 }
 
@@ -80,10 +82,32 @@ class RoomController extends Controller
                 $room->booking_code = $br->booking?->booking_code ?? '';
                 $room->booking_name = $br->booking?->booking_name ?? '';
                 $room->company_name = $br->booking?->company?->name ?? '';
-            } else {
-                if (!in_array($room->status, ['dirty', 'maintenance'])) {
-                    $room->status = 'available';
-                }
+                $room->booking_color = $br->booking?->color ?? '';
+                $room->arrival_date = $br->arrival_date ? $br->arrival_date->toDateString() : '';
+                $room->departure_date = $br->departure_date ? $br->departure_date->toDateString() : '';
+                $room->nights = $br->arrival_date && $br->departure_date ? $br->arrival_date->diffInDays($br->departure_date) : 1;
+                $room->adults = $br->adults ?? 2;
+                $room->children = $br->children ? $br->children->where('age_group', 'child')->count() : 0;
+                $room->babies = $br->children ? $br->children->where('age_group', 'baby')->count() : 0;
+                $room->arrival_time = $br->arrival_time ?? '14:00';
+                $room->rate = $br->rate ?? 0;
+                $room->booking_note = $br->booking?->note ?? '';
+                $room->special_requests = $br->booking?->special_requests ?? '';
+                $room->guest_details = $br->guests->map(fn($g) => $g->full_name)->toArray();
+                
+                $room->external_booking_code = $br->booking?->external_booking_code ?? '';
+                $room->registration_status = $br->booking?->registrationStatus?->name ?? '';
+                $room->confirm_date = $br->booking?->confirm_date ? \Carbon\Carbon::parse($br->booking->confirm_date)->toDateString() : '';
+                $room->sales_person = $br->booking?->sales_person ?? '';
+                $room->is_git = (bool)($br->booking?->is_git ?? false);
+                $room->has_vat = (bool)($br->booking?->has_vat ?? false);
+                $room->payment_method = $br->booking?->paymentMethod?->name ?? '';
+                $room->payment_value = $br->booking?->payment_value ?? 0;
+            }
+
+            // Đảm bảo trạng thái vệ sinh hợp lệ từ database, nếu trống/null thì mặc định available
+            if (!in_array($room->status, ['dirty', 'maintenance', 'checkout'])) {
+                $room->status = 'available';
             }
         }
 

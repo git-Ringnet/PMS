@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import {
@@ -32,6 +33,7 @@ import {
   fetchVacantRooms,
   autoAssignRoom,
   checkInRoom,
+  upgradeRoom,
   unassignRoom,
   cancelBookingRoom,
   fetchHotelServices,
@@ -40,6 +42,7 @@ import {
   deleteBookingRoomServicesBulk
 } from '@/services/booking-service'
 
+const route = useRoute()
 const uiStore = useUiStore()
 
 // ==================== CONFIG & SYSTEM ====================
@@ -196,6 +199,7 @@ const emptyForm = () => ({
   dbId: null,
   bookingCode: '',
   bookingName: '',
+  color: '#000000',
   checkIn: new Date().toISOString().split('T')[0],
   checkOut: '',
   nights: 1,
@@ -223,6 +227,7 @@ const emptyForm = () => ({
 })
 
 const modalForm = ref(emptyForm())
+const isColorChanged = ref(false)
 
 // ==================== DEPOSIT MODAL STATE & ACTIONS ====================
 const isDepositModalOpen = ref(false)
@@ -238,6 +243,21 @@ const depositForm = ref({
   image: null
 })
 
+function parseApiDate(dateStr) {
+  if (!dateStr) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+  if (dateStr.includes('T')) {
+    const d = new Date(dateStr)
+    if (!isNaN(d)) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  return dateStr.substring(0, 10)
+}
+
 async function syncDepositsFromBackend() {
   if (!modalForm.value.dbId) return
   try {
@@ -245,7 +265,7 @@ async function syncDepositsFromBackend() {
     const paymentsList = res.data?.data || res.data || []
     modalForm.value.deposits = paymentsList.map(p => ({
       id: p.id,
-      date: p.date ? p.date.substring(0, 10).split('-').reverse().join('/') : '',
+      date: p.date ? parseApiDate(p.date).split('-').reverse().join('/') : '',
       time: p.open_time ? p.open_time.substring(0, 5) : '',
       paymentMethodId: p.payment_method_id,
       note: p.description || '',
@@ -583,6 +603,7 @@ const columns = ref([
   { key: 'children', label: 'Trẻ em', visible: true, width: 'w-[65px]', center: true },
   { key: 'childBreakfast', label: 'Chi tiết ăn sáng trẻ', visible: true, width: 'w-[130px]', center: true },
   { key: 'breakfast', label: 'Ăn sáng', visible: true, width: 'w-[75px]', center: true },
+  { key: 'upgrade', label: 'Nâng hạng', visible: true, width: 'w-[130px]', center: true },
   { key: 'extraBed', label: 'Thêm giường', visible: true, width: 'w-[100px]', center: true },
   { key: 'extraBedPrice', label: 'Giá thêm giường', visible: true, width: 'w-[115px]', right: true },
   { key: 'hourly', label: 'Ở theo giờ', visible: true, width: 'w-[85px]', center: true },
@@ -821,10 +842,32 @@ onMounted(async () => {
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
+    
+    if (route.query.bookingCode) {
+      const foundTab = tabs.value.find(t => t.id === route.query.bookingCode)
+      if (foundTab) {
+        activeTabId.value = foundTab.id
+        if (route.query.openModal === 'true') {
+          await openEditModal()
+        }
+      }
+    }
   } catch (err) {
     console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
   } finally {
     isLoading.value = false
+  }
+})
+
+watch(() => route.query.bookingCode, async (newCode) => {
+  if (newCode) {
+    const foundTab = tabs.value.find(t => t.id === newCode)
+    if (foundTab) {
+      activeTabId.value = foundTab.id
+      if (route.query.openModal === 'true') {
+        await openEditModal()
+      }
+    }
   }
 })
 
@@ -960,6 +1003,7 @@ function bookingToTab(b) {
         roomClassId: br.room_class_id,
         services: br.services || [],
         bookingRoomStatus: br.status !== undefined ? Number(br.status) : 0,
+        upgradeClassId: null,
       })
     })
   } else {
@@ -1015,6 +1059,7 @@ function bookingToTab(b) {
           total: Number(roomDetail.total) || totalNum,
           roomClassId: alloc.roomClassId,
           bookingRoomStatus: 0,
+          upgradeClassId: alloc.upgradeRoomClassId || null,
         })
       }
     })
@@ -1030,8 +1075,8 @@ function bookingToTab(b) {
           roomClassId: classId,
           roomClassCode: br.room_class?.code || '',
           roomClassName: br.room_class?.name || '',
-          arrivalDate: br.arrival_date ? br.arrival_date.substring(0, 10) : '',
-          departureDate: br.departure_date ? br.departure_date.substring(0, 10) : '',
+          arrivalDate: parseApiDate(br.arrival_date),
+          departureDate: parseApiDate(br.departure_date),
           quantity: 0,
           price: Number(br.rate) || 0,
           ratePlanCode: '',
@@ -1083,14 +1128,15 @@ function bookingToTab(b) {
     bookingName: b.booking_name,
     statusLabel: b.registration_status?.name || '—',
     registrationStatusId: b.registration_status_id,
-    checkIn: b.arrival_date ? b.arrival_date.substring(0, 10) : '',
-    checkOut: b.departure_date ? b.departure_date.substring(0, 10) : '',
+    checkIn: parseApiDate(b.arrival_date),
+    checkOut: parseApiDate(b.departure_date),
     nights: b.num_of_days,
     deposit: b.payment_value || 0,
     company: b.company?.name || '—',
     companyId: b.company_id,
-    confirmDate: b.confirm_date ? b.confirm_date.substring(0, 10) : '',
-    expiredDate: b.expired_date ? b.expired_date.substring(0, 10) : '',
+    confirmDate: parseApiDate(b.confirm_date),
+    expiredDate: parseApiDate(b.expired_date),
+    color: b.color || '#000000',
     marketId: b.market_id,
     market: b.market?.name || '—',
     customerSourceId: b.customer_source_id,
@@ -1111,7 +1157,7 @@ function bookingToTab(b) {
     roomAllocations: roomAllocations,
     deposits: b.payments ? b.payments.map(p => ({
       id: p.id,
-      date: p.date ? p.date.substring(0, 10).split('-').reverse().join('/') : '',
+      date: p.date ? parseApiDate(p.date).split('-').reverse().join('/') : '',
       time: p.open_time ? p.open_time.substring(0, 5) : '',
       paymentMethodId: p.payment_method_id,
       note: p.description || '',
@@ -1204,6 +1250,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
 async function handleAddTabClick() {
   isEditModal.value = false
   modalPos.value = { x: 0, y: 0 }
+  isColorChanged.value = false
   const today = new Date().toISOString().split('T')[0]
   const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
   const tomorrow = tomorrowDate.toISOString().split('T')[0]
@@ -1232,10 +1279,12 @@ async function openEditModal() {
   if (!tab) return
   modalPos.value = { x: 0, y: 0 }
   isEditModal.value = true
+  isColorChanged.value = false
   modalForm.value = {
     dbId: tab.dbId,
     bookingCode: tab.id,
     bookingName: tab.bookingName,
+    color: tab.color || '#000000',
     checkIn: tab.checkIn,
     checkOut: tab.checkOut,
     nights: tab.nights,
@@ -1544,6 +1593,7 @@ async function handleSaveNewBooking() {
   try {
     const payload = {
       booking_name:           modalForm.value.bookingName.toUpperCase(),
+      color:                  (isColorChanged.value || modalForm.value.color !== '#000000') ? modalForm.value.color : null,
       arrival_date:           modalForm.value.checkIn,
       departure_date:         modalForm.value.checkOut,
       num_of_days:            modalForm.value.nights,
@@ -1795,7 +1845,60 @@ async function triggerAction(actionName) {
       uiStore.showToast('Có lỗi xảy ra khi giao phòng!', 'error')
     }
   } else if (actionName === 'Nâng hạng phòng') {
-    uiStore.showToast('Vui lòng tích chọn phòng muốn nâng hạng trên bảng!', 'info')
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi nâng hạng phòng!', 'warning')
+      return
+    }
+    if (!tab.rooms || tab.rooms.length === 0) {
+      uiStore.showToast('Không có phòng nào để nâng hạng!', 'info')
+      return
+    }
+
+    const targetList = tab.rooms.filter(r => selectedRows.value.includes(r.id) && r.upgradeClassId)
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng và chọn hạng phòng muốn nâng lên!', 'warning')
+      return
+    }
+
+    uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
+
+    try {
+      await Promise.all(targetList.map(async (r) => {
+        if (!r.bookingRoomId) return
+        try {
+          const data = { room_class_id: r.upgradeClassId }
+          if (r.price) data.rate = Number(r.price)
+          const res = await upgradeRoom(tab.dbId, r.bookingRoomId, data)
+          if (res.data?.success) {
+            successCount++
+            r.roomNumber = ''
+            r.roomClassId = r.upgradeClassId
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
+          failCount++
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+        }
+      }))
+
+      if (successCount > 0) {
+        await loadBookings()
+        selectedRows.value = []
+        uiStore.showToast(`Nâng hạng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+      } else {
+        uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch(err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
+    }
   } else if (actionName === 'Tự động gán phòng') {
     const tab = activeTab.value
     if (!tab || !tab.dbId) {
@@ -2204,6 +2307,31 @@ async function saveServices() {
   // Reset selection sau khi thực hiện xong
   selectedRows.value = []
 }
+
+async function openBookingModalByCode(bookingCode) {
+  const foundTab = tabs.value.find(t => t.id === bookingCode)
+  if (foundTab) {
+    activeTabId.value = foundTab.id
+    await openEditModal()
+  } else {
+    try {
+      const res = await fetchBookings({ search: bookingCode })
+      const list = res.data?.data || res.data || []
+      if (list.length > 0) {
+        const tabObj = bookingToTab(list[0])
+        tabs.value.push(tabObj)
+        activeTabId.value = tabObj.id
+        await openEditModal()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+}
+
+defineExpose({
+  openBookingModalByCode
+})
 </script>
 
 <template>
@@ -2610,6 +2738,12 @@ async function saveServices() {
                             <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                           </label>
                         </template>
+                        <template v-else-if="col.key === 'upgrade'">
+                          <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[26px] pl-1.5 pr-4 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[10px]">
+                            <option :value="null">Chọn hạng</option>
+                            <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                          </select>
+                        </template>
                         <template v-else-if="col.key === 'extraBed'">
                           <button @click.stop="openServicesModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
@@ -3012,7 +3146,7 @@ async function saveServices() {
             <div class="flex items-center space-x-3">
                 <div class="flex items-center space-x-1.5 bg-white/10 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner">
                     <span class="text-xs font-medium text-gray-300 select-none">Màu BK</span>
-                    <input type="color" v-model="modalForm.color" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none">
+                    <input type="color" v-model="modalForm.color" @change="isColorChanged = true" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none">
                 </div>
 
                 <div class="flex items-center space-x-1.5">

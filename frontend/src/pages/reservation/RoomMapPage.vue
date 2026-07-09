@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
-import RoomDetailModal from '@/components/RoomDetailModal.vue'
+import BookingDetailModal from '@/components/BookingDetailModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -15,16 +15,21 @@ import LockRoomPage from './LockRoomPage.vue'
 import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
+import CheckInPage from './CheckInPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
 const route = useRoute()
+const router = useRouter()
 
 const currentTab = computed(() => route.query.tab || 'room-map')
 
+const createRegRef = ref(null)
 const showDetailModal = ref(false)
+const showBookingDetailModal = ref(false)
+const selectedBookingRoom = ref(null)
 const showStatsModal = ref(false)
 const isLoaded = ref(false)
 
@@ -176,17 +181,17 @@ watch(rawDate, async () => {
 
 // Circular widgets stats computed dynamically
 const checkinStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length
+  const count = roomStore.rooms.filter(r => r.booking_status === 'reserved').length
   return `${count}/23`
 })
 
 const checkoutStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).length
+  const count = roomStore.rooms.filter(r => r.booking_status === 'checkout').length
   return `${count}/31`
 })
 
 const occupiedStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length
+  const count = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
   return `${count}/${roomStore.rooms.length || 181}`
 })
 
@@ -206,13 +211,76 @@ const activeFilter = computed(() => roomStore.filters.status)
 
 // Methods
 function handleRoomClick(room) {
-  roomStore.selectRoom(room)
-  showDetailModal.value = true
+  // Click actions on rooms are disabled as per user request to not show room detail modal.
+}
+
+const hoverTooltip = ref({
+  show: false,
+  x: 0,
+  y: 0,
+  isBelow: false,
+  room: null,
+})
+
+let tooltipTimeout = null
+
+function showTooltip(event, room) {
+  if (!room || (room.booking_status !== 'occupied' && room.booking_status !== 'reserved' && room.booking_status !== 'checkout')) return
+  
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+
+  const rect = event.currentTarget.getBoundingClientRect()
+  const tooltipHeight = 280
+  const isBelow = rect.top < tooltipHeight
+
+  hoverTooltip.value = {
+    show: true,
+    x: rect.left + rect.width / 2,
+    y: isBelow ? rect.bottom + 8 : rect.top - 8,
+    isBelow: isBelow,
+    room: room
+  }
+}
+
+function hideTooltip() {
+  if (tooltipTimeout) clearTimeout(tooltipTimeout)
+  tooltipTimeout = setTimeout(() => {
+    hoverTooltip.value.show = false
+  }, 250)
+}
+
+function cancelHide() {
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+}
+
+function formatTooltipDate(dateStr) {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}`
+  }
+  return dateStr
+}
+
+function formatTooltipPrice(price) {
+  const num = Math.round(Number(price) || 0)
+  return num.toLocaleString('vi-VN') + 'đ'
 }
 
 function closeModal() {
   showDetailModal.value = false
   roomStore.clearSelectedRoom()
+}
+
+function closeBookingDetailModal() {
+  showBookingDetailModal.value = false
+  selectedBookingRoom.value = null
 }
 
 // Checkbox helper for filters
@@ -245,15 +313,15 @@ function showDevelopmentToast(featureName) {
 
 // Logic for status dots (Top Left - Green / Top Right - Red)
 function hasArrivalToday(room) {
-  return room.status === ROOM_STATUSES.RESERVED
+  return room.booking_status === 'reserved'
 }
 
 function hasDepartureToday(room) {
-  return room.status === ROOM_STATUSES.CHECKOUT
+  return room.booking_status === 'checkout'
 }
 
 function getGuestCount(room) {
-  if (room.status === ROOM_STATUSES.OCCUPIED) {
+  if (room.booking_status === 'occupied' || room.booking_status === 'checkout') {
     return room.max_guests || 2
   }
   return 0
@@ -265,7 +333,7 @@ function hasExtraBed(room) {
 
 // Room number red color warning rule
 function isRoomNumberRed(room) {
-  return room.status === ROOM_STATUSES.MAINTENANCE || room.status === ROOM_STATUSES.CHECKOUT || !!room.has_issue
+  return room.status === ROOM_STATUSES.MAINTENANCE || room.booking_status === 'checkout' || !!room.has_issue
 }
 
 // Show Broom icon for dirty rooms
@@ -275,7 +343,7 @@ function shouldShowBroom(room) {
 
 // Show Sparkles icon for clean vacant rooms
 function shouldShowSparkles(room) {
-  return !!room.is_clean && room.status === ROOM_STATUSES.AVAILABLE
+  return !!room.is_clean && room.status === ROOM_STATUSES.AVAILABLE && !room.booking_status
 }
 
 function getStatusIconSize(room) {
@@ -294,6 +362,43 @@ function getStatusIconSize(room) {
     size = settings.value.iconSizes.group2
   }
   return Math.round(size * cardScale.value)
+}
+
+function isLightColor(color) {
+  if (!color) return true
+  const hex = color.replace('#', '')
+  if (hex.length < 6) return true
+  const r = parseInt(hex.substring(0, 2), 16)
+  const g = parseInt(hex.substring(2, 4), 16)
+  const b = parseInt(hex.substring(4, 6), 16)
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return brightness > 155
+}
+
+function getRoomCardStyle(room, floorIdx, roomIdx) {
+  const isOccupiedOrCheckout = room.booking_status === 'occupied' || room.booking_status === 'checkout'
+  const hasBkColor = isOccupiedOrCheckout && room.booking_color && room.booking_color !== ''
+
+  const baseStyle = {
+    animationDelay: `${(floorIdx * 80) + (roomIdx * 20)}ms`,
+    width: settings.value.roomWidth + 'px',
+    height: settings.value.roomHeight + 'px',
+    minHeight: settings.value.roomHeight + 'px',
+    maxHeight: settings.value.roomHeight + 'px'
+  }
+
+  if (hasBkColor) {
+    const textColor = isLightColor(room.booking_color) ? '#1e293b' : '#ffffff'
+    return {
+      ...baseStyle,
+      background: room.booking_color,
+      backgroundImage: 'none',
+      borderColor: room.booking_color,
+      color: textColor
+    }
+  }
+
+  return baseStyle
 }
 
 // Guest names list matching image 2
@@ -389,13 +494,34 @@ function closeContextMenu() {
 
 // Show room info modal
 function showRoomInfo(room) {
-  roomStore.selectRoom(room)
-  showDetailModal.value = true
+  if (room.booking_code) {
+    selectedBookingRoom.value = room
+    showBookingDetailModal.value = true
+  }
   closeContextMenu()
 }
 
-// Trigger warning toast for other options
+// Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
+  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'Chuyển Phòng', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+    if (contextMenu.value.room && contextMenu.value.room.booking_code) {
+      router.push({
+        query: {
+          ...route.query,
+          tab: 'create-res',
+          bookingCode: contextMenu.value.room.booking_code
+        }
+      })
+      uiStore.showToast(`Chuyển đến Phiếu Đăng ký ${contextMenu.value.room.booking_code} để thực hiện "${actionName}"`, 'success')
+      closeContextMenu()
+      return
+    } else {
+      uiStore.showToast('Phòng chưa được giao hoặc không có mã đăng ký!', 'warning')
+      closeContextMenu()
+      return
+    }
+  }
+
   const isEn = t('roomMap.filterTitle') === 'Filters'
   const msg = isEn ? `Feature "${actionName}" is under development!` : `Tính năng "${actionName}" đang được phát triển!`
   uiStore.showToast(msg, 'warning')
@@ -889,7 +1015,12 @@ const uniqueFloors = computed(() => {
 
           <!-- Tab 7: Tạo Đăng Ký CreateRegistrationPage -->
           <div v-else-if="currentTab === 'create-res'" class="h-full overflow-hidden">
-            <CreateRegistrationPage />
+            <CreateRegistrationPage ref="createRegRef" />
+          </div>
+
+          <!-- Tab Checkin: Nhận phòng (Đến / Đã đến) -->
+          <div v-else-if="currentTab === 'checkin'" class="h-full overflow-hidden">
+            <CheckInPage :initial-date="rawDate" />
           </div>
 
           <!-- Tab 8: ALLOTMENT Tab -->
@@ -1206,8 +1337,13 @@ const uniqueFloors = computed(() => {
           <!-- THE DEFAULT ROOM MAP VIEW -->
           <div v-else class="flex-1 flex flex-col gap-4 min-h-0">
             
+            <!-- Check-in Page view when filtering by RESERVED (Đã đến) -->
+            <div v-if="activeFilter === ROOM_STATUSES.RESERVED" class="flex-1 flex flex-col min-h-0">
+              <CheckInPage :initial-date="rawDate" />
+            </div>
+
             <!-- Loading State -->
-            <div v-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
+            <div v-else-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
               <LoadingOverlay :show="roomStore.loading" />
             </div>
 
@@ -1260,16 +1396,13 @@ const uniqueFloors = computed(() => {
                     v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]"
                     :key="room.id"
                     class="room-card room-card-animate"
-                    :style="{ 
-                      animationDelay: `${(floorIdx * 80) + (roomIdx * 20)}ms`,
-                      width: settings.roomWidth + 'px',
-                      height: settings.roomHeight + 'px',
-                      minHeight: settings.roomHeight + 'px',
-                      maxHeight: settings.roomHeight + 'px'
-                    }"
+                    :style="getRoomCardStyle(room, floorIdx, roomIdx)"
                     :class="{ 'occupied-room': room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT }"
                     @click="handleRoomClick(room)"
                     @contextmenu.prevent="handleContextMenu($event, room)"
+                    @mouseenter="showTooltip($event, room)"
+                    @mousemove="showTooltip($event, room)"
+                    @mouseleave="hideTooltip"
                   >
                     <!-- Status Indicator Dot (Top Left - Check-in Today) -->
                     <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
@@ -1287,33 +1420,34 @@ const uniqueFloors = computed(() => {
                     <div class="flex flex-col items-center justify-center w-full my-auto">
                       <!-- Room Number -->
                       <div class="font-bold text-[18px] leading-tight text-center w-full">
-                        <span :class="isRoomNumberRed(room) ? 'text-red-600' : 'text-gray-900'">
+                        <span :class="isRoomNumberRed(room) ? 'text-red-600' : (room.booking_color ? 'text-inherit' : 'text-gray-900')">
                           {{ room.room_number }}
                         </span>
                       </div>
 
                       <!-- Room Type (e.g. SUPT) -->
-                      <div class="text-[10px] font-bold text-gray-500 uppercase text-center w-full mt-0.5">
+                      <div class="text-[10px] font-bold uppercase text-center w-full mt-0.5" :class="room.booking_color ? 'text-inherit opacity-80' : 'text-gray-500'">
                         {{ room.room_type || room.room_class?.code }}
                       </div>
 
                       <!-- Guest Name (if occupied or reserved) -->
-                      <div v-if="room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || room.status === ROOM_STATUSES.CHECKOUT" class="text-[11px] font-bold text-gray-900 leading-tight text-center w-full mt-1 truncate max-w-full">
+                      <div v-if="room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'" class="text-[11px] font-bold leading-tight text-center w-full mt-1 truncate max-w-full" :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
                         {{ getMockGuestName(room) }}
                       </div>
                     </div>
 
                     <!-- Bottom row: Icons (Absolute Positioned to allow overflow boundaries) -->
                     <!-- Bottom Left Corner: Guest Count and Extra Bed -->
-                    <div class="absolute flex items-center gap-1.5 text-slate-500 pointer-events-none overflow-visible shrink-0"
+                    <div class="absolute flex items-center gap-1.5 pointer-events-none overflow-visible shrink-0"
                       :style="{
                         left: (10 - (settings.iconSizes.group4 - 16) * cardScale) + 'px',
                         bottom: (6 - (settings.iconSizes.group4 - 16) * cardScale) + 'px'
                       }"
+                      :class="room.booking_color ? 'text-inherit opacity-85' : 'text-slate-500'"
                     >
                       <template v-if="getGuestCount(room) > 0">
-                        <span class="flex items-center gap-0.5 font-bold text-[10.5px] text-gray-900 leading-none">
-                          <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" class="text-gray-600" :style="{ width: (settings.iconSizes.group4 * cardScale) + 'px', height: (settings.iconSizes.group4 * cardScale) + 'px' }" />
+                        <span class="flex items-center gap-0.5 font-bold text-[10.5px] leading-none" :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
+                          <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" :class="room.booking_color ? 'text-inherit' : 'text-gray-600'" :style="{ width: (settings.iconSizes.group4 * cardScale) + 'px', height: (settings.iconSizes.group4 * cardScale) + 'px' }" />
                           {{ getGuestCount(room) }}
                         </span>
                       </template>
@@ -1349,7 +1483,6 @@ const uniqueFloors = computed(() => {
                       <template v-else>
                         <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :monochrome="room.id % 2 === 0" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="occupied" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
                     </div>
                   </div>
@@ -1568,12 +1701,109 @@ const uniqueFloors = computed(() => {
 
       </div>
     </div>
-    <!-- Room Detail Modal -->
-    <RoomDetailModal
-      v-if="showDetailModal && roomStore.selectedRoom"
-      :room="roomStore.selectedRoom"
-      @close="closeModal"
+
+
+    <!-- Booking Detail Modal -->
+    <BookingDetailModal
+      v-if="showBookingDetailModal && selectedBookingRoom"
+      :room="selectedBookingRoom"
+      @close="closeBookingDetailModal"
     />
+
+    <!-- Hover Tooltip -->
+    <Teleport to="body">
+      <Transition name="tooltip-fade">
+        <div
+          v-if="hoverTooltip.show && hoverTooltip.room"
+          class="fixed z-[99999] pointer-events-auto bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
+          :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
+          :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }"
+          @mouseenter="cancelHide"
+          @mouseleave="hideTooltip"
+        >
+        <!-- Header: Dates and Booking Code -->
+        <div class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs">🟢</span>
+            <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
+            <span class="text-neutral-500 font-normal">-</span>
+            <span class="text-xs">🔴</span>
+            <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
+          </div>
+          <div>
+            <span class="text-neutral-400 font-normal">Mã ĐK:</span>
+            <span class="ml-1 text-sky-400">{{ hoverTooltip.room.booking_code }}</span>
+          </div>
+        </div>
+
+        <!-- Details list -->
+        <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>Tên ĐK: <strong class="text-white">{{ hoverTooltip.room.booking_name }}</strong></span>
+          </li>
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>Tên: <strong class="text-white">{{ hoverTooltip.room.guest_name }}</strong></span>
+          </li>
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
+          </li>
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>Đêm: {{ hoverTooltip.room.nights }}</span>
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="text-neutral-500">•</span>
+            <span class="flex items-center gap-1">
+              {{ hoverTooltip.room.adults }} 🧑
+              {{ hoverTooltip.room.children }} 🧒
+              {{ hoverTooltip.room.babies }} 👶
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="flex items-center gap-1">
+              <span class="text-neutral-500">•</span>
+              <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
+            </span>
+            <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
+          </li>
+        </ul>
+
+        <!-- Divider -->
+        <div class="h-px bg-neutral-700/60 my-2"></div>
+
+        <!-- Lower Section (Description/Company details) -->
+        <div class="text-neutral-400 space-y-1">
+          <div class="uppercase font-bold text-neutral-300">
+            1 {{ hoverTooltip.room.room_type_name }} - {{ hoverTooltip.room.adults > 2 ? 'TRPL' : 'DBL' }} ({{ hoverTooltip.room.nights }} ĐÊM)*
+          </div>
+          <div>{{ formatTooltipPrice(hoverTooltip.room.rate) }}/R/N</div>
+          <div v-if="hoverTooltip.room.company_name" class="uppercase text-neutral-300">CTY: {{ hoverTooltip.room.company_name }}</div>
+          <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{ hoverTooltip.room.booking_note }}</div>
+          <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{ hoverTooltip.room.special_requests }}</div>
+
+          <div class="h-px bg-neutral-700/30 my-1.5" v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
+          
+          <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
+            <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
+            <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx" class="uppercase text-neutral-200 pl-1">
+              • {{ gName }}
+            </div>
+          </template>
+        </div>
+
+        <!-- Triangle Pointer -->
+        <div
+          class="absolute left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent"
+          :class="hoverTooltip.isBelow
+            ? 'top-0 -translate-y-full border-b-[6px] border-b-[#2e2e2e] border-t-0'
+            : 'bottom-0 translate-y-full border-t-[6px] border-t-[#2e2e2e] border-b-0'"
+        ></div>
+      </div>
+      </Transition>
+    </Teleport>
 
     <!-- Teleported Context Menu -->
     <Teleport to="body">
@@ -1586,6 +1816,7 @@ const uniqueFloors = computed(() => {
       >
         <!-- Thông tin -->
         <button
+          v-if="contextMenu.room.booking_code"
           @click="showRoomInfo(contextMenu.room)"
           class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
           :class="TEXT_THEME.menuItem"
@@ -2100,6 +2331,24 @@ const uniqueFloors = computed(() => {
 .filter-panel-wrapper {
   transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.45s ease;
   will-change: width;
+}
+
+/* Tooltip Fade-in / Fade-out Transition */
+.tooltip-fade-enter-active,
+.tooltip-fade-leave-active {
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tooltip-fade-enter-from,
+.tooltip-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -96%) scale(0.97) !important;
+}
+
+.tooltip-fade-enter-from.translate-y-0,
+.tooltip-fade-leave-to.translate-y-0 {
+  opacity: 0;
+  transform: translate(-50%, 4px) scale(0.97) !important;
 }
 </style>
 
