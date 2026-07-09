@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import {
@@ -40,6 +41,7 @@ import {
   deleteBookingRoomServicesBulk
 } from '@/services/booking-service'
 
+const route = useRoute()
 const uiStore = useUiStore()
 
 // ==================== CONFIG & SYSTEM ====================
@@ -196,6 +198,7 @@ const emptyForm = () => ({
   dbId: null,
   bookingCode: '',
   bookingName: '',
+  color: '#000000',
   checkIn: new Date().toISOString().split('T')[0],
   checkOut: '',
   nights: 1,
@@ -223,6 +226,7 @@ const emptyForm = () => ({
 })
 
 const modalForm = ref(emptyForm())
+const isColorChanged = ref(false)
 
 // ==================== DEPOSIT MODAL STATE & ACTIONS ====================
 const isDepositModalOpen = ref(false)
@@ -238,6 +242,21 @@ const depositForm = ref({
   image: null
 })
 
+function parseApiDate(dateStr) {
+  if (!dateStr) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+  if (dateStr.includes('T')) {
+    const d = new Date(dateStr)
+    if (!isNaN(d)) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  return dateStr.substring(0, 10)
+}
+
 async function syncDepositsFromBackend() {
   if (!modalForm.value.dbId) return
   try {
@@ -245,7 +264,7 @@ async function syncDepositsFromBackend() {
     const paymentsList = res.data?.data || res.data || []
     modalForm.value.deposits = paymentsList.map(p => ({
       id: p.id,
-      date: p.date ? p.date.substring(0, 10).split('-').reverse().join('/') : '',
+      date: p.date ? parseApiDate(p.date).split('-').reverse().join('/') : '',
       time: p.open_time ? p.open_time.substring(0, 5) : '',
       paymentMethodId: p.payment_method_id,
       note: p.description || '',
@@ -821,10 +840,32 @@ onMounted(async () => {
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
+    
+    if (route.query.bookingCode) {
+      const foundTab = tabs.value.find(t => t.id === route.query.bookingCode)
+      if (foundTab) {
+        activeTabId.value = foundTab.id
+        if (route.query.openModal === 'true') {
+          await openEditModal()
+        }
+      }
+    }
   } catch (err) {
     console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
   } finally {
     isLoading.value = false
+  }
+})
+
+watch(() => route.query.bookingCode, async (newCode) => {
+  if (newCode) {
+    const foundTab = tabs.value.find(t => t.id === newCode)
+    if (foundTab) {
+      activeTabId.value = foundTab.id
+      if (route.query.openModal === 'true') {
+        await openEditModal()
+      }
+    }
   }
 })
 
@@ -1030,8 +1071,8 @@ function bookingToTab(b) {
           roomClassId: classId,
           roomClassCode: br.room_class?.code || '',
           roomClassName: br.room_class?.name || '',
-          arrivalDate: br.arrival_date ? br.arrival_date.substring(0, 10) : '',
-          departureDate: br.departure_date ? br.departure_date.substring(0, 10) : '',
+          arrivalDate: parseApiDate(br.arrival_date),
+          departureDate: parseApiDate(br.departure_date),
           quantity: 0,
           price: Number(br.rate) || 0,
           ratePlanCode: '',
@@ -1083,14 +1124,15 @@ function bookingToTab(b) {
     bookingName: b.booking_name,
     statusLabel: b.registration_status?.name || '—',
     registrationStatusId: b.registration_status_id,
-    checkIn: b.arrival_date ? b.arrival_date.substring(0, 10) : '',
-    checkOut: b.departure_date ? b.departure_date.substring(0, 10) : '',
+    checkIn: parseApiDate(b.arrival_date),
+    checkOut: parseApiDate(b.departure_date),
     nights: b.num_of_days,
     deposit: b.payment_value || 0,
     company: b.company?.name || '—',
     companyId: b.company_id,
-    confirmDate: b.confirm_date ? b.confirm_date.substring(0, 10) : '',
-    expiredDate: b.expired_date ? b.expired_date.substring(0, 10) : '',
+    confirmDate: parseApiDate(b.confirm_date),
+    expiredDate: parseApiDate(b.expired_date),
+    color: b.color || '#000000',
     marketId: b.market_id,
     market: b.market?.name || '—',
     customerSourceId: b.customer_source_id,
@@ -1111,7 +1153,7 @@ function bookingToTab(b) {
     roomAllocations: roomAllocations,
     deposits: b.payments ? b.payments.map(p => ({
       id: p.id,
-      date: p.date ? p.date.substring(0, 10).split('-').reverse().join('/') : '',
+      date: p.date ? parseApiDate(p.date).split('-').reverse().join('/') : '',
       time: p.open_time ? p.open_time.substring(0, 5) : '',
       paymentMethodId: p.payment_method_id,
       note: p.description || '',
@@ -1204,6 +1246,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
 async function handleAddTabClick() {
   isEditModal.value = false
   modalPos.value = { x: 0, y: 0 }
+  isColorChanged.value = false
   const today = new Date().toISOString().split('T')[0]
   const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
   const tomorrow = tomorrowDate.toISOString().split('T')[0]
@@ -1232,10 +1275,12 @@ async function openEditModal() {
   if (!tab) return
   modalPos.value = { x: 0, y: 0 }
   isEditModal.value = true
+  isColorChanged.value = false
   modalForm.value = {
     dbId: tab.dbId,
     bookingCode: tab.id,
     bookingName: tab.bookingName,
+    color: tab.color || '#000000',
     checkIn: tab.checkIn,
     checkOut: tab.checkOut,
     nights: tab.nights,
@@ -1544,6 +1589,7 @@ async function handleSaveNewBooking() {
   try {
     const payload = {
       booking_name:           modalForm.value.bookingName.toUpperCase(),
+      color:                  (isColorChanged.value || modalForm.value.color !== '#000000') ? modalForm.value.color : null,
       arrival_date:           modalForm.value.checkIn,
       departure_date:         modalForm.value.checkOut,
       num_of_days:            modalForm.value.nights,
@@ -2204,6 +2250,31 @@ async function saveServices() {
   // Reset selection sau khi thực hiện xong
   selectedRows.value = []
 }
+
+async function openBookingModalByCode(bookingCode) {
+  const foundTab = tabs.value.find(t => t.id === bookingCode)
+  if (foundTab) {
+    activeTabId.value = foundTab.id
+    await openEditModal()
+  } else {
+    try {
+      const res = await fetchBookings({ search: bookingCode })
+      const list = res.data?.data || res.data || []
+      if (list.length > 0) {
+        const tabObj = bookingToTab(list[0])
+        tabs.value.push(tabObj)
+        activeTabId.value = tabObj.id
+        await openEditModal()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+}
+
+defineExpose({
+  openBookingModalByCode
+})
 </script>
 
 <template>
@@ -3012,7 +3083,7 @@ async function saveServices() {
             <div class="flex items-center space-x-3">
                 <div class="flex items-center space-x-1.5 bg-white/10 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner">
                     <span class="text-xs font-medium text-gray-300 select-none">Màu BK</span>
-                    <input type="color" v-model="modalForm.color" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none">
+                    <input type="color" v-model="modalForm.color" @change="isColorChanged = true" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none">
                 </div>
 
                 <div class="flex items-center space-x-1.5">
