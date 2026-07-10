@@ -3,6 +3,11 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import CopyModal from './components/CopyModal.vue'
+import UpgradeModal from './components/UpgradeModal.vue'
+import DepositModal from './components/DepositModal.vue'
+import ServicesModal from './components/ServicesModal.vue'
+import SystemSearchModal from './components/SystemSearchModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -66,6 +71,7 @@ const roomClasses = ref([])
 const roomRateCodes = ref([])
 const hotelServicesList = ref([])
 const selectedServiceFilter = ref('all')
+const diagnosticErrors = ref([])
 
 // ==================== TAB MANAGEMENT ====================
 const tabs = ref([])
@@ -133,8 +139,6 @@ const selectedRoomAction = ref('0')
 
 // ==================== REDESIGN GLOBAL SEARCH & DOCK ====================
 const isGlobalSearchOpen = ref(false)
-const globalSearchQuery = ref('')
-const globalSearchResults = ref([])
 const isSubListOpen = ref(false)
 const isPrintPrice = ref(true)
 
@@ -147,76 +151,7 @@ function handleTableScroll() {
   }
 }
 
-const filterByArrivalDate = ref(false)
-const searchFromDate = ref(new Date().toISOString().split('T')[0])
-const searchToDate = ref(new Date().toISOString().split('T')[0])
-const searchStatuses = ref([])
-const isStatusDropdownOpen = ref(false)
-
-const searchStatusLabel = computed(() => {
-  const selected = searchStatuses.value
-  if (selected.length === 0) return 'Không có'
-  if (selected.length === registrationStatuses.value.length) return 'Tất cả'
-  
-  const names = []
-  selected.forEach(id => {
-    const s = registrationStatuses.value.find(rs => rs.id === id)
-    if (s) names.push(s.name)
-  })
-  
-  if (names.length <= 2) return names.join(', ')
-  return 'Nhiều tình trạng'
-})
-
-const isAllStatusesChecked = computed({
-  get() {
-    if (registrationStatuses.value.length === 0) return false
-    return searchStatuses.value.length === registrationStatuses.value.length
-  },
-  set(val) {
-    if (val) {
-      searchStatuses.value = registrationStatuses.value.map(rs => rs.id)
-    } else {
-      searchStatuses.value = []
-    }
-  }
-})
-
-async function executeGlobalSearch() {
-  const params = {}
-  
-  if (globalSearchQuery.value.trim().length >= 2) {
-    params.search = globalSearchQuery.value.trim()
-  } else if (!filterByArrivalDate.value) {
-    globalSearchResults.value = []
-    return
-  }
-  
-  if (filterByArrivalDate.value) {
-    if (searchFromDate.value) params.from_date = searchFromDate.value
-    if (searchToDate.value) params.to_date = searchToDate.value
-  }
-  
-  if (searchStatuses.value.length > 0) {
-    params.registration_status_id = searchStatuses.value.join(',')
-  }
-  
-  try {
-    const res = await fetchBookings(params)
-    globalSearchResults.value = res.data?.data || res.data || []
-  } catch (err) {
-    console.error(err)
-  }
-}
-
-watch([globalSearchQuery, filterByArrivalDate, searchFromDate, searchToDate, searchStatuses], () => {
-  executeGlobalSearch()
-}, { deep: true })
-
 function handleGlobalSearchResultClick(booking) {
-  isGlobalSearchOpen.value = false
-  globalSearchQuery.value = ''
-  
   const existing = tabs.value.find(t => t.dbId === booking.id)
   if (existing) {
     activeTabId.value = existing.id
@@ -229,33 +164,6 @@ function handleGlobalSearchResultClick(booking) {
 
 function openGlobalSearch() {
   isGlobalSearchOpen.value = true
-  
-  const tab = activeTab.value
-  if (tab) {
-    let ci = tab.checkIn
-    let co = tab.checkOut
-    if (ci && ci.includes('/')) ci = parseDateVi(ci)
-    if (co && co.includes('/')) co = parseDateVi(co)
-    
-    searchFromDate.value = ci || new Date().toISOString().split('T')[0]
-    searchToDate.value = co || new Date().toISOString().split('T')[0]
-  } else {
-    const today = new Date().toISOString().split('T')[0]
-    searchFromDate.value = today
-    searchToDate.value = today
-  }
-  
-  setTimeout(() => {
-    const el = document.getElementById('gsInput')
-    if (el) el.focus()
-  }, 50)
-}
-
-function closeGlobalSearch() {
-  isGlobalSearchOpen.value = false
-  globalSearchQuery.value = ''
-  globalSearchResults.value = []
-  filterByArrivalDate.value = false
 }
 
 function getColWidthPx(col) {
@@ -306,25 +214,9 @@ const copyModalDepartureDate = ref('')
 
 // ==================== UPGRADE ROOM MODAL ====================
 const isUpgradeModalOpen = ref(false)
-const upgradeTargetRooms = ref([])
-const upgradeTargetClassId = ref(null)
-const upgradeTargetRateCode = ref('')
-const upgradeTargetPrice = ref(0)
-const upgradeChangePrice = ref(false)
 
 // ==================== DEPOSIT MODAL STATE & ACTIONS ====================
 const isDepositModalOpen = ref(false)
-const selectedDepositIds = ref([])
-const depositForm = ref({
-  id: null,
-  amount: 0,
-  paymentMethodId: null,
-  bankAccountId: 'Tài khoản ngân hàng',
-  date: new Date().toISOString().split('T')[0],
-  note: '',
-  recipient: 'Admin',
-  image: null
-})
 
 function parseApiDate(dateStr) {
   if (!dateStr) return ''
@@ -341,305 +233,8 @@ function parseApiDate(dateStr) {
   return dateStr.substring(0, 10)
 }
 
-async function syncDepositsFromBackend() {
-  if (!modalForm.value.dbId) return
-  try {
-    const res = await fetchPayments(modalForm.value.dbId)
-    const paymentsList = res.data?.data || res.data || []
-    modalForm.value.deposits = paymentsList.map(p => ({
-      id: p.id,
-      date: p.date ? parseApiDate(p.date).split('-').reverse().join('/') : '',
-      time: p.open_time ? p.open_time.substring(0, 5) : '',
-      paymentMethodId: p.payment_method_id,
-      note: p.description || '',
-      amount: Number(p.amount) || 0,
-      currency: activeCurrency.value.code || 'VND',
-      recipient: p.created_by || 'Admin',
-      images: [],
-      status: p.status,
-      edit_flag: p.edit_flag,
-      reversal_ref: p.reversal_ref,
-      debit_account: p.debit_account
-    }))
-    // Tính tổng các cọc active (edit_flag = 0 và pack2 = DPR)
-    const activeDeposits = paymentsList.filter(p => p.edit_flag === 0 && p.pack2 === 'DPR')
-    modalForm.value.paymentValue = activeDeposits.reduce((sum, d) => sum + Number(d.amount), 0)
-    
-    // Đồng bộ lại paymentValue cho Tab active hiện tại
-    const activeTab = tabs.value.find(t => t.dbId === modalForm.value.dbId)
-    if (activeTab) {
-      activeTab.deposit = modalForm.value.paymentValue
-      activeTab.paymentValue = modalForm.value.paymentValue
-    }
-  } catch (err) {
-    console.error('Lỗi đồng bộ cọc:', err)
-  }
-}
-
-async function openDepositModal() {
-  depositForm.value = {
-    id: null,
-    amount: 0,
-    paymentMethodId: paymentMethods.value[0]?.id || null,
-    bankAccountId: 'Tài khoản ngân hàng',
-    date: new Date().toISOString().split('T')[0],
-    note: '',
-    recipient: 'Admin',
-    image: null
-  }
-  selectedDepositIds.value = []
-  
-  if (modalForm.value.dbId) {
-    await syncDepositsFromBackend()
-  } else {
-    if (!modalForm.value.deposits) {
-      modalForm.value.deposits = []
-      modalForm.value.paymentValue = 0
-    }
-  }
+function openDepositModal() {
   isDepositModalOpen.value = true
-}
-
-function handleDepositImageUpload(event) {
-  const file = event.target.files[0]
-  if (file) {
-    depositForm.value.image = URL.createObjectURL(file)
-  }
-}
-
-async function addDeposit() {
-  if (!depositForm.value.amount || depositForm.value.amount <= 0) {
-    uiStore.showToast('Vui lòng nhập số tiền đặt cọc hợp lệ!', 'warning')
-    return
-  }
-  
-  if (modalForm.value.dbId) {
-    try {
-      const payload = {
-        date: depositForm.value.date,
-        amount: Number(depositForm.value.amount),
-        payment_method_id: depositForm.value.paymentMethodId,
-        description: depositForm.value.note || 'Đặt cọc',
-        debit_account: depositForm.value.bankAccountId || 'Tài khoản ngân hàng',
-      }
-      await createPayment(modalForm.value.dbId, payload)
-      await syncDepositsFromBackend()
-      uiStore.showToast('Đã thêm đặt cọc mới thành công!', 'success')
-      depositForm.value.amount = 0
-      depositForm.value.note = ''
-      depositForm.value.image = null
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Không thể thêm cọc!', 'error')
-    }
-  } else {
-    const now = new Date()
-    const timeStr = now.toTimeString().split(' ')[0].substring(0, 5)
-    
-    const newDep = {
-      id: Date.now(),
-      date: depositForm.value.date.split('-').reverse().join('/'),
-      time: timeStr,
-      paymentMethodId: depositForm.value.paymentMethodId,
-      note: depositForm.value.note || 'Đặt cọc',
-      amount: Number(depositForm.value.amount),
-      currency: activeCurrency.value.code || 'VND',
-      recipient: depositForm.value.recipient || 'Admin',
-      images: depositForm.value.image ? ['Chứng từ'] : []
-    }
-    
-    if (!modalForm.value.deposits) {
-      modalForm.value.deposits = []
-    }
-    modalForm.value.deposits.push(newDep)
-    modalForm.value.paymentValue = modalForm.value.deposits.reduce((sum, d) => sum + d.amount, 0)
-    
-    depositForm.value.amount = 0
-    depositForm.value.note = ''
-    depositForm.value.image = null
-    uiStore.showToast('Đã thêm đặt cọc mới!', 'success')
-  }
-}
-
-function editDeposit() {
-  if (selectedDepositIds.value.length !== 1) {
-    uiStore.showToast('Vui lòng chọn duy nhất 1 cọc để sửa!', 'warning')
-    return
-  }
-  const targetId = selectedDepositIds.value[0]
-  const dep = modalForm.value.deposits.find(d => d.id === targetId)
-  if (dep) {
-    let dateVal = dep.date
-    if (dateVal.includes('/')) {
-      dateVal = dateVal.split('/').reverse().join('-')
-    }
-    depositForm.value = {
-      id: dep.id,
-      amount: dep.amount,
-      paymentMethodId: dep.paymentMethodId,
-      bankAccountId: dep.bankAccountId || 'Tài khoản ngân hàng',
-      date: dateVal,
-      note: dep.note,
-      recipient: dep.recipient,
-      image: dep.images?.[0] || null
-    }
-  }
-}
-
-async function saveDeposit() {
-  if (!depositForm.value.id) {
-    isDepositModalOpen.value = false
-    return
-  }
-  
-  if (modalForm.value.dbId) {
-    try {
-      const payload = {
-        date: depositForm.value.date,
-        amount: Number(depositForm.value.amount),
-        payment_method_id: depositForm.value.paymentMethodId,
-        description: depositForm.value.note,
-        debit_account: depositForm.value.bankAccountId,
-      }
-      await updatePayment(depositForm.value.id, payload)
-      await syncDepositsFromBackend()
-      uiStore.showToast('Cập nhật đặt cọc thành công!', 'success')
-      depositForm.value.id = null
-      depositForm.value.amount = 0
-      depositForm.value.note = ''
-      depositForm.value.image = null
-      selectedDepositIds.value = []
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Không thể sửa cọc!', 'error')
-    }
-  } else {
-    const idx = modalForm.value.deposits.findIndex(d => d.id === depositForm.value.id)
-    if (idx !== -1) {
-      modalForm.value.deposits[idx].amount = Number(depositForm.value.amount)
-      modalForm.value.deposits[idx].paymentMethodId = depositForm.value.paymentMethodId
-      modalForm.value.deposits[idx].date = depositForm.value.date.split('-').reverse().join('/')
-      modalForm.value.deposits[idx].note = depositForm.value.note
-      modalForm.value.deposits[idx].images = depositForm.value.image ? ['Chứng từ'] : []
-      
-      modalForm.value.paymentValue = modalForm.value.deposits.reduce((sum, d) => sum + d.amount, 0)
-      
-      depositForm.value.id = null
-      depositForm.value.amount = 0
-      depositForm.value.note = ''
-      depositForm.value.image = null
-      selectedDepositIds.value = []
-      uiStore.showToast('Đã cập nhật đặt cọc thành công!', 'success')
-    }
-  }
-}
-
-async function deleteDeposits() {
-  if (selectedDepositIds.value.length === 0) {
-    uiStore.showToast('Vui lòng chọn các cọc muốn xóa!', 'warning')
-    return
-  }
-  
-  if (modalForm.value.dbId) {
-    uiStore.confirm({
-      title: 'Hủy/Xóa đặt cọc',
-      message: 'Bạn có chắc chắn muốn xóa đặt cọc này? Hệ thống sẽ tạo dòng đối trừ âm.',
-      confirmText: 'Đồng ý',
-      cancelText: 'Quay lại'
-    }).then(async confirmed => {
-      if (!confirmed) return
-      try {
-        for (const depId of selectedDepositIds.value) {
-          await deletePayment(depId)
-        }
-        await syncDepositsFromBackend()
-        uiStore.showToast('Đã xóa đặt cọc (tạo đối trừ) thành công!', 'success')
-        selectedDepositIds.value = []
-      } catch (err) {
-        uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa cọc!', 'error')
-      }
-    })
-  } else {
-    modalForm.value.deposits = modalForm.value.deposits.filter(d => !selectedDepositIds.value.includes(d.id))
-    modalForm.value.paymentValue = modalForm.value.deposits.reduce((sum, d) => sum + d.amount, 0)
-    selectedDepositIds.value = []
-    uiStore.showToast('Đã xóa cọc thành công!', 'success')
-  }
-}
-
-async function splitDeposit() {
-  if (selectedDepositIds.value.length !== 1) {
-    uiStore.showToast('Vui lòng chọn duy nhất 1 cọc để tách!', 'warning')
-    return
-  }
-  const targetId = selectedDepositIds.value[0]
-  const dep = modalForm.value.deposits.find(d => d.id === targetId)
-  if (!dep) return
-
-  if (!modalForm.value.dbId) {
-    uiStore.showToast('Chỉ có thể tách cọc của booking đã lưu.', 'warning')
-    return
-  }
-
-  const amtStr = window.prompt(`Nhập các số tiền sau khi tách, cách nhau bởi dấu phẩy (Ví dụ: 500000, 400000). Tổng phải bằng ${dep.amount.toLocaleString()} VND:`)
-  if (!amtStr) return
-
-  const amounts = amtStr.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0)
-  if (amounts.length < 2) {
-    uiStore.showToast('Vui lòng nhập ít nhất 2 số tiền hợp lệ!', 'warning')
-    return
-  }
-
-  try {
-    await splitPayment(targetId, { amounts })
-    await syncDepositsFromBackend()
-    uiStore.showToast('Tách cọc thành công!', 'success')
-    selectedDepositIds.value = []
-  } catch (err) {
-    uiStore.showToast(err.response?.data?.message || 'Không thể tách cọc!', 'error')
-  }
-}
-
-async function transferDeposit() {
-  if (selectedDepositIds.value.length !== 1) {
-    uiStore.showToast('Vui lòng chọn duy nhất 1 cọc để chuyển!', 'warning')
-    return
-  }
-  const targetId = selectedDepositIds.value[0]
-  if (!modalForm.value.dbId) {
-    uiStore.showToast('Chỉ có thể chuyển cọc của booking đã lưu.', 'warning')
-    return
-  }
-
-  const destCode = window.prompt('Nhập mã booking đích muốn chuyển cọc sang (Ví dụ: GAL0012):')
-  if (!destCode) return
-
-  try {
-    const res = await fetchBookings({ search: destCode.trim() })
-    const bookings = res.data?.data || res.data || []
-    const targetBooking = bookings.find(b => b.booking_code.toUpperCase() === destCode.trim().toUpperCase())
-    
-    if (!targetBooking) {
-      uiStore.showToast(`Không tìm thấy booking có mã "${destCode}"!`, 'error')
-      return
-    }
-
-    uiStore.confirm({
-      title: 'Chuyển đặt cọc',
-      message: `Bạn có chắc chắn muốn chuyển cọc sang booking "${targetBooking.booking_code} - ${targetBooking.booking_name}"?`,
-      confirmText: 'Chuyển', cancelText: 'Hủy'
-    }).then(async confirmed => {
-      if (!confirmed) return
-      try {
-        await transferPayment(targetId, { target_booking_id: targetBooking.id })
-        await syncDepositsFromBackend()
-        uiStore.showToast(`Đã chuyển cọc sang booking ${targetBooking.booking_code} thành công!`, 'success')
-        selectedDepositIds.value = []
-      } catch (err) {
-        uiStore.showToast(err.response?.data?.message || 'Lỗi khi chuyển cọc!', 'error')
-      }
-    })
-  } catch (err) {
-    uiStore.showToast('Không thể xác thực booking đích!', 'error')
-  }
 }
 
 // ==================== TABLE UI STATES ====================
@@ -956,21 +551,8 @@ watch(() => route.query.bookingCode, async (newCode) => {
 
 async function loadDropdowns() {
   try {
-    const [
-      mRes,
-      csRes,
-      bRes,
-      cRes,
-      pmRes,
-      rsRes,
-      uRes,
-      rcRes,
-      rrcRes,
-      currRes,
-      hsRes,
-      settingsRes,
-      sysTimeRes
-    ] = await Promise.allSettled([
+    diagnosticErrors.value = []
+    const results = await Promise.allSettled([
       fetchMarkets(),
       fetchCustomerSources(),
       fetchBookers(),
@@ -985,13 +567,41 @@ async function loadDropdowns() {
       fetchHotelSettings(),
       fetchSystemTime(),
     ])
+    
+    const [
+      mRes,
+      csRes,
+      bRes,
+      cRes,
+      pmRes,
+      rsRes,
+      uRes,
+      rcRes,
+      rrcRes,
+      currRes,
+      hsRes,
+      settingsRes,
+      sysTimeRes
+    ] = results
+
+    const endpointNames = [
+      'Markets', 'CustomerSources', 'Bookers', 'Companies', 'PaymentMethods',
+      'RegistrationStatuses', 'Users', 'RoomClasses', 'RoomRateCodes',
+      'Currencies', 'HotelServices', 'HotelSettings', 'SystemTime'
+    ]
+
+    results.forEach((r, idx) => {
+      if (r.status === 'rejected') {
+        diagnosticErrors.value.push(`API ${endpointNames[idx]} failed: ${r.reason?.response?.data?.message || r.reason?.message || r.reason}`)
+      }
+    })
+
     markets.value              = mRes.status  === 'fulfilled' ? (mRes.value.data?.data  || mRes.value.data  || []) : []
     customerSources.value      = csRes.status === 'fulfilled' ? (csRes.value.data?.data || csRes.value.data || []) : []
     bookers.value              = bRes.status  === 'fulfilled' ? (bRes.value.data?.data  || bRes.value.data  || []) : []
     companies.value            = cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []
     paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
     registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
-    searchStatuses.value = registrationStatuses.value.map(rs => rs.id)
     users.value                = uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []
     roomClasses.value          = (rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []).filter(c => c.is_active !== false)
     roomRateCodes.value        = rrcRes.status === 'fulfilled' ? (rrcRes.value.data?.data || rrcRes.value.data || []) : []
@@ -999,8 +609,20 @@ async function loadDropdowns() {
     hotelServicesList.value    = hsRes.status === 'fulfilled' ? (hsRes.value.data?.data  || hsRes.value.data  || []) : []
     hotelSettings.value        = settingsRes.status === 'fulfilled' ? (settingsRes.value.data?.data || settingsRes.value.data || {}) : {}
     systemDate.value           = sysTimeRes.status === 'fulfilled' ? (sysTimeRes.value.data?.system_date || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
+
+    // Empty list checks
+    if (rcRes.status === 'fulfilled' && roomClasses.value.length === 0) {
+      diagnosticErrors.value.push("Room Classes API returned 0 active room classes.")
+    }
+    if (uRes.status === 'fulfilled' && users.value.length === 0) {
+      diagnosticErrors.value.push("Users API returned 0 users.")
+    }
+    if (rsRes.status === 'fulfilled' && registrationStatuses.value.length === 0) {
+      diagnosticErrors.value.push("Registration Statuses API returned 0 statuses.")
+    }
   } catch (err) {
     console.error('Error loading dropdowns:', err)
+    diagnosticErrors.value.push(`Uncaught loadDropdowns error: ${err.message}`)
   }
 }
 
@@ -1390,7 +1012,9 @@ async function openEditModal() {
     contactPhone: tab.contactPhone || '',
     note: tab.note || '',
     specialRequests: tab.specialRequests || '',
-    shuttleInfo: JSON.parse(JSON.stringify(tab.shuttleInfo || [])),
+    shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
+      ? JSON.parse(JSON.stringify(tab.shuttleInfo))
+      : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
     roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
@@ -2185,46 +1809,13 @@ async function openCopyModal() {
   isCopyModalOpen.value = true
 }
 
-async function handleConfirmCopy() {
-  const tab = activeTab.value
-  if (!tab || !tab.dbId) return
-  
-  if (!copyModalArrivalDate.value || !copyModalDepartureDate.value) {
-    uiStore.showToast('Vui lòng chọn đầy đủ ngày đến và ngày đi!', 'warning')
-    return
+function handleCopied(newBooking) {
+  if (newBooking) {
+    const newTab = bookingToTab(newBooking)
+    tabs.value.push(newTab)
+    activeTabId.value = newTab.id
   }
-  
-  if (copyModalDepartureDate.value <= copyModalArrivalDate.value) {
-    uiStore.showToast('Ngày đi phải lớn hơn ngày đến!', 'warning')
-    return
-  }
-  
-  uiStore.showToast('Đang thực hiện nhân bản đăng ký...', 'info')
-  try {
-    const res = await copyBooking(tab.dbId, {
-      arrival_date: copyModalArrivalDate.value,
-      departure_date: copyModalDepartureDate.value
-    })
-    
-    if (res.data?.success) {
-      uiStore.showToast(res.data.message || 'Nhân bản đăng ký thành công!', 'success')
-      isCopyModalOpen.value = false
-      
-      const newBooking = res.data.data
-      if (newBooking) {
-        const newTab = bookingToTab(newBooking)
-        tabs.value.push(newTab)
-        activeTabId.value = newTab.id
-      }
-      
-      await loadBookings()
-    } else {
-      uiStore.showToast(res.data?.message || 'Nhân bản thất bại!', 'error')
-    }
-  } catch (err) {
-    console.error('Copy booking error:', err)
-    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi nhân bản đăng ký!', 'error')
-  }
+  loadBookings()
 }
 
 // ==================== NÂNG HẠNG PHÒNG MODAL ====================
@@ -2245,284 +1836,31 @@ function openUpgradeModal() {
     return
   }
 
-  upgradeTargetRooms.value = selected
-  const targetRoom = selected[0]
-  if (targetRoom) {
-    const matchedClass = roomClasses.value.find(c => c.name === targetRoom.type || c.code === targetRoom.shape)
-    upgradeTargetClassId.value = matchedClass ? matchedClass.id : null
-    upgradeTargetRateCode.value = ''
-    upgradeTargetPrice.value = targetRoom.price || 0
-    upgradeChangePrice.value = false
-  } else {
-    upgradeTargetClassId.value = null
-    upgradeTargetRateCode.value = ''
-    upgradeTargetPrice.value = 0
-    upgradeChangePrice.value = false
-  }
   isUpgradeModalOpen.value = true
 }
 
-async function confirmUpgrade() {
-  const tab = activeTab.value
-  if (!tab || !tab.dbId) return
-
-  const classId = upgradeTargetClassId.value
-  if (!classId) {
-    uiStore.showToast('Vui lòng chọn hạng phòng muốn nâng lên!', 'warning')
-    return
-  }
-
-  const targetList = upgradeTargetRooms.value
-  if (targetList.length === 0) {
-    uiStore.showToast('Không có phòng nào để nâng hạng!', 'info')
-    return
-  }
-
-  isUpgradeModalOpen.value = false
-  uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
-  let successCount = 0
-  let failCount = 0
-  let failMessages = []
-
-  try {
-    await Promise.all(targetList.map(async (r) => {
-      if (!r.bookingRoomId) return
-      try {
-        const data = { room_class_id: classId }
-        if (upgradeChangePrice.value) {
-          data.rate = Number(upgradeTargetPrice.value)
-        }
-        const res = await upgradeRoom(tab.dbId, r.bookingRoomId, data)
-        if (res.data?.success) {
-          successCount++
-          r.roomNumber = ''
-          r.roomClassId = classId
-          const matchedClass = roomClasses.value.find(c => c.id === classId)
-          if (matchedClass) {
-            r.type = matchedClass.name
-            r.shape = matchedClass.code
-          }
-          if (upgradeChangePrice.value) {
-            r.price = Number(upgradeTargetPrice.value)
-            if (upgradeTargetRateCode.value) {
-              r.rateCode = upgradeTargetRateCode.value
-            }
-          }
-        } else {
-          failCount++
-          failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
-        }
-      } catch (err) {
-        console.error(err)
-        failCount++
-        failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
-      }
-    }))
-
-    if (successCount > 0) {
-      await loadBookings()
-      selectedRows.value = []
-      upgradeTargetRooms.value = []
-      uiStore.showToast(`Nâng hạng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
-    } else {
-      uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
-    }
-  } catch(err) {
-    console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
-  }
+function handleUpgraded() {
+  loadBookings()
+  selectedRows.value = []
 }
 
 // ==================== DỊCH VỤ BỔ SUNG MODAL ====================
 const isServicesModalOpen = ref(false)
 const servicesModalRoom = ref(null)
-const servicesModalSearch = ref('')
-const selectedServiceCodes = ref([])
-const checkedDates = ref([])
-const serviceItems = ref([])
-
-const filteredHotelServices = computed(() => {
-  if (!servicesModalSearch.value) return hotelServicesList.value
-  const q = servicesModalSearch.value.toLowerCase()
-  return hotelServicesList.value.filter(s => 
-    s.name.toLowerCase().includes(q) || 
-    s.code.toLowerCase().includes(q)
-  )
+const servicesTargetRooms = computed(() => {
+  const tab = activeTab.value
+  if (!tab || !tab.rooms) return []
+  const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+  return selected.length > 0 ? selected : (servicesModalRoom.value ? [servicesModalRoom.value] : [])
 })
 
-const stayDatesList = computed(() => {
-  if (!servicesModalRoom.value) return []
-  return getStayDates(servicesModalRoom.value.checkIn, servicesModalRoom.value.checkOut)
-})
-
-const servicesTotalAmount = computed(() => {
-  return serviceItems.value.reduce((sum, item) => sum + (item.quantity * item.rate), 0)
-})
-
-function getStayDates(checkIn, checkOut) {
-  const dates = []
-  const start = new Date(parseDateVi(checkIn))
-  const end = new Date(parseDateVi(checkOut))
-  if (isNaN(start) || isNaN(end)) return dates
-  
-  let curr = new Date(start)
-  while (curr < end) {
-    dates.push(curr.toISOString().split('T')[0])
-    curr.setDate(curr.getDate() + 1)
-  }
-  return dates
-}
-
-
-
-function formatDateShort(dateStr) {
-  const parts = dateStr.split('-')
-  if (parts.length === 3) {
-    return `${parts[2]}/${parts[1]}`
-  }
-  return dateStr
-}
-
-function getServiceNameFromCode(code) {
-  const svc = hotelServicesList.value.find(s => s.code === code)
-  return svc ? svc.name : code
-}
-
-async function openServicesModal(room) {
+function openServicesModal(room) {
   servicesModalRoom.value = room
-  servicesModalSearch.value = ''
-  selectedServiceCodes.value = []
-  
-  const dates = getStayDates(room.checkIn, room.checkOut)
-  checkedDates.value = [...dates]
-  
-  try {
-    const res = await fetchBookingRoomServices(room.bookingRoomId)
-    const existing = res.data?.data || []
-    
-    const items = []
-    const codes = []
-    existing.forEach(svc => {
-      if (!codes.includes(svc.service_code)) {
-        codes.push(svc.service_code)
-        items.push({
-          service_code: svc.service_code,
-          service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
-          quantity: svc.quantity || 1,
-          rate: Number(svc.rate) || 0,
-          is_room: svc.is_room !== 0
-        })
-      }
-    })
-    
-    selectedServiceCodes.value = codes
-    serviceItems.value = items
-  } catch (err) {
-    console.error(err)
-    serviceItems.value = []
-  }
-  
   isServicesModalOpen.value = true
 }
 
-function handleServiceCheckboxChange(svc, checked) {
-  if (checked) {
-    if (!selectedServiceCodes.value.includes(svc.code)) {
-      selectedServiceCodes.value.push(svc.code)
-      serviceItems.value.push({
-        service_code: svc.code,
-        service_name: svc.name,
-        quantity: 1,
-        rate: Number(svc.price) || 0,
-        is_room: true
-      })
-    }
-  } else {
-    selectedServiceCodes.value = selectedServiceCodes.value.filter(c => c !== svc.code)
-    serviceItems.value = serviceItems.value.filter(i => i.service_code !== svc.code)
-  }
-}
-
-function toggleAllDates(event) {
-  if (event.target.checked) {
-    checkedDates.value = [...stayDatesList.value]
-  } else {
-    checkedDates.value = []
-  }
-}
-
-async function saveServices() {
-  if (!servicesModalRoom.value) return
-  const tab = activeTab.value
-  if (!tab) return
-
-  // Tìm danh sách các phòng được chọn trên bảng
-  const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-  
-  // Áp dụng hàng loạt cho tất cả các phòng được tick chọn hoặc phòng đang sửa lẻ
-  const targetRooms = selectedRooms.length > 0 ? selectedRooms : [servicesModalRoom.value]
-
-  uiStore.showToast('Đang tiến hành lưu dịch vụ bổ sung...', 'info')
-  let hasError = false
-  let lastErrorMsg = ''
-
-  for (const room of targetRooms) {
-    const roomId = room.bookingRoomId
-    if (!roomId) continue
-
-    try {
-      const res = await fetchBookingRoomServices(roomId)
-      const existing = res.data?.data || []
-
-      const toDeleteIds = []
-      existing.forEach(svc => {
-        const isCodeSelected = selectedServiceCodes.value.includes(svc.service_code)
-        let svcDateShort = svc.service_date
-        if (svcDateShort && svcDateShort.includes('T')) {
-          svcDateShort = svcDateShort.split('T')[0]
-        }
-        const isDateChecked = checkedDates.value.includes(svcDateShort)
-        if (!isCodeSelected || !isDateChecked) {
-          toDeleteIds.push(svc.id)
-        }
-      })
-
-      if (toDeleteIds.length > 0) {
-        await deleteBookingRoomServicesBulk(roomId, { service_ids: toDeleteIds })
-      }
-
-      for (const item of serviceItems.value) {
-        for (const d of checkedDates.value) {
-          await createBookingRoomService(roomId, {
-            service_code: item.service_code,
-            service_name: item.service_name,
-            service_date: d,
-            quantity: item.quantity,
-            rate: item.rate,
-            is_room: item.is_room ? 1 : 0
-          })
-        }
-      }
-
-      // Đồng bộ local services cho từng phòng
-      const updatedRes = await fetchBookingRoomServices(roomId)
-      room.services = updatedRes.data?.data || []
-    } catch (roomErr) {
-      console.error(`Lỗi khi lưu dịch vụ cho phòng ${room.roomNumber || roomId}:`, roomErr)
-      hasError = true
-      lastErrorMsg = roomErr.response?.data?.message || roomErr.message || 'Lỗi khi kết nối server.'
-    }
-  }
-
-  if (hasError) {
-    uiStore.showToast(`Lưu dịch vụ hoàn tất nhưng có lỗi xảy ra: ${lastErrorMsg}`, 'error')
-  } else {
-    uiStore.showToast('Lưu dịch vụ bổ sung thành công cho tất cả phòng đã chọn!', 'success')
-  }
-
-  isServicesModalOpen.value = false
-  await loadBookings()
-  // Reset selection sau khi thực hiện xong
+function handleServicesSaved() {
+  loadBookings()
   selectedRows.value = []
 }
 
@@ -2554,6 +1892,17 @@ defineExpose({
 
 <template>
   <div class="h-full flex flex-col bg-slate-50 text-slate-800 animate-in select-none">
+    
+    <!-- DIAGNOSTIC WARNINGS BANNER -->
+    <div v-if="diagnosticErrors.length" class="bg-rose-600 text-white text-xs px-4 py-2 font-bold flex flex-col gap-1 z-[99999] shrink-0 border-b border-rose-700 shadow-sm">
+      <div class="flex items-center gap-1.5 font-black text-sm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        Cảnh báo hệ thống: Lỗi tải dữ liệu từ server
+      </div>
+      <ul class="list-disc list-inside mt-1 font-semibold pl-1 text-[11px] opacity-95">
+        <li v-for="err in diagnosticErrors" :key="err" class="mt-0.5">{{ err }}</li>
+      </ul>
+    </div>
     
     <!-- DYNAMIC TABS HEADER BAR (Redesigned Top Bar) -->
     <div class="topbar shrink-0">
@@ -3313,176 +2662,12 @@ defineExpose({
     </div>
 
     <!-- GLOBAL SYSTEM SEARCH OVERLAY -->
-    <Teleport to="body">
-      <div 
-        v-if="isGlobalSearchOpen" 
-        class="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex justify-center items-start pt-16 z-[99999]"
-        @click="closeGlobalSearch"
-      >
-        <div 
-          class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden border border-gray-200"
-          @click.stop
-        >
-          <!-- INPUT HEADER -->
-          <div class="flex items-center px-4 py-2.5 border-b border-gray-100">
-            <svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-            </svg>
-            <input 
-              type="text" 
-              id="gsInput"
-              v-model="globalSearchQuery" 
-              placeholder="Tìm kiếm" 
-              class="flex-1 text-[13px] text-gray-800 placeholder-gray-400 outline-none bg-transparent" 
-              autofocus
-            />
-            <button class="text-gray-400 hover:text-gray-600 transition border-none bg-transparent cursor-pointer" @click="closeGlobalSearch">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-            </button>
-          </div>
-
-          <!-- FILTERS HEADER -->
-          <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-x-6 gap-y-2 items-center justify-between" @click="isStatusDropdownOpen = false">
-            <div class="flex items-center gap-4">
-              <!-- Switch toggle -->
-              <label class="relative inline-flex items-center cursor-pointer select-none">
-                <input 
-                  type="checkbox" 
-                  v-model="filterByArrivalDate" 
-                  class="sr-only peer"
-                />
-                <div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-400"></div>
-                <span class="ml-2 text-[11px] text-gray-500 font-medium block peer-checked:hidden">Xem tất cả</span>
-                <span class="ml-2 text-[11px] text-blue-600 font-medium hidden peer-checked:block">Xem theo ngày đến</span>
-              </label>
-
-              <!-- Date picker range inputs -->
-              <div 
-                v-if="filterByArrivalDate"
-                class="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded border border-gray-300 text-[11px] text-gray-700 animate-in fade-in zoom-in-95 duration-100"
-              >
-                <input type="date" v-model="searchFromDate" class="outline-none bg-transparent cursor-pointer border-none" />
-                <span class="text-gray-400">-</span>
-                <input type="date" v-model="searchToDate" class="outline-none bg-transparent cursor-pointer border-none" />
-              </div>
-            </div>
-
-            <!-- Tình trạng dropdown (click toggled) -->
-            <div class="relative select-none">
-              <button 
-                class="flex items-center gap-1.5 bg-white border border-gray-300 px-2.5 py-1 rounded text-[11px] text-gray-700 hover:border-blue-400 outline-none cursor-pointer"
-                @click.stop="isStatusDropdownOpen = !isStatusDropdownOpen"
-              >
-                Tình trạng: <span class="font-bold">{{ searchStatusLabel }}</span>
-                <svg class="w-3 h-3 text-gray-500 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
-              </button>
-              
-              <div 
-                v-show="isStatusDropdownOpen"
-                class="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded shadow-lg py-1.5 z-20"
-                @click.stop
-              >
-                <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
-                  <input type="checkbox" v-model="isAllStatusesChecked" class="custom-checkbox w-3.5 h-3.5 rounded border-gray-300 cursor-pointer">
-                  <span class="text-[11px] text-gray-700 font-bold">Chọn tất cả</span>
-                </label>
-                
-                <div class="max-h-48 overflow-y-auto pt-1">
-                  <label 
-                    v-for="rs in registrationStatuses" 
-                    :key="rs.id" 
-                    class="flex items-center gap-2 px-3 py-1 hover:bg-gray-50 cursor-pointer"
-                  >
-                    <input 
-                      type="checkbox" 
-                      :value="rs.id" 
-                      v-model="searchStatuses" 
-                      class="custom-checkbox w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
-                    >
-                    <span class="text-[11px] text-gray-600">{{ rs.name }}</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- RESULTS LIST -->
-          <div class="max-h-[50vh] overflow-y-auto">
-            <!-- RESULTS HEADER -->
-            <div class="flex items-center px-4 py-1.5 text-[10px] font-bold text-gray-500 uppercase bg-gray-100 sticky top-0 z-10 border-b border-gray-200">
-              <div class="w-16 shrink-0">Mã ĐK</div>
-              <div class="flex-1">Tên đăng ký</div>
-              <div class="w-28 text-center shrink-0">Mã tham chiếu</div>
-              <div class="w-28 text-center shrink-0">Ngày đến</div>
-              <div class="w-24 text-right shrink-0">Trạng thái</div>
-            </div>
-
-            <!-- RESULTS BODY -->
-            <div v-if="globalSearchResults.length > 0">
-              <div 
-                v-for="b in globalSearchResults" 
-                :key="b.id" 
-                class="flex items-center px-4 py-2 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition group"
-                @click="handleGlobalSearchResultClick(b)"
-              >
-                <!-- Mã ĐK -->
-                <div class="w-16 text-[11px] font-bold text-gray-500 group-hover:text-blue-600 shrink-0">
-                  {{ b.id }}
-                </div>
-                
-                <!-- Tên đăng ký / Tên khách -->
-                <div class="flex-1 min-w-0 pr-2">
-                  <div class="text-[13px] font-semibold text-gray-800 leading-tight truncate">
-                    {{ b.booking_name }}
-                  </div>
-                  <div class="text-[10px] text-gray-500 mt-0.5 truncate">
-                    {{ b.company_name || 'Khách lẻ' }} <span v-if="b.booking_code" class="text-slate-400 font-medium">({{ b.booking_code }})</span>
-                  </div>
-                </div>
-
-                <!-- Mã tham chiếu -->
-                <div class="w-28 text-center text-[11px] text-gray-600 shrink-0 truncate">
-                  {{ b.reference_code || '-' }}
-                </div>
-
-                <!-- Ngày đến -->
-                <div class="w-28 text-center text-[11px] text-gray-600 shrink-0">
-                  {{ formatDateVi(b.arrival_date || b.check_in) }}
-                </div>
-
-                <!-- Trạng thái -->
-                <div class="w-24 text-right shrink-0">
-                  <span 
-                    class="inline-block px-1.5 py-0.5 text-[10px] font-bold rounded border uppercase"
-                    :style="{ 
-                      backgroundColor: (b.registration_status?.color || '#64748b') + '15', 
-                      color: b.registration_status?.color || '#64748b',
-                      borderColor: (b.registration_status?.color || '#64748b') + '30'
-                    }"
-                  >
-                    {{ b.registration_status?.name || 'Không rõ' }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- EMPTY STATES -->
-            <div v-else class="px-4 py-6 text-[11px] text-gray-400 text-center bg-white">
-              <div v-if="globalSearchQuery.trim().length >= 2 || filterByArrivalDate">
-                Không tìm thấy kết quả phù hợp
-              </div>
-              <div v-else>
-                Nhập ít nhất 2 ký tự hoặc bật Xem theo ngày đến để tìm kiếm...
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <SystemSearchModal 
+      v-model:show="isGlobalSearchOpen" 
+      :registrationStatuses="registrationStatuses" 
+      :activeTab="activeTab" 
+      @select-booking="handleGlobalSearchResultClick" 
+    />
 
     <!-- MOCKUP CREATE REGISTRATION MODAL (Image 2 Match) -->
     <Teleport to="body">
@@ -4203,1460 +3388,47 @@ defineExpose({
     </Teleport>
 
     <!-- DEPOSIT MODAL MATCHING ĐẶT CỌC.html -->
-    <Teleport to="body">
-      <div 
-        v-if="isDepositModalOpen" 
-        class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
-      >
-        <div class="w-full max-w-5xl bg-white shadow-2xl rounded-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
-            
-            <!-- HEADER -->
-            <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 border-b border-[#1a2d42]">
-                <div class="flex items-center space-x-2">
-                    <div class="bg-blue-400/20 p-1.5 rounded-lg">
-                        <i class="fa-solid fa-file-invoice-dollar text-blue-200 text-xs"></i>
-                    </div>
-                    <span class="font-bold text-xs tracking-wide uppercase">Thêm đặt cọc</span>
-                </div>
-                <button @click="isDepositModalOpen = false" class="text-slate-300 hover:text-white transition p-1.5 rounded-lg hover:bg-white/10 cursor-pointer border-none bg-transparent">
-                    <i class="fa-solid fa-xmark text-sm"></i>
-                </button>
-            </div>
-
-            <!-- SCROLLABLE CONTENT -->
-            <div class="overflow-y-auto p-4 bg-white flex flex-col space-y-3 shrink-0">
-                
-                <div class="w-1/2 pr-2">
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Tên đăng ký</label>
-                    <div class="relative">
-                        <select disabled class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-medium bg-slate-50 text-slate-800 appearance-none focus:outline-none shadow-sm cursor-not-allowed">
-                            <option>{{ modalForm.bookingName || '123131' }}</option>
-                        </select>
-                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div>
-                        <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Số tiền <span class="text-rose-500">*</span></label>
-                        <div class="relative">
-                            <input 
-                              type="text" 
-                              :value="formatCurrencyInput(depositForm.amount)"
-                              @input="e => depositForm.amount = cleanCurrencyValue(e.target.value)"
-                              class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-bold bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm"
-                            >
-                            <div class="absolute right-1 top-0.5 flex flex-col">
-                                <button type="button" @click="depositForm.amount++" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
-                                <button type="button" @click="depositForm.amount = Math.max(0, depositForm.amount - 1)" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Phương thức đặt cọc <span class="text-rose-500">*</span></label>
-                        <div class="relative h-[30px]">
-                            <select 
-                              v-model="depositForm.paymentMethodId"
-                              class="w-full border border-blue-200 rounded-lg px-3 h-full text-xs font-medium bg-blue-50/70 text-black appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
-                            >
-                                <option :value="null">Phương thức đặt cọc</option>
-                                <option v-for="pm in paymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
-                            </select>
-                            <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Tài khoản ngân hàng</label>
-                        <div class="relative">
-                            <select 
-                              v-model="depositForm.bankAccountId"
-                              class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs bg-white text-slate-800 appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
-                            >
-                                <option value="Tài khoản ngân hàng">Tài khoản ngân hàng</option>
-                                <option value="Vietcombank - 1012345678">Vietcombank - 1012345678</option>
-                                <option value="BIDV - 2012345678">BIDV - 2012345678</option>
-                                <option value="Techcombank - 3012345678">Techcombank - 3012345678</option>
-                            </select>
-                            <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Ngày <span class="text-rose-500">*</span></label>
-                        <div class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative">
-                            <input 
-                              type="date" 
-                              v-model="depositForm.date" 
-                              class="date-span-input flex-1 text-left w-full"
-                            />
-                            <i class="fa-regular fa-calendar-days text-blue-500 cursor-pointer pointer-events-none"></i>
-                            <i @click="navigator.clipboard.writeText(depositForm.date)" class="fa-regular fa-copy text-slate-400 hover:text-slate-600 cursor-pointer"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Mô tả</label>
-                        <textarea 
-                          v-model="depositForm.note"
-                          placeholder="Nhập mô tả..." 
-                          class="w-full border border-blue-200 rounded-lg p-2 text-xs font-medium bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm h-[56px] resize-none"
-                        ></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Lưu hình ảnh (Chứng từ / Biên lai)</label>
-                        <div class="border border-dashed border-slate-300 rounded-lg h-[56px] bg-slate-50 flex items-center justify-center hover:bg-slate-100 hover:border-blue-400 transition cursor-pointer relative overflow-hidden group shadow-sm">
-                            <input type="file" @change="handleDepositImageUpload" class="absolute inset-0 opacity-0 cursor-pointer z-10" accept="image/*">
-                            <div class="flex flex-col items-center space-y-1" v-if="!depositForm.image">
-                                <i class="fa-solid fa-cloud-arrow-up text-slate-400 group-hover:text-blue-500 transition text-xs"></i>
-                                <span class="text-[10px] text-slate-500 font-medium group-hover:text-blue-600 transition">Nhấp để tải ảnh lên hoặc kéo thả vào đây</span>
-                            </div>
-                            <div class="flex items-center space-x-2 p-1" v-else>
-                                <img :src="depositForm.image" class="h-10 w-10 object-cover rounded border" />
-                                <span class="text-xs text-green-600 font-bold">Hình ảnh đã chọn</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TABLE AND LIST -->
-            <div class="bg-slate-50 p-4 border-t border-slate-200 flex-1 flex flex-col overflow-y-auto">
-                
-                <div class="flex justify-between items-end mb-1.5 shrink-0">
-                    <h3 class="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center">
-                        Danh sách đặt cọc <span class="text-rose-500 ml-1">*</span>
-                    </h3>
-                    
-                    <div class="flex items-center space-x-3">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-[11px] text-slate-500 font-medium">Hiển thị xoá</span>
-                            <div class="relative inline-block w-6 align-middle select-none transition duration-200 ease-in">
-                                <input type="checkbox" name="toggle" id="show-deleted" class="toggle-checkbox absolute block w-3 h-3 rounded-full bg-white border-2 border-slate-300 appearance-none cursor-pointer top-0 bottom-0 m-auto z-10 transition-transform duration-200 ease-in-out left-0"/>
-                                <label for="show-deleted" class="toggle-label block overflow-hidden h-3 rounded-full bg-slate-300 cursor-pointer transition-colors duration-200"></label>
-                            </div>
-                        </div>
-                        <button class="text-slate-400 hover:text-blue-600 transition border-none bg-transparent cursor-pointer">
-                            <i class="fa-solid fa-sliders text-xs"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm mb-1">
-                    <table class="w-full border-collapse text-left text-xs">
-                        <thead>
-                            <tr class="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
-                                <th class="p-2 w-10 text-center">
-                                    <input 
-                                      type="checkbox" 
-                                      class="rounded border-slate-300 font-normal"
-                                      :checked="selectedDepositIds.length === modalForm.deposits?.length"
-                                      @change="selectedDepositIds = $event.target.checked ? modalForm.deposits.map(d => d.id) : []"
-                                    >
-                                </th>
-                                <th class="p-2 min-w-[80px]">Ngày</th>
-                                <th class="p-2 min-w-[60px]">Giờ</th>
-                                <th class="p-2 min-w-[130px]">Phương thức thanh toán</th>
-                                <th class="p-2 min-w-[150px]">Mô tả</th>
-                                <th class="p-2 min-w-[90px] text-right">Số tiền</th>
-                                <th class="p-2 min-w-[60px] text-center">Tiền tệ</th>
-                                <th class="p-2 min-w-[110px]">Người nhận</th>
-                                <th class="p-2 min-w-[100px] text-center">Chứng từ</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr 
-                              v-for="dep in modalForm.deposits" 
-                              :key="dep.id" 
-                              class="border-b border-slate-100 hover:bg-slate-50/80 transition"
-                              :class="{ 'bg-blue-50/30': selectedDepositIds.includes(dep.id) }"
-                            >
-                                <td class="p-2 text-center align-middle">
-                                    <input 
-                                      type="checkbox" 
-                                      :value="dep.id" 
-                                      v-model="selectedDepositIds"
-                                      class="rounded border-slate-300 font-normal"
-                                    >
-                                </td>
-                                <td class="p-2 font-medium text-slate-800 align-middle">{{ dep.date }}</td>
-                                <td class="p-2 text-slate-600 align-middle">{{ dep.time }}</td>
-                                <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.id === dep.paymentMethodId)?.name || 'BT' }}</td>
-                                <td class="p-2 text-slate-600 align-middle">{{ dep.note }}</td>
-                                <td class="p-2 text-right font-mono font-semibold text-slate-900 align-middle">{{ dep.amount.toLocaleString('vi-VN') }}</td>
-                                <td class="p-2 text-center text-slate-500 align-middle">{{ dep.currency }}</td>
-                                <td class="p-2 text-slate-700 font-medium align-middle">{{ dep.recipient }}</td>
-                                <td class="p-2 text-center align-middle">
-                                    <div class="flex items-center justify-center space-x-1.5">
-                                        <div 
-                                          v-for="(img, iIdx) in (dep.images || [])" 
-                                          :key="iIdx"
-                                          class="relative group w-7 h-7 rounded border border-slate-200 overflow-hidden shadow-sm bg-white cursor-pointer flex-shrink-0"
-                                        >
-                                            <div class="w-full h-full flex items-center justify-center bg-slate-100 text-[8px] font-bold text-slate-500 uppercase">
-                                                {{ img }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr v-if="!modalForm.deposits || modalForm.deposits.length === 0" class="border-b border-slate-100">
-                                <td colspan="9" class="p-4 text-center text-slate-400 italic">Chưa có thông tin đặt cọc.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- FOOTER ACTIONS -->
-            <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0">
-                
-                <div class="flex items-center space-x-2">
-                    <button type="button" @click="splitDeposit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                        <i class="fa-solid fa-code-branch text-[10px]"></i>
-                        <span>Tách</span>
-                    </button>
-                    <button type="button" @click="transferDeposit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                        <i class="fa-solid fa-arrow-right-arrow-left text-[10px]"></i>
-                        <span>Chuyển</span>
-                    </button>
-                </div>
-
-                <div class="flex items-center space-x-2">
-                    <button type="button" @click="deleteDeposits" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                        <i class="fa-solid fa-trash-can text-[10px]"></i>
-                        <span>Xóa</span>
-                    </button>
-                    <button type="button" @click="editDeposit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                        <i class="fa-solid fa-pen-to-square text-[10px]"></i>
-                        <span>Sửa</span>
-                    </button>
-                    <button type="button" @click="saveDeposit" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                        <i class="fa-regular fa-floppy-disk text-[10px]"></i>
-                        <span>Lưu</span>
-                    </button>
-                    <button type="button" @click="addDeposit" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition flex items-center space-x-1.5 shadow-md text-xs tracking-wide cursor-pointer border-none">
-                        <i class="fa-solid fa-plus text-[10px]"></i>
-                        <span>Thêm</span>
-                    </button>
-                </div>
-                
-            </div>
-
-        </div>
-      </div>
-    </Teleport>
+    <DepositModal 
+      v-model:show="isDepositModalOpen" 
+      :bookingId="modalForm?.dbId" 
+      :bookingName="modalForm?.bookingName" 
+      :paymentMethods="paymentMethods" 
+      :currenciesList="currenciesList" 
+      v-model:deposits="modalForm.deposits" 
+      @update:paymentValue="modalForm.paymentValue = $event; if (activeTab) { activeTab.deposit = $event; activeTab.paymentValue = $event; }" 
+    />
 
     <!-- DỊCH VỤ BỔ SUNG MODAL (Screenshot 4 Match) -->
-    <Teleport to="body">
-      <div 
-        v-if="isServicesModalOpen" 
-        class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
-      >
-        <div 
-          class="bg-white rounded-xl shadow-2xl w-full max-w-[1200px] overflow-hidden border border-gray-300 flex flex-col max-h-[85vh]"
-        >
-          <!-- MODAL HEADER -->
-          <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 shrink-0 select-none">
-            <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
-                <i class="fa-solid fa-bell-concierge text-blue-300"></i>
-                <span>Dịch vụ bổ sung - PHÒNG {{ servicesModalRoom?.roomNumber || 'CHƯA GÁN' }} ({{ servicesModalRoom?.type }})</span>
-            </div>
-            <div class="flex items-center space-x-2 text-gray-300">
-                <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="isServicesModalOpen = false">
-                  <i class="fa-solid fa-xmark text-red-400"></i>
-                </button>
-            </div>
-          </div>
-
-          <!-- MODAL BODY -->
-          <div class="flex flex-1 overflow-hidden min-h-[450px]">
-            <!-- LEFT PANEL: Dịch vụ -->
-            <div class="w-1/4 border-r border-slate-200 flex flex-col p-3 bg-slate-50/50">
-              <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2">Dịch vụ</div>
-              
-              <!-- Search box -->
-              <div class="relative mb-3 shrink-0">
-                <input 
-                  type="text" 
-                  v-model="servicesModalSearch" 
-                  placeholder="Tìm kiếm mã, tên..." 
-                  class="w-full pl-7 pr-3 py-1 bg-white border border-slate-200 rounded-md text-[11px] focus:outline-none focus:ring-1 focus:ring-sky-500"
-                />
-                <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400 text-[11px]"></i>
-              </div>
-
-              <!-- Services list -->
-              <div class="flex-1 overflow-y-auto space-y-1 pr-1">
-                <label 
-                  v-for="svc in filteredHotelServices" 
-                  :key="svc.code" 
-                  class="flex items-start gap-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer transition text-[11px] text-slate-700"
-                >
-                  <input 
-                    type="checkbox" 
-                    :checked="selectedServiceCodes.includes(svc.code)"
-                    @change="e => handleServiceCheckboxChange(svc, e.target.checked)"
-                    class="mt-0.5"
-                  />
-                  <div>
-                    <div class="font-bold text-slate-800">{{ svc.name }}</div>
-                    <div class="text-[9px] text-slate-400 font-mono">{{ svc.code }} - {{ Number(svc.price).toLocaleString('vi-VN') }} VND</div>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <!-- MIDDLE PANEL: Ngày -->
-            <div class="w-[15%] border-r border-slate-200 flex flex-col p-3 bg-slate-50/50">
-              <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2">Ngày</div>
-              
-              <!-- Select All dates checkbox -->
-              <label class="flex items-center gap-2 p-1.5 border-b border-slate-200 font-bold cursor-pointer text-[11px] text-slate-700 mb-2 shrink-0">
-                <input 
-                  type="checkbox" 
-                  :checked="checkedDates.length === stayDatesList.length" 
-                  @change="toggleAllDates"
-                />
-                <span>Tất cả</span>
-              </label>
-
-              <!-- Stay dates list -->
-              <div class="flex-1 overflow-y-auto space-y-1 pr-1">
-                <label 
-                  v-for="d in stayDatesList" 
-                  :key="d" 
-                  class="flex items-center gap-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer transition text-[11px] text-slate-700 font-mono"
-                >
-                  <input 
-                    type="checkbox" 
-                    :value="d" 
-                    v-model="checkedDates"
-                  />
-                  <span>{{ formatDateShort(d) }}</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- RIGHT PANEL: Dịch vụ chọn -->
-            <div class="w-[60%] flex flex-col p-3 bg-white">
-              <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2 shrink-0">Chi tiết dịch vụ bổ sung</div>
-
-              <!-- Table -->
-              <div class="flex-1 overflow-y-auto border border-slate-200 rounded-lg">
-                <table class="w-full border-collapse text-left text-[11px]">
-                  <thead>
-                    <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold h-8">
-                      <th class="p-2 pl-3">Dịch vụ</th>
-                      <th class="p-2 text-center w-24">Số lượng</th>
-                      <th class="p-2 text-right w-36">Đơn giá (VND)</th>
-                      <th class="p-2 text-center w-28">FIT/GIT</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr 
-                      v-for="(item, index) in serviceItems" 
-                      :key="item.service_code"
-                      class="border-b border-slate-100 hover:bg-slate-50/50 h-10 align-middle font-medium"
-                    >
-                      <td class="p-2 pl-3 font-bold text-slate-800">
-                        {{ item.service_name }}
-                        <span class="block text-[9px] text-slate-400 font-mono font-normal">{{ item.service_code }}</span>
-                      </td>
-                      <td class="p-2 text-center">
-                        <input 
-                          type="number" 
-                          v-model.number="item.quantity" 
-                          min="0.01" 
-                          step="1"
-                          class="w-16 border border-slate-200 rounded-md px-1 py-0.5 text-center font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                        />
-                      </td>
-                      <td class="p-2 text-right">
-                        <input 
-                          type="text" 
-                          :value="formatCurrencyInput(item.rate)" 
-                          @input="e => item.rate = cleanCurrencyValue(e.target.value)"
-                          class="w-28 border border-slate-200 rounded-md px-2 py-0.5 text-right font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                        />
-                      </td>
-                      <td class="p-2 text-center">
-                        <!-- Toggle FIT/GIT -->
-                        <div class="flex items-center justify-center space-x-1.5">
-                          <span class="text-[9px] font-bold" :class="item.is_room ? 'text-sky-500' : 'text-slate-400'">FIT</span>
-                          <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
-                            <input 
-                              type="checkbox" 
-                              v-model="item.is_room" 
-                              :id="'fit-toggle-' + index"
-                              class="sr-only peer"
-                            />
-                            <label 
-                              :for="'fit-toggle-' + index"
-                              class="block overflow-hidden h-4 rounded-full bg-slate-300 peer-checked:bg-sky-500 cursor-pointer transition-colors duration-200"
-                            ></label>
-                            <span class="absolute block w-3 h-3 rounded-full bg-white top-0.5 left-0.5 peer-checked:translate-x-4 transition-transform duration-200 pointer-events-none"></span>
-                          </div>
-                          <span class="text-[9px] font-bold" :class="!item.is_room ? 'text-sky-500' : 'text-slate-400'">GIT</span>
-                        </div>
-                      </td>
-                    </tr>
-                    <tr v-if="serviceItems.length === 0">
-                      <td colspan="4" class="p-8 text-center text-slate-400 italic">
-                        Chưa chọn dịch vụ nào. Hãy tích chọn dịch vụ ở cột bên trái!
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <!-- MODAL FOOTER -->
-          <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 flex items-center justify-between">
-            <div class="bg-[#e2e8f0] px-4 py-1.5 rounded-lg text-slate-700 font-extrabold text-xs shadow-inner">
-              Tổng tiền: <span class="text-slate-900 ml-1 font-black">{{ servicesTotalAmount.toLocaleString('vi-VN') }} VND</span>
-            </div>
-            <div class="flex items-center space-x-2">
-              <button 
-                @click="saveServices" 
-                class="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer shadow-sm flex items-center space-x-1.5 transition border-none"
-              >
-                <i class="fa-solid fa-floppy-disk"></i>
-                <span>Lưu</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ServicesModal 
+      v-model:show="isServicesModalOpen" 
+      :room="servicesModalRoom" 
+      :targetRooms="servicesTargetRooms" 
+      :hotelServicesList="hotelServicesList" 
+      @saved="handleServicesSaved" 
+    />
 
     <!-- NHÂN BẢN BOOKING MODAL -->
-    <Teleport to="body">
-      <div 
-        v-if="isCopyModalOpen" 
-        class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
-      >
-        <div 
-          class="bg-white rounded-xl shadow-2xl w-full max-w-[450px] overflow-hidden border border-slate-200 flex flex-col"
-        >
-          <!-- MODAL HEADER -->
-          <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none">
-            <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
-                <i class="fa-solid fa-clone text-sky-400"></i>
-                <span>Nhân bản đăng ký phòng</span>
-            </div>
-            <button 
-              class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" 
-              @click="isCopyModalOpen = false"
-            >
-              <i class="fa-solid fa-xmark text-red-400"></i>
-            </button>
-          </div>
-
-          <!-- MODAL BODY -->
-          <div class="p-5 flex flex-col gap-4 text-xs font-semibold text-slate-700">
-            <p class="text-slate-500 leading-relaxed font-medium">
-              Nhân bản đăng ký này sang một thời gian mới. Toàn bộ thông tin khách hàng, loại phòng, số lượng phòng và đơn giá sẽ được sao chép tự động.
-            </p>
-
-            <div class="grid grid-cols-2 gap-3 mt-2">
-              <div>
-                <label class="block text-slate-500 mb-1 font-bold">Ngày đến mới</label>
-                <input 
-                  type="date" 
-                  v-model="copyModalArrivalDate"
-                  class="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
-                />
-              </div>
-              <div>
-                <label class="block text-slate-500 mb-1 font-bold">Ngày đi mới</label>
-                <input 
-                  type="date" 
-                  v-model="copyModalDepartureDate"
-                  class="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- MODAL FOOTER -->
-          <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 flex justify-end space-x-2.5 shrink-0">
-            <button 
-              @click="isCopyModalOpen = false" 
-              class="px-4 py-2 border border-slate-200 text-slate-600 font-bold text-xs rounded-lg hover:bg-slate-100 cursor-pointer transition bg-white"
-            >
-              Hủy
-            </button>
-            <button 
-              @click="handleConfirmCopy" 
-              class="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer shadow-sm flex items-center space-x-1.5 transition border-none"
-            >
-              <i class="fa-solid fa-check"></i>
-              <span>Xác nhận nhân bản</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <CopyModal 
+      v-model:show="isCopyModalOpen" 
+      :bookingId="activeTab?.dbId" 
+      :defaultArrival="copyModalArrivalDate" 
+      :defaultDeparture="copyModalDepartureDate" 
+      @copied="handleCopied" 
+    />
 
     <!-- NÂNG HẠNG PHÒNG MODAL -->
-    <Teleport to="body">
-      <div 
-        v-if="isUpgradeModalOpen" 
-        class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
-      >
-        <div 
-          class="bg-white rounded-xl shadow-2xl w-full max-w-[600px] overflow-hidden border border-slate-300 flex flex-col max-h-[90vh]"
-        >
-          <!-- HEADER -->
-          <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none">
-            <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
-              <i class="fa-solid fa-arrow-up text-sky-400"></i>
-              <span>Nâng hạng phòng</span>
-            </div>
-            <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="isUpgradeModalOpen = false">
-              <i class="fa-solid fa-xmark text-red-400"></i>
-            </button>
-          </div>
-
-          <!-- BODY -->
-          <div class="p-5 space-y-4 flex-1 overflow-y-auto">
-            <!-- PHÒNG ĐÃ CHỌN -->
-            <div class="text-[10px] font-black text-slate-400 tracking-wider uppercase">PHÒNG ĐÃ CHỌN ({{ upgradeTargetRooms.length }})</div>
-            <div class="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-              <table class="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold h-8">
-                    <th class="p-2.5">Phòng</th>
-                    <th class="p-2.5">Hạng hiện tại</th>
-                    <th class="p-2.5">Khách</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in upgradeTargetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-semibold text-slate-700">
-                    <td class="p-2.5 font-bold text-sky-600">{{ r.roomNumber || 'Chưa gán' }}</td>
-                    <td class="p-2.5">{{ r.type || r.shape || '-' }}</td>
-                    <td class="p-2.5 text-slate-500">{{ r.guestName || '-' }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- CHỌN HẠNG MỚI (GRID LAYOUT) -->
-            <div class="grid grid-cols-2 gap-4 text-xs font-bold text-slate-700">
-              <!-- Loại phòng -->
-              <div>
-                <label class="block text-slate-600 mb-1.5 font-bold">Loại phòng</label>
-                <select 
-                  v-model="upgradeTargetClassId" 
-                  class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400"
-                >
-                  <option :value="null">Chọn loại phòng</option>
-                  <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
-                </select>
-              </div>
-
-              <!-- Dạng phòng -->
-              <div>
-                <label class="block text-slate-600 mb-1.5 font-bold">Dạng phòng</label>
-                <select 
-                  v-model="upgradeTargetClassId" 
-                  class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400"
-                >
-                  <option :value="null">Chọn dạng phòng</option>
-                  <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
-                </select>
-              </div>
-
-              <!-- Mã giá phòng -->
-              <div>
-                <label class="block text-slate-600 mb-1.5 font-bold">Mã giá phòng</label>
-                <select 
-                  v-model="upgradeTargetRateCode" 
-                  :disabled="!upgradeChangePrice"
-                  class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200"
-                  :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
-                >
-                  <option value="">Select Value</option>
-                  <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
-                </select>
-              </div>
-
-              <!-- Giá phòng -->
-              <div>
-                <label class="block text-slate-600 mb-1.5 font-bold">Giá phòng</label>
-                <input 
-                  type="number" 
-                  v-model="upgradeTargetPrice"
-                  :disabled="!upgradeChangePrice"
-                  class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200"
-                  :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
-                />
-              </div>
-
-              <!-- Checkbox Thay đổi giá -->
-              <div class="col-span-2 flex items-center gap-2 py-1 select-none">
-                <input 
-                  id="upgradeChangePrice"
-                  type="checkbox" 
-                  v-model="upgradeChangePrice"
-                  class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
-                />
-                <label for="upgradeChangePrice" class="text-xs font-extrabold text-slate-700 cursor-pointer">Thay đổi giá</label>
-              </div>
-            </div>
-          </div>
-
-          <!-- FOOTER -->
-          <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center space-x-2">
-            <button 
-              @click="isUpgradeModalOpen = false" 
-              class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
-            >
-              <i class="fa-solid fa-circle-xmark"></i>
-              <span>Đóng</span>
-            </button>
-            <button 
-              @click="confirmUpgrade" 
-              class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
-            >
-              <i class="fa-solid fa-floppy-disk"></i>
-              <span>Lưu</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <UpgradeModal 
+      v-model:show="isUpgradeModalOpen" 
+      :bookingId="activeTab?.dbId" 
+      :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id)) : []" 
+      :roomClasses="roomClasses" 
+      :roomRateCodes="roomRateCodes"
+      @upgraded="handleUpgraded" 
+    />
 
     <!-- Global Loading Overlay -->
     <LoadingOverlay :show="isLoading" />
   </div>
 </template>
 
-<style>
-input[type="checkbox"].custom-checkbox {
-  accent-color: #7dd3fc;
-  cursor: pointer;
-}
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.animate-in {
-  animation: fadeIn 0.15s ease-out forwards;
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(2px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Ghi đè để làm tròn ô chọn màu hệ thống */
-input[type="color"]::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-input[type="color"]::-webkit-color-swatch {
-  border: none;
-  border-radius: 50%;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
-}
-
-/* Custom date input styling to look like plain text spans */
-.date-span-input {
-  border: none;
-  background: transparent;
-  padding: 0;
-  margin: 0;
-  font-size: inherit;
-  font-weight: inherit;
-  color: inherit;
-  outline: none;
-  cursor: pointer;
-  width: 82px;
-  text-align: center;
-}
-.date-span-input::-webkit-calendar-picker-indicator {
-  display: none;
-  -webkit-appearance: none;
-}
-.date-span-input::-webkit-inner-spin-button {
-  display: none;
-  -webkit-appearance: none;
-}
-
-/* Hide number input spinners */
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-:root {
-  --navy: #12233d;
-  --navy-2: #1b3357;
-  --navy-3: #22406b;
-  --teal: #0f7d8c;
-  --teal-light: #e4f4f6;
-  --ink: #1c2733;
-  --ink-soft: #5c6b7a;
-  --line: #dde3ea;
-  --bg: #eef1f5;
-  --panel: #ffffff;
-  --amber: #c8862a;
-  --amber-bg: #fbf1e2;
-  --green: #1f8a52;
-  --green-bg: #e7f6ee;
-  --danger: #c1403f;
-  --danger-bg: #fbeaea;
-  --blue: #1c5aa6;
-  --blue-bg: #eaf3ff;
-}
-
-/* ---------- TOP BAR ---------- */
-.topbar {
-  background: var(--navy);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-}
-.booking-tab {
-  background: var(--navy-2);
-  color: #8fa6c4 !important;
-  font-weight: 600;
-  font-size: 12.5px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.booking-tab.active {
-  background: var(--navy-3) !important;
-  color: #fff !important;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-.booking-tab:hover {
-  background: var(--navy-3);
-  color: #fff !important;
-}
-.booking-tab .x {
-  color: #9db3d1;
-  font-size: 13px;
-  cursor: pointer;
-}
-.booking-tab .x:hover {
-  color: #ffb8b6;
-}
-.add-booking-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px dashed rgba(255, 255, 255, 0.35);
-  color: #c7d2e0 !important;
-  padding: 8px 13px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-.add-booking-btn:hover {
-  background: var(--teal);
-  border-color: var(--teal);
-  border-style: solid;
-  color: #fff !important;
-}
-.add-booking-btn svg {
-  flex: none;
-}
-.spacer {
-  flex: 1;
-}
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 13px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.06);
-  color: #dbe4ee !important;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-.btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-.btn.blue {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: #fff !important;
-}
-.btn.red {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff !important;
-}
-.icon {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-
-.global-search-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #dbe4ee !important;
-  padding: 8px 14px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.global-search-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff !important;
-}
-.topbar-divider {
-  width: 1px;
-  align-self: stretch;
-  background: rgba(255, 255, 255, 0.14);
-  margin: 2px 4px;
-}
-
-.global-search-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(10, 20, 35, 0.5);
-  display: none;
-  align-items: flex-start;
-  justify-content: center;
-  z-index: 100;
-  padding-top: 90px;
-  backdrop-filter: blur(2px);
-}
-.global-search-overlay.show {
-  display: flex;
-}
-.global-search-modal {
-  background: #fff;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 650px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  overflow: hidden;
-}
-.gs-input-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink-soft);
-}
-.gs-input-row input {
-  flex: 1;
-  border: none;
-  outline: none;
-  font-size: 15px;
-  color: var(--ink);
-}
-.gs-close {
-  border: none;
-  background: none;
-  font-size: 15px;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-.gs-hint {
-  padding: 10px 18px;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  background: #f8f9fb;
-  border-bottom: 1px solid var(--line);
-}
-.gs-results {
-  padding: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.gs-section-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  padding: 8px 10px 4px;
-}
-.gs-result {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 7px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.gs-result:hover {
-  background: #f4f7f9;
-}
-.gs-tag {
-  font-size: 10.5px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 5px;
-}
-.gs-tag.room {
-  background: var(--blue-bg);
-  color: var(--blue);
-}
-.gs-tag.guest {
-  background: var(--teal-light);
-  color: #0c6a77;
-}
-.gs-booking {
-  margin-left: auto;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-}
-
-/* ---------- SUMMARY ---------- */
-.summary-bar {
-  background: var(--panel);
-  padding: 10px 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  align-items: center;
-  border-bottom: 1px solid var(--line);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.summary-bar:hover {
-  background: #f1f5f9;
-  border-bottom-color: #cbd5e1;
-  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.02);
-}
-.summary-bar .view-detail-btn {
-  opacity: 0;
-  transform: translateX(8px);
-  pointer-events: none;
-  transition: all 0.2s ease-in-out;
-}
-.summary-bar:hover .view-detail-btn {
-  opacity: 1;
-  transform: translateX(0);
-  pointer-events: auto;
-}
-.summary-bar .label {
-  color: var(--ink-soft);
-  margin-right: 4px;
-}
-.summary-bar b {
-  font-weight: 700;
-  color: var(--ink);
-}
-.topbar-service-select {
-  max-width: 140px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow: hidden;
-  padding-right: 20px !important;
-}
-.topbar-service-select option {
-  background-color: var(--navy) !important;
-  color: #fff !important;
-}
-.status-pill {
-  background: var(--green-bg);
-  color: var(--green);
-  padding: 2px 10px;
-  border-radius: 20px;
-  font-weight: 700;
-  font-size: 11.5px;
-  text-transform: uppercase;
-}
-
-/* ---------- SEARCH + QUICK ACTIONS ROW ---------- */
-.quick-row {
-  background: var(--panel);
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--line);
-}
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 10px;
-  background: #fff;
-  min-width: 240px;
-}
-.search-box input {
-  border: none;
-  outline: none;
-  font-size: 12px;
-  width: 100%;
-  background: transparent;
-  color: var(--ink);
-}
-.search-box input::placeholder {
-  color: var(--ink-soft);
-}
-.quick-row .right-group {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.chip-plain {
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.chip-plain:hover {
-  background: #f8fafc;
-}
-.chip-plain.primary {
-  background: var(--teal);
-  border-color: var(--teal);
-  color: #fff;
-}
-.chip-plain.primary:hover {
-  background: #0c6a77;
-}
-
-/* ---------- MAIN LAYOUT ---------- */
-.main-layout {
-  display: flex;
-  position: relative;
-}
-
-/* ---------- TABLE ---------- */
-.table-wrap {
-  background: var(--panel);
-  margin: 14px 16px 90px 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: auto;
-  flex: 1;
-  min-width: 0;
-}
-.table-wrap table {
-  border-collapse: collapse;
-  width: 100%;
-}
-.table-wrap thead th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: #f5f7fa;
-  color: var(--ink-soft);
-  font-weight: 700;
-  font-size: 10.8px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 9px 7px;
-  border-bottom: 1px solid var(--line);
-  border-right: 1px solid rgba(18, 35, 61, 0.05);
-  text-align: left;
-  white-space: nowrap;
-}
-.table-wrap tbody td {
-  padding: 7px;
-  border-bottom: 1px solid #eef1f5;
-  border-right: 1px solid rgba(18, 35, 61, 0.05);
-  white-space: nowrap;
-  vertical-align: middle;
-  font-weight: 500 !important;
-  color: #475569 !important;
-}
-.table-wrap tbody td span,
-.table-wrap tbody td input,
-.table-wrap tbody td select {
-  font-weight: 500 !important;
-  color: #475569 !important;
-}
-.table-wrap tbody tr:hover {
-  background: #f7fbfc;
-}
-tr.group-row td {
-  background: #f0f4f8;
-  font-weight: 700;
-  color: var(--navy-2);
-  padding: 8px 7px;
-}
-tr.status-row td {
-  background: #e4eaf1;
-  font-weight: 700;
-  color: var(--navy);
-  padding: 9px 7px;
-  border-bottom: 1px solid var(--line);
-}
-.toggle-mini {
-  width: 16px;
-  height: 16px;
-  border: 1px solid #c3cdd8;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: var(--ink-soft);
-  background: #fff;
-  cursor: pointer;
-}
-.page-footer {
-  position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
-  z-index: 30;
-  background: #dde3ea;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 -6px 16px rgba(18, 35, 61, 0.14);
-  overflow: hidden;
-}
-.footer-scroll {
-  overflow: hidden;
-}
-table.footer-table {
-  border-collapse: collapse;
-  font-size: 12px;
-}
-table.footer-table td {
-  padding: 10px 7px;
-  font-weight: 700;
-  color: var(--navy-2);
-  border-right: 1px solid rgba(18, 35, 61, 0.06);
-  white-space: nowrap;
-}
-table.footer-table td.f-total {
-  text-align: right;
-  color: var(--navy);
-  font-size: 13px;
-}
-.stepper-mini {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  overflow: hidden;
-  background: #fff;
-}
-.stepper-mini span {
-  width: 24px;
-  text-align: center;
-  font-size: 12px;
-}
-.stepper-mini button {
-  width: 16px;
-  border: none;
-  background: #f5f7fa;
-  font-size: 10px;
-  cursor: pointer;
-  color: var(--ink-soft);
-  height: 22px;
-}
-.price-input {
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 5px 7px;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  width: 140px;
-  background: #fbfcfd;
-}
-.chip {
-  padding: 4px 9px;
-  border-radius: 5px;
-  font-size: 11px;
-  font-weight: 700;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  cursor: pointer;
-}
-.chip.blue {
-  background: var(--blue-bg);
-  border-color: #bcd7f7;
-  color: var(--blue);
-}
-.chip.teal {
-  background: var(--teal-light);
-  border-color: #bfe3e7;
-  color: #0c6a77;
-}
-.switch {
-  width: 30px;
-  height: 16px;
-  border-radius: 20px;
-  background: var(--teal);
-  position: relative;
-  display: inline-block;
-  cursor: pointer;
-  vertical-align: middle;
-}
-.switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-}
-.switch.off {
-  background: #d7dde3;
-}
-.switch.off::after {
-  left: 2px;
-  right: auto;
-}
-.vacant {
-  color: var(--green);
-  font-weight: 700;
-}
-.stt {
-  color: var(--ink-soft);
-}
-.guest {
-  font-weight: 600;
-}
-.amount {
-  font-weight: 700;
-  color: var(--navy-2);
-}
-
-/* ---------- ACTION DOCK ---------- */
-.dock {
-  position: sticky;
-  top: 14px;
-  align-self: flex-start;
-  margin: 14px 16px 90px 0;
-  width: 52px;
-  background: var(--navy);
-  border-radius: 10px;
-  overflow: hidden;
-  transition: width 0.22s ease;
-  z-index: 40;
-  box-shadow: 0 4px 14px rgba(18, 35, 61, 0.18);
-}
-.dock:hover {
-  width: 246px;
-}
-.dock-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  color: #fff;
-  font-weight: 700;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  white-space: nowrap;
-}
-.dock-head .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--teal);
-  flex: none;
-}
-.dock-group {
-  padding: 5px 8px 1px 8px;
-}
-.dock-group-label {
-  font-size: 9px;
-  font-weight: 700;
-  color: #7d93b3;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 2px 6px;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.18s ease;
-}
-.dock:hover .dock-group-label {
-  opacity: 1;
-  transition-delay: 0.08s;
-}
-.dock-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 5px 8px;
-  border-radius: 7px;
-  cursor: pointer;
-  color: #c7d2e0;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.dock-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-.dock-item.danger:hover {
-  background: rgba(193, 64, 63, 0.25);
-  color: #ffb8b6;
-}
-.dock-item .di {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.dock-item .lbl {
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0;
-  transition: opacity 0.16s ease;
-}
-.dock:hover .dock-item .lbl {
-  opacity: 1;
-  transition-delay: 0.06s;
-}
-.dock-foot {
-  padding: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  margin-top: 4px;
-}
-.dock-item.expandable {
-  justify-content: space-between;
-}
-.chevron {
-  margin-left: auto;
-  font-size: 12px;
-  color: #9db3d1;
-  opacity: 0;
-  transition: opacity 0.16s ease, transform 0.18s ease;
-  flex: none;
-}
-.dock:hover .chevron {
-  opacity: 1;
-}
-.chevron.open {
-  transform: rotate(90deg);
-}
-.sub-current {
-  opacity: 0;
-  font-size: 10px;
-  color: #8fa6c4;
-  font-weight: 500;
-  transition: opacity 0.16s ease;
-  white-space: nowrap;
-}
-.dock:hover .sub-current {
-  opacity: 1;
-}
-.sub-list {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.2s ease;
-}
-.sub-list.open {
-  max-height: 120px;
-}
-.sub-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 8px 8px 34px;
-  border-radius: 6px;
-  color: #c7d2e0;
-  font-size: 11.5px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.sub-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-.sub-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1.5px solid #7d93b3;
-  flex: none;
-  position: relative;
-}
-.sub-item.selected .sub-dot {
-  border-color: var(--teal);
-}
-.sub-item.selected .sub-dot::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-radius: 50%;
-  background: var(--teal);
-}
-.sub-item.selected {
-  color: #fff;
-}
-.dock-invoice {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: var(--teal);
-  color: #fff;
-  border-radius: 7px;
-  padding: 10px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  font-weight: 700;
-  font-size: 12px;
-}
-.dock-invoice:hover {
-  background: #0c6a77;
-}
-.dock-invoice .lbl {
-  opacity: 0;
-  transition: opacity 0.16s ease;
-}
-.dock:hover .dock-invoice .lbl {
-  opacity: 1;
-  transition-delay: 0.06s;
-}
-</style>
+<style src="./CreateRegistrationPage.css"></style>
