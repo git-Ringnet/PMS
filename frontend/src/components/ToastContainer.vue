@@ -5,9 +5,10 @@ const uiStore = useUiStore()
 </script>
 
 <template>
-  <div class="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] flex flex-col items-center gap-2 max-w-sm w-full pointer-events-none">
-    <TransitionGroup name="toast" tag="div" class="flex flex-col gap-2 w-full items-center">
-      <div
+  <Teleport to="body">
+    <div class="fixed top-4 left-1/2 -translate-x-1/2 z-[1000001] flex flex-col items-center gap-2 max-w-sm w-full pointer-events-none">
+      <TransitionGroup name="toast" tag="div" class="flex flex-col gap-2 w-full items-center">
+        <div
         v-for="toast in uiStore.toasts"
         :key="toast.id"
         class="pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-lg bg-white/95 backdrop-blur-sm transition-all duration-300 relative overflow-hidden w-full max-w-sm"
@@ -54,7 +55,8 @@ const uiStore = useUiStore()
         </button>
       </div>
     </TransitionGroup>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>

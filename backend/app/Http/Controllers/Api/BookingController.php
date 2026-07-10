@@ -79,7 +79,14 @@ class BookingController extends Controller
 
         // Filter theo tình trạng booking
         if ($request->registration_status_id) {
-            $query->where('registration_status_id', $request->registration_status_id);
+            $regStatusVal = $request->registration_status_id;
+            if (is_array($regStatusVal)) {
+                $query->whereIn('registration_status_id', $regStatusVal);
+            } elseif (is_string($regStatusVal) && str_contains($regStatusVal, ',')) {
+                $query->whereIn('registration_status_id', explode(',', $regStatusVal));
+            } else {
+                $query->where('registration_status_id', $regStatusVal);
+            }
         }
 
         $bookings = $query->orderBy('created_at', 'desc')->get();
