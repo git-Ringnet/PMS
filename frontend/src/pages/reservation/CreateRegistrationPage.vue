@@ -2662,12 +2662,14 @@ defineExpose({
     </div>
 
     <!-- GLOBAL SYSTEM SEARCH OVERLAY -->
-    <SystemSearchModal 
-      v-model:show="isGlobalSearchOpen" 
-      :registrationStatuses="registrationStatuses" 
-      :activeTab="activeTab" 
-      @select-booking="handleGlobalSearchResultClick" 
-    />
+    <Teleport to="body">
+      <SystemSearchModal 
+        v-model:show="isGlobalSearchOpen" 
+        :registrationStatuses="registrationStatuses" 
+        :activeTab="activeTab" 
+        @select-booking="handleGlobalSearchResultClick" 
+      />
+    </Teleport>
 
     <!-- MOCKUP CREATE REGISTRATION MODAL (Image 2 Match) -->
     <Teleport to="body">
@@ -3388,43 +3390,51 @@ defineExpose({
     </Teleport>
 
     <!-- DEPOSIT MODAL MATCHING ĐẶT CỌC.html -->
-    <DepositModal 
-      v-model:show="isDepositModalOpen" 
-      :bookingId="modalForm?.dbId" 
-      :bookingName="modalForm?.bookingName" 
-      :paymentMethods="paymentMethods" 
-      :currenciesList="currenciesList" 
-      v-model:deposits="modalForm.deposits" 
-      @update:paymentValue="modalForm.paymentValue = $event; if (activeTab) { activeTab.deposit = $event; activeTab.paymentValue = $event; }" 
-    />
+    <Teleport to="body">
+      <DepositModal 
+        v-model:show="isDepositModalOpen" 
+        :bookingId="modalForm?.dbId" 
+        :bookingName="modalForm?.bookingName" 
+        :paymentMethods="paymentMethods" 
+        :currenciesList="currenciesList" 
+        v-model:deposits="modalForm.deposits" 
+        @update:paymentValue="modalForm.paymentValue = $event; if (activeTab) { activeTab.deposit = $event; activeTab.paymentValue = $event; }" 
+      />
+    </Teleport>
 
     <!-- DỊCH VỤ BỔ SUNG MODAL (Screenshot 4 Match) -->
-    <ServicesModal 
-      v-model:show="isServicesModalOpen" 
-      :room="servicesModalRoom" 
-      :targetRooms="servicesTargetRooms" 
-      :hotelServicesList="hotelServicesList" 
-      @saved="handleServicesSaved" 
-    />
+    <Teleport to="body">
+      <ServicesModal 
+        v-model:show="isServicesModalOpen" 
+        :room="servicesModalRoom" 
+        :targetRooms="servicesTargetRooms" 
+        :hotelServicesList="hotelServicesList" 
+        @saved="handleServicesSaved" 
+      />
+    </Teleport>
 
     <!-- NHÂN BẢN BOOKING MODAL -->
-    <CopyModal 
-      v-model:show="isCopyModalOpen" 
-      :bookingId="activeTab?.dbId" 
-      :defaultArrival="copyModalArrivalDate" 
-      :defaultDeparture="copyModalDepartureDate" 
-      @copied="handleCopied" 
-    />
+    <Teleport to="body">
+      <CopyModal 
+        v-model:show="isCopyModalOpen" 
+        :bookingId="activeTab?.dbId" 
+        :defaultArrival="copyModalArrivalDate" 
+        :defaultDeparture="copyModalDepartureDate" 
+        @copied="handleCopied" 
+      />
+    </Teleport>
 
     <!-- NÂNG HẠNG PHÒNG MODAL -->
-    <UpgradeModal 
-      v-model:show="isUpgradeModalOpen" 
-      :bookingId="activeTab?.dbId" 
-      :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id)) : []" 
-      :roomClasses="roomClasses" 
-      :roomRateCodes="roomRateCodes"
-      @upgraded="handleUpgraded" 
-    />
+    <Teleport to="body">
+      <UpgradeModal 
+        v-model:show="isUpgradeModalOpen" 
+        :bookingId="activeTab?.dbId" 
+        :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id)) : []" 
+        :roomClasses="roomClasses" 
+        :roomRateCodes="roomRateCodes"
+        @upgraded="handleUpgraded" 
+      />
+    </Teleport>
 
     <!-- Global Loading Overlay -->
     <LoadingOverlay :show="isLoading" />
