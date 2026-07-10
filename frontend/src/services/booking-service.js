@@ -32,6 +32,7 @@ export const updateBooking = (id, data) => http.put(`/bookings/${id}`, data)
  * @param {number} id - ID booking
  */
 export const deleteBooking = (id) => http.delete(`/bookings/${id}`)
+export const copyBooking = (id, data) => http.post(`/bookings/${id}/copy`, data)
 
 // ==================== BOOKING ROOMS (GIAO PHÒNG / CHECK-IN) ====================
 export const autoAssignRooms = (bookingId) => http.post(`/bookings/${bookingId}/auto-assign`)
