@@ -1,352 +1,915 @@
 <script setup>
-import { ref } from 'vue'
-import AddRevenueGroupModal from './AddRevenueGroupModal.vue'
-import AddCrmCustomerModal from './AddCrmCustomerModal.vue'
-import AddTravelCompanyModal from './AddTravelCompanyModal.vue'
+import { ref, computed, watch } from 'vue'
+import AddSubPartyModal from './AddSubPartyModal.vue'
+import { fetchCompanies, fetchUsers, fetchBookers, createBooker } from '@/services/company-service'
+import { getParty, cancelParty, completeSubParty } from '@/services/fb-party-service'
+import http from '@/services/http'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
-  isOpen: {
-    type: Boolean,
-    default: false
+  isOpen: { type: Boolean, default: false },
+  partyId: { type: [Number, String], default: null }
+})
+const emit = defineEmits(['close', 'save', 'refresh'])
+
+// Form state
+const form = ref({
+  id: null,
+  partyCode: '',
+  partyName: '',
+  arrivalDate: '',
+  confirmationType: 'byDate',
+  confirmationDate: '',
+  saleStaff: '',
+  totalDeposit: 0,
+  groupCode: '',
+  company: 'KHÁCH LẺ',
+  customer: '',
+  email: '',
+  note: '',
+  vatNote: ''
+})
+
+const subParties = ref([])
+const isAddSubPartyOpen = ref(false)
+
+// Initial DB data lists
+const companyList = ref([])
+const saleUsers = ref([])
+const bookersList = ref([])
+const filteredBookers = ref([])
+const showBookerSuggestions = ref(false)
+const todayDate = ref('')
+const confirmationDays = ref(1)
+
+// Quick Booker modal state
+const isAddBookerOpen = ref(false)
+const newBooker = ref({ name: '', phone: '', email: '' })
+
+const fetchInitialData = async () => {
+  try {
+    // 1. Get system time
+    const timeRes = await http.get('/system-time')
+    todayDate.value = timeRes.data?.time 
+      ? timeRes.data.time.split('T')[0] 
+      : new Date().toISOString().split('T')[0]
+      
+    // Set default arrivalDate to today if empty
+    if (!form.value.arrivalDate) {
+      form.value.arrivalDate = todayDate.value
+    }
+
+    // 2. Load users
+    const usersRes = await fetchUsers()
+    saleUsers.value = usersRes.data?.data || []
+
+    // 3. Load companies
+    const compRes = await fetchCompanies()
+    companyList.value = compRes.data?.data || []
+
+    // 4. Load bookers
+    const bookRes = await fetchBookers()
+    bookersList.value = bookRes.data?.data || []
+  } catch (err) {
+    console.error('Lỗi tải dữ liệu khởi tạo:', err)
+  }
+}
+
+const isLoading = ref(false)
+const initialState = ref(null)
+const showUnsavedWarning = ref(false)
+
+const loadPartyDetails = async (id) => {
+  isLoading.value = true
+  try {
+    const res = await getParty(id)
+    const party = res.data?.data
+    if (party) {
+      form.value = {
+        id: party.id,
+        partyCode: party.partyCode,
+        partyName: party.partyName,
+        arrivalDate: party.arrivalDate,
+        confirmationType: party.confirmationType || 'byDate',
+        confirmationDate: party.confirmationDate || '',
+        saleStaff: party.saleStaff || '',
+        totalDeposit: party.depositAmount || 0,
+        groupCode: party.groupCode || '',
+        company: party.company || 'KHÁCH LẺ',
+        customer: party.customer || '',
+        email: party.email || '',
+        note: party.note || '',
+        vatNote: party.vatNote || '',
+        status: party.status || 'confirmed'
+      }
+      subParties.value = (party.subParties || []).map(sub => ({
+        id: sub.id,
+        bookingCode: sub.bookingCode,
+        arrivalDate: sub.arrivalDate,
+        arrivalTime: sub.arrivalTime,
+        departureTime: sub.departureTime,
+        adults: sub.adults,
+        children: sub.children,
+        tables: sub.tables,
+        extra: sub.extra,
+        outlet_id: sub.outlet_id,
+        outlet: sub.outlet_id || sub.outlet,
+        outletName: sub.outlet,
+        location: sub.location,
+        partyType: sub.partyType,
+        groupCode: sub.groupCode,
+        note: sub.note,
+        deposits: sub.deposits || [],
+        menuItems: sub.menuItems || [],
+        status: sub.status || 'confirmed'
+      }))
+      saveInitialState()
+    }
+  } catch (err) {
+    console.error('Lỗi tải chi tiết tiệc:', err)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const saveInitialState = () => {
+  initialState.value = {
+    form: JSON.parse(JSON.stringify(form.value)),
+    subParties: JSON.parse(JSON.stringify(subParties.value))
+  }
+}
+
+watch(() => props.isOpen, (newVal) => {
+  if (newVal) {
+    isLoading.value = true
+    form.value = {
+      id: null,
+      partyCode: '',
+      partyName: '',
+      arrivalDate: '',
+      confirmationType: 'byDate',
+      confirmationDate: '',
+      saleStaff: '',
+      totalDeposit: 0,
+      groupCode: '',
+      company: 'KHÁCH LẺ',
+      customer: '',
+      email: '',
+      note: '',
+      vatNote: '',
+      status: 'confirmed'
+    }
+    subParties.value = []
+    fetchInitialData().then(() => {
+      if (props.partyId) {
+        loadPartyDetails(props.partyId)
+      } else {
+        saveInitialState()
+        isLoading.value = false
+      }
+    }).catch(() => {
+      isLoading.value = false
+    })
   }
 })
 
-const emit = defineEmits(['close', 'save', 'addProduct'])
-
-// Nested Modals State
-const isAddRevenueGroupOpen = ref(false)
-const isAddCrmCustomerOpen = ref(false)
-const isAddTravelCompanyOpen = ref(false)
-
-// Form State
-const form = ref({
-  shift: '',
-  outlet: '',
-  revenueGroup: '',
-  customerName: '',
-  phone: '',
-  travelCompany: '',
-  arrivalDate: '',
-  arrivalTime: '',
-  departureTime: '',
-  guestCount: 1,
-  tableCount: 1,
-  partyType: '',
-  status: 'Mới',
-  taxCode: '',
-  invoiceName: '',
-  invoiceAddress: '',
-  note: '',
-  internalNote: ''
+watch(() => props.partyId, (newVal) => {
+  if (props.isOpen && newVal) {
+    loadPartyDetails(newVal)
+  }
 })
 
-const errors = ref({})
-const hasAttemptedSave = ref(false)
-
-// Deposit State
-const deposits = ref([])
-const newDeposit = ref({
-  date: '',
-  method: '',
-  amount: ''
+// Max confirmation date calculation (must be at least 1 day before arrival date)
+const maxConfirmationDate = computed(() => {
+  if (!form.value.arrivalDate) return null
+  const arrDate = new Date(form.value.arrivalDate)
+  arrDate.setDate(arrDate.getDate() - 1)
+  try {
+    return arrDate.toISOString().split('T')[0]
+  } catch (e) {
+    return null
+  }
 })
-const depositErrors = ref({})
 
-const addDeposit = () => {
-  depositErrors.value = {}
-  if (!newDeposit.value.date) depositErrors.value.date = true
-  if (!newDeposit.value.method) depositErrors.value.method = true
-  if (!newDeposit.value.amount) depositErrors.value.amount = true
-  
-  if (Object.keys(depositErrors.value).length > 0) return
-  
-  deposits.value.push({ ...newDeposit.value })
-  newDeposit.value = { date: '', method: '', amount: '' }
+// Autocomplete bookers methods
+const handleBookerInput = () => {
+  const keyword = form.value.customer.trim().toLowerCase()
+  if (!keyword) {
+    filteredBookers.value = bookersList.value
+  } else {
+    filteredBookers.value = bookersList.value.filter(b => 
+      (b.name && b.name.toLowerCase().includes(keyword)) ||
+      (b.phone && b.phone.toLowerCase().includes(keyword))
+    )
+  }
+  showBookerSuggestions.value = true
 }
 
-const removeDeposit = (index) => {
-  deposits.value.splice(index, 1)
+const selectBooker = (b) => {
+  form.value.customer = b.name
+  form.value.email = b.email || ''
+  showBookerSuggestions.value = false
 }
 
-const handleSave = () => {
-  hasAttemptedSave.value = true
-  errors.value = {}
-  
-  if (!form.value.shift) errors.value.shift = true
-  if (!form.value.outlet) errors.value.outlet = true
-  if (!form.value.customerName) errors.value.customerName = true
-  
-  if (Object.keys(errors.value).length > 0) {
+const handleBookerBlur = () => {
+  setTimeout(() => {
+    showBookerSuggestions.value = false
+  }, 200)
+}
+
+// Add new booker quickly
+const saveNewBooker = async () => {
+  if (!newBooker.value.name || !newBooker.value.phone) {
+    uiStore.alert('Vui lòng điền tên và số điện thoại!')
     return
   }
+  try {
+    const res = await createBooker(newBooker.value)
+    const created = res.data?.data || res.data
+    bookersList.value.push(created)
+    form.value.customer = created.name
+    form.value.email = created.email || ''
+    isAddBookerOpen.value = false
+    newBooker.value = { name: '', phone: '', email: '' }
+  } catch (err) {
+    console.error('Lỗi tạo khách hàng:', err)
+    uiStore.alert('Lỗi: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+// Watch confirmationType to automatically compute confirmationDate if beforeN
+watch([() => form.value.arrivalDate, () => form.value.confirmationType, confirmationDays], () => {
+  if (form.value.confirmationType === 'beforeN') {
+    if (form.value.arrivalDate) {
+      const arrDate = new Date(form.value.arrivalDate)
+      arrDate.setDate(arrDate.getDate() - Number(confirmationDays.value || 0))
+      try {
+        form.value.confirmationDate = arrDate.toISOString().split('T')[0]
+      } catch (e) {
+        form.value.confirmationDate = ''
+      }
+    }
+  }
+})
+
+const selectedSubPartyIdx = ref(-1)
+const selectedSubPartyData = ref(null)
+
+const addSubParty = () => {
+  if (!form.value.customer || form.value.customer.trim() === '') {
+    uiStore.alert('Vui lòng nhập/chọn Khách hàng ở tiệc chính trước khi thêm tiệc con.')
+    return
+  }
+  selectedSubPartyIdx.value = -1
+  selectedSubPartyData.value = null
+  isAddSubPartyOpen.value = true
+}
+
+const editSubParty = (idx) => {
+  selectedSubPartyIdx.value = idx
+  selectedSubPartyData.value = JSON.parse(JSON.stringify(subParties.value[idx]))
+  isAddSubPartyOpen.value = true
+}
+
+const handleSubPartySave = (data) => {
+  if (selectedSubPartyIdx.value !== -1) {
+    subParties.value[selectedSubPartyIdx.value] = {
+      ...subParties.value[selectedSubPartyIdx.value],
+      ...data
+    }
+  } else {
+    subParties.value.push({ id: Date.now(), ...data })
+  }
+  isAddSubPartyOpen.value = false
+}
+
+const stats = computed(() => ({
+  totalAmount: subParties.value.reduce((s, p) => {
+    const subTotal = (p.menuItems || []).reduce((sum, item) => sum + (item.price * item.quantity), 0)
+    return s + subTotal
+  }, 0),
+  totalDeposit: subParties.value.reduce((s, p) => {
+    const subDep = (p.deposits || []).reduce((sum, dep) => {
+      if (dep.status === 'cancelled') return sum
+      return sum + Number(dep.amount || 0)
+    }, 0)
+    return s + subDep
+  }, 0),
+  subCount: subParties.value.length,
+  totalGuests: subParties.value.reduce((s, p) => s + ((p.adults || 0) + (p.children || 0)), 0),
+  totalTables: subParties.value.reduce((s, p) => s + (p.tables || 0), 0)
+}))
+
+// Override totalDeposit from subParties deposits stats
+watch(() => stats.value.totalDeposit, (newVal) => {
+  form.value.totalDeposit = newVal
+})
+
+const formatCurrency = (val) => Number(val || 0).toLocaleString('vi-VN') + ' đ'
+const getSubPartyTotal = (sub) => {
+  return (sub.menuItems || []).reduce((total, item) => total + (item.price * item.quantity), 0)
+}
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
+  return dateStr
+}
+
+const getStatusLabelAndClass = (status) => {
+  switch (status) {
+    case 'confirmed':
+      return { text: 'Xác nhận', class: 'bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold shadow-xs' }
+    case 'completed':
+      return { text: 'Hoàn thành', class: 'bg-sky-50 text-sky-600 border border-sky-200 px-2 py-0.5 rounded text-[10px] font-bold shadow-xs' }
+    case 'cancelled':
+      return { text: 'Hủy', class: 'bg-rose-50 text-rose-600 border border-rose-200 px-2 py-0.5 rounded text-[10px] font-bold shadow-xs' }
+    default:
+      return { text: 'Xác nhận', class: 'bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold shadow-xs' }
+  }
+}
+
+const getSubPartyDynamicStatusInfo = (sub) => {
+  if (sub.status === 'completed') {
+    return { text: 'Hoàn thành', class: 'text-sky-600 bg-sky-50 px-2 py-0.5 rounded font-extrabold text-[10px]', borderClass: 'border-sky-300' }
+  }
+  const arrDateStr = sub.arrivalDate || form.value.arrivalDate
+  if (!arrDateStr) return { text: 'Xác nhận', class: 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-extrabold text-[10px]', borderClass: 'border-emerald-300' }
+
+  const parts = arrDateStr.split('-')
+  if (parts.length !== 3) return { text: 'Xác nhận', class: 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-extrabold text-[10px]', borderClass: 'border-emerald-300' }
   
-  emit('save', { ...form.value, deposits: deposits.value })
-  handleClose()
+  const startTime = new Date(`${arrDateStr}T${sub.arrivalTime || '00:00'}:00`).getTime()
+  const endTime = new Date(`${arrDateStr}T${sub.departureTime || '23:59'}:00`).getTime()
+  const now = new Date().getTime()
+
+  if (now > endTime) {
+    return { text: 'Hoàn thành', class: 'text-sky-600 bg-sky-50 px-2 py-0.5 rounded font-extrabold text-[10px]', borderClass: 'border-sky-300' }
+  } else if (now >= startTime && now <= endTime) {
+    return { text: 'Đang phục vụ', class: 'text-amber-600 bg-amber-50 px-2 py-0.5 rounded font-extrabold text-[10px]', borderClass: 'border-amber-400' }
+  }
+  return { text: 'Xác nhận', class: 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-extrabold text-[10px]', borderClass: 'border-emerald-300' }
+}
+
+const viewConfirmationSlip = () => {
+  uiStore.alert('Đang hiển thị phiếu xác nhận của đặt tiệc ' + (form.value.partyCode || ''))
+}
+const printConfirmationSlip = () => {
+  uiStore.alert('Đang in phiếu xác nhận của đặt tiệc ' + (form.value.partyCode || ''))
+}
+const handleCancelParty = async () => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận hủy tiệc',
+    message: 'Bạn có chắc chắn muốn hủy đặt tiệc này không?'
+  })
+  if (!confirmed) return
+  try {
+    const res = await cancelParty(form.value.id)
+    uiStore.alert(res.data?.message || 'Đã huỷ tiệc thành công.')
+    emit('refresh')
+    emit('close')
+  } catch (err) {
+    uiStore.alert('Lỗi hủy tiệc: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+const handleCompleteSubParty = async (subId) => {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận hoàn thành',
+    message: 'Bạn xác nhận tiệc con này đã hoàn thành?'
+  })
+  if (!confirmed) return
+  try {
+    const res = await completeSubParty(form.value.id, subId)
+    uiStore.alert(res.data?.message || 'Đã hoàn thành tiệc con.')
+    if (res.data?.partyCompleted) {
+      emit('refresh')
+      emit('close')
+    } else {
+      loadPartyDetails(form.value.id)
+      emit('refresh')
+    }
+  } catch (err) {
+    uiStore.alert('Lỗi hoàn thành: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+const isDirty = computed(() => {
+  if (!initialState.value) return false
+  const formChanged = JSON.stringify(form.value) !== JSON.stringify(initialState.value.form)
+  const subChanged = JSON.stringify(subParties.value) !== JSON.stringify(initialState.value.subParties)
+  return formChanged || subChanged
+})
+
+const handleSave = () => {
+  if (!form.value.saleStaff) {
+    uiStore.alert('Vui lòng chọn Nhân viên sale.')
+    return
+  }
+  if (!form.value.customer) {
+    uiStore.alert('Vui lòng nhập Khách hàng.')
+    return
+  }
+  if (form.value.confirmationType === 'byDate' && !form.value.confirmationDate) {
+    uiStore.alert('Vui lòng chọn Ngày xác nhận.')
+    return
+  }
+  if (form.value.confirmationType === 'beforeN' && !confirmationDays.value) {
+    uiStore.alert('Vui lòng nhập số ngày xác nhận trước.')
+    return
+  }
+
+  // Update confirmationDate based on beforeN if needed
+  if (form.value.confirmationType === 'beforeN') {
+    if (form.value.arrivalDate && confirmationDays.value) {
+      const arrDate = new Date(form.value.arrivalDate)
+      arrDate.setDate(arrDate.getDate() - confirmationDays.value)
+      try {
+        form.value.confirmationDate = arrDate.toISOString().split('T')[0]
+      } catch (e) {
+        form.value.confirmationDate = ''
+      }
+    }
+  }
+
+  emit('save', { ...form.value, subParties: subParties.value })
+  emit('close')
 }
 
 const handleClose = () => {
-  emit('close')
-  hasAttemptedSave.value = false
-  errors.value = {}
+  if (isDirty.value) {
+    showUnsavedWarning.value = true
+  } else {
+    emit('close')
+  }
 }
 
-const increment = (field) => form.value[field]++
-const decrement = (field) => { if (form.value[field] > 1) form.value[field]-- }
+const confirmCloseWithoutSaving = () => {
+  showUnsavedWarning.value = false
+  emit('close')
+}
+
+defineExpose({
+  isDirty
+})
 </script>
 
 <template>
-  <div v-if="isOpen" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[50] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
-      <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
-        <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-          <svg class="w-6 h-6 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-          Thêm đặt tiệc
-        </h2>
-        <button @click="handleClose" class="text-slate-400 hover:text-slate-600 transition-colors p-2 rounded-lg hover:bg-slate-100">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
+  <!-- Full-screen overlay form -->
+  <div
+    v-if="isOpen"
+    class="fixed inset-0 z-[45] bg-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-150 relative"
+  >
+    <!-- Loading overlay (PMS Style spinner) -->
+    <div v-if="isLoading" class="absolute inset-0 z-[80] flex items-center justify-center bg-white/60 backdrop-blur-xs">
+      <div class="loader">
+        <div class="inner one"></div>
+        <div class="inner two"></div>
+        <div class="inner three"></div>
       </div>
-      
-      <!-- Body -->
-      <div class="p-6 overflow-y-auto flex-1 space-y-8 bg-white">
-        <!-- Error Banner -->
-        <div v-if="hasAttemptedSave && Object.keys(errors).length > 0" class="bg-red-50 text-red-600 p-4 rounded-lg flex items-start gap-3 border border-red-100">
-          <svg class="w-5 h-5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          <div>
-            <p class="font-semibold text-sm">Vui lòng điền đầy đủ các thông tin bắt buộc:</p>
-            <ul class="list-disc ml-5 mt-1 text-sm">
-              <li v-if="errors.shift">Vui lòng chọn Ca</li>
-              <li v-if="errors.outlet">Vui lòng chọn Outlet</li>
-              <li v-if="errors.customerName">Vui lòng nhập Tên khách hàng</li>
-            </ul>
-          </div>
-        </div>
-
-        <section>
-          <h3 class="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">Thông tin chung</h3>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Ca <span class="text-red-500">*</span></label>
-              <select v-model="form.shift" :class="{'border-red-500 ring-1 ring-red-500': errors.shift}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm bg-white">
-                <option value="">Chọn ca</option>
-                <option value="Sáng">Sáng</option>
-                <option value="Trưa">Trưa</option>
-                <option value="Tối">Tối</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Outlet <span class="text-red-500">*</span></label>
-              <select v-model="form.outlet" :class="{'border-red-500 ring-1 ring-red-500': errors.outlet}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm bg-white">
-                <option value="">Chọn outlet</option>
-                <option value="Nhà Hàng A">Nhà Hàng A</option>
-                <option value="Nhà Hàng B">Nhà Hàng B</option>
-              </select>
-            </div>
-            <div class="lg:col-span-2">
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Nhóm doanh thu</label>
-              <div class="flex items-center gap-2">
-                <select v-model="form.revenueGroup" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm bg-white">
-                  <option value="">Chọn nhóm doanh thu</option>
-                  <option v-if="form.revenueGroup" :value="form.revenueGroup">{{ form.revenueGroup }}</option>
-                </select>
-                <button @click="isAddRevenueGroupOpen = true" class="w-9 h-9 flex items-center justify-center shrink-0 bg-sky-50 text-sky-600 rounded-lg hover:bg-sky-100 transition-colors border border-sky-100">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                </button>
-              </div>
-            </div>
-
-            <div class="lg:col-span-2">
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Tên khách hàng (CRM) <span class="text-red-500">*</span></label>
-              <div class="flex items-center gap-2">
-                <input v-model="form.customerName" :class="{'border-red-500 ring-1 ring-red-500': errors.customerName}" type="text" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên khách hàng" />
-                <button @click="isAddCrmCustomerOpen = true" class="w-9 h-9 flex items-center justify-center shrink-0 bg-sky-50 text-sky-600 rounded-lg hover:bg-sky-100 transition-colors border border-sky-100">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                </button>
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Số điện thoại</label>
-              <input v-model="form.phone" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập số điện thoại" />
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Trạng thái</label>
-              <select v-model="form.status" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm bg-white">
-                <option value="Mới">Mới</option>
-                <option value="Xác nhận">Xác nhận</option>
-                <option value="Hoàn thành">Hoàn thành</option>
-                <option value="Hủy">Hủy</option>
-              </select>
-            </div>
-
-            <div class="lg:col-span-2">
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Tên công ty du lịch</label>
-              <div class="flex items-center gap-2">
-                <input v-model="form.travelCompany" type="text" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Chọn hoặc nhập tên công ty" />
-                <button @click="isAddTravelCompanyOpen = true" class="w-9 h-9 flex items-center justify-center shrink-0 bg-sky-50 text-sky-600 rounded-lg hover:bg-sky-100 transition-colors border border-sky-100">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                </button>
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Loại tiệc</label>
-              <select v-model="form.partyType" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm bg-white">
-                <option value="">Chọn loại tiệc</option>
-                <option value="Sinh nhật">Sinh nhật</option>
-                <option value="Cưới hỏi">Cưới hỏi</option>
-                <option value="Hội nghị">Hội nghị</option>
-                <option value="Khác">Khác</option>
-              </select>
-            </div>
-            <div class="col-span-1 hidden lg:block"></div> <!-- Spacer -->
-
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Ngày đến</label>
-              <input v-model="form.arrivalDate" type="date" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" />
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Giờ đến</label>
-              <input v-model="form.arrivalTime" type="time" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" />
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Giờ đi (Dự kiến)</label>
-              <input v-model="form.departureTime" type="time" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" />
-            </div>
-            <div class="col-span-1 hidden lg:block"></div>
-
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Số lượng khách</label>
-              <div class="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white">
-                <button @click="decrement('guestCount')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border-r border-slate-300 transition-colors">-</button>
-                <input v-model="form.guestCount" type="number" min="1" class="w-full px-3 py-2 text-center focus:outline-none text-sm" />
-                <button @click="increment('guestCount')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border-l border-slate-300 transition-colors">+</button>
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1.5">Số lượng bàn</label>
-              <div class="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white">
-                <button @click="decrement('tableCount')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border-r border-slate-300 transition-colors">-</button>
-                <input v-model="form.tableCount" type="number" min="1" class="w-full px-3 py-2 text-center focus:outline-none text-sm" />
-                <button @click="increment('tableCount')" class="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border-l border-slate-300 transition-colors">+</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Hóa đơn / Ghi chú -->
-        <section>
-           <h3 class="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">Thông tin hóa đơn & Ghi chú</h3>
-           <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Mã số thuế</label>
-                <input v-model="form.taxCode" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" />
-              </div>
-              <div class="lg:col-span-2">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Tên xuất hóa đơn</label>
-                <input v-model="form.invoiceName" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" />
-              </div>
-              <div class="lg:col-span-3">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Địa chỉ xuất hóa đơn</label>
-                <input v-model="form.invoiceAddress" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" />
-              </div>
-              
-              <div class="lg:col-span-2">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Ghi chú</label>
-                <textarea v-model="form.note" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập nội dung ghi chú..."></textarea>
-              </div>
-              <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Ghi chú nội bộ</label>
-                <textarea v-model="form.internalNote" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Ghi chú nội bộ..."></textarea>
-              </div>
-           </div>
-        </section>
-
-        <!-- Quản lý đặt cọc -->
-        <section>
-          <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-            <h3 class="text-lg font-semibold text-slate-800 flex items-center gap-2">Quản lý đặt cọc</h3>
-          </div>
-          
-          <!-- Add Deposit Form -->
-          <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4 flex flex-wrap lg:flex-nowrap items-end gap-4">
-            <div class="w-full lg:w-40">
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Ngày cọc <span class="text-red-500">*</span></label>
-              <input v-model="newDeposit.date" type="date" :class="{'border-red-500': depositErrors.date}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none text-sm" />
-            </div>
-            <div class="w-full lg:w-48">
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Phương thức <span class="text-red-500">*</span></label>
-              <select v-model="newDeposit.method" :class="{'border-red-500': depositErrors.method}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none text-sm bg-white">
-                <option value="">Chọn PT</option>
-                <option value="Tiền mặt">Tiền mặt</option>
-                <option value="Chuyển khoản">Chuyển khoản</option>
-                <option value="Thẻ tín dụng">Thẻ tín dụng</option>
-              </select>
-            </div>
-            <div class="flex-1 w-full">
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Số tiền <span class="text-red-500">*</span></label>
-              <input v-model="newDeposit.amount" type="number" :class="{'border-red-500': depositErrors.amount}" placeholder="0" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none text-sm" />
-            </div>
-            <div class="w-full lg:w-auto">
-              <button @click="addDeposit" class="w-full lg:w-auto px-4 py-2 text-sm font-medium text-white bg-teal-500 rounded-lg hover:bg-teal-600 transition-all shadow-sm">
-                Thêm vào danh sách
-              </button>
-            </div>
-          </div>
-          
-          <!-- Deposit List -->
-          <div v-if="deposits.length > 0" class="border border-slate-200 rounded-lg overflow-hidden">
-            <table class="w-full text-sm text-left text-slate-600">
-              <thead class="text-xs uppercase bg-slate-100 text-slate-500">
-                <tr>
-                  <th class="px-4 py-3 font-semibold">STT</th>
-                  <th class="px-4 py-3 font-semibold">Ngày cọc</th>
-                  <th class="px-4 py-3 font-semibold">Phương thức</th>
-                  <th class="px-4 py-3 font-semibold text-right">Số tiền</th>
-                  <th class="px-4 py-3 font-semibold text-center w-20">Xóa</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-200">
-                <tr v-for="(dep, index) in deposits" :key="index" class="bg-white hover:bg-slate-50 transition-colors">
-                  <td class="px-4 py-3">{{ index + 1 }}</td>
-                  <td class="px-4 py-3 font-medium">{{ dep.date }}</td>
-                  <td class="px-4 py-3">
-                    <span class="px-2 py-1 bg-slate-100 rounded text-xs font-medium">{{ dep.method }}</span>
-                  </td>
-                  <td class="px-4 py-3 text-right font-semibold text-emerald-600">{{ Number(dep.amount).toLocaleString('vi-VN') }} ₫</td>
-                  <td class="px-4 py-3 text-center">
-                    <button @click="removeDeposit(index)" class="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-else class="text-center py-8 bg-slate-50/50 rounded-lg border border-dashed border-slate-300">
-            <p class="text-sm text-slate-400">Chưa có dữ liệu đặt cọc</p>
-          </div>
-        </section>
-      </div>
-      
-      <!-- Footer -->
-      <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
-        <button class="px-5 py-2.5 text-sm font-semibold text-sky-600 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 transition-all flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-          Thêm sản phẩm
+    </div>
+    <!-- ===== TOP HEADER ===== -->
+    <div class="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shrink-0 shadow-sm">
+      <div class="flex items-center gap-3">
+        <button @click="handleClose" class="text-slate-400 hover:text-slate-600 transition-colors p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
+          </svg>
         </button>
-        <div class="flex items-center gap-3">
-          <button @click="handleClose" class="px-5 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-all shadow-sm">
-            Hủy
-          </button>
-          <button @click="handleSave" class="px-5 py-2.5 text-sm font-semibold text-white bg-sky-500 rounded-lg hover:bg-sky-600 transition-all shadow-sm shadow-sky-200 hover:shadow-sky-300">
-            Lưu
-          </button>
-        </div>
+        <span class="text-sm font-extrabold text-slate-800">
+          {{ form.id ? `Chỉnh sửa đặt tiệc: ${form.partyCode || ''}` : 'Tạo đặt tiệc mới' }}
+        </span>
+        <span 
+          v-if="form.id" 
+          :class="getStatusLabelAndClass(form.status).class"
+        >
+          {{ getStatusLabelAndClass(form.status).text }}
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          v-if="form.id"
+          @click="viewConfirmationSlip"
+          class="border border-slate-200 hover:bg-slate-150 text-slate-600 text-xs font-bold px-4 py-2 rounded-lg shadow-sm transition-all cursor-pointer bg-white"
+        >
+          Xem phiếu xác nhận
+        </button>
+        <button
+          v-if="form.id"
+          @click="printConfirmationSlip"
+          class="border border-slate-200 hover:bg-slate-150 text-slate-600 text-xs font-bold px-4 py-2 rounded-lg shadow-sm transition-all cursor-pointer bg-white"
+        >
+          In phiếu xác nhận
+        </button>
+        <button
+          v-if="form.id && form.status !== 'cancelled' && stats.totalDeposit === 0"
+          @click="handleCancelParty"
+          class="border border-rose-200 hover:bg-rose-50 text-rose-600 hover:text-rose-700 text-xs font-bold px-4 py-2 rounded-lg shadow-sm transition-all cursor-pointer bg-white"
+        >
+          Hủy tiệc
+        </button>
+        <button
+          v-else-if="form.id && form.status !== 'cancelled' && stats.totalDeposit > 0"
+          title="Không thể hủy tiệc đã có tiền cọc"
+          disabled
+          class="border border-slate-200 text-slate-400 text-xs font-bold px-4 py-2 rounded-lg shadow-sm cursor-not-allowed bg-slate-50"
+        >
+          Hủy tiệc
+        </button>
+        <button
+          @click="handleSave"
+          class="bg-sky-500 hover:bg-sky-600 text-white text-xs font-extrabold px-5 py-2 rounded-lg shadow-sm transition-all cursor-pointer"
+        >
+          Lưu
+        </button>
       </div>
     </div>
 
-    <AddRevenueGroupModal :isOpen="isAddRevenueGroupOpen" @close="isAddRevenueGroupOpen = false" @save="(val) => { form.revenueGroup = val.name; isAddRevenueGroupOpen = false }" />
-    <AddCrmCustomerModal :isOpen="isAddCrmCustomerOpen" @close="isAddCrmCustomerOpen = false" @save="(val) => { form.customerName = val.name; form.phone = val.phone; isAddCrmCustomerOpen = false }" />
-    <AddTravelCompanyModal :isOpen="isAddTravelCompanyOpen" @close="isAddTravelCompanyOpen = false" @save="(val) => { form.travelCompany = val.name; isAddTravelCompanyOpen = false }" />
+    <!-- ===== SCROLLABLE BODY ===== -->
+    <div class="flex-1 overflow-y-auto px-6 py-5">
+      <div class="max-w-4xl mx-auto space-y-5">
+
+        <!-- ===== THÔNG TIN CHUNG ===== -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="px-5 py-3 border-b border-slate-100 bg-slate-50">
+            <span class="text-xs font-extrabold text-slate-700 uppercase tracking-wide">Thông tin chung</span>
+          </div>
+
+          <div class="p-5 space-y-4">
+            <!-- Stats row -->
+            <div class="flex gap-3">
+              <div class="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50">
+                <div class="text-[10px] text-slate-400 font-semibold mb-0.5">Tổng tiền tiệc</div>
+                <div class="text-sm font-extrabold text-slate-800">{{ formatCurrency(stats.totalAmount) }}</div>
+              </div>
+              <div class="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50">
+                <div class="text-[10px] text-slate-400 font-semibold mb-0.5">Tổng cọc</div>
+                <div class="text-sm font-extrabold text-slate-800">{{ formatCurrency(stats.totalDeposit) }}</div>
+              </div>
+              <div class="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50">
+                <div class="text-[10px] text-slate-400 font-semibold mb-0.5">Số tiệc con</div>
+                <div class="text-sm font-extrabold text-slate-800">{{ stats.subCount }}</div>
+              </div>
+              <div class="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50">
+                <div class="text-[10px] text-slate-400 font-semibold mb-0.5">Tổng khách</div>
+                <div class="text-sm font-extrabold text-slate-800">{{ stats.totalGuests }}</div>
+              </div>
+              <div class="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50">
+                <div class="text-[10px] text-slate-400 font-semibold mb-0.5">Tổng bàn</div>
+                <div class="text-sm font-extrabold text-slate-800">{{ stats.totalTables }}</div>
+              </div>
+            </div>
+
+            <!-- Row 1: Mã / Tên / Ngày đến -->
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Mã đặt tiệc</label>
+                <input
+                  v-model="form.partyCode"
+                  disabled
+                  placeholder="Tự động tạo"
+                  class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-400 bg-slate-50 cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-700 mb-1">Tên đặt tiệc <span class="text-rose-500">*</span></label>
+                <input
+                  v-model="form.partyName"
+                  placeholder=""
+                  class="w-full px-3 py-2 border border-amber-300 rounded-lg text-xs focus:outline-none focus:border-sky-500 bg-amber-50"
+                />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-700 mb-1">Ngày đến <span class="text-rose-500">*</span></label>
+                <div class="relative">
+                  <input
+                    type="date"
+                    v-model="form.arrivalDate"
+                    :min="todayDate"
+                    :disabled="['completed', 'serving'].includes(form.status)"
+                    class="w-full px-3 py-2 border border-amber-300 rounded-lg text-xs focus:outline-none focus:border-sky-500 bg-amber-50 font-semibold"
+                    :class="{'opacity-60 cursor-not-allowed': ['completed', 'serving'].includes(form.status)}"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Row 2: Hình thức xác nhận / Ngày xác nhận -->
+            <div class="grid grid-cols-3 gap-4 items-end">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1.5">Hình thức xác nhận</label>
+                <div class="flex items-center gap-4 text-xs font-semibold text-slate-700 h-[38px]">
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" v-model="form.confirmationType" value="byDate" class="accent-sky-500" />
+                    Theo ngày
+                  </label>
+                  <label class="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" v-model="form.confirmationType" value="beforeN" class="accent-sky-500" />
+                    Trước N ngày
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">
+                  {{ form.confirmationType === 'byDate' ? 'Ngày xác nhận' : 'Trước số ngày (N)' }}
+                  <span class="text-rose-500">*</span>
+                </label>
+                <div class="relative">
+                  <input
+                    v-if="form.confirmationType === 'byDate'"
+                    type="date"
+                    v-model="form.confirmationDate"
+                    :max="maxConfirmationDate"
+                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500 bg-white focus:outline-none focus:border-sky-500 font-semibold"
+                  />
+                  <input
+                    v-else
+                    type="number"
+                    v-model.number="confirmationDays"
+                    min="1"
+                    class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500 bg-white focus:outline-none focus:border-sky-500 font-semibold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Row 3: Nhân viên sale / Tổng đặt cọc / Mã nhóm -->
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Nhân viên sale <span class="text-rose-500">*</span></label>
+                <div class="relative">
+                  <select v-model="form.saleStaff" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 bg-white focus:outline-none focus:border-sky-500 appearance-none cursor-pointer font-semibold">
+                    <option value="">Chọn nhân viên</option>
+                    <option v-for="u in saleUsers" :key="u.id" :value="u.username">{{ u.name || u.username }}</option>
+                  </select>
+                  <svg class="w-3 h-3 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Tổng đặt cọc</label>
+                <input
+                  :value="formatCurrency(form.totalDeposit)"
+                  disabled
+                  class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500 bg-slate-50 cursor-not-allowed font-semibold"
+                />
+                <p class="text-[10px] text-slate-400 mt-0.5">Tự tổng hợp từ cọc của các tiệc con</p>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Mã nhóm</label>
+                <input
+                  v-model="form.groupCode"
+                  placeholder="Tự động / theo mã đoàn"
+                  class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500 bg-white focus:outline-none focus:border-sky-500 font-semibold"
+                />
+              </div>
+            </div>
+
+            <!-- Row 4: Công ty -->
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Công ty</label>
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <select v-model="form.company" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-sky-500 appearance-none cursor-pointer text-slate-700 font-semibold">
+                    <option value="KHÁCH LẺ">KHÁCH LẺ</option>
+                    <option v-for="c in companyList" :key="c.id" :value="c.name">{{ c.name }}</option>
+                  </select>
+                  <svg class="w-3 h-3 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </div>
+                <button class="w-7 h-7 flex items-center justify-center rounded-lg bg-sky-400 hover:bg-sky-500 text-white transition-colors shrink-0 cursor-pointer shadow-sm">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                </button>
+                <button class="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition-colors shrink-0 cursor-pointer">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Row 5: Khách hàng -->
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Khách hàng <span class="text-rose-500">*</span></label>
+              <div class="flex items-center gap-2">
+                <div class="relative flex-1">
+                  <input
+                    v-model="form.customer"
+                    @input="handleBookerInput"
+                    @focus="handleBookerInput"
+                    @blur="handleBookerBlur"
+                    placeholder="Tìm khách hàng từ bookers theo tên / SĐT..."
+                    class="w-full px-3 py-2 pr-7 border border-amber-300 rounded-lg text-xs bg-amber-50 focus:outline-none focus:border-sky-500 text-slate-700 font-semibold"
+                  />
+                  <svg v-if="form.customer" @click="form.customer=''" class="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                  
+                  <!-- Booker Suggestions Dropdown -->
+                  <div 
+                    v-if="showBookerSuggestions && filteredBookers.length > 0"
+                    class="absolute left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto text-xs"
+                  >
+                    <div 
+                      v-for="b in filteredBookers" 
+                      :key="b.id"
+                      @mousedown="selectBooker(b)"
+                      class="px-3 py-2 hover:bg-slate-100 cursor-pointer flex justify-between items-center border-b border-slate-50"
+                    >
+                      <span class="font-bold text-slate-700">{{ b.name }}</span>
+                      <span class="text-slate-400 font-semibold">{{ b.phone }}</span>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  @click="isAddBookerOpen = true"
+                  class="w-7 h-7 flex items-center justify-center rounded-lg bg-sky-400 hover:bg-sky-500 text-white transition-colors shrink-0 cursor-pointer shadow-sm"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                </button>
+                <button class="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition-colors shrink-0 cursor-pointer">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-400 mt-0.5">Dữ liệu lấy từ Bookers hệ thống</p>
+            </div>
+
+            <!-- Row 6: Email / Ghi chú -->
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Email</label>
+                <input v-model="form.email" type="email" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-sky-500 font-semibold" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Ghi chú</label>
+                <textarea v-model="form.note" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-sky-500 resize-none font-semibold"></textarea>
+              </div>
+            </div>
+
+            <!-- Row 7: Ghi chú xuất hóa đơn VAT -->
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1">Ghi chú xuất hóa đơn VAT</label>
+              <textarea v-model="form.vatNote" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-sky-500 resize-none font-semibold"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== DANH SÁCH TIỆC CON ===== -->
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-extrabold text-slate-700 uppercase tracking-wide">Danh sách tiệc con</span>
+              <p v-if="!form.partyName || !form.arrivalDate" class="text-[10px] text-rose-500 font-bold animate-pulse">
+                (* Vui lòng điền Tên đặt tiệc và Ngày đến trước)
+              </p>
+            </div>
+            <button
+              @click="addSubParty"
+              :disabled="!form.partyName || !form.arrivalDate"
+              :class="(!form.partyName || !form.arrivalDate) ? 'opacity-40 cursor-not-allowed bg-slate-300 text-slate-500' : 'bg-sky-500 hover:bg-sky-600 text-white'"
+              class="flex items-center gap-1.5 text-[11px] font-extrabold px-3 py-1.5 rounded-lg transition-all shadow-sm cursor-pointer"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+              Thêm tiệc
+            </button>
+          </div>
+
+          <div class="p-5">
+            <div v-if="subParties.length === 0" class="py-10 text-center text-slate-400">
+              <p class="text-xs font-semibold">Chưa có tiệc con. Nhấn nút Thêm tiệc để thêm.</p>
+            </div>
+            <div v-else class="flex flex-col gap-3">
+              <div
+                v-for="(sub, idx) in subParties"
+                :key="sub.id"
+                :class="['border-[3px] rounded-xl p-4 bg-white flex flex-col gap-3 hover:bg-sky-50/10 transition-colors cursor-pointer group', getSubPartyDynamicStatusInfo(sub).borderClass]"
+                @click="editSubParty(idx)"
+              >
+                <!-- Row 1 -->
+                <div class="flex items-center justify-between pb-2 border-b border-slate-100 border-dashed">
+                  <div class="flex items-center gap-4 text-xs font-bold text-slate-600 flex-wrap">
+                    <span>Mã: {{ sub.bookingCode || ('#' + (idx + 1)) }}</span>
+                    <span>Ngày: {{ formatDate(sub.arrivalDate || form.arrivalDate) || '—' }}</span>
+                    <span>Thời gian: {{ sub.arrivalTime || '—' }} - {{ sub.departureTime || '—' }}</span>
+                    <span>Loại tiệc: {{ sub.partyType || '—' }}</span>
+                    <span>Outlet: {{ sub.outletName || sub.outlet || '—' }}</span>
+                  </div>
+                  <div class="flex items-center gap-2" @click.stop>
+                    <span :class="getSubPartyDynamicStatusInfo(sub).class" class="mr-1 border border-current/20">
+                      {{ getSubPartyDynamicStatusInfo(sub).text }}
+                    </span>
+                    <button 
+                      @click="editSubParty(idx)" 
+                      class="border border-slate-200 text-slate-500 text-[10px] font-bold px-2 py-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      Sửa
+                    </button>
+                    <button 
+                      @click="subParties.splice(idx, 1)" 
+                      class="text-slate-400 hover:text-rose-500 transition-colors cursor-pointer p-1 rounded hover:bg-slate-100"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Row 2 -->
+                <div class="flex items-center gap-5 text-[11px] font-bold text-slate-600 flex-wrap border-b border-slate-100 border-dashed pb-2">
+                  <span class="bg-sky-50 text-sky-600 px-3 py-1 rounded-full">Khu vực: {{ sub.location || '—' }}</span>
+                  <span class="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full">Bàn: {{ sub.tables || 0 }}</span>
+                  <span>Khách: NL: {{ sub.adults || 0 }} | TE: {{ sub.children || 0 }} | Tổng: {{ Number(sub.adults || 0) + Number(sub.children || 0) }}</span>
+                  <span>Phát sinh: {{ sub.extra || 0 }}</span>
+                  <span class="text-sky-400">Cọc: {{ formatCurrency((sub.deposits || []).reduce((s,d)=>s+d.amount,0)) }}</span>
+                  <span class="text-amber-600 text-xs">Tổng tiền: {{ formatCurrency(getSubPartyTotal(sub)) }}</span>
+                </div>
+
+                <!-- Row 3 -->
+                <div class="flex flex-col gap-2">
+                  <span class="text-[10px] font-bold text-slate-400">Menu ({{ (sub.menuItems || []).length }} món)</span>
+                  <div class="flex flex-wrap gap-2">
+                    <span 
+                      v-for="(item, i) in sub.menuItems" 
+                      :key="i"
+                      class="text-[10px] font-bold px-2.5 py-1 rounded-md"
+                      :class="['bg-emerald-50 text-emerald-600', 'bg-blue-50 text-blue-600', 'bg-orange-50 text-orange-600', 'bg-amber-50 text-amber-600'][i % 4]"
+                    >
+                      {{ item.name }} x{{ item.quantity }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub-party modal -->
+  <AddSubPartyModal
+    :isOpen="isAddSubPartyOpen"
+    :parentCustomer="form.customer"
+    :parentArrivalDate="form.arrivalDate"
+    :subPartyData="selectedSubPartyData"
+    @close="isAddSubPartyOpen = false"
+    @save="handleSubPartySave"
+  />
+
+  <!-- Quick Add Booker Modal -->
+  <div v-if="isAddBookerOpen" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-xs">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden border border-slate-200">
+      <div class="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+        <span class="text-xs font-bold text-slate-700 uppercase">Thêm nhanh Khách hàng mới</span>
+        <button @click="isAddBookerOpen = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-4 space-y-3">
+        <div>
+          <label class="block text-[10px] font-bold text-slate-500 mb-1">Tên khách hàng <span class="text-rose-500">*</span></label>
+          <input v-model="newBooker.name" placeholder="Tên khách hàng..." class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-sky-500" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-500 mb-1">Số điện thoại <span class="text-rose-500">*</span></label>
+          <input v-model="newBooker.phone" placeholder="Số điện thoại..." class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-sky-500" />
+        </div>
+        <div>
+          <label class="block text-[10px] font-bold text-slate-500 mb-1">Email (tùy chọn)</label>
+          <input v-model="newBooker.email" placeholder="Email..." class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-sky-500" />
+        </div>
+      </div>
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 text-xs">
+        <button @click="isAddBookerOpen = false" class="px-3 py-1.5 border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-600 font-semibold cursor-pointer">Hủy</button>
+        <button @click="saveNewBooker" class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg font-bold cursor-pointer shadow-sm">Lưu khách</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Unsaved Warning Modal -->
+  <div v-if="showUnsavedWarning" class="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 backdrop-blur-xs">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+      <div class="p-6 text-center space-y-4">
+        <div class="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+        </div>
+        <div class="space-y-1">
+          <h4 class="text-sm font-bold text-slate-800">Thay đổi chưa lưu</h4>
+          <p class="text-xs text-slate-500 font-medium">Bạn có các thay đổi chưa được lưu cho đặt tiệc này. Bạn có chắc chắn muốn thoát mà không lưu không?</p>
+        </div>
+      </div>
+      <div class="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
+        <button 
+          @click="showUnsavedWarning = false" 
+          class="px-4 py-1.5 border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-600 font-semibold cursor-pointer"
+        >
+          Quay lại chỉnh sửa
+        </button>
+        <button 
+          @click="confirmCloseWithoutSaving" 
+          class="px-4 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg font-bold shadow-sm cursor-pointer"
+        >
+          Thoát không lưu
+        </button>
+      </div>
+    </div>
   </div>
 </template>

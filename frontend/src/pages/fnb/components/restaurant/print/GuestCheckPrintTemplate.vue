@@ -47,13 +47,19 @@
         <tbody>
           <template v-for="(item, i) in (bill?.items || [])" :key="i">
             <tr class="border-b border-black">
-              <td class="border-r border-black p-1.5 font-medium">{{ item.name || item.product?.name }}</td>
+              <td class="border-r border-black p-1.5 font-medium">
+                <div>{{ item.name || item.product?.name }}</div>
+                <div v-if="item.note" class="text-[10px] text-gray-500 italic font-normal">* Ghi chú: {{ item.note }}</div>
+              </td>
               <td class="border-r border-black p-1.5 text-center">{{ item.quantity }}</td>
               <td class="border-r border-black p-1.5 text-right">{{ formatNumber(item.price) }}</td>
               <td class="p-1.5 text-right">{{ formatNumber(item.price * item.quantity) }}</td>
             </tr>
             <tr v-for="(subItem, j) in (item.sub_items || [])" :key="`sub_${i}_${j}`" class="border-b border-black text-gray-700">
-              <td class="border-r border-black p-1.5 pl-4 text-[11px] italic">- {{ subItem.name || subItem.product?.name }}</td>
+              <td class="border-r border-black p-1.5 pl-4 text-[11px] italic">
+                <div>- {{ subItem.name || subItem.product?.name }}</div>
+                <div v-if="subItem.note" class="text-[10px] text-gray-500 font-normal pl-3">* Ghi chú: {{ subItem.note }}</div>
+              </td>
               <td class="border-r border-black p-1.5 text-center text-[11px]">{{ subItem.quantity }}</td>
               <td class="border-r border-black p-1.5 text-right text-[11px]">{{ formatNumber(subItem.price) }}</td>
               <td class="p-1.5 text-right text-[11px]">{{ formatNumber(subItem.price * subItem.quantity) }}</td>
