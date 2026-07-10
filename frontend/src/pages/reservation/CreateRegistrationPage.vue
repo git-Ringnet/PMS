@@ -147,19 +147,71 @@ function handleTableScroll() {
   }
 }
 
-watch(globalSearchQuery, async (newVal) => {
-  if (!newVal || newVal.trim().length < 2) {
+const filterByArrivalDate = ref(false)
+const searchFromDate = ref(new Date().toISOString().split('T')[0])
+const searchToDate = ref(new Date().toISOString().split('T')[0])
+const searchStatuses = ref([])
+const isStatusDropdownOpen = ref(false)
+
+const searchStatusLabel = computed(() => {
+  const selected = searchStatuses.value
+  if (selected.length === 0) return 'Không có'
+  if (selected.length === registrationStatuses.value.length) return 'Tất cả'
+  
+  const names = []
+  selected.forEach(id => {
+    const s = registrationStatuses.value.find(rs => rs.id === id)
+    if (s) names.push(s.name)
+  })
+  
+  if (names.length <= 2) return names.join(', ')
+  return 'Nhiều tình trạng'
+})
+
+const isAllStatusesChecked = computed({
+  get() {
+    if (registrationStatuses.value.length === 0) return false
+    return searchStatuses.value.length === registrationStatuses.value.length
+  },
+  set(val) {
+    if (val) {
+      searchStatuses.value = registrationStatuses.value.map(rs => rs.id)
+    } else {
+      searchStatuses.value = []
+    }
+  }
+})
+
+async function executeGlobalSearch() {
+  const params = {}
+  
+  if (globalSearchQuery.value.trim().length >= 2) {
+    params.search = globalSearchQuery.value.trim()
+  } else if (!filterByArrivalDate.value) {
     globalSearchResults.value = []
     return
   }
+  
+  if (filterByArrivalDate.value) {
+    if (searchFromDate.value) params.from_date = searchFromDate.value
+    if (searchToDate.value) params.to_date = searchToDate.value
+  }
+  
+  if (searchStatuses.value.length > 0) {
+    params.registration_status_id = searchStatuses.value.join(',')
+  }
+  
   try {
-    const res = await fetchBookings({ search: newVal.trim() })
-    const list = res.data?.data || res.data || []
-    globalSearchResults.value = list
+    const res = await fetchBookings(params)
+    globalSearchResults.value = res.data?.data || res.data || []
   } catch (err) {
     console.error(err)
   }
-})
+}
+
+watch([globalSearchQuery, filterByArrivalDate, searchFromDate, searchToDate, searchStatuses], () => {
+  executeGlobalSearch()
+}, { deep: true })
 
 function handleGlobalSearchResultClick(booking) {
   isGlobalSearchOpen.value = false
@@ -177,6 +229,22 @@ function handleGlobalSearchResultClick(booking) {
 
 function openGlobalSearch() {
   isGlobalSearchOpen.value = true
+  
+  const tab = activeTab.value
+  if (tab) {
+    let ci = tab.checkIn
+    let co = tab.checkOut
+    if (ci && ci.includes('/')) ci = parseDateVi(ci)
+    if (co && co.includes('/')) co = parseDateVi(co)
+    
+    searchFromDate.value = ci || new Date().toISOString().split('T')[0]
+    searchToDate.value = co || new Date().toISOString().split('T')[0]
+  } else {
+    const today = new Date().toISOString().split('T')[0]
+    searchFromDate.value = today
+    searchToDate.value = today
+  }
+  
   setTimeout(() => {
     const el = document.getElementById('gsInput')
     if (el) el.focus()
@@ -187,6 +255,7 @@ function closeGlobalSearch() {
   isGlobalSearchOpen.value = false
   globalSearchQuery.value = ''
   globalSearchResults.value = []
+  filterByArrivalDate.value = false
 }
 
 function getColWidthPx(col) {
@@ -922,6 +991,7 @@ async function loadDropdowns() {
     companies.value            = cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []
     paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
     registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
+    searchStatuses.value = registrationStatuses.value.map(rs => rs.id)
     users.value                = uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []
     roomClasses.value          = (rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []).filter(c => c.is_active !== false)
     roomRateCodes.value        = rrcRes.status === 'fulfilled' ? (rrcRes.value.data?.data || rrcRes.value.data || []) : []
@@ -3243,33 +3313,176 @@ defineExpose({
     </div>
 
     <!-- GLOBAL SYSTEM SEARCH OVERLAY -->
-    <div class="global-search-overlay" :class="{ show: isGlobalSearchOpen }" @click="closeGlobalSearch">
-      <div class="global-search-modal animate-in" @click.stop>
-        <div class="gs-input-row">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-          <input type="text" id="gsInput" v-model="globalSearchQuery" placeholder="Tìm phòng, tên khách, mã booking... trên toàn hệ thống" />
-          <button class="gs-close" @click="closeGlobalSearch">✕</button>
-        </div>
-        <div class="gs-hint">Tìm kiếm này quét toàn bộ dữ liệu hệ thống — không giới hạn trong booking đang mở.</div>
-        <div class="gs-results border-t border-slate-100">
-          <div class="gs-section-label font-black text-xs text-slate-500 mb-2" v-if="globalSearchResults.length > 0">Kết quả tìm kiếm</div>
-          <div class="gs-section-label font-bold text-slate-400 py-4 text-center italic" v-else-if="globalSearchQuery.trim().length >= 2">Không tìm thấy kết quả phù hợp</div>
-          <div class="gs-section-label font-bold text-slate-400 py-4 text-center italic" v-else>Nhập ít nhất 2 ký tự để tìm kiếm...</div>
-          
-          <div 
-            v-for="b in globalSearchResults" 
-            :key="b.id" 
-            class="gs-result border-b border-slate-50 last:border-none"
-            @click="handleGlobalSearchResultClick(b)"
-          >
-            <span class="gs-tag guest">Booking</span> 
-            <span class="font-extrabold text-slate-800">{{ b.booking_code }}</span> 
-            · {{ b.booking_name }} · {{ b.company_name || 'Khách lẻ' }}
-            <span class="gs-booking font-bold text-slate-500">Đến: {{ formatDateVi(b.check_in) }}</span>
+    <Teleport to="body">
+      <div 
+        v-if="isGlobalSearchOpen" 
+        class="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex justify-center items-start pt-16 z-[99999]"
+        @click="closeGlobalSearch"
+      >
+        <div 
+          class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden border border-gray-200"
+          @click.stop
+        >
+          <!-- INPUT HEADER -->
+          <div class="flex items-center px-4 py-2.5 border-b border-gray-100">
+            <svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+            <input 
+              type="text" 
+              id="gsInput"
+              v-model="globalSearchQuery" 
+              placeholder="Tìm kiếm" 
+              class="flex-1 text-[13px] text-gray-800 placeholder-gray-400 outline-none bg-transparent" 
+              autofocus
+            />
+            <button class="text-gray-400 hover:text-gray-600 transition border-none bg-transparent cursor-pointer" @click="closeGlobalSearch">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- FILTERS HEADER -->
+          <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-x-6 gap-y-2 items-center justify-between" @click="isStatusDropdownOpen = false">
+            <div class="flex items-center gap-4">
+              <!-- Switch toggle -->
+              <label class="relative inline-flex items-center cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  v-model="filterByArrivalDate" 
+                  class="sr-only peer"
+                />
+                <div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-400"></div>
+                <span class="ml-2 text-[11px] text-gray-500 font-medium block peer-checked:hidden">Xem tất cả</span>
+                <span class="ml-2 text-[11px] text-blue-600 font-medium hidden peer-checked:block">Xem theo ngày đến</span>
+              </label>
+
+              <!-- Date picker range inputs -->
+              <div 
+                v-if="filterByArrivalDate"
+                class="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded border border-gray-300 text-[11px] text-gray-700 animate-in fade-in zoom-in-95 duration-100"
+              >
+                <input type="date" v-model="searchFromDate" class="outline-none bg-transparent cursor-pointer border-none" />
+                <span class="text-gray-400">-</span>
+                <input type="date" v-model="searchToDate" class="outline-none bg-transparent cursor-pointer border-none" />
+              </div>
+            </div>
+
+            <!-- Tình trạng dropdown (click toggled) -->
+            <div class="relative select-none">
+              <button 
+                class="flex items-center gap-1.5 bg-white border border-gray-300 px-2.5 py-1 rounded text-[11px] text-gray-700 hover:border-blue-400 outline-none cursor-pointer"
+                @click.stop="isStatusDropdownOpen = !isStatusDropdownOpen"
+              >
+                Tình trạng: <span class="font-bold">{{ searchStatusLabel }}</span>
+                <svg class="w-3 h-3 text-gray-500 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+              
+              <div 
+                v-show="isStatusDropdownOpen"
+                class="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded shadow-lg py-1.5 z-20"
+                @click.stop
+              >
+                <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100">
+                  <input type="checkbox" v-model="isAllStatusesChecked" class="custom-checkbox w-3.5 h-3.5 rounded border-gray-300 cursor-pointer">
+                  <span class="text-[11px] text-gray-700 font-bold">Chọn tất cả</span>
+                </label>
+                
+                <div class="max-h-48 overflow-y-auto pt-1">
+                  <label 
+                    v-for="rs in registrationStatuses" 
+                    :key="rs.id" 
+                    class="flex items-center gap-2 px-3 py-1 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input 
+                      type="checkbox" 
+                      :value="rs.id" 
+                      v-model="searchStatuses" 
+                      class="custom-checkbox w-3.5 h-3.5 rounded border-gray-300 cursor-pointer"
+                    >
+                    <span class="text-[11px] text-gray-600">{{ rs.name }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RESULTS LIST -->
+          <div class="max-h-[50vh] overflow-y-auto">
+            <!-- RESULTS HEADER -->
+            <div class="flex items-center px-4 py-1.5 text-[10px] font-bold text-gray-500 uppercase bg-gray-100 sticky top-0 z-10 border-b border-gray-200">
+              <div class="w-16 shrink-0">Mã ĐK</div>
+              <div class="flex-1">Tên đăng ký</div>
+              <div class="w-28 text-center shrink-0">Mã tham chiếu</div>
+              <div class="w-28 text-center shrink-0">Ngày đến</div>
+              <div class="w-24 text-right shrink-0">Trạng thái</div>
+            </div>
+
+            <!-- RESULTS BODY -->
+            <div v-if="globalSearchResults.length > 0">
+              <div 
+                v-for="b in globalSearchResults" 
+                :key="b.id" 
+                class="flex items-center px-4 py-2 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition group"
+                @click="handleGlobalSearchResultClick(b)"
+              >
+                <!-- Mã ĐK -->
+                <div class="w-16 text-[11px] font-bold text-gray-500 group-hover:text-blue-600 shrink-0">
+                  {{ b.id }}
+                </div>
+                
+                <!-- Tên đăng ký / Tên khách -->
+                <div class="flex-1 min-w-0 pr-2">
+                  <div class="text-[13px] font-semibold text-gray-800 leading-tight truncate">
+                    {{ b.booking_name }}
+                  </div>
+                  <div class="text-[10px] text-gray-500 mt-0.5 truncate">
+                    {{ b.company_name || 'Khách lẻ' }} <span v-if="b.booking_code" class="text-slate-400 font-medium">({{ b.booking_code }})</span>
+                  </div>
+                </div>
+
+                <!-- Mã tham chiếu -->
+                <div class="w-28 text-center text-[11px] text-gray-600 shrink-0 truncate">
+                  {{ b.reference_code || '-' }}
+                </div>
+
+                <!-- Ngày đến -->
+                <div class="w-28 text-center text-[11px] text-gray-600 shrink-0">
+                  {{ formatDateVi(b.arrival_date || b.check_in) }}
+                </div>
+
+                <!-- Trạng thái -->
+                <div class="w-24 text-right shrink-0">
+                  <span 
+                    class="inline-block px-1.5 py-0.5 text-[10px] font-bold rounded border uppercase"
+                    :style="{ 
+                      backgroundColor: (b.registration_status?.color || '#64748b') + '15', 
+                      color: b.registration_status?.color || '#64748b',
+                      borderColor: (b.registration_status?.color || '#64748b') + '30'
+                    }"
+                  >
+                    {{ b.registration_status?.name || 'Không rõ' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- EMPTY STATES -->
+            <div v-else class="px-4 py-6 text-[11px] text-gray-400 text-center bg-white">
+              <div v-if="globalSearchQuery.trim().length >= 2 || filterByArrivalDate">
+                Không tìm thấy kết quả phù hợp
+              </div>
+              <div v-else>
+                Nhập ít nhất 2 ký tự hoặc bật Xem theo ngày đến để tìm kiếm...
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Teleport>
 
     <!-- MOCKUP CREATE REGISTRATION MODAL (Image 2 Match) -->
     <Teleport to="body">
@@ -4625,6 +4838,10 @@ defineExpose({
 </template>
 
 <style>
+input[type="checkbox"].custom-checkbox {
+  accent-color: #7dd3fc;
+  cursor: pointer;
+}
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
