@@ -100,7 +100,7 @@ return new class extends Migration
             $table->dateTime('edit_date')->nullable(); // Thời điểm chỉnh sửa cuối (EditDate)
 
             $table->json('shuttle_info')->nullable(); // Thông tin đưa đón (dạng JSON array)
-            $table->json('room_allocations')->nullable(); // Thông tin lấy phòng/loại phòng đã chọn (dạng JSON array)
+            $table->json('deposit_details')->nullable(); // Lưu chi tiết đặt cọc dạng JSON array
 
             $table->timestamps(); // created_at, updated_at
             $table->softDeletes(); // deleted_at — xóa mềm để lưu lịch sử
