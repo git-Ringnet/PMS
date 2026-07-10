@@ -33,6 +33,7 @@ class FbOrderController extends Controller
                     'surcharge' => (float)$item->surcharge,
                     'baseDiscount' => (float)$item->base_discount,
                     'baseSurcharge' => (float)$item->base_surcharge,
+                    'note' => $item->note,
                     'product' => $item->product // original product details
                 ];
             })->toArray();
@@ -160,6 +161,7 @@ class FbOrderController extends Controller
                         'surcharge' => $item['surcharge'] ?? 0,
                         'base_discount' => $item['baseDiscount'] ?? 0,
                         'base_surcharge' => $item['baseSurcharge'] ?? 0,
+                        'note' => $item['note'] ?? null,
                     ]);
 
                     if (isset($item['sub_items']) && is_array($item['sub_items'])) {
@@ -177,6 +179,7 @@ class FbOrderController extends Controller
                                 'surcharge' => $subItem['surcharge'] ?? 0,
                                 'base_discount' => $subItem['baseDiscount'] ?? 0,
                                 'base_surcharge' => $subItem['baseSurcharge'] ?? 0,
+                                'note' => $subItem['note'] ?? null,
                                 'created_at' => now(),
                                 'updated_at' => now(),
                             ];

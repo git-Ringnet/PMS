@@ -20,6 +20,7 @@ class FbOrderItem extends Model
         'surcharge',
         'base_discount',
         'base_surcharge',
+        'note',
     ];
 
     public function order()

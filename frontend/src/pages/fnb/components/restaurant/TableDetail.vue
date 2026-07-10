@@ -778,6 +778,14 @@ const handleConfirmSplitByItem = () => {
 
   if (!bill) return
 
+  // Convert promotion discounts to base discounts first
+  if (bill.items) {
+    bill.items.forEach(item => {
+      item.baseDiscount = item.discount || 0
+      item.baseSurcharge = item.surcharge || 0
+    })
+  }
+
   // Clear promotion on split to avoid recalculation loops
   bill.promotionId = undefined
 
@@ -894,6 +902,14 @@ const handleConfirmSplitByAmount = (amount) => {
 
     targetRowTotals[fractionalParts[i].index] += 1
 
+  }
+
+  // Convert promotion discounts to base discounts first
+  if (bill.items) {
+    bill.items.forEach(item => {
+      item.baseDiscount = item.discount || 0
+      item.baseSurcharge = item.surcharge || 0
+    })
   }
 
   // Clear promotion on split to avoid recalculation loops
@@ -1720,6 +1736,24 @@ const handleSaveInternalNote = (data) => {
     handleSave()
   }, 100)
 }
+const handleClickOutside = (e) => {
+  const searchContainer = document.getElementById('search-container')
+  if (searchContainer && !searchContainer.contains(e.target)) {
+    isSearchDropdownOpen.value = false
+  }
+  const categoryContainer = document.getElementById('category-container')
+  if (categoryContainer && !categoryContainer.contains(e.target)) {
+    isCategoryDropdownOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 
 </script>
 
@@ -1754,7 +1788,7 @@ const handleSaveInternalNote = (data) => {
               <div v-if="searchFilteredProducts.length === 0" class="p-3 text-center text-slate-500 text-sm">Không tìm thấy món ăn</div>
               <div v-for="prod in searchFilteredProducts" :key="'search-'+prod.id" class="flex items-center justify-between p-1.5 border-b border-slate-100 bg-white hover:bg-sky-50 transition-colors cursor-pointer" @click.stop="handleAddProduct(prod); isSearchDropdownOpen = false; searchQuery = ''">
                 <div class="flex items-center gap-2">
-                   <span class="text-[11px] font-bold text-slate-400 w-10 truncate">{{ prod.code }}</span>
+                   <span class="text-[11px] font-bold text-slate-400 w-10 truncate">{{ prod.code || prod.product_code }}</span>
                    <span class="text-xs font-semibold text-slate-800 line-clamp-1">{{ prod.name }}</span>
                 </div>
                 <div class="flex items-center gap-3 shrink-0">
@@ -1815,7 +1849,7 @@ const handleSaveInternalNote = (data) => {
             </div>
             <div class="w-full h-20 bg-slate-100 rounded mb-2 overflow-hidden flex items-center justify-center shrink-0">
               <img v-if="prod.image" :src="getImageUrl(prod.image)" class="w-full h-full object-cover" />
-              <span v-else class="text-xs text-slate-400 font-bold">{{ prod.code }}</span>
+              <span v-else class="text-xs text-slate-400 font-bold">{{ prod.code || prod.product_code }}</span>
             </div>
             <span class="text-[11px] font-bold text-slate-800 line-clamp-2 leading-tight">{{ prod.name }}</span>
             <div class="flex-1"></div>
@@ -1978,7 +2012,18 @@ const handleSaveInternalNote = (data) => {
                 <td class="px-2 py-2 text-center border-r border-slate-100">
                   <input type="checkbox" v-model="item.selected" class="rounded border-slate-300 text-sky-500 focus:ring-sky-500" />
                 </td>
-                <td class="px-3 py-2 border-r border-slate-100 font-semibold text-slate-800 text-[12px]">{{ item.product.name }}</td>
+                <td class="px-3 py-2 border-r border-slate-100 text-[12px]">
+                  <div class="flex flex-col gap-0.5">
+                    <span class="font-semibold text-slate-800">{{ item.product?.name || item.name }}</span>
+                    <input 
+                      type="text" 
+                      v-model="item.note" 
+                      placeholder="Thêm ghi chú món..." 
+                      class="text-[10px] text-slate-400 italic bg-transparent border-b border-transparent hover:border-slate-200 focus:border-sky-300 focus:outline-none w-full py-0 px-0 h-4"
+                      @change="isDirty = true"
+                    />
+                  </div>
+                </td>
                 <td class="px-2 py-2 text-right border-r border-slate-100 text-slate-600 text-[11px]">{{ Number(item.price).toLocaleString('vi-VN') }}</td>
                 <td class="px-2 py-2 text-center border-r border-slate-100">
                   <input type="number" step="any" min="0" v-model="item.quantity" class="w-14 text-center bg-transparent border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-sky-300 py-0.5 font-bold text-slate-800" />
@@ -1998,9 +2043,20 @@ const handleSaveInternalNote = (data) => {
               <template v-if="item.sub_items && item.sub_items.length">
                 <tr v-show="isGroupExpanded(group.name)" v-for="(subItem, subIdx) in item.sub_items" :key="'sub_' + (subItem.id || subIdx)" class="border-b border-slate-50 bg-slate-50 hover:bg-sky-50 transition-colors">
                   <td class="px-2 py-1.5 text-center border-r border-slate-100"></td>
-                  <td class="px-3 py-1.5 border-r border-slate-100 text-slate-600 text-[11px] pl-6 flex items-center gap-2">
-                    <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                    {{ subItem.product?.name || subItem.name }}
+                  <td class="px-3 py-1.5 border-r border-slate-100 text-[11px] pl-6">
+                    <div class="flex items-center gap-2">
+                      <svg class="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                      <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                        <span class="text-slate-600 font-medium">{{ subItem.product?.name || subItem.name }}</span>
+                        <input 
+                          type="text" 
+                          v-model="subItem.note" 
+                          placeholder="Thêm ghi chú..." 
+                          class="text-[9px] text-slate-400 italic bg-transparent border-b border-transparent hover:border-slate-200 focus:border-sky-300 focus:outline-none w-full py-0 px-0 h-3.5"
+                          @change="isDirty = true"
+                        />
+                      </div>
+                    </div>
                   </td>
                   <td class="px-2 py-1.5 text-right border-r border-slate-100 text-slate-500 text-[11px]">{{ Number(subItem.price).toLocaleString('vi-VN') }}</td>
                   <td class="px-2 py-1.5 text-center border-r border-slate-100 text-slate-700 text-[11px] font-medium">{{ subItem.quantity }}</td>

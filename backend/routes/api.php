@@ -142,6 +142,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
     Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class);
     Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class);
+    Route::apiResource('fb-parties', \App\Http\Controllers\Api\FbPartyController::class);
+    Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel']);
+    Route::post('fb-parties/check-conflict', [\App\Http\Controllers\Api\FbPartyController::class, 'checkConflict']);
+    Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
     
     // F&B Orders (Bills)
     Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
