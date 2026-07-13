@@ -59,8 +59,26 @@ export const fetchSystemTime = () => http.get('/system-time')
 
 // ==================== PAYMENTS (ĐẶT CỌC) ====================
 export const fetchPayments = (bookingId) => http.get(`/bookings/${bookingId}/payments`)
-export const createPayment = (bookingId, data) => http.post(`/bookings/${bookingId}/payments`, data)
-export const updatePayment = (id, data) => http.put(`/payments/${id}`, data)
+export const createPayment = (bookingId, data) => {
+  if (data instanceof FormData) {
+    return http.post(`/bookings/${bookingId}/payments`, data, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  }
+  return http.post(`/bookings/${bookingId}/payments`, data)
+}
+export const updatePayment = (id, data) => {
+  if (data instanceof FormData) {
+    return http.post(`/payments/${id}`, data, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  }
+  return http.put(`/payments/${id}`, data)
+}
 export const deletePayment = (id) => http.delete(`/payments/${id}`)
 export const splitPayment = (id, data) => http.post(`/payments/${id}/split`, data)
 export const transferPayment = (id, data) => http.post(`/payments/${id}/transfer`, data)

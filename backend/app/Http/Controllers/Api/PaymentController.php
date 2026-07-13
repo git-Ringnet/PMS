@@ -78,7 +78,14 @@ class PaymentController extends Controller
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
             'booking_room_id'   => 'nullable|exists:booking_rooms,id',
+            'image'             => 'nullable|file|image|max:4096',
         ]);
+
+        // Upload ảnh chứng từ cọc nếu có
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('payments', 'public');
+        }
 
         // Kiểm tra payment_method — không cho Công nợ (group=4) và Miễn phí (group=5) làm cọc
         $method = PaymentMethod::findOrFail($request->payment_method_id);
@@ -96,7 +103,7 @@ class PaymentController extends Controller
         // Tạo hiển thị guest: mã booking + tên
         $guestDisplay = $booking->booking_code . ' - ' . $booking->booking_name;
 
-        $payment = DB::transaction(function () use ($request, $bookingId, $booking, $description, $guestDisplay) {
+        $payment = DB::transaction(function () use ($request, $bookingId, $booking, $description, $guestDisplay, $imagePath) {
             $payment = Payment::create([
                 'booking_id'        => $bookingId,
                 'booking_room_id'   => $request->booking_room_id,
@@ -112,6 +119,7 @@ class PaymentController extends Controller
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
                 'created_by'        => Auth::user()?->username ?? 'system',
+                'image_path'        => $imagePath,
             ]);
 
             // Cập nhật payment_value trên booking header = tổng cọc
@@ -153,11 +161,16 @@ class PaymentController extends Controller
             'payment_method_id' => 'sometimes|exists:payment_methods,id',
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
+            'image'             => 'nullable|file|image|max:4096',
         ]);
 
         DB::transaction(function () use ($request, $payment) {
+            $data = $request->only(['date', 'amount', 'payment_method_id', 'description', 'debit_account']);
+            if ($request->hasFile('image')) {
+                $data['image_path'] = $request->file('image')->store('payments', 'public');
+            }
             $payment->update(array_merge(
-                $request->only(['date', 'amount', 'payment_method_id', 'description', 'debit_account']),
+                $data,
                 ['updated_by' => Auth::user()?->username ?? 'system']
             ));
 

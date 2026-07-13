@@ -56,12 +56,17 @@ class BookingController extends Controller
             });
         }
 
-        // Filter theo tên đăng ký
+        // Filter theo tên đăng ký hoặc ID (mã BK)
         if ($request->search) {
-            $query->where(function ($q) use ($request) {
-                $q->where('booking_name', 'like', '%' . $request->search . '%')
-                  ->orWhere('booking_code', 'like', '%' . $request->search . '%')
-                  ->orWhere('contact_name', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('booking_name', 'like', '%' . $search . '%')
+                  ->orWhere('contact_name', 'like', '%' . $search . '%');
+                
+                $cleanId = preg_replace('/[^0-9]/', '', $search);
+                if (!empty($cleanId)) {
+                    $q->orWhere('id', $cleanId);
+                }
             });
         }
 
@@ -161,8 +166,14 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // Tự sinh booking_code từ prefix khách sạn + số thứ tự
-        $validated['booking_code'] = $this->generateBookingCode();
+        // Tiền phòng gửi về master luôn luôn bật (is_git = 1)
+        $validated['is_git'] = true;
+
+        // Default màu BK theo ColorDefaultBookingRoomMap
+        if (empty($validated['color']) || $validated['color'] === '#000000') {
+            $colorConfig = \App\Models\HotelConfig::where('name', 'ColorDefaultBookingRoomMap')->first();
+            $validated['color'] = $colorConfig ? $colorConfig->value : '#97D5FF';
+        }
 
         // Lấy ngày hệ thống từ system_date_rolls (ngày nghiệp vụ hiện tại)
         $validated['booking_date'] = $sysDateStr;
@@ -174,15 +185,24 @@ class BookingController extends Controller
         if (empty($validated['confirm_date'])) {
             if (!empty($validated['registration_status_id'])) {
                 $statusModel = \App\Models\RegistrationStatus::find($validated['registration_status_id']);
-                if ($statusModel && $statusModel->confirmation_days > 0) {
-                    $confirmDate = Carbon::parse($validated['arrival_date'])->subDays($statusModel->confirmation_days);
-                    $sysDate = $systemDate ? Carbon::parse($systemDate->system_date)->startOfDay() : now()->startOfDay();
-                    
-                    // Nếu confirmDate < systemDate thì lấy arrival_date
-                    if ($confirmDate->startOfDay()->lt($sysDate)) {
-                        $validated['confirm_date'] = Carbon::parse($validated['arrival_date'])->toDateString();
+                if ($statusModel) {
+                    $statusNameLower = strtolower($statusModel->name ?? '');
+                    $isDefinite = str_contains($statusNameLower, 'guaranteed') && 
+                                  !str_contains($statusNameLower, 'none') && 
+                                  !str_contains($statusNameLower, 'non');
+
+                    $days = $statusModel->confirmation_days ?? 0;
+                    if ($isDefinite) {
+                        // Chắc chắn: mặc định bằng ngày tạo bk (system_date)
+                        $validated['confirm_date'] = $sysDateStr;
                     } else {
-                        $validated['confirm_date'] = $confirmDate->toDateString();
+                        // Không chắc chắn: ngày lưu trú - ngày xác nhận định nghĩa
+                        $calcDate = Carbon::parse($validated['arrival_date'])->subDays($days)->toDateString();
+                        if ($calcDate > Carbon::parse($validated['arrival_date'])->toDateString()) {
+                            $validated['confirm_date'] = Carbon::parse($validated['arrival_date'])->toDateString();
+                        } else {
+                            $validated['confirm_date'] = $calcDate;
+                        }
                     }
                 } else {
                     $validated['confirm_date'] = Carbon::parse($validated['arrival_date'])->toDateString();
@@ -454,6 +474,9 @@ class BookingController extends Controller
         $validated['edit_count']  = $booking->edit_count + 1;
         $validated['edit_date']   = now();
         $validated['updated_by']  = Auth::user()?->username ?? 'system';
+        
+        // Tiền phòng gửi về master luôn luôn bật (is_git = 1)
+        $validated['is_git'] = true;
 
         // Lấy ngày hệ thống
         $systemDate = SystemDateRoll::latest('id')->first();
@@ -699,7 +722,6 @@ class BookingController extends Controller
             ) {
                 // 1. Tạo booking mới từ booking gốc
                 $newBooking = Booking::create([
-                    'booking_code'           => $this->generateBookingCode(),
                     'booking_name'           => $source->booking_name,
                     'arrival_date'           => $newArrival,
                     'departure_date'         => $newDeparture,
@@ -710,7 +732,7 @@ class BookingController extends Controller
                     'status'                 => Booking::STATUS_RESERVATION,
                     'registration_status_id' => $source->registration_status_id,
                     'color'                  => $source->color,
-                    'is_git'                 => $source->is_git,
+                    'is_git'                 => true,
                     'is_day_use'             => $source->is_day_use,
                     'breakfast_included'     => $source->breakfast_included,
                     'has_vat'                => $source->has_vat,
@@ -909,9 +931,14 @@ class BookingController extends Controller
             });
         }
         if ($request->search) {
-            $query->where(function ($q) use ($request) {
-                $q->where('booking_name', 'like', '%' . $request->search . '%')
-                  ->orWhere('booking_code', 'like', '%' . $request->search . '%');
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('booking_name', 'like', '%' . $search . '%');
+                
+                $cleanId = preg_replace('/[^0-9]/', '', $search);
+                if (!empty($cleanId)) {
+                    $q->orWhere('id', $cleanId);
+                }
             });
         }
         if ($request->has('status')) {

@@ -6,7 +6,7 @@ const uiStore = useUiStore()
 
 <template>
   <Teleport to="body">
-    <div class="fixed top-4 left-1/2 -translate-x-1/2 z-[1000001] flex flex-col items-center gap-2 max-w-sm w-full pointer-events-none">
+    <div class="fixed top-4 left-1/2 -translate-x-1/2 z-[99999999] flex flex-col items-center gap-2 max-w-sm w-full pointer-events-none">
       <TransitionGroup name="toast" tag="div" class="flex flex-col gap-2 w-full items-center">
         <div
         v-for="toast in uiStore.toasts"
