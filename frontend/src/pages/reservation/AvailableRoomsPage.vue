@@ -14,7 +14,7 @@ const dates = ref([])
 const roomClasses = ref([])
 const gridData = ref({})
 const statistics = ref({})
-const totals = ref({ grand_total: 0, grand_max_extra_beds: 0 })
+const totals = ref({ grand_total: 0, grand_max_rooms: 0, grand_max_extra_beds: 0 })
 
 // Dropdown statuses
 const registrationStatuses = ref([])
@@ -417,7 +417,7 @@ function showExportToast() {
               {{ rc.total }}
             </td>
             <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[300px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
-              {{ rc.max_extra_beds }}
+              {{ rc.max_rooms ?? 0 }}
             </td>
 
             <!-- Dynamic grid cells based on selected filters -->
@@ -440,7 +440,7 @@ function showExportToast() {
               {{ totals.grand_total }}
             </td>
             <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
-              {{ totals.grand_max_extra_beds }}
+              {{ totals.grand_max_rooms ?? 0 }}
             </td>
 
             <template v-for="day in days" :key="day.fullDateStr">
