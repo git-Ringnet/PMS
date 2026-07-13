@@ -547,3 +547,9 @@ html.dark .floor-pill:hover {
   transform: scale(0.95);
   background: #e0f2fe !important;
 }
+
+/* Gray styling for disabled options in select dropdowns */
+select option:disabled {
+  color: #94a3b8 !important;
+  background-color: #f1f5f9 !important;
+}

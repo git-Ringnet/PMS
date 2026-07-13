@@ -211,6 +211,38 @@ const emptyForm = () => ({
 const modalForm = ref(emptyForm())
 const isColorChanged = ref(false)
 
+const activeDepositsList = computed(() => {
+  if (!modalForm.value || !modalForm.value.deposits) return []
+  return modalForm.value.deposits.filter(d => d.edit_flag === 0 && (d.pack2 === 'DPR' || d.pack2 === undefined))
+})
+
+const hasActiveDeposits = computed(() => {
+  return activeDepositsList.value.length > 0 && modalForm.value.paymentValue > 0
+})
+
+const firstDepositDate = computed(() => {
+  if (activeDepositsList.value.length > 0) {
+    return activeDepositsList.value[0].date
+  }
+  return ''
+})
+
+const firstDepositNote = computed(() => {
+  if (activeDepositsList.value.length > 0) {
+    return activeDepositsList.value[0].note || 'Ghi nhận cọc'
+  }
+  return 'Ghi nhận cọc'
+})
+
+const firstDepositMethodName = computed(() => {
+  if (activeDepositsList.value.length > 0) {
+    const pmId = activeDepositsList.value[0].paymentMethodId
+    const pm = paymentMethods.value.find(x => x.id === pmId)
+    return pm ? pm.name : 'Đặt cọc'
+  }
+  return ''
+})
+
 // ==================== NHÂN BẢN BOOKING MODAL ====================
 const isCopyModalOpen = ref(false)
 const copyModalArrivalDate = ref('')
@@ -238,6 +270,10 @@ function parseApiDate(dateStr) {
 }
 
 function openDepositModal() {
+  if (!modalForm.value.dbId) {
+    uiStore.showToast('Vui lòng lưu phiếu đăng ký trước khi đặt cọc!', 'warning')
+    return
+  }
   isDepositModalOpen.value = true
 }
 
@@ -831,6 +867,9 @@ function bookingToTab(b) {
     })
   }
 
+  const activePayments = b.payments ? b.payments.filter(p => p.edit_flag === 0 && p.pack2 === 'DPR') : []
+  const totalDeposit = activePayments.reduce((sum, p) => sum + Number(p.amount), 0)
+
   return {
     id: b.booking_code,
     dbId: b.id,
@@ -841,7 +880,7 @@ function bookingToTab(b) {
     checkIn: parseApiDate(b.arrival_date),
     checkOut: parseApiDate(b.departure_date),
     nights: b.num_of_days,
-    deposit: b.payment_value || 0,
+    deposit: totalDeposit,
     company: b.company?.name || '—',
     companyId: b.company_id,
     confirmDate: parseApiDate(b.confirm_date),
@@ -856,7 +895,7 @@ function bookingToTab(b) {
     contactEmail: b.contact_email || '',
     contactPhone: b.contact_phone || '',
     paymentMethodId: b.payment_method_id,
-    paymentValue: b.payment_value || 0,
+    paymentValue: totalDeposit,
     externalBookingCode: b.external_booking_code || '',
     salesPerson: b.sales_person || '',
     isGit: b.is_git || false,
@@ -874,11 +913,12 @@ function bookingToTab(b) {
       amount: Number(p.amount) || 0,
       currency: activeCurrency.value.code || 'VND',
       recipient: p.created_by || 'Admin',
-      images: [],
+      images: p.image_path ? [p.image_path] : [],
       status: p.status,
       edit_flag: p.edit_flag,
       reversal_ref: p.reversal_ref,
-      debit_account: p.debit_account
+      debit_account: p.debit_account,
+      pack2: p.pack2
     })) : [],
     rooms: rooms,
     createdBy: b.created_by || '',
@@ -3089,15 +3129,27 @@ defineExpose({
                       <div class="flex-2 min-w-[260px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Người đặt phòng</label>
                           <div class="flex space-x-1.5 h-[32px]">
-                              <select 
-                                v-model="modalForm.bookerId"
-                                @change="handleBookerChange"
-                                class="flex-1 border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white font-bold"
-                              >
-                                  <option :value="null" disabled>Chọn người đặt...</option>
-                                  <option v-for="b in bookers" :key="b.id" :value="b.id">{{ b.name }}</option>
-                              </select>
-                              <button type="button" class="bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-xl text-gray-600 hover:bg-gray-200 transition cursor-pointer">
+                              <div class="relative flex-1 flex items-center">
+                                  <select 
+                                    v-model="modalForm.bookerId"
+                                    @change="handleBookerChange"
+                                    class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white font-bold h-[32px] cursor-pointer"
+                                  >
+                                      <option :value="null" disabled>Chọn người đặt...</option>
+                                      <option v-for="b in bookers" :key="b.id" :value="b.id">{{ b.name }}</option>
+                                  </select>
+                                  <button 
+                                    v-if="modalForm.bookerId"
+                                    type="button"
+                                    @click.stop="modalForm.bookerId = null; handleBookerChange()"
+                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                    style="z-index: 10;"
+                                    title="Xóa chọn"
+                                  >
+                                      <i class="fa-solid fa-xmark"></i>
+                                  </button>
+                              </div>
+                              <button type="button" class="bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-xl text-gray-600 hover:bg-gray-200 transition cursor-pointer flex-shrink-0">
                                   <i class="fa-solid fa-user-plus text-xs"></i>
                               </button>
                           </div>
@@ -3130,27 +3182,40 @@ defineExpose({
                           <div class="w-1 h-3 bg-green-500 rounded-full mr-1.5"></div>
                           Đặt cọc
                       </h3>
-                      <button @click="openDepositModal" type="button" class="text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-md px-2 py-0.5 text-[11px] transition flex items-center gap-1 cursor-pointer">
+                      <button 
+                        @click="openDepositModal" 
+                        :disabled="!modalForm.dbId"
+                        type="button" 
+                        class="rounded-md px-2 py-0.5 text-[11px] transition flex items-center gap-1 shadow-xs"
+                        :class="modalForm.dbId ? 'text-gray-600 bg-gray-100 hover:bg-gray-200 cursor-pointer' : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-60'"
+                      >
                           <i class="fa-solid fa-plus"></i> Thêm cọc
                       </button>
                   </div>
                   <div class="bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-wrap md:flex-nowrap gap-4 items-center shadow-inner">
-                      <div class="text-xs font-semibold text-gray-800 flex items-center">
-                          <span class="text-[11px] text-gray-400 font-medium mr-1.5">Ngày:</span> {{ formatDateVi(systemDate) }}
-                      </div>
+                      <!-- Số tiền first -->
                       <div class="text-xs text-gray-800 flex items-center font-bold">
                           <span class="text-[11px] text-gray-400 font-medium mr-1.5">Số tiền:</span>
                           <input 
                             type="text" 
+                            readonly
                             :value="formatCurrencyInput(modalForm.paymentValue)"
-                            @input="e => modalForm.paymentValue = cleanCurrencyValue(e.target.value)"
-                            class="border border-gray-300 rounded-lg px-2.5 py-0.5 text-xs font-black text-slate-800 focus:outline-none w-28 bg-white mr-1.5 text-right shadow-inner"
+                            class="border border-gray-200 rounded-lg px-2.5 py-0.5 text-xs font-black text-slate-500 focus:outline-none w-28 bg-slate-100/50 mr-1.5 text-right shadow-inner cursor-not-allowed"
                           />
-                          <i class="fa-solid fa-money-bill-wave text-green-600 mr-1.5 text-xs"></i> (Ghi nhận cọc)
                       </div>
-                      <div class="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-xs md:ml-auto border border-blue-100">
-                          NB0021
-                      </div>
+                      
+                      <!-- Only show Date and Note if booking has deposits -->
+                      <template v-if="hasActiveDeposits">
+                          <div class="text-xs font-semibold text-gray-800 flex items-center">
+                              <span class="text-[11px] text-gray-400 font-medium mr-1.5">Ngày:</span> {{ firstDepositDate }}
+                          </div>
+                          <div class="text-xs text-gray-800 flex items-center font-semibold">
+                              <i class="fa-solid fa-money-bill-wave text-green-600 mr-1.5 text-xs"></i> ({{ firstDepositNote }})
+                          </div>
+                          <div class="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-xs md:ml-auto border border-blue-100">
+                              {{ firstDepositMethodName }}
+                          </div>
+                      </template>
                   </div>
               </div>
 
@@ -3584,6 +3649,7 @@ defineExpose({
         v-model:show="isDepositModalOpen" 
         :bookingId="modalForm?.dbId" 
         :bookingName="modalForm?.bookingName" 
+        :bookingCode="modalForm?.bookingCode" 
         :paymentMethods="paymentMethods" 
         :currenciesList="currenciesList" 
         v-model:deposits="modalForm.deposits" 
