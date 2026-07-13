@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -50,6 +50,8 @@ import {
 
 const route = useRoute()
 const uiStore = useUiStore()
+import { useAuthStore } from '@/stores/auth-store'
+const authStore = useAuthStore()
 
 // ==================== CONFIG & SYSTEM ====================
 const systemDate = ref(new Date().toISOString().split('T')[0])
@@ -177,7 +179,7 @@ const emptyForm = () => ({
   dbId: null,
   bookingCode: '',
   bookingName: '',
-  color: '#000000',
+  color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
   checkIn: new Date().toISOString().split('T')[0],
   checkOut: '',
   nights: 1,
@@ -189,7 +191,7 @@ const emptyForm = () => ({
   paymentValue: 0,
   externalBookingCode: '',
   salesPerson: '',
-  isGit: false,
+  isGit: true,
   hasVat: false,
   marketId: null,
   customerSourceId: null,
@@ -202,6 +204,8 @@ const emptyForm = () => ({
   shuttleInfo: [],
   roomAllocations: [],
   deposits: [],
+  createdBy: '',
+  createdAt: '',
 })
 
 const modalForm = ref(emptyForm())
@@ -877,6 +881,8 @@ function bookingToTab(b) {
       debit_account: p.debit_account
     })) : [],
     rooms: rooms,
+    createdBy: b.created_by || '',
+    createdAt: b.created_at || '',
   }
 }
 
@@ -894,6 +900,8 @@ function makeBlankTab() {
     paymentMethodId: null, paymentValue: 0, externalBookingCode: '',
     salesPerson: '', isGit: false, hasVat: false, note: '', specialRequests: '',
     rooms: [],
+    createdBy: '',
+    createdAt: '',
   }
 }
 
@@ -966,10 +974,12 @@ async function handleAddTabClick() {
     checkIn: today,
     checkOut: tomorrow,
     nights: 1,
-    registrationStatusId: registrationStatuses.value[0]?.id || null,
-    paymentMethodId: paymentMethods.value[0]?.id || null,
-    marketId: markets.value[0]?.id || null,
-    customerSourceId: customerSources.value[0]?.id || null,
+    registrationStatusId: registrationStatuses.value.find(s => !s.is_hidden)?.id || null,
+    paymentMethodId: null,
+    marketId: null,
+    customerSourceId: null,
+    color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
+    isGit: true,
     shuttleInfo: [
       { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: today, time: '00:00', price: 0, location: '', note: '' }
     ],
@@ -1002,7 +1012,7 @@ async function openEditModal() {
     paymentValue: tab.paymentValue || 0,
     externalBookingCode: tab.externalBookingCode || '',
     salesPerson: tab.salesPerson || '',
-    isGit: tab.isGit || false,
+    isGit: true,
     hasVat: tab.hasVat || false,
     marketId: tab.marketId,
     customerSourceId: tab.customerSourceId,
@@ -1018,10 +1028,15 @@ async function openEditModal() {
     roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
+    createdBy: tab.createdBy || '',
+    createdAt: tab.createdAt || '',
   }
   await updateRoomAvailability()
   modalSubTab.value = 'info'
   isModalOpen.value = true
+  nextTick(() => {
+    autoResizeTextarea()
+  })
 }
 
 function handleBookerChange() {
@@ -1034,21 +1049,108 @@ function handleBookerChange() {
 }
 
 function handleCompanyChange() {
-  const selected = companies.value.find(c => c.id === Number(modalForm.value.companyId))
-  if (selected) {
-    if (selected.market_id) modalForm.value.marketId = selected.market_id
-    if (selected.customer_source_id) modalForm.value.customerSourceId = selected.customer_source_id
-  }
+  // Không tự động chọn sẵn thị trường và nguồn khách từ công ty
 }
 
 watch(() => modalForm.value.registrationStatusId, (newId) => {
   if (newId) {
-    const st = registrationStatuses.value.find(rs => rs.id === newId)
+    const st = registrationStatuses.value.find(rs => rs.id === Number(newId))
     if (st && st.is_availability === false) {
       uiStore.showToast('Chú ý: Tình trạng đăng ký này không giữ phòng trống (is_availability = 0)', 'info')
     }
   }
+  handleConfirmDateCalculation()
 })
+
+watch(() => modalForm.value.checkIn, () => {
+  handleConfirmDateCalculation()
+})
+
+function addDaysToDateStr(dateStr, days) {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return dateStr
+  const y = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10) - 1
+  const d = parseInt(parts[2], 10)
+  const date = new Date(y, m, d)
+  date.setDate(date.getDate() + days)
+  const newY = date.getFullYear()
+  const newM = String(date.getMonth() + 1).padStart(2, '0')
+  const newD = String(date.getDate()).padStart(2, '0')
+  return `${newY}-${newM}-${newD}`
+}
+
+function handleConfirmDateCalculation() {
+  const statusId = modalForm.value.registrationStatusId
+  if (!statusId) return
+  const status = registrationStatuses.value.find(s => s.id === Number(statusId))
+  if (!status) return
+
+  const statusNameLower = (status.name || '').toLowerCase()
+  const isDefinite = statusNameLower.includes('guaranteed') && 
+                     !statusNameLower.includes('none') && 
+                     !statusNameLower.includes('non')
+
+  console.log('handleConfirmDateCalculation: status changed', {
+    statusId,
+    statusName: status.name,
+    isDefinite,
+    checkIn: modalForm.value.checkIn,
+    systemDate: systemDate.value
+  })
+
+  if (isDefinite) {
+    // Chắc chắn: mặc định bằng ngày tạo bk (systemDate)
+    modalForm.value.confirmDate = systemDate.value
+  } else {
+    // Không chắc chắn: ngày lưu trú - ngày xác nhận định nghĩa (cut-off)
+    const cutOff = status.confirmation_days || 0
+    if (modalForm.value.checkIn) {
+      const calcDate = addDaysToDateStr(modalForm.value.checkIn, -cutOff)
+      if (calcDate > modalForm.value.checkIn) {
+        modalForm.value.confirmDate = modalForm.value.checkIn
+      } else {
+        modalForm.value.confirmDate = calcDate
+      }
+    }
+  }
+}
+
+async function incrementNights() {
+  modalForm.value.nights++
+  await handleNightsChange()
+}
+
+async function decrementNights() {
+  if (modalForm.value.nights > 1) {
+    modalForm.value.nights--
+    await handleNightsChange()
+  }
+}
+
+function autoResizeTextarea() {
+  nextTick(() => {
+    const el = document.getElementById('booking-note-textarea')
+    if (el) {
+      el.style.height = 'auto'
+      el.style.height = el.scrollHeight + 'px'
+    }
+  })
+}
+
+function formatDateTime(val) {
+  if (!val) return ''
+  const d = new Date(val)
+  if (isNaN(d.getTime())) return val
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  const seconds = String(d.getSeconds()).padStart(2, '0')
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
+}
 
 async function updateRoomAvailability() {
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) return
@@ -1260,12 +1362,13 @@ async function handleRowDateChange(row) {
   }
 }
 
-function handleNightsChange() {
+async function handleNightsChange() {
   const ci = new Date(modalForm.value.checkIn)
   if (!isNaN(ci) && modalForm.value.nights > 0) {
     const co = new Date(ci)
     co.setDate(ci.getDate() + Number(modalForm.value.nights))
     modalForm.value.checkOut = co.toISOString().split('T')[0]
+    await updateRoomAvailability()
   }
 }
 
@@ -2252,7 +2355,7 @@ defineExpose({
                             v-model="room.rateCode" 
                             class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none"
                           >
-                            <option value="Vui lòng chọn giá phòng">Vui lòng chọn giá phòng</option>
+                            <option value="Vui lòng chọn giá phòng" disabled>Vui lòng chọn giá phòng</option>
                             <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
                           </select>
                           <span v-else class="text-slate-400 font-semibold">{{ room.rateCode }}</span>
@@ -2307,7 +2410,7 @@ defineExpose({
                         </template>
                         <template v-else-if="col.key === 'upgrade'">
                           <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[26px] pl-1.5 pr-4 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[10px]">
-                            <option :value="null">Chọn hạng</option>
+                            <option :value="null" disabled>Chọn hạng</option>
                             <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
                           </select>
                         </template>
@@ -2720,7 +2823,7 @@ defineExpose({
           <div class="px-4 py-2 border-b border-gray-200 flex flex-wrap items-end justify-between gap-2 bg-gray-50/50 shrink-0">
             <div class="flex flex-col">
                 <div class="text-xs text-gray-500 font-semibold mb-0.5">Mã booking</div>
-                <div class="font-bold text-sm text-gray-900 h-[32px] flex items-center px-1">{{ modalForm.bookingCode || 'Tự động sinh' }}</div>
+                <div class="font-bold text-sm text-gray-900 h-[32px] flex items-center px-1">{{ modalForm.bookingCode || ((hotelSettings?.prefix_booking_id || 'GAL') + ' (Tự động)') }}</div>
             </div>
             <div class="flex flex-col flex-1 min-w-[140px]">
                 <div class="text-xs text-gray-500 font-semibold mb-0.5">Tên đăng ký <span class="text-red-500">*</span></div>
@@ -2763,27 +2866,44 @@ defineExpose({
                     />
                 </div>
             </div>
-            <div class="flex flex-col">
+            <div class="flex flex-col w-[65px]">
                 <div class="text-xs text-gray-500 font-semibold mb-0.5">Đêm</div>
-                <div class="font-bold text-sm text-gray-900 border border-gray-300 rounded-xl h-[32px] flex items-center justify-center min-w-[40px] bg-white shadow-sm">
+                <div class="font-bold text-sm text-gray-900 border border-gray-300 rounded-xl h-[32px] flex items-center justify-between px-2 bg-white shadow-sm relative">
                     <input 
                       type="number" 
                       v-model="modalForm.nights" 
                       @input="handleNightsChange"
                       min="1"
-                      class="border-none bg-transparent text-center w-8 text-sm font-bold focus:outline-none focus:ring-0 p-0"
+                      class="border-none bg-transparent text-center w-8 text-sm font-bold focus:outline-none focus:ring-0 p-0 w-8"
                     />
+                    <div class="flex flex-col select-none">
+                        <button type="button" @click="incrementNights" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button type="button" @click="decrementNights" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>
                 </div>
             </div>
             <div class="flex flex-col">
                 <div class="text-xs text-gray-500 font-semibold mb-0.5">Tình trạng đăng ký</div>
-                <select 
-                  v-model="modalForm.registrationStatusId"
-                  class="bg-blue-50/70 border border-blue-200 text-blue-800 rounded-xl px-3 text-xs focus:outline-none focus:border-blue-400 appearance-none font-bold h-[32px] shadow-sm cursor-pointer"
-                >
-                    <option :value="null">— Chọn —</option>
-                    <option v-for="rs in registrationStatuses" :key="rs.id" :value="rs.id">{{ rs.name }}</option>
-                </select>
+                <div class="relative w-full flex items-center">
+                    <select 
+                      v-model="modalForm.registrationStatusId"
+                      @change="handleConfirmDateCalculation"
+                      class="w-full bg-blue-50/70 border border-blue-200 text-blue-800 rounded-xl pl-3 pr-8 text-xs focus:outline-none focus:border-blue-400 appearance-none font-bold h-[32px] shadow-sm cursor-pointer"
+                    >
+                        <option :value="null" disabled>— Chọn —</option>
+                        <option v-for="rs in registrationStatuses.filter(s => !s.is_hidden || s.id === modalForm.registrationStatusId)" :key="rs.id" :value="rs.id">{{ rs.name }}</option>
+                    </select>
+                    <button 
+                      v-if="modalForm.registrationStatusId"
+                      type="button" 
+                      @click.stop="modalForm.registrationStatusId = null; handleConfirmDateCalculation()"
+                      class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                      style="z-index: 10;"
+                      title="Xóa chọn"
+                    >
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
             <div class="flex flex-col shrink-0 w-[150px]">
                 <div class="text-xs text-gray-500 font-semibold mb-0.5">Ngày xác nhận</div>
@@ -2847,54 +2967,114 @@ defineExpose({
                   <div class="flex flex-wrap lg:flex-nowrap gap-2 items-end">
                       <div class="flex-1 min-w-[160px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Công ty <span class="text-red-500">*</span></label>
-                          <select 
-                            v-model="modalForm.companyId"
-                            @change="handleCompanyChange"
-                            class="w-full border border-blue-200 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer"
-                          >
-                              <option :value="null">— Chọn công ty —</option>
-                              <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-                          </select>
+                          <div class="relative w-full flex items-center">
+                              <select 
+                                v-model="modalForm.companyId"
+                                @change="handleCompanyChange"
+                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer"
+                              >
+                                  <option :value="null" disabled>— Chọn công ty —</option>
+                                  <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
+                              </select>
+                              <button 
+                                v-if="modalForm.companyId"
+                                type="button"
+                                @click.stop="modalForm.companyId = null; handleCompanyChange()"
+                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                style="z-index: 10;"
+                                title="Xóa chọn"
+                              >
+                                  <i class="fa-solid fa-xmark"></i>
+                              </button>
+                          </div>
                       </div>
                       <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Thị trường</label>
-                          <select 
-                            v-model="modalForm.marketId"
-                            class="w-full border border-blue-200 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold"
-                          >
-                              <option :value="null">— Chọn thị trường —</option>
-                              <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
-                          </select>
+                          <div class="relative w-full flex items-center">
+                              <select 
+                                v-model="modalForm.marketId"
+                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold"
+                              >
+                                  <option :value="null" disabled>— Chọn thị trường —</option>
+                                  <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
+                              </select>
+                              <button 
+                                v-if="modalForm.marketId"
+                                type="button"
+                                @click.stop="modalForm.marketId = null"
+                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                style="z-index: 10;"
+                                title="Xóa chọn"
+                              >
+                                  <i class="fa-solid fa-xmark"></i>
+                              </button>
+                          </div>
                       </div>
                       <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Nguồn khách</label>
-                          <select 
-                            v-model="modalForm.customerSourceId"
-                            class="w-full border border-blue-200 rounded-xl px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold"
-                          >
-                              <option :value="null">— Chọn nguồn khách —</option>
-                              <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
-                          </select>
+                          <div class="relative w-full flex items-center">
+                              <select 
+                                v-model="modalForm.customerSourceId"
+                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold"
+                              >
+                                  <option :value="null" disabled>— Chọn nguồn khách —</option>
+                                  <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
+                              </select>
+                              <button 
+                                v-if="modalForm.customerSourceId"
+                                type="button"
+                                @click.stop="modalForm.customerSourceId = null"
+                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                style="z-index: 10;"
+                                title="Xóa chọn"
+                              >
+                                  <i class="fa-solid fa-xmark"></i>
+                              </button>
+                          </div>
                       </div>
                       <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Người bán</label>
-                          <select 
-                            v-model="modalForm.salesPerson"
-                            class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold"
-                          >
-                              <option value="">— Chọn người bán —</option>
-                              <option v-for="u in users" :key="u.id" :value="u.username || u.name">{{ u.name || u.username }}</option>
-                          </select>
+                          <div class="relative w-full flex items-center">
+                              <select 
+                                v-model="modalForm.salesPerson"
+                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold"
+                              >
+                                  <option value="" disabled>— Chọn người bán —</option>
+                                  <option v-for="u in users" :key="u.id" :value="u.username || u.name">{{ u.name || u.username }}</option>
+                              </select>
+                              <button 
+                                v-if="modalForm.salesPerson"
+                                type="button"
+                                @click.stop="modalForm.salesPerson = ''"
+                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                style="z-index: 10;"
+                                title="Xóa chọn"
+                              >
+                                  <i class="fa-solid fa-xmark"></i>
+                              </button>
+                          </div>
                       </div>
                       <div class="flex-1 min-w-[150px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Phương thức thanh toán</label>
-                          <select 
-                            v-model="modalForm.paymentMethodId"
-                            class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold"
-                          >
-                              <option :value="null">Chọn phương thức...</option>
-                              <option v-for="pm in paymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
-                          </select>
+                          <div class="relative w-full flex items-center">
+                              <select 
+                                v-model="modalForm.paymentMethodId"
+                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold"
+                              >
+                                  <option :value="null" disabled>Chọn phương thức...</option>
+                                  <option v-for="pm in paymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
+                              </select>
+                              <button 
+                                v-if="modalForm.paymentMethodId"
+                                type="button"
+                                @click.stop="modalForm.paymentMethodId = null"
+                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                style="z-index: 10;"
+                                title="Xóa chọn"
+                              >
+                                  <i class="fa-solid fa-xmark"></i>
+                              </button>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -2914,7 +3094,7 @@ defineExpose({
                                 @change="handleBookerChange"
                                 class="flex-1 border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white font-bold"
                               >
-                                  <option :value="null">Chọn người đặt...</option>
+                                  <option :value="null" disabled>Chọn người đặt...</option>
                                   <option v-for="b in bookers" :key="b.id" :value="b.id">{{ b.name }}</option>
                               </select>
                               <button type="button" class="bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-xl text-gray-600 hover:bg-gray-200 transition cursor-pointer">
@@ -2981,9 +3161,11 @@ defineExpose({
                       Ghi chú
                   </h3>
                   <textarea 
+                    id="booking-note-textarea"
                     v-model="modalForm.note"
+                    @input="autoResizeTextarea"
                     placeholder="Nhập ghi chú tại đây..." 
-                    class="w-full border border-gray-300 rounded-xl p-2 focus:outline-none focus:border-blue-500 text-xs resize-none min-h-[54px] shadow-inner bg-gray-50/30 font-semibold"
+                    class="w-full border border-gray-300 rounded-xl p-2 focus:outline-none focus:border-blue-500 text-xs resize-none min-h-[54px] shadow-inner bg-gray-50/30 font-semibold overflow-hidden"
                   ></textarea>
               </div>
             </div>
@@ -3019,7 +3201,7 @@ defineExpose({
                       <!-- Phương tiện -->
                       <td class="py-2 px-2">
                         <select v-model="row.vehicle" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white cursor-pointer shadow-sm text-[11px]">
-                          <option value="Select Value">— Chọn xe —</option>
+                          <option value="Select Value" disabled>— Chọn xe —</option>
                           <option value="4 Seater car">4 Seater car</option>
                           <option value="7 Seater car">7 Seater car</option>
                           <option value="16 Seater car">16 Seater car</option>
@@ -3062,7 +3244,7 @@ defineExpose({
                       <!-- Địa điểm -->
                       <td class="py-2 px-2">
                         <select v-model="row.location" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white cursor-pointer shadow-sm text-[11px]">
-                          <option value="">— Chọn địa điểm —</option>
+                          <option value="" disabled>— Chọn địa điểm —</option>
                           <option value="Sân bay Cam Ranh">Sân bay Cam Ranh</option>
                           <option value="Ga Nha Trang">Ga Nha Trang</option>
                           <option value="Bến xe Nha Trang">Bến xe Nha Trang</option>
@@ -3279,7 +3461,7 @@ defineExpose({
                       <td v-if="visibleColumns.upgrade" class="py-2 px-2">
                         <div class="relative">
                           <select v-model="row.upgradeClassId" class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[11px]">
-                            <option :value="null">Select</option>
+                            <option :value="null" disabled>Select</option>
                             <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
                           </select>
                           <i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px] pointer-events-none"></i>
@@ -3364,9 +3546,16 @@ defineExpose({
 
           <!-- MODAL FOOTER -->
           <div class="bg-white border-t border-gray-200 p-2.5 flex flex-col sm:flex-row justify-between items-center gap-2 shrink-0 rounded-b-xl">
-              <div class="text-xs text-gray-400 flex items-center space-x-1.5 w-full sm:w-auto justify-center sm:justify-start pl-1">
-                  <i class="fa-solid fa-user-pen text-gray-300 text-xs"></i>
-                  <span>Tạo bởi: <strong class="text-gray-500 font-bold">{{ modalForm.dbId ? (booking?.created_by || 'system') : (currentUser?.username || 'system') }}</strong></span>
+              <div class="text-xs text-gray-400 flex flex-wrap items-center gap-2 w-full sm:w-auto justify-center sm:justify-start pl-1">
+                  <div class="flex items-center space-x-1.5">
+                      <i class="fa-solid fa-user-pen text-gray-300 text-xs"></i>
+                      <span>Tạo bởi: <strong class="text-gray-500 font-bold">{{ modalForm.createdBy || authStore.user?.username || 'system' }}</strong></span>
+                  </div>
+                  <div v-if="modalForm.createdAt" class="flex items-center space-x-1.5">
+                      <span class="text-gray-300">|</span>
+                      <i class="fa-solid fa-clock text-gray-300 text-xs"></i>
+                      <span>Thời điểm tạo: <strong class="text-gray-500 font-bold">{{ formatDateTime(modalForm.createdAt) }}</strong></span>
+                  </div>
               </div>
               <div class="flex items-center space-x-2 w-full sm:w-auto justify-center sm:justify-end">
                   <button 

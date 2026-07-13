@@ -15,6 +15,9 @@ class RegistrationStatusController extends Controller
         if ($request->has('is_availability')) {
             $query->where('is_availability', filter_var($request->is_availability, FILTER_VALIDATE_BOOLEAN));
         }
+        if ($request->has('is_hidden')) {
+            $query->where('is_hidden', filter_var($request->is_hidden, FILTER_VALIDATE_BOOLEAN));
+        }
         $statuses = $query->get();
         return response()->json([
             'success' => true,

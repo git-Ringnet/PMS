@@ -234,6 +234,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'OOORoleUserUnlock', 'value' => 'Admin,FOM,Sales,HKM', 'description' => 'Quyền user được phép mở khóa OOO', 'is_visible' => true],
             ['name' => 'OOSRoleUserUnlock', 'value' => 'Admin,FOM,Sales,HKM', 'description' => 'Quyền user được phép mở khóa OOS', 'is_visible' => true],
             ['name' => 'FrmOOO_DefineLockByTime', 'value' => '23:59', 'description' => 'Thời gian kết thúc khóa mặc định', 'is_visible' => true],
+            ['name' => 'ColorDefaultBookingRoomMap', 'value' => '#97D5FF', 'description' => 'Màu sắc booking mặc định trên sơ đồ phòng', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {

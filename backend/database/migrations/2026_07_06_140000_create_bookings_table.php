@@ -16,7 +16,6 @@ return new class extends Migration
             // ĐỊNH DANH BOOKING
             // =========================================
             $table->id(); // ID nội bộ tự tăng
-            $table->string('booking_code')->unique(); // Mã đăng ký tự sinh theo prefix khách sạn (VD: GAL5490)
             $table->string('booking_name'); // Tên đăng ký (tên khách/đoàn) — thường viết HOA
 
             // =========================================

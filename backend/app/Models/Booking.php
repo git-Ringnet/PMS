@@ -10,8 +10,16 @@ class Booking extends Model
 {
     use HasFactory, SoftDeletes;
 
+    protected $appends = ['booking_code'];
+
+    public function getBookingCodeAttribute()
+    {
+        $setting = HotelSetting::first();
+        $prefix = strtoupper($setting?->prefix_booking_id ?? 'GAL');
+        return $prefix . $this->id;
+    }
+
     protected $fillable = [
-        'booking_code',
         'booking_name',
         'arrival_date',
         'departure_date',
