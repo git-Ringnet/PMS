@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thông tin đăng ký</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Custom toggle switch styling */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #68D391;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+        /* Ghi đè để làm tròn ô chọn màu hệ thống */
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 50%;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-200 p-4 font-sans text-sm text-gray-700">
+
+    <div class="max-w-[1400px] mx-auto bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
+        
+        <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2">
+            <div class="flex items-center space-x-2 font-semibold text-sm">
+                <i class="fa-solid fa-file-lines text-blue-300"></i>
+                <span>THÔNG TIN ĐĂNG KÝ</span>
+            </div>
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center space-x-1.5 bg-white/10 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner">
+                    <span class="text-xs font-medium text-gray-300 select-none">Màu BK</span>
+                    <input type="color" value="#3b82f6" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none">
+                </div>
+
+                <div class="flex items-center space-x-1.5">
+                    <span class="text-xs font-medium text-gray-300">Tiền phòng gửi Master</span>
+                    <div class="relative inline-block w-8 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="toggle" id="git-toggle" class="toggle-checkbox absolute block w-3.5 h-3.5 rounded-full bg-white border-4 appearance-none cursor-pointer top-0 bottom-0 m-auto z-10 transition-transform duration-200 ease-in-out left-0"/>
+                        <label for="git-toggle" class="toggle-label block overflow-hidden h-3.5 rounded-full bg-gray-400 cursor-pointer"></label>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2 text-gray-300">
+                    <button class="flex items-center space-x-1 text-xs bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition text-gray-200 hover:text-white font-medium shadow-sm">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <span>Lịch sử booking</span>
+                    </button>
+                    <button class="hover:text-white"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                    <button class="hover:text-white ml-1 bg-red-500/20 px-1.5 py-0.5 rounded-md"><i class="fa-solid fa-xmark text-red-400"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-4 py-2 border-b border-gray-200 flex flex-wrap items-end justify-between gap-2 bg-gray-50/50">
+            <div class="flex flex-col">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Mã booking</div>
+                <div class="font-bold text-sm text-gray-900 h-[32px] flex items-center px-1">GAL5501</div>
+            </div>
+            <div class="flex flex-col flex-1 min-w-[140px]">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Tên đăng ký <span class="text-red-500">*</span></div>
+                <div class="font-bold text-sm text-black border border-blue-200 rounded-xl px-3 h-[32px] flex items-center bg-blue-50/70 shadow-sm">PEGAS</div>
+            </div>
+            <div class="flex flex-col">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Mã tham chiếu</div>
+                <input type="text" placeholder="Mã tham chiếu" class="border border-gray-300 rounded-xl px-3 text-xs focus:outline-none focus:border-blue-500 w-28 h-[32px] shadow-sm">
+            </div>
+            <div class="flex flex-col">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Ngày lưu trú</div>
+                <div class="flex items-center space-x-2 text-xs font-medium text-gray-800 border border-gray-300 rounded-xl px-3 h-[32px] bg-white shadow-sm">
+                    <i class="fa-regular fa-calendar text-blue-500"></i>
+                    <span>01/07/2026</span>
+                    <i class="fa-solid fa-arrow-right text-gray-400 text-xs"></i>
+                    <span>02/07/2026</span>
+                </div>
+            </div>
+            <div class="flex flex-col">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Đêm</div>
+                <div class="font-bold text-sm text-gray-900 border border-gray-300 rounded-xl px-2.5 h-[32px] flex items-center justify-center min-w-[40px] bg-white shadow-sm">1</div>
+            </div>
+            <div class="flex flex-col">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Tình trạng đăng ký</div>
+                <select class="bg-blue-50/70 border border-blue-200 text-blue-800 rounded-xl px-3 text-xs focus:outline-none focus:border-blue-400 appearance-none pr-7 font-medium relative h-[32px] shadow-sm cursor-pointer">
+                    <option>Guaranteed</option>
+                </select>
+            </div>
+            <div class="flex flex-col">
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Ngày xác nhận</div>
+                <div class="flex items-center space-x-2 text-xs text-gray-800 border border-gray-300 rounded-xl px-3 h-[32px] bg-white shadow-sm">
+                    <span>24/06/2026</span>
+                    <i class="fa-regular fa-calendar text-gray-400"></i>
+                    <i class="fa-regular fa-copy text-gray-400 cursor-pointer hover:text-gray-600"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex px-4 border-b border-gray-200 bg-white">
+            <button class="px-3 py-2 text-blue-600 font-semibold border-b-2 border-blue-600 flex items-center space-x-1.5 text-xs">
+                <i class="fa-solid fa-address-card"></i>
+                <span>Thông tin chung</span>
+            </button>
+            <button class="px-3 py-2 text-gray-500 font-medium hover:text-gray-700 flex items-center space-x-1.5 text-xs">
+                <i class="fa-solid fa-van-shuttle"></i>
+                <span>Thông tin đưa đón</span>
+            </button>
+            <button class="px-3 py-2 text-gray-500 font-medium hover:text-gray-700 flex items-center space-x-1.5 text-xs">
+                <i class="fa-solid fa-bed"></i>
+                <span>Lấy phòng</span>
+            </button>
+        </div>
+
+        <div class="p-3 bg-gray-50 flex flex-col space-y-2">
+            
+            <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="font-semibold text-gray-800 mb-1.5 flex items-center text-xs uppercase tracking-wider">
+                    <div class="w-1 h-3 bg-blue-500 rounded-full mr-1.5"></div>
+                    Công ty
+                </h3>
+                <div class="flex flex-wrap lg:flex-nowrap gap-2 items-end">
+                    <div class="flex-1 min-w-[160px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Công ty <span class="text-red-500">*</span></label>
+                        <select class="w-full border border-blue-200 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-400 text-xs font-medium bg-blue-50/70 text-black h-[32px] cursor-pointer">
+                            <option>PEGAS</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[130px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Thị trường</label>
+                        <select class="w-full border border-blue-200 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer">
+                            <option>Travel Agent</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[130px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Nguồn khách</label>
+                        <select class="w-full border border-blue-200 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer">
+                            <option>Travel Agent</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[130px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Người bán</label>
+                        <select class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px]">
+                            <option>User sale</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Phương thức thanh toán</label>
+                        <select class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs text-gray-400 bg-white h-[32px]">
+                            <option>Chọn phương thức...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="font-semibold text-gray-800 mb-1.5 flex items-center text-xs uppercase tracking-wider">
+                    <div class="w-1 h-3 bg-purple-500 rounded-full mr-1.5"></div>
+                    Người liên hệ
+                </h3>
+                <div class="flex flex-wrap md:flex-nowrap gap-2 items-end">
+                    <div class="flex-2 min-w-[260px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Người đặt phòng</label>
+                        <div class="flex space-x-1.5 h-[32px]">
+                            <select class="flex-1 border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs text-gray-400 bg-white">
+                                <option>Chọn người đặt...</option>
+                            </select>
+                            <button class="bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-xl text-gray-600 hover:bg-gray-200 transition">
+                                <i class="fa-solid Side fa-user-plus text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex-1 min-w-[160px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Số điện thoại</label>
+                        <input type="text" placeholder="Số điện thoại" class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs h-[32px]">
+                    </div>
+                    <div class="flex-1 min-w-[160px]">
+                        <label class="block text-[11px] text-gray-500 mb-0.5">Email</label>
+                        <input type="email" placeholder="Email" class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs h-[32px]">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative">
+                <div class="flex justify-between items-center mb-1.5">
+                    <h3 class="font-semibold text-gray-800 flex items-center text-xs uppercase tracking-wider">
+                        <div class="w-1 h-3 bg-green-500 rounded-full mr-1.5"></div>
+                        Đặt cọc
+                    </h3>
+                    <button class="text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-md px-2 py-0.5 text-[11px] transition flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> Thêm cọc
+                    </button>
+                </div>
+                <div class="bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-wrap md:flex-nowrap gap-4 items-center shadow-inner">
+                    <div class="text-xs font-semibold text-gray-800 flex items-center">
+                        <span class="text-[11px] text-gray-400 font-medium mr-1.5">Ngày:</span> 01/07/2026
+                    </div>
+                    <div class="text-xs text-gray-800 flex items-center">
+                        <span class="text-[11px] text-gray-400 font-medium mr-1.5">Số tiền:</span> 1.000.000 <i class="fa-solid fa-money-bill-wave text-green-600 ml-1.5 mr-1 text-xs"></i> (Tiền mặt)
+                    </div>
+                    <div class="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-xs md:ml-auto border border-blue-100">
+                        NB0021
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col">
+                <h3 class="font-semibold text-gray-800 mb-1.5 flex items-center text-xs uppercase tracking-wider">
+                    <div class="w-1 h-3 bg-yellow-400 rounded-full mr-1.5"></div>
+                    Ghi chú                </h3>
+                <textarea placeholder="Nhập ghi chú tại đây..." class="w-full border border-gray-300 rounded-xl p-2 focus:outline-none focus:border-blue-500 text-xs resize-none min-h-[54px] shadow-inner bg-gray-50/30"></textarea>
+            </div>
+            
+        </div>
+
+        <div class="bg-white border-t border-gray-200 p-2.5 flex flex-col sm:flex-row justify-between items-center gap-2 rounded-b-xl">
+            <div class="text-xs text-gray-400 flex items-center space-x-1.5 w-full sm:w-auto justify-center sm:justify-start pl-1">
+                <i class="fa-solid fa-user-pen text-gray-300 text-xs"></i>
+                <span>Tạo bởi: <strong class="text-gray-500 font-medium">User sale</strong> - 15:43, 07/07/2026</span>
+            </div>
+            <div class="flex items-center space-x-2 w-full sm:w-auto justify-center sm:justify-end">
+                <button class="px-4 py-1.5 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition text-xs">
+                    Hủy bỏ
+                </button>
+                <button class="px-4 py-1.5 bg-[#2563eb] text-white font-medium rounded-xl hover:bg-blue-700 transition flex items-center space-x-1.5 shadow-md text-xs">
+                    <i class="fa-regular fa-floppy-disk"></i>
+                    <span>Lưu Booking</span>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

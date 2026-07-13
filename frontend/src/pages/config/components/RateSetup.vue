@@ -82,7 +82,7 @@ const rateFormState = reactive({
   BeginDate: '',
   EndDate: '',
   Currency: 'VND',
-  isDaily: false, // Using this as UI toggle flag
+  IsDaily: false, // Using this as UI toggle flag
   Disable: false,
   AllowChangeRate: false,
   IsChannelManager: false,
@@ -376,6 +376,21 @@ const formatDateVN = (dateStr) => {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+const getTodayString = () => {
+  const d = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+  const parts = formatter.formatToParts(d)
+  const month = parts.find(p => p.type === 'month').value
+  const day = parts.find(p => p.type === 'day').value
+  const year = parts.find(p => p.type === 'year').value
+  return `${year}-${month}-${day}`
+}
+
 const isEditing = computed(() => {
   return rateCodes.value.some(r => r.Ma === rateFormState.Ma);
 })
@@ -470,7 +485,7 @@ const displayedDailyMappings = computed(() => {
 
 const dailyPagination = reactive({
   page: 1,
-  limit: 20
+  limit: 200
 });
 
 const paginatedDailyMappings = computed(() => {
@@ -482,7 +497,7 @@ const totalDailyPages = computed(() => {
   return Math.ceil(displayedDailyMappings.value.length / dailyPagination.limit) || 1;
 });
 
-watch(() => rateFormState.isDaily, () => {
+watch(() => rateFormState.IsDaily, () => {
   dailyPagination.page = 1;
 });
 watch(() => rateFormState.BeginDate, () => {
@@ -527,7 +542,7 @@ watch(selectedRateCode, (newVal) => {
       BeginDate: newVal.BeginDate || '',
       EndDate: newVal.EndDate || '',
       Currency: newVal.Currency || 'VND',
-      isDaily: (newVal.daily_mappings && newVal.daily_mappings.length > 0) ? true : false,
+      IsDaily: newVal.IsDaily ? true : false,
       Disable: newVal.Disable || false,
       AllowChangeRate: newVal.AllowChangeRate || false,
       IsChannelManager: newVal.IsChannelManager || false,
@@ -547,7 +562,7 @@ watch(selectedRateCode, (newVal) => {
     }
   } else {
     // Reset
-    Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', isDaily: false })
+    Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', IsDaily: false })
     for (const key in rateMatrix) delete rateMatrix[key];
     dailyMappingsList.value = [];
   }
@@ -569,7 +584,7 @@ const handleAdd = async () => {
     if (!confirmed) return;
   }
   selectedRateCode.value = null
-  Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', Currency: 'VND', isDaily: false, Disable: false, AllowChangeRate: false, IsChannelManager: false, IncludeBF: false })
+  Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', Currency: 'VND', IsDaily: false, Disable: false, AllowChangeRate: false, IsChannelManager: false, IncludeBF: false })
   for (const key in rateMatrix) delete rateMatrix[key];
 }
 
@@ -599,14 +614,10 @@ const handleSave = async () => {
 
     if (res.status === 200 || res.status === 201) {
       // Save Matrix
-      if (!rateFormState.isDaily) {
+      if (!rateFormState.IsDaily) {
         await http.post(`/room-rate-codes/${savedMa}/plans`, {
           Code: 'DEFAULT',
           Period: rateMatrix
-        });
-        // Clear daily mappings in the database if any existed
-        await http.post(`/room-rate-codes/${savedMa}/daily-mappings`, {
-          mappings: []
         });
       } else {
         // Save Daily Mappings
@@ -745,9 +756,9 @@ const selectPackage = (pkg) => {
                     <td class="p-2 border border-slate-100 font-bold">{{ rc.Ma }}</td>
                     <td class="p-2 border border-slate-100">{{ rc.Description }}</td>
                     <td class="p-2 border border-slate-100 text-center">{{ rc.Currency }}</td>
-                    <td class="p-2 border border-slate-100 text-center text-gray-900 font-semibold">{{ rc.BeginDate }}
+                    <td class="p-2 border border-slate-100 text-center text-gray-900 font-semibold">{{ formatDateVN(rc.BeginDate) }}
                     </td>
-                    <td class="p-2 border border-slate-100 text-center text-gray-900 font-semibold">{{ rc.EndDate }}
+                    <td class="p-2 border border-slate-100 text-center text-gray-900 font-semibold">{{ formatDateVN(rc.EndDate) }}
                     </td>
                   </tr>
                 </tbody>
@@ -838,7 +849,7 @@ const selectPackage = (pkg) => {
               <div class="flex flex-wrap gap-x-5 gap-y-2 items-center pt-2 border-t border-slate-100">
                 <label
                   class="inline-flex items-center gap-1.5 text-xs text-gray-900 font-semibold cursor-pointer select-none">
-                  <input type="checkbox" v-model="rateFormState.isDaily"
+                  <input type="checkbox" v-model="rateFormState.IsDaily"
                     class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                   Giá theo ngày
                 </label>
@@ -863,7 +874,7 @@ const selectPackage = (pkg) => {
               </div>
 
               <!-- Row 4: Daily-only fields: Ngày áp dụng + Weekday checkboxes + Loại giá -->
-              <div v-if="rateFormState.isDaily" class="flex flex-col gap-3 pt-2 border-t border-slate-200">
+              <div v-if="rateFormState.IsDaily" class="flex flex-col gap-3 pt-2 border-t border-slate-200">
                 <div class="flex gap-4 items-end flex-wrap">
                   <div class="flex items-center gap-2">
                     <label class="text-xs font-bold text-gray-900 whitespace-nowrap">Ngày áp dụng</label>
@@ -921,7 +932,7 @@ const selectPackage = (pkg) => {
         </div>
 
         <!-- Bottom Room rate matrix values with full table grid lines -->
-        <div v-if="!rateFormState.isDaily"
+        <div v-if="!rateFormState.IsDaily"
           class="h-[520px] shrink-0 bg-white border border-slate-200 rounded-xl p-4 flex flex-col shadow-xs">
           <div class="flex-1 overflow-auto">
             <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
@@ -985,17 +996,25 @@ const selectPackage = (pkg) => {
               <tbody>
                 <tr v-for="mapping in paginatedDailyMappings" :key="mapping.Date"
                   class="border-b border-slate-100 hover:bg-sky-100 transition-colors" :class="{
-                    'bg-sky-50/30': getDayOfWeekFromDate(mapping.Date) === 0,
-                    'text-rose-500': getDayOfWeekFromDate(mapping.Date) === 0,
-                    'text-orange-500': getDayOfWeekFromDate(mapping.Date) === 6
+                    'bg-emerald-50/60 font-bold': mapping.Date === getTodayString(),
+                    'bg-sky-50/30': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                    'text-rose-500': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                    'text-orange-500': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 6
                   }">
                   <td
-                    class="p-2 border border-slate-100 font-semibold text-gray-900 text-center whitespace-nowrap sticky left-0 bg-white z-10"
-                    :class="{ 'bg-sky-50/30': getDayOfWeekFromDate(mapping.Date) === 0 }">
+                    class="p-2 border border-slate-100 font-semibold text-gray-900 text-center whitespace-nowrap sticky left-0 z-10"
+                    :class="{
+                      'bg-emerald-100 text-emerald-900 font-bold': mapping.Date === getTodayString(),
+                      'bg-sky-50/30': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                      'bg-white': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) !== 0
+                    }">
                     {{ formatDateVN(mapping.Date) }}
                   </td>
                   <td class="p-2 border border-slate-100 text-center font-semibold text-gray-900 text-[10px]"
-                    :class="{ 'text-rose-500': getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 }">
+                    :class="{
+                      'bg-emerald-100/50 text-emerald-900': mapping.Date === getTodayString(),
+                      'text-rose-500': mapping.Date !== getTodayString() && (getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6)
+                    }">
                     {{ getDayLabel(getDayOfWeekFromDate(mapping.Date)) }}
                   </td>
                   <td class="p-1.5 border border-slate-100 text-center">

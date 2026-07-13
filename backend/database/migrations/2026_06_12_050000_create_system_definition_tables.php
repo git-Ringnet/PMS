@@ -104,6 +104,7 @@ return new class extends Migration
             $table->string('status_value')->nullable();
             $table->boolean('is_hidden')->default(false);
             $table->boolean('is_availability')->default(true);
+            $table->unsignedTinyInteger('bk_definite')->nullable()->comment('4 = trạng thái tự chuyển khi hủy booking. null = không tự chuyển.');
             $table->timestamps();
         });
     }

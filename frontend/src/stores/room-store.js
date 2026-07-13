@@ -33,6 +33,14 @@ export const useRoomStore = defineStore('room', () => {
         result = result.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS')
       } else if (filters.value.status === 'OOS') {
         result = result.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS')
+      } else if (filters.value.status === 'occupied') {
+        result = result.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout')
+      } else if (filters.value.status === 'reserved') {
+        result = result.filter(r => r.booking_status === 'reserved')
+      } else if (filters.value.status === 'checkout') {
+        result = result.filter(r => r.booking_status === 'checkout')
+      } else if (filters.value.status === 'available') {
+        result = result.filter(r => r.status === ROOM_STATUSES.AVAILABLE && !r.booking_status)
       } else {
         result = result.filter(r => r.status === filters.value.status)
       }
@@ -69,14 +77,22 @@ export const useRoomStore = defineStore('room', () => {
   const roomStats = computed(() => {
     if (stats.value) return stats.value
     // Calculate from local data
+    const total = rooms.value.length
+    const occupied = rooms.value.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
+    const reserved = rooms.value.filter(r => r.booking_status === 'reserved').length
+    const checkout = rooms.value.filter(r => r.booking_status === 'checkout').length
+    const maintenance = rooms.value.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length
+    const dirty = rooms.value.filter(r => r.status === ROOM_STATUSES.DIRTY).length
+    const available = rooms.value.filter(r => r.status === ROOM_STATUSES.AVAILABLE && !r.booking_status).length
+
     return {
-      total: rooms.value.length,
-      available: rooms.value.filter(r => r.status === ROOM_STATUSES.AVAILABLE).length,
-      occupied: rooms.value.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length,
-      dirty: rooms.value.filter(r => r.status === ROOM_STATUSES.DIRTY).length,
-      maintenance: rooms.value.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length,
-      reserved: rooms.value.filter(r => r.status === ROOM_STATUSES.RESERVED).length,
-      checkout: rooms.value.filter(r => r.status === ROOM_STATUSES.CHECKOUT).length,
+      total,
+      available,
+      occupied,
+      dirty,
+      maintenance,
+      reserved,
+      checkout
     }
   })
 
