@@ -46,6 +46,13 @@ return new class extends Migration
             // GIÁ & GIƯỜNG PHỤ
             // =========================================
             $table->decimal('rate', 15, 2)->default(0);             // Giá phòng mỗi đêm
+            $table->string('rate_code', 50)->nullable();            // Mã giá phòng
+            $table->boolean('breakfast')->default(false);           // Có ăn sáng hay không
+            $table->string('discount', 100)->nullable();            // Tên/Chuỗi giảm giá hiển thị
+            $table->string('discount_type', 10)->nullable();        // up hoặc down
+            $table->decimal('discount_value', 15, 2)->default(0);   // Giá trị giảm giá
+            $table->string('discount_unit', 10)->nullable();        // percent hoặc amount
+            $table->decimal('base_price', 15, 2)->default(0);       // Giá gốc trước khi giảm
             $table->unsignedTinyInteger('adults')->default(1);       // Số người lớn
             $table->unsignedTinyInteger('extra_bed_qty')->default(0);        // Số giường phụ
             $table->decimal('extra_bed_rate', 15, 2)->default(0);   // Giá thêm giường / đêm

@@ -134,7 +134,7 @@
                   </span>
                 </td>
                 <td class="p-2 text-right pr-4 font-mono font-black text-slate-900">
-                  {{ Number(b.total_amount || 0).toLocaleString('vi-VN') }}
+                  {{ Number(b.total_amount || 0).toLocaleString('en-US') }}
                 </td>
               </tr>
             </tbody>

@@ -20,6 +20,13 @@ class BookingRoom extends Model
         'arrival_time',
         'departure_time',
         'rate',
+        'rate_code',
+        'breakfast',
+        'discount',
+        'discount_type',
+        'discount_value',
+        'discount_unit',
+        'base_price',
         'adults',
         'extra_bed_qty',
         'extra_bed_rate',
@@ -39,6 +46,9 @@ class BookingRoom extends Model
         'adults'                 => 'integer',
         'extra_bed_qty'          => 'integer',
         'is_do_not_move'         => 'integer',
+        'breakfast'              => 'boolean',
+        'discount_value'         => 'decimal:2',
+        'base_price'             => 'decimal:2',
     ];
 
     // =========================================

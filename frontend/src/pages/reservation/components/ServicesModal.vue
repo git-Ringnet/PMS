@@ -51,7 +51,7 @@
               />
               <div>
                 <div class="font-bold text-slate-800">{{ svc.name }}</div>
-                <div class="text-[9px] text-slate-400 font-mono">{{ svc.code }} - {{ Number(svc.price).toLocaleString('vi-VN') }} VND</div>
+                <div class="text-[9px] text-slate-400 font-mono">{{ svc.code }} - {{ Number(svc.price).toLocaleString('en-US') }} VND</div>
               </div>
             </label>
           </div>
@@ -165,7 +165,7 @@
       <!-- MODAL FOOTER -->
       <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 flex items-center justify-between">
         <div class="bg-[#e2e8f0] px-4 py-1.5 rounded-lg text-slate-700 font-extrabold text-xs shadow-inner">
-          Tổng tiền: <span class="text-slate-900 ml-1 font-black">{{ servicesTotalAmount.toLocaleString('vi-VN') }} VND</span>
+          Tổng tiền: <span class="text-slate-900 ml-1 font-black">{{ servicesTotalAmount.toLocaleString('en-US') }} VND</span>
         </div>
         <div class="flex items-center space-x-2">
           <button 
@@ -393,12 +393,19 @@ async function saveServices() {
 }
 
 function formatCurrencyInput(val) {
-  if (!val && val !== 0) return ''
-  return Number(val).toLocaleString('vi-VN')
+  if (val === null || val === undefined || val === '') return '';
+  let str = String(val).replace(/[^\d.-]/g, '');
+  if (!str) return '';
+  
+  let parts = str.split('.');
+  if (parts.length > 2) parts = [parts[0], parts.slice(1).join('')];
+  parts[0] = Number(parts[0]).toLocaleString('en-US');
+  return parts.join('.');
 }
 
 function cleanCurrencyValue(val) {
-  if (!val) return 0
-  return Number(val.replace(/\./g, '').replace(/,/g, ''))
+  if (val === null || val === undefined || val === '') return 0;
+  const cleanStr = String(val).replace(/,/g, '');
+  return Number(cleanStr) || 0;
 }
 </script>

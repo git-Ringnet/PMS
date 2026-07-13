@@ -270,7 +270,7 @@ function formatTooltipDate(dateStr) {
 
 function formatTooltipPrice(price) {
   const num = Math.round(Number(price) || 0)
-  return num.toLocaleString('vi-VN') + 'đ'
+  return num.toLocaleString('en-US') + 'đ'
 }
 
 function closeModal() {

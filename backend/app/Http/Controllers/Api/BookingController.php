@@ -261,6 +261,13 @@ class BookingController extends Controller
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $alloc['price'] ?? 0,
+                                'rate_code' => $alloc['rateCode'] ?? null,
+                                'breakfast' => !empty($alloc['breakfastIncluded']),
+                                'discount' => $alloc['discount'] ?? null,
+                                'discount_type' => $alloc['discountType'] ?? null,
+                                'discount_value' => $alloc['discountValue'] ?? 0,
+                                'discount_unit' => $alloc['discountUnit'] ?? null,
+                                'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
                                 'adults' => $detail['adults'] ?? 2,
                                 'extra_bed_qty' => empty($detail['extraBedPrice']) ? 0 : 1,
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
@@ -520,7 +527,7 @@ class BookingController extends Controller
                         for ($i = 0; $i < $qty; $i++) {
                             $detail = $details[$i] ?? [];
                             
-                            $bRoom = \App\Models\BookingRoom::create([
+                             $bRoom = \App\Models\BookingRoom::create([
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
@@ -530,6 +537,13 @@ class BookingController extends Controller
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $alloc['price'] ?? 0,
+                                'rate_code' => $alloc['rateCode'] ?? null,
+                                'breakfast' => !empty($alloc['breakfastIncluded']),
+                                'discount' => $alloc['discount'] ?? null,
+                                'discount_type' => $alloc['discountType'] ?? null,
+                                'discount_value' => $alloc['discountValue'] ?? 0,
+                                'discount_unit' => $alloc['discountUnit'] ?? null,
+                                'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
                                 'adults' => $detail['adults'] ?? 2,
                                 'extra_bed_qty' => empty($detail['extraBedPrice']) ? 0 : 1,
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,

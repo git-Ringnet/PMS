@@ -71,6 +71,9 @@ const registrationStatuses = ref([])
 const users = ref([])
 const roomClasses = ref([])
 const roomRateCodes = ref([])
+const activeRoomRateCodes = computed(() => {
+  return (roomRateCodes.value || []).filter(rc => !rc.Disable)
+})
 const hotelServicesList = ref([])
 const selectedServiceFilter = ref('all')
 const diagnosticErrors = ref([])
@@ -287,7 +290,7 @@ const collapsedSections = ref({
   deluxeDouble: false
 })
 
-const visibleColumns = ref({
+const defaultColumns = {
   roomType: true,
   dates: true,
   occupancy: false, // Chiếm dụng
@@ -302,7 +305,26 @@ const visibleColumns = ref({
   children: true, // Trẻ em
   childBreakfastRate: true, // Giá ăn sáng trẻ em
   breakfast: true, // Ăn sáng
-})
+}
+
+const visibleColumns = ref({ ...defaultColumns })
+
+try {
+  const saved = localStorage.getItem('pms_visible_columns')
+  if (saved) {
+    visibleColumns.value = { ...defaultColumns, ...JSON.parse(saved) }
+  }
+} catch (e) {
+  console.error(e)
+}
+
+watch(visibleColumns, (newVal) => {
+  try {
+    localStorage.setItem('pms_visible_columns', JSON.stringify(newVal))
+  } catch (e) {
+    console.error(e)
+  }
+}, { deep: true })
 const showColumnSelector = ref(false)
 
 const columns = ref([
@@ -557,6 +579,7 @@ function syncRoomsToAllocations(tab) {
 
 // ==================== LIFECYCLE ====================
 onMounted(async () => {
+  document.addEventListener('click', handleGlobalClick)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -575,6 +598,10 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleGlobalClick)
 })
 
 watch(() => route.query.bookingCode, async (newCode) => {
@@ -817,6 +844,10 @@ function bookingToTab(b) {
     b.booking_rooms.forEach(br => {
       const classId = br.room_class_id
       if (!grouped[classId]) {
+        const rc = roomClasses.value.find(c => c.id === classId)
+        const isBfChecked = hotelSettings.value?.DefaultBreakfast !== undefined 
+          ? (Number(hotelSettings.value.DefaultBreakfast) === 1) 
+          : true
         grouped[classId] = {
           roomClassId: classId,
           roomClassCode: br.room_class?.code || '',
@@ -825,14 +856,18 @@ function bookingToTab(b) {
           departureDate: parseApiDate(br.departure_date),
           quantity: 0,
           price: Number(br.rate) || 0,
-          ratePlanCode: '',
-          discount: 'Tăng/Giảm giá',
-          upgradeRoomClassId: null,
-          adults: br.adults || 2,
+          rateCode: br.rate_code || '',
+          discount: br.discount || 'Tăng/Giảm giá',
+          discountType: br.discount_type || 'down',
+          discountValue: br.discount_value !== undefined ? Number(br.discount_value) : 0,
+          discountUnit: br.discount_unit || 'percent',
+          basePrice: br.base_price !== undefined ? Number(br.base_price) : (Number(br.rate) || 0),
+          upgradeClassId: br.upgrade_class_id || null,
+          adults: br.adults || rc?.max_adults || 2,
           babies: 0,
           children: 0,
-          childBreakfastRate: 90000,
-          breakfastIncluded: true,
+          childBreakfastRate: hotelSettings.value?.breakfast_child_rate || 90000,
+          breakfastIncluded: br.breakfast !== undefined ? !!br.breakfast : isBfChecked,
         }
       }
       grouped[classId].quantity++
@@ -847,6 +882,9 @@ function bookingToTab(b) {
   } else {
     const dbAlloc = b.room_allocations || []
     dbAlloc.forEach(alloc => {
+      const isBfChecked = hotelSettings.value?.DefaultBreakfast !== undefined 
+        ? (Number(hotelSettings.value.DefaultBreakfast) === 1) 
+        : true
       roomAllocations.push({
         roomClassId: alloc.roomClassId,
         roomClassCode: alloc.roomClassCode,
@@ -855,14 +893,18 @@ function bookingToTab(b) {
         departureDate: alloc.departureDate,
         quantity: Number(alloc.quantity) || 0,
         price: Number(alloc.price) || 0,
-        ratePlanCode: alloc.ratePlanCode || '',
+        rateCode: alloc.rateCode || alloc.ratePlanCode || '',
         discount: alloc.discount || 'Tăng/Giảm giá',
-        upgradeRoomClassId: alloc.upgradeRoomClassId || null,
+        discountType: alloc.discountType || 'down',
+        discountValue: alloc.discountValue !== undefined ? Number(alloc.discountValue) : 0,
+        discountUnit: alloc.discountUnit || 'percent',
+        basePrice: alloc.basePrice !== undefined ? Number(alloc.basePrice) : (Number(alloc.price) || 0),
+        upgradeClassId: alloc.upgradeClassId || alloc.upgradeRoomClassId || null,
         adults: Number(alloc.adults) || 2,
         babies: Number(alloc.babies) || 0,
         children: Number(alloc.children) || 0,
-        childBreakfastRate: Number(alloc.childBreakfastRate) || 90000,
-        breakfastIncluded: alloc.breakfastIncluded !== undefined ? !!alloc.breakfastIncluded : true,
+        childBreakfastRate: Number(alloc.childBreakfastRate) || hotelSettings.value?.breakfast_child_rate || 90000,
+        breakfastIncluded: alloc.breakfastIncluded !== undefined ? !!alloc.breakfastIncluded : isBfChecked,
       })
     })
   }
@@ -962,23 +1004,45 @@ function handleCloseTab(tabId, event) {
 }
 
 function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
+  const isBreakfastChecked = hotelSettings.value?.DefaultBreakfast !== undefined 
+    ? (Number(hotelSettings.value.DefaultBreakfast) === 1) 
+    : true
+
   return roomClasses.value.map(rc => {
     const found = existing.find(e => e.roomClassId === rc.id || e.roomClassCode === rc.code)
-    if (found) {
-      return {
-        ...found,
-        roomClassId: rc.id,
-        roomClassCode: rc.code,
-        roomClassName: rc.name,
-      }
-    }
-    // Mock available room count for view
+    
+    // Default available room count
     let defaultAvail = 3
     if (rc.code === 'SUPD') defaultAvail = 0
     else if (rc.code === 'SUPTR' || rc.code === 'DLXDB') defaultAvail = 9
     else if (rc.code === 'DLXTB') defaultAvail = 8
     else if (rc.code === 'DLXT') defaultAvail = 4
     else if (rc.code === 'JST') defaultAvail = 1
+
+    if (found) {
+      return {
+        roomClassId: rc.id,
+        roomClassCode: rc.code,
+        roomClassName: rc.name,
+        arrivalDate: found.arrivalDate || checkInDate,
+        departureDate: found.departureDate || checkOutDate,
+        availableRooms: found.availableRooms !== undefined ? found.availableRooms : defaultAvail,
+        quantity: found.quantity !== undefined ? Number(found.quantity) : 0,
+        price: found.price !== undefined ? Number(found.price) : 0,
+        rateCode: found.rateCode || found.ratePlanCode || '',
+        discount: found.discount || 'Tăng/Giảm giá',
+        discountType: found.discountType || 'down',
+        discountValue: found.discountValue !== undefined ? Number(found.discountValue) : 0,
+        discountUnit: found.discountUnit || 'percent',
+        basePrice: found.basePrice !== undefined ? Number(found.basePrice) : (found.price !== undefined ? Number(found.price) : 0),
+        upgradeClassId: found.upgradeClassId || found.upgradeRoomClassId || null,
+        adults: found.adults !== undefined ? Number(found.adults) : (rc.max_adults || 2),
+        babies: found.babies !== undefined ? Number(found.babies) : 0,
+        children: found.children !== undefined ? Number(found.children) : 0,
+        childBreakfastRate: found.childBreakfastRate !== undefined ? Number(found.childBreakfastRate) : (hotelSettings.value?.breakfast_child_rate || 90000),
+        breakfastIncluded: found.breakfastIncluded !== undefined ? !!found.breakfastIncluded : isBreakfastChecked,
+      }
+    }
 
     return {
       roomClassId: rc.id,
@@ -989,16 +1053,258 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
       availableRooms: defaultAvail,
       quantity: 0,
       price: 0,
-      ratePlanCode: '',
+      rateCode: '',
       discount: 'Tăng/Giảm giá',
-      upgradeRoomClassId: null,
-      adults: rc.code.toLowerCase().includes('tr') || rc.code.toLowerCase().includes('t') ? 3 : 2,
+      discountType: 'down',
+      discountValue: 0,
+      discountUnit: 'percent',
+      basePrice: 0,
+      upgradeClassId: null,
+      adults: rc.max_adults || 2,
       babies: 0,
       children: 0,
       childBreakfastRate: hotelSettings.value?.breakfast_child_rate || 90000,
-      breakfastIncluded: hotelSettings.value?.booking_auto_extra_charge_bf_child ? true : (rc.code.toLowerCase().includes('tr') || rc.code.toLowerCase().includes('t') ? true : false),
+      breakfastIncluded: isBreakfastChecked,
     }
   })
+}
+
+function syncAllocationToRooms(row) {
+  if (!modalForm.value.rooms) return
+  modalForm.value.rooms.forEach(r => {
+    if (r.roomClassId === row.roomClassId) {
+      r.price = Number(row.price) || 0
+      r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
+      r.adults = Number(row.adults) || 2
+      r.babies = Number(row.babies) || 0
+      r.children = Number(row.children) || 0
+      r.breakfast = !!row.breakfastIncluded
+      r.upgradeClassId = row.upgradeClassId || null
+      r.total = r.price * (Number(r.nights) || 1)
+    }
+  })
+}
+
+function handleRateCodeChange(row) {
+  if (row.rateCode) {
+    const rcObj = roomRateCodes.value.find(rc => rc.Ma === row.rateCode)
+    if (rcObj) {
+      // 1. Check expiration dates
+      if (rcObj.BeginDate || rcObj.EndDate) {
+        const arr = new Date(row.arrivalDate)
+        const dep = new Date(row.departureDate)
+        const begin = rcObj.BeginDate ? new Date(rcObj.BeginDate) : null
+        const end = rcObj.EndDate ? new Date(rcObj.EndDate) : null
+        
+        arr.setHours(0,0,0,0)
+        dep.setHours(0,0,0,0)
+        if (begin) begin.setHours(0,0,0,0)
+        if (end) end.setHours(0,0,0,0)
+
+        if ((begin && arr < begin) || (end && dep > end)) {
+          uiStore.showToast(`Mã giá phòng ${row.rateCode} đã hết hạn hoặc không áp dụng trong thời gian lưu trú này!`, 'error')
+          row.rateCode = ''
+          syncAllocationToRooms(row)
+          return
+        }
+      }
+
+      row.breakfastIncluded = !!rcObj.IncludeBF
+      
+      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate)
+      if (price > 0) {
+        row.price = price
+        row.basePrice = price
+      }
+    }
+  }
+  syncAllocationToRooms(row)
+}
+
+function handleRoomRateCodeChange(room) {
+  if (room.rateCode) {
+    const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
+    if (rcObj) {
+      // Check expiration dates
+      if (rcObj.BeginDate || rcObj.EndDate) {
+        const arr = new Date(room.checkIn)
+        const dep = new Date(room.checkOut)
+        const begin = rcObj.BeginDate ? new Date(rcObj.BeginDate) : null
+        const end = rcObj.EndDate ? new Date(rcObj.EndDate) : null
+        
+        arr.setHours(0,0,0,0)
+        dep.setHours(0,0,0,0)
+        if (begin) begin.setHours(0,0,0,0)
+        if (end) end.setHours(0,0,0,0)
+
+        if ((begin && arr < begin) || (end && dep > end)) {
+          uiStore.showToast(`Mã giá phòng ${room.rateCode} đã hết hạn hoặc không áp dụng trong thời gian lưu trú này!`, 'error')
+          room.rateCode = 'Vui lòng chọn giá phòng'
+          return
+        }
+      }
+      
+      room.breakfast = !!rcObj.IncludeBF
+      
+      const price = getRateCodePrice(room.rateCode, room.roomClassCode, room.checkIn)
+      if (price > 0) {
+        room.price = price
+        room.basePrice = price
+        room.total = (price || 0) * (room.nights || 1)
+      }
+
+      // Sync back to allocation row
+      if (modalForm.value.roomAllocations) {
+        const alloc = modalForm.value.roomAllocations.find(a => a.roomClassId === room.roomClassId)
+        if (alloc) {
+          alloc.rateCode = room.rateCode
+          alloc.price = room.price
+          alloc.basePrice = room.price
+          alloc.breakfastIncluded = room.breakfast
+        }
+      }
+    }
+  }
+}
+
+function isPriceDisabled(row) {
+  if (!row.rateCode) return false
+  const rcObj = roomRateCodes.value.find(rc => rc.Ma === row.rateCode)
+  if (rcObj) {
+    return !rcObj.AllowChangeRate
+  }
+  return false
+}
+
+function isRoomPriceDisabled(room) {
+  if (!room.rateCode || room.rateCode === 'Vui lòng chọn giá phòng') return false
+  const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
+  if (rcObj) {
+    return !rcObj.AllowChangeRate
+  }
+  return false
+}
+
+const activeDiscountRowId = ref(null)
+
+function toggleDiscountPopover(row) {
+  if (activeDiscountRowId.value === row.roomClassId) {
+    activeDiscountRowId.value = null
+  } else {
+    activeDiscountRowId.value = row.roomClassId
+  }
+}
+
+function closeDiscountPopover() {
+  activeDiscountRowId.value = null
+}
+
+function handleGlobalClick(event) {
+  closeDiscountPopover()
+  const toggleBtn = document.getElementById('column-selector-toggle')
+  const selectorContainer = document.getElementById('column-selector-container')
+  if (toggleBtn && selectorContainer) {
+    if (!toggleBtn.contains(event.target) && !selectorContainer.contains(event.target)) {
+      showColumnSelector.value = false
+    }
+  }
+}
+
+function calculateAdjustedPrice(row) {
+  if (row.basePrice === undefined || row.basePrice === null) {
+    row.basePrice = Number(row.price) || 0
+  }
+  
+  let val = Number(row.discountValue) || 0
+  let adjusted = row.basePrice
+  
+  if (row.discountUnit === 'percent') {
+    const adjustAmount = Math.round(row.basePrice * (val / 100))
+    if (row.discountType === 'up') {
+      adjusted = row.basePrice + adjustAmount
+    } else {
+      adjusted = Math.max(0, row.basePrice - adjustAmount)
+    }
+  } else {
+    if (row.discountType === 'up') {
+      adjusted = row.basePrice + val
+    } else {
+      adjusted = Math.max(0, row.basePrice - val)
+    }
+  }
+  
+  row.price = adjusted
+  
+  // Also update the formatted discount string to save to database or display
+  row.discount = getDiscountLabel(row)
+  
+  syncAllocationToRooms(row)
+}
+
+function getDiscountLabel(row) {
+  if (!row.discountValue) return 'Tăng/Giảm giá'
+  const sign = row.discountType === 'up' ? '+' : '-'
+  const unit = row.discountUnit === 'percent' ? '%' : ''
+  const formattedVal = row.discountUnit === 'percent' ? row.discountValue : formatCurrencyInput(row.discountValue)
+  return `${sign}${formattedVal}${unit}`
+}
+
+function getOccupancyCount(row) {
+  if (modalForm.value.status === 3 || modalForm.value.status === 100) {
+    return 0
+  }
+  if (!modalForm.value.rooms) return 0
+  return modalForm.value.rooms.filter(r => 
+    r.roomClassId === row.roomClassId && 
+    r.bookingRoomStatus !== 3 && 
+    r.bookingRoomStatus !== 100
+  ).length
+}
+
+function getRateCodePrice(rateCodeMa, roomClassCode, dateStr) {
+  const rcObj = roomRateCodes.value.find(rc => rc.Ma === rateCodeMa)
+  if (!rcObj || !rcObj.rate_plans) return 0
+  
+  // 1. Find active plan code for the date (dateStr) from daily_mappings
+  let activePlanCode = 'DEFAULT'
+  if (dateStr && rcObj.daily_mappings) {
+    const mapping = rcObj.daily_mappings.find(m => m.Date === dateStr)
+    if (mapping) {
+      activePlanCode = mapping.Code
+    }
+  }
+
+  // 2. Find the plan corresponding to activePlanCode
+  let plan = rcObj.rate_plans.find(p => p.Code === activePlanCode)
+  if (!plan) {
+    plan = rcObj.rate_plans.find(p => p.Code === 'DEFAULT') || rcObj.rate_plans[0]
+  }
+  
+  if (!plan || !plan.Period) return 0
+  
+  const period = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period
+  const planCode = plan.Code
+  
+  const key = `${planCode}_${roomClassCode}_Double`
+  if (period && period[key] !== undefined) {
+    return Number(period[key]) || 0
+  }
+  
+  const legacyKey = `${rateCodeMa}_${roomClassCode}_Double`
+  if (period && period[legacyKey] !== undefined) {
+    return Number(period[legacyKey]) || 0
+  }
+  
+  if (period) {
+    const matchingKey = Object.keys(period).find(k => 
+      k.startsWith(`${planCode}_${roomClassCode}_`) || 
+      k.startsWith(`${rateCodeMa}_${roomClassCode}_`)
+    )
+    if (matchingKey && period[matchingKey] !== undefined) {
+      return Number(period[matchingKey]) || 0
+    }
+  }
+  return 0
 }
 
 async function handleAddTabClick() {
@@ -1331,6 +1637,24 @@ watch(() => modalForm.value.roomAllocations, (newAllocations) => {
   })
 }, { deep: true })
 
+watch(() => modalForm.value.rooms, (newRooms) => {
+  if (!modalForm.value.roomAllocations) return
+  const counts = {}
+  if (newRooms) {
+    newRooms.forEach(r => {
+      if (r.roomClassId) {
+        counts[r.roomClassId] = (counts[r.roomClassId] || 0) + 1
+      }
+    })
+  }
+  modalForm.value.roomAllocations.forEach(alloc => {
+    const actualQty = counts[alloc.roomClassId] || 0
+    if (alloc.quantity !== actualQty) {
+      alloc.quantity = actualQty
+    }
+  })
+}, { deep: true, immediate: true })
+
 function validateRoomQuantity(alloc) {
   if (hotelSettings.value?.allow_over_room_type === 0 || hotelSettings.value?.allow_over_room_type === false) {
     if (alloc.quantity > alloc.availableRooms) {
@@ -1377,6 +1701,13 @@ async function handleRowDateChange(row) {
     const diff = Math.ceil((co - ci) / 86400000)
     row.nights = diff > 0 ? diff : 1
     
+    if (row.rateCode) {
+      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate)
+      if (price > 0) {
+        row.price = price
+      }
+    }
+
     if (modalForm.value.rooms) {
       modalForm.value.rooms.forEach(r => {
         if (r.roomClassId === row.roomClassId) {
@@ -1387,6 +1718,7 @@ async function handleRowDateChange(row) {
         }
       })
     }
+    syncAllocationToRooms(row)
 
     try {
       const res = await checkAvailability({
@@ -1542,33 +1874,19 @@ function getVacantRoomsList(room) {
 
 function formatCurrencyInput(val) {
   if (val === null || val === undefined || val === '') return '';
-  const currencyCode = activeCurrency.value.code || 'VND'
-
-  let clean = String(val).replace(/[^\d.,-]/g, '');
-  if (!clean) return '';
-
-  if (currencyCode === 'VND') {
-    clean = clean.replace(/\D/g, '');
-    if (!clean) return '';
-    return Number(clean).toLocaleString('vi-VN');
-  } else {
-    clean = clean.replace(/,/g, '');
-    let parts = clean.split('.');
-    if (parts.length > 2) parts = [parts[0], parts.slice(1).join('')];
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return parts.join('.');
-  }
+  let str = String(val).replace(/[^\d.-]/g, '');
+  if (!str) return '';
+  
+  let parts = str.split('.');
+  if (parts.length > 2) parts = [parts[0], parts.slice(1).join('')];
+  parts[0] = Number(parts[0]).toLocaleString('en-US');
+  return parts.join('.');
 }
 
 function cleanCurrencyValue(val) {
   if (val === null || val === undefined || val === '') return 0;
-  const currencyCode = activeCurrency.value.code || 'VND'
-  let clean = String(val).replace(/[^\d.,-]/g, '');
-  if (currencyCode === 'VND') {
-    return Number(clean.replace(/\D/g, '')) || 0;
-  } else {
-    return Number(clean.replace(/,/g, '')) || 0;
-  }
+  const cleanStr = String(val).replace(/,/g, '');
+  return Number(cleanStr) || 0;
 }
 
 function handleRowSelectAll(event) {
@@ -2199,7 +2517,7 @@ defineExpose({
       <div 
         class="summary-bar shrink-0 cursor-pointer" 
         @click="openEditModal"
-        :title="`Chi tiết phiếu đăng ký: ${activeTab.bookingName || 'Trống'}\nTrạng thái: ${activeTabStatusName || 'Trống'}\nNgày đến/đi: ${formatDateVi(activeTab.checkIn)} ~ ${formatDateVi(activeTab.checkOut)}\nĐặt cọc: ${(activeTab.deposit || 0).toLocaleString('vi-VN')} VND\nCông ty: ${activeTab.company || '---'}\nXác nhận: ${formatDateVi(activeTab.confirmDate) || '---'}\n\n-> Click để mở chi tiết thông tin đăng ký (Edit Modal)`"
+        :title="`Chi tiết phiếu đăng ký: ${activeTab.bookingName || 'Trống'}\nTrạng thái: ${activeTabStatusName || 'Trống'}\nNgày đến/đi: ${formatDateVi(activeTab.checkIn)} ~ ${formatDateVi(activeTab.checkOut)}\nĐặt cọc: ${(activeTab.deposit || 0).toLocaleString('en-US')} VND\nCông ty: ${activeTab.company || '---'}\nXác nhận: ${formatDateVi(activeTab.confirmDate) || '---'}\n\n-> Click để mở chi tiết thông tin đăng ký (Edit Modal)`"
       >
         <div>
           <span class="label">Tên đăng ký:</span>
@@ -2207,7 +2525,7 @@ defineExpose({
         </div>
         <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
         <div><span class="label">Ngày đến/đi:</span><b class="font-black text-slate-800">{{ formatDateVi(activeTab.checkIn) }} ~ {{ formatDateVi(activeTab.checkOut) }}</b></div>
-        <div><span class="label">Đặt cọc:</span><b class="font-black text-slate-800">{{ (activeTab.deposit || 0).toLocaleString('vi-VN') }}</b></div>
+        <div><span class="label">Đặt cọc:</span><b class="font-black text-slate-800">{{ (activeTab.deposit || 0).toLocaleString('en-US') }}</b></div>
         <div><span class="label">Công ty:</span><b class="font-black text-[#0f7d8c]">{{ activeTab.company || '---' }}</b></div>
         <div><span class="label">Xác nhận:</span><b class="font-bold text-slate-500">{{ formatDateVi(activeTab.confirmDate) || '---' }}</b></div>
         
@@ -2324,7 +2642,7 @@ defineExpose({
                         :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
                         @click="handleRowSelect(room.id)"
                         @dblclick.stop="openServicesModal(room)"
-                        :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('vi-VN')}đ\nDouble-click → Dịch vụ bổ sung`"
+                        :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ\nDouble-click → Dịch vụ bổ sung`"
                       >
                         <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                           <button 
@@ -2382,21 +2700,25 @@ defineExpose({
                         <template v-else-if="col.key === 'price'">
                           <input 
                             v-if="isEditing" 
-                            type="number" 
-                            v-model.number="room.price" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-right" 
-                            @input="room.total = (Number(room.price) || 0) * (Number(room.nights) || 1)"
+                            type="text" 
+                            :value="formatCurrencyInput(room.price)" 
+                            :disabled="isRoomPriceDisabled(room)"
+                            @input="e => { room.price = cleanCurrencyValue(e.target.value); room.total = (Number(room.price) || 0) * (Number(room.nights) || 1) }"
+                            @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                            class="border rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-right" 
+                            :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-slate-900'"
                           />
-                          <span v-else>{{ room.price.toLocaleString('vi-VN') }}</span>
+                          <span v-else>{{ formatCurrencyInput(room.price) }}</span>
                         </template>
                         <template v-else-if="col.key === 'rateCode'">
                           <select 
                             v-if="isEditing" 
                             v-model="room.rateCode" 
+                            @change="handleRoomRateCodeChange(room)"
                             class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none"
                           >
                             <option value="Vui lòng chọn giá phòng" disabled>Vui lòng chọn giá phòng</option>
-                            <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
+                            <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
                           </select>
                           <span v-else class="text-slate-400 font-semibold">{{ room.rateCode }}</span>
                         </template>
@@ -2458,7 +2780,7 @@ defineExpose({
                           <button @click.stop="openServicesModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold">{{ room.extraBedPrice.toLocaleString('vi-VN') }}</span>
+                          <span class="text-gray-900 font-semibold">{{ formatCurrencyInput(room.extraBedPrice) }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -2553,7 +2875,7 @@ defineExpose({
                           <span v-else>{{ room.roomCode || '-' }}</span>
                         </template>
                         </td>
-                        <td class="p-2 text-right text-gray-900 font-semibold sticky right-0 bg-white group-hover:bg-sky-50/30 border-l border-slate-200 z-10" @click.stop @dblclick.stop="openServicesModal(room)">{{ (Number(room.total) || 0).toLocaleString('vi-VN') }}</td>
+                        <td class="p-2 text-right text-gray-900 font-semibold sticky right-0 bg-white group-hover:bg-sky-50/30 border-l border-slate-200 z-10" @click.stop @dblclick.stop="openServicesModal(room)">{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
                       </tr>
 
                       <!-- Expanded Services Row -->
@@ -2594,7 +2916,7 @@ defineExpose({
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
                                   <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity || 1 }}</td>
-                                  <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('vi-VN') }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
                                     <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
                                   </td>
@@ -2776,7 +3098,7 @@ defineExpose({
                   Tổng cộng: {{ roomsTotalSummary.count }}
                 </template>
                 <template v-else-if="col.key === 'price'">
-                  {{ roomsTotalSummary.priceSum.toLocaleString('vi-VN') }}
+                  {{ formatCurrencyInput(roomsTotalSummary.priceSum) }}
                 </template>
                 <template v-else-if="col.key === 'adults'">
                   {{ roomsTotalSummary.adults }}
@@ -2788,14 +3110,14 @@ defineExpose({
                   {{ roomsTotalSummary.children }}
                 </template>
                 <template v-else-if="col.key === 'extraBedPrice'">
-                  {{ roomsTotalSummary.extraBed.toLocaleString('vi-VN') }}
+                  {{ formatCurrencyInput(roomsTotalSummary.extraBed) }}
                 </template>
                 <template v-else>
                   -
                 </template>
               </td>
               <td class="p-2 text-right text-sky-700 font-bold text-sm sticky right-0 bg-[#dde3ea] border-l border-slate-200 z-10 w-[120px] shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">
-                {{ roomsTotalSummary.total.toLocaleString('vi-VN') }}
+                {{ formatCurrencyInput(roomsTotalSummary.total) }}
               </td>
             </tr>
           </table>
@@ -2987,9 +3309,6 @@ defineExpose({
               >
                   <i class="fa-solid fa-bed"></i>
                   <span>Lấy phòng</span>
-                  <span class="ml-1.5 bg-blue-100 text-blue-600 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full" v-if="modalForm.roomAllocations?.length">
-                    {{ modalForm.roomAllocations.length }}
-                  </span>
               </button>
           </div>
 
@@ -3298,7 +3617,7 @@ defineExpose({
                       <!-- Hiện giá -->
                       <td class="py-2 px-2">
                         <div class="relative w-full border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="text" :value="formatCurrencyInput(row.price)" @input="e => row.price = cleanCurrencyValue(e.target.value)" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
+                          <input type="text" :value="formatCurrencyInput(row.price)" @input="e => row.price = cleanCurrencyValue(e.target.value)" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
                             <button @click.prevent="row.price = (Number(row.price) || 0) + 10000" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                             <button @click.prevent="row.price >= 10000 ? row.price = (Number(row.price) || 0) - 10000 : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
@@ -3357,6 +3676,7 @@ defineExpose({
               <!-- Column Selector Icon at Top Right -->
               <div class="flex justify-end items-center relative z-20 shrink-0">
                 <button
+                  id="column-selector-toggle"
                   @click="showColumnSelector = !showColumnSelector"
                   class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 border border-slate-200 bg-white shadow-xs cursor-pointer transition-colors"
                   title="Cấu hình hiển thị cột"
@@ -3367,7 +3687,7 @@ defineExpose({
                 </button>
 
                 <!-- Column Toggle Dropdown -->
-                <div v-if="showColumnSelector" class="absolute right-0 top-10 bg-white border border-slate-200 rounded-lg shadow-xl p-3 w-56 flex flex-col gap-2 z-30 select-none animate-in">
+                <div v-if="showColumnSelector" id="column-selector-container" class="absolute right-0 top-10 bg-white border border-slate-200 rounded-lg shadow-xl p-3 w-56 flex flex-col gap-2 z-30 select-none animate-in">
                   <span class="text-xs font-black text-slate-400 uppercase tracking-wider border-b pb-1">Cột hiển thị</span>
                   
                   <div class="flex flex-col gap-1.5 overflow-y-auto max-h-72 text-sm font-bold text-slate-700">
@@ -3437,7 +3757,7 @@ defineExpose({
                   <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
                       <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[6%] font-semibold text-[11px]">Loại/Dạng</th>
-                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center w-[18%] font-semibold text-[11px]">Ngày đến ~ Ngày đi</th>
+                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center w-[17%] font-semibold text-[11px]">Ngày đến ~ Ngày đi</th>
                       <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Chiếm dụng</th>
                       <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Trống</th>
                       <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[7%] font-semibold text-[11px] bg-slate-100/50">Số lượng</th>
@@ -3448,13 +3768,13 @@ defineExpose({
                       <th v-if="visibleColumns.adults" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Người lớn</th>
                       <th v-if="visibleColumns.babies" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Em bé</th>
                       <th v-if="visibleColumns.children" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Trẻ em</th>
-                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[9%] font-semibold text-[11px]">Giá ăn sáng trẻ em</th>
+                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[11%] font-semibold text-[11px]">Giá ăn sáng trẻ em</th>
                       <th v-if="visibleColumns.breakfast" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px]">Ăn sáng</th>
                     </tr>
                   </thead>
                   
                   <tbody class="text-[11px] text-slate-700 font-medium select-none">
-                    <tr v-for="row in modalForm.roomAllocations" :key="row.roomClassId" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
+                    <tr v-for="(row, idx) in modalForm.roomAllocations" :key="row.roomClassId" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
                       
                       <!-- Loại/Dạng -->
                       <td v-if="visibleColumns.roomType" class="py-2 px-2 font-bold text-slate-900">{{ row.roomClassCode }}</td>
@@ -3483,7 +3803,7 @@ defineExpose({
                       </td>
                       
                       <!-- Chiếm dụng -->
-                      <td v-if="visibleColumns.occupancy" class="py-2 px-1 text-center font-semibold text-slate-600">{{ row.occupancy || 0 }}%</td>
+                      <td v-if="visibleColumns.occupancy" class="py-2 px-1 text-center font-semibold text-slate-600">{{ getOccupancyCount(row) }}</td>
                       
                       <!-- Phòng trống -->
                       <td v-if="visibleColumns.availability" class="py-2 px-1 text-center font-bold" :class="row.availableRooms <= 0 ? 'text-rose-600' : 'text-slate-800'">
@@ -3493,7 +3813,7 @@ defineExpose({
                       <!-- Số lượng -->
                       <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
                             <button @click.prevent="row.quantity++; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                             <button @click.prevent="row.quantity > 0 ? (row.quantity--, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
@@ -3503,30 +3823,118 @@ defineExpose({
 
                       <!-- Giá phòng -->
                       <td v-if="visibleColumns.price" class="py-2 px-1">
-                        <div class="relative w-full min-w-[70px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="text" :value="formatCurrencyInput(row.price)" @input="e => row.price = cleanCurrencyValue(e.target.value)" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
-                          <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.price = (Number(row.price) || 0) + 50000" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.price >= 50000 ? row.price = (Number(row.price) || 0) - 50000 : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                        <div class="relative w-full min-w-[70px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isPriceDisabled(row) ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'">
+                          <input type="text" :value="formatCurrencyInput(row.price)" :disabled="isPriceDisabled(row)" @input="e => { row.price = cleanCurrencyValue(e.target.value); row.basePrice = row.price; syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold" :class="isPriceDisabled(row) ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800'">
+                          <div v-if="!isPriceDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                            <button @click.prevent="row.price = (Number(row.price) || 0) + 50000; row.basePrice = row.price; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="row.price >= 50000 ? (row.price = (Number(row.price) || 0) - 50000, row.basePrice = row.price, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>
 
                       <!-- Mã giá phòng -->
                       <td v-if="visibleColumns.rateCode" class="py-2 px-2">
-                        <input type="text" v-model="row.rateCode" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm bg-white text-[11px]">
+                        <select 
+                          v-model="row.rateCode" 
+                          @change="handleRateCodeChange(row)"
+                          class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm bg-white text-[11px]"
+                        >
+                          <option value="">— Chọn giá phòng —</option>
+                          <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
+                        </select>
                       </td>
 
                       <!-- Tăng/Giảm -->
-                      <td v-if="visibleColumns.discount" class="py-2 px-2">
-                        <input type="text" v-model="row.discount" placeholder="Nhập giá" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm text-[11px]">
+                      <td v-if="visibleColumns.discount" class="py-2 px-2 relative">
+                        <div 
+                          @click.stop="toggleDiscountPopover(row)"
+                          class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 shadow-sm text-[11px] flex items-center justify-between cursor-pointer bg-white"
+                        >
+                          <span class="font-bold" :class="row.discountValue ? 'text-sky-600' : 'text-slate-500'">{{ getDiscountLabel(row) }}</span>
+                          <i class="fa-solid fa-calculator text-slate-400 text-[10px]"></i>
+                        </div>
+                        
+                        <!-- Popover UI -->
+                        <div 
+                          v-if="activeDiscountRowId === row.roomClassId" 
+                          @click.stop
+                          class="absolute left-1/2 -translate-x-1/2 z-[9999] bg-white border border-slate-200 rounded-lg p-2.5 shadow-xl flex flex-col gap-2 w-[185px] pointer-events-auto"
+                          :class="idx < 2 ? 'top-full mt-1.5' : 'bottom-full mb-1.5'"
+                        >
+                          <!-- Toggle Tăng/Giảm -->
+                          <div class="flex items-center gap-1.5 select-none">
+                            <button 
+                              type="button"
+                              @click.stop="row.discountType = 'up'; calculateAdjustedPrice(row)"
+                              class="flex-1 py-1 rounded text-[10px] font-extrabold cursor-pointer border transition-colors flex items-center justify-center gap-1"
+                              :style="{ minHeight: '26px' }"
+                              :class="row.discountType === 'up' ? 'bg-sky-100 text-sky-700 border-sky-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'"
+                            >
+                              <i class="fa-solid fa-angles-up text-emerald-500"></i>
+                              <span>Tăng</span>
+                            </button>
+                            <button 
+                              type="button"
+                              @click.stop="row.discountType = 'down'; calculateAdjustedPrice(row)"
+                              class="flex-1 py-1 rounded text-[10px] font-extrabold cursor-pointer border transition-colors flex items-center justify-center gap-1"
+                              :style="{ minHeight: '26px' }"
+                              :class="row.discountType === 'down' ? 'bg-sky-100 text-sky-700 border-sky-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'"
+                            >
+                              <i class="fa-solid fa-angles-down text-rose-500"></i>
+                              <span>Giảm</span>
+                            </button>
+                          </div>
+                          
+                          <!-- Input and unit toggle -->
+                          <div class="flex items-center gap-1.5">
+                            <!-- Input -->
+                            <div class="relative flex-1 border border-slate-300 rounded bg-white shadow-sm flex items-center h-[26px]">
+                              <input 
+                                type="text"
+                                :value="row.discountUnit === 'percent' ? row.discountValue : formatCurrencyInput(row.discountValue)"
+                                @input="e => { row.discountValue = row.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); calculateAdjustedPrice(row) }"
+                                @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
+                              />
+                            </div>
+                            
+                            <!-- Toggle switch unit -->
+                            <label class="relative inline-flex items-center cursor-pointer select-none">
+                              <input 
+                                type="checkbox" 
+                                :checked="row.discountUnit === 'percent'" 
+                                @change="e => { row.discountUnit = e.target.checked ? 'percent' : 'amount'; calculateAdjustedPrice(row) }"
+                                class="sr-only peer"
+                              />
+                              <div class="w-11 h-[20px] bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[20px] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[16px] after:w-[16px] after:transition-all peer-checked:bg-sky-500"></div>
+                              <span 
+                                class="absolute text-[8px] font-black pointer-events-none select-none transition-all"
+                                :class="row.discountUnit === 'percent' ? 'left-[6px] text-white' : 'right-[7px] text-slate-500'"
+                              >
+                                {{ row.discountUnit === 'percent' ? '%' : 'đ' }}
+                              </span>
+                            </label>
+                          </div>
+                          
+                          <!-- Price summary preview -->
+                          <div class="text-[10px] text-slate-500 border-t border-slate-100 pt-1.5 mt-0.5 flex flex-col gap-0.5 select-none">
+                            <div class="flex justify-between">
+                              <span>Giá gốc:</span>
+                              <span class="font-bold text-slate-700">{{ formatCurrencyInput(row.basePrice || 0) }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span>Giá mới:</span>
+                              <span class="font-bold text-sky-600">{{ formatCurrencyInput(row.price || 0) }}</span>
+                            </div>
+                          </div>
+                        </div>
                       </td>
 
                       <!-- Nâng hạng -->
                       <td v-if="visibleColumns.upgrade" class="py-2 px-2">
                         <div class="relative">
-                          <select v-model="row.upgradeClassId" class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[11px]">
-                            <option :value="null" disabled>Select</option>
+                          <select v-model="row.upgradeClassId" @change="syncAllocationToRooms(row)" class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[11px]">
+                            <option :value="null">Gốc</option>
                             <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
                           </select>
                           <i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px] pointer-events-none"></i>
@@ -3536,10 +3944,10 @@ defineExpose({
                       <!-- Người lớn -->
                       <td v-if="visibleColumns.adults" class="py-2 px-1">
                         <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.adults" min="1" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.adults" min="1" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.adults++" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.adults > 1 ? row.adults-- : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            <button @click.prevent="row.adults++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="row.adults > 1 ? (row.adults--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>
@@ -3547,10 +3955,10 @@ defineExpose({
                       <!-- Em bé -->
                       <td v-if="visibleColumns.babies" class="py-2 px-1">
                         <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.babies" min="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.babies" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.babies++" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.babies > 0 ? row.babies-- : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            <button @click.prevent="row.babies++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="row.babies > 0 ? (row.babies--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>
@@ -3558,28 +3966,28 @@ defineExpose({
                       <!-- Trẻ em -->
                       <td v-if="visibleColumns.children" class="py-2 px-1">
                         <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.children" min="0" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.children" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.children++" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.children > 0 ? row.children-- : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            <button @click.prevent="row.children++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="row.children > 0 ? (row.children--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>
 
                       <!-- Giá ăn sáng trẻ em -->
                       <td v-if="visibleColumns.childBreakfastRate" class="py-2 px-1">
-                        <div class="relative w-full min-w-[65px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="text" :value="formatCurrencyInput(row.childBreakfastRate)" @input="e => row.childBreakfastRate = cleanCurrencyValue(e.target.value)" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
+                        <div class="relative w-full min-w-[90px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                          <input type="text" :value="formatCurrencyInput(row.childBreakfastRate)" @input="e => { row.childBreakfastRate = cleanCurrencyValue(e.target.value); syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) + 5000" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.childBreakfastRate >= 5000 ? row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) - 5000 : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            <button @click.prevent="row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) + 5000; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="row.childBreakfastRate >= 5000 ? (row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) - 5000, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>
 
                       <!-- Ăn sáng -->
                       <td v-if="visibleColumns.breakfast" class="py-2 px-1 text-center">
-                        <input type="checkbox" v-model="row.breakfastIncluded" class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300">
+                        <input type="checkbox" v-model="row.breakfastIncluded" @change="syncAllocationToRooms(row)" class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300">
                       </td>
 
                     </tr>
@@ -3587,7 +3995,7 @@ defineExpose({
                   
                   <tfoot class="bg-white font-bold text-slate-900 border-t border-slate-300 text-[11px]">
                     <tr>
-                      <td v-if="visibleColumns.roomType" class="py-2.5 px-2 text-left text-slate-800" colspan="2">Tổng: {{ allocationsSummary.count }}</td>
+                      <td v-if="visibleColumns.roomType" class="py-2.5 px-2 text-left text-slate-800">Tổng</td>
                       <td v-if="visibleColumns.dates" class="py-2.5 px-2"></td>
                       <td v-if="visibleColumns.occupancy" class="py-2.5 px-1 text-center"></td>
                       <td v-if="visibleColumns.availability" class="py-2.5 px-1 text-center text-[11px] font-semibold">{{ allocationsSummary.availableRooms }}</td>
