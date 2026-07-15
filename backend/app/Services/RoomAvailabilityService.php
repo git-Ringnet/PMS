@@ -30,7 +30,7 @@ class RoomAvailabilityService
         int $roomClassId,
         string $arrivalDate,
         string $departureDate,
-        ?int $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null
     ): int {
         $query = BookingRoom::where('room_class_id', $roomClassId)
             ->whereIn('status', [
@@ -102,7 +102,7 @@ class RoomAvailabilityService
         int $roomClassId,
         string $arrivalDate,
         string $departureDate,
-        ?int $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null
     ): int {
         $total  = $this->getTotalRooms($roomClassId);
         $locked = $this->getLockedCount($roomClassId, $arrivalDate, $departureDate);

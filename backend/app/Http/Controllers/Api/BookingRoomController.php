@@ -210,6 +210,21 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Phòng đã checkout, không thể sửa.'], 422);
         }
 
+        // Khóa chuyển phòng Do Not Move
+        if ($bookingRoom->is_do_not_move) {
+            if (
+                ($request->has('room_number') && $request->room_number !== $bookingRoom->room_number) ||
+                ($request->has('room_class_id') && (int)$request->room_class_id !== (int)$bookingRoom->room_class_id) ||
+                ($request->has('arrival_date') && $request->arrival_date !== $bookingRoom->arrival_date->toDateString()) ||
+                ($request->has('departure_date') && $request->departure_date !== $bookingRoom->departure_date->toDateString())
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng này đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.'
+                ], 422);
+            }
+        }
+
         $isInhouse = $bookingRoom->status === BookingRoom::STATUS_CHECKED_IN;
 
         // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
@@ -479,6 +494,11 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái có thể check-in.'], 422);
         }
 
+        // Điều kiện 1.5: Phải được gán số phòng vật lý trước khi check-in
+        if (empty($bookingRoom->room_number)) {
+            return response()->json(['success' => false, 'message' => 'Phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi giao phòng.'], 422);
+        }
+
         // Điều kiện 2: arrival_date = system_date
         if ($bookingRoom->arrival_date->toDateString() !== $systemDate->toDateString()) {
             return response()->json([
@@ -600,6 +620,10 @@ class BookingRoomController extends Controller
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
 
+        if ($bookingRoom->is_do_not_move) {
+            return response()->json(['success' => false, 'message' => 'Phòng này đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.'], 422);
+        }
+
         if ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN) {
             return response()->json(['success' => false, 'message' => 'Không thể gỡ số phòng khi đang check-in.'], 422);
         }
@@ -710,6 +734,10 @@ class BookingRoomController extends Controller
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
 
+        if ($bookingRoom->is_do_not_move) {
+            return response()->json(['success' => false, 'message' => 'Phòng này đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.'], 422);
+        }
+
         if ($bookingRoom->status !== BookingRoom::STATUS_BOOKED) {
             return response()->json(['success' => false, 'message' => 'Chỉ nâng hạng phòng ở trạng thái đăng ký.'], 422);
         }
@@ -766,6 +794,10 @@ class BookingRoomController extends Controller
     public function lockMove(Request $request, $bookingId, $roomId)
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+
+        if (empty($bookingRoom->room_number)) {
+            return response()->json(['success' => false, 'message' => 'Phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi khóa chuyển phòng.'], 422);
+        }
 
         if ($bookingRoom->is_do_not_move) {
             return response()->json(['success' => false, 'message' => 'Phòng đã đang khóa chuyển phòng.'], 422);

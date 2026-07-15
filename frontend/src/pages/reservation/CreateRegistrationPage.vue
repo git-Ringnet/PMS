@@ -49,7 +49,9 @@ import {
   fetchHotelServices,
   fetchBookingRoomServices,
   createBookingRoomService,
-  deleteBookingRoomServicesBulk
+  deleteBookingRoomServicesBulk,
+  lockRoomMove,
+  unlockRoomMove
 } from '@/services/booking-service'
 
 const route = useRoute()
@@ -899,6 +901,7 @@ function bookingToTab(b) {
       rooms.push({
         id: idCounter++,
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
+        isDoNotMove: br.is_do_not_move !== undefined ? !!br.is_do_not_move : false,
         type: rc.name || 'Unknown Class',
         shape: rc.code || '',
         roomNumber: physicalRoom.room_number || '',
@@ -2418,6 +2421,11 @@ async function triggerAction(actionName) {
       return
     }
 
+    if (targetList.some(r => !r.roomNumber)) {
+      uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi giao phòng!', 'warning')
+      return
+    }
+
     uiStore.showToast('Đang tiến hành giao phòng cho khách...', 'info')
     let successCount = 0
     let failCount = 0
@@ -2618,9 +2626,135 @@ async function triggerAction(actionName) {
     deleteServiceModalTargetRooms.value = validRooms
     isDeleteServiceModalOpen.value = true
   } else if (actionName === 'Khóa chuyển phòng') {
-    uiStore.showToast('Đã thiết lập khóa chuyển phòng!', 'success')
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi khóa chuyển phòng!', 'warning')
+      return
+    }
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : []
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng muốn khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.roomNumber)) {
+      uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.bookingRoomId)) {
+      uiStore.showToast('Có phòng chưa được lưu. Vui lòng lưu thông tin đăng ký trước!', 'warning')
+      return
+    }
+
+    uiStore.confirm({
+      title: 'Khóa chuyển phòng',
+      message: `Bạn có chắc chắn muốn khóa chuyển phòng cho ${targetList.length} phòng đã chọn?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang tiến hành khóa chuyển phòng...', 'info')
+        let successCount = 0
+        let failCount = 0
+        let failMessages = []
+
+        try {
+          for (const r of targetList) {
+            try {
+              const res = await lockRoomMove(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+                r.isDoNotMove = true
+              } else {
+                failCount++
+                failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+              }
+            } catch (err) {
+              console.error(err)
+              failCount++
+              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+            }
+          }
+          await loadBookings()
+          selectedRows.value = []
+
+          if (successCount > 0) {
+            uiStore.showToast(`Khóa chuyển phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+          } else {
+            uiStore.showToast(`Khóa chuyển phòng thất bại: ${failMessages.join(', ')}`, 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Có lỗi xảy ra khi khóa chuyển phòng!', 'error')
+        }
+      }
+    })
   } else if (actionName === 'Mở chuyển phòng') {
-    uiStore.showToast('Đã mở khóa chuyển phòng!', 'success')
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi mở khóa chuyển phòng!', 'warning')
+      return
+    }
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : []
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng muốn mở khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.roomNumber)) {
+      uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi mở khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.bookingRoomId)) {
+      uiStore.showToast('Có phòng chưa được lưu. Vui lòng lưu thông tin đăng ký trước!', 'warning')
+      return
+    }
+
+    uiStore.confirm({
+      title: 'Mở khóa chuyển phòng',
+      message: `Bạn có chắc chắn muốn mở khóa chuyển phòng cho ${targetList.length} phòng đã chọn?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang tiến hành mở khóa chuyển phòng...', 'info')
+        let successCount = 0
+        let failCount = 0
+        let failMessages = []
+
+        try {
+          for (const r of targetList) {
+            try {
+              const res = await unlockRoomMove(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+                r.isDoNotMove = false
+              } else {
+                failCount++
+                failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+              }
+            } catch (err) {
+              console.error(err)
+              failCount++
+              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+            }
+          }
+          await loadBookings()
+          selectedRows.value = []
+
+          if (successCount > 0) {
+            uiStore.showToast(`Mở khóa chuyển phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+          } else {
+            uiStore.showToast(`Mở khóa chuyển phòng thất bại: ${failMessages.join(', ')}`, 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Có lỗi xảy ra khi mở khóa chuyển phòng!', 'error')
+        }
+      }
+    })
   } else if (actionName === 'Xuất Excel') {
     uiStore.showToast('Đang tải xuống tệp Excel danh sách phòng...', 'success')
   } else if (actionName === 'In phiếu đăng ký khách') {
@@ -2729,9 +2863,17 @@ function openUpgradeModal() {
   isUpgradeModalOpen.value = true
 }
 
-function handleUpgraded() {
+function handleUpgraded(payload) {
   loadBookings()
   selectedRows.value = []
+  if (payload) {
+    const { successCount, failCount, failMessages } = payload
+    if (successCount > 0) {
+      uiStore.showToast(`Nâng hạng phòng thành công cho ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+    }
+  } else {
+    uiStore.showToast('Nâng hạng phòng thành công!', 'success')
+  }
 }
 
 // ==================== XÓA DỊCH VỤ BỔ SUNG MODAL ====================
@@ -3200,8 +3342,15 @@ defineExpose({
                           <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomNumber'">
+                          <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
+                            <span>{{ room.roomNumber || '-' }}</span>
+                            <svg class="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+                            </svg>
+                          </div>
                           <select 
-                            v-if="isEditing" 
+                            v-else-if="isEditing" 
                             v-model="room.roomNumber" 
                             @focus="loadVacantRoomsForRoom(room)"
                             class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
@@ -3676,8 +3825,15 @@ defineExpose({
                                   <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomNumber'">
+                                  <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
+                                    <span>{{ room.roomNumber || '-' }}</span>
+                                    <svg class="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
+                                      <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+                                    </svg>
+                                  </div>
                                   <select 
-                                    v-if="isEditing" 
+                                    v-else-if="isEditing" 
                                     v-model="room.roomNumber" 
                                     @focus="loadVacantRoomsForRoom(room)"
                                     class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
