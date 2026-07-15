@@ -103,11 +103,38 @@ export const useRoomStore = defineStore('room', () => {
 
   // Actions
   async function fetchRooms(params = {}) {
-    loading.value = true
+    const { silent, ...apiParams } = params
+    if (!silent) {
+      loading.value = true
+    }
     error.value = null
     try {
-      const response = await roomService.getRooms(params)
-      rooms.value = response.data
+      const response = await roomService.getRooms(apiParams)
+      const newRooms = response.data
+
+      if (silent && rooms.value.length > 0) {
+        // Cập nhật in-place để Vue không rebuild toàn bộ DOM (tránh chớp nháy)
+        const newRoomMap = new Map(newRooms.map(r => [r.id, r]))
+        const existingIds = new Set(rooms.value.map(r => r.id))
+
+        // Patch từng room đã có → Vue giữ nguyên DOM node, chỉ update props
+        rooms.value.forEach(room => {
+          const newData = newRoomMap.get(room.id)
+          if (newData) Object.assign(room, newData)
+        })
+
+        // Thêm phòng mới (nếu có)
+        newRooms.forEach(r => {
+          if (!existingIds.has(r.id)) rooms.value.push(r)
+        })
+
+        // Xóa phòng không còn tồn tại (iterate ngược để splice an toàn)
+        for (let i = rooms.value.length - 1; i >= 0; i--) {
+          if (!newRoomMap.has(rooms.value[i].id)) rooms.value.splice(i, 1)
+        }
+      } else {
+        rooms.value = newRooms
+      }
     } catch (err) {
       error.value = 'Không thể tải danh sách phòng. Vui lòng thử lại.'
       console.error('fetchRooms error:', err)

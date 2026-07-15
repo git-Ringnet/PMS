@@ -32,6 +32,8 @@ const showBookingDetailModal = ref(false)
 const selectedBookingRoom = ref(null)
 const showStatsModal = ref(false)
 const isLoaded = ref(false)
+const isInitialLoad = ref(true)
+let pollingInterval = null
 
 function handleMetricClick(status) {
   filterByStatus(status)
@@ -174,9 +176,20 @@ watch(isFuture, (newVal) => {
 })
 
 watch(rawDate, async () => {
-  isLoaded.value = false
-  await roomStore.fetchRooms()
-  isLoaded.value = true
+  await Promise.all([
+    roomStore.fetchRooms({ silent: true }),
+    roomStore.fetchStats()
+  ])
+})
+
+// Fetch 1 lần khi chuyển vào tab Room Map → dữ liệu luôn mới sau khi giao phòng
+watch(currentTab, async (newTab) => {
+  if (newTab === 'room-map') {
+    await Promise.all([
+      roomStore.fetchRooms({ silent: true }),
+      roomStore.fetchStats()
+    ])
+  }
 })
 
 // Circular widgets stats computed dynamically
@@ -577,6 +590,7 @@ onMounted(async () => {
     roomStore.fetchStats()
   ])
   isLoaded.value = true
+  isInitialLoad.value = false
   
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', handleClickOutsideSettings)
@@ -1369,9 +1383,11 @@ const uniqueFloors = computed(() => {
               <div
                 v-for="(floor, floorIdx) in sortedFloors"
                 :key="floor"
-                class="floor-row-animate"
-                :class="settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2'"
-                :style="{ animationDelay: `${floorIdx * 65}ms` }"
+                :class="[
+                  settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2',
+                  isInitialLoad ? 'floor-row-animate' : ''
+                ]"
+                :style="isInitialLoad ? { animationDelay: `${floorIdx * 65}ms` } : {}"
               >
                 <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
                 <div class="floor-pill cursor-pointer"
@@ -1395,9 +1411,12 @@ const uniqueFloors = computed(() => {
                   <div
                     v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]"
                     :key="room.id"
-                    class="room-card room-card-animate"
+                    class="room-card"
+                    :class="[
+                      isInitialLoad ? 'room-card-animate' : '',
+                      (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT) ? 'occupied-room' : ''
+                    ]"
                     :style="getRoomCardStyle(room, floorIdx, roomIdx)"
-                    :class="{ 'occupied-room': room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT }"
                     @click="handleRoomClick(room)"
                     @contextmenu.prevent="handleContextMenu($event, room)"
                     @mouseenter="showTooltip($event, room)"
