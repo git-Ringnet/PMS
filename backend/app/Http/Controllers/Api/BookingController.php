@@ -40,6 +40,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
 
@@ -379,6 +380,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
 
@@ -411,6 +413,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ])->find($id);
 
@@ -712,6 +715,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
 

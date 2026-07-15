@@ -166,9 +166,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Special Requests (SP2107, SP1325) — Epic 15 ---
     Route::get('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'catalog']);
+    Route::post('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'storeMaster']);
+    Route::delete('/special-requests/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroyMaster']);
     Route::prefix('booking-rooms/{roomId}/special-requests')->group(function () {
         Route::get('/',        [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'index']);
         Route::post('/',       [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store']);
+        Route::post('/sync',   [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'sync']);
         Route::delete('/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroy']);
     });
 

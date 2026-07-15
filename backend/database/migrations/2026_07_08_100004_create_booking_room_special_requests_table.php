@@ -20,7 +20,7 @@ return new class extends Migration
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
             $table->foreignId('special_request_id')
                 ->constrained('special_requests')
-                ->restrictOnDelete();
+                ->cascadeOnDelete();
             $table->text('note')->nullable(); // Ghi chú thêm cho yêu cầu này
             $table->timestamps();
 

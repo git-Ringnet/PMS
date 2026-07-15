@@ -11,6 +11,7 @@ import DeleteServiceModal from './components/DeleteServiceModal.vue'
 import ExtraBedModal from './components/ExtraBedModal.vue'
 import SystemSearchModal from './components/SystemSearchModal.vue'
 import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
+import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -891,6 +892,7 @@ function bookingToTab(b) {
         total: totalNum,
         roomClassId: br.room_class_id,
         services: br.services || [],
+        specialRequests: br.special_requests || [],
         bookingRoomStatus: br.status !== undefined ? Number(br.status) : 0,
         upgradeClassId: null,
         discount: br.discount,
@@ -2698,6 +2700,27 @@ function handleExtraBedSaved({ quantity, rate }) {
   extraBedModalRoom.value.total = calculateRoomTotal(extraBedModalRoom.value)
 }
 
+// ==================== YÊU CẦU ĐẶC BIỆT MODAL ====================
+const isSpecialRequestsModalOpen = ref(false)
+const specialRequestsModalRoom = ref(null)
+
+function openSpecialRequestsModal(room) {
+  specialRequestsModalRoom.value = room
+  isSpecialRequestsModalOpen.value = true
+}
+
+function handleSpecialRequestsSaved(updatedRequests) {
+  if (!specialRequestsModalRoom.value) return
+  specialRequestsModalRoom.value.specialRequests = updatedRequests
+}
+
+function getRoomSpecialRequestsText(room) {
+  if (!room.specialRequests || room.specialRequests.length === 0) return 'Yêu cầu đặc biệt'
+  return room.specialRequests
+    .map(r => r.special_request?.name || r.specialRequest?.name || r.name || 'Yêu cầu')
+    .join(', ')
+}
+
 // ==================== DỊCH VỤ BỔ SUNG MODAL ====================
 const isServicesModalOpen = ref(false)
 const servicesModalRoom = ref(null)
@@ -3109,8 +3132,12 @@ defineExpose({
                         <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
                         <td v-for="col in columns.filter(c => c.visible)" 
                             :key="col.key" 
-                            class="p-2 border-r border-slate-200 overflow-hidden max-w-0" 
-                            :class="[col.center ? 'text-center' : '', col.right ? 'text-right' : '']"
+                            class="p-2 border-r border-slate-200 max-w-0" 
+                            :class="[
+                              col.center ? 'text-center' : '', 
+                              col.right ? 'text-right' : '', 
+                              col.key === 'adjustment' ? 'overflow-visible' : 'overflow-hidden'
+                            ]"
                         >
                         <template v-if="col.key === 'type'">
                           <span class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
@@ -3370,7 +3397,13 @@ defineExpose({
                           </label>
                         </template>
                         <template v-else-if="col.key === 'specialRequests'">
-                          <button @click.stop="openServicesModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Yêu cầu đặc biệt</button>
+                          <button 
+                            @click.stop="openSpecialRequestsModal(room)" 
+                            class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer max-w-[120px] truncate"
+                            :title="getRoomSpecialRequestsText(room)"
+                          >
+                            {{ getRoomSpecialRequestsText(room) }}
+                          </button>
                         </template>
                         <template v-else-if="col.key === 'arrivalTime'">
                           <input 
@@ -3496,7 +3529,7 @@ defineExpose({
                                   <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
-                                  <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity || 1 }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
                                   <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
                                     <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
@@ -3840,7 +3873,13 @@ defineExpose({
                                   </label>
                                 </template>
                                 <template v-else-if="col.key === 'specialRequests'">
-                                  <button @click.stop="openServicesModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Yêu cầu đặc biệt</button>
+                                  <button 
+                                    @click.stop="openSpecialRequestsModal(room)" 
+                                    class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer max-w-[120px] truncate"
+                                    :title="getRoomSpecialRequestsText(room)"
+                                  >
+                                    {{ getRoomSpecialRequestsText(room) }}
+                                  </button>
                                 </template>
                                 <template v-else-if="col.key === 'arrivalTime'">
                                   <input 
@@ -3961,7 +4000,7 @@ defineExpose({
                                       >
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
-                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity || 1 }}</td>
+                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
                                         <td class="p-2 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
                                       </tr>
                                     </tbody>
@@ -5181,6 +5220,15 @@ defineExpose({
         :room="selectedRoomForBreakfast"
         :bookingId="activeTab?.dbId"
         @saved="onChildBreakfastSaved"
+      />
+    </Teleport>
+
+    <!-- YÊU CẦU ĐẶC BIỆT MODAL -->
+    <Teleport to="body">
+      <SpecialRequestsModal
+        v-model:show="isSpecialRequestsModalOpen"
+        :room="specialRequestsModalRoom"
+        @saved="handleSpecialRequestsSaved"
       />
     </Teleport>
 

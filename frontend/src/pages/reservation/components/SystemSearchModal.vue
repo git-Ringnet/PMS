@@ -5,11 +5,11 @@
     @click="close"
   >
     <div 
-      class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden border border-gray-200"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-visible border border-gray-200"
       @click.stop
     >
       <!-- INPUT HEADER -->
-      <div class="flex items-center px-4 py-2.5 border-b border-gray-100">
+      <div class="flex items-center px-4 py-2.5 border-b border-gray-100 rounded-t-xl bg-white">
         <svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
         </svg>
@@ -92,7 +92,7 @@
       </div>
 
       <!-- RESULTS / EMPTY STATE -->
-      <div class="max-h-[350px] overflow-y-auto">
+      <div class="max-h-[350px] overflow-y-auto rounded-b-xl">
         <div v-if="globalSearchResults.length > 0">
           <table class="w-full text-left text-[11px] border-collapse">
             <thead>
