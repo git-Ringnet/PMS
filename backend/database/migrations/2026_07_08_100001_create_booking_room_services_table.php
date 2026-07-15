@@ -23,7 +23,8 @@ return new class extends Migration
             // =========================================
             // LIÊN KẾT
             // =========================================
-            $table->foreignId('booking_room_id')->constrained('booking_rooms')->cascadeOnDelete();
+            $table->string('booking_room_id', 50);
+            $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
 
             // Mã dịch vụ: 'RM' (tiền phòng), 'EB' (extra bed), 'BD' (phụ thu ăn sáng trẻ em)
             // hoặc mã dịch vụ bất kỳ từ bảng hotel_services
@@ -38,6 +39,7 @@ return new class extends Migration
             $table->date('service_date');               // Ngày áp dụng dịch vụ
             $table->decimal('quantity', 10, 2)->default(1);  // Số lượng
             $table->decimal('rate', 15, 2)->default(0);      // Đơn giá
+            $table->decimal('total_amount', 15, 2)->default(0)->comment('Tổng tiền = quantity * rate');
 
             // =========================================
             // FIT / GIT

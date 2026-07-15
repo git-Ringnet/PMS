@@ -44,7 +44,7 @@ class AvailabilityController extends Controller
         $temp  = $startDate->copy();
         while ($temp->lte($endDate)) {
             $dates[] = $temp->toDateString();
-            $temp->addDay();
+            $temp = $temp->addDay();
         }
 
         // 2. Lấy room classes

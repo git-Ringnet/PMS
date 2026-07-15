@@ -258,7 +258,7 @@ class GuestController extends Controller
                     'amount'          => $isBaby ? 0 : $amount,
                 ]
             );
-            $current->addDay();
+            $current = $current->addDay();
         }
     }
 }

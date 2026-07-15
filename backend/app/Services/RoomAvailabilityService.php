@@ -125,7 +125,7 @@ class RoomAvailabilityService
         string $roomNumber,
         string $arrivalDate,
         string $departureDate,
-        ?int $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null
     ): bool {
         $query = BookingRoom::where('room_number', $roomNumber)
             ->whereIn('status', [
@@ -134,10 +134,7 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
             ->whereHas('booking', function ($q) {
-                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
-                  ->whereHas('registrationStatus', function ($subQ) {
-                      $subQ->where('is_availability', 1);
-                  });
+                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW]);
             })
             ->where('arrival_date', '<', $departureDate)
             ->where('departure_date', '>', $arrivalDate);
@@ -223,7 +220,7 @@ class RoomAvailabilityService
             )->count();
 
             $result[$dateStr] = max(0, $total - $locked - $booked);
-            $current->addDay();
+            $current = $current->addDay();
         }
 
         return $result;

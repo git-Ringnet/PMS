@@ -10,7 +10,15 @@
       <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 shrink-0 select-none">
         <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
             <i class="fa-solid fa-bell-concierge text-blue-300"></i>
-            <span>Dịch vụ bổ sung - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }} ({{ room?.type }})</span>
+            <span v-if="targetRooms.length <= 1">
+              Dịch vụ bổ sung - PHÒNG {{ room?.roomNumber || '(Chưa xếp phòng)' }} ({{ room?.type }})
+            </span>
+            <span v-else>
+              Dịch vụ bổ sung - {{ targetRooms.length }} PHÒNG ĐÃ CHỌN
+              <span class="ml-2 text-[10px] text-blue-300 font-normal normal-case">
+                ({{ targetRooms.map(r => r.roomNumber || 'Chưa xếp').join(', ') }})
+              </span>
+            </span>
         </div>
         <div class="flex items-center space-x-2 text-gray-300">
             <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
@@ -65,7 +73,8 @@
           <label class="flex items-center gap-2 p-1.5 border-b border-slate-200 font-bold cursor-pointer text-[11px] text-slate-700 mb-2 shrink-0">
             <input 
               type="checkbox" 
-              :checked="checkedDates.length === stayDatesList.length" 
+              :checked="checkedDates.length === stayDatesList.filter(d => d >= props.systemDate).length && checkedDates.length > 0" 
+              :disabled="stayDatesList.filter(d => d >= props.systemDate).length === 0"
               @change="toggleAllDates"
             />
             <span>Tất cả</span>
@@ -76,14 +85,17 @@
             <label 
               v-for="d in stayDatesList" 
               :key="d" 
-              class="flex items-center gap-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer transition text-[11px] text-slate-700 font-mono"
+              class="flex items-center gap-2 p-1.5 rounded-md transition text-[11px] text-slate-700 font-mono"
+              :class="d < props.systemDate ? 'opacity-50 cursor-not-allowed bg-slate-50/20' : 'hover:bg-slate-100 cursor-pointer'"
             >
               <input 
                 type="checkbox" 
                 :value="d" 
                 v-model="checkedDates"
+                :disabled="d < props.systemDate"
               />
               <span>{{ formatDateShort(d) }}</span>
+              <span v-if="d < props.systemDate" class="ml-auto text-[8px] font-bold text-rose-500 bg-rose-50 px-1 py-0.5 rounded border border-rose-200">Quá khứ</span>
             </label>
           </div>
         </div>
@@ -91,6 +103,12 @@
         <!-- RIGHT PANEL: Dịch vụ chọn -->
         <div class="w-[60%] flex flex-col p-3 bg-white">
           <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider mb-2 shrink-0">Chi tiết dịch vụ bổ sung</div>
+
+          <!-- Multi-room note -->
+          <div v-if="targetRooms.length > 1" class="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-700 font-semibold shrink-0">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+            Dịch vụ sẽ được áp dụng cho {{ targetRooms.length }} phòng đã chọn. Ngày hiển thị theo phòng đầu tiên ({{ room?.roomNumber }}).
+          </div>
 
           <!-- Table -->
           <div class="flex-1 overflow-y-auto border border-slate-200 rounded-lg">
@@ -100,6 +118,7 @@
                   <th class="p-2 pl-3">Dịch vụ</th>
                   <th class="p-2 text-center w-24">Số lượng</th>
                   <th class="p-2 text-right w-36">Đơn giá (VND)</th>
+                  <th class="p-2 text-right w-36">Thành tiền</th>
                   <th class="p-2 text-center w-28">FIT/GIT</th>
                 </tr>
               </thead>
@@ -130,6 +149,9 @@
                       class="w-28 border border-slate-200 rounded-md px-2 py-0.5 text-right font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     />
                   </td>
+                  <td class="p-2 text-right font-bold text-sky-700">
+                    {{ formatCurrencyInput(item.quantity * item.rate) }}
+                  </td>
                   <td class="p-2 text-center">
                     <!-- Toggle FIT/GIT -->
                     <div class="flex items-center justify-center space-x-1.5">
@@ -152,7 +174,7 @@
                   </td>
                 </tr>
                 <tr v-if="serviceItems.length === 0">
-                  <td colspan="4" class="p-8 text-center text-slate-400 italic">
+                  <td colspan="5" class="p-8 text-center text-slate-400 italic">
                     Chưa chọn dịch vụ nào. Hãy tích chọn dịch vụ ở cột bên trái!
                   </td>
                 </tr>
@@ -166,6 +188,7 @@
       <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 flex items-center justify-between">
         <div class="bg-[#e2e8f0] px-4 py-1.5 rounded-lg text-slate-700 font-extrabold text-xs shadow-inner">
           Tổng tiền: <span class="text-slate-900 ml-1 font-black">{{ servicesTotalAmount.toLocaleString('en-US') }} VND</span>
+          <span v-if="targetRooms.length > 1" class="ml-2 text-slate-500 font-normal">(x{{ targetRooms.length }} phòng = {{ (servicesTotalAmount * targetRooms.length).toLocaleString('en-US') }} VND)</span>
         </div>
         <div class="flex items-center space-x-2">
           <button 
@@ -173,7 +196,7 @@
             class="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer shadow-sm flex items-center space-x-1.5 transition border-none"
           >
             <i class="fa-solid fa-floppy-disk"></i>
-            <span>Lưu</span>
+            <span>Lưu{{ targetRooms.length > 1 ? ` (${targetRooms.length} phòng)` : '' }}</span>
           </button>
         </div>
       </div>
@@ -193,8 +216,9 @@ import { useUiStore } from '@/stores/ui-store'
 const props = defineProps({
   show: Boolean,
   room: Object,
-  targetRooms: Array,
-  hotelServicesList: Array
+  targetRooms: { type: Array, default: () => [] },
+  hotelServicesList: Array,
+  systemDate: String
 })
 
 const emit = defineEmits(['update:show', 'saved'])
@@ -215,9 +239,15 @@ const filteredHotelServices = computed(() => {
   )
 })
 
+// Use union of all target rooms' dates (or fall back to primary room)
 const stayDatesList = computed(() => {
-  if (!props.room) return []
-  return getStayDates(props.room.checkIn, props.room.checkOut)
+  const rooms = props.targetRooms?.length > 0 ? props.targetRooms : (props.room ? [props.room] : [])
+  if (rooms.length === 0) return []
+  const dateSet = new Set()
+  rooms.forEach(r => {
+    getStayDates(r.checkIn, r.checkOut).forEach(d => dateSet.add(d))
+  })
+  return Array.from(dateSet).sort()
 })
 
 const servicesTotalAmount = computed(() => {
@@ -230,29 +260,37 @@ watch(() => props.show, async (newVal) => {
     selectedServiceCodes.value = []
     
     const dates = getStayDates(props.room.checkIn, props.room.checkOut)
-    checkedDates.value = [...dates]
+    checkedDates.value = dates.filter(d => d >= formatLocalYYYYMMDD(props.systemDate))
     
     try {
-      const res = await fetchBookingRoomServices(props.room.bookingRoomId)
-      const existing = res.data?.data || []
-      
-      const items = []
-      const codes = []
-      existing.forEach(svc => {
-        if (!codes.includes(svc.service_code)) {
-          codes.push(svc.service_code)
-          items.push({
-            service_code: svc.service_code,
-            service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
-            quantity: svc.quantity || 1,
-            rate: Number(svc.rate) || 0,
-            is_room: svc.is_room !== 0
-          })
-        }
-      })
-      
-      selectedServiceCodes.value = codes
-      serviceItems.value = items
+      // Load existing services from the primary room to prefill
+      if (props.room.bookingRoomId) {
+        const res = await fetchBookingRoomServices(props.room.bookingRoomId)
+        const existing = res.data?.data || []
+        
+        const items = []
+        const codes = []
+        existing.forEach(svc => {
+          // Bỏ qua các dịch vụ hệ thống (giường phụ, tiền phòng, ăn sáng trẻ em)
+          if (['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(svc.service_code)) return
+
+          if (!codes.includes(svc.service_code)) {
+            codes.push(svc.service_code)
+            items.push({
+              service_code: svc.service_code,
+              service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
+              quantity: svc.quantity || 1,
+              rate: Number(svc.rate) || 0,
+              is_room: svc.is_room !== 0
+            })
+          }
+        })
+        
+        selectedServiceCodes.value = codes
+        serviceItems.value = items
+      } else {
+        serviceItems.value = []
+      }
     } catch (err) {
       console.error(err)
       serviceItems.value = []
@@ -322,37 +360,55 @@ function handleServiceCheckboxChange(svc, checked) {
 
 function toggleAllDates(event) {
   if (event.target.checked) {
-    checkedDates.value = [...stayDatesList.value]
+    checkedDates.value = stayDatesList.value.filter(d => d >= formatLocalYYYYMMDD(props.systemDate))
   } else {
     checkedDates.value = []
   }
 }
 
+function formatLocalYYYYMMDD(dVal) {
+  if (!dVal) return ''
+  const d = new Date(dVal)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 async function saveServices() {
-  if (!props.room || !props.targetRooms || props.targetRooms.length === 0) return
+  const rooms = props.targetRooms?.length > 0 ? props.targetRooms : (props.room ? [props.room] : [])
+  if (rooms.length === 0) return
 
   uiStore.showToast('Đang tiến hành lưu dịch vụ bổ sung...', 'info')
   let hasError = false
   let lastErrorMsg = ''
 
-  for (const room of props.targetRooms) {
+  for (const room of rooms) {
     const roomId = room.bookingRoomId
     if (!roomId) continue
 
     try {
+      // 1. Fetch existing services for this room
       const res = await fetchBookingRoomServices(roomId)
       const existing = res.data?.data || []
 
+      // 2. Determine which existing services to delete:
+      //    - service code not in our selected list, OR
+      //    - service date not in our checked dates
       const toDeleteIds = []
       existing.forEach(svc => {
+        // Bỏ qua các dịch vụ hệ thống (giường phụ, tiền phòng, ăn sáng trẻ em)
+        if (['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(svc.service_code)) return
+
         const isCodeSelected = selectedServiceCodes.value.includes(svc.service_code)
-        let svcDateShort = svc.service_date
-        if (svcDateShort && svcDateShort.includes('T')) {
-          svcDateShort = svcDateShort.split('T')[0]
-        }
+        const svcDateShort = formatLocalYYYYMMDD(svc.service_date)
         const isDateChecked = checkedDates.value.includes(svcDateShort)
         if (!isCodeSelected || !isDateChecked) {
-          toDeleteIds.push(svc.id)
+          const isDeletable = svcDateShort >= formatLocalYYYYMMDD(props.systemDate) && svc.is_posted !== 1
+          if (isDeletable) {
+            toDeleteIds.push(svc.id)
+          }
         }
       })
 
@@ -360,8 +416,36 @@ async function saveServices() {
         await deleteBookingRoomServicesBulk(roomId, { service_ids: toDeleteIds })
       }
 
+      // 3. Build a set of (service_code, date) that already exist after deletion
+      const remainingExisting = existing.filter(s => !toDeleteIds.includes(s.id))
+      const existingKeys = new Set(remainingExisting.map(s => {
+        const d = formatLocalYYYYMMDD(s.service_date)
+        return `${s.service_code}__${d}`
+      }))
+
+      // 4. Create or update services
       for (const item of serviceItems.value) {
-        for (const d of checkedDates.value) {
+        // Determine dates for this room specifically
+        const roomDates = getStayDates(room.checkIn, room.checkOut)
+        const datesToCreate = checkedDates.value.filter(d => roomDates.includes(d))
+
+        for (const d of datesToCreate) {
+          const existingSvc = remainingExisting.find(s => {
+            const sd = formatLocalYYYYMMDD(s.service_date)
+            return s.service_code === item.service_code && sd === d
+          })
+          
+          if (existingSvc) {
+            const isUnchanged = Number(existingSvc.quantity) === Number(item.quantity) &&
+                                Number(existingSvc.rate) === Number(item.rate) &&
+                                !!existingSvc.is_room === !!item.is_room
+            if (isUnchanged) continue
+          }
+
+          if (d < formatLocalYYYYMMDD(props.systemDate)) {
+            continue
+          }
+
           await createBookingRoomService(roomId, {
             service_code: item.service_code,
             service_name: item.service_name,
@@ -373,6 +457,7 @@ async function saveServices() {
         }
       }
 
+      // 5. Update local room services cache
       const updatedRes = await fetchBookingRoomServices(roomId)
       room.services = updatedRes.data?.data || []
     } catch (roomErr) {
@@ -385,7 +470,7 @@ async function saveServices() {
   if (hasError) {
     uiStore.showToast(`Lưu dịch vụ hoàn tất nhưng có lỗi xảy ra: ${lastErrorMsg}`, 'error')
   } else {
-    uiStore.showToast('Lưu dịch vụ bổ sung thành công cho tất cả phòng đã chọn!', 'success')
+    uiStore.showToast(`Lưu dịch vụ bổ sung thành công cho ${rooms.length} phòng!`, 'success')
   }
 
   close()

@@ -954,7 +954,7 @@ class RoomLockController extends Controller
                 ];
             }
 
-            $tempDate->addDay();
+            $tempDate = $tempDate->addDay();
         }
 
         return null;

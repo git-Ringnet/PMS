@@ -48,9 +48,8 @@ return new class extends Migration
         // =============================================
         Schema::create('booking_room_guests', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_room_id')
-                ->constrained('booking_rooms')
-                ->cascadeOnDelete();
+            $table->string('booking_room_id', 50);
+            $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
             $table->foreignId('guest_id')
                 ->constrained('guests')
                 ->restrictOnDelete();
@@ -76,7 +75,7 @@ return new class extends Migration
                 ->constrained('bookings')
                 ->cascadeOnDelete();
             // NULL nếu chưa gán vào phòng cụ thể; có giá trị khi đã assign (gộp SP2500)
-            $table->unsignedBigInteger('booking_room_id')->nullable();
+            $table->string('booking_room_id', 50)->nullable();
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->nullOnDelete();
             $table->string('full_name', 200)->nullable(); // Tên trẻ em (tùy chọn)
             // 'baby'  = Em bé (mặc định ăn sáng miễn phí, không tính phụ phí)
