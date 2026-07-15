@@ -18,7 +18,16 @@ class HotelSettingController extends Controller
         if (!$setting) {
             return response()->json(['message' => 'Hotel settings not found'], 404);
         }
-        return new HotelSettingResource($setting);
+        $resource = new HotelSettingResource($setting);
+        $data = $resource->toArray(request());
+        
+        $colorConfig = \App\Models\HotelConfig::where('name', 'ColorDefaultBookingRoomMap')->first();
+        $data['ColorDefaultBookingRoomMap'] = $colorConfig ? $colorConfig->value : '#97D5FF';
+        
+        return response()->json([
+            'success' => true,
+            'data' => $data
+        ]);
     }
 
     /**

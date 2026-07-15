@@ -57,6 +57,7 @@ class Payment extends Model
         'shift',
         'created_by',
         'updated_by',
+        'image_path',
     ];
 
     protected $casts = [
