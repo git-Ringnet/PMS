@@ -16,12 +16,11 @@ return new class extends Migration
     {
         Schema::create('booking_room_special_requests', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_room_id')
-                ->constrained('booking_rooms')
-                ->cascadeOnDelete();
+            $table->string('booking_room_id', 50);
+            $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
             $table->foreignId('special_request_id')
                 ->constrained('special_requests')
-                ->restrictOnDelete();
+                ->cascadeOnDelete();
             $table->text('note')->nullable(); // Ghi chú thêm cho yêu cầu này
             $table->timestamps();
 

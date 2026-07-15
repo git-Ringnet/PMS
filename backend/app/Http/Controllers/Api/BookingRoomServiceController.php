@@ -28,7 +28,6 @@ class BookingRoomServiceController extends Controller
     {
         $room     = BookingRoom::findOrFail($roomId);
         $services = $room->services()
-            ->where('service_date', '>=', $this->avService->getSystemDate()->toDateString())
             ->orderBy('service_date')
             ->get();
 
@@ -69,7 +68,7 @@ class BookingRoomServiceController extends Controller
             'service_name'  => 'nullable|string|max:100',
             'service_date'  => 'required|date',
             'quantity'      => 'nullable|numeric|min:0.01',
-            'rate'          => 'nullable|numeric|min:0',
+            'rate'          => 'nullable|numeric',
             'is_room'       => 'nullable|boolean',
         ]);
 
@@ -127,16 +126,24 @@ class BookingRoomServiceController extends Controller
             'service_ids.*' => 'integer',
         ]);
 
-        $systemDate  = $this->avService->getSystemDate()->toDateString();
+        $systemDate = $this->avService->getSystemDate();
+
         $services    = BookingRoomService::where('booking_room_id', $roomId)
             ->whereIn('id', $request->service_ids)
-            ->where('service_date', '>=', $systemDate) // Chỉ xóa ngày >= system_date
             ->get();
 
         $deletedCount = 0;
         $hasEbDeleted = false;
 
         foreach ($services as $svc) {
+            // Check Epic 10: only allow deleting if service_date >= system_date AND is_posted == 0
+            if (Carbon::parse($svc->service_date)->lt($systemDate) || $svc->is_posted == 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không thể xóa dịch vụ bổ sung trong quá khứ hoặc đã được post sang Folio (Dịch vụ: ' . ($svc->service_name ?: $svc->service_code) . ' ngày ' . $svc->service_date->toDateString() . ').',
+                ], 422);
+            }
+
             if ($svc->service_code === BookingRoomService::CODE_EXTRA_BED) {
                 $hasEbDeleted = true;
             }

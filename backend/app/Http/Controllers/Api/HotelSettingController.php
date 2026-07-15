@@ -24,6 +24,9 @@ class HotelSettingController extends Controller
         $colorConfig = \App\Models\HotelConfig::where('name', 'ColorDefaultBookingRoomMap')->first();
         $data['ColorDefaultBookingRoomMap'] = $colorConfig ? $colorConfig->value : '#97D5FF';
         
+        $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
+        $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;
+        
         return response()->json([
             'success' => true,
             'data' => $data

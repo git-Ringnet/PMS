@@ -39,6 +39,7 @@
                           type="text" 
                           :value="formatCurrencyInput(depositForm.amount)"
                           @input="e => depositForm.amount = cleanCurrencyValue(e.target.value)"
+                          @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                           class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-bold bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm"
                         >
                         <div class="absolute right-1 top-0.5 flex flex-col">
@@ -193,7 +194,7 @@
                             <td class="p-2 text-slate-600 align-middle">{{ dep.time }}</td>
                             <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.id === dep.paymentMethodId)?.name || 'BT' }}</td>
                             <td class="p-2 text-slate-600 align-middle">{{ dep.note }}</td>
-                            <td class="p-2 text-right font-mono font-semibold text-slate-900 align-middle">{{ dep.amount.toLocaleString('vi-VN') }}</td>
+                            <td class="p-2 text-right font-mono font-semibold text-slate-900 align-middle">{{ dep.amount.toLocaleString('en-US') }}</td>
                             <td class="p-2 text-center text-slate-500 align-middle">{{ dep.currency }}</td>
                             <td class="p-2 text-slate-700 font-medium align-middle">{{ dep.recipient }}</td>
                             <td class="p-2 text-center align-middle">
@@ -286,6 +287,7 @@
                               type="text" 
                               :value="formatCurrencyInput(splitAmount1)"
                               @input="e => handleSplitAmount1Input(e.target.value)"
+                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                               class="w-full border border-slate-300 rounded-lg pl-3 pr-12 h-[32px] text-xs text-right font-bold bg-white text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
                             />
                             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">VND</span>
@@ -298,6 +300,7 @@
                               type="text" 
                               :value="formatCurrencyInput(splitAmount2)"
                               @input="e => handleSplitAmount2Input(e.target.value)"
+                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                               class="w-full border border-slate-300 rounded-lg pl-3 pr-12 h-[32px] text-xs text-right font-bold bg-white text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
                             />
                             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">VND</span>
@@ -983,13 +986,20 @@ async function confirmTransfer() {
 }
 
 function formatCurrencyInput(val) {
-  if (!val && val !== 0) return ''
-  return Number(val).toLocaleString('vi-VN')
+  if (val === null || val === undefined || val === '') return '';
+  let str = String(val).replace(/[^\d.-]/g, '');
+  if (!str) return '';
+  
+  let parts = str.split('.');
+  if (parts.length > 2) parts = [parts[0], parts.slice(1).join('')];
+  parts[0] = Number(parts[0]).toLocaleString('en-US');
+  return parts.join('.');
 }
 
 function cleanCurrencyValue(val) {
-  if (!val) return 0
-  return Number(val.replace(/\./g, '').replace(/,/g, ''))
+  if (val === null || val === undefined || val === '') return 0;
+  const cleanStr = String(val).replace(/,/g, '');
+  return Number(cleanStr) || 0;
 }
 
 function copyToClipboard(text) {

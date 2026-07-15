@@ -13,7 +13,7 @@ class RoomClassController extends Controller
      */
     public function index()
     {
-        $classes = RoomClass::with('roomClassGroup')->get();
+        $classes = RoomClass::with(['roomClassGroup', 'standardRates.roomForm'])->get();
         return RoomClassResource::collection($classes);
     }
 

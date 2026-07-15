@@ -86,12 +86,23 @@ export const fetchCurrencies = (params = {}) => http.get('/currencies', { params
 export const fetchAvailability = (params = {}) => http.get('/availability', { params })
 export const checkAvailability = (params = {}) => http.get('/availability/check', { params })
 export const fetchVacantRooms = (params = {}) => http.get('/rooms/vacant', { params })
-export const autoAssignRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/auto-assign`)
+export const autoAssignRoom = (bookingId, roomId, params = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/auto-assign`, null, { params })
 export const fetchFOServicesList = () => http.get('/booking-services/fo-list')
 export const fetchBookingRoomServices = (roomId) => http.get(`/booking-rooms/${roomId}/services`)
 export const createBookingRoomService = (roomId, data) => http.post(`/booking-rooms/${roomId}/services`, data)
 export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/booking-rooms/${roomId}/services/bulk`, { data })
 export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
+
+// ==================== CHILD BREAKFAST ====================
+export const fetchBookingChildren = (bookingId) => http.get(`/bookings/${bookingId}/children`)
+export const updateChildBreakfastDetail = (childId, detailId, data) => http.patch(`/booking-children/${childId}/breakfast-details/${detailId}`, data)
+
+// ==================== SPECIAL REQUESTS (YÊU CẦU ĐẶC BIỆT) ====================
+export const fetchSpecialRequestsCatalog = () => http.get('/special-requests')
+export const createSpecialRequestMaster = (data) => http.post('/special-requests', data)
+export const deleteSpecialRequestMaster = (id) => http.delete(`/special-requests/${id}`)
+export const fetchBookingRoomSpecialRequests = (roomId) => http.get(`/booking-rooms/${roomId}/special-requests`)
+export const syncBookingRoomSpecialRequests = (roomId, data) => http.post(`/booking-rooms/${roomId}/special-requests/sync`, data)
 
 
 

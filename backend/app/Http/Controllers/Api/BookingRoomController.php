@@ -58,16 +58,29 @@ class BookingRoomController extends Controller
         $validated = $request->validate([
             'room_class_id'   => 'required|exists:room_classes,id',
             'arrival_date'    => 'required|date',
-            'departure_date'  => 'required|date|after:arrival_date',
+            'departure_date'  => 'required|date|after_or_equal:arrival_date',
             'rate'            => 'required|numeric|min:0',
             'adults'          => 'nullable|integer|min:1',
+            'children'        => 'nullable|integer|min:0',
+            'babies'          => 'nullable|integer|min:0',
+            'guest_name'      => 'nullable|string|max:100',
             'extra_bed_qty'   => 'nullable|integer|min:0',
             'extra_bed_rate'  => 'nullable|numeric|min:0',
             'arrival_time'    => 'nullable|date_format:H:i',
             'departure_time'  => 'nullable|date_format:H:i',
             'note'            => 'nullable|string',
             'room_number'     => 'nullable|string|exists:rooms,room_number',
+            'breakfast'       => 'nullable|boolean',
+            'is_day_use'      => 'nullable|boolean',
         ]);
+
+        $isDayUse = filter_var($request->input('is_day_use'), FILTER_VALIDATE_BOOLEAN);
+        if (!$isDayUse && $validated['departure_date'] === $validated['arrival_date']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày đi phải sau ngày đến đối với phòng ở qua đêm thông thường.',
+            ], 422);
+        }
 
         $systemDate = $this->avService->getSystemDate();
 
@@ -125,6 +138,44 @@ class BookingRoomController extends Controller
 
         $bookingRoom = BookingRoom::create($validated);
 
+        // Thêm khách chính (guest_name)
+        $roomGuestName = trim($validated['guest_name'] ?? '');
+        if (empty($roomGuestName)) {
+            $roomGuestName = $booking->booking_name;
+        }
+        $guest = \App\Models\Guest::create([
+            'full_name' => $roomGuestName,
+            'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+        ]);
+        \App\Models\BookingRoomGuest::create([
+            'booking_room_id' => $bookingRoom->id,
+            'guest_id' => $guest->id,
+            'is_primary' => 1,
+        ]);
+
+        // Thêm trẻ em / em bé
+        $numChildren = (int)($validated['children'] ?? 0);
+        for ($c = 0; $c < $numChildren; $c++) {
+            $child = \App\Models\BookingChild::create([
+                'booking_id' => $booking->id,
+                'booking_room_id' => $bookingRoom->id,
+                'full_name' => 'Child ' . ($c + 1),
+                'age_group' => 'child',
+            ]);
+            $this->createChildBreakfastDetails($child, $bookingRoom);
+        }
+
+        $numBabies = (int)($validated['babies'] ?? 0);
+        for ($b = 0; $b < $numBabies; $b++) {
+            $baby = \App\Models\BookingChild::create([
+                'booking_id' => $booking->id,
+                'booking_room_id' => $bookingRoom->id,
+                'full_name' => 'Baby ' . ($b + 1),
+                'age_group' => 'baby',
+            ]);
+            $this->createChildBreakfastDetails($baby, $bookingRoom);
+        }
+
         // Nếu có extra bed -> auto-insert dịch vụ EB theo từng ngày
         if (!empty($validated['extra_bed_qty']) && $validated['extra_bed_qty'] > 0) {
             $this->upsertExtraBedServices($bookingRoom);
@@ -161,29 +212,38 @@ class BookingRoomController extends Controller
 
         $isInhouse = $bookingRoom->status === BookingRoom::STATUS_CHECKED_IN;
 
-        // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá
+        // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
         if ($isInhouse) {
             $validated = $request->validate([
-                'departure_date'  => 'sometimes|required|date|after:arrival_date',
+                'departure_date'  => 'sometimes|required|date|after_or_equal:arrival_date',
                 'departure_time'  => 'nullable|date_format:H:i',
                 'rate'            => 'nullable|numeric|min:0',
                 'extra_bed_qty'   => 'nullable|integer|min:0',
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
+                'guest_name'      => 'nullable|string|max:100',
+                'room_number'     => 'nullable|string|exists:rooms,room_number',
+                'breakfast'       => 'nullable|boolean',
+                'is_day_use'      => 'nullable|boolean',
             ]);
         } else {
             $validated = $request->validate([
                 'room_class_id'   => 'sometimes|exists:room_classes,id',
                 'arrival_date'    => 'sometimes|date',
-                'departure_date'  => 'sometimes|date|after:arrival_date',
+                'departure_date'  => 'sometimes|date|after_or_equal:arrival_date',
                 'arrival_time'    => 'nullable|date_format:H:i',
                 'departure_time'  => 'nullable|date_format:H:i',
                 'rate'            => 'nullable|numeric|min:0',
                 'adults'          => 'nullable|integer|min:1',
+                'children'        => 'nullable|integer|min:0',
+                'babies'          => 'nullable|integer|min:0',
+                'guest_name'      => 'nullable|string|max:100',
                 'extra_bed_qty'   => 'nullable|integer|min:0',
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
                 'room_number'     => 'nullable|string|exists:rooms,room_number',
+                'breakfast'       => 'nullable|boolean',
+                'is_day_use'      => 'nullable|boolean',
             ]);
         }
 
@@ -191,6 +251,14 @@ class BookingRoomController extends Controller
         $arrivalDate  = $validated['arrival_date'] ?? $bookingRoom->arrival_date->toDateString();
         $departureDate = $validated['departure_date'] ?? $bookingRoom->departure_date->toDateString();
         $roomClassId  = $validated['room_class_id'] ?? $bookingRoom->room_class_id;
+
+        $isDayUse = filter_var($request->has('is_day_use') ? $request->input('is_day_use') : $bookingRoom->is_day_use, FILTER_VALIDATE_BOOLEAN);
+        if (!$isDayUse && $departureDate === $arrivalDate) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày đi phải sau ngày đến đối với phòng ở qua đêm thông thường.',
+            ], 422);
+        }
 
         // Validate AV nếu thay đổi ngày hoặc loại phòng
         if (isset($validated['arrival_date']) || isset($validated['departure_date']) || isset($validated['room_class_id'])) {
@@ -205,17 +273,94 @@ class BookingRoomController extends Controller
         }
 
         // Số phòng vật lý trùng lịch
-        if (!empty($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number) {
-            if ($this->avService->isRoomNumberOccupied($validated['room_number'], $arrivalDate, $departureDate, $roomId)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Số phòng ' . $validated['room_number'] . ' đã được gán cho booking khác trong cùng khoảng thời gian.',
-                ], 422);
+        $targetRoomNumber = $validated['room_number'] ?? $bookingRoom->room_number;
+        if (!empty($targetRoomNumber)) {
+            $datesChanged = (isset($validated['arrival_date']) && $validated['arrival_date'] !== $bookingRoom->arrival_date->toDateString())
+                || (isset($validated['departure_date']) && $validated['departure_date'] !== $bookingRoom->departure_date->toDateString());
+            $roomNumberChanged = (isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number);
+
+            if ($datesChanged || $roomNumberChanged) {
+                if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Số phòng ' . $targetRoomNumber . ' đã được gán cho booking khác trong cùng khoảng thời gian.',
+                    ], 422);
+                }
             }
         }
 
-        $validated['updated_by'] = Auth::user()?->username ?? 'system';
-        $bookingRoom->update($validated);
+        $currentUser = Auth::user()?->username ?? 'system';
+        $validated['updated_by'] = $currentUser;
+
+        if ($isInhouse && isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number) {
+            $newRoomNumber = $validated['room_number'];
+            unset($validated['room_number']);
+            
+            DB::beginTransaction();
+            try {
+                $newRoom = $bookingRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser);
+                $newRoom->update($validated);
+                DB::commit();
+                
+                $bookingRoom = $newRoom;
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'message' => 'Lỗi khi chuyển phòng: ' . $e->getMessage()], 500);
+            }
+        } else {
+            $bookingRoom->update($validated);
+        }
+
+        // Cập nhật khách chính (guest_name)
+        if ($request->has('guest_name')) {
+            $roomGuestName = trim($request->guest_name);
+            if (!empty($roomGuestName)) {
+                $primaryGuestRelation = $bookingRoom->guests()->where('is_primary', 1)->first();
+                if ($primaryGuestRelation && $primaryGuestRelation->guest) {
+                    $primaryGuestRelation->guest->update(['full_name' => $roomGuestName]);
+                } else {
+                    $guest = \App\Models\Guest::create([
+                        'full_name' => $roomGuestName,
+                        'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                    ]);
+                    \App\Models\BookingRoomGuest::create([
+                        'booking_room_id' => $bookingRoom->id,
+                        'guest_id' => $guest->id,
+                        'is_primary' => 1,
+                    ]);
+                }
+            }
+        }
+
+        // Cập nhật số lượng children
+        if ($request->has('children')) {
+            $bookingRoom->children()->where('age_group', 'child')->delete();
+            $numChildren = (int)$request->children;
+            for ($c = 0; $c < $numChildren; $c++) {
+                $child = \App\Models\BookingChild::create([
+                    'booking_id' => $bookingRoom->booking_id,
+                    'booking_room_id' => $bookingRoom->id,
+                    'full_name' => 'Child ' . ($c + 1),
+                    'age_group' => 'child',
+                ]);
+                $this->createChildBreakfastDetails($child, $bookingRoom);
+            }
+        }
+
+        // Cập nhật số lượng babies
+        if ($request->has('babies')) {
+            $bookingRoom->children()->where('age_group', 'baby')->delete();
+            $numBabies = (int)$request->babies;
+            for ($b = 0; $b < $numBabies; $b++) {
+                $baby = \App\Models\BookingChild::create([
+                    'booking_id' => $bookingRoom->booking_id,
+                    'booking_room_id' => $bookingRoom->id,
+                    'full_name' => 'Baby ' . ($b + 1),
+                    'age_group' => 'baby',
+                ]);
+                $this->createChildBreakfastDetails($baby, $bookingRoom);
+            }
+        }
 
         // Sync extra bed services nếu có thay đổi EB
         if (isset($validated['extra_bed_qty']) || isset($validated['extra_bed_rate'])) {
@@ -250,6 +395,8 @@ class BookingRoomController extends Controller
             'adults'         => 'nullable|integer|min:1',
             'extra_bed_qty'  => 'nullable|integer|min:0',
             'extra_bed_rate' => 'nullable|numeric|min:0',
+            'breakfast'      => 'nullable|boolean',
+            'is_day_use'     => 'nullable|boolean',
         ]);
 
         $rooms   = BookingRoom::where('booking_id', $bookingId)
@@ -287,6 +434,8 @@ class BookingRoomController extends Controller
                     'arrival_date'   => !$isInhouse ? $request->arrival_date : null,
                     'extra_bed_qty'  => $request->extra_bed_qty,
                     'extra_bed_rate' => $request->extra_bed_rate,
+                    'breakfast'      => $request->has('breakfast') ? $request->breakfast : null,
+                    'is_day_use'     => $request->has('is_day_use') ? $request->is_day_use : null,
                     'updated_by'     => Auth::user()?->username ?? 'system',
                 ], fn($v) => !is_null($v));
 
@@ -376,8 +525,10 @@ class BookingRoomController extends Controller
         DB::beginTransaction();
         try {
             $bookingRoom->update([
-                'status'     => BookingRoom::STATUS_CHECKED_IN,
-                'updated_by' => Auth::user()?->username ?? 'system',
+                'status'              => BookingRoom::STATUS_CHECKED_IN,
+                'check_in_user'       => Auth::user()?->username ?? 'system',
+                'actual_arrival_date' => $bookingRoom->actual_arrival_date ?? $bookingRoom->arrival_date,
+                'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
             // Nếu tất cả phòng trong booking đều đã check-in → cập nhật booking header
@@ -703,8 +854,8 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Chỉ tự động gán phòng cho phòng ở trạng thái đăng ký.'], 422);
         }
 
-        $arrivalDate   = $bookingRoom->arrival_date->toDateString();
-        $departureDate = $bookingRoom->departure_date->toDateString();
+        $arrivalDate   = request('arrival_date') ?? $bookingRoom->arrival_date->toDateString();
+        $departureDate = request('departure_date') ?? $bookingRoom->departure_date->toDateString();
 
         // Lấy danh sách phòng vật lý cùng loại, sắp xếp theo tầng thấp→cao
         $candidates = \App\Models\Room::where('room_class_id', $bookingRoom->room_class_id)
@@ -764,24 +915,49 @@ class BookingRoomController extends Controller
      */
     private function upsertExtraBedServices(BookingRoom $room): void
     {
-        $systemDate    = $this->avService->getSystemDate()->toDateString();
         $arrivalDate   = $room->arrival_date->toDateString();
         $departureDate = $room->departure_date->toDateString();
 
         if ($room->extra_bed_qty <= 0) {
-            // Reset: xóa tất cả EB từ ngày system_date trở đi
+            // Chỉ xóa các dịch vụ EB chưa được post
             $room->services()
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
-                ->where('service_date', '>=', $systemDate)
+                ->where('is_posted', 0)
                 ->forceDelete();
             return;
         }
 
-        $current = Carbon::parse(max($arrivalDate, $systemDate));
-        $end     = Carbon::parse($departureDate);
+        // 1. Lấy danh sách dịch vụ EB hiện tại
+        $existingServices = $room->services()
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+            ->get()
+            ->keyBy(function ($item) {
+                return $item->service_date->toDateString();
+            });
 
+        // 2. Xóa các ngày nằm ngoài giai đoạn ở mới (nếu thu hẹp ngày ở) mà chưa post
+        $current = Carbon::parse($arrivalDate);
+        $end     = Carbon::parse($departureDate);
+        $stayDates = [];
         while ($current->lt($end)) {
-            $dateStr = $current->toDateString();
+            $stayDates[] = $current->toDateString();
+            $current = $current->addDay();
+        }
+
+        $room->services()
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+            ->whereNotIn('service_date', $stayDates)
+            ->where('is_posted', 0)
+            ->forceDelete();
+
+        // 3. Upsert cho từng ngày
+        foreach ($stayDates as $dateStr) {
+            $existing = $existingServices->get($dateStr);
+            if ($existing && $existing->is_posted == 1) {
+                // Đã post rồi thì không được ghi đè hay thay đổi giá/số lượng
+                continue;
+            }
+
             BookingRoomService::withTrashed()->updateOrCreate(
                 [
                     'booking_room_id' => $room->id,
@@ -798,7 +974,6 @@ class BookingRoomController extends Controller
                     'created_by'   => Auth::user()?->username ?? 'system',
                 ]
             );
-            $current->addDay();
         }
     }
 
@@ -822,6 +997,45 @@ class BookingRoomController extends Controller
 
         if (!empty($data)) {
             $booking->update($data);
+        }
+    }
+
+    /**
+     * Tạo chi tiết ăn sáng cho trẻ em
+     */
+    private function createChildBreakfastDetails($child, $bRoom)
+    {
+        $setting = \App\Models\HotelSetting::first();
+        $autoExtra = $setting?->booking_auto_extra_charge_bf_child == 1;
+        $childRate = $setting?->breakfast_child_rate ?? 90000;
+
+        $current = Carbon::parse($bRoom->arrival_date);
+        $departure = Carbon::parse($bRoom->departure_date);
+
+        while ($current->lt($departure)) {
+            $isFree = true;
+            $isExtra = false;
+            $amount = 0;
+
+            if ($child->age_group === 'child') {
+                if ($autoExtra) {
+                    $isFree = false;
+                    $isExtra = true;
+                    $amount = $childRate;
+                }
+            }
+
+            \App\Models\BookingChildBreakfastDetail::create([
+                'booking_child_id' => $child->id,
+                'service_date'     => $current->toDateString(),
+                'breakfast'        => true,
+                'is_free'          => $isFree,
+                'is_extra_charge'  => $isExtra,
+                'is_room'          => true, // FIT
+                'amount'           => $amount,
+            ]);
+
+            $current = $current->addDay();
         }
     }
 }

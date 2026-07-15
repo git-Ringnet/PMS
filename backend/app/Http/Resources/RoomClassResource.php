@@ -14,6 +14,9 @@ class RoomClassResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $standardRate = $this->standardRates?->first();
+        $maxAdults = $standardRate?->roomForm?->max_adults ?? 2;
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -25,6 +28,7 @@ class RoomClassResource extends JsonResource
             'notes' => $this->notes,
             'image_path' => $this->image_path,
             'image_url' => $this->image_path ? asset('storage/' . $this->image_path) : null,
+            'max_adults' => $maxAdults,
         ];
     }
 }

@@ -15,7 +15,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('booking_rooms', function (Blueprint $table) {
-            $table->id();
+            $table->string('id', 50)->primary();
 
             // =========================================
             // LIÊN KẾT BOOKING
@@ -39,6 +39,7 @@ return new class extends Migration
             // =========================================
             $table->date('arrival_date');       // Ngày đến của phòng này (có thể khác header booking)
             $table->date('departure_date');     // Ngày đi của phòng này
+            $table->date('actual_arrival_date')->nullable(); // Ngày đến thực tế (giữ nguyên gốc khi chuyển phòng)
             $table->time('arrival_time')->nullable();    // Giờ đến
             $table->time('departure_time')->nullable();  // Giờ đi
 
@@ -46,6 +47,14 @@ return new class extends Migration
             // GIÁ & GIƯỜNG PHỤ
             // =========================================
             $table->decimal('rate', 15, 2)->default(0);             // Giá phòng mỗi đêm
+            $table->string('rate_code', 50)->nullable();            // Mã giá phòng
+            $table->boolean('breakfast')->default(false);           // Có ăn sáng hay không
+            $table->boolean('is_day_use')->default(false);          // Phòng Dayuse
+            $table->string('discount', 100)->nullable();            // Tên/Chuỗi giảm giá hiển thị
+            $table->string('discount_type', 10)->nullable();        // up hoặc down
+            $table->decimal('discount_value', 15, 2)->default(0);   // Giá trị giảm giá
+            $table->string('discount_unit', 10)->nullable();        // percent hoặc amount
+            $table->decimal('base_price', 15, 2)->default(0);       // Giá gốc trước khi giảm
             $table->unsignedTinyInteger('adults')->default(1);       // Số người lớn
             $table->unsignedTinyInteger('extra_bed_qty')->default(0);        // Số giường phụ
             $table->decimal('extra_bed_rate', 15, 2)->default(0);   // Giá thêm giường / đêm
@@ -61,6 +70,7 @@ return new class extends Migration
 
             // Do Not Move — khóa không cho chuyển số phòng (1 = đang khóa)
             $table->unsignedTinyInteger('is_do_not_move')->default(0);
+            $table->string('move_room', 20)->nullable();            // Mã phòng mới lúc chuyển phòng
 
             // =========================================
             // GHI CHÚ
@@ -72,6 +82,8 @@ return new class extends Migration
             // =========================================
             $table->string('created_by')->nullable();
             $table->string('updated_by')->nullable();
+            $table->string('check_in_user', 100)->nullable();       // Người thực hiện check-in
+            $table->string('check_out_user', 100)->nullable();      // Người thực hiện check-out
 
             $table->timestamps();
             $table->softDeletes(); // Xóa mềm để giữ lịch sử

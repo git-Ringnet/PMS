@@ -9,6 +9,8 @@ class Guest extends Model
 {
     use HasFactory;
 
+    const STATUS_ACTIVE = 1;
+
     protected $fillable = [
         'full_name', 'id_number', 'passport_number',
         'dob', 'gender', 'nationality_code',
