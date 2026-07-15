@@ -83,7 +83,7 @@ input[type="number"] {
 
 /* ---------- TOP BAR ---------- */
 .topbar {
-  background: var(--navy);
+  background: var(--pms-custom-theme, var(--navy));
   display: flex;
   align-items: center;
   gap: 8px;
@@ -641,7 +641,7 @@ table.footer-table td:last-child {
   align-self: flex-start;
   margin: 14px 16px 90px 0;
   width: 52px;
-  background: var(--navy);
+  background: var(--pms-custom-theme, var(--navy));
   border-radius: 10px;
   overflow: hidden;
   transition: width 0.22s ease;
@@ -828,4 +828,24 @@ table.footer-table td:last-child {
 .dock:hover .dock-invoice .lbl {
   opacity: 1;
   transition-delay: 0.06s;
+}
+
+/* ---------- DOCK RESPONSIVE ---------- */
+@media (max-width: 1280px) {
+  .dock {
+    width: 44px;
+    margin: 10px 10px 80px 0;
+  }
+  .dock:hover {
+    width: 220px;
+  }
+  .dock-head {
+    padding: 10px 12px;
+    font-size: 10px;
+  }
+}
+@media (max-width: 900px) {
+  .dock {
+    display: none;
+  }
 }

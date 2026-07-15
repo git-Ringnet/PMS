@@ -98,6 +98,25 @@ const activeTabId = ref(null)
 const isLoadingBookings = ref(false)
 const isLoading = ref(true)
 
+// --- Persistent closed tabs (localStorage) ---
+const CLOSED_TABS_KEY = 'pms_closed_tabs'
+function getClosedTabIds() {
+  try { return JSON.parse(localStorage.getItem(CLOSED_TABS_KEY) || '[]') } catch { return [] }
+}
+function addClosedTabId(dbId) {
+  if (!dbId) return
+  const ids = getClosedTabIds()
+  if (!ids.includes(String(dbId))) {
+    ids.push(String(dbId))
+    localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify(ids))
+  }
+}
+function removeClosedTabId(dbId) {
+  if (!dbId) return
+  const ids = getClosedTabIds().filter(id => id !== String(dbId))
+  localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify(ids))
+}
+
 // ==================== MODAL STATES ====================
 const isModalOpen = ref(false)
 const isEditModal = ref(false)
@@ -171,6 +190,8 @@ function handleTableScroll() {
 }
 
 function handleGlobalSearchResultClick(booking) {
+  // Khi mở lại booking, xóa khỏi danh sách tab đã đóng để F5 hiện lại
+  removeClosedTabId(booking.id)
   const existing = tabs.value.find(t => t.dbId === booking.id)
   if (existing) {
     activeTabId.value = existing.id
@@ -810,7 +831,10 @@ async function loadBookings() {
   try {
     const prevActiveId = activeTabId.value
     const res = await fetchBookings({ status: '0,1' })
-    const list = res.data?.data || res.data || []
+    const allList = res.data?.data || res.data || []
+    // Lọc bỏ các booking đã bị đóng tab (lưu trong localStorage)
+    const closedIds = getClosedTabIds()
+    const list = allList.filter(b => !closedIds.includes(String(b.id)))
     tabs.value = list.map(b => bookingToTab(b))
     
     if (tabs.value.some(t => t.id === prevActiveId)) {
@@ -1116,6 +1140,9 @@ function handleTabClick(tabId) { activeTabId.value = tabId }
 function handleCloseTab(tabId, event) {
   event.stopPropagation()
   const index = tabs.value.findIndex(t => t.id === tabId)
+  const closedTab = tabs.value.find(t => t.id === tabId)
+  // Lưu dbId vào localStorage để F5 không hiện lại
+  if (closedTab?.dbId) addClosedTabId(closedTab.dbId)
   tabs.value = tabs.value.filter(t => t.id !== tabId)
   if (activeTabId.value === tabId) {
     if (tabs.value.length > 0) activeTabId.value = tabs.value[Math.max(0, index - 1)].id
@@ -2641,6 +2668,8 @@ async function openCopyModal() {
 function handleCopied(newBooking) {
   if (newBooking) {
     const newTab = bookingToTab(newBooking)
+    // Xóa khỏi closed list nếu trước đây đã bị đóng
+    removeClosedTabId(newBooking.id)
     tabs.value.push(newTab)
     activeTabId.value = newTab.id
   }
@@ -2770,6 +2799,8 @@ async function openBookingModalByCode(bookingCode) {
       const list = res.data?.data || res.data || []
       if (list.length > 0) {
         const tabObj = bookingToTab(list[0])
+        // Xóa khỏi closed list khi mở lại qua URL
+        removeClosedTabId(list[0].id)
         tabs.value.push(tabObj)
         activeTabId.value = tabObj.id
         await openEditModal()
@@ -2888,16 +2919,6 @@ defineExpose({
 
       <!-- Hotel Service Filter + Column Selector in Top Bar -->
       <div v-if="activeTab" class="flex items-center gap-1.5 ml-2.5 text-white/90 text-xs font-bold shrink-0">
-        <select 
-          v-model="selectedServiceFilter" 
-          class="topbar-service-select border border-white/10 rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer text-xs text-white font-bold h-7"
-          style="width: 140px !important; background-color: var(--navy) !important;"
-        >
-          <option value="all">Tất cả dịch vụ</option>
-          <option v-for="svc in hotelServicesList" :key="svc.code" :value="svc.code">
-            {{ svc.name }} ({{ svc.code }})
-          </option>
-        </select>
 
         <!-- Column Selector in Top Bar -->
         <div class="relative inline-block text-left">
@@ -2999,10 +3020,6 @@ defineExpose({
         <div><span class="label">Xác nhận:</span><b class="font-bold text-slate-500">{{ formatDateVi(activeTab.confirmDate) || '---' }}</b></div>
         
         <div class="flex items-center gap-2" style="margin-left:auto;">
-          <span class="view-detail-btn text-sky-600 hover:text-sky-800 text-[10.5px] font-black bg-sky-50 px-2.5 py-1.5 rounded border border-sky-200 inline-flex items-center gap-0.5 shadow-2xs select-none transition-all duration-200">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
-            Xem chi tiết
-          </span>
           <button class="chip-plain primary font-black" style="border-radius: 20px; padding: 7px 16px; background: var(--teal) !important; color: #fff !important;" @click.stop="triggerAction('Hóa đơn')">Hoá đơn</button>
         </div>
       </div>
@@ -3065,20 +3082,6 @@ defineExpose({
                 <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2">
                   <div class="flex items-center gap-2.5">
                     <span class="text-gray-900 text-xs font-bold uppercase tracking-wider">Tình trạng: Đăng ký ({{ roomsTotalSummary.count }})</span>
-                    <!-- Range Slider for room selection -->
-                    <div class="flex items-center gap-2 ml-3">
-                      <input 
-                        type="range" 
-                        min="0" 
-                        :max="roomsTotalSummary.count" 
-                        step="1" 
-                        v-model.number="selectRangeVal"
-                        class="w-32 h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-sky-500 focus:outline-none"
-                      />
-                      <span class="text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded shadow-xs select-none">
-                        {{ selectRangeVal }} / {{ roomsTotalSummary.count }}
-                      </span>
-                    </div>
                   </div>
                 </td>
                 <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
@@ -4203,12 +4206,7 @@ defineExpose({
             </div>
           </div>
 
-          <div class="dock-foot" @click="triggerAction('Hóa đơn')">
-            <div class="dock-invoice">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
-              <span class="lbl">Hoá đơn</span>
-            </div>
-          </div>
+
         </aside>
       </div>
 
