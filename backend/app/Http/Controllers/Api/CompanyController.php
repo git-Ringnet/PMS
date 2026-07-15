@@ -14,7 +14,7 @@ class CompanyController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Company::with(['customerSource', 'market', 'branch', 'booker']);
+        $query = Company::with(['customerSource', 'market', 'branch', 'booker', 'salesPerson']);
 
         // Search by name or code
         if ($request->has('search') && !empty($request->search)) {
@@ -73,14 +73,15 @@ class CompanyController extends Controller
             'sync_acc' => 'nullable|boolean',
             'max_debt' => 'nullable|numeric|min:0',
             'bank_account' => 'nullable|string|max:255',
-            'booker_id' => 'nullable|exists:bookers,id',
-            'rate_code' => 'nullable|string|max:100',
-            'branch_id' => 'nullable|exists:branches,id',
-            'is_active' => 'nullable|boolean',
+            'booker_id'                => 'nullable|exists:bookers,id',
+            'sales_person_id'          => 'nullable|exists:users,id',
+            'rate_code'                => 'nullable|string|max:100',
+            'branch_id'                => 'nullable|exists:branches,id',
+            'is_active'                => 'nullable|boolean',
         ]);
 
         $company = Company::create($validated);
-        $company->load(['customerSource', 'market', 'branch', 'booker']);
+        $company->load(['customerSource', 'market', 'branch', 'booker', 'salesPerson']);
 
         return response()->json([
             'success' => true,
@@ -93,7 +94,7 @@ class CompanyController extends Controller
      */
     public function show($id)
     {
-        $company = Company::with(['customerSource', 'market', 'branch', 'booker'])->find($id);
+        $company = Company::with(['customerSource', 'market', 'branch', 'booker', 'salesPerson'])->find($id);
         if (!$company) {
             return response()->json(['message' => 'Company not found'], 404);
         }
@@ -125,14 +126,15 @@ class CompanyController extends Controller
             'sync_acc' => 'nullable|boolean',
             'max_debt' => 'nullable|numeric|min:0',
             'bank_account' => 'nullable|string|max:255',
-            'booker_id' => 'nullable|exists:bookers,id',
-            'rate_code' => 'nullable|string|max:100',
-            'branch_id' => 'nullable|exists:branches,id',
-            'is_active' => 'nullable|boolean',
+            'booker_id'                => 'nullable|exists:bookers,id',
+            'sales_person_id'          => 'nullable|exists:users,id',
+            'rate_code'                => 'nullable|string|max:100',
+            'branch_id'                => 'nullable|exists:branches,id',
+            'is_active'                => 'nullable|boolean',
         ]);
 
         $company->update($validated);
-        $company->load(['customerSource', 'market', 'branch', 'booker']);
+        $company->load(['customerSource', 'market', 'branch', 'booker', 'salesPerson']);
 
         return response()->json([
             'success' => true,
@@ -176,7 +178,7 @@ class CompanyController extends Controller
      */
     public function export(Request $request)
     {
-        $companies = Company::with(['customerSource', 'market', 'branch', 'booker'])->get();
+        $companies = Company::with(['customerSource', 'market', 'branch', 'booker', 'salesPerson'])->get();
 
         $headers = [
             'Content-Type' => 'text/csv; charset=UTF-8',

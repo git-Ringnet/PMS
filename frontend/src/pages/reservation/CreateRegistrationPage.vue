@@ -799,7 +799,7 @@ async function loadDropdowns() {
     markets.value              = mRes.status  === 'fulfilled' ? (mRes.value.data?.data  || mRes.value.data  || []) : []
     customerSources.value      = csRes.status === 'fulfilled' ? (csRes.value.data?.data || csRes.value.data || []) : []
     bookers.value              = bRes.status  === 'fulfilled' ? (bRes.value.data?.data  || bRes.value.data  || []) : []
-    companies.value            = cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []
+    companies.value            = (cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []).filter(c => c.is_active || c.is_active === undefined)
     paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
     registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
     users.value                = uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []
@@ -832,24 +832,34 @@ async function loadBookings() {
     const prevActiveId = activeTabId.value
     const res = await fetchBookings({ status: '0,1' })
     const allList = res.data?.data || res.data || []
-    // Lọc bỏ các booking đã bị đóng tab (lưu trong localStorage)
-    const closedIds = getClosedTabIds()
-    const list = allList.filter(b => !closedIds.includes(String(b.id)))
-    tabs.value = list.map(b => bookingToTab(b))
-    
-    if (tabs.value.some(t => t.id === prevActiveId)) {
-      activeTabId.value = prevActiveId
-    } else if (tabs.value.length > 0) {
+
+    // Kiểm tra lần đầu vào trang: closedIds chưa có trong localStorage
+    const isFirstLoad = localStorage.getItem(CLOSED_TABS_KEY) === null
+
+    if (isFirstLoad && allList.length > 0) {
+      // Lần đầu: chỉ mở 1 booking mới nhất (id lớn nhất), KHÔNG đóng các booking khác
+      const latestBooking = allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
+      // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
+      localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
+      tabs.value = [bookingToTab(latestBooking)]
       activeTabId.value = tabs.value[0].id
     } else {
-      tabs.value = [makeBlankTab()]
-      activeTabId.value = tabs.value[0].id
+      // Các lần sau: lọc theo closedIds đã lưu
+      const closedIds = getClosedTabIds()
+      const list = allList.filter(b => !closedIds.includes(String(b.id)))
+      tabs.value = list.map(b => bookingToTab(b))
+
+      if (tabs.value.some(t => t.id === prevActiveId)) {
+        activeTabId.value = prevActiveId
+      } else if (tabs.value.length > 0) {
+        activeTabId.value = tabs.value[0].id
+      } else {
+        // Không còn tab nào → empty state, KHÔNG tạo blank tab
+        tabs.value = []
+        activeTabId.value = null
+      }
     }
   } catch (err) {
-    if (tabs.value.length === 0) {
-      tabs.value = [makeBlankTab()]
-      activeTabId.value = tabs.value[0].id
-    }
     console.error('Lỗi khi tải bookings:', err)
   } finally {
     isLoadingBookings.value = false
@@ -1145,10 +1155,11 @@ function handleCloseTab(tabId, event) {
   if (closedTab?.dbId) addClosedTabId(closedTab.dbId)
   tabs.value = tabs.value.filter(t => t.id !== tabId)
   if (activeTabId.value === tabId) {
-    if (tabs.value.length > 0) activeTabId.value = tabs.value[Math.max(0, index - 1)].id
-    else {
-      tabs.value = [makeBlankTab()]
-      activeTabId.value = tabs.value[0].id
+    if (tabs.value.length > 0) {
+      activeTabId.value = tabs.value[Math.max(0, index - 1)].id
+    } else {
+      // Đóng tab cuối → empty state, KHÔNG tạo blank tab
+      activeTabId.value = null
     }
   }
 }
@@ -1614,7 +1625,24 @@ function handleBookerChange() {
 }
 
 function handleCompanyChange() {
-  // Không tự động chọn sẵn thị trường và nguồn khách từ công ty
+  const co = companies.value.find(c => c.id === Number(modalForm.value.companyId))
+  if (!co) return
+
+  // Auto-fill thông tin liên hệ từ booker của công ty (nếu chưa có)
+  if (co.booker_id) {
+    const booker = bookers.value.find(bk => bk.id === co.booker_id)
+    if (booker) {
+      if (!modalForm.value.bookerId) modalForm.value.bookerId = booker.id
+      if (!modalForm.value.contactName)  modalForm.value.contactName  = booker.name  || ''
+      if (!modalForm.value.contactEmail) modalForm.value.contactEmail = booker.email || ''
+      if (!modalForm.value.contactPhone) modalForm.value.contactPhone = booker.phone || ''
+    }
+  }
+
+  // Auto-fill người bán từ công ty (nếu chưa chọn)
+  if (!modalForm.value.salesPerson && co.sales_person) {
+    modalForm.value.salesPerson = co.sales_person.username || co.sales_person.name || ''
+  }
 }
 
 watch(() => modalForm.value.registrationStatusId, (newId) => {
@@ -2121,6 +2149,9 @@ function copyConfirmDate() {
 async function handleSaveNewBooking() {
   if (!modalForm.value.bookingName.trim()) { uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning'); return }
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) { uiStore.showToast('Vui lòng chọn ngày đến và ngày đi!', 'warning'); return }
+  if (!modalForm.value.companyId)        { uiStore.showToast('Vui lòng chọn Công ty!', 'warning'); return }
+  if (!modalForm.value.marketId)         { uiStore.showToast('Vui lòng chọn Thị trường!', 'warning'); return }
+  if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
   
   const dupError = validateRoomsDuplication(modalForm.value.rooms)
   if (dupError) {
@@ -2613,8 +2644,9 @@ async function triggerAction(actionName) {
         if (idx !== -1) tabs.value.splice(idx, 1)
         if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
         else {
-          tabs.value = [makeBlankTab()]
-          activeTabId.value = tabs.value[0].id
+          // Không còn tab nào → empty state
+          tabs.value = []
+          activeTabId.value = null
         }
         uiStore.showToast('Đã xóa đăng ký thành công!', 'success')
       } catch (err) {
@@ -2843,6 +2875,7 @@ defineExpose({
         >
           <span>{{ tab.title }}</span>
           <span
+            v-if="tabs.length > 1"
             @click.stop="handleCloseTab(tab.id, $event)"
             class="x hover:text-white ml-1.5 transition-colors font-bold"
           >
@@ -2963,6 +2996,24 @@ defineExpose({
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- EMPTY STATE: Không còn tab nào -->
+    <div v-if="tabs.length === 0 && !isLoading" class="flex-1 flex flex-col items-center justify-center gap-4" style="background: var(--bg-page, #f0f4f8);">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.2">
+        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+        <rect x="9" y="3" width="6" height="4" rx="1"/>
+        <path d="M9 12h6M9 16h4"/>
+      </svg>
+      <div class="text-slate-400 text-sm font-medium">Chưa có đăng ký nào đang mở</div>
+      <button
+        @click="openNewBookingModal"
+        class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all"
+        style="background: linear-gradient(135deg, #006bdb, #0050a8); box-shadow: 0 2px 8px rgba(0,107,219,0.3);"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Tạo đăng ký mới
+      </button>
     </div>
 
     <!-- MAIN TAB CONTENT PANEL -->
