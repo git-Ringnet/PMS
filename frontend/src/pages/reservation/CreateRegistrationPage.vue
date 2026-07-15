@@ -802,7 +802,7 @@ async function loadDropdowns() {
     companies.value            = (cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []).filter(c => c.is_active || c.is_active === undefined)
     paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
     registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
-    users.value                = uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []
+    users.value                = (uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
     roomClasses.value          = (rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []).filter(c => c.is_active !== false)
     roomRateCodes.value        = rrcRes.status === 'fulfilled' ? (rrcRes.value.data?.data || rrcRes.value.data || []) : []
     currenciesList.value       = currRes.status === 'fulfilled' ? (currRes.value.data?.data || currRes.value.data || []) : []
@@ -4472,7 +4472,7 @@ defineExpose({
                                 class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer"
                               >
                                   <option :value="null" disabled>— Chọn công ty —</option>
-                                  <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
+                                  <option v-for="c in companies" :key="c.id" :value="c.id">[{{ c.code }}] {{ c.name }}</option>
                               </select>
                               <button 
                                 v-if="modalForm.companyId"

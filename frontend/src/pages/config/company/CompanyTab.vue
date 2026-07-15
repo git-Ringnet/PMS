@@ -78,6 +78,7 @@ const isEditMode = ref(false)
 const currentId = ref(null)
 
 const emptyForm = () => ({
+  code: '',
   name: '',
   trading_name: '',
   address: '',
@@ -121,7 +122,7 @@ const loadLookups = async () => {
     customerSources.value = csRes.data.data || []
     branches.value = bRes.data.data || []
     bookers.value = bkRes.data.data || []
-    users.value = uRes.data.data || []
+    users.value = (uRes.data.data || []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
   } catch (err) {
     console.error('Error loading lookups:', err)
   }
@@ -150,6 +151,7 @@ const openEditModal = (item) => {
   isEditMode.value = true
   currentId.value = item.id
   form.value = {
+    code: item.code || '',
     name: item.name || '',
     trading_name: item.trading_name || '',
     address: item.address || '',
@@ -959,7 +961,7 @@ const handleDownloadTemplate = async () => {
               <span class="text-xs text-slate-500 font-semibold">Không sử dụng</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="!form.is_active" @change="form.is_active = !$event.target.checked" class="sr-only peer" />
-                <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-400"></div>
+                <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
               </label>
             </div>
           </div>
