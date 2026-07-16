@@ -270,6 +270,8 @@ class BookingController extends Controller
                                 'discount_unit' => $alloc['discountUnit'] ?? null,
                                 'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
                                 'adults' => $detail['adults'] ?? 2,
+                                'babies' => $detail['babies'] ?? 0,
+                                'children_qty' => $detail['children'] ?? 0,
                                 'extra_bed_qty' => (int)($detail['extraBedQty'] ?? (empty($detail['extraBedPrice']) ? 0 : 1)),
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
@@ -292,6 +294,24 @@ class BookingController extends Controller
                                 'guest_id' => $guest->id,
                                 'is_primary' => 1,
                             ]);
+
+                            // Tự động tạo thêm khách phụ cho đủ số lượng adults
+                            $numAdults = (int)($detail['adults'] ?? 2);
+                            if ($numAdults > 1) {
+                                for ($a = 2; $a <= $numAdults; $a++) {
+                                    $subGuest = \App\Models\Guest::create([
+                                        'full_name' => 'Guest ' . $a,
+                                        'title' => 'Mr.',
+                                        'nationality_code' => 'VN',
+                                        'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                                    ]);
+                                    \App\Models\BookingRoomGuest::create([
+                                        'booking_room_id' => $bRoom->id,
+                                        'guest_id' => $subGuest->id,
+                                        'is_primary' => 0,
+                                    ]);
+                                }
+                            }
 
                             // Thêm số lượng children / babies vào booking_children
                             $numChildren = (int)($detail['children'] ?? 0);
@@ -603,6 +623,8 @@ class BookingController extends Controller
                                 'discount_unit' => $alloc['discountUnit'] ?? null,
                                 'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
                                 'adults' => $detail['adults'] ?? 2,
+                                'babies' => $detail['babies'] ?? 0,
+                                'children_qty' => $detail['children'] ?? 0,
                                 'extra_bed_qty' => (int)($detail['extraBedQty'] ?? (empty($detail['extraBedPrice']) ? 0 : 1)),
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => $bRoom ? $bRoom->status : \App\Models\BookingRoom::STATUS_BOOKED,
@@ -638,6 +660,45 @@ class BookingController extends Controller
                                     'guest_id' => $guest->id,
                                     'is_primary' => 1,
                                 ]);
+                            }
+
+                            // Đồng bộ số lượng adults khách phụ (non-primary)
+                            $targetAdults = (int)($detail['adults'] ?? 2);
+                            $secondaries = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)
+                                ->where('is_primary', 0)
+                                ->get();
+                            $totalCurrentGuests = 1 + $secondaries->count();
+
+                            if ($totalCurrentGuests < $targetAdults) {
+                                // Cần tạo thêm khách phụ
+                                $needed = $targetAdults - $totalCurrentGuests;
+                                for ($a = 0; $a < $needed; $a++) {
+                                    $seq = $totalCurrentGuests + $a + 1;
+                                    $subGuest = \App\Models\Guest::create([
+                                        'full_name' => 'Guest ' . $seq,
+                                        'title' => 'Mr.',
+                                        'nationality_code' => 'VN',
+                                        'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                                    ]);
+                                    \App\Models\BookingRoomGuest::create([
+                                        'booking_room_id' => $bRoom->id,
+                                        'guest_id' => $subGuest->id,
+                                        'is_primary' => 0,
+                                    ]);
+                                }
+                            } elseif ($totalCurrentGuests > $targetAdults) {
+                                // Cần xóa bớt khách phụ thừa
+                                $toRemove = $totalCurrentGuests - $targetAdults;
+                                $secondariesToRemove = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)
+                                    ->where('is_primary', 0)
+                                    ->orderBy('id', 'desc')
+                                    ->take($toRemove)
+                                    ->get();
+                                foreach ($secondariesToRemove as $pivotToRemove) {
+                                    $gId = $pivotToRemove->guest_id;
+                                    $pivotToRemove->delete();
+                                    \App\Models\Guest::where('id', $gId)->delete();
+                                }
                             }
 
                             // Đồng bộ trẻ em: Xóa cũ của phòng này và tạo lại theo số lượng mới
