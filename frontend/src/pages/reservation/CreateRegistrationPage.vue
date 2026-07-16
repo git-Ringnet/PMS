@@ -2451,42 +2451,52 @@ async function triggerAction(actionName) {
       return
     }
 
-    uiStore.showToast('Đang tiến hành giao phòng cho khách...', 'info')
-    let successCount = 0
-    let failCount = 0
-    let failMessages = []
+    uiStore.confirm({
+      title: 'Xác nhận giao phòng',
+      message: selected.length > 0
+        ? `Bạn có chắc chắn muốn giao phòng cho ${selected.length} phòng đã chọn?`
+        : 'Bạn có chắc chắn muốn giao phòng cho toàn bộ phòng đã gán số?',
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang tiến hành giao phòng cho khách...', 'info')
+        let successCount = 0
+        let failCount = 0
+        let failMessages = []
 
-    try {
-      for (const r of targetList) {
-        if (!r.bookingRoomId) continue
         try {
-          const res = await checkInRoom(tab.dbId, r.bookingRoomId)
-          if (res.data?.success) {
-            successCount++
-            r.roomStatus = 'Đang ở'
-          } else {
-            failCount++
-            failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+          for (const r of targetList) {
+            if (!r.bookingRoomId) continue
+            try {
+              const res = await checkInRoom(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+                r.roomStatus = 'Đang ở'
+              } else {
+                failCount++
+                failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+              }
+            } catch (err) {
+              console.error(err)
+              failCount++
+              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+            }
           }
-        } catch (err) {
+
+          await loadBookings()
+          selectedRows.value = []
+
+          if (successCount > 0) {
+            uiStore.showToast(`Giao phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+          } else {
+            uiStore.showToast(`Giao phòng thất bại: ${failMessages.join(', ')}`, 'error')
+          }
+        } catch(err) {
           console.error(err)
-          failCount++
-          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+          uiStore.showToast('Có lỗi xảy ra khi giao phòng!', 'error')
         }
       }
-
-      await loadBookings()
-      selectedRows.value = []
-
-      if (successCount > 0) {
-        uiStore.showToast(`Giao phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
-      } else {
-        uiStore.showToast(`Giao phòng thất bại: ${failMessages.join(', ')}`, 'error')
-      }
-    } catch(err) {
-      console.error(err)
-      uiStore.showToast('Có lỗi xảy ra khi giao phòng!', 'error')
-    }
+    })
   } else if (actionName === 'Nâng hạng phòng') {
     openUpgradeModal()
   } else if (actionName === 'Tự động gán phòng') {
@@ -2540,34 +2550,45 @@ async function triggerAction(actionName) {
       console.error(err)
       uiStore.showToast('Có lỗi xảy ra khi tự động gán phòng!', 'error')
     }
+
   } else if (actionName === 'Gỡ số phòng') {
     const tab = activeTab.value
     if (tab && tab.rooms) {
       const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
       const targetList = selected.length > 0 ? selected : tab.rooms
-      
-      if (tab.dbId) {
-        uiStore.showToast('Đang tiến hành gỡ số phòng...', 'info')
-        try {
-          for (const r of targetList) {
-            if (!r.bookingRoomId) continue
-            await unassignRoom(tab.dbId, r.bookingRoomId)
-            r.roomNumber = ''
-            r.isPreassigned = false
+
+      uiStore.confirm({
+        title: 'Xác nhận gỡ số phòng',
+        message: selected.length > 0
+          ? `Bạn có chắc chắn muốn gỡ số phòng cho ${selected.length} phòng đã chọn?`
+          : 'Bạn có chắc chắn muốn gỡ số phòng cho toàn bộ phòng trong đăng ký này?',
+        confirmText: 'Đồng ý', cancelText: 'Hủy'
+      }).then(async (confirmed) => {
+        if (confirmed) {
+          if (tab.dbId) {
+            uiStore.showToast('Đang tiến hành gỡ số phòng...', 'info')
+            try {
+              for (const r of targetList) {
+                if (!r.bookingRoomId) continue
+                await unassignRoom(tab.dbId, r.bookingRoomId)
+                r.roomNumber = ''
+                r.isPreassigned = false
+              }
+              uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
+            } catch(err) {
+              console.error(err)
+              uiStore.showToast('Lỗi khi gỡ số phòng trên hệ thống!', 'error')
+            }
+          } else {
+            targetList.forEach(r => {
+              r.roomNumber = ''
+              r.isPreassigned = false
+            })
+            uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
           }
-          uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
-        } catch(err) {
-          console.error(err)
-          uiStore.showToast('Lỗi khi gỡ số phòng trên hệ thống!', 'error')
+          selectedRows.value = []
         }
-      } else {
-        targetList.forEach(r => {
-          r.roomNumber = ''
-          r.isPreassigned = false
-        })
-        uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
-      }
-      selectedRows.value = []
+      })
     }
   } else if (actionName === 'Hủy phòng') {
     const tab = activeTab.value
@@ -4349,18 +4370,6 @@ defineExpose({
               </span>
               <span class="lbl">Giao phòng (Check-in)</span>
             </div>
-            <div class="dock-item" @click="triggerAction('Gỡ số phòng')">
-              <span class="di">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </span>
-              <span class="lbl">Gỡ số phòng</span>
-            </div>
-            <div class="dock-item danger" @click="triggerAction('Hủy phòng')">
-              <span class="di">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><circle cx="12" cy="12" r="9"/><path d="M9 15l6-6M9 9l6 6"/></svg>
-              </span>
-              <span class="lbl">Hủy phòng</span>
-            </div>
           </div>
 
           <div class="dock-group">
@@ -4380,18 +4389,18 @@ defineExpose({
           </div>
 
           <div class="dock-group">
-            <div class="dock-group-label">Chọn hàng</div>
-            <div class="dock-item" @click="selectedRows = activeTab?.rooms?.map(r => r.id) || []">
+            <div class="dock-group-label">Tác vụ phòng</div>
+            <div class="dock-item" @click="triggerAction('Gỡ số phòng')">
               <span class="di">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="11" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><path d="M10 7h11M10 13h11M10 19h11"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </span>
-              <span class="lbl">Chọn tất cả</span>
+              <span class="lbl">Gỡ số phòng</span>
             </div>
-            <div class="dock-item" @click="selectedRows = []">
+            <div class="dock-item danger" @click="triggerAction('Hủy phòng')">
               <span class="di">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="3" y="5" width="4" height="4" rx="1"/><rect x="3" y="11" width="4" height="4" rx="1"/><rect x="3" y="17" width="4" height="4" rx="1"/><path d="M10 7h11M10 13h5M10 19h8"/><path d="M19 16l3 3-3 3" stroke-linecap="round"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><circle cx="12" cy="12" r="9"/><path d="M9 15l6-6M9 9l6 6"/></svg>
               </span>
-              <span class="lbl">Bỏ chọn tất cả</span>
+              <span class="lbl">Hủy phòng</span>
             </div>
           </div>
 
