@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingCancelLog;
+use App\Models\BookingChild;
 use App\Models\BookingRoom;
+use App\Models\BookingRoomGuest;
 use App\Models\CancelReason;
+use App\Models\Guest;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,6 +25,112 @@ class GuestController extends Controller
     // =========================================
     // GUESTS (người lớn)
     // =========================================
+
+    // GET /bookings/{bookingId}/guests
+    public function bookingGuests($bookingId)
+    {
+        $booking = Booking::with([
+            'bookingRooms' => function ($q) {
+                $q->whereNull('deleted_at')
+                  ->where('status', '!=', \App\Models\BookingRoom::STATUS_CANCELLED)
+                  ->with(['roomClass', 'guests.guest', 'children']);
+            }
+        ])->findOrFail($bookingId);
+
+        $grouped = $booking->bookingRooms->map(function ($room) {
+            return [
+                'booking_room_id'  => $room->id,
+                'room_number'      => $room->room_number,
+                'room_class_name'  => $room->roomClass?->name ?? '',
+                'arrival_date'     => $room->arrival_date,
+                'departure_date'   => $room->departure_date,
+                'rate'             => $room->rate,
+                'adults_count'     => $room->adults ?? 1,
+                'babies_count'     => $room->babies ?? 0,
+                'children_count'   => $room->children_qty ?? 0,
+                'guests'           => $room->guests->map(fn($rg) => array_merge(
+                    $rg->guest->toArray(),
+                    ['pivot_id' => $rg->id, 'is_primary' => $rg->is_primary]
+                )),
+                'children'         => $room->children->values(),
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $grouped]);
+    }
+
+    // POST /bookings/{bookingId}/init-guests
+    public function initGuests($bookingId)
+    {
+        $booking = Booking::with([
+            'bookingRooms' => function ($q) {
+                $q->whereNull('deleted_at')
+                  ->where('status', '!=', \App\Models\BookingRoom::STATUS_CANCELLED)
+                  ->with(['guests', 'children']);
+            }
+        ])->findOrFail($bookingId);
+
+        DB::beginTransaction();
+        try {
+            foreach ($booking->bookingRooms as $room) {
+                $existingGuestsCount = $room->guests->count();
+                $existingBabies   = $room->children->where('age_group', 'baby')->count();
+                $existingChildren = $room->children->where('age_group', 'child')->count();
+
+                $numAdults   = max(1, intval($room->adults ?? 1));
+                $targetBabies   = intval($room->babies ?? 0);
+                $targetChildren = intval($room->children_qty ?? 0);
+
+                // Tạo guests (người lớn) còn thiếu
+                for ($i = $existingGuestsCount + 1; $i <= $numAdults; $i++) {
+                    $guest = Guest::create([
+                        'full_name'        => "Guest {$i}",
+                        'title'            => 'Mr.',
+                        'nationality_code' => 'VN',
+                        'guest_status'     => 0,
+                    ]);
+                    BookingRoomGuest::firstOrCreate(
+                        ['booking_room_id' => $room->id, 'guest_id' => $guest->id],
+                        ['is_primary' => $i === 1, 'status' => 0]
+                    );
+                }
+
+                // Tạo em bé còn thiếu
+                for ($i = $existingBabies + 1; $i <= $targetBabies; $i++) {
+                    BookingChild::create([
+                        'booking_id'       => $bookingId,
+                        'booking_room_id'  => $room->id,
+                        'full_name'        => "Baby {$i}",
+                        'title'            => 'Mr.',
+                        'nationality_code' => 'VN',
+                        'age_group'        => 'baby',
+                        'child_status'     => 0,
+                    ]);
+                }
+
+                // Tạo trẻ em còn thiếu
+                for ($i = $existingChildren + 1; $i <= $targetChildren; $i++) {
+                    BookingChild::create([
+                        'booking_id'       => $bookingId,
+                        'booking_room_id'  => $room->id,
+                        'full_name'        => "Child {$i}",
+                        'title'            => 'Mr.',
+                        'nationality_code' => 'VN',
+                        'age_group'        => 'child',
+                        'child_status'     => 0,
+                    ]);
+                }
+
+
+            }
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Đã khởi tạo thông tin khách mẫu.']);
+    }
 
     // GET /booking-rooms/{roomId}/guests
     public function roomGuests($roomId)
@@ -102,10 +211,63 @@ class GuestController extends Controller
         ], 201);
     }
 
+    // PUT /booking-rooms/{roomId}/guests/{guestId} — Cập nhật thông tin guest
+    public function updateGuest(Request $request, $roomId, $guestId)
+    {
+        // Verify pivot exists
+        $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
+            ->where('guest_id', $guestId)
+            ->firstOrFail();
+
+        $guest = Guest::findOrFail($guestId);
+
+        $request->validate([
+            'full_name'         => 'nullable|string|max:200',
+            'title'             => 'nullable|string|max:20',
+            'id_type'           => 'nullable|string|max:50',
+            'id_number'         => 'nullable|string|max:50',
+            'id_issue_date'     => 'nullable|date',
+            'passport_number'   => 'nullable|string|max:50',
+            'passport_expiry'   => 'nullable|date',
+            'dob'               => 'nullable|date',
+            'gender'            => 'nullable|integer|in:0,1,2',
+            'nationality_code'  => 'nullable|string|max:5',
+            'phone'             => 'nullable|string|max:20',
+            'email'             => 'nullable|email|max:150',
+            'address'           => 'nullable|string|max:500',
+            'guest_type'        => 'nullable|string|max:50',
+            'province'          => 'nullable|string|max:100',
+            'district'          => 'nullable|string|max:100',
+            'ward'              => 'nullable|string|max:100',
+            'residence_type'    => 'nullable|string|max:20',
+            'temp_residence_to' => 'nullable|date',
+            'visa_no'           => 'nullable|string|max:50',
+            'entry_date'        => 'nullable|date',
+            'visa_expiry_date'  => 'nullable|date',
+            'entry_purpose'     => 'nullable|string|max:200',
+            'border_gate'       => 'nullable|string|max:100',
+            'occupation'        => 'nullable|string|max:200',
+            'note'              => 'nullable|string',
+        ]);
+
+        $guest->update($request->only([
+            'full_name', 'title', 'id_type', 'id_number', 'id_issue_date',
+            'passport_number', 'passport_expiry', 'dob', 'gender', 'nationality_code',
+            'phone', 'email', 'address', 'guest_type',
+            'province', 'district', 'ward',
+            'residence_type', 'temp_residence_to',
+            'visa_no', 'entry_date', 'visa_expiry_date',
+            'entry_purpose', 'border_gate', 'occupation', 'note',
+        ]));
+
+
+        return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
+    }
+
     // DELETE /booking-rooms/{roomId}/guests/{guestId}
     public function removeGuest($roomId, $guestId)
     {
-        \App\Models\BookingRoomGuest::where('booking_room_id', $roomId)
+        BookingRoomGuest::where('booking_room_id', $roomId)
             ->where('guest_id', $guestId)
             ->delete();
 
@@ -169,10 +331,28 @@ class GuestController extends Controller
         ], 201);
     }
 
+    // PUT /booking-children/{childId} — Cập nhật thông tin trẻ em
+    public function updateChild(Request $request, $childId)
+    {
+        $child = BookingChild::findOrFail($childId);
+
+        $request->validate([
+            'full_name'        => 'nullable|string|max:200',
+            'title'            => 'nullable|string|max:20',
+            'dob'              => 'nullable|date',
+            'nationality_code' => 'nullable|string|max:5',
+            'age_group'        => 'nullable|in:baby,child',
+        ]);
+
+        $child->update($request->only(['full_name', 'title', 'dob', 'nationality_code', 'age_group']));
+
+        return response()->json(['success' => true, 'data' => $child, 'message' => 'Cập nhật thông tin trẻ em thành công.']);
+    }
+
     // DELETE /bookings/{bookingId}/children/{childId}
     public function removeChild($bookingId, $childId)
     {
-        $child = \App\Models\BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
+        $child = BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
         $child->breakfastDetails()->delete();
         $child->delete();
 
@@ -220,6 +400,92 @@ class GuestController extends Controller
     {
         $reasons = CancelReason::where('is_active', true)->get();
         return response()->json(['success' => true, 'data' => $reasons]);
+    }
+
+    // POST /bookings/{bookingId}/bulk-update-guests
+    public function bulkUpdate(Request $request)
+    {
+        $guestsData = $request->input('guests', []);
+        $childrenData = $request->input('children', []);
+
+        DB::beginTransaction();
+        try {
+            // Update người lớn (guests)
+            foreach ($guestsData as $gData) {
+                if (empty($gData['id'])) continue;
+                $guest = Guest::find($gData['id']);
+                if ($guest) {
+                    $guest->update([
+                        'full_name'         => $gData['full_name'] ?? '',
+                        'title'             => $gData['title'] ?? null,
+                        'dob'               => $gData['dob'] ?? null,
+                        'nationality_code'  => $gData['nationality_code'] ?? null,
+                        'id_type'           => $gData['id_type'] ?? null,
+                        'id_number'         => $gData['id_number'] ?? null,
+                        'id_issue_date'     => $gData['id_issue_date'] ?? null,
+                        'passport_expiry'   => $gData['passport_expiry'] ?? null,
+                        'address'           => $gData['address'] ?? null,
+                        'province'          => $gData['province'] ?? null,
+                        'district'          => $gData['district'] ?? null,
+                        'ward'              => $gData['ward'] ?? null,
+                        'residence_type'    => $gData['residence_type'] ?? null,
+                        'temp_residence_to' => $gData['temp_residence_to'] ?? null,
+                        'phone'             => $gData['phone'] ?? null,
+                        'email'             => $gData['email'] ?? null,
+                        'guest_type'        => $gData['guest_type'] ?? null,
+                        'visa_no'           => $gData['visa_no'] ?? null,
+                        'entry_date'        => $gData['entry_date'] ?? null,
+                        'visa_expiry_date'  => $gData['visa_expiry_date'] ?? null,
+                        'entry_purpose'     => $gData['entry_purpose'] ?? null,
+                        'border_gate'       => $gData['border_gate'] ?? null,
+                        'occupation'        => $gData['occupation'] ?? null,
+                        'note'              => $gData['note'] ?? null,
+                    ]);
+                }
+            }
+
+            // Update trẻ em / em bé
+            foreach ($childrenData as $cData) {
+                if (empty($cData['id'])) continue;
+                $child = BookingChild::find($cData['id']);
+                if ($child) {
+                    $child->update([
+                        'full_name'         => $cData['full_name'] ?? '',
+                        'title'             => $cData['title'] ?? null,
+                        'dob'               => $cData['dob'] ?? null,
+                        'nationality_code'  => $cData['nationality_code'] ?? null,
+                        'id_type'           => $cData['id_type'] ?? null,
+                        'id_number'         => $cData['id_number'] ?? null,
+                        'id_issue_date'     => $cData['id_issue_date'] ?? null,
+                        'passport_expiry'   => $cData['passport_expiry'] ?? null,
+                        'address'           => $cData['address'] ?? null,
+                        'province'          => $cData['province'] ?? null,
+                        'district'          => $cData['district'] ?? null,
+                        'ward'              => $cData['ward'] ?? null,
+                        'residence_type'    => $cData['residence_type'] ?? null,
+                        'temp_residence_to' => $cData['temp_residence_to'] ?? null,
+                        'phone'             => $cData['phone'] ?? null,
+                        'email'             => $cData['email'] ?? null,
+                        'guest_type'        => $cData['guest_type'] ?? null,
+                        'visa_no'           => $cData['visa_no'] ?? null,
+                        'entry_date'        => $cData['entry_date'] ?? null,
+                        'visa_expiry_date'  => $cData['visa_expiry_date'] ?? null,
+                        'entry_purpose'     => $cData['entry_purpose'] ?? null,
+                        'border_gate'       => $cData['border_gate'] ?? null,
+                        'occupation'        => $cData['occupation'] ?? null,
+                        'note'              => $cData['note'] ?? null,
+                    ]);
+                    $this->generateBreakfastDetails($child);
+                }
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Cập nhật thông tin khách hàng loạt thành công!']);
     }
 
     // =========================================

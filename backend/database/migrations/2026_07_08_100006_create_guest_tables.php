@@ -23,8 +23,12 @@ return new class extends Migration
         Schema::create('guests', function (Blueprint $table) {
             $table->id();
             $table->string('full_name', 200);                  // Họ tên đầy đủ (viết hoa)
+            $table->string('title', 20)->nullable();           // Danh xưng: Mr./Mrs./Ms./Miss/Kid.
+            $table->string('id_type', 50)->nullable();         // Loại giấy tờ: CCCD/CMND/Hộ chiếu/...
             $table->string('id_number', 50)->nullable();       // Số CCCD/CMND
+            $table->date('id_issue_date')->nullable();         // Ngày cấp giấy tờ
             $table->string('passport_number', 50)->nullable(); // Số hộ chiếu
+            $table->date('passport_expiry')->nullable();       // Ngày hết hạn hộ chiếu/CCCD
             $table->date('dob')->nullable();                   // Ngày sinh
             // 0 = Nam, 1 = Nữ, 2 = Khác
             $table->unsignedTinyInteger('gender')->nullable();
@@ -32,6 +36,19 @@ return new class extends Migration
             $table->string('phone', 20)->nullable();
             $table->string('email', 150)->nullable();
             $table->string('address', 500)->nullable();
+            $table->string('guest_type', 50)->nullable();      // Loại khách: FIT/GIT/VIP/...
+            $table->string('province', 100)->nullable();       // Tỉnh/Thành phố
+            $table->string('district', 100)->nullable();       // Quận/Huyện
+            $table->string('ward', 100)->nullable();           // Phường/Xã
+            $table->string('residence_type', 20)->nullable();  // Thường trú/Tạm trú
+            $table->date('temp_residence_to')->nullable();     // Tạm trú đến
+            $table->string('visa_no', 50)->nullable();         // Số Visa
+            $table->date('entry_date')->nullable();            // Ngày nhập cảnh
+            $table->date('visa_expiry_date')->nullable();      // Ngày hết hạn visa
+            $table->string('entry_purpose', 200)->nullable();  // Mục đích nhập cảnh
+            $table->string('border_gate', 100)->nullable();    // Cửa khẩu
+            $table->string('occupation', 200)->nullable();     // Công việc
+            $table->text('note')->nullable();                  // Ghi chú
             // 0 = Active, 3 = Cancelled (cascade từ hủy phòng)
             $table->unsignedTinyInteger('guest_status')->default(0);
             $table->timestamps();
@@ -41,6 +58,7 @@ return new class extends Migration
             $table->index('passport_number');
             $table->index('full_name');
         });
+
 
         // =============================================
         // 2. booking_room_guests (SP2200 — PhongThueKhach)
@@ -78,6 +96,9 @@ return new class extends Migration
             $table->string('booking_room_id', 50)->nullable();
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->nullOnDelete();
             $table->string('full_name', 200)->nullable(); // Tên trẻ em (tùy chọn)
+            $table->string('title', 20)->nullable();      // Danh xưng: Kid./Baby.
+            $table->date('dob')->nullable();              // Ngày sinh
+            $table->string('nationality_code', 5)->nullable()->default('VN'); // Quốc tịch
             // 'baby'  = Em bé (mặc định ăn sáng miễn phí, không tính phụ phí)
             // 'child' = Trẻ em (có thể tính phụ phí ăn sáng tùy cấu hình)
             $table->enum('age_group', ['baby', 'child'])->default('child');
@@ -88,6 +109,7 @@ return new class extends Migration
             $table->index('booking_id');
             $table->index('booking_room_id');
         });
+
 
         // =============================================
         // 4. booking_child_breakfast_details (SP2401 — TreEmAnSangChiTiet)

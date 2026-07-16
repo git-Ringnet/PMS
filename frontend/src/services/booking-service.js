@@ -106,6 +106,13 @@ export const deleteSpecialRequestMaster = (id) => http.delete(`/special-requests
 export const fetchBookingRoomSpecialRequests = (roomId) => http.get(`/booking-rooms/${roomId}/special-requests`)
 export const syncBookingRoomSpecialRequests = (roomId, data) => http.post(`/booking-rooms/${roomId}/special-requests/sync`, data)
 
+// ==================== GUESTS (THÔNG TIN KHÁCH) ====================
+export const fetchBookingGuests = (bookingId) => http.get(`/bookings/${bookingId}/guests`)
+export const initBookingGuests = (bookingId) => http.post(`/bookings/${bookingId}/init-guests`)
+export const updateBookingRoomGuest = (roomId, guestId, data) => http.put(`/booking-rooms/${roomId}/guests/${guestId}`, data)
+export const updateBookingChild = (childId, data) => http.put(`/booking-children/${childId}`, data)
+export const bulkUpdateBookingGuests = (bookingId, data) => http.post(`/bookings/${bookingId}/bulk-update-guests`, data)
+
 
 
 

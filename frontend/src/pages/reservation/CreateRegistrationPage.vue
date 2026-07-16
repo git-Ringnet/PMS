@@ -12,6 +12,7 @@ import ExtraBedModal from './components/ExtraBedModal.vue'
 import SystemSearchModal from './components/SystemSearchModal.vue'
 import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
 import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
+import GuestInfoModal from './components/GuestInfoModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -290,6 +291,18 @@ const copyModalDepartureDate = ref('')
 
 // ==================== UPGRADE ROOM MODAL ====================
 const isUpgradeModalOpen = ref(false)
+
+// ==================== GUEST INFO MODAL ====================
+const isGuestInfoModalOpen = ref(false)
+
+function openGuestInfoModal() {
+  const tab = activeTab.value
+  if (!tab || !tab.dbId) {
+    uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi xem thông tin khách!', 'warning')
+    return
+  }
+  isGuestInfoModalOpen.value = true
+}
 
 // ==================== CHILD BREAKFAST MODAL STATE ====================
 const isChildBreakfastModalOpen = ref(false)
@@ -2392,8 +2405,10 @@ async function triggerAction(actionName) {
     } else {
       uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
     }
-  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký' || actionName === 'Thông tin khách hàng') {
+  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký') {
     openEditModal()
+  } else if (actionName === 'Thông tin khách hàng') {
+    openGuestInfoModal()
   } else if (actionName === 'Hóa đơn' || actionName === 'Hoá đơn') {
     uiStore.showToast('Đang tiến hành tạo hóa đơn...', 'success')
   } else if (actionName === 'Nhân bản') {
@@ -3225,7 +3240,7 @@ defineExpose({
         <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
           <!-- ROOMS DATA TABLE LIST -->
           <div class="table-wrap flex-1 min-h-[300px]" id="tableWrap" ref="tableWrapRef" @scroll="handleTableScroll">
-          <table :style="{ width: tableWidth }" class="text-left border-collapse text-xs table-fixed">
+          <table :style="{ width: tableWidth }" class="text-left border-collapse text-xs table-auto">
             <colgroup>
               <col style="width: 35px" />
               <col style="width: 50px" />
@@ -3328,7 +3343,7 @@ defineExpose({
                         <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
                         <td v-for="col in columns.filter(c => c.visible)" 
                             :key="col.key" 
-                            class="p-2 border-r border-slate-200 max-w-0" 
+                            class="p-2 border-r border-slate-200" 
                             :class="[
                               col.center ? 'text-center' : '', 
                               col.right ? 'text-right' : '', 
@@ -5397,6 +5412,14 @@ defineExpose({
         @upgraded="handleUpgraded" 
       />
     </Teleport>
+
+    <!-- THÔNG TIN KHÁCH MODAL -->
+    <GuestInfoModal
+      :show="isGuestInfoModalOpen"
+      :bookingId="activeTab?.dbId"
+      @close="isGuestInfoModalOpen = false"
+      @saved="loadBookings"
+    />
 
     <!-- XÓA DỊCH VỤ BỔ SUNG MODAL -->
     <Teleport to="body">

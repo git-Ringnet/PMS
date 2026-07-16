@@ -141,10 +141,12 @@ class BookingRoomController extends Controller
         // Thêm khách chính (guest_name)
         $roomGuestName = trim($validated['guest_name'] ?? '');
         if (empty($roomGuestName)) {
-            $roomGuestName = $booking->booking_name;
+            $roomGuestName = 'Guest 1';
         }
         $guest = \App\Models\Guest::create([
             'full_name' => $roomGuestName,
+            'title' => 'Mr.',
+            'nationality_code' => 'VN',
             'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
         ]);
         \App\Models\BookingRoomGuest::create([
