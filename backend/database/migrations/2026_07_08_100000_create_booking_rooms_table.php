@@ -39,6 +39,7 @@ return new class extends Migration
             // =========================================
             $table->date('arrival_date');       // Ngày đến của phòng này (có thể khác header booking)
             $table->date('departure_date');     // Ngày đi của phòng này
+            $table->unsignedInteger('num_of_days')->default(1)->comment('Số đêm/ngày thuê của phòng này');
             $table->date('actual_arrival_date')->nullable(); // Ngày đến thực tế (giữ nguyên gốc khi chuyển phòng)
             $table->time('arrival_time')->nullable();    // Giờ đến
             $table->time('departure_time')->nullable();  // Giờ đi

@@ -9,6 +9,27 @@ class Guest extends Model
 {
     use HasFactory;
 
+    protected $keyType = 'string';
+    public $incrementing = false;
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            if (empty($model->id)) {
+                $lastGuest = self::where('id', 'like', 'K%')
+                    ->orderByRaw('CAST(SUBSTRING(id, 2) AS UNSIGNED) DESC')
+                    ->first();
+                $nextNum = 1;
+                if ($lastGuest && preg_match('/^K(\d+)$/', $lastGuest->id, $matches)) {
+                    $nextNum = intval($matches[1]) + 1;
+                }
+                $model->id = 'K' . str_pad($nextNum, 9, '0', STR_PAD_LEFT);
+            }
+        });
+    }
+
     const STATUS_ACTIVE = 1;
 
     protected $fillable = [

@@ -21,7 +21,7 @@ return new class extends Migration
         // Thông tin khách người lớn — dùng chung, có thể kế thừa cho booking mới
         // =============================================
         Schema::create('guests', function (Blueprint $table) {
-            $table->id();
+            $table->string('id', 50)->primary();
             $table->string('full_name', 200);                  // Họ tên đầy đủ (viết hoa)
             $table->string('title', 20)->nullable();           // Danh xưng: Mr./Mrs./Ms./Miss/Kid.
             $table->string('id_type', 50)->nullable();         // Loại giấy tờ: CCCD/CMND/Hộ chiếu/...
@@ -68,9 +68,8 @@ return new class extends Migration
             $table->id();
             $table->string('booking_room_id', 50);
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
-            $table->foreignId('guest_id')
-                ->constrained('guests')
-                ->restrictOnDelete();
+            $table->string('guest_id', 50);
+            $table->foreign('guest_id')->references('id')->on('guests')->restrictOnDelete();
             // 1 = Khách đại diện chính của phòng (guest phải có đầy đủ thông tin hơn)
             $table->boolean('is_primary')->default(false);
             // 0 = Active, 3 = Cancelled
@@ -88,7 +87,7 @@ return new class extends Migration
         // SP2500 chỉ là pivot đơn giản (booking_child_id + booking_room_id) nên gộp vào đây
         // =============================================
         Schema::create('booking_children', function (Blueprint $table) {
-            $table->id();
+            $table->string('id', 50)->primary();
             $table->foreignId('booking_id')
                 ->constrained('bookings')
                 ->cascadeOnDelete();
@@ -117,9 +116,8 @@ return new class extends Migration
         // =============================================
         Schema::create('booking_child_breakfast_details', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_child_id')
-                ->constrained('booking_children')
-                ->cascadeOnDelete();
+            $table->string('booking_child_id', 50);
+            $table->foreign('booking_child_id')->references('id')->on('booking_children')->cascadeOnDelete();
             $table->date('service_date');           // Ngày ăn sáng
             $table->boolean('breakfast')->default(false);       // 1 = Có ăn sáng ngày này
             $table->boolean('is_free')->default(true);          // 1 = Miễn phí (giá = 0đ)

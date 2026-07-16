@@ -27,7 +27,7 @@ class BookingRoom extends Model
                 if ($lastRoom && preg_match('/^G(\d+)$/', $lastRoom->id, $matches)) {
                     $nextNum = intval($matches[1]) + 1;
                 }
-                $model->id = 'G' . $nextNum;
+                $model->id = 'G' . str_pad($nextNum, 7, '0', STR_PAD_LEFT);
             }
         });
 
@@ -47,6 +47,14 @@ class BookingRoom extends Model
                     $model->actual_arrival_date = $model->arrival_date;
                 }
             }
+
+            // Tự động tính số đêm (num_of_days) của phòng
+            if (!empty($model->arrival_date) && !empty($model->departure_date)) {
+                $arr = \Carbon\Carbon::parse($model->arrival_date);
+                $dep = \Carbon\Carbon::parse($model->departure_date);
+                $diff = $arr->diffInDays($dep);
+                $model->num_of_days = $diff > 0 ? $diff : 1; // Nếu cùng ngày (day use) thì tính 1 ngày
+            }
         });
     }
 
@@ -57,6 +65,7 @@ class BookingRoom extends Model
         'original_room_class_id',
         'arrival_date',
         'departure_date',
+        'num_of_days',
         'actual_arrival_date',
         'arrival_time',
         'departure_time',
@@ -87,6 +96,7 @@ class BookingRoom extends Model
     protected $casts = [
         'arrival_date'           => 'date',
         'departure_date'         => 'date',
+        'num_of_days'            => 'integer',
         'actual_arrival_date'    => 'date',
         'rate'                   => 'decimal:2',
         'extra_bed_rate'         => 'decimal:2',

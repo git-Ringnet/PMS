@@ -1659,6 +1659,16 @@ function handleCompanyChange() {
   if (!modalForm.value.salesPerson && co.sales_person) {
     modalForm.value.salesPerson = co.sales_person.username || co.sales_person.name || ''
   }
+
+  // Auto-fill thị trường từ công ty
+  if (co.market_id) {
+    modalForm.value.marketId = co.market_id
+  }
+
+  // Auto-fill nguồn khách từ công ty
+  if (co.customer_source_id) {
+    modalForm.value.customerSourceId = co.customer_source_id
+  }
 }
 
 watch(() => modalForm.value.registrationStatusId, (newId) => {
