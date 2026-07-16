@@ -650,19 +650,51 @@ function getRoomStatusGroupName(status) {
   if (s === 3) return 'Hủy phòng'
   if (s === 4) return 'No Show'
   if (s === 100) return 'Phòng chuyển'
-  return 'Đã đặt'
+  return 'Đăng ký'
 }
 
-// Grouped by room type (always)
+function getStatusOrderAndName(status) {
+  const s = Number(status)
+  if (s === 0)   return { order: 0, name: 'Đăng ký' }
+  if (s === 1)   return { order: 1, name: 'Đang ở' }
+  if (s === 2)   return { order: 2, name: 'Phòng đi' }
+  if (s === 3 || s === 100) return { order: 3, name: 'Phòng chuyển' }
+  if (s === 4)   return { order: 4, name: 'Khách không đến' }
+  return { order: 5, name: 'Khác' }
+}
+
+// Grouped by room type (always) - Returns sorted array
 const groupedRooms = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return {}
-  const groups = {}
+  if (!activeTab.value || !activeTab.value.rooms) return []
+  const groupsMap = {}
   filteredActiveRooms.value.forEach(room => {
     const key = room.type || 'Khác'
-    if (!groups[key]) groups[key] = []
-    groups[key].push(room)
+    if (!groupsMap[key]) groupsMap[key] = []
+    groupsMap[key].push(room)
   })
-  return groups
+
+  const groupsList = Object.keys(groupsMap).map(typeName => {
+    const rooms = groupsMap[typeName]
+    // Sort rooms by bookingRoomId ascending
+    rooms.sort((a, b) => {
+      const idA = a.bookingRoomId || ''
+      const idB = b.bookingRoomId || ''
+      return idA.localeCompare(idB)
+    })
+
+    const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
+    const order = rc ? (rc.orders !== undefined ? Number(rc.orders) : 0) : 9999
+
+    return {
+      typeName,
+      order,
+      rooms
+    }
+  })
+
+  // Sort groups by room class order ascending
+  groupsList.sort((a, b) => a.order - b.order || a.typeName.localeCompare(b.typeName))
+  return groupsList
 })
 
 // Whether any room has been checked-in/checked-out so we show status headers
@@ -671,18 +703,60 @@ const hasStatusGroups = computed(() => {
   return activeTab.value.rooms.some(r => Number(r.bookingRoomStatus) >= 1)
 })
 
-// Build nested: { 'Đang ở': { 'Deluxe Double': [...] }, 'Đã đặt': { ... } }
+// Build nested: Returns sorted array of status groups, each containing typeGroups sorted by room class order
 const groupedRoomsNested = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return {}
-  const nested = {}
+  if (!activeTab.value || !activeTab.value.rooms) return []
+  
+  const statusGroupsMap = {}
   filteredActiveRooms.value.forEach(room => {
-    const statusKey = getRoomStatusGroupName(room.bookingRoomStatus)
+    const { order: statusOrder, name: statusName } = getStatusOrderAndName(room.bookingRoomStatus)
+    if (!statusGroupsMap[statusOrder]) {
+      statusGroupsMap[statusOrder] = {
+        statusOrder,
+        statusName,
+        typeGroupsMap: {}
+      }
+    }
     const typeKey = room.type || 'Khác'
-    if (!nested[statusKey]) nested[statusKey] = {}
-    if (!nested[statusKey][typeKey]) nested[statusKey][typeKey] = []
-    nested[statusKey][typeKey].push(room)
+    if (!statusGroupsMap[statusOrder].typeGroupsMap[typeKey]) {
+      statusGroupsMap[statusOrder].typeGroupsMap[typeKey] = []
+    }
+    statusGroupsMap[statusOrder].typeGroupsMap[typeKey].push(room)
   })
-  return nested
+
+  const sortedStatusGroups = Object.values(statusGroupsMap).map(statusGroup => {
+    const typeGroupsList = Object.keys(statusGroup.typeGroupsMap).map(typeName => {
+      const rooms = statusGroup.typeGroupsMap[typeName]
+      // Sort rooms by bookingRoomId ascending
+      rooms.sort((a, b) => {
+        const idA = a.bookingRoomId || ''
+        const idB = b.bookingRoomId || ''
+        return idA.localeCompare(idB)
+      })
+
+      const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
+      const order = rc ? (rc.orders !== undefined ? Number(rc.orders) : 0) : 9999
+
+      return {
+        typeName,
+        order,
+        rooms
+      }
+    })
+
+    // Sort type groups by room class order ascending
+    typeGroupsList.sort((a, b) => a.order - b.order || a.typeName.localeCompare(b.typeName))
+
+    return {
+      statusOrder: statusGroup.statusOrder,
+      statusName: statusGroup.statusName,
+      typeGroups: typeGroupsList
+    }
+  })
+
+  // Sort status groups by statusOrder ascending (0 -> 1 -> 2 -> 3 -> 4)
+  sortedStatusGroups.sort((a, b) => a.statusOrder - b.statusOrder)
+  return sortedStatusGroups
 })
 
 function toggleGroupCollapse(typeName) {
@@ -2354,6 +2428,19 @@ function handleRowSelect(roomId) {
   else selectedRows.value.push(roomId)
 }
 
+function handleSelectAllInGroup(rooms, checked) {
+  const ids = rooms.map(r => r.id)
+  if (checked) {
+    ids.forEach(id => {
+      if (!selectedRows.value.includes(id)) {
+        selectedRows.value.push(id)
+      }
+    })
+  } else {
+    selectedRows.value = selectedRows.value.filter(id => !ids.includes(id))
+  }
+}
+
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
     isEditing.value = true
@@ -3330,28 +3417,34 @@ defineExpose({
               <template v-if="!collapsedSections.registrationStatus">
                 <!-- ===== MODE A: No checked-in rooms → flat group by room type ===== -->
                 <template v-if="!hasStatusGroups">
-                  <template v-for="(roomsInGroup, typeName) in groupedRooms" :key="typeName">
+                  <template v-for="group in groupedRooms" :key="group.typeName">
                     <!-- Type Group Header Row -->
                     <tr class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900">
                       <td class="p-2 border-r border-slate-200 text-center">
                         <button 
-                          @click="toggleGroupCollapse(typeName)" 
+                          @click="toggleGroupCollapse(group.typeName)" 
                           class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
                           style="font-size: 13px; line-height: 1;"
                         >
-                          {{ collapsedSections[typeName] ? '+' : '−' }}
+                          {{ collapsedSections[group.typeName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r border-slate-200 text-center"></td>
+                      <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                        <input 
+                          type="checkbox" 
+                          :checked="group.rooms.length > 0 && group.rooms.every(r => selectedRows.includes(r.id))" 
+                          @change="e => handleSelectAllInGroup(group.rooms, e.target.checked)" 
+                        />
+                      </td>
                       <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider">
-                        {{ typeName }} ({{ roomsInGroup.length }})
+                        {{ group.typeName }} ({{ group.rooms.length }})
                       </td>
                       <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
                     </tr>
 
                   <!-- Rooms in Group -->
-                  <template v-if="!collapsedSections[typeName]">
-                    <template v-for="(room, idx) in roomsInGroup" :key="room.id">
+                  <template v-if="!collapsedSections[group.typeName]">
+                    <template v-for="(room, idx) in group.rooms" :key="room.id">
                       <tr 
                         class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
                         :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
@@ -3796,49 +3889,61 @@ defineExpose({
 
                 <!-- ===== MODE B: Mixed check-in/booked → status group → room type sub-group ===== -->
                 <template v-else>
-                  <template v-for="(typeGroups, statusName) in groupedRoomsNested" :key="statusName">
+                  <template v-for="statusGroup in groupedRoomsNested" :key="statusGroup.statusName">
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr class="bg-[#dbeafe]/60 border-b border-blue-200 font-bold h-8 text-blue-900">
                       <td class="p-2 border-r border-blue-200 text-center">
                         <button 
-                          @click="toggleGroupCollapse('status_' + statusName)" 
+                          @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded bg-blue-400 hover:bg-blue-500 text-white font-bold select-none cursor-pointer"
                           style="font-size: 13px; line-height: 1;"
                         >
-                          {{ collapsedSections['status_' + statusName] ? '+' : '−' }}
+                          {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r border-blue-200 text-center"></td>
+                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                        <input 
+                          type="checkbox" 
+                          :checked="statusGroup.typeGroups.flatMap(g => g.rooms).length > 0 && statusGroup.typeGroups.flatMap(g => g.rooms).every(r => selectedRows.includes(r.id))" 
+                          @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
+                        />
+                      </td>
                       <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-blue-900 font-bold text-xs uppercase tracking-wider">
-                        {{ statusName }} ({{ Object.values(typeGroups).flat().length }})
+                        Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
                       <td class="bg-[#bfdbfe] sticky-shadow-left z-10"></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
-                    <template v-if="!collapsedSections['status_' + statusName]">
-                      <template v-for="(roomsInGroup, typeName) in typeGroups" :key="typeName">
+                    <template v-if="!collapsedSections['status_' + statusGroup.statusName]">
+                      <template v-for="group in statusGroup.typeGroups" :key="group.typeName">
                         <!-- Sub-group Header (Room Type) -->
                         <tr class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900">
                           <td class="p-2 border-r border-slate-200 text-center">
                             <button 
-                              @click="toggleGroupCollapse(statusName + '_' + typeName)" 
+                              @click="toggleGroupCollapse(statusGroup.statusName + '_' + group.typeName)" 
                               class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
                               style="font-size: 13px; line-height: 1;"
                             >
-                              {{ collapsedSections[statusName + '_' + typeName] ? '+' : '−' }}
+                              {{ collapsedSections[statusGroup.statusName + '_' + group.typeName] ? '+' : '−' }}
                             </button>
                           </td>
-                          <td class="p-2 border-r border-slate-200 text-center"></td>
+                          <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                            <input 
+                              type="checkbox" 
+                              :checked="group.rooms.length > 0 && group.rooms.every(r => selectedRows.includes(r.id))" 
+                              @change="e => handleSelectAllInGroup(group.rooms, e.target.checked)" 
+                            />
+                          </td>
                           <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-gray-700 font-bold text-xs uppercase tracking-wider pl-6">
-                            {{ typeName }} ({{ roomsInGroup.length }})
+                            {{ group.typeName }} ({{ group.rooms.length }})
                           </td>
                           <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
                         </tr>
 
                         <!-- Rooms within this sub-group -->
-                        <template v-if="!collapsedSections[statusName + '_' + typeName]">
-                          <template v-for="(room, idx) in roomsInGroup" :key="room.id">
+                        <template v-if="!collapsedSections[statusGroup.statusName + '_' + group.typeName]">
+                          <template v-for="(room, idx) in group.rooms" :key="room.id">
                             <tr 
                               class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
                               :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
@@ -4579,7 +4684,7 @@ defineExpose({
                     <select 
                       v-model="modalForm.registrationStatusId"
                       @change="handleConfirmDateCalculation"
-                      class="w-full bg-blue-50/70 border border-blue-200 text-blue-800 rounded-xl pl-3 pr-8 text-xs focus:outline-none focus:border-blue-400 appearance-none font-bold h-[32px] shadow-sm cursor-pointer"
+                      class="w-full bg-blue-50/70 border border-blue-200 text-black rounded-xl pl-3 pr-8 text-xs focus:outline-none focus:border-blue-400 appearance-none font-bold h-[32px] shadow-sm cursor-pointer"
                     >
                         <option :value="null" disabled>— Chọn —</option>
                         <option v-for="rs in registrationStatuses.filter(s => !s.is_hidden || s.id === modalForm.registrationStatusId)" :key="rs.id" :value="rs.id">{{ rs.name }}</option>
@@ -4655,20 +4760,26 @@ defineExpose({
                   <div class="flex flex-wrap lg:flex-nowrap gap-2 items-end">
                       <div class="flex-1 min-w-[160px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Công ty <span class="text-red-500">*</span></label>
-                          <div class="relative w-full flex items-center">
+                          <div class="relative w-full flex items-center group">
                               <select 
                                 v-model="modalForm.companyId"
                                 @change="handleCompanyChange"
-                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer"
+                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer appearance-none"
                               >
                                   <option :value="null" disabled>— Chọn công ty —</option>
                                   <option v-for="c in companies" :key="c.id" :value="c.id">[{{ c.code }}] {{ c.name }}</option>
                               </select>
+                              <span 
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150 animate-none"
+                                :class="{ 'group-hover:opacity-0': modalForm.companyId }"
+                              >
+                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                              </span>
                               <button 
                                 v-if="modalForm.companyId"
                                 type="button"
                                 @click.stop="modalForm.companyId = null; handleCompanyChange()"
-                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                                 style="z-index: 10;"
                                 title="Xóa chọn"
                               >
@@ -4678,19 +4789,25 @@ defineExpose({
                       </div>
                       <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Thị trường</label>
-                          <div class="relative w-full flex items-center">
+                          <div class="relative w-full flex items-center group">
                               <select 
                                 v-model="modalForm.marketId"
-                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold"
+                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold appearance-none"
                               >
                                   <option :value="null" disabled>— Chọn thị trường —</option>
                                   <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
                               </select>
+                              <span 
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
+                                :class="{ 'group-hover:opacity-0': modalForm.marketId }"
+                              >
+                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                              </span>
                               <button 
                                 v-if="modalForm.marketId"
                                 type="button"
                                 @click.stop="modalForm.marketId = null"
-                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                                 style="z-index: 10;"
                                 title="Xóa chọn"
                               >
@@ -4700,19 +4817,25 @@ defineExpose({
                       </div>
                       <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Nguồn khách</label>
-                          <div class="relative w-full flex items-center">
+                          <div class="relative w-full flex items-center group">
                               <select 
                                 v-model="modalForm.customerSourceId"
-                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold"
+                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold appearance-none"
                               >
                                   <option :value="null" disabled>— Chọn nguồn khách —</option>
                                   <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
                               </select>
+                              <span 
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
+                                :class="{ 'group-hover:opacity-0': modalForm.customerSourceId }"
+                              >
+                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                              </span>
                               <button 
                                 v-if="modalForm.customerSourceId"
                                 type="button"
                                 @click.stop="modalForm.customerSourceId = null"
-                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                                 style="z-index: 10;"
                                 title="Xóa chọn"
                               >
@@ -4722,19 +4845,25 @@ defineExpose({
                       </div>
                       <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Người bán</label>
-                          <div class="relative w-full flex items-center">
+                          <div class="relative w-full flex items-center group">
                               <select 
                                 v-model="modalForm.salesPerson"
-                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold"
+                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold appearance-none cursor-pointer"
                               >
                                   <option value="" disabled>— Chọn người bán —</option>
                                   <option v-for="u in users" :key="u.id" :value="u.username || u.name">{{ u.name || u.username }}</option>
                               </select>
+                              <span 
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
+                                :class="{ 'group-hover:opacity-0': modalForm.salesPerson }"
+                              >
+                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                              </span>
                               <button 
                                 v-if="modalForm.salesPerson"
                                 type="button"
                                 @click.stop="modalForm.salesPerson = ''"
-                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                                 style="z-index: 10;"
                                 title="Xóa chọn"
                               >
@@ -4744,19 +4873,25 @@ defineExpose({
                       </div>
                       <div class="flex-1 min-w-[150px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Phương thức thanh toán</label>
-                          <div class="relative w-full flex items-center">
+                          <div class="relative w-full flex items-center group">
                               <select 
                                 v-model="modalForm.paymentMethodId"
-                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold"
+                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold appearance-none cursor-pointer"
                               >
                                   <option :value="null" disabled>Chọn phương thức...</option>
                                   <option v-for="pm in paymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
                               </select>
+                              <span 
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
+                                :class="{ 'group-hover:opacity-0': modalForm.paymentMethodId }"
+                              >
+                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                              </span>
                               <button 
                                 v-if="modalForm.paymentMethodId"
                                 type="button"
                                 @click.stop="modalForm.paymentMethodId = null"
-                                class="absolute right-7 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                                 style="z-index: 10;"
                                 title="Xóa chọn"
                               >
@@ -4777,20 +4912,26 @@ defineExpose({
                       <div class="flex-2 min-w-[260px] flex flex-col gap-0.5">
                           <label class="block text-[11px] text-gray-500 font-bold">Người đặt phòng</label>
                           <div class="flex space-x-1.5 h-[32px]">
-                              <div class="relative flex-1 flex items-center">
+                              <div class="relative flex-1 flex items-center group">
                                   <select 
                                     v-model="modalForm.bookerId"
                                     @change="handleBookerChange"
-                                    class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white font-bold h-[32px] cursor-pointer"
+                                    class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white font-bold h-[32px] cursor-pointer appearance-none"
                                   >
                                       <option :value="null" disabled>Chọn người đặt...</option>
                                       <option v-for="b in bookers" :key="b.id" :value="b.id">{{ b.name }}</option>
                                   </select>
+                                  <span 
+                                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
+                                    :class="{ 'group-hover:opacity-0': modalForm.bookerId }"
+                                  >
+                                      <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                                  </span>
                                   <button 
                                     v-if="modalForm.bookerId"
                                     type="button"
                                     @click.stop="modalForm.bookerId = null; handleBookerChange()"
-                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
+                                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                                     style="z-index: 10;"
                                     title="Xóa chọn"
                                   >
