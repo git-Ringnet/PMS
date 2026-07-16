@@ -27,7 +27,7 @@ return new class extends Migration
 
             // Target entity (polymorphic-style)
             $table->string('target_type', 120)->nullable(); // Model class: Room, User, Company
-            $table->unsignedBigInteger('target_id')->nullable(); // ID record bị tác động
+            $table->string('target_id', 120)->nullable(); // ID record bị tác động (string để hỗ trợ cả ID số và ID chuỗi như 'G1')
             $table->string('target_label')->nullable(); // Nhãn hiển thị: "Phòng 101"
 
             // Change tracking

@@ -10,12 +10,15 @@ class BookingChild extends Model
     use HasFactory;
 
     protected $fillable = [
-        'booking_id', 'booking_room_id', 'full_name', 'age_group', 'child_status',
+        'booking_id', 'booking_room_id', 'full_name', 'title',
+        'dob', 'nationality_code', 'age_group', 'child_status',
     ];
 
     protected $casts = [
         'child_status' => 'integer',
+        'dob'          => 'date',
     ];
+
 
     public function booking()
     {

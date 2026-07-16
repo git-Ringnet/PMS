@@ -27,24 +27,40 @@ http.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+// Flag tránh redirect nhiều lần khi nhiều request 401 cùng lúc
+let _isRedirectingToLogin = false
+
 // Response interceptor
 http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      switch (error.response.status) {
-        case 401:
-          localStorage.removeItem('pms_token')
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login'
-          }
-          break
-        case 403:
-          console.error('Không có quyền truy cập')
-          break
-        case 500:
-          console.error('Lỗi máy chủ')
-          break
+      const status = error.response.status
+
+      // 401 = Token hết hạn / không hợp lệ (ví dụ: server migrate:fresh)
+      // 419 = Session/CSRF expired
+      if ((status === 401 || status === 419) && !_isRedirectingToLogin) {
+        _isRedirectingToLogin = true
+
+        // Xóa sạch toàn bộ auth state
+        localStorage.removeItem('pms_token')
+        localStorage.removeItem('pms_user')
+        localStorage.removeItem('pms_lang')
+        // Xóa tất cả key có prefix pms_ để đảm bảo sạch hoàn toàn
+        Object.keys(localStorage)
+          .filter(key => key.startsWith('pms_'))
+          .forEach(key => localStorage.removeItem(key))
+
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+
+        // Reset flag sau 3 giây để tránh lock vĩnh viễn
+        setTimeout(() => { _isRedirectingToLogin = false }, 3000)
+      } else if (status === 403) {
+        console.error('Không có quyền truy cập')
+      } else if (status === 500) {
+        console.error('Lỗi máy chủ')
       }
     }
     return Promise.reject(error)

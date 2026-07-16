@@ -126,9 +126,9 @@ class BookingController extends Controller
             'is_day_use'               => 'nullable|boolean',
             'breakfast_included'       => 'nullable|boolean',
             'has_vat'                  => 'nullable|boolean',
-            'company_id'               => 'nullable|exists:companies,id',
-            'market_id'                => 'nullable|exists:markets,id',
-            'customer_source_id'       => 'nullable|exists:customer_sources,id',
+            'company_id'               => 'required|exists:companies,id',
+            'market_id'                => 'required|exists:markets,id',
+            'customer_source_id'       => 'required|exists:customer_sources,id',
             'branch_id'                => 'nullable|exists:branches,id',
             'booker_id'                => 'nullable|exists:bookers,id',
             'contact_name'             => 'nullable|string|max:255',
@@ -279,10 +279,12 @@ class BookingController extends Controller
                             // Thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
                             if (empty($roomGuestName)) {
-                                $roomGuestName = $booking->booking_name;
+                                $roomGuestName = 'Guest 1';
                             }
                             $guest = \App\Models\Guest::create([
                                 'full_name' => $roomGuestName,
+                                'title' => 'Mr.',
+                                'nationality_code' => 'VN',
                                 'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
                             ]);
                             \App\Models\BookingRoomGuest::create([
@@ -463,9 +465,9 @@ class BookingController extends Controller
             'is_day_use'               => 'nullable|boolean',
             'breakfast_included'       => 'nullable|boolean',
             'has_vat'                  => 'nullable|boolean',
-            'company_id'               => 'nullable|exists:companies,id',
-            'market_id'                => 'nullable|exists:markets,id',
-            'customer_source_id'       => 'nullable|exists:customer_sources,id',
+            'company_id'               => 'required|exists:companies,id',
+            'market_id'                => 'required|exists:markets,id',
+            'customer_source_id'       => 'required|exists:customer_sources,id',
             'branch_id'                => 'nullable|exists:branches,id',
             'booker_id'                => 'nullable|exists:bookers,id',
             'contact_name'             => 'nullable|string|max:255',
@@ -616,7 +618,7 @@ class BookingController extends Controller
                             // Cập nhật hoặc thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
                             if (empty($roomGuestName)) {
-                                $roomGuestName = $booking->booking_name;
+                                $roomGuestName = 'Guest 1';
                             }
                             
                             $pivot = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)->where('is_primary', 1)->first();
@@ -627,6 +629,8 @@ class BookingController extends Controller
                             } else {
                                 $guest = \App\Models\Guest::create([
                                     'full_name' => $roomGuestName,
+                                    'title' => 'Mr.',
+                                    'nationality_code' => 'VN',
                                     'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
                                 ]);
                                 \App\Models\BookingRoomGuest::create([

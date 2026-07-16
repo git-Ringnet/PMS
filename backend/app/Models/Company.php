@@ -24,6 +24,7 @@ class Company extends Model
         'max_debt',
         'bank_account',
         'booker_id',
+        'sales_person_id',
         'rate_code',
         'branch_id',
         'is_active',
@@ -69,5 +70,10 @@ class Company extends Model
     public function booker(): BelongsTo
     {
         return $this->belongsTo(Booker::class);
+    }
+
+    public function salesPerson(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sales_person_id');
     }
 }

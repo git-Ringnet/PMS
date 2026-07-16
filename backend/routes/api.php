@@ -177,13 +177,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Guests & Children — Epic 7, 13 ---
     Route::get('/guests/search', [\App\Http\Controllers\Api\GuestController::class, 'searchGuests']);
+    Route::get('/bookings/{bookingId}/guests',   [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
+    Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests']);
+    Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate']);
     Route::prefix('booking-rooms/{roomId}/guests')->group(function () {
         Route::get('/',             [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
         Route::post('/',            [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
+        Route::put('/{guestId}',    [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
     Route::get('/bookings/{bookingId}/children',              [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
     Route::post('/bookings/{bookingId}/children',             [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
+    Route::put('/booking-children/{childId}',                 [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);
     Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild']);
 
     // Breakfast details (Epic 13)

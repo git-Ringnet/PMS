@@ -56,6 +56,8 @@ return new class extends Migration
             $table->string('discount_unit', 10)->nullable();        // percent hoặc amount
             $table->decimal('base_price', 15, 2)->default(0);       // Giá gốc trước khi giảm
             $table->unsignedTinyInteger('adults')->default(1);       // Số người lớn
+            $table->unsignedTinyInteger('babies')->default(0);        // Số em bé
+            $table->unsignedTinyInteger('children_qty')->default(0);  // Số trẻ em
             $table->unsignedTinyInteger('extra_bed_qty')->default(0);        // Số giường phụ
             $table->decimal('extra_bed_rate', 15, 2)->default(0);   // Giá thêm giường / đêm
 

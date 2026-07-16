@@ -103,6 +103,9 @@ class RoomController extends Controller
                 $room->has_vat = (bool)($br->booking?->has_vat ?? false);
                 $room->payment_method = $br->booking?->paymentMethod?->name ?? '';
                 $room->payment_value = $br->booking?->payment_value ?? 0;
+                $room->is_do_not_move = $br->is_do_not_move ?? 0;
+                $room->booking_room_id = $br->id ?? null;
+                $room->booking_id = $br->booking_id ?? null;
             }
 
             // Đảm bảo trạng thái vệ sinh hợp lệ từ database, nếu trống/null thì mặc định available

@@ -12,6 +12,7 @@ import ExtraBedModal from './components/ExtraBedModal.vue'
 import SystemSearchModal from './components/SystemSearchModal.vue'
 import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
 import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
+import GuestInfoModal from './components/GuestInfoModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -49,7 +50,9 @@ import {
   fetchHotelServices,
   fetchBookingRoomServices,
   createBookingRoomService,
-  deleteBookingRoomServicesBulk
+  deleteBookingRoomServicesBulk,
+  lockRoomMove,
+  unlockRoomMove
 } from '@/services/booking-service'
 
 const route = useRoute()
@@ -288,6 +291,18 @@ const copyModalDepartureDate = ref('')
 
 // ==================== UPGRADE ROOM MODAL ====================
 const isUpgradeModalOpen = ref(false)
+
+// ==================== GUEST INFO MODAL ====================
+const isGuestInfoModalOpen = ref(false)
+
+function openGuestInfoModal() {
+  const tab = activeTab.value
+  if (!tab || !tab.dbId) {
+    uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi xem thông tin khách!', 'warning')
+    return
+  }
+  isGuestInfoModalOpen.value = true
+}
 
 // ==================== CHILD BREAKFAST MODAL STATE ====================
 const isChildBreakfastModalOpen = ref(false)
@@ -799,10 +814,10 @@ async function loadDropdowns() {
     markets.value              = mRes.status  === 'fulfilled' ? (mRes.value.data?.data  || mRes.value.data  || []) : []
     customerSources.value      = csRes.status === 'fulfilled' ? (csRes.value.data?.data || csRes.value.data || []) : []
     bookers.value              = bRes.status  === 'fulfilled' ? (bRes.value.data?.data  || bRes.value.data  || []) : []
-    companies.value            = cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []
+    companies.value            = (cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []).filter(c => c.is_active || c.is_active === undefined)
     paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
     registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
-    users.value                = uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []
+    users.value                = (uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
     roomClasses.value          = (rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []).filter(c => c.is_active !== false)
     roomRateCodes.value        = rrcRes.status === 'fulfilled' ? (rrcRes.value.data?.data || rrcRes.value.data || []) : []
     currenciesList.value       = currRes.status === 'fulfilled' ? (currRes.value.data?.data || currRes.value.data || []) : []
@@ -832,24 +847,34 @@ async function loadBookings() {
     const prevActiveId = activeTabId.value
     const res = await fetchBookings({ status: '0,1' })
     const allList = res.data?.data || res.data || []
-    // Lọc bỏ các booking đã bị đóng tab (lưu trong localStorage)
-    const closedIds = getClosedTabIds()
-    const list = allList.filter(b => !closedIds.includes(String(b.id)))
-    tabs.value = list.map(b => bookingToTab(b))
-    
-    if (tabs.value.some(t => t.id === prevActiveId)) {
-      activeTabId.value = prevActiveId
-    } else if (tabs.value.length > 0) {
+
+    // Kiểm tra lần đầu vào trang: closedIds chưa có trong localStorage
+    const isFirstLoad = localStorage.getItem(CLOSED_TABS_KEY) === null
+
+    if (isFirstLoad && allList.length > 0) {
+      // Lần đầu: chỉ mở 1 booking mới nhất (id lớn nhất), KHÔNG đóng các booking khác
+      const latestBooking = allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
+      // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
+      localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
+      tabs.value = [bookingToTab(latestBooking)]
       activeTabId.value = tabs.value[0].id
     } else {
-      tabs.value = [makeBlankTab()]
-      activeTabId.value = tabs.value[0].id
+      // Các lần sau: lọc theo closedIds đã lưu
+      const closedIds = getClosedTabIds()
+      const list = allList.filter(b => !closedIds.includes(String(b.id)))
+      tabs.value = list.map(b => bookingToTab(b))
+
+      if (tabs.value.some(t => t.id === prevActiveId)) {
+        activeTabId.value = prevActiveId
+      } else if (tabs.value.length > 0) {
+        activeTabId.value = tabs.value[0].id
+      } else {
+        // Không còn tab nào → empty state, KHÔNG tạo blank tab
+        tabs.value = []
+        activeTabId.value = null
+      }
     }
   } catch (err) {
-    if (tabs.value.length === 0) {
-      tabs.value = [makeBlankTab()]
-      activeTabId.value = tabs.value[0].id
-    }
     console.error('Lỗi khi tải bookings:', err)
   } finally {
     isLoadingBookings.value = false
@@ -889,6 +914,7 @@ function bookingToTab(b) {
       rooms.push({
         id: idCounter++,
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
+        isDoNotMove: br.is_do_not_move !== undefined ? !!br.is_do_not_move : false,
         type: rc.name || 'Unknown Class',
         shape: rc.code || '',
         roomNumber: physicalRoom.room_number || '',
@@ -1145,10 +1171,11 @@ function handleCloseTab(tabId, event) {
   if (closedTab?.dbId) addClosedTabId(closedTab.dbId)
   tabs.value = tabs.value.filter(t => t.id !== tabId)
   if (activeTabId.value === tabId) {
-    if (tabs.value.length > 0) activeTabId.value = tabs.value[Math.max(0, index - 1)].id
-    else {
-      tabs.value = [makeBlankTab()]
-      activeTabId.value = tabs.value[0].id
+    if (tabs.value.length > 0) {
+      activeTabId.value = tabs.value[Math.max(0, index - 1)].id
+    } else {
+      // Đóng tab cuối → empty state, KHÔNG tạo blank tab
+      activeTabId.value = null
     }
   }
 }
@@ -1614,7 +1641,24 @@ function handleBookerChange() {
 }
 
 function handleCompanyChange() {
-  // Không tự động chọn sẵn thị trường và nguồn khách từ công ty
+  const co = companies.value.find(c => c.id === Number(modalForm.value.companyId))
+  if (!co) return
+
+  // Auto-fill thông tin liên hệ từ booker của công ty (nếu chưa có)
+  if (co.booker_id) {
+    const booker = bookers.value.find(bk => bk.id === co.booker_id)
+    if (booker) {
+      if (!modalForm.value.bookerId) modalForm.value.bookerId = booker.id
+      if (!modalForm.value.contactName)  modalForm.value.contactName  = booker.name  || ''
+      if (!modalForm.value.contactEmail) modalForm.value.contactEmail = booker.email || ''
+      if (!modalForm.value.contactPhone) modalForm.value.contactPhone = booker.phone || ''
+    }
+  }
+
+  // Auto-fill người bán từ công ty (nếu chưa chọn)
+  if (!modalForm.value.salesPerson && co.sales_person) {
+    modalForm.value.salesPerson = co.sales_person.username || co.sales_person.name || ''
+  }
 }
 
 watch(() => modalForm.value.registrationStatusId, (newId) => {
@@ -2121,6 +2165,9 @@ function copyConfirmDate() {
 async function handleSaveNewBooking() {
   if (!modalForm.value.bookingName.trim()) { uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning'); return }
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) { uiStore.showToast('Vui lòng chọn ngày đến và ngày đi!', 'warning'); return }
+  if (!modalForm.value.companyId)        { uiStore.showToast('Vui lòng chọn Công ty!', 'warning'); return }
+  if (!modalForm.value.marketId)         { uiStore.showToast('Vui lòng chọn Thị trường!', 'warning'); return }
+  if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
   
   const dupError = validateRoomsDuplication(modalForm.value.rooms)
   if (dupError) {
@@ -2358,8 +2405,10 @@ async function triggerAction(actionName) {
     } else {
       uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
     }
-  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký' || actionName === 'Thông tin khách hàng') {
+  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký') {
     openEditModal()
+  } else if (actionName === 'Thông tin khách hàng') {
+    openGuestInfoModal()
   } else if (actionName === 'Hóa đơn' || actionName === 'Hoá đơn') {
     uiStore.showToast('Đang tiến hành tạo hóa đơn...', 'success')
   } else if (actionName === 'Nhân bản') {
@@ -2384,6 +2433,11 @@ async function triggerAction(actionName) {
 
     if (targetList.length === 0) {
       uiStore.showToast('Vui lòng gán số phòng trước khi giao phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.roomNumber)) {
+      uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi giao phòng!', 'warning')
       return
     }
 
@@ -2587,9 +2641,135 @@ async function triggerAction(actionName) {
     deleteServiceModalTargetRooms.value = validRooms
     isDeleteServiceModalOpen.value = true
   } else if (actionName === 'Khóa chuyển phòng') {
-    uiStore.showToast('Đã thiết lập khóa chuyển phòng!', 'success')
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi khóa chuyển phòng!', 'warning')
+      return
+    }
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : []
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng muốn khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.roomNumber)) {
+      uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.bookingRoomId)) {
+      uiStore.showToast('Có phòng chưa được lưu. Vui lòng lưu thông tin đăng ký trước!', 'warning')
+      return
+    }
+
+    uiStore.confirm({
+      title: 'Khóa chuyển phòng',
+      message: `Bạn có chắc chắn muốn khóa chuyển phòng cho ${targetList.length} phòng đã chọn?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang tiến hành khóa chuyển phòng...', 'info')
+        let successCount = 0
+        let failCount = 0
+        let failMessages = []
+
+        try {
+          for (const r of targetList) {
+            try {
+              const res = await lockRoomMove(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+                r.isDoNotMove = true
+              } else {
+                failCount++
+                failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+              }
+            } catch (err) {
+              console.error(err)
+              failCount++
+              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+            }
+          }
+          await loadBookings()
+          selectedRows.value = []
+
+          if (successCount > 0) {
+            uiStore.showToast(`Khóa chuyển phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+          } else {
+            uiStore.showToast(`Khóa chuyển phòng thất bại: ${failMessages.join(', ')}`, 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Có lỗi xảy ra khi khóa chuyển phòng!', 'error')
+        }
+      }
+    })
   } else if (actionName === 'Mở chuyển phòng') {
-    uiStore.showToast('Đã mở khóa chuyển phòng!', 'success')
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi mở khóa chuyển phòng!', 'warning')
+      return
+    }
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    const targetList = selected.length > 0 ? selected : []
+    if (targetList.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng muốn mở khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.roomNumber)) {
+      uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi mở khóa chuyển phòng!', 'warning')
+      return
+    }
+
+    if (targetList.some(r => !r.bookingRoomId)) {
+      uiStore.showToast('Có phòng chưa được lưu. Vui lòng lưu thông tin đăng ký trước!', 'warning')
+      return
+    }
+
+    uiStore.confirm({
+      title: 'Mở khóa chuyển phòng',
+      message: `Bạn có chắc chắn muốn mở khóa chuyển phòng cho ${targetList.length} phòng đã chọn?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang tiến hành mở khóa chuyển phòng...', 'info')
+        let successCount = 0
+        let failCount = 0
+        let failMessages = []
+
+        try {
+          for (const r of targetList) {
+            try {
+              const res = await unlockRoomMove(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+                r.isDoNotMove = false
+              } else {
+                failCount++
+                failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+              }
+            } catch (err) {
+              console.error(err)
+              failCount++
+              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+            }
+          }
+          await loadBookings()
+          selectedRows.value = []
+
+          if (successCount > 0) {
+            uiStore.showToast(`Mở khóa chuyển phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+          } else {
+            uiStore.showToast(`Mở khóa chuyển phòng thất bại: ${failMessages.join(', ')}`, 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Có lỗi xảy ra khi mở khóa chuyển phòng!', 'error')
+        }
+      }
+    })
   } else if (actionName === 'Xuất Excel') {
     uiStore.showToast('Đang tải xuống tệp Excel danh sách phòng...', 'success')
   } else if (actionName === 'In phiếu đăng ký khách') {
@@ -2613,8 +2793,9 @@ async function triggerAction(actionName) {
         if (idx !== -1) tabs.value.splice(idx, 1)
         if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
         else {
-          tabs.value = [makeBlankTab()]
-          activeTabId.value = tabs.value[0].id
+          // Không còn tab nào → empty state
+          tabs.value = []
+          activeTabId.value = null
         }
         uiStore.showToast('Đã xóa đăng ký thành công!', 'success')
       } catch (err) {
@@ -2697,9 +2878,17 @@ function openUpgradeModal() {
   isUpgradeModalOpen.value = true
 }
 
-function handleUpgraded() {
+function handleUpgraded(payload) {
   loadBookings()
   selectedRows.value = []
+  if (payload) {
+    const { successCount, failCount, failMessages } = payload
+    if (successCount > 0) {
+      uiStore.showToast(`Nâng hạng phòng thành công cho ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+    }
+  } else {
+    uiStore.showToast('Nâng hạng phòng thành công!', 'success')
+  }
 }
 
 // ==================== XÓA DỊCH VỤ BỔ SUNG MODAL ====================
@@ -2843,6 +3032,7 @@ defineExpose({
         >
           <span>{{ tab.title }}</span>
           <span
+            v-if="tabs.length > 1"
             @click.stop="handleCloseTab(tab.id, $event)"
             class="x hover:text-white ml-1.5 transition-colors font-bold"
           >
@@ -2965,6 +3155,24 @@ defineExpose({
       </div>
     </div>
 
+    <!-- EMPTY STATE: Không còn tab nào -->
+    <div v-if="tabs.length === 0 && !isLoading" class="flex-1 flex flex-col items-center justify-center gap-4" style="background: var(--bg-page, #f0f4f8);">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.2">
+        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+        <rect x="9" y="3" width="6" height="4" rx="1"/>
+        <path d="M9 12h6M9 16h4"/>
+      </svg>
+      <div class="text-slate-400 text-sm font-medium">Chưa có đăng ký nào đang mở</div>
+      <button
+        @click="openNewBookingModal"
+        class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all"
+        style="background: linear-gradient(135deg, #006bdb, #0050a8); box-shadow: 0 2px 8px rgba(0,107,219,0.3);"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Tạo đăng ký mới
+      </button>
+    </div>
+
     <!-- MAIN TAB CONTENT PANEL -->
     <div v-if="activeTab" class="flex-1 flex flex-col overflow-hidden">
       
@@ -3032,7 +3240,7 @@ defineExpose({
         <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
           <!-- ROOMS DATA TABLE LIST -->
           <div class="table-wrap flex-1 min-h-[300px]" id="tableWrap" ref="tableWrapRef" @scroll="handleTableScroll">
-          <table :style="{ width: tableWidth }" class="text-left border-collapse text-xs table-fixed">
+          <table :style="{ width: tableWidth }" class="text-left border-collapse text-xs table-auto">
             <colgroup>
               <col style="width: 35px" />
               <col style="width: 50px" />
@@ -3135,7 +3343,7 @@ defineExpose({
                         <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
                         <td v-for="col in columns.filter(c => c.visible)" 
                             :key="col.key" 
-                            class="p-2 border-r border-slate-200 max-w-0" 
+                            class="p-2 border-r border-slate-200" 
                             :class="[
                               col.center ? 'text-center' : '', 
                               col.right ? 'text-right' : '', 
@@ -3149,8 +3357,15 @@ defineExpose({
                           <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomNumber'">
+                          <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
+                            <span>{{ room.roomNumber || '-' }}</span>
+                            <svg class="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+                            </svg>
+                          </div>
                           <select 
-                            v-if="isEditing" 
+                            v-else-if="isEditing" 
                             v-model="room.roomNumber" 
                             @focus="loadVacantRoomsForRoom(room)"
                             class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
@@ -3625,8 +3840,15 @@ defineExpose({
                                   <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomNumber'">
+                                  <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
+                                    <span>{{ room.roomNumber || '-' }}</span>
+                                    <svg class="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
+                                      <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+                                    </svg>
+                                  </div>
                                   <select 
-                                    v-if="isEditing" 
+                                    v-else-if="isEditing" 
                                     v-model="room.roomNumber" 
                                     @focus="loadVacantRoomsForRoom(room)"
                                     class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
@@ -4421,7 +4643,7 @@ defineExpose({
                                 class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer"
                               >
                                   <option :value="null" disabled>— Chọn công ty —</option>
-                                  <option v-for="c in companies" :key="c.id" :value="c.id">{{ c.name }}</option>
+                                  <option v-for="c in companies" :key="c.id" :value="c.id">[{{ c.code }}] {{ c.name }}</option>
                               </select>
                               <button 
                                 v-if="modalForm.companyId"
@@ -5190,6 +5412,14 @@ defineExpose({
         @upgraded="handleUpgraded" 
       />
     </Teleport>
+
+    <!-- THÔNG TIN KHÁCH MODAL -->
+    <GuestInfoModal
+      :show="isGuestInfoModalOpen"
+      :bookingId="activeTab?.dbId"
+      @close="isGuestInfoModalOpen = false"
+      @saved="loadBookings"
+    />
 
     <!-- XÓA DỊCH VỤ BỔ SUNG MODAL -->
     <Teleport to="body">
