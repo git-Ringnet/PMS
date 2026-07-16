@@ -71,16 +71,16 @@ class SystemConfigurationSeeder extends Seeder
 
         // 2. Seed Room Classes (Tên loại phòng - from Screenshot 2)
         $classes = [
-            ['name' => 'Superior Double', 'code' => 'SUPD', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Superior Twin', 'code' => 'SUPT', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Superior Triple', 'code' => 'SUPTR', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Double City view', 'code' => 'DLXD', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Twin City View', 'code' => 'DLXT', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Double with Balcony', 'code' => 'DLXDB', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Twin with Balcony', 'code' => 'DLXTB', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Family City View', 'code' => 'FAM', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Suite', 'code' => 'JST', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'DỰ PHÒNG', 'code' => 'DP', 'color' => '#ffffff', 'is_active' => false, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Double', 'code' => 'SUPD', 'color' => '#ffffff', 'is_active' => true, 'orders' => 1, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Twin', 'code' => 'SUPT', 'color' => '#ffffff', 'is_active' => true, 'orders' => 2, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Triple', 'code' => 'SUPTR', 'color' => '#ffffff', 'is_active' => true, 'orders' => 3, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Double City view', 'code' => 'DLXD', 'color' => '#ffffff', 'is_active' => true, 'orders' => 4, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Twin City View', 'code' => 'DLXT', 'color' => '#ffffff', 'is_active' => true, 'orders' => 5, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Double with Balcony', 'code' => 'DLXDB', 'color' => '#ffffff', 'is_active' => true, 'orders' => 6, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Twin with Balcony', 'code' => 'DLXTB', 'color' => '#ffffff', 'is_active' => true, 'orders' => 7, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Family City View', 'code' => 'FAM', 'color' => '#ffffff', 'is_active' => true, 'orders' => 8, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Suite', 'code' => 'JST', 'color' => '#ffffff', 'is_active' => true, 'orders' => 9, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'DỰ PHÒNG', 'code' => 'DP', 'color' => '#ffffff', 'is_active' => false, 'orders' => 10, 'room_class_group_id' => $hotelGroup->id],
         ];
 
         $classModels = [];

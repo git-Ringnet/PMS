@@ -44,6 +44,8 @@ export const upgradeRoom = (bookingId, roomId, data) => http.patch(`/bookings/${
 export const cancelBookingRoom = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`)
 export const lockRoomMove = (bookingId, roomId, data = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/lock-move`, data)
 export const unlockRoomMove = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/lock-move`)
+export const updateBookingRoom = (bookingId, roomId, data) => http.put(`/bookings/${bookingId}/rooms/${roomId}`, data)
+export const splitBookingRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/split`, data)
 
 // ==================== PAYMENT METHODS (PHƯƠNG THỨC THANH TOÁN) ====================
 export const fetchPaymentMethods = (params = {}) => http.get('/payment-methods', { params })
@@ -58,6 +60,11 @@ export const fetchRoomRateCodes = () => http.get('/room-rate-codes')
 // ==================== CONFIG & SYSTEM ====================
 export const fetchHotelSettings = () => http.get('/hotel-settings')
 export const fetchSystemTime = () => http.get('/system-time')
+export const fetchSystemDate = () => http.get('/system-date')
+
+// ==================== USER SETTINGS ====================
+export const fetchUserSettings = () => http.get('/user-settings')
+export const updateUserSettings = (data) => http.put('/user-settings', data)
 
 // ==================== PAYMENTS (ĐẶT CỌC) ====================
 export const fetchPayments = (bookingId) => http.get(`/bookings/${bookingId}/payments`)

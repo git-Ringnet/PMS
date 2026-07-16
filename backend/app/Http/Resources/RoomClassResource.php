@@ -23,6 +23,7 @@ class RoomClassResource extends JsonResource
             'code' => $this->code,
             'color' => $this->color,
             'is_active' => (bool) $this->is_active,
+            'orders' => (int) $this->orders,
             'room_class_group_id' => $this->room_class_group_id,
             'group' => $this->roomClassGroup?->name,
             'notes' => $this->notes,

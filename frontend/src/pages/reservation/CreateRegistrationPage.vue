@@ -32,6 +32,7 @@ import {
   fetchRoomRateCodes,
   fetchHotelSettings,
   fetchSystemTime,
+  fetchSystemDate,
   fetchPayments,
   createPayment,
   updatePayment,
@@ -221,7 +222,7 @@ const emptyForm = () => ({
   bookingCode: '',
   bookingName: '',
   color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
-  checkIn: new Date().toISOString().split('T')[0],
+  checkIn: systemDate.value || new Date().toISOString().split('T')[0],
   checkOut: '',
   nights: 1,
   registrationStatusId: null,
@@ -781,6 +782,7 @@ async function loadDropdowns() {
       fetchHotelServices(),
       fetchHotelSettings(),
       fetchSystemTime(),
+      fetchSystemDate(),
     ])
     
     const [
@@ -796,13 +798,14 @@ async function loadDropdowns() {
       currRes,
       hsRes,
       settingsRes,
-      sysTimeRes
+      sysTimeRes,
+      sysDateRes
     ] = results
 
     const endpointNames = [
       'Markets', 'CustomerSources', 'Bookers', 'Companies', 'PaymentMethods',
       'RegistrationStatuses', 'Users', 'RoomClasses', 'RoomRateCodes',
-      'Currencies', 'HotelServices', 'HotelSettings', 'SystemTime'
+      'Currencies', 'HotelServices', 'HotelSettings', 'SystemTime', 'SystemDate'
     ]
 
     results.forEach((r, idx) => {
@@ -823,7 +826,11 @@ async function loadDropdowns() {
     currenciesList.value       = currRes.status === 'fulfilled' ? (currRes.value.data?.data || currRes.value.data || []) : []
     hotelServicesList.value    = hsRes.status === 'fulfilled' ? (hsRes.value.data?.data  || hsRes.value.data  || []) : []
     hotelSettings.value        = settingsRes.status === 'fulfilled' ? (settingsRes.value.data?.data || settingsRes.value.data || {}) : {}
-    systemDate.value           = sysTimeRes.status === 'fulfilled' ? (sysTimeRes.value.data?.time ? formatLocalYYYYMMDD(sysTimeRes.value.data.time) : formatLocalYYYYMMDD(new Date())) : formatLocalYYYYMMDD(new Date())
+    if (sysDateRes.status === 'fulfilled' && sysDateRes.value?.data?.data?.system_date) {
+      systemDate.value = sysDateRes.value.data.data.system_date
+    } else {
+      systemDate.value = sysTimeRes.status === 'fulfilled' ? (sysTimeRes.value.data?.time ? formatLocalYYYYMMDD(sysTimeRes.value.data.time) : formatLocalYYYYMMDD(new Date())) : formatLocalYYYYMMDD(new Date())
+    }
 
     // Empty list checks
     if (rcRes.status === 'fulfilled' && roomClasses.value.length === 0) {
@@ -1142,8 +1149,8 @@ function bookingToTab(b) {
 }
 
 function makeBlankTab() {
-  const today = new Date().toISOString().split('T')[0]
-  const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const today = systemDate.value || new Date().toISOString().split('T')[0]
+  const tomorrowDate = new Date(today); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
   const tomorrow = tomorrowDate.toISOString().split('T')[0]
   return {
     id: 'NEW_BOOKING', dbId: null, title: 'Đăng ký mới', bookingName: 'Chưa có thông tin',
@@ -1557,8 +1564,8 @@ async function handleAddTabClick() {
   isEditModal.value = false
   modalPos.value = { x: 0, y: 0 }
   isColorChanged.value = false
-  const today = new Date().toISOString().split('T')[0]
-  const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const today = systemDate.value || new Date().toISOString().split('T')[0]
+  const tomorrowDate = new Date(today); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
   const tomorrow = tomorrowDate.toISOString().split('T')[0]
 
   modalForm.value = {
@@ -1616,7 +1623,7 @@ async function openEditModal() {
     specialRequests: tab.specialRequests || '',
     shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
       ? JSON.parse(JSON.stringify(tab.shuttleInfo))
-      : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
+      : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
     roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
@@ -2856,20 +2863,13 @@ async function openCopyModal() {
     defaultDeparture = parseDateVi(defaultDeparture)
   }
   
-  try {
-    const sysTimeRes = await fetchSystemTime()
-    if (sysTimeRes.data && sysTimeRes.data.time) {
-      const sysDateStr = sysTimeRes.data.time.split('T')[0]
-      if (defaultArrival < sysDateStr) {
-        defaultArrival = sysDateStr
-        const nights = tab.nights || 1
-        const depDate = new Date(sysDateStr)
-        depDate.setDate(depDate.getDate() + nights)
-        defaultDeparture = depDate.toISOString().split('T')[0]
-      }
-    }
-  } catch (err) {
-    console.error('Failed to fetch system time:', err)
+  const sysDateStr = systemDate.value || new Date().toISOString().split('T')[0]
+  if (defaultArrival < sysDateStr) {
+    defaultArrival = sysDateStr
+    const nights = tab.nights || 1
+    const depDate = new Date(sysDateStr)
+    depDate.setDate(depDate.getDate() + nights)
+    defaultDeparture = depDate.toISOString().split('T')[0]
   }
   
   copyModalArrivalDate.value = defaultArrival

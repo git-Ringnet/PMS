@@ -151,6 +151,62 @@ function getCellClass(subCol, val, isWeekend) {
   return base
 }
 
+function getCellTooltip(rcCode, dateStr, subCol) {
+  const data = gridData.value[rcCode]?.[dateStr]
+  if (!data) return ''
+  
+  let rooms = []
+  let statusName = ''
+  
+  if (subCol === 'AV') {
+    rooms = data.av_rooms || []
+    statusName = 'Trống (AV)'
+  } else if (subCol === 'OOO') {
+    rooms = data.ooo_rooms || []
+    statusName = 'Khóa OOO'
+  } else if (subCol === 'OOS') {
+    rooms = data.oos_rooms || []
+    statusName = 'Khóa OOS'
+  } else if (subCol === 'OCC') {
+    rooms = data.occ_rooms || []
+    statusName = 'Có khách (OCC)'
+  } else {
+    return ''
+  }
+  
+  if (rooms.length === 0) return `Không có phòng nào`
+  
+  return `Danh sách phòng ${statusName} (${rooms.length} phòng):\n${rooms.join(', ')}`
+}
+
+function getStatTooltip(subCol, dateStr) {
+  const stat = statistics.value[dateStr]
+  if (!stat) return ''
+  
+  let rooms = []
+  let statusName = ''
+  
+  if (subCol === 'AV') {
+    rooms = stat.av_rooms || []
+    statusName = 'Trống (AV)'
+  } else if (subCol === 'OOO') {
+    rooms = stat.ooo_rooms || []
+    statusName = 'Khóa OOO'
+  } else if (subCol === 'OOS') {
+    rooms = stat.oos_rooms || []
+    statusName = 'Khóa OOS'
+  } else if (subCol === 'OCC') {
+    rooms = stat.occ_rooms || []
+    statusName = 'Có khách (OCC)'
+  } else {
+    return ''
+  }
+  
+  if (rooms.length === 0) return `Không có phòng nào`
+  
+  return `Thống kê phòng ${statusName} (${rooms.length} phòng):\n${rooms.join(', ')}`
+}
+
 // Total of available rooms row sum
 const totalAvailableRow = computed(() => {
   const rowSums = {}
@@ -426,6 +482,7 @@ function showExportToast() {
                 v-for="subCol in activeSubColumns" 
                 :key="subCol"
                 :class="getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend)"
+                :title="getCellTooltip(rc.code, day.fullDateStr, subCol)"
               >
                 {{ getSubColValue(rc.code, day.fullDateStr, subCol) }}
               </td>
@@ -452,6 +509,7 @@ function showExportToast() {
                   day.isWeekend ? 'bg-[#8cc4fb]' : '',
                   getSumValue(subCol, day.fullDateStr) === 0 ? 'text-gray-400 font-light' : ''
                 ]"
+                :title="getStatTooltip(subCol, day.fullDateStr)"
               >
                 {{ getSumValue(subCol, day.fullDateStr) }}
               </td>
@@ -503,6 +561,7 @@ function showExportToast() {
                 day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
                 (statistics[day.fullDateStr]?.ooo ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
+              :title="getStatTooltip('OOO', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.ooo ?? 0 }}
             </td>
@@ -524,6 +583,7 @@ function showExportToast() {
                 day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
                 (statistics[day.fullDateStr]?.oos ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
+              :title="getStatTooltip('OOS', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.oos ?? 0 }}
             </td>
@@ -605,6 +665,7 @@ function showExportToast() {
                 day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
                 (statistics[day.fullDateStr]?.bk_guaranteed ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
+              :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.bk_guaranteed ?? 0 }}
             </td>
@@ -626,6 +687,7 @@ function showExportToast() {
                 day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
                 (statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
+              :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0 }}
             </td>
@@ -644,6 +706,7 @@ function showExportToast() {
               :colspan="activeSubColumns.length"
               class="p-1 border-r border-slate-200 text-center leading-tight text-red-600 text-[12px] font-light"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
+              :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.total_occupied ?? 0 }}<br/>
               <span class="text-[9px] font-medium text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
@@ -663,6 +726,7 @@ function showExportToast() {
               :colspan="activeSubColumns.length"
               class="p-2 border-r border-slate-200 text-center text-red-500 font-light"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
+              :title="getStatTooltip('AV', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.av ?? 0 }}
             </td>
@@ -768,6 +832,7 @@ function showExportToast() {
                 day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
                 (statistics[day.fullDateStr]?.inhouse ?? 0) === 0 ? 'text-gray-400 font-light' : ''
               ]"
+              :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.inhouse ?? 0 }}
             </td>

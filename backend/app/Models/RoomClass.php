@@ -15,6 +15,7 @@ class RoomClass extends Model
         'code',
         'color',
         'is_active',
+        'orders',
         'room_class_group_id',
         'notes',
         'image_path',
@@ -22,6 +23,7 @@ class RoomClass extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'orders' => 'integer',
     ];
 
     public function roomClassGroup(): \Illuminate\Database\Eloquent\Relations\BelongsTo

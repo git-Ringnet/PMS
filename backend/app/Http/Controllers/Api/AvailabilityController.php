@@ -114,6 +114,7 @@ class AvailabilityController extends Controller
             ->get();
 
         $lockCounts = [];
+        $lockRooms = []; // $lockRooms[$classCode][$dStr][$lockType][] = $room_number
         foreach ($locks as $lock) {
             if (!$lock->room || !$lock->room->roomClass) continue;
             $classCode = $lock->room->roomClass->code;
@@ -125,6 +126,7 @@ class AvailabilityController extends Controller
                 $dateObj = Carbon::parse($dStr)->startOfDay();
                 if ($dateObj->gte($lockStart) && $dateObj->lte($lockEnd)) {
                     $lockCounts[$classCode][$dStr][$lockType] = ($lockCounts[$classCode][$dStr][$lockType] ?? 0) + 1;
+                    $lockRooms[$classCode][$dStr][$lockType][] = $lock->room_number;
                 }
             }
         }
@@ -158,6 +160,10 @@ class AvailabilityController extends Controller
         $arrivalCounts   = []; // Arrivals: arrival_date = dStr
         $departureCounts = [];
         $extraBedCounts  = [];
+
+        $bookedRooms     = []; // $bookedRooms[classCode][dateStr][] = room_number
+        $inhouseRooms    = []; // $inhouseRooms[classCode][dateStr][] = room_number
+        $allotmentRooms  = []; // $allotmentRooms[classCode][dateStr][] = room_number
 
         foreach ($bookings as $br) {
             if (!$br->roomClass) continue;
@@ -205,13 +211,23 @@ class AvailabilityController extends Controller
                 
                 if ($isMatchDate) {
                     if ($isOccupied) {
+                        $roomNum = $br->room_number;
                         if ($isAllotment) {
                             $allotmentCounts[$classCode][$dStr] = ($allotmentCounts[$classCode][$dStr] ?? 0) + 1;
+                            if ($roomNum) {
+                                $allotmentRooms[$classCode][$dStr][] = $roomNum;
+                            }
                         } else {
                             if ($isBooked) {
                                 $bookedCounts[$classCode][$dStr] = ($bookedCounts[$classCode][$dStr] ?? 0) + 1;
+                                if ($roomNum) {
+                                    $bookedRooms[$classCode][$dStr][] = $roomNum;
+                                }
                             } elseif ($isCheckedIn || $isCheckedOut) {
                                 $inhouseCounts[$classCode][$dStr] = ($inhouseCounts[$classCode][$dStr] ?? 0) + 1;
+                                if ($roomNum) {
+                                    $inhouseRooms[$classCode][$dStr][] = $roomNum;
+                                }
                             }
                         }
 
@@ -274,13 +290,20 @@ class AvailabilityController extends Controller
             }
         }
 
+        // Lấy tất cả phòng của mỗi loại phòng
+        $roomsByClass = Room::select('room_number', 'room_class_id')->get()->groupBy('room_class_id');
+
         // 5. Build grid và statistics
         $grid = [];
 
         foreach ($roomClassesData as $rc) {
+            $rcId  = $rc['id'];
             $code  = $rc['code'];
             $total = $rc['total'];
             $grid[$code] = [];
+
+            // Lấy danh sách tất cả số phòng thuộc loại phòng này
+            $allClassRoomNumbers = $roomsByClass->get($rcId)?->pluck('room_number')->toArray() ?? [];
 
             foreach ($dates as $dStr) {
                 $oooCount     = $lockCounts[$code][$dStr]['OOO'] ?? 0;
@@ -293,16 +316,32 @@ class AvailabilityController extends Controller
                 $departures   = $departureCounts[$code][$dStr] ?? 0;
                 $almCount     = $allotmentCounts[$code][$dStr] ?? 0;
 
+                $oooRooms = array_values(array_unique(array_filter($lockRooms[$code][$dStr]['OOO'] ?? [])));
+                $oosRooms = array_values(array_unique(array_filter($lockRooms[$code][$dStr]['OOS'] ?? [])));
+                $occRooms = array_merge(
+                    $bookedRooms[$code][$dStr] ?? [],
+                    $inhouseRooms[$code][$dStr] ?? [],
+                    $allotmentRooms[$code][$dStr] ?? []
+                );
+                $occRooms = array_values(array_unique(array_filter($occRooms)));
+
+                $unavailableRooms = array_merge($oooRooms, $oosRooms, $occRooms);
+                $avRooms          = array_values(array_diff($allClassRoomNumbers, $unavailableRooms));
+
                 $sellable = max(0, $total - $oooCount - $oosCount);
                 $av       = max(0, $sellable - $occupied - $almCount);
 
                 $grid[$code][$dStr] = [
                     'av'         => $av,
+                    'av_rooms'   => $avRooms,
                     'ooo'        => $oooCount,
+                    'ooo_rooms'  => $oooRooms,
                     'oos'        => $oosCount,
+                    'oos_rooms'  => $oosRooms,
                     'bk'         => $bkCount,    // Reserved (chưa check-in)
                     'occ'        => $occupied,   // total non-allotment occupied
                     'total_occ'  => $occupied,
+                    'occ_rooms'  => $occRooms,
                     'eb'         => $ebCount,
                     'arr'        => $arrivals,
                     'dep'        => $departures,
@@ -319,6 +358,17 @@ class AvailabilityController extends Controller
                 $statistics[$dStr]['extra_beds']       += $ebCount;
                 $statistics[$dStr]['arrivals_rooms']   += $arrivals;
                 $statistics[$dStr]['departures_rooms'] += $departures;
+
+                // Thu thập danh sách mã phòng cho thống kê ngày tổng
+                if (!isset($statistics[$dStr]['av_rooms']))  $statistics[$dStr]['av_rooms'] = [];
+                if (!isset($statistics[$dStr]['ooo_rooms'])) $statistics[$dStr]['ooo_rooms'] = [];
+                if (!isset($statistics[$dStr]['oos_rooms'])) $statistics[$dStr]['oos_rooms'] = [];
+                if (!isset($statistics[$dStr]['occ_rooms'])) $statistics[$dStr]['occ_rooms'] = [];
+
+                $statistics[$dStr]['av_rooms']  = array_merge($statistics[$dStr]['av_rooms'], $avRooms);
+                $statistics[$dStr]['ooo_rooms'] = array_merge($statistics[$dStr]['ooo_rooms'], $oooRooms);
+                $statistics[$dStr]['oos_rooms'] = array_merge($statistics[$dStr]['oos_rooms'], $oosRooms);
+                $statistics[$dStr]['occ_rooms'] = array_merge($statistics[$dStr]['occ_rooms'], $occRooms);
             }
         }
 
@@ -333,6 +383,12 @@ class AvailabilityController extends Controller
             $statistics[$dStr]['sellable'] = $sellable;
             $statistics[$dStr]['av']       = $av;
             $statistics[$dStr]['occupied_pct'] = $sellable > 0 ? round(($occ / $sellable) * 100) : 0;
+
+            // Dọn dẹp/unique mảng mã phòng của statistics
+            $statistics[$dStr]['av_rooms']  = array_values(array_unique(array_filter($statistics[$dStr]['av_rooms'])));
+            $statistics[$dStr]['ooo_rooms'] = array_values(array_unique(array_filter($statistics[$dStr]['ooo_rooms'])));
+            $statistics[$dStr]['oos_rooms'] = array_values(array_unique(array_filter($statistics[$dStr]['oos_rooms'])));
+            $statistics[$dStr]['occ_rooms'] = array_values(array_unique(array_filter($statistics[$dStr]['occ_rooms'])));
         }
 
         // Tính SL Phòng Tối Đa cho mỗi room class và totals

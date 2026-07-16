@@ -1035,6 +1035,74 @@ class BookingRoomController extends Controller
     }
 
     /**
+     * Tách phòng (split booking room segment)
+     * POST /bookings/{bookingId}/rooms/{roomId}/split
+     */
+    public function split(Request $request, $bookingId, $roomId)
+    {
+        $request->validate([
+            'split_date' => 'required|date'
+        ]);
+
+        $splitDateStr = $request->split_date;
+        $splitDate    = \Carbon\Carbon::parse($splitDateStr)->startOfDay();
+
+        $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+
+        if ($bookingRoom->status === BookingRoom::STATUS_CANCELLED) {
+            return response()->json(['success' => false, 'message' => 'Phòng đã hủy, không thể tách.'], 422);
+        }
+        if ($bookingRoom->status === BookingRoom::STATUS_CHECKED_OUT) {
+            return response()->json(['success' => false, 'message' => 'Phòng đã checkout, không thể tách.'], 422);
+        }
+
+        $arrDate = \Carbon\Carbon::parse($bookingRoom->arrival_date)->startOfDay();
+        $depDate = \Carbon\Carbon::parse($bookingRoom->departure_date)->startOfDay();
+
+        if ($splitDate->lte($arrDate) || $splitDate->gte($depDate)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày tách phải nằm giữa ngày đến (' . $arrDate->toDateString() . ') và ngày đi (' . $depDate->toDateString() . ') của phòng.'
+            ], 422);
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::beginTransaction();
+
+            $originalDepartureDate = $bookingRoom->departure_date->toDateString();
+
+            // 1. Cập nhật ngày đi của đoạn đầu tiên
+            $bookingRoom->departure_date = $splitDateStr;
+            $bookingRoom->save();
+
+            // 2. Tạo đoạn thứ hai (copy từ đoạn thứ nhất)
+            $newBookingRoom = $bookingRoom->replicate();
+            $newBookingRoom->id = null; // Tự động sinh ID mới dạng Gx
+            $newBookingRoom->arrival_date = $splitDateStr;
+            $newBookingRoom->departure_date = $originalDepartureDate;
+            $newBookingRoom->status = BookingRoom::STATUS_BOOKED; // Reset về BOOKED cho đoạn sau
+            $newBookingRoom->save();
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tách phòng thành công.',
+                'data' => [
+                    'original' => $bookingRoom,
+                    'new'      => $newBookingRoom
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi hệ thống khi tách phòng: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Tạo chi tiết ăn sáng cho trẻ em
      */
     private function createChildBreakfastDetails($child, $bRoom)

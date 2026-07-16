@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('code')->unique(); // Tên viết tắt
             $table->string('color')->default('#ffffff'); // Màu sắc
             $table->boolean('is_active')->default(true); // Có sử dụng
+            $table->integer('orders')->default(0); // Thứ tự sắp xếp
             $table->foreignId('room_class_group_id')
                 ->nullable()
                 ->constrained('room_class_groups')

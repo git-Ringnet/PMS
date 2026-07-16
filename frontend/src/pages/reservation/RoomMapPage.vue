@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
-import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove } from '@/services/booking-service'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
@@ -25,7 +25,13 @@ const uiStore = useUiStore()
 const route = useRoute()
 const router = useRouter()
 
-const currentTab = computed(() => route.query.tab || 'room-map')
+const getQueryParam = (name) => {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get(name)
+}
+
+const currentTab = computed(() => route.query.tab || getQueryParam('tab') || 'room-map')
 
 const createRegRef = ref(null)
 const showDetailModal = ref(false)
@@ -35,6 +41,15 @@ const showStatsModal = ref(false)
 const isLoaded = ref(false)
 const isInitialLoad = ref(true)
 let pollingInterval = null
+const isRoomPlanLoading = ref(false)
+
+watch(currentTab, (newTab) => {
+  if (newTab === 'room-plan') {
+    isRoomPlanLoading.value = true
+  } else {
+    isRoomPlanLoading.value = false
+  }
+}, { immediate: true })
 
 function handleMetricClick(status) {
   filterByStatus(status)
@@ -630,6 +645,16 @@ async function changeRoomStatus(room, newStatus, lockType = null) {
 }
 
 onMounted(async () => {
+  // Fetch system date and set rawDate
+  try {
+    const dateRes = await fetchSystemDate()
+    if (dateRes?.data?.success && dateRes?.data?.data?.system_date) {
+      rawDate.value = dateRes.data.data.system_date
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải ngày hệ thống cho sơ đồ phòng:', err)
+  }
+
   // Migration to set default roomWidth to 200px for existing local storage sessions
   if (localStorage.getItem('pms_room_width_migrated_200') !== 'true') {
     settings.value.roomWidth = 200
@@ -1045,10 +1070,14 @@ const uniqueFloors = computed(() => {
       </div>
 
       <!-- Main Layout Body (Grid or list or subpages) -->
-      <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden">
+      <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
         
-        <!-- Left/Center content container -->
-        <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
+        <!-- Global Loading Overlay -->
+        <LoadingOverlay :show="!isLoaded || (currentTab === 'room-plan' && isRoomPlanLoading)" />
+
+        <template v-if="isLoaded">
+          <!-- Left/Center content container -->
+          <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
           
           <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
           <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
@@ -1057,7 +1086,7 @@ const uniqueFloors = computed(() => {
 
           <!-- Tab 2: Kế hoạch phòng RoomPlanPage -->
           <div v-else-if="currentTab === 'room-plan'" class="h-full overflow-hidden">
-            <RoomPlanPage />
+            <RoomPlanPage @loading="val => isRoomPlanLoading = val" />
           </div>
 
           <!-- Tab 3: D.S Công Việc ShiftWorkPage -->
@@ -1783,6 +1812,7 @@ const uniqueFloors = computed(() => {
           </aside>
         </div>
 
+        </template>
       </div>
     </div>
 

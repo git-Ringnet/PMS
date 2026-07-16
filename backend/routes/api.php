@@ -23,6 +23,52 @@ Route::middleware('auth:sanctum')->group(function () {
         ]);
     });
 
+    // System date (ngày nghiệp vụ từ system_date_rolls)
+    Route::get('/system-date', function () {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        $systemDate = $latest
+            ? \Carbon\Carbon::parse($latest->system_date)->toDateString()
+            : now()->timezone('Asia/Ho_Chi_Minh')->toDateString();
+        $shift = $latest ? $latest->shift : '1';
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'system_date' => $systemDate,
+                'shift'       => $shift
+            ],
+        ]);
+    });
+
+    Route::post('/system-date/roll', function (Request $request) {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        $currentSystemDate = $latest
+            ? \Carbon\Carbon::parse($latest->system_date)
+            : now()->timezone('Asia/Ho_Chi_Minh');
+
+        $nextSystemDate = $currentSystemDate->copy()->addDay();
+
+        $newRoll = \App\Models\SystemDateRoll::create([
+            'system_date' => $nextSystemDate->toDateTimeString(),
+            'actual_date' => now()->timezone('Asia/Ho_Chi_Minh')->toDateTimeString(),
+            'shift'       => $latest ? $latest->shift : '1',
+            'username'    => auth()->user() ? auth()->user()->username : 'admin',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Rolled system date successfully to ' . $nextSystemDate->toDateString(),
+            'data'    => [
+                'system_date' => $nextSystemDate->toDateString(),
+                'shift'       => $newRoll->shift
+            ]
+        ]);
+    });
+
+
+    // User settings (thiết lập cá nhân kế hoạch phòng)
+    Route::get('/user-settings', [\App\Http\Controllers\Api\UserSettingController::class, 'show']);
+    Route::put('/user-settings', [\App\Http\Controllers\Api\UserSettingController::class, 'update']);
+
     // Room Rate Codes (Mapped to SP1340)
     Route::apiResource('room-rate-codes', RoomRateCodeController::class)->parameters([
         'room-rate-codes' => 'ma'
@@ -147,6 +193,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{roomId}/unassign',   [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
         // Epic 9 - Hủy phòng
         Route::delete('/{roomId}/cancel',    [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
+        // Tách phòng
+        Route::post('/{roomId}/split',        [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
         // Epic 3 - Auto assign room number
         Route::post('/{roomId}/auto-assign', [\App\Http\Controllers\Api\BookingRoomController::class, 'autoAssign']);
         // Epic 11 - Do Not Move

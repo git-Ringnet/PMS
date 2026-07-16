@@ -21,8 +21,21 @@ class HotelSettingController extends Controller
         $resource = new HotelSettingResource($setting);
         $data = $resource->toArray(request());
         
-        $colorConfig = \App\Models\HotelConfig::where('name', 'ColorDefaultBookingRoomMap')->first();
-        $data['ColorDefaultBookingRoomMap'] = $colorConfig ? $colorConfig->value : '#97D5FF';
+        $configs = \App\Models\HotelConfig::whereIn('name', [
+            'ColorDefaultBookingRoomMap',
+            'RoomPlan_ColorRoomReservation',
+            'RoomPlan_ColorRoomInhouse',
+            'RoomPlan_ColorRoomLateCheckout',
+            'RoomPlan_ColorOOO',
+            'RoomPlan_ColorOOS'
+        ])->get()->pluck('value', 'name');
+
+        $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
+        $data['RoomPlan_ColorRoomReservation'] = $configs->get('RoomPlan_ColorRoomReservation', '#E3E8C4');
+        $data['RoomPlan_ColorRoomInhouse'] = $configs->get('RoomPlan_ColorRoomInhouse', '#4a90e2');
+        $data['RoomPlan_ColorRoomLateCheckout'] = $configs->get('RoomPlan_ColorRoomLateCheckout', '#FCF55F');
+        $data['RoomPlan_ColorOOO'] = $configs->get('RoomPlan_ColorOOO', '#107eeb');
+        $data['RoomPlan_ColorOOS'] = $configs->get('RoomPlan_ColorOOS', '#107eeb');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

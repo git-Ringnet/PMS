@@ -69,6 +69,7 @@ return new class extends Migration
             $table->boolean('Disable')->default(false);
             $table->boolean('AllowChangeRate')->default(false);
             $table->boolean('IsChannelManager')->default(false);
+            $table->boolean('IsDaily')->default(false);
         });
 
         // 4.1 Room Rate Plans (Mapped from SP1341)
@@ -107,6 +108,15 @@ return new class extends Migration
             $table->unsignedTinyInteger('bk_definite')->nullable()->comment('4 = trạng thái tự chuyển khi hủy booking. null = không tự chuyển.');
             $table->timestamps();
         });
+
+        // Update existing rate codes that already have daily mappings to IsDaily = true
+        DB::table('room_rate_codes')
+            ->whereIn('Ma', function ($query) {
+                $query->select('RateCode')
+                    ->from('room_rate_daily_mappings')
+                    ->distinct();
+            })
+            ->update(['IsDaily' => true]);
     }
 
     /**

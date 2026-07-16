@@ -17,6 +17,7 @@ class RoomResource extends JsonResource
         return [
             'id' => $this->id,
             'room_number' => $this->room_number,
+            'orders' => (int) $this->orders,
             'room_form_id' => $this->room_form_id,
             'room_class_id' => $this->room_class_id,
             'room_form' => new RoomFormResource($this->whenLoaded('roomForm')),

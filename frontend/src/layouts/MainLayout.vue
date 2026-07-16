@@ -6,12 +6,15 @@ import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
+import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
 const router = useRouter()
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
 const timeOffset = ref(0)
+const systemDate = ref('')
+const dbShift = ref('')
 
 // Topbar custom background color (default #006bdb)
 const headerBgColor = ref(localStorage.getItem('pms_header_bg_color') || '#006bdb')
@@ -115,6 +118,7 @@ const isHeaderBgDark = computed(() => {
 })
 
 const authStore = useAuthStore()
+const uiStore = useUiStore()
 const currentUser = computed(() => authStore.user)
 
 const shifts = ref([])
@@ -167,7 +171,26 @@ const fetchServerTime = async () => {
   }
 }
 
+const fetchSystemDate = async () => {
+  try {
+    const res = await http.get('/system-date')
+    if (res.data && res.data.success && res.data.data) {
+      systemDate.value = res.data.data.system_date
+      if (res.data.data.shift) {
+        dbShift.value = res.data.data.shift
+        activeShiftName.value = res.data.data.shift
+      }
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải ngày hệ thống:', err)
+  }
+}
+
 const updateActiveShift = () => {
+  if (dbShift.value) {
+    activeShiftName.value = dbShift.value
+    return
+  }
   if (shifts.value.length === 0) return
   const now = currentDate.value
   const activeShift = shifts.value.find(s => isTimeInShift(now, s.start_time, s.end_time))
@@ -324,6 +347,7 @@ onMounted(() => {
   updateCssVariables(savedBg)
   
   fetchServerTime()
+  fetchSystemDate()
   fetchShifts()
   loadBranches().finally(() => {
     setTimeout(() => {
@@ -430,10 +454,16 @@ const menuItems = computed(() => {
   ]
 })
 
+const getQueryParam = (name) => {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get(name)
+}
+
 const subMenuItems = computed(() => {
   const currentTab = route.path.startsWith('/reports')
-    ? (route.query.tab || 'overview')
-    : (route.query.tab || 'room-map')
+    ? (route.query.tab || getQueryParam('tab') || 'overview')
+    : (route.query.tab || getQueryParam('tab') || 'room-map')
   
   if (route.path.startsWith('/reservation')) {
     return [
@@ -460,7 +490,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
       { name: t('submenu.roomManage'), icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
       { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
-      { name: t('submenu.dayClose'), icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
+      { name: t('submenu.dayClose'), icon: 'calendar-range', action: 'dayClose', active: false },
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
       // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
@@ -520,7 +550,17 @@ const formattedTimeVi = computed(() => {
   const second = parts.find(p => p.type === 'second').value
   const dayPeriod = parts.find(p => p.type === 'dayPeriod').value // "AM" or "PM"
   
-  const dateStr = `${day}/${month}/${year}`
+  let dateStr = ''
+  if (systemDate.value) {
+    const sParts = systemDate.value.split('-')
+    if (sParts.length === 3) {
+      dateStr = `${sParts[2]}/${sParts[1]}/${sParts[0]}`
+    }
+  }
+  if (!dateStr) {
+    dateStr = `${day}/${month}/${year}`
+  }
+
   const period = currentLang.value === 'vi'
     ? (dayPeriod === 'PM' ? 'CH' : 'SA')
     : dayPeriod
@@ -546,11 +586,60 @@ function isActive(menuRoute) {
   return pathMatch
 }
 
-function navigateTo(menuRoute) {
+async function triggerDayClose() {
+  const confirmed = await uiStore.confirm({
+    title: t('submenu.dayClose') || 'Xác nhận sang ngày',
+    message: currentLang.value === 'vi' 
+      ? 'Bạn có chắc chắn muốn chuyển hệ thống sang ngày tiếp theo?'
+      : 'Are you sure you want to roll the system date to the next day?',
+    confirmText: currentLang.value === 'vi' ? 'Đồng ý' : 'Confirm',
+    cancelText: currentLang.value === 'vi' ? 'Hủy' : 'Cancel'
+  })
+  
+  if (confirmed) {
+    try {
+      uiStore.showToast(currentLang.value === 'vi' ? 'Đang chuyển ngày...' : 'Rolling day...', 'info')
+      const res = await http.post('/system-date/roll')
+      if (res.data && res.data.success) {
+        uiStore.showToast(
+          currentLang.value === 'vi' 
+            ? 'Đã chuyển sang ngày tiếp theo thành công!' 
+            : 'Rolled system date successfully!', 
+          'success'
+        )
+        setTimeout(() => {
+          window.location.reload()
+        }, 800)
+      } else {
+        uiStore.showToast(
+          currentLang.value === 'vi' ? 'Không thể chuyển ngày hệ thống.' : 'Failed to roll system date.', 
+          'error'
+        )
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast(
+        err.response?.data?.message || 
+          (currentLang.value === 'vi' ? 'Có lỗi xảy ra khi chuyển ngày hệ thống.' : 'An error occurred while rolling system date.'),
+        'error'
+      )
+    }
+  }
+}
+
+async function navigateTo(menuRoute) {
+  if (menuRoute === '/frontdesk?tab=day-close') {
+    await triggerDayClose()
+    return
+  }
   router.push(menuRoute)
 }
 
-function handleSubMenuClick(item) {
+async function handleSubMenuClick(item) {
+  if (item.action === 'dayClose') {
+    await triggerDayClose()
+    return
+  }
   if (item.tab) {
     router.push({ path: route.path, query: { tab: item.tab } })
   }

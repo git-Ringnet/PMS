@@ -14,7 +14,9 @@ class RoomController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Room::with(['roomForm', 'roomClass', 'activeLock', 'allActiveLocks']);
+        $query = Room::with(['roomForm', 'roomClass', 'activeLock', 'allActiveLocks'])
+            ->orderBy('orders', 'asc')
+            ->orderBy('room_number', 'asc');
 
         // Filter out rooms that belong to inactive room classes
         $query->whereHas('roomClass', function($q) {
