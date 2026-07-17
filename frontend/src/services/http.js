@@ -12,7 +12,7 @@ const http = axios.create({
 // Request interceptor
 http.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('pms_token')
+    const token = sessionStorage.getItem('pms_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -42,11 +42,11 @@ http.interceptors.response.use(
       if ((status === 401 || status === 419) && !_isRedirectingToLogin) {
         _isRedirectingToLogin = true
 
-        // Xóa sạch toàn bộ auth state
-        localStorage.removeItem('pms_token')
-        localStorage.removeItem('pms_user')
+        // Xóa sạch toàn bộ auth state ở sessionStorage
+        sessionStorage.removeItem('pms_token')
+        sessionStorage.removeItem('pms_user')
         localStorage.removeItem('pms_lang')
-        // Xóa tất cả key có prefix pms_ để đảm bảo sạch hoàn toàn
+        // Xóa các keys cấu hình cũ ở localStorage nếu cần
         Object.keys(localStorage)
           .filter(key => key.startsWith('pms_'))
           .forEach(key => localStorage.removeItem(key))

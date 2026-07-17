@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
@@ -22,6 +23,7 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -66,17 +68,35 @@ const showSettings = ref(false)
 
 const settings = ref({
   iconSizes: {
-    group1: parseInt(localStorage.getItem('pms_icon_size_g1') || '20'), // lock, birthday, honeymoon, extra-bed
-    group2: parseInt(localStorage.getItem('pms_icon_size_g2') || '20'), // clean, double-check, dirty
-    group3: parseInt(localStorage.getItem('pms_icon_size_g3') || '10'), // status dots (emerald/red)
-    group4: parseInt(localStorage.getItem('pms_icon_size_g4') || '16'), // walkin / guest count
-    group5: parseInt(localStorage.getItem('pms_icon_size_g5') || '20'), // priority, DND
+    group1: 20,
+    group2: 20,
+    group3: 10,
+    group4: 16,
+    group5: 20,
   },
-  exactPosition: localStorage.getItem('pms_exact_position') === 'true',
-  floorOrientation: localStorage.getItem('pms_floor_orientation') || 'Ngang',
-  roomWidth: parseInt(localStorage.getItem('pms_room_width') || '200'),
-  roomHeight: parseInt(localStorage.getItem('pms_room_height') || '110')
+  exactPosition: false,
+  floorOrientation: 'Ngang',
+  roomWidth: 200,
+  roomHeight: 110
 })
+
+watch(() => authStore.settings?.room_map, (newRoomMapSettings) => {
+  if (newRoomMapSettings) {
+    settings.value = {
+      iconSizes: {
+        group1: parseInt(newRoomMapSettings.iconSizes?.group1 ?? 20),
+        group2: parseInt(newRoomMapSettings.iconSizes?.group2 ?? 20),
+        group3: parseInt(newRoomMapSettings.iconSizes?.group3 ?? 10),
+        group4: parseInt(newRoomMapSettings.iconSizes?.group4 ?? 16),
+        group5: parseInt(newRoomMapSettings.iconSizes?.group5 ?? 20),
+      },
+      exactPosition: newRoomMapSettings.exactPosition === true || newRoomMapSettings.exactPosition === 'true',
+      floorOrientation: newRoomMapSettings.floorOrientation || 'Ngang',
+      roomWidth: parseInt(newRoomMapSettings.roomWidth ?? 200),
+      roomHeight: parseInt(newRoomMapSettings.roomHeight ?? 110)
+    }
+  }
+}, { immediate: true, deep: true })
 
 const cardScale = computed(() => {
   const widthScale = settings.value.roomWidth / 200
@@ -85,42 +105,35 @@ const cardScale = computed(() => {
 })
 
 function saveSettings() {
-  localStorage.setItem('pms_icon_size_g1', String(settings.value.iconSizes.group1))
-  localStorage.setItem('pms_icon_size_g2', String(settings.value.iconSizes.group2))
-  localStorage.setItem('pms_icon_size_g3', String(settings.value.iconSizes.group3))
-  localStorage.setItem('pms_icon_size_g4', String(settings.value.iconSizes.group4))
-  localStorage.setItem('pms_icon_size_g5', String(settings.value.iconSizes.group5))
-  localStorage.setItem('pms_exact_position', String(settings.value.exactPosition))
-  localStorage.setItem('pms_floor_orientation', settings.value.floorOrientation)
-  localStorage.setItem('pms_room_width', String(settings.value.roomWidth))
-  localStorage.setItem('pms_room_height', String(settings.value.roomHeight))
+  authStore.updateUserSettings({
+    room_map: {
+      iconSizes: {
+        group1: settings.value.iconSizes.group1,
+        group2: settings.value.iconSizes.group2,
+        group3: settings.value.iconSizes.group3,
+        group4: settings.value.iconSizes.group4,
+        group5: settings.value.iconSizes.group5,
+      },
+      exactPosition: settings.value.exactPosition,
+      floorOrientation: settings.value.floorOrientation,
+      roomWidth: settings.value.roomWidth,
+      roomHeight: settings.value.roomHeight
+    }
+  })
   showSettings.value = false
   uiStore.showToast('Cài đặt hiển thị đã được lưu thành công!', 'success')
 }
 
 function resetToDefaultSettings() {
-  settings.value = {
-    iconSizes: {
-      group1: 20,
-      group2: 20,
-      group3: 10,
-      group4: 16,
-      group5: 20,
-    },
+  const defaultRoomMap = {
+    iconSizes: { group1: 20, group2: 20, group3: 10, group4: 16, group5: 20 },
     exactPosition: false,
     floorOrientation: 'Ngang',
     roomWidth: 200,
     roomHeight: 110
   }
-  localStorage.removeItem('pms_icon_size_g1')
-  localStorage.removeItem('pms_icon_size_g2')
-  localStorage.removeItem('pms_icon_size_g3')
-  localStorage.removeItem('pms_icon_size_g4')
-  localStorage.removeItem('pms_icon_size_g5')
-  localStorage.removeItem('pms_exact_position')
-  localStorage.removeItem('pms_floor_orientation')
-  localStorage.removeItem('pms_room_width')
-  localStorage.removeItem('pms_room_height')
+  settings.value = JSON.parse(JSON.stringify(defaultRoomMap))
+  authStore.updateUserSettings({ room_map: defaultRoomMap })
   calculateScale()
   uiStore.showToast('Đã khôi phục cài đặt hiển thị mặc định!', 'success')
 }
@@ -141,9 +154,21 @@ const rawDate = ref(new Date().toISOString().split('T')[0])
 const isGridMode = ref(true)
 
 // Auto scale / zoom layout state
-const autoScale = ref(localStorage.getItem('pms_room_map_auto_scale') !== 'false')
-const manualScale = ref(parseFloat(localStorage.getItem('pms_room_map_scale') || '1.0'))
+const autoScale = ref(true)
+const manualScale = ref(1.0)
 const scaleFactor = ref(1.0)
+
+watch(() => authStore.settings?.room_map, (newRoomMapSettings) => {
+  if (newRoomMapSettings) {
+    if (newRoomMapSettings.autoScale !== undefined) {
+      autoScale.value = newRoomMapSettings.autoScale !== false && newRoomMapSettings.autoScale !== 'false'
+    }
+    if (newRoomMapSettings.scale !== undefined) {
+      manualScale.value = parseFloat(newRoomMapSettings.scale ?? 1.0)
+    }
+    calculateScale()
+  }
+}, { immediate: true, deep: true })
 
 function calculateScale() {
   if (autoScale.value) {
@@ -160,7 +185,11 @@ function calculateScale() {
 
 function toggleAutoScale() {
   autoScale.value = !autoScale.value
-  localStorage.setItem('pms_room_map_auto_scale', String(autoScale.value))
+  authStore.updateUserSettings({
+    room_map: {
+      autoScale: autoScale.value
+    }
+  })
   calculateScale()
 }
 
@@ -172,7 +201,11 @@ function adjustManualScale(direction) {
   } else {
     manualScale.value = 1.0
   }
-  localStorage.setItem('pms_room_map_scale', String(manualScale.value))
+  authStore.updateUserSettings({
+    room_map: {
+      scale: manualScale.value
+    }
+  })
   calculateScale()
 }
 

@@ -14,11 +14,13 @@ class UserSetting extends Model
         'sort_option',
         'night_view',
         'show_notes',
+        'settings',
     ];
 
     protected $casts = [
         'night_view' => 'boolean',
         'show_notes' => 'boolean',
+        'settings'   => 'array',
     ];
 
     public function user()

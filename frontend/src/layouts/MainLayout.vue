@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemBranches } from '@/services/company-service'
@@ -16,8 +16,10 @@ const timeOffset = ref(0)
 const systemDate = ref('')
 const dbShift = ref('')
 
+const authStore = useAuthStore()
+
 // Topbar custom background color (default #006bdb)
-const headerBgColor = ref(localStorage.getItem('pms_header_bg_color') || '#006bdb')
+const headerBgColor = computed(() => authStore.settings?.topbar_color || '#006bdb')
 
 const isColorPickerOpen = ref(false)
 const colorPickerRef = ref(null)
@@ -70,8 +72,7 @@ function updateCssVariables(colorVal) {
 }
 
 function setHeaderColor(colorVal) {
-  headerBgColor.value = colorVal
-  localStorage.setItem('pms_header_bg_color', colorVal)
+  authStore.updateUserSettings({ topbar_color: colorVal })
   updateCssVariables(colorVal)
 }
 
@@ -84,6 +85,12 @@ function resetHeaderColor() {
   customGradientAngle.value = 135
   activeColorTab.value = 'solid'
 }
+
+watch(() => authStore.settings?.topbar_color, (newColor) => {
+  if (newColor) {
+    updateCssVariables(newColor)
+  }
+}, { immediate: true })
 
 function updateCustomSolid() {
   setHeaderColor(customSolidColor.value)
@@ -117,7 +124,6 @@ const isHeaderBgDark = computed(() => {
   return false
 })
 
-const authStore = useAuthStore()
 const uiStore = useUiStore()
 const currentUser = computed(() => authStore.user)
 
@@ -320,7 +326,7 @@ onMounted(() => {
   }
   
   // Initialize color customization tabs/values
-  const savedBg = localStorage.getItem('pms_header_bg_color') || '#006bdb'
+  const savedBg = authStore.settings?.topbar_color || '#006bdb'
   if (savedBg.includes('linear-gradient')) {
     activeColorTab.value = 'gradient'
     const angleMatch = savedBg.match(/(\d+)deg/)
