@@ -467,45 +467,50 @@ class BookingController extends Controller
             ], 422);
         }
 
-        $validated = $request->validate([
-            'booking_name'             => 'sometimes|required|string|max:255',
-            'arrival_date'             => 'sometimes|required|date',
-            'departure_date'           => 'sometimes|required|date|after:arrival_date',
-            'num_of_days'              => 'sometimes|required|integer|min:1',
-            'confirm_date'             => 'nullable|date',
-            'expired_date'             => 'nullable|date',
-            'arrival_flight'           => 'nullable|string|max:50',
-            'arrival_flight_date'      => 'nullable|date',
-            'departure_flight'         => 'nullable|string|max:50',
-            'departure_flight_date'    => 'nullable|date',
-            'status'                   => 'nullable|integer',
-            'registration_status_id'   => 'nullable|exists:registration_statuses,id',
-            'color'                    => 'nullable|string|max:20',
-            'is_git'                   => 'nullable|boolean',
-            'is_day_use'               => 'nullable|boolean',
-            'breakfast_included'       => 'nullable|boolean',
-            'has_vat'                  => 'nullable|boolean',
-            'company_id'               => 'required|exists:companies,id',
-            'market_id'                => 'required|exists:markets,id',
-            'customer_source_id'       => 'required|exists:customer_sources,id',
-            'branch_id'                => 'nullable|exists:branches,id',
-            'booker_id'                => 'nullable|exists:bookers,id',
-            'contact_name'             => 'nullable|string|max:255',
-            'contact_email'            => 'nullable|email|max:255',
-            'contact_phone'            => 'nullable|string|max:50',
-            'payment_method_id'        => 'nullable|exists:payment_methods,id',
-            'payment_value'            => 'nullable|numeric|min:0',
-            'commission'               => 'nullable|numeric|min:0',
-            'voucher_info'             => 'nullable|string|max:255',
-            'external_booking_code'    => 'nullable|string|max:100',
-            'event_code'               => 'nullable|string|max:50',
-            'note'                     => 'nullable|string',
-            'special_requests'         => 'nullable|string',
-            'sales_person'             => 'nullable|string|max:100',
-            'edit_message'             => 'nullable|string',
-            'shuttle_info'             => 'nullable|array',
-            'deposit_details'          => 'nullable|array',
-        ]);
+        try {
+            $validated = $request->validate([
+                'booking_name'             => 'sometimes|required|string|max:255',
+                'arrival_date'             => 'sometimes|required|date',
+                'departure_date'           => 'sometimes|required|date|after:arrival_date',
+                'num_of_days'              => 'sometimes|required|integer|min:1',
+                'confirm_date'             => 'nullable|date',
+                'expired_date'             => 'nullable|date',
+                'arrival_flight'           => 'nullable|string|max:50',
+                'arrival_flight_date'      => 'nullable|date',
+                'departure_flight'         => 'nullable|string|max:50',
+                'departure_flight_date'    => 'nullable|date',
+                'status'                   => 'nullable|integer',
+                'registration_status_id'   => 'nullable|exists:registration_statuses,id',
+                'color'                    => 'nullable|string|max:20',
+                'is_git'                   => 'nullable|boolean',
+                'is_day_use'               => 'nullable|boolean',
+                'breakfast_included'       => 'nullable|boolean',
+                'has_vat'                  => 'nullable|boolean',
+                'company_id'               => 'required|exists:companies,id',
+                'market_id'                => 'required|exists:markets,id',
+                'customer_source_id'       => 'required|exists:customer_sources,id',
+                'branch_id'                => 'nullable|exists:branches,id',
+                'booker_id'                => 'nullable|exists:bookers,id',
+                'contact_name'             => 'nullable|string|max:255',
+                'contact_email'            => 'nullable|email|max:255',
+                'contact_phone'            => 'nullable|string|max:50',
+                'payment_method_id'        => 'nullable|exists:payment_methods,id',
+                'payment_value'            => 'nullable|numeric|min:0',
+                'commission'               => 'nullable|numeric|min:0',
+                'voucher_info'             => 'nullable|string|max:255',
+                'external_booking_code'    => 'nullable|string|max:100',
+                'event_code'               => 'nullable|string|max:50',
+                'note'                     => 'nullable|string',
+                'special_requests'         => 'nullable|string',
+                'sales_person'             => 'nullable|string|max:100',
+                'edit_message'             => 'nullable|string',
+                'shuttle_info'             => 'nullable|array',
+                'deposit_details'          => 'nullable|array',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Illuminate\Support\Facades\Log::error('Validation failed on update booking: ' . json_encode($e->errors()));
+            throw $e;
+        }
 
         // Tự động tăng edit_count và ghi nhận người sửa
         $validated['edit_count']  = $booking->edit_count + 1;
@@ -552,7 +557,8 @@ class BookingController extends Controller
                         $this->validateRoomAllocations(
                             $request->room_allocations,
                             $validated['arrival_date'] ?? $booking->arrival_date->toDateString(),
-                            $validated['departure_date'] ?? $booking->departure_date->toDateString()
+                            $validated['departure_date'] ?? $booking->departure_date->toDateString(),
+                            $booking->id
                         );
                     } catch (\Exception $e) {
                         // Restore lại toàn bộ nếu validate lỗi để không mất dữ liệu của người dùng
@@ -603,25 +609,28 @@ class BookingController extends Controller
                                 }
                             }
                             
+                            $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? $validated['arrival_date'] ?? $booking->arrival_date;
+                            $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? $validated['departure_date'] ?? $booking->departure_date;
+
                             $roomData = [
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
                                 'original_room_class_id' => $alloc['roomClassId'] ?? null,
-                                'arrival_date' => $validated['arrival_date'] ?? $booking->arrival_date,
-                                'departure_date' => $validated['departure_date'] ?? $booking->departure_date,
-                                'actual_arrival_date' => $bRoom && $bRoom->actual_arrival_date ? $bRoom->actual_arrival_date->toDateString() : ($validated['arrival_date'] ?? $booking->arrival_date),
+                                'arrival_date' => $roomArrival,
+                                'departure_date' => $roomDeparture,
+                                'actual_arrival_date' => $bRoom && $bRoom->actual_arrival_date ? $bRoom->actual_arrival_date->toDateString() : $roomArrival,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
-                                'rate' => $alloc['price'] ?? 0,
-                                'rate_code' => $alloc['rateCode'] ?? null,
+                                'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
+                                'rate_code' => $detail['rateCode'] ?? $alloc['rateCode'] ?? null,
                                 'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
-                                'is_day_use' => !empty($booking->is_day_use) || ($detail['hourly'] ?? false) || (($validated['arrival_date'] ?? $booking->arrival_date) === ($validated['departure_date'] ?? $booking->departure_date)),
-                                'discount' => $alloc['discount'] ?? null,
-                                'discount_type' => $alloc['discountType'] ?? null,
-                                'discount_value' => $alloc['discountValue'] ?? 0,
-                                'discount_unit' => $alloc['discountUnit'] ?? null,
-                                'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
+                                'is_day_use' => !empty($booking->is_day_use) || ($detail['hourly'] ?? false) || ($roomArrival === $roomDeparture),
+                                'discount' => $detail['discount'] ?? $alloc['discount'] ?? null,
+                                'discount_type' => $detail['discountType'] ?? $alloc['discountType'] ?? null,
+                                'discount_value' => $detail['discountValue'] ?? $alloc['discountValue'] ?? 0,
+                                'discount_unit' => $detail['discountUnit'] ?? $alloc['discountUnit'] ?? null,
+                                'base_price' => $detail['basePrice'] ?? $alloc['basePrice'] ?? $detail['price'] ?? 0,
                                 'adults' => $detail['adults'] ?? 2,
                                 'babies' => $detail['babies'] ?? 0,
                                 'children_qty' => $detail['children'] ?? 0,
@@ -761,6 +770,7 @@ class BookingController extends Controller
                 }
             });
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Exception in update booking: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -1215,7 +1225,7 @@ class BookingController extends Controller
     /**
      * Validate room allocations against availability, OOO/OOS locks, and occupancy.
      */
-    private function validateRoomAllocations(array $roomAllocations, string $arrivalDate, string $departureDate)
+    private function validateRoomAllocations(array $roomAllocations, string $arrivalDate, string $departureDate, $excludeBookingId = null)
     {
         $avService = app(RoomAvailabilityService::class);
         $allowOver = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
@@ -1230,24 +1240,26 @@ class BookingController extends Controller
             $qty = (int)($alloc['quantity'] ?? 0);
             if ($qty <= 0) continue;
 
-            // Validate AV
-            $allocArrival = $arrivalDate;
-            $allocDeparture = $departureDate;
-
-            $av = $avService->getAvailability(
-                $roomClassId,
-                $allocArrival,
-                $allocDeparture
-            );
-
-            if ($av < $qty && !$allowOver) {
-                $roomClass = \App\Models\RoomClass::find($roomClassId);
-                throw new \Exception('Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định') . '. Số phòng trống hiện tại: ' . $av);
-            }
-
             $details = $alloc['rooms'] ?? [];
             for ($i = 0; $i < $qty; $i++) {
                 $detail = $details[$i] ?? [];
+                
+                // Lấy ngày đến/đi riêng của phòng con này nếu có, nếu không lấy của booking
+                $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? $arrivalDate;
+                $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? $departureDate;
+
+                // Validate AV cho khoảng ngày của phòng con này
+                $av = $avService->getAvailability(
+                    $roomClassId,
+                    $roomArrival,
+                    $roomDeparture
+                );
+
+                if ($av < $qty && !$allowOver) {
+                    $roomClass = \App\Models\RoomClass::find($roomClassId);
+                    throw new \Exception('Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định') . '. Số phòng trống hiện tại: ' . $av);
+                }
+
                 if (!empty($detail['roomNumber'])) {
                     $roomNumber = $detail['roomNumber'];
                     $room = \App\Models\Room::where('room_number', $roomNumber)->first();
@@ -1261,7 +1273,7 @@ class BookingController extends Controller
                     // Check duplicate assignment within the same request payload on overlapping dates
                     foreach ($payloadAssignments as $assignment) {
                         if ($assignment['room_number'] === $roomNumber) {
-                            if ($allocArrival < $assignment['departure'] && $assignment['arrival'] < $allocDeparture) {
+                            if ($roomArrival < $assignment['departure'] && $assignment['arrival'] < $roomDeparture) {
                                 throw new \Exception('Số phòng ' . $roomNumber . ' bị trùng lặp trong cùng một lượt lưu với thời gian ở trùng nhau.');
                             }
                         }
@@ -1270,15 +1282,15 @@ class BookingController extends Controller
                     // Record this assignment
                     $payloadAssignments[] = [
                         'room_number' => $roomNumber,
-                        'arrival' => $allocArrival,
-                        'departure' => $allocDeparture,
+                        'arrival' => $roomArrival,
+                        'departure' => $roomDeparture,
                     ];
 
                     // Check OOO/OOS Lock
                     $isLocked = \App\Models\RoomLock::where('room_number', $roomNumber)
                         ->where('is_active', 1)
-                        ->where('start_date', '<', $allocDeparture)
-                        ->where('end_date', '>', $allocArrival)
+                        ->where('start_date', '<', $roomDeparture)
+                        ->where('end_date', '>', $roomArrival)
                         ->exists();
 
                     if ($isLocked) {
@@ -1288,8 +1300,10 @@ class BookingController extends Controller
                     // Check occupied by another booking
                     $isOccupied = $avService->isRoomNumberOccupied(
                         $roomNumber,
-                        $allocArrival,
-                        $allocDeparture
+                        $roomArrival,
+                        $roomDeparture,
+                        $detail['bookingRoomId'] ?? null,
+                        $excludeBookingId
                     );
                     if ($isOccupied) {
                         throw new \Exception('Số phòng ' . $roomNumber . ' đã được gán cho lượt đăng ký khác trong giai đoạn này.');

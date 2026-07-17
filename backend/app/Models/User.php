@@ -45,4 +45,12 @@ class User extends Authenticatable
     {
         return $value ? asset($value) : null;
     }
+
+    /**
+     * Get the user settings.
+     */
+    public function setting()
+    {
+        return $this->hasOne(UserSetting::class);
+    }
 }

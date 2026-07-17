@@ -125,7 +125,8 @@ class RoomAvailabilityService
         string $roomNumber,
         string $arrivalDate,
         string $departureDate,
-        string|int|null $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null,
+        string|int|null $excludeBookingId = null
     ): bool {
         $query = BookingRoom::where('room_number', $roomNumber)
             ->whereIn('status', [
@@ -133,8 +134,11 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
-            ->whereHas('booking', function ($q) {
+            ->whereHas('booking', function ($q) use ($excludeBookingId) {
                 $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW]);
+                if ($excludeBookingId) {
+                    $q->where('id', '!=', $excludeBookingId);
+                }
             })
             ->where('arrival_date', '<', $departureDate)
             ->where('departure_date', '>', $arrivalDate);

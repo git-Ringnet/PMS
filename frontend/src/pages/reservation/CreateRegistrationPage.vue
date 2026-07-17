@@ -378,18 +378,19 @@ const defaultColumns = {
 
 const visibleColumns = ref({ ...defaultColumns })
 
-try {
-  const saved = localStorage.getItem('pms_visible_columns')
-  if (saved) {
-    visibleColumns.value = { ...defaultColumns, ...JSON.parse(saved) }
+watch(() => authStore.settings?.visible_columns?.create_registration, (newVal) => {
+  if (newVal) {
+    visibleColumns.value = { ...defaultColumns, ...newVal }
   }
-} catch (e) {
-  console.error(e)
-}
+}, { immediate: true, deep: true })
 
 watch(visibleColumns, (newVal) => {
   try {
-    localStorage.setItem('pms_visible_columns', JSON.stringify(newVal))
+    authStore.updateUserSettings({
+      visible_columns: {
+        create_registration: newVal
+      }
+    })
   } catch (e) {
     console.error(e)
   }
@@ -792,9 +793,18 @@ function syncRoomsToAllocations(tab) {
       roomCode: r.roomCode || '',
       bookingRoomId: r.bookingRoomId || null,
       total: Number(r.total) || 0,
+      price: r.price || 0,
+      basePrice: r.basePrice || 0,
+      discountType: r.discountType || 'down',
+      discountValue: r.discountValue || 0,
+      discountUnit: r.discountUnit || 'percent',
+      arrivalDate: r.checkIn || tab.checkIn,
+      departureDate: r.checkOut || tab.checkOut,
+      nights: Number(r.nights) || 1,
     }))
     return {
       ...alloc,
+      quantity: matchingRooms.length,
       rooms: roomsDetail,
     }
   })
@@ -2149,6 +2159,35 @@ async function handleRowDateChange(row) {
   }
 }
 
+function syncBookingDatesFromRooms(tab) {
+  if (!tab || !tab.rooms || tab.rooms.length === 0) return
+  let maxCheckOut = null
+  let minCheckIn = null
+  
+  tab.rooms.forEach(r => {
+    if (r.checkIn) {
+      if (!minCheckIn || r.checkIn < minCheckIn) {
+        minCheckIn = r.checkIn
+      }
+    }
+    if (r.checkOut) {
+      if (!maxCheckOut || r.checkOut > maxCheckOut) {
+        maxCheckOut = r.checkOut
+      }
+    }
+  })
+  
+  if (minCheckIn) tab.checkIn = minCheckIn
+  if (maxCheckOut) tab.checkOut = maxCheckOut
+  
+  const ci = new Date(tab.checkIn)
+  const co = new Date(tab.checkOut)
+  if (!isNaN(ci) && !isNaN(co)) {
+    const diff = Math.ceil((co - ci) / 86400000)
+    tab.nights = diff > 0 ? diff : 1
+  }
+}
+
 async function handleRowDateChangeInline(room) {
   if (room.checkIn && room.checkOut) {
     const ci = new Date(room.checkIn)
@@ -2173,6 +2212,7 @@ async function handleRowDateChangeInline(room) {
           alloc.departureDate = room.checkOut
           alloc.nights = room.nights
         }
+        syncBookingDatesFromRooms(tab)
       }
     }
   }
@@ -2195,6 +2235,60 @@ async function handleRowNightsChangeInline(room) {
           alloc.departureDate = room.checkOut
           alloc.nights = Number(room.nights)
         }
+        syncBookingDatesFromRooms(tab)
+      }
+    }
+  }
+}
+
+function handleRoomClassChange(room, oldClassId) {
+  const newClass = roomClasses.value.find(c => c.id === Number(room.roomClassId))
+  if (newClass) {
+    room.type = newClass.name
+    room.shape = newClass.code
+    room.roomNumber = '' // reset số phòng cũ
+  }
+  
+  const tab = activeTab.value
+  if (!tab || !tab.roomAllocations) return
+  
+  // 1. Tăng quantity ở allocation mới (hoặc tạo mới nếu chưa có)
+  let newAlloc = tab.roomAllocations.find(a => a.roomClassId === Number(room.roomClassId))
+  if (!newAlloc && newClass) {
+    newAlloc = {
+      roomClassId: newClass.id,
+      roomClassCode: newClass.code,
+      roomClassName: newClass.name,
+      arrivalDate: room.checkIn || tab.checkIn,
+      departureDate: room.checkOut || tab.checkOut,
+      quantity: 0,
+      price: Number(newClass.price) || Number(room.price) || 0,
+      rateCode: '',
+      discount: 'Tăng/Giảm giá',
+      discountType: 'down',
+      discountValue: 0,
+      discountUnit: 'percent',
+      basePrice: Number(newClass.price) || Number(room.price) || 0,
+      upgradeClassId: null,
+      adults: newClass.max_adults || 2,
+      babies: 0,
+      children: 0,
+      breakfastIncluded: true,
+      rooms: []
+    }
+    tab.roomAllocations.push(newAlloc)
+  }
+  if (newAlloc) {
+    newAlloc.quantity = (Number(newAlloc.quantity) || 0) + 1
+  }
+  
+  // 2. Giảm quantity ở allocation cũ
+  if (oldClassId !== undefined && oldClassId !== null) {
+    const oldAlloc = tab.roomAllocations.find(a => a.roomClassId === Number(oldClassId))
+    if (oldAlloc) {
+      oldAlloc.quantity = Math.max(0, (Number(oldAlloc.quantity) || 0) - 1)
+      if (oldAlloc.quantity === 0) {
+        tab.roomAllocations = tab.roomAllocations.filter(a => a.roomClassId !== Number(oldClassId))
       }
     }
   }
@@ -2504,7 +2598,8 @@ async function triggerAction(actionName) {
         uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
       } catch (err) {
         console.error(err)
-        uiStore.showToast('Không thể lưu thông tin đăng ký!', 'error')
+        const errMsg = err.response?.data?.message || 'Không thể lưu thông tin đăng ký!'
+        uiStore.showToast(errMsg, 'error')
       }
     } else {
       uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
@@ -3475,10 +3570,28 @@ defineExpose({
                             ]"
                         >
                         <template v-if="col.key === 'type'">
-                          <span class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
+                          <select 
+                            v-if="isEditing" 
+                            v-model="room.roomClassId" 
+                            @focus="room._oldClassId = room.roomClassId"
+                            @change="handleRoomClassChange(room, room._oldClassId)"
+                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer"
+                          >
+                            <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
+                          </select>
+                          <span v-else class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
                         </template>
                         <template v-else-if="col.key === 'shape'">
-                          <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
+                          <select 
+                            v-if="isEditing" 
+                            v-model="room.roomClassId" 
+                            @focus="room._oldClassId = room.roomClassId"
+                            @change="handleRoomClassChange(room, room._oldClassId)"
+                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer text-center"
+                          >
+                            <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                          </select>
+                          <span v-else class="text-gray-900 font-semibold">{{ room.shape }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomNumber'">
                           <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
@@ -3970,10 +4083,28 @@ defineExpose({
                                   :class="[col.center ? 'text-center' : '', col.right ? 'text-right' : '']"
                               >
                                 <template v-if="col.key === 'type'">
-                                  <span class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
+                                  <select 
+                                    v-if="isEditing" 
+                                    v-model="room.roomClassId" 
+                                    @focus="room._oldClassId = room.roomClassId" 
+                                    @change="handleRoomClassChange(room, room._oldClassId)" 
+                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer"
+                                  >
+                                    <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
+                                  </select>
+                                  <span v-else class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'shape'">
-                                  <span class="text-gray-900 font-semibold">{{ room.shape }}</span>
+                                  <select 
+                                    v-if="isEditing" 
+                                    v-model="room.roomClassId" 
+                                    @focus="room._oldClassId = room.roomClassId" 
+                                    @change="handleRoomClassChange(room, room._oldClassId)" 
+                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer text-center"
+                                  >
+                                    <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                                  </select>
+                                  <span v-else class="text-gray-900 font-semibold">{{ room.shape }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomNumber'">
                                   <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">

@@ -23,6 +23,7 @@ class UserSettingController extends Controller
                 'sort_option' => 'Phòng',
                 'night_view'  => true,
                 'show_notes'  => true,
+                'settings'    => [],
             ]
         );
 
@@ -43,12 +44,28 @@ class UserSettingController extends Controller
             'sort_option' => 'sometimes|string|in:Phòng,Loại phòng,Dạng phòng,Tầng',
             'night_view'  => 'sometimes|boolean',
             'show_notes'  => 'sometimes|boolean',
+            'settings'    => 'sometimes|array',
         ]);
 
-        $setting = UserSetting::updateOrCreate(
-            ['user_id' => $userId],
-            $validated
-        );
+        $setting = UserSetting::firstOrCreate(['user_id' => $userId]);
+
+        if ($request->has('settings')) {
+            $currentSettings = $setting->settings ?? [];
+            $newSettings = $request->input('settings', []);
+            $setting->settings = array_replace_recursive($currentSettings, $newSettings);
+        }
+
+        if ($request->has('sort_option')) {
+            $setting->sort_option = $validated['sort_option'];
+        }
+        if ($request->has('night_view')) {
+            $setting->night_view = $validated['night_view'];
+        }
+        if ($request->has('show_notes')) {
+            $setting->show_notes = $validated['show_notes'];
+        }
+
+        $setting->save();
 
         return response()->json([
             'success' => true,
