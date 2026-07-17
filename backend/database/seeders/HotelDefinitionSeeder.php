@@ -236,6 +236,11 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'FrmOOO_DefineLockByTime', 'value' => '23:59', 'description' => 'Thời gian kết thúc khóa mặc định', 'is_visible' => true],
             ['name' => 'ColorDefaultBookingRoomMap', 'value' => '#97D5FF', 'description' => 'Màu sắc booking mặc định trên sơ đồ phòng', 'is_visible' => true],
             ['name' => 'DefaultBreakfast', 'value' => '1', 'description' => 'Mặc định tick ăn sáng (1: có, 0: không)', 'is_visible' => true],
+            ['name' => 'RoomPlan_ColorRoomReservation', 'value' => '#E3E8C4', 'description' => 'màu phòng đặt trước trên room plan', 'is_visible' => true],
+            ['name' => 'RoomPlan_ColorRoomInhouse', 'value' => '#4a90e2', 'description' => 'màu phòng đang ở trên room plan', 'is_visible' => true],
+            ['name' => 'RoomPlan_ColorRoomLateCheckout', 'value' => '#FCF55F', 'description' => 'màu phòng trả phòng trễ', 'is_visible' => true],
+            ['name' => 'RoomPlan_ColorOOO', 'value' => '#107eeb', 'description' => 'màu phòng khóa OOO', 'is_visible' => true],
+            ['name' => 'RoomPlan_ColorOOS', 'value' => '#107eeb', 'description' => 'màu phòng khóa OOS', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {

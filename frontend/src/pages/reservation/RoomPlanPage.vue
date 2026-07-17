@@ -5,9 +5,138 @@ import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies } from '@/services/company-service'
+import { useAuthStore } from '@/stores/auth-store'
+import http from '@/services/http'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
+const authStore = useAuthStore()
+
+const isAdmin = computed(() => {
+  const u = authStore.user
+  if (!u) return false
+  return u.username === 'admin' || u.job_title_code === 'RL001' || u.department_code === 'MGMT'
+})
+
+const legendConfigKeys = {
+  'Reservation': 'RoomPlan_ColorRoomReservation',
+  'Guaranteed': 'RoomPlan_ColorRoomReservation',
+  'InHouse': 'RoomPlan_ColorRoomInhouse',
+  'Late Checkout': 'RoomPlan_ColorRoomLateCheckout',
+  'OOO': 'RoomPlan_ColorOOO',
+  'OOS': 'RoomPlan_ColorOOS'
+}
+
+const presetColors = [
+  '#E3E8C4', '#4a90e2', '#FCF55F', '#107eeb',
+  '#97D5FF', '#2ECC71', '#E74C3C', '#F1C40F',
+  '#9B59B6', '#1ABC9C', '#34495E', '#FFFFFF'
+]
+
+const systemDate = ref('')
+
+// Hsv/Rgb/Hex Helpers
+function hsvToRgb(h, s, v) {
+  s = s / 100
+  v = v / 100
+  let r, g, b
+  const i = Math.floor(h / 60) % 6
+  const f = h / 60 - i
+  const p = v * (1 - s)
+  const q = v * (1 - f * s)
+  const t = v * (1 - (1 - f) * s)
+  switch (i) {
+    case 0: r = v; g = t; b = p; break
+    case 1: r = q; g = v; b = p; break
+    case 2: r = p; g = v; b = t; break
+    case 3: r = p; g = q; b = v; break
+    case 4: r = t; g = p; b = v; break
+    case 5: r = v; g = p; b = q; break
+  }
+  return {
+    r: Math.round(r * 255),
+    g: Math.round(g * 255),
+    b: Math.round(b * 255)
+  }
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h, s, v = max
+  const d = max - min
+  s = max === 0 ? 0 : d / max
+  if (max === min) {
+    h = 0
+  } else {
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break
+      case g: h = (b - r) / d + 2; break
+      case b: h = (r - g) / d + 4; break
+    }
+    h /= 6
+  }
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    v: Math.round(v * 100)
+  }
+}
+
+function hexToRgb(hex) {
+  hex = hex.replace(/^#/, '')
+  if (hex.length === 3) {
+    hex = hex.split('').map(c => c + c).join('')
+  }
+  const num = parseInt(hex, 16)
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255
+  }
+}
+
+function rgbToHex(r, g, b) {
+  const toHex = (c) => {
+    const h = Math.max(0, Math.min(255, c)).toString(16)
+    return h.length === 1 ? '0' + h : h
+  }
+  return '#' + toHex(r) + toHex(g) + toHex(b)
+}
+
+function toLocalDateStr(dateVal) {
+  if (!dateVal) return ''
+  if (typeof dateVal === 'string' && !dateVal.includes('T') && !dateVal.includes('Z') && !dateVal.includes('+')) {
+    return dateVal.substring(0, 10)
+  }
+  const d = new Date(dateVal)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const showColorPicker = ref(false)
+const pickerPosition = ref({ top: 0, left: 0 })
+const selectedLegendForColor = ref(null)
+const tempColorValue = ref('#ffffff')
+const savingColor = ref(false)
+const colorPickerRef = ref(null)
+const colorAreaRef = ref(null)
+
+const hue = ref(0)
+const saturation = ref(100)
+const value = ref(100)
+const alpha = ref(100)
+
+const computedRgb = computed(() => hsvToRgb(hue.value, saturation.value, value.value))
+const computedHex = computed(() => rgbToHex(computedRgb.value.r, computedRgb.value.g, computedRgb.value.b))
+
+const pickerPresets = [
+  '#D32F2F', '#F57C00', '#FBC02D', '#5D4037', '#7CB342', '#388E3C', '#8E24AA', '#5E35B1',
+  '#1E88E5', '#00ACC1', '#00897B', '#000000', '#424242', '#9E9E9E', '#E0E0E0', '#FFFFFF'
+]
 
 const emit = defineEmits(['loading'])
 
@@ -301,8 +430,9 @@ function formatDateStr(d) {
 
 function formatDateToDMY(dateStr) {
   if (!dateStr) return ''
-  const cleanStr = dateStr.substring(0, 10)
-  const parts = cleanStr.split('-')
+  const localDate = toLocalDateStr(dateStr)
+  if (!localDate) return dateStr
+  const parts = localDate.split('-')
   if (parts.length === 3) {
     return `${parts[2]}/${parts[1]}/${parts[0]}`
   }
@@ -918,8 +1048,8 @@ async function loadBookings() {
           const companyName = b.company?.company_name || 'Khách lẻ'
           const label = `${b.booking_code} - ${b.booking_name} - ${companyName} - ${priceStr}đ`
 
-          const arrivalStr = br.arrival_date ? br.arrival_date.substring(0, 10) : (b.arrival_date ? b.arrival_date.substring(0, 10) : '')
-          const departureStr = br.departure_date ? br.departure_date.substring(0, 10) : (b.departure_date ? b.departure_date.substring(0, 10) : '')
+          const arrivalStr = br.arrival_date ? toLocalDateStr(br.arrival_date) : (b.arrival_date ? toLocalDateStr(b.arrival_date) : '')
+          const departureStr = br.departure_date ? toLocalDateStr(br.departure_date) : (b.departure_date ? toLocalDateStr(b.departure_date) : '')
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
 
@@ -1007,9 +1137,15 @@ function closeDatePickerPopover() {
 }
 
 function handleWindowClick(event) {
-  const container = document.getElementById('quick-booking-company-container')
+  const container = document.querySelector('.quick-booking-company-search-container')
   if (container && !container.contains(event.target)) {
     showQuickBookingCompanyDropdown.value = false
+  }
+  if (showColorPicker.value && colorPickerRef.value && !colorPickerRef.value.contains(event.target)) {
+    const isPill = event.target.closest('.px-2.py-0.5.border.rounded')
+    if (!isPill) {
+      showColorPicker.value = false
+    }
   }
 }
 
@@ -1029,6 +1165,7 @@ onMounted(async () => {
     if (sysDateRes.status === 'fulfilled' && sysDateRes.value?.data?.data?.system_date) {
       sysDateStr = sysDateRes.value.data.data.system_date
     }
+    systemDate.value = sysDateStr || formatDateStr(new Date())
 
     // Apply user settings
     if (userSettingsRes.status === 'fulfilled' && userSettingsRes.value?.data?.data) {
@@ -1156,26 +1293,7 @@ function matchesSelectedStatus(bk) {
 }
 
 const visibleLegends = computed(() => {
-  const activeTypes = new Set()
-  
-  Object.values(processedBookings.value).forEach(roomBookings => {
-    roomBookings.forEach(bk => {
-      if (bk.type) {
-        activeTypes.add(bk.code === 'LOCK' ? (bk.type === 'OOS' ? 'OOS' : 'OOO') : bk.type)
-      }
-    })
-  })
-
-  dbRooms.value.forEach(room => {
-    if (room.active_locks && room.active_locks.length > 0) {
-      room.active_locks.forEach(lock => {
-        const type = lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'
-        activeTypes.add(type)
-      })
-    }
-  })
-
-  return legends.filter(lg => activeTypes.has(lg.name))
+  return legends
 })
 
 function getLegendDotClass(name) {
@@ -2107,15 +2225,160 @@ async function saveLockRoom() {
   }
 }
 
+function parseColorToHsv(colorStr) {
+  if (!colorStr) colorStr = '#ffffff'
+  const rgb = hexToRgb(colorStr)
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+  hue.value = hsv.h
+  saturation.value = hsv.s
+  value.value = hsv.v
+  alpha.value = 100
+}
+
+function handleLegendClick(legName, event) {
+  if (!isAdmin.value) return
+  const configKey = legendConfigKeys[legName]
+  if (!configKey) return
+  
+  let curColor = '#ffffff'
+  if (legName === 'Reservation' || legName === 'Guaranteed') {
+    curColor = hotelSettings.value?.RoomPlan_ColorRoomReservation || '#E3E8C4'
+  }
+  else if (legName === 'InHouse') curColor = hotelSettings.value?.RoomPlan_ColorRoomInhouse || '#4a90e2'
+  else if (legName === 'Late Checkout') curColor = hotelSettings.value?.RoomPlan_ColorRoomLateCheckout || '#FCF55F'
+  else if (legName === 'OOO') curColor = hotelSettings.value?.RoomPlan_ColorOOO || '#107eeb'
+  else if (legName === 'OOS') curColor = hotelSettings.value?.RoomPlan_ColorOOS || '#107eeb'
+  
+  selectedLegendForColor.value = { name: legName, configKey }
+  parseColorToHsv(curColor)
+  
+  const rect = event.target.getBoundingClientRect()
+  pickerPosition.value = {
+    top: rect.bottom + window.scrollY + 8,
+    left: Math.min(rect.left + window.scrollX, window.innerWidth - 280)
+  }
+  showColorPicker.value = true
+}
+
+async function saveLegendColor() {
+  if (!selectedLegendForColor.value) return
+  savingColor.value = true
+  try {
+    const key = selectedLegendForColor.value.configKey
+    const color = computedHex.value
+    await http.put('/hotel-settings', {
+      hotel_name: hotelSettings.value?.hotel_name || 'Galliot Hotel Nha Trang',
+      [key]: color
+    })
+    if (hotelSettings.value) {
+      hotelSettings.value[key] = color
+    }
+    uiStore.showToast('Cập nhật màu sắc thành công!', 'success')
+    showColorPicker.value = false
+  } catch (err) {
+    console.error(err)
+    const msg = err.response?.data?.message || 'Không thể lưu màu sắc'
+    uiStore.showToast(msg, 'error')
+  } finally {
+    savingColor.value = false
+  }
+}
+
+// Drag & Drop handlers for custom color picker
+function startDragColorArea(e) {
+  handleColorAreaDrag(e)
+  window.addEventListener('mousemove', handleColorAreaDrag)
+  window.addEventListener('mouseup', stopDragColorArea)
+}
+
+function handleColorAreaDrag(e) {
+  if (!colorAreaRef.value) return
+  const rect = colorAreaRef.value.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  let y = e.clientY - rect.top
+  x = Math.max(0, Math.min(x, rect.width))
+  y = Math.max(0, Math.min(y, rect.height))
+  
+  saturation.value = Math.round((x / rect.width) * 100)
+  value.value = Math.round((1 - y / rect.height) * 100)
+}
+
+function stopDragColorArea() {
+  window.removeEventListener('mousemove', handleColorAreaDrag)
+  window.removeEventListener('mouseup', stopDragColorArea)
+}
+
+function startDragHue(e) {
+  handleHueDrag(e)
+  window.addEventListener('mousemove', handleHueDrag)
+  window.addEventListener('mouseup', stopDragHue)
+}
+
+function handleHueDrag(e) {
+  const slider = e.target.closest('.relative')
+  if (!slider) return
+  const rect = slider.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  x = Math.max(0, Math.min(x, rect.width))
+  hue.value = Math.round((x / rect.width) * 360)
+}
+
+function stopDragHue() {
+  window.removeEventListener('mousemove', handleHueDrag)
+  window.removeEventListener('mouseup', stopDragHue)
+}
+
+function startDragAlpha(e) {
+  handleAlphaDrag(e)
+  window.addEventListener('mousemove', handleAlphaDrag)
+  window.addEventListener('mouseup', stopDragAlpha)
+}
+
+function handleAlphaDrag(e) {
+  const slider = e.target.closest('.relative')
+  if (!slider) return
+  const rect = slider.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  x = Math.max(0, Math.min(x, rect.width))
+  alpha.value = Math.round((x / rect.width) * 100)
+}
+
+function stopDragAlpha() {
+  window.removeEventListener('mousemove', handleAlphaDrag)
+  window.removeEventListener('mouseup', stopDragAlpha)
+}
+
+function handleHexInputChange(e) {
+  let val = e.target.value
+  if (!val.startsWith('#')) val = '#' + val
+  const rgb = hexToRgb(val)
+  if (rgb) {
+    const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+    hue.value = hsv.h
+    saturation.value = hsv.s
+    value.value = hsv.v
+  }
+}
+
+function handleRgbInput(channel, val) {
+  const num = parseInt(val) || 0
+  const rgb = { ...computedRgb.value }
+  rgb[channel] = Math.max(0, Math.min(255, num))
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+  hue.value = hsv.h
+  saturation.value = hsv.s
+  value.value = hsv.v
+}
+
+function selectPresetColor(color) {
+  parseColorToHsv(color)
+}
+
 function isTodayDate(dateVal) {
   if (!dateVal) return false
-  const d = new Date(dateVal)
-  const today = new Date()
-  const isRealToday = d.getDate() === today.getDate() &&
-                      d.getMonth() === today.getMonth() &&
-                      d.getFullYear() === today.getFullYear()
-  if (isRealToday) return true
-  return d.getDate() === 14 && d.getMonth() === 6 && d.getFullYear() === 2026
+  const dStr = toLocalDateStr(dateVal)
+  const sysDateVal = systemDate.value ? toLocalDateStr(systemDate.value) : ''
+  return dStr === sysDateVal
 }
 </script>
 
@@ -2249,9 +2512,13 @@ function isTodayDate(dateVal) {
           <div 
             v-for="leg in visibleLegends" 
             :key="leg.name" 
-            class="px-2 py-0.5 border rounded text-[9px] font-extrabold whitespace-nowrap shadow-2xs leading-none uppercase" 
-            :class="leg.class"
+            class="px-2 py-0.5 border rounded text-[9px] font-extrabold whitespace-nowrap shadow-2xs leading-none uppercase select-none" 
+            :class="[
+              leg.class,
+              (isAdmin && legendConfigKeys[leg.name]) ? 'cursor-pointer hover:scale-105 transition-transform duration-150' : ''
+            ]"
             :style="getLegendStyle(leg.name)"
+            @click="handleLegendClick(leg.name, $event)"
           >
             {{ leg.name }}
           </div>
@@ -2314,7 +2581,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-600')
               ]"
             >
               {{ day.dow }}
@@ -2329,7 +2596,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 border-r border-slate-200 text-center text-[10px] sticky top-[32px] z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff8a65] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-50 text-slate-700')
+                isTodayDate(day.fullDate) ? 'bg-[#ff8a65] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-50 text-slate-700')
               ]"
             >
               {{ day.dateStr }}
@@ -2410,8 +2677,8 @@ function isTodayDate(dateVal) {
                   isCellSelected(item.room, day.fullDate)
                     ? 'ring-2 ring-blue-500 bg-[#bae6fd] z-20 shadow-xs'
                     : (item.isVirtual
-                        ? (isTodayDate(day.fullDate) ? 'bg-[#fdf2e6]' : (day.isWeekend ? 'bg-[#f0ece0]' : 'bg-[#fdf6e2]'))
-                        : (isTodayDate(day.fullDate) ? 'bg-[#fff0eb]' : (day.isWeekend ? 'bg-[#edf5ff]' : 'bg-white')))
+                        ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
+                        : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
                 ]"
                 @click="handleCellClick(item, day, dayIdx, $event)"
                 @contextmenu.prevent="handleCellContextMenu(item, day, $event)"
@@ -2522,7 +2789,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ffeae2] shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]'
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]'
               ]"
               :title="'Danh sách phòng bận ngày ' + day.dateStr + ':\n' + (dynamicStats.occRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -2546,7 +2813,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 text-center text-[10px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#fff0eb]' : (day.isWeekend ? 'bg-[#edf5ff]' : 'bg-white')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
               :title="'Danh sách phòng trống ngày ' + day.dateStr + ':\n' + (dynamicStats.avRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -2570,7 +2837,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 text-center text-[10px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#fff0eb]' : (day.isWeekend ? 'bg-[#edf5ff]' : 'bg-white')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
               :title="'Danh sách phòng khóa bảo trì ngày ' + day.dateStr + ':\n' + (dynamicStats.oooRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -3151,6 +3418,147 @@ function isTodayDate(dateVal) {
             <span>Lưu</span>
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Legend Color Picker Popover -->
+    <div 
+      v-if="showColorPicker && selectedLegendForColor"
+      ref="colorPickerRef"
+      class="fixed z-50 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 w-[260px] flex flex-col gap-3 select-none text-left"
+      :style="{ top: `${pickerPosition.top}px`, left: `${pickerPosition.left}px`, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)' }"
+    >
+      <!-- Color saturation/value gradient block -->
+      <div 
+        ref="colorAreaRef"
+        class="h-32 rounded-lg relative overflow-hidden cursor-crosshair border border-slate-200"
+        :style="{ backgroundColor: `hsl(${hue}, 100%, 50%)` }"
+        @mousedown="startDragColorArea"
+      >
+        <!-- White saturation gradient overlay -->
+        <div class="absolute inset-0" style="background: linear-gradient(to right, #fff, transparent);"></div>
+        <!-- Black value gradient overlay -->
+        <div class="absolute inset-0" style="background: linear-gradient(to top, #000, transparent);"></div>
+        
+        <!-- White pointer circle -->
+        <div 
+          class="absolute w-3 h-3 rounded-full border-2 border-white -translate-x-1.5 -translate-y-1.5 shadow-sm pointer-events-none"
+          :style="{ left: `${saturation}%`, top: `${100 - value}%` }"
+        ></div>
+      </div>
+
+      <!-- Hue & Alpha Sliders row next to Preview box -->
+      <div class="flex items-center gap-3">
+        <!-- Sliders stacked -->
+        <div class="flex-1 flex flex-col gap-2">
+          <!-- Hue Rainbow Slider -->
+          <div 
+            class="h-2.5 rounded relative cursor-pointer" 
+            style="background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);"
+            @mousedown="startDragHue"
+          >
+            <div 
+              class="absolute top-[-2px] bottom-[-2px] w-1.5 bg-white border border-slate-400 rounded cursor-pointer shadow-sm translate-x-[-50%]"
+              :style="{ left: `${(hue / 360) * 100}%` }"
+            ></div>
+          </div>
+
+          <!-- Alpha Opacity Slider -->
+          <div 
+            class="h-2.5 rounded relative cursor-pointer overflow-hidden border border-slate-100" 
+            style="background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0;"
+            @mousedown="startDragAlpha"
+          >
+            <!-- Overlay showing opacity to current solid color -->
+            <div 
+              class="absolute inset-0"
+              :style="{ background: `linear-gradient(to right, transparent, ${computedHex})` }"
+            ></div>
+            <div 
+              class="absolute top-[-2px] bottom-[-2px] w-1.5 bg-white border border-slate-400 rounded cursor-pointer shadow-sm translate-x-[-50%]"
+              :style="{ left: `${alpha}%` }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Solid/Current Color Preview Block -->
+        <div 
+          class="w-8 h-8 rounded border border-slate-300 shadow-3xs shrink-0" 
+          :style="{ backgroundColor: computedHex }"
+        ></div>
+      </div>
+
+      <!-- Hex & RGB Inputs Row -->
+      <div class="grid grid-cols-5 gap-1.5 text-[10px] text-slate-400 font-bold uppercase">
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="text" 
+            :value="computedHex.replace('#', '').toUpperCase()"
+            @change="handleHexInputChange"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] uppercase text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">Hex</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            :value="computedRgb.r"
+            @input="handleRgbInput('r', $event.target.value)"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">R</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            :value="computedRgb.g"
+            @input="handleRgbInput('g', $event.target.value)"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">G</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            :value="computedRgb.b"
+            @input="handleRgbInput('b', $event.target.value)"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">B</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            v-model="alpha"
+            min="0"
+            max="100"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">A</span>
+        </div>
+      </div>
+
+      <!-- Preset Grid -->
+      <div class="grid grid-cols-8 gap-1.5 pt-1.5 border-t border-slate-100 justify-items-center">
+        <button 
+          v-for="color in pickerPresets" 
+          :key="color"
+          @click="selectPresetColor(color)"
+          class="w-4 h-4 rounded-full border border-slate-200/50 cursor-pointer shadow-3xs hover:scale-115 transition-transform duration-100 p-0"
+          :style="{ backgroundColor: color }"
+        ></button>
+      </div>
+
+      <!-- Actions (Blue Save Button at bottom) -->
+      <div class="flex items-center gap-1.5 border-t border-slate-100 pt-2 shrink-0">
+        <button 
+          @click="saveLegendColor" 
+          :disabled="savingColor"
+          class="w-full py-1.5 bg-[#72b5f7] hover:bg-[#5da3e5] text-white rounded-lg font-bold text-xs border-none cursor-pointer shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+        >
+          <span v-if="savingColor" class="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
+          Save
+        </button>
       </div>
     </div>
   </div>

@@ -94,6 +94,11 @@ class HotelSettingController extends Controller
             'pos_invoice_symbol' => 'nullable|string|max:100',
             'logo_url' => 'nullable|string|max:255',
             'qr_code_url' => 'nullable|string|max:255',
+            'RoomPlan_ColorRoomReservation' => 'nullable|string|max:7',
+            'RoomPlan_ColorRoomInhouse' => 'nullable|string|max:7',
+            'RoomPlan_ColorRoomLateCheckout' => 'nullable|string|max:7',
+            'RoomPlan_ColorOOO' => 'nullable|string|max:7',
+            'RoomPlan_ColorOOS' => 'nullable|string|max:7',
         ], [
             'hotel_name.required' => 'Tên khách sạn không được để trống.',
             'email.email' => 'Email không đúng định dạng.',
@@ -105,6 +110,21 @@ class HotelSettingController extends Controller
 
         $setting->fill($validated);
         $setting->save();
+
+        foreach ([
+            'RoomPlan_ColorRoomReservation',
+            'RoomPlan_ColorRoomInhouse',
+            'RoomPlan_ColorRoomLateCheckout',
+            'RoomPlan_ColorOOO',
+            'RoomPlan_ColorOOS'
+        ] as $cfgKey) {
+            if ($request->has($cfgKey)) {
+                \App\Models\HotelConfig::updateOrCreate(
+                    ['name' => $cfgKey],
+                    ['value' => $request->input($cfgKey)]
+                );
+            }
+        }
 
         return new HotelSettingResource($setting);
     }
