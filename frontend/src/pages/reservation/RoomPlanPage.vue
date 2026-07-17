@@ -1011,9 +1011,11 @@ async function loadBookings() {
       const apiBookings = []
       
       res.data.data.forEach(b => {
+        if (Number(b.status) === 3) return
         if (!b.booking_rooms) return
 
         b.booking_rooms.forEach(br => {
+          if (Number(br.status) === 3) return
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
@@ -1665,7 +1667,18 @@ function showTooltip(booking, event) {
 }
 
 function updateTooltipPosition(event) {
-  tooltipX.value = event.clientX
+  const tooltipWidth = 340
+  const halfWidth = tooltipWidth / 2
+  const padding = 16
+  
+  let targetX = event.clientX
+  if (targetX - halfWidth < padding) {
+    targetX = halfWidth + padding
+  } else if (targetX + halfWidth > window.innerWidth - padding) {
+    targetX = window.innerWidth - halfWidth - padding
+  }
+  
+  tooltipX.value = targetX
   tooltipY.value = event.clientY
   // If cursor is in the upper 45% of the viewport, show tooltip below the cursor
   tooltipBelow.value = event.clientY < window.innerHeight * 0.45
@@ -2626,12 +2639,12 @@ function isTodayDate(dateVal) {
             </tr>
 
             <tr 
-              class="border-b border-slate-200 h-[38px] hover:bg-slate-50 relative"
+              class="border-b border-slate-300 h-[38px] hover:bg-slate-50 relative"
               :class="item.isVirtual ? 'bg-[#fdf6e2]' : ''"
             >
               <!-- Room Info (Sticky Left) -->
               <td 
-                class="p-0.5 px-1 border-r border-slate-200 sticky left-0 z-20 shadow-[inset_-1px_0_0_#e2e8f0] h-[37px] overflow-hidden"
+                class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden"
                 :class="item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white'"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
@@ -2672,10 +2685,10 @@ function isTodayDate(dateVal) {
               <td 
                 v-for="(day, dayIdx) in days" 
                 :key="dayIdx" 
-                class="border-r border-slate-100 h-full p-0 relative"
+                class="border-r border-slate-300 h-full p-0 relative"
                 :class="[
                   isCellSelected(item.room, day.fullDate)
-                    ? 'ring-2 ring-blue-500 bg-[#bae6fd] z-20 shadow-xs'
+                    ? 'ring-2 ring-blue-600 bg-[#2563eb] z-20 shadow-sm'
                     : (item.isVirtual
                         ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
                         : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
