@@ -29,6 +29,63 @@ class BookingRoom extends Model
                 }
                 $model->id = 'G' . str_pad($nextNum, 7, '0', STR_PAD_LEFT);
             }
+
+            // Set created_by and updated_by
+            $currentUser = auth()->user()?->username ?? 'system';
+            $model->created_by = $model->created_by ?: $currentUser;
+            $model->updated_by = $model->updated_by ?: $currentUser;
+
+            // Format original_room_class_id to "room_class_id-room_form_id"
+            if (!empty($model->original_room_class_id)) {
+                if (strpos((string)$model->original_room_class_id, '-') === false) {
+                    $classId = $model->original_room_class_id;
+                    $standardRate = \App\Models\StandardRate::where('room_class_id', $classId)->first();
+                    $formId = $standardRate ? $standardRate->room_form_id : 1;
+                    $model->original_room_class_id = "{$classId}-{$formId}";
+                }
+            } else if (!empty($model->room_class_id)) {
+                $classId = $model->room_class_id;
+                $standardRate = \App\Models\StandardRate::where('room_class_id', $classId)->first();
+                $formId = $standardRate ? $standardRate->room_form_id : 1;
+                $model->original_room_class_id = "{$classId}-{$formId}";
+            }
+
+            // Set RoomKind
+            if (!empty($model->room_class_id)) {
+                $standardRate = \App\Models\StandardRate::where('room_class_id', $model->room_class_id)->first();
+                $roomForm = $standardRate ? \App\Models\RoomForm::find($standardRate->room_form_id) : null;
+                $model->RoomKind = $roomForm ? $roomForm->name : null;
+            }
+            if ($model->ActutalNumOfDays === null && !empty($model->arrival_date) && !empty($model->departure_date)) {
+                $arr = \Carbon\Carbon::parse($model->arrival_date);
+                $dep = \Carbon\Carbon::parse($model->departure_date);
+                $diff = $arr->diffInDays($dep);
+                $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
+            }
+        });
+
+        static::updating(function ($model) {
+            $model->updated_by = auth()->user()?->username ?? 'system';
+
+            // Keep original_room_class_id unchanged on updates
+            if ($model->isDirty('original_room_class_id')) {
+                $model->original_room_class_id = $model->getOriginal('original_room_class_id');
+            }
+
+            // Update RoomKind if room_class_id changes
+            if ($model->isDirty('room_class_id') && !empty($model->room_class_id)) {
+                $standardRate = \App\Models\StandardRate::where('room_class_id', $model->room_class_id)->first();
+                $roomForm = $standardRate ? \App\Models\RoomForm::find($standardRate->room_form_id) : null;
+                $model->RoomKind = $roomForm ? $roomForm->name : null;
+            }
+            if ($model->isDirty('arrival_date') || $model->isDirty('departure_date') || $model->ActutalNumOfDays === null) {
+                if (!empty($model->arrival_date) && !empty($model->departure_date)) {
+                    $arr = \Carbon\Carbon::parse($model->arrival_date);
+                    $dep = \Carbon\Carbon::parse($model->departure_date);
+                    $diff = $arr->diffInDays($dep);
+                    $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
+                }
+            }
         });
 
         static::saving(function ($model) {
@@ -48,12 +105,17 @@ class BookingRoom extends Model
                 }
             }
 
-            // Tự động tính số đêm (num_of_days) của phòng
+            // Tự động tính số đêm (ActutalNumOfDays) của phòng
             if (!empty($model->arrival_date) && !empty($model->departure_date)) {
                 $arr = \Carbon\Carbon::parse($model->arrival_date);
                 $dep = \Carbon\Carbon::parse($model->departure_date);
                 $diff = $arr->diffInDays($dep);
-                $model->num_of_days = $diff > 0 ? $diff : 1; // Nếu cùng ngày (day use) thì tính 1 ngày
+                $model->ActutalNumOfDays = $diff > 0 ? $diff : 1; // Nếu cùng ngày (day use) thì tính 1 ngày
+            }
+
+            // Reset giá thêm giường về 0 nếu số lượng giường phụ bằng 0
+            if (empty($model->extra_bed_qty) || (int)$model->extra_bed_qty === 0) {
+                $model->extra_bed_rate = 0;
             }
         });
     }
@@ -62,10 +124,11 @@ class BookingRoom extends Model
         'booking_id',
         'room_number',
         'room_class_id',
+        'RoomKind',
         'original_room_class_id',
         'arrival_date',
         'departure_date',
-        'num_of_days',
+        'ActutalNumOfDays',
         'actual_arrival_date',
         'arrival_time',
         'departure_time',
@@ -96,7 +159,7 @@ class BookingRoom extends Model
     protected $casts = [
         'arrival_date'           => 'date',
         'departure_date'         => 'date',
-        'num_of_days'            => 'integer',
+        'ActutalNumOfDays'       => 'integer',
         'actual_arrival_date'    => 'date',
         'rate'                   => 'decimal:2',
         'extra_bed_rate'         => 'decimal:2',
@@ -141,7 +204,16 @@ class BookingRoom extends Model
 
     public function originalRoomClass()
     {
-        return $this->belongsTo(RoomClass::class, 'original_room_class_id');
+        return $this->belongsTo(RoomClass::class, 'original_room_class_only_id');
+    }
+
+    public function getOriginalRoomClassOnlyIdAttribute()
+    {
+        if (!empty($this->original_room_class_id)) {
+            $parts = explode('-', $this->original_room_class_id);
+            return (int)$parts[0];
+        }
+        return null;
     }
 
     public function services()

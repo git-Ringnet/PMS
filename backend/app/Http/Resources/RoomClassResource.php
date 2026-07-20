@@ -30,6 +30,10 @@ class RoomClassResource extends JsonResource
             'image_path' => $this->image_path,
             'image_url' => $this->image_path ? asset('storage/' . $this->image_path) : null,
             'max_adults' => $maxAdults,
+            'room_form_id' => $standardRate?->room_form_id,
+            'room_form_name' => $standardRate?->roomForm?->name,
+            'room_price' => $standardRate?->room_price ? (float) $standardRate->room_price : 0,
+            'extra_bed_price' => $standardRate?->extra_bed_price ? (float) $standardRate->extra_bed_price : 0,
         ];
     }
 }
