@@ -47,9 +47,10 @@
             <label class="block text-slate-600 mb-1.5 font-bold">Loại phòng</label>
             <select 
               v-model="upgradeTargetClassId" 
-              class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400"
+              @change="handleClassChange"
+              class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400 cursor-pointer"
             >
-              <option :value="null">Chọn loại phòng</option>
+              <option :value="null" disabled>— Chọn loại phòng —</option>
               <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
             </select>
           </div>
@@ -58,11 +59,12 @@
           <div>
             <label class="block text-slate-600 mb-1.5 font-bold">Dạng phòng</label>
             <select 
-              v-model="upgradeTargetClassId" 
-              class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400"
+              v-model="upgradeTargetFormId" 
+              @change="handleFormChange"
+              class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400 cursor-pointer"
             >
-              <option :value="null">Chọn dạng phòng</option>
-              <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+              <option :value="null" disabled>— Chọn dạng phòng —</option>
+              <option v-for="rf in availableForms" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
             </select>
           </div>
 
@@ -71,11 +73,12 @@
             <label class="block text-slate-600 mb-1.5 font-bold">Mã giá phòng</label>
             <select 
               v-model="upgradeTargetRateCode" 
+              @change="handleRateCodeChange"
               :disabled="!upgradeChangePrice"
               class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200"
-              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
+              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500 cursor-pointer'"
             >
-              <option value="">Select Value</option>
+              <option value="">Chọn mã giá phòng</option>
               <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
             </select>
           </div>
@@ -84,10 +87,11 @@
           <div>
             <label class="block text-slate-600 mb-1.5 font-bold">Giá phòng</label>
             <input 
-              type="number" 
-              v-model="upgradeTargetPrice"
+              type="text" 
+              :value="formatCurrencyInput(upgradeTargetPrice)"
+              @input="e => upgradeTargetPrice = cleanCurrencyValue(e.target.value)"
               :disabled="!upgradeChangePrice"
-              class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200"
+              class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200 text-right font-bold"
               :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
             />
           </div>
@@ -98,6 +102,7 @@
               id="upgradeChangePrice"
               type="checkbox" 
               v-model="upgradeChangePrice"
+              @change="handleToggleChangePrice"
               class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
             />
             <label for="upgradeChangePrice" class="text-xs font-extrabold text-slate-700 cursor-pointer">Thay đổi giá</label>
@@ -127,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { upgradeRoom } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -136,6 +141,7 @@ const props = defineProps({
   bookingId: Number,
   targetRooms: Array,
   roomClasses: Array,
+  roomForms: { type: Array, default: () => [] },
   roomRateCodes: Array
 })
 
@@ -144,30 +150,127 @@ const emit = defineEmits(['update:show', 'upgraded'])
 const uiStore = useUiStore()
 
 const upgradeTargetClassId = ref(null)
+const upgradeTargetFormId = ref(null)
 const upgradeTargetRateCode = ref('')
 const upgradeTargetPrice = ref(0)
 const upgradeChangePrice = ref(false)
+
+function getNormalizedCategory(rc, forms) {
+  if (!rc || !rc.name) return ''
+  let categoryName = rc.name
+  if (forms && forms.length > 0) {
+    forms.forEach(rf => {
+      if (!rf || !rf.name) return
+      const regex = new RegExp('\\b' + rf.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi')
+      categoryName = categoryName.replace(regex, '')
+    })
+  }
+  return categoryName.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+const availableForms = computed(() => {
+  const currentClass = props.roomClasses?.find(c => c.id === upgradeTargetClassId.value)
+  if (!currentClass) return props.roomForms || []
+  const category = getNormalizedCategory(currentClass, props.roomForms)
+  const siblingClasses = props.roomClasses.filter(c => getNormalizedCategory(c, props.roomForms) === category)
+  const formIds = siblingClasses.map(c => c.room_form_id).filter(id => id !== undefined && id !== null)
+  const list = (props.roomForms || []).filter(f => formIds.includes(f.id))
+  return list.length > 0 ? list : (props.roomForms || [])
+})
+
+function updatePriceFromClass(cls) {
+  if (!cls) return
+  const stdPrice = cls.room_price ?? cls.price ?? cls.standard_rate ?? 0
+  if (!upgradeChangePrice.value) {
+    upgradeTargetPrice.value = Number(stdPrice)
+  }
+}
+
+function handleClassChange() {
+  const matchedClass = props.roomClasses?.find(c => c.id === Number(upgradeTargetClassId.value))
+  if (matchedClass) {
+    upgradeTargetFormId.value = matchedClass.room_form_id || upgradeTargetFormId.value
+    updatePriceFromClass(matchedClass)
+  }
+}
+
+function handleFormChange() {
+  const currentClass = props.roomClasses?.find(c => c.id === Number(upgradeTargetClassId.value))
+  if (!currentClass) return
+
+  const category = getNormalizedCategory(currentClass, props.roomForms)
+  const targetClass = props.roomClasses?.find(c => {
+    return getNormalizedCategory(c, props.roomForms) === category && c.room_form_id === Number(upgradeTargetFormId.value)
+  })
+
+  if (targetClass) {
+    upgradeTargetClassId.value = targetClass.id
+    updatePriceFromClass(targetClass)
+  }
+}
+
+function handleRateCodeChange() {
+  if (!upgradeChangePrice.value) return
+  if (!upgradeTargetRateCode.value) return
+  const matchedCode = props.roomRateCodes?.find(rc => rc.Ma === upgradeTargetRateCode.value)
+  if (matchedCode && (matchedCode.Gia || matchedCode.price)) {
+    upgradeTargetPrice.value = Number(matchedCode.Gia || matchedCode.price)
+  }
+}
+
+function handleToggleChangePrice() {
+  if (!upgradeChangePrice.value) {
+    upgradeTargetRateCode.value = ''
+    const matchedClass = props.roomClasses?.find(c => c.id === Number(upgradeTargetClassId.value))
+    if (matchedClass) {
+      upgradeTargetPrice.value = Number(matchedClass.room_price ?? matchedClass.price ?? 0)
+    }
+  }
+}
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
     const targetRoom = props.targetRooms?.[0]
     if (targetRoom) {
-      const matchedClass = props.roomClasses.find(c => c.name === targetRoom.type || c.code === targetRoom.shape)
-      upgradeTargetClassId.value = matchedClass ? matchedClass.id : null
-      upgradeTargetRateCode.value = ''
-      upgradeTargetPrice.value = targetRoom.price || 0
-      upgradeChangePrice.value = false
+      const matchedClass = props.roomClasses?.find(c => 
+        c.id === targetRoom.roomClassId || c.name === targetRoom.type || c.code === targetRoom.shape
+      )
+      if (matchedClass) {
+        upgradeTargetClassId.value = matchedClass.id
+        upgradeTargetFormId.value = matchedClass.room_form_id || null
+        upgradeTargetPrice.value = Number(matchedClass.room_price ?? matchedClass.price ?? targetRoom.price ?? 0)
+      } else {
+        upgradeTargetClassId.value = props.roomClasses?.[0]?.id || null
+        upgradeTargetFormId.value = props.roomClasses?.[0]?.room_form_id || null
+        upgradeTargetPrice.value = Number(props.roomClasses?.[0]?.room_price ?? props.roomClasses?.[0]?.price ?? 0)
+      }
     } else {
-      upgradeTargetClassId.value = null
-      upgradeTargetRateCode.value = ''
-      upgradeTargetPrice.value = 0
-      upgradeChangePrice.value = false
+      upgradeTargetClassId.value = props.roomClasses?.[0]?.id || null
+      upgradeTargetFormId.value = props.roomClasses?.[0]?.room_form_id || null
+      upgradeTargetPrice.value = Number(props.roomClasses?.[0]?.room_price ?? props.roomClasses?.[0]?.price ?? 0)
     }
+    upgradeTargetRateCode.value = ''
+    upgradeChangePrice.value = false
   }
 })
 
 function close() {
   emit('update:show', false)
+}
+
+function formatCurrencyInput(val) {
+  if (val === null || val === undefined || val === '') return '';
+  let str = String(val).replace(/[^\d.-]/g, '');
+  if (!str) return '';
+  let parts = str.split('.');
+  parts[0] = Number(parts[0]).toLocaleString('en-US');
+  return parts.join('.');
+}
+
+function cleanCurrencyValue(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  const cleanStr = String(val).replace(/,/g, '');
+  return Number(cleanStr) || 0;
 }
 
 async function confirmUpgrade() {
@@ -185,55 +288,65 @@ async function confirmUpgrade() {
     return
   }
 
-  close()
-  uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
-  let successCount = 0
-  let failCount = 0
-  let failMessages = []
+  uiStore.confirm({
+    title: 'Xác nhận nâng hạng phòng',
+    message: `Bạn có chắc chắn muốn nâng hạng cho ${targetList.length} phòng đã chọn?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy'
+  }).then(async (confirmed) => {
+    if (!confirmed) return
+    close()
+    uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
 
-  try {
-    await Promise.all(targetList.map(async (r) => {
-      if (!r.bookingRoomId) return
-      try {
-        const data = { room_class_id: classId }
-        if (upgradeChangePrice.value) {
-          data.rate = Number(upgradeTargetPrice.value)
-        }
-        const res = await upgradeRoom(props.bookingId, r.bookingRoomId, data)
-        if (res.data?.success) {
-          successCount++
-          r.roomNumber = ''
-          r.roomClassId = classId
-          const matchedClass = props.roomClasses.find(c => c.id === classId)
-          if (matchedClass) {
-            r.type = matchedClass.name
-            r.shape = matchedClass.code
-          }
+    try {
+      await Promise.all(targetList.map(async (r) => {
+        if (!r.bookingRoomId) return
+        try {
+          const data = { room_class_id: classId }
           if (upgradeChangePrice.value) {
-            r.price = Number(upgradeTargetPrice.value)
-            if (upgradeTargetRateCode.value) {
-              r.rateCode = upgradeTargetRateCode.value
-            }
+            data.rate = Number(upgradeTargetPrice.value)
           }
-        } else {
+          const res = await upgradeRoom(props.bookingId, r.bookingRoomId, data)
+          if (res.data?.success) {
+            successCount++
+            r.roomNumber = ''
+            r.roomClassId = classId
+            const matchedClass = props.roomClasses.find(c => c.id === classId)
+            if (matchedClass) {
+              r.type = matchedClass.name
+              r.shape = matchedClass.room_form_name || matchedClass.code
+            }
+            if (upgradeChangePrice.value) {
+              r.price = Number(upgradeTargetPrice.value)
+              if (upgradeTargetRateCode.value) {
+                r.rateCode = upgradeTargetRateCode.value
+              }
+            } else if (matchedClass) {
+              r.price = Number(matchedClass.room_price ?? matchedClass.price ?? r.price)
+            }
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
           failCount++
-          failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
         }
-      } catch (err) {
-        console.error(err)
-        failCount++
-        failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
-      }
-    }))
+      }))
 
-    if (successCount > 0) {
-      emit('upgraded', { successCount, failCount, failMessages })
-    } else {
-      uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
+      if (successCount > 0) {
+        emit('upgraded', { successCount, failCount, failMessages })
+      } else {
+        uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch(err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
     }
-  } catch(err) {
-    console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
-  }
+  })
 }
 </script>

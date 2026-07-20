@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
+import http from '@/services/http'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import CopyModal from './components/CopyModal.vue'
 import UpgradeModal from './components/UpgradeModal.vue'
@@ -504,19 +505,32 @@ function getRoomDisplayServices(room) {
 }
 
 function getServicesTotal(room) {
-  if (!room.services) return 0
+  if (!room.services || !Array.isArray(room.services)) return 0
   return room.services
     .filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE')
     .reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
 }
 
+function getRoomExtraBedTotal(room) {
+  if (!room) return 0
+  if (room.extraBedTotalSum !== undefined && room.extraBedTotalSum !== null) {
+    return Number(room.extraBedTotalSum) || 0
+  }
+  if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
+    return room.dailyExtraBeds.reduce((sum, d) => sum + (Number(d.total) || 0), 0)
+  }
+  const nights = Number(room.nights) || 1
+  const extraBedPrice = Number(room.extraBedPrice) || 0
+  const extraBedQty = Number(room.extraBedQty) || 0
+  return extraBedPrice * extraBedQty * nights
+}
+
 function calculateRoomTotal(room) {
   const nights = Number(room.nights) || 1
   const price = Number(room.price) || 0
-  const extraBedPrice = Number(room.extraBedPrice) || 0
-  const extraBedQty = Number(room.extraBedQty) || 0
+  const extraBedTotal = getRoomExtraBedTotal(room)
   const servicesTotal = getServicesTotal(room)
-  return (price * nights) + (extraBedPrice * extraBedQty * nights) + servicesTotal
+  return (price * nights) + extraBedTotal + servicesTotal
 }
 
 
@@ -604,8 +618,9 @@ const roomsTotalSummary = computed(() => {
     adults   += Number(r.adults) || 0
     babies   += Number(r.babies) || 0
     children += Number(r.children) || 0
-    extraBed += (Number(r.extraBedPrice) || 0) * (Number(r.extraBedQty) || 0) * (Number(r.nights) || 1)
-    total    += Number(r.total) || 0
+    const ebTotal = getRoomExtraBedTotal(r)
+    extraBed += ebTotal
+    total    += Number(r.total) || calculateRoomTotal(r)
   })
   return { count: activeTab.value.rooms.length, priceSum, adults, babies, children, extraBed, total }
 })
@@ -2575,45 +2590,53 @@ async function triggerAction(actionName) {
         return
       }
     }
-    isEditing.value = false
-    if (tab && tab.dbId) {
-      try {
-        const payload = {
-          booking_name:           tab.bookingName.toUpperCase(),
-          arrival_date:           tab.checkIn,
-          departure_date:         tab.checkOut,
-          num_of_days:            tab.nights,
-          registration_status_id: tab.registrationStatusId,
-          confirm_date:           tab.confirmDate || null,
-          company_id:             tab.companyId || null,
-          market_id:              tab.marketId || null,
-          customer_source_id:     tab.customerSourceId || null,
-          booker_id:              tab.bookerId || null,
-          contact_name:           tab.contactName || null,
-          contact_email:          tab.contactEmail || null,
-          contact_phone:          tab.contactPhone || null,
-          payment_method_id:      tab.paymentMethodId || null,
-          payment_value:          tab.paymentValue || 0,
-          external_booking_code:  tab.externalBookingCode || null,
-          sales_person:           tab.salesPerson || null,
-          is_git:                 tab.isGit ? 1 : 0,
-          has_vat:                tab.hasVat ? 1 : 0,
-          note:                   tab.note || null,
-          special_requests:       tab.specialRequests || null,
-          shuttle_info:           tab.shuttleInfo || [],
-          room_allocations:       syncRoomsToAllocations(tab),
+    uiStore.confirm({
+      title: 'Xác nhận lưu đăng ký',
+      message: `Bạn có chắc chắn muốn lưu các thông tin thay đổi cho đăng ký "${tab?.bookingName || ''}"?`,
+      confirmText: 'Lưu',
+      cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (!confirmed) return
+      isEditing.value = false
+      if (tab && tab.dbId) {
+        try {
+          const payload = {
+            booking_name:           tab.bookingName.toUpperCase(),
+            arrival_date:           tab.checkIn,
+            departure_date:         tab.checkOut,
+            num_of_days:            tab.nights,
+            registration_status_id: tab.registrationStatusId,
+            confirm_date:           tab.confirmDate || null,
+            company_id:             tab.companyId || null,
+            market_id:              tab.marketId || null,
+            customer_source_id:     tab.customerSourceId || null,
+            booker_id:              tab.bookerId || null,
+            contact_name:           tab.contactName || null,
+            contact_email:          tab.contactEmail || null,
+            contact_phone:          tab.contactPhone || null,
+            payment_method_id:      tab.paymentMethodId || null,
+            payment_value:          tab.paymentValue || 0,
+            external_booking_code:  tab.externalBookingCode || null,
+            sales_person:           tab.salesPerson || null,
+            is_git:                 tab.isGit ? 1 : 0,
+            has_vat:                tab.hasVat ? 1 : 0,
+            note:                   tab.note || null,
+            special_requests:       tab.specialRequests || null,
+            shuttle_info:           tab.shuttleInfo || [],
+            room_allocations:       syncRoomsToAllocations(tab),
+          }
+          const res = await updateBooking(tab.dbId, payload)
+          await loadBookings()
+          uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
+        } catch (err) {
+          console.error(err)
+          const errMsg = err.response?.data?.message || 'Không thể lưu thông tin đăng ký!'
+          uiStore.showToast(errMsg, 'error')
         }
-        const res = await updateBooking(tab.dbId, payload)
-        await loadBookings()
+      } else {
         uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
-      } catch (err) {
-        console.error(err)
-        const errMsg = err.response?.data?.message || 'Không thể lưu thông tin đăng ký!'
-        uiStore.showToast(errMsg, 'error')
       }
-    } else {
-      uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
-    }
+    })
   } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký') {
     openEditModal()
   } else if (actionName === 'Thông tin khách hàng') {
@@ -2624,7 +2647,7 @@ async function triggerAction(actionName) {
     openCopyModal()
   } else if (actionName === 'GIAO PHÒNG') {
     if (isCheckInDisabled.value) {
-      uiStore.showToast('Tất cả phòng được chọn (hoặc tất cả phòng gán số) đã được giao phòng!', 'warning')
+      uiStore.showToast('Tất cả phòng được chọn đã được giao phòng!', 'warning')
       return
     }
     const tab = activeTab.value
@@ -2638,12 +2661,11 @@ async function triggerAction(actionName) {
     }
 
     const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-    const targetList = selected.length > 0 ? selected : tab.rooms.filter(r => r.roomNumber)
-
-    if (targetList.length === 0) {
-      uiStore.showToast('Vui lòng gán số phòng trước khi giao phòng!', 'warning')
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng cần giao phòng!', 'warning')
       return
     }
+    const targetList = selected
 
     if (targetList.some(r => !r.roomNumber)) {
       uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi giao phòng!', 'warning')
@@ -2652,9 +2674,7 @@ async function triggerAction(actionName) {
 
     uiStore.confirm({
       title: 'Xác nhận giao phòng',
-      message: selected.length > 0
-        ? `Bạn có chắc chắn muốn giao phòng cho ${selected.length} phòng đã chọn?`
-        : 'Bạn có chắc chắn muốn giao phòng cho toàn bộ phòng đã gán số?',
+      message: `Bạn có chắc chắn muốn giao phòng cho ${targetList.length} phòng đã chọn?`,
       confirmText: 'Đồng ý', cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (confirmed) {
@@ -2710,57 +2730,68 @@ async function triggerAction(actionName) {
     }
 
     const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-    const targetList = selected.length > 0 ? selected : tab.rooms
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng cần tự động gán phòng!', 'warning')
+      return
+    }
+    const targetList = selected
 
-    uiStore.showToast('Đang tiến hành tự động gán số phòng...', 'info')
-    let successCount = 0
-    let failCount = 0
+    uiStore.confirm({
+      title: 'Tự động gán số phòng',
+      message: `Bạn có chắc chắn muốn tự động gán số phòng cho ${targetList.length} phòng đã chọn?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (!confirmed) return
+      uiStore.showToast('Đang tiến hành tự động gán số phòng...', 'info')
+      let successCount = 0
+      let failCount = 0
 
-    try {
-      for (const r of targetList) {
-        if (!r.bookingRoomId) continue
-        try {
-          const res = await autoAssignRoom(tab.dbId, r.bookingRoomId, {
-            arrival_date: r.checkIn,
-            departure_date: r.checkOut
-          })
-          if (res.data?.success) {
-            r.roomNumber = res.data.room_number || ''
-            r.isPreassigned = true
-            successCount++
-          } else {
+      try {
+        for (const r of targetList) {
+          if (!r.bookingRoomId) continue
+          try {
+            const res = await autoAssignRoom(tab.dbId, r.bookingRoomId, {
+              arrival_date: r.checkIn,
+              departure_date: r.checkOut
+            })
+            if (res.data?.success) {
+              r.roomNumber = res.data.room_number || ''
+              r.isPreassigned = true
+              successCount++
+            } else {
+              failCount++
+            }
+          } catch (err) {
+            console.error(err)
             failCount++
           }
-        } catch (err) {
-          console.error(err)
-          failCount++
         }
+
+        selectedRows.value = []
+
+        if (successCount > 0) {
+          uiStore.showToast(`Tự động gán thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng)` : ''}`, 'success')
+        } else {
+          uiStore.showToast('Không tìm thấy số phòng trống phù hợp cho các phòng đã chọn!', 'error')
+        }
+      } catch(err) {
+        console.error(err)
+        uiStore.showToast('Có lỗi xảy ra khi tự động gán phòng!', 'error')
       }
-
-      // Reset checkbox selection
-      selectedRows.value = []
-
-      if (successCount > 0) {
-        uiStore.showToast(`Tự động gán thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng)` : ''}`, 'success')
-      } else {
-        uiStore.showToast('Không tìm thấy số phòng trống phù hợp cho các phòng đã chọn!', 'error')
-      }
-    } catch(err) {
-      console.error(err)
-      uiStore.showToast('Có lỗi xảy ra khi tự động gán phòng!', 'error')
-    }
-
+    })
   } else if (actionName === 'Gỡ số phòng') {
     const tab = activeTab.value
     if (tab && tab.rooms) {
       const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-      const targetList = selected.length > 0 ? selected : tab.rooms
+      if (selected.length === 0) {
+        uiStore.showToast('Vui lòng tích chọn phòng cần gỡ số phòng!', 'warning')
+        return
+      }
+      const targetList = selected
 
       uiStore.confirm({
         title: 'Xác nhận gỡ số phòng',
-        message: selected.length > 0
-          ? `Bạn có chắc chắn muốn gỡ số phòng cho ${selected.length} phòng đã chọn?`
-          : 'Bạn có chắc chắn muốn gỡ số phòng cho toàn bộ phòng trong đăng ký này?',
+        message: `Bạn có chắc chắn muốn gỡ số phòng cho ${targetList.length} phòng đã chọn?`,
         confirmText: 'Đồng ý', cancelText: 'Hủy'
       }).then(async (confirmed) => {
         if (confirmed) {
@@ -2796,17 +2827,15 @@ async function triggerAction(actionName) {
       return
     }
     const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-    const targetList = selected.length > 0 ? selected : tab.rooms
-    if (targetList.length === 0) {
-      uiStore.showToast('Không có phòng nào để hủy!', 'info')
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng cần hủy!', 'warning')
       return
     }
+    const targetList = selected
 
     uiStore.confirm({
       title: 'Hủy phòng',
-      message: selected.length > 0 
-        ? `Bạn có chắc chắn muốn hủy ${selected.length} phòng đã chọn?` 
-        : 'Bạn có chắc chắn muốn hủy toàn bộ phòng trong đăng ký này?',
+      message: `Bạn có chắc chắn muốn hủy ${targetList.length} phòng đã chọn?`,
       confirmText: 'Đồng ý', cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (confirmed) {
@@ -2852,21 +2881,23 @@ async function triggerAction(actionName) {
     if (!tab || !tab.rooms || tab.rooms.length === 0) return
     const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
     if (selected.length === 0) {
-      uiStore.showToast('Vui lòng tích chọn phòng muốn thêm dịch vụ bổ sung trên bảng!', 'warning')
+      uiStore.showToast('Vui lòng tích chọn phòng cần thêm dịch vụ bổ sung!', 'warning')
       return
     }
-    // Pass first room (used for dates), but targetRooms computed includes all selected
     openServicesModal(selected[0])
   } else if (actionName === 'Xóa dịch vụ bổ sung') {
     const tab = activeTab.value
     if (!tab || !tab.rooms || tab.rooms.length === 0) return
     const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-    const validRooms = selected.filter(r => r.bookingRoomId)
+    let validRooms = selected.filter(r => r.bookingRoomId)
+    // Ngoại lệ: Nếu không tích chọn phòng trước, lấy toàn bộ phòng đã lưu trong booking
     if (validRooms.length === 0) {
-      uiStore.showToast('Vui lòng tích chọn phòng (đã giao) muốn xóa dịch vụ bổ sung!', 'warning')
+      validRooms = tab.rooms.filter(r => r.bookingRoomId)
+    }
+    if (validRooms.length === 0) {
+      uiStore.showToast('Không có phòng nào đã lưu để xóa dịch vụ bổ sung!', 'warning')
       return
     }
-    // Pass first room for compatibility; modal handles multi-room via targetRooms prop
     deleteServiceModalRoom.value = validRooms[0]
     deleteServiceModalTargetRooms.value = validRooms
     isDeleteServiceModalOpen.value = true
@@ -3003,11 +3034,39 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Xuất Excel') {
     uiStore.showToast('Đang tải xuống tệp Excel danh sách phòng...', 'success')
   } else if (actionName === 'In phiếu đăng ký khách') {
-    uiStore.showToast('Đang in phiếu đăng ký khách (Registration Card)...', 'success')
-    setTimeout(() => window.print(), 500)
+    const tab = activeTab.value
+    const selected = tab?.rooms?.filter(r => selectedRows.value.includes(r.id)) || []
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng cần in phiếu đăng ký!', 'warning')
+      return
+    }
+    uiStore.confirm({
+      title: 'Xác nhận in phiếu đăng ký',
+      message: `Bạn có chắc chắn muốn in phiếu đăng ký khách cho ${selected.length} phòng đã chọn?`,
+      confirmText: 'In phiếu', cancelText: 'Hủy'
+    }).then((confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang in phiếu đăng ký khách (Registration Card)...', 'success')
+        setTimeout(() => window.print(), 500)
+      }
+    })
   } else if (actionName === 'In hoá đơn tạm') {
-    uiStore.showToast('Đang in hóa đơn tạm tính (Pro-forma Invoice)...', 'success')
-    setTimeout(() => window.print(), 500)
+    const tab = activeTab.value
+    const selected = tab?.rooms?.filter(r => selectedRows.value.includes(r.id)) || []
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng tích chọn phòng cần in hóa đơn tạm!', 'warning')
+      return
+    }
+    uiStore.confirm({
+      title: 'Xác nhận in hóa đơn tạm',
+      message: `Bạn có chắc chắn muốn in hóa đơn tạm tính cho ${selected.length} phòng đã chọn?`,
+      confirmText: 'In hóa đơn', cancelText: 'Hủy'
+    }).then((confirmed) => {
+      if (confirmed) {
+        uiStore.showToast('Đang in hóa đơn tạm tính (Pro-forma Invoice)...', 'success')
+        setTimeout(() => window.print(), 500)
+      }
+    })
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
     if (!tab) return
@@ -3138,11 +3197,55 @@ function openExtraBedModal(room) {
   isExtraBedModalOpen.value = true
 }
 
-function handleExtraBedSaved({ quantity, rate }) {
+async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRates }) {
   if (!extraBedModalRoom.value) return
-  extraBedModalRoom.value.extraBedQty = quantity
-  extraBedModalRoom.value.extraBedPrice = rate
-  extraBedModalRoom.value.total = calculateRoomTotal(extraBedModalRoom.value)
+  const room = extraBedModalRoom.value
+  room.extraBedQty = quantity
+  room.extraBedPrice = rate
+  if (totalExtraBedPrice !== undefined) {
+    room.extraBedTotalSum = totalExtraBedPrice
+  }
+  if (dailyRates) {
+    room.dailyExtraBeds = dailyRates
+  }
+  room.total = calculateRoomTotal(room)
+
+  // Nếu là booking đã lưu dưới database (có bookingRoomId), tự động đồng bộ API Dịch vụ EB & DB booking_rooms
+  if (activeTab.value?.dbId && room.bookingRoomId) {
+    try {
+      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+
+      // 1. Cập nhật trực tiếp số lượng và đơn giá extra bed vào bảng booking_rooms
+      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+        extra_bed_qty: quantity,
+        extra_bed_rate: rate
+      })
+
+      // 2. Cập nhật chi tiết từng đêm vào dịch vụ booking_room_services
+      if (dailyRates && dailyRates.length > 0) {
+        for (const d of dailyRates) {
+          if (d.isPast) continue // Không lưu/sửa đêm quá khứ
+          if (d.quantity > 0) {
+            await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+              service_code: 'EB',
+              service_name: 'Extra Bed',
+              service_date: d.dateStr,
+              quantity: d.quantity,
+              rate: d.rate,
+              is_room: d.isRoom ? 1 : 0
+            })
+          }
+        }
+      }
+
+      await loadBookings()
+      uiStore.showToast('Cập nhật Thêm giường vào Database thành công!', 'success')
+    } catch (err) {
+      console.error('Lỗi khi lưu Extra Bed:', err)
+      const detailMsg = err.response?.data?.message || err.message || ''
+      uiStore.showToast(`Lỗi khi lưu Thêm giường: ${detailMsg}`, 'error')
+    }
+  }
 }
 
 // ==================== YÊU CẦU ĐẶC BIỆT MODAL ====================
@@ -3850,13 +3953,13 @@ defineExpose({
                         <template v-else-if="col.key === 'extraBed'">
                           <div class="flex items-center justify-center gap-1">
                             <span class="font-bold text-slate-700 text-[11px]">{{ room.extraBedQty || 0 }}</span>
-                            <button v-if="isEditing" @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">
-                              <i class="fa-solid fa-pen text-[8px]"></i>
+                            <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
+                              <span>Chi tiết</span>
                             </button>
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold">{{ Number(room.extraBedQty) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
+                          <span class="text-gray-900 font-semibold" :title="`Đơn giá: ${formatCurrencyInput(room.extraBedPrice)}/đêm`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -4362,8 +4465,8 @@ defineExpose({
                                 <template v-else-if="col.key === 'extraBed'">
                                   <div class="flex items-center justify-center gap-1">
                                     <span class="font-bold text-slate-700 text-[11px]">{{ room.extraBedQty || 0 }}</span>
-                                    <button v-if="isEditing" @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">
-                                      <i class="fa-solid fa-pen text-[8px]"></i>
+                                    <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
+                                      <span>Chi tiết</span>
                                     </button>
                                   </div>
                                 </template>
@@ -5711,6 +5814,7 @@ defineExpose({
         :bookingId="activeTab?.dbId" 
         :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id)) : []" 
         :roomClasses="roomClasses" 
+        :roomForms="roomForms"
         :roomRateCodes="roomRateCodes"
         @upgraded="handleUpgraded" 
       />
@@ -5740,6 +5844,7 @@ defineExpose({
       <ExtraBedModal
         v-model:show="isExtraBedModalOpen"
         :room="extraBedModalRoom"
+        :systemDate="systemDate"
         @saved="handleExtraBedSaved"
       />
     </Teleport>
