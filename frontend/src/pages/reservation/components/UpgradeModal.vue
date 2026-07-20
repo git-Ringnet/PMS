@@ -185,55 +185,63 @@ async function confirmUpgrade() {
     return
   }
 
-  close()
-  uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
-  let successCount = 0
-  let failCount = 0
-  let failMessages = []
+  uiStore.confirm({
+    title: 'Xác nhận nâng hạng phòng',
+    message: `Bạn có chắc chắn muốn nâng hạng cho ${targetList.length} phòng đã chọn?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy'
+  }).then(async (confirmed) => {
+    if (!confirmed) return
+    close()
+    uiStore.showToast('Đang tiến hành nâng hạng phòng...', 'info')
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
 
-  try {
-    await Promise.all(targetList.map(async (r) => {
-      if (!r.bookingRoomId) return
-      try {
-        const data = { room_class_id: classId }
-        if (upgradeChangePrice.value) {
-          data.rate = Number(upgradeTargetPrice.value)
-        }
-        const res = await upgradeRoom(props.bookingId, r.bookingRoomId, data)
-        if (res.data?.success) {
-          successCount++
-          r.roomNumber = ''
-          r.roomClassId = classId
-          const matchedClass = props.roomClasses.find(c => c.id === classId)
-          if (matchedClass) {
-            r.type = matchedClass.name
-            r.shape = matchedClass.code
-          }
+    try {
+      await Promise.all(targetList.map(async (r) => {
+        if (!r.bookingRoomId) return
+        try {
+          const data = { room_class_id: classId }
           if (upgradeChangePrice.value) {
-            r.price = Number(upgradeTargetPrice.value)
-            if (upgradeTargetRateCode.value) {
-              r.rateCode = upgradeTargetRateCode.value
-            }
+            data.rate = Number(upgradeTargetPrice.value)
           }
-        } else {
+          const res = await upgradeRoom(props.bookingId, r.bookingRoomId, data)
+          if (res.data?.success) {
+            successCount++
+            r.roomNumber = ''
+            r.roomClassId = classId
+            const matchedClass = props.roomClasses.find(c => c.id === classId)
+            if (matchedClass) {
+              r.type = matchedClass.name
+              r.shape = matchedClass.code
+            }
+            if (upgradeChangePrice.value) {
+              r.price = Number(upgradeTargetPrice.value)
+              if (upgradeTargetRateCode.value) {
+                r.rateCode = upgradeTargetRateCode.value
+              }
+            }
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
           failCount++
-          failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
         }
-      } catch (err) {
-        console.error(err)
-        failCount++
-        failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
-      }
-    }))
+      }))
 
-    if (successCount > 0) {
-      emit('upgraded', { successCount, failCount, failMessages })
-    } else {
-      uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
+      if (successCount > 0) {
+        emit('upgraded', { successCount, failCount, failMessages })
+      } else {
+        uiStore.showToast(`Nâng hạng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch(err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
     }
-  } catch(err) {
-    console.error(err)
-    uiStore.showToast('Có lỗi xảy ra khi nâng hạng phòng!', 'error')
-  }
+  })
 }
 </script>

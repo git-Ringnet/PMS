@@ -380,101 +380,109 @@ async function saveServices() {
   const rooms = props.targetRooms?.length > 0 ? props.targetRooms : (props.room ? [props.room] : [])
   if (rooms.length === 0) return
 
-  uiStore.showToast('Đang tiến hành lưu dịch vụ bổ sung...', 'info')
-  let hasError = false
-  let lastErrorMsg = ''
+  uiStore.confirm({
+    title: 'Xác nhận lưu dịch vụ bổ sung',
+    message: `Bạn có chắc chắn muốn lưu các dịch vụ bổ sung đã chọn cho ${rooms.length} phòng?`,
+    confirmText: 'Lưu',
+    cancelText: 'Hủy'
+  }).then(async (confirmed) => {
+    if (!confirmed) return
+    uiStore.showToast('Đang tiến hành lưu dịch vụ bổ sung...', 'info')
+    let hasError = false
+    let lastErrorMsg = ''
 
-  for (const room of rooms) {
-    const roomId = room.bookingRoomId
-    if (!roomId) continue
+    for (const room of rooms) {
+      const roomId = room.bookingRoomId
+      if (!roomId) continue
 
-    try {
-      // 1. Fetch existing services for this room
-      const res = await fetchBookingRoomServices(roomId)
-      const existing = res.data?.data || []
+      try {
+        // 1. Fetch existing services for this room
+        const res = await fetchBookingRoomServices(roomId)
+        const existing = res.data?.data || []
 
-      // 2. Determine which existing services to delete:
-      //    - service code not in our selected list, OR
-      //    - service date not in our checked dates
-      const toDeleteIds = []
-      existing.forEach(svc => {
-        // Bỏ qua các dịch vụ hệ thống (giường phụ, tiền phòng, ăn sáng trẻ em)
-        if (['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(svc.service_code)) return
+        // 2. Determine which existing services to delete:
+        //    - service code not in our selected list, OR
+        //    - service date not in our checked dates
+        const toDeleteIds = []
+        existing.forEach(svc => {
+          // Bỏ qua các dịch vụ hệ thống (giường phụ, tiền phòng, ăn sáng trẻ em)
+          if (['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(svc.service_code)) return
 
-        const isCodeSelected = selectedServiceCodes.value.includes(svc.service_code)
-        const svcDateShort = formatLocalYYYYMMDD(svc.service_date)
-        const isDateChecked = checkedDates.value.includes(svcDateShort)
-        if (!isCodeSelected || !isDateChecked) {
-          const isDeletable = svcDateShort >= formatLocalYYYYMMDD(props.systemDate) && svc.is_posted !== 1
-          if (isDeletable) {
-            toDeleteIds.push(svc.id)
+          const isCodeSelected = selectedServiceCodes.value.includes(svc.service_code)
+          const svcDateShort = formatLocalYYYYMMDD(svc.service_date)
+          const isDateChecked = checkedDates.value.includes(svcDateShort)
+          if (!isCodeSelected || !isDateChecked) {
+            const isDeletable = svcDateShort >= formatLocalYYYYMMDD(props.systemDate) && svc.is_posted !== 1
+            if (isDeletable) {
+              toDeleteIds.push(svc.id)
+            }
+          }
+        })
+
+        if (toDeleteIds.length > 0) {
+          await deleteBookingRoomServicesBulk(roomId, { service_ids: toDeleteIds })
+        }
+
+        // 3. Build a set of (service_code, date) that already exist after deletion
+        const remainingExisting = existing.filter(s => !toDeleteIds.includes(s.id))
+        const existingKeys = new Set(remainingExisting.map(s => {
+          const d = formatLocalYYYYMMDD(s.service_date)
+          return `${s.service_code}__${d}`
+        }))
+
+        // 4. Create or update services
+        for (const item of serviceItems.value) {
+          // Determine dates for this room specifically
+          const roomDates = getStayDates(room.checkIn, room.checkOut)
+          const datesToCreate = checkedDates.value.filter(d => roomDates.includes(d))
+
+          for (const d of datesToCreate) {
+            const existingSvc = remainingExisting.find(s => {
+              const sd = formatLocalYYYYMMDD(s.service_date)
+              return s.service_code === item.service_code && sd === d
+            })
+            
+            if (existingSvc) {
+              const isUnchanged = Number(existingSvc.quantity) === Number(item.quantity) &&
+                                  Number(existingSvc.rate) === Number(item.rate) &&
+                                  !!existingSvc.is_room === !!item.is_room
+              if (isUnchanged) continue
+            }
+
+            if (d < formatLocalYYYYMMDD(props.systemDate)) {
+              continue
+            }
+
+            await createBookingRoomService(roomId, {
+              service_code: item.service_code,
+              service_name: item.service_name,
+              service_date: d,
+              quantity: item.quantity,
+              rate: item.rate,
+              is_room: item.is_room ? 1 : 0
+            })
           }
         }
-      })
 
-      if (toDeleteIds.length > 0) {
-        await deleteBookingRoomServicesBulk(roomId, { service_ids: toDeleteIds })
+        // 5. Update local room services cache
+        const updatedRes = await fetchBookingRoomServices(roomId)
+        room.services = updatedRes.data?.data || []
+      } catch (roomErr) {
+        console.error(`Lỗi khi lưu dịch vụ cho phòng ${room.roomNumber || roomId}:`, roomErr)
+        hasError = true
+        lastErrorMsg = roomErr.response?.data?.message || roomErr.message || 'Lỗi khi kết nối server.'
       }
-
-      // 3. Build a set of (service_code, date) that already exist after deletion
-      const remainingExisting = existing.filter(s => !toDeleteIds.includes(s.id))
-      const existingKeys = new Set(remainingExisting.map(s => {
-        const d = formatLocalYYYYMMDD(s.service_date)
-        return `${s.service_code}__${d}`
-      }))
-
-      // 4. Create or update services
-      for (const item of serviceItems.value) {
-        // Determine dates for this room specifically
-        const roomDates = getStayDates(room.checkIn, room.checkOut)
-        const datesToCreate = checkedDates.value.filter(d => roomDates.includes(d))
-
-        for (const d of datesToCreate) {
-          const existingSvc = remainingExisting.find(s => {
-            const sd = formatLocalYYYYMMDD(s.service_date)
-            return s.service_code === item.service_code && sd === d
-          })
-          
-          if (existingSvc) {
-            const isUnchanged = Number(existingSvc.quantity) === Number(item.quantity) &&
-                                Number(existingSvc.rate) === Number(item.rate) &&
-                                !!existingSvc.is_room === !!item.is_room
-            if (isUnchanged) continue
-          }
-
-          if (d < formatLocalYYYYMMDD(props.systemDate)) {
-            continue
-          }
-
-          await createBookingRoomService(roomId, {
-            service_code: item.service_code,
-            service_name: item.service_name,
-            service_date: d,
-            quantity: item.quantity,
-            rate: item.rate,
-            is_room: item.is_room ? 1 : 0
-          })
-        }
-      }
-
-      // 5. Update local room services cache
-      const updatedRes = await fetchBookingRoomServices(roomId)
-      room.services = updatedRes.data?.data || []
-    } catch (roomErr) {
-      console.error(`Lỗi khi lưu dịch vụ cho phòng ${room.roomNumber || roomId}:`, roomErr)
-      hasError = true
-      lastErrorMsg = roomErr.response?.data?.message || roomErr.message || 'Lỗi khi kết nối server.'
     }
-  }
 
-  if (hasError) {
-    uiStore.showToast(`Lưu dịch vụ hoàn tất nhưng có lỗi xảy ra: ${lastErrorMsg}`, 'error')
-  } else {
-    uiStore.showToast(`Lưu dịch vụ bổ sung thành công cho ${rooms.length} phòng!`, 'success')
-  }
+    if (hasError) {
+      uiStore.showToast(`Lưu dịch vụ hoàn tất nhưng có lỗi xảy ra: ${lastErrorMsg}`, 'error')
+    } else {
+      uiStore.showToast(`Lưu dịch vụ bổ sung thành công cho ${rooms.length} phòng!`, 'success')
+    }
 
-  close()
-  emit('saved')
+    close()
+    emit('saved')
+  })
 }
 
 function formatCurrencyInput(val) {
