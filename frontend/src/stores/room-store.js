@@ -23,7 +23,7 @@ export const useRoomStore = defineStore('room', () => {
   })
 
   const filteredRooms = computed(() => {
-    let result = rooms.value
+    let result = rooms.value.filter(r => !r.is_internal)
 
     if (filters.value.floor) {
       result = result.filter(r => r.floor === filters.value.floor)

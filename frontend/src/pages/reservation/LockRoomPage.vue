@@ -149,7 +149,7 @@ const fetchRooms = async () => {
   try {
     const res = await http.get('/rooms')
     if (res.data && res.data.success) {
-      rooms.value = res.data.data || []
+      rooms.value = (res.data.data || []).filter(r => !r.is_internal)
     }
   } catch (err) {
     console.error('Lỗi khi tải danh sách phòng:', err)

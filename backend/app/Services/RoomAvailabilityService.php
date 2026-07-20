@@ -66,6 +66,7 @@ class RoomAvailabilityService
     public function getLockedCount(int $roomClassId, string $arrivalDate, string $departureDate): int
     {
         $roomNumbers = \App\Models\Room::where('room_class_id', $roomClassId)
+            ->where('is_internal', false)
             ->pluck('room_number');
 
         if ($roomNumbers->isEmpty()) return 0;
@@ -78,14 +79,16 @@ class RoomAvailabilityService
     }
 
     /**
-     * Lấy tổng số phòng thuộc loại phòng.
+     * Lấy tổng số phòng thuộc loại phòng (loại trừ phòng nội bộ/phòng ảo).
      *
      * @param int $roomClassId
      * @return int
      */
     public function getTotalRooms(int $roomClassId): int
     {
-        return \App\Models\Room::where('room_class_id', $roomClassId)->count();
+        return \App\Models\Room::where('room_class_id', $roomClassId)
+            ->where('is_internal', false)
+            ->count();
     }
 
     /**
@@ -198,7 +201,7 @@ class RoomAvailabilityService
             ->get(['arrival_date', 'departure_date']);
 
         // Lấy locks
-        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId))
+        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId)->where('is_internal', false))
             ->where('is_active', true)
             ->where('start_date', '<', $endDate)
             ->where('end_date', '>', $startDate)

@@ -222,6 +222,11 @@ const resizeState = ref(null)
 
 // Drag and drop & Splitting Room states
 const draggedBooking = ref(null)
+const draggedOverRoom = ref(null)
+const draggedOverDayIdx = ref(null)
+
+const activeHighlightRoom = computed(() => draggedOverRoom.value)
+const activeHighlightDayIdx = computed(() => draggedOverDayIdx.value)
 const splittingBooking = ref(null)
 const splitIndex = ref(-1)
 
@@ -1599,7 +1604,7 @@ const dynamicStats = computed(() => {
     }
   }
 
-  const physicalRooms = dbRooms.value.filter(r => !r.isVirtual)
+  const physicalRooms = dbRooms.value.filter(r => !r.isVirtual && !r.is_internal)
   const totalRooms = physicalRooms.length || 131
 
   const occCounts = Array(numDays).fill(0)
@@ -1731,44 +1736,44 @@ function hideTooltip() {
 
 // Map legend colors to Tailwind classes
 function getBookingClass(type) {
-  if (type === 'InHouse') return 'bg-[#c9eeff] text-[#0369a1] border-[#7dd3fc]'
-  if (type === 'Reservation') return 'bg-[#fef3c7] text-[#b45309] border-[#fde68a]'
-  if (type === 'Late Checkout') return 'bg-[#fef9c3] text-[#854d0e] border-[#fef08a]'
-  if (type === 'CheckedOut') return 'bg-slate-200 text-slate-500 border-slate-300'
-  if (type === 'Guaranteed') return 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]'
-  if (type === 'Allotment') return 'bg-[#ffedd5] text-[#9a3412] border-[#fed7aa]'
-  if (type === 'OOO') return 'bg-[repeating-linear-gradient(45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-white border-blue-400'
-  if (type === 'OOS') return 'bg-[repeating-linear-gradient(45deg,#94a3b8,#94a3b8_5px,#cbd5e1_5px,#cbd5e1_10px)] text-white border-slate-400'
-  return 'bg-[#1e293b] text-white border-slate-700'
+  if (type === 'InHouse') return 'bg-[#c9eeff] text-black border-[#7dd3fc]'
+  if (type === 'Reservation') return 'bg-[#fef3c7] text-black border-[#fde68a]'
+  if (type === 'Late Checkout') return 'bg-[#fef9c3] text-black border-[#fef08a]'
+  if (type === 'CheckedOut') return 'bg-slate-200 text-black border-slate-300'
+  if (type === 'Guaranteed') return 'bg-[#dcfce7] text-black border-[#bbf7d0]'
+  if (type === 'Allotment') return 'bg-[#ffedd5] text-black border-[#fed7aa]'
+  if (type === 'OOO') return 'bg-[repeating-linear-gradient(45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-black border-blue-400'
+  if (type === 'OOS') return 'bg-[repeating-linear-gradient(45deg,#94a3b8,#94a3b8_5px,#cbd5e1_5px,#cbd5e1_10px)] text-black border-slate-400'
+  return 'bg-[#1e293b] text-black border-slate-700'
 }
 
 function getBookingStyle(type) {
   if (type === 'CheckedOut') {
-    return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#475569' }
+    return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#000000' }
   }
-  if (!hotelSettings.value) return {}
+  if (!hotelSettings.value) return { color: '#000000' }
   
   if (type === 'Reservation') {
     const color = hotelSettings.value.RoomPlan_ColorRoomReservation || '#E3E8C4'
-    return { backgroundColor: color, borderColor: color, color: '#3f6212' }
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   if (type === 'InHouse') {
     const color = hotelSettings.value.RoomPlan_ColorRoomInhouse || '#4a90e2'
-    return { backgroundColor: color, borderColor: color, color: '#ffffff' }
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   if (type === 'Late Checkout') {
     const color = hotelSettings.value.RoomPlan_ColorRoomLateCheckout || '#FCF55F'
-    return { backgroundColor: color, borderColor: color, color: '#713f12' }
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   if (type === 'OOO') {
     const color = hotelSettings.value.RoomPlan_ColorOOO || '#107eeb'
-    return { backgroundColor: color, borderColor: color, color: '#ffffff' }
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   if (type === 'OOS') {
     const color = hotelSettings.value.RoomPlan_ColorOOS || '#107eeb'
-    return { backgroundColor: color, borderColor: color, color: '#ffffff' }
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
-  return {}
+  return { color: '#000000' }
 }
 
 function getLegendStyle(name) {
@@ -2196,12 +2201,87 @@ function handleDragStart(bk, event) {
   event.dataTransfer.effectAllowed = 'move'
 }
 
-function handleDragOver(event) {
+let scrollInterval = null
+let currentScrollX = 0
+let currentScrollY = 0
+let scrollContainer = null
+
+function stopDragAutoScroll() {
+  if (scrollInterval) {
+    clearInterval(scrollInterval)
+    scrollInterval = null
+  }
+  currentScrollX = 0
+  currentScrollY = 0
+  scrollContainer = null
+}
+
+function handleDragOver(event, item, dayIdx) {
   event.preventDefault()
+  if (item && draggedOverRoom.value !== item.room) {
+    draggedOverRoom.value = item.room
+  }
+  if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
+    draggedOverDayIdx.value = dayIdx
+  }
+
+  // Measure boundary of container to auto-scroll
+  const container = event.currentTarget.closest('.overflow-auto')
+  if (!container) return
+  scrollContainer = container
+
+  const rect = container.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+
+  const threshold = 65
+  const scrollSpeed = 22
+
+  let scrollX = 0
+  let scrollY = 0
+
+  if (x < threshold) {
+    scrollX = -scrollSpeed
+  } else if (rect.width - x < threshold) {
+    scrollX = scrollSpeed
+  }
+
+  if (y < threshold) {
+    scrollY = -scrollSpeed
+  } else if (rect.height - y < threshold) {
+    scrollY = scrollSpeed
+  }
+
+  currentScrollX = scrollX
+  currentScrollY = scrollY
+
+  if (scrollX !== 0 || scrollY !== 0) {
+    if (!scrollInterval) {
+      scrollInterval = setInterval(() => {
+        if (scrollContainer) {
+          scrollContainer.scrollLeft += currentScrollX
+          scrollContainer.scrollTop += currentScrollY
+        }
+      }, 35)
+    }
+  } else {
+    stopDragAutoScroll()
+  }
+}
+
+function handleDragEnd() {
+  draggedBooking.value = null
+  draggedOverRoom.value = null
+  draggedOverDayIdx.value = null
+  stopDragAutoScroll()
 }
 
 async function handleDrop(targetRoom, targetDay, event) {
   event.preventDefault()
+  draggedOverRoom.value = null
+  draggedOverDayIdx.value = null
+  stopDragAutoScroll()
+
   const bk = draggedBooking.value
   if (!bk) return
   draggedBooking.value = null
@@ -2215,14 +2295,11 @@ async function handleDrop(targetRoom, targetDay, event) {
   const targetRoomClass = targetRoom.type
   const originalRoomClass = bk.typeClass
 
-  // Determine new dates keeping same duration
-  const newCheckInDate = new Date(targetDay.fullDate)
-  const durationNights = bk.nights || 1
-  const newCheckOutDate = new Date(newCheckInDate)
-  newCheckOutDate.setDate(newCheckInDate.getDate() + durationNights)
-
-  const arrivalStr = formatDateStr(newCheckInDate)
-  const departureStr = formatDateStr(newCheckOutDate)
+  // Keep original check-in and check-out dates (only change room)
+  const originalCheckIn = parseDateTime(bk.checkIn)
+  const originalCheckOut = parseDateTime(bk.checkOut)
+  const arrivalStr = formatDateStr(originalCheckIn)
+  const departureStr = formatDateStr(originalCheckOut)
 
   const proceedMove = async (differentClass = false) => {
     try {
@@ -2869,8 +2946,10 @@ function isTodayDate(dateVal) {
             >
               <!-- Room Info (Sticky Left) -->
               <td 
-                class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden"
-                :class="item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white'"
+                class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden transition-colors"
+                :class="[
+                  activeHighlightRoom === item.room ? '!bg-amber-200 shadow-[inset_-1px_0_0_#d97706]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
+                ]"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
                   <!-- Room Number (Left side) -->
@@ -2910,17 +2989,21 @@ function isTodayDate(dateVal) {
               <td 
                 v-for="(day, dayIdx) in days" 
                 :key="dayIdx" 
-                class="border-r border-slate-300 h-full p-0 relative"
+                class="border-r border-slate-300 h-full p-0 relative transition-colors duration-75"
                 :class="[
                   isCellSelected(item.room, day.fullDate)
                     ? 'ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm'
-                    : (item.isVirtual
-                        ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
-                        : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
+                    : (
+                        (activeHighlightRoom === item.room)
+                          ? 'bg-amber-100/60 shadow-xs'
+                          : (item.isVirtual
+                              ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
+                              : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
+                      )
                 ]"
                 @click="handleCellClick(item, day, dayIdx, $event)"
                 @contextmenu.prevent="handleCellContextMenu(item, day, $event)"
-                @dragover="handleDragOver($event)"
+                @dragover="handleDragOver($event, item, dayIdx)"
                 @drop="handleDrop(item, day, $event)"
               >
                 <!-- Render bookings starting at this cell -->
@@ -2935,10 +3018,12 @@ function isTodayDate(dateVal) {
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="true"
                     @dragstart="handleDragStart(bk, $event)"
+                    @dragend="handleDragEnd"
                     class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-all"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
-                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden'
+                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
+                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-10 border-dashed pointer-events-none' : ''
                     ]"
                     :style="{
                       left: `${bk.leftRatio * 100}%`,

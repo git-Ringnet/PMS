@@ -202,7 +202,7 @@ class HotelDefinitionSeeder extends Seeder
         ];
 
         foreach ($services as $s) {
-            HotelService::create($s);
+            HotelService::firstOrCreate(['name' => $s['name']], $s);
         }
 
         // 2. Seed Shifts
@@ -213,7 +213,7 @@ class HotelDefinitionSeeder extends Seeder
         ];
 
         foreach ($shifts as $sh) {
-            Shift::create($sh);
+            Shift::firstOrCreate(['name' => $sh['name']], $sh);
         }
 
         // 3. Seed Configs
@@ -256,7 +256,7 @@ class HotelDefinitionSeeder extends Seeder
         ];
 
         foreach ($branches as $br) {
-            BranchTotal::create($br);
+            BranchTotal::firstOrCreate(['code' => $br['code']], $br);
         }
 
         // 5. Seed Templates
@@ -281,7 +281,7 @@ class HotelDefinitionSeeder extends Seeder
         ];
 
         foreach ($templates as $tpl) {
-            Template::create($tpl);
+            Template::firstOrCreate(['report' => $tpl['report']], $tpl);
         }
     }
 }
