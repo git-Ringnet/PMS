@@ -27,7 +27,10 @@ class HotelSettingController extends Controller
             'RoomPlan_ColorRoomInhouse',
             'RoomPlan_ColorRoomLateCheckout',
             'RoomPlan_ColorOOO',
-            'RoomPlan_ColorOOS'
+            'RoomPlan_ColorOOS',
+            'RoomPlan_AllowChangeArrivalDate',
+            'AllowOverRoomTypeRoomKind',
+            'AllowLockRoomCauseUnassignableRoomBK'
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -36,6 +39,9 @@ class HotelSettingController extends Controller
         $data['RoomPlan_ColorRoomLateCheckout'] = $configs->get('RoomPlan_ColorRoomLateCheckout', '#FCF55F');
         $data['RoomPlan_ColorOOO'] = $configs->get('RoomPlan_ColorOOO', '#107eeb');
         $data['RoomPlan_ColorOOS'] = $configs->get('RoomPlan_ColorOOS', '#107eeb');
+        $data['RoomPlan_AllowChangeArrivalDate'] = $configs->get('RoomPlan_AllowChangeArrivalDate', '0');
+        $data['AllowOverRoomTypeRoomKind'] = $configs->get('AllowOverRoomTypeRoomKind', '0');
+        $data['AllowLockRoomCauseUnassignableRoomBK'] = $configs->get('AllowLockRoomCauseUnassignableRoomBK', '0');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

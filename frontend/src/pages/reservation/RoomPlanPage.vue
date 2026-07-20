@@ -138,7 +138,7 @@ const pickerPresets = [
   '#1E88E5', '#00ACC1', '#00897B', '#000000', '#424242', '#9E9E9E', '#E0E0E0', '#FFFFFF'
 ]
 
-const emit = defineEmits(['loading'])
+const emit = defineEmits(['loading', 'edit-booking'])
 
 const getInitialDates = () => {
   const start = new Date()
@@ -189,6 +189,7 @@ const selectedStatuses = ref([])
 const selectedCompanies = ref([])
 const tempSelectedStatuses = ref([])
 const tempSelectedCompanies = ref([])
+const showCompanyFilterDropdown = ref(false)
 const companySearchQuery = ref('')
 const allCompanies = ref([])
 
@@ -215,6 +216,9 @@ const lockRoomForm = ref({
 
 // Cell selections state
 const selectedCells = ref([])
+
+// Resize state
+const resizeState = ref(null)
 
 // Drag and drop & Splitting Room states
 const draggedBooking = ref(null)
@@ -294,7 +298,7 @@ function clearFilters() {
   selectedRoomTypes.value = []
 }
 
-const displayCompanies = computed(() => {
+const companyFilterData = computed(() => {
   const list = []
   
   allCompanies.value.forEach(c => {
@@ -320,17 +324,31 @@ const displayCompanies = computed(() => {
     return removeVietnameseTones(name.toLowerCase()).includes(query)
   })
 
-  // Display selected ones first, then others matching the query
+  // Display selected ones first, then limit others matching the query to 20 items
   const finalSet = new Set()
   tempSelectedCompanies.value.forEach(name => {
     finalSet.add(name)
   })
-  matched.forEach(name => {
-    finalSet.add(name)
-  })
 
-  return Array.from(finalSet)
+  let addedCount = 0
+  const LIMIT = 20
+  for (const name of matched) {
+    if (!finalSet.has(name)) {
+      if (addedCount < LIMIT) {
+        finalSet.add(name)
+        addedCount++
+      }
+    }
+  }
+
+  return {
+    items: Array.from(finalSet),
+    totalMatched: matched.length,
+    hasMore: matched.length > LIMIT
+  }
 })
+
+const displayCompanies = computed(() => companyFilterData.value.items)
 
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
@@ -630,6 +648,9 @@ const dbRooms = computed(() => {
       else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
       else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
 
+      const foundRoom = roomStore.rooms ? roomStore.rooms.find(r => (r.room_class?.code || r.room_type) === type) : null
+      const classId = foundRoom ? foundRoom.room_class_id : null
+
       list.push({
         room: vRoom,
         type,
@@ -639,7 +660,8 @@ const dbRooms = computed(() => {
         hasSparkles: false,
         isVirtual: true,
         active_locks: [],
-        orders: 999999
+        orders: 999999,
+        classId
       })
     }
   })
@@ -1022,21 +1044,23 @@ async function loadBookings() {
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
 
           // Map status values to matching UI classes
-          let type = 'Guaranteed'
+          let type = 'Reservation'
           if (br.status === 1) {
             type = 'InHouse'
           } else if (br.status === 2) {
-            type = 'Late Checkout' // checked out, or late checkout style
+            type = 'CheckedOut'
+          } else if (br.status === 0) {
+            type = 'Reservation'
           } else {
             const regStatus = b.registration_status?.name || ''
             if (regStatus.toLowerCase().includes('guaranteed') || regStatus.toLowerCase().includes('đảm bảo')) {
-              type = 'Guaranteed'
+              type = 'Reservation'
             } else if (regStatus.toLowerCase().includes('allotment')) {
               type = 'Allotment'
             } else if (regStatus.toLowerCase().includes('late') || regStatus.toLowerCase().includes('trễ')) {
               type = 'Late Checkout'
             } else {
-              type = 'Guaranteed'
+              type = 'Reservation'
             }
           }
 
@@ -1138,11 +1162,22 @@ function closeDatePickerPopover() {
   showDatePickerPopover.value = false
 }
 
+function toggleCompanyFilterDropdown(event) {
+  event.stopPropagation()
+  showCompanyFilterDropdown.value = !showCompanyFilterDropdown.value
+}
+
 function handleWindowClick(event) {
   const container = document.querySelector('.quick-booking-company-search-container')
   if (container && !container.contains(event.target)) {
     showQuickBookingCompanyDropdown.value = false
   }
+  
+  const compDropdownContainer = document.querySelector('#filter-company-dropdown-container')
+  if (compDropdownContainer && !compDropdownContainer.contains(event.target)) {
+    showCompanyFilterDropdown.value = false
+  }
+
   if (showColorPicker.value && colorPickerRef.value && !colorPickerRef.value.contains(event.target)) {
     const isPill = event.target.closest('.px-2.py-0.5.border.rounded')
     if (!isPill) {
@@ -1419,7 +1454,8 @@ const processedBookings = computed(() => {
           label: `${lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'} - ${lock.lock_reason || 'Bảo trì'}`,
           isVirtual: false,
           bookingId: null,
-          bookingRoomId: null,
+          bookingRoomId: lock.id,
+          lockId: lock.id,
           phone: '',
           roomChargeDue: 0,
           serviceChargeDue: 0,
@@ -1442,8 +1478,13 @@ const processedBookings = computed(() => {
       }
     }
 
-    const checkInDate = parseDateTime(bk.checkIn)
-    const checkOutDate = parseDateTime(bk.checkOut)
+    let checkInDate = parseDateTime(bk.checkIn)
+    let checkOutDate = parseDateTime(bk.checkOut)
+
+    if (resizeState.value && resizeState.value.booking.bookingRoomId === bk.bookingRoomId) {
+      checkInDate = resizeState.value.tempCheckIn
+      checkOutDate = resizeState.value.tempCheckOut
+    }
     
     // Check if there is overlap with visible grid range
     if (checkOutDate < visibleStart || checkInDate > visibleEnd) {
@@ -1693,6 +1734,7 @@ function getBookingClass(type) {
   if (type === 'InHouse') return 'bg-[#c9eeff] text-[#0369a1] border-[#7dd3fc]'
   if (type === 'Reservation') return 'bg-[#fef3c7] text-[#b45309] border-[#fde68a]'
   if (type === 'Late Checkout') return 'bg-[#fef9c3] text-[#854d0e] border-[#fef08a]'
+  if (type === 'CheckedOut') return 'bg-slate-200 text-slate-500 border-slate-300'
   if (type === 'Guaranteed') return 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]'
   if (type === 'Allotment') return 'bg-[#ffedd5] text-[#9a3412] border-[#fed7aa]'
   if (type === 'OOO') return 'bg-[repeating-linear-gradient(45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-white border-blue-400'
@@ -1701,6 +1743,9 @@ function getBookingClass(type) {
 }
 
 function getBookingStyle(type) {
+  if (type === 'CheckedOut') {
+    return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#475569' }
+  }
   if (!hotelSettings.value) return {}
   
   if (type === 'Reservation') {
@@ -1790,6 +1835,136 @@ function handleCellContextMenu(roomItem, dayItem, event) {
   }
 }
 
+function handleBookingDblClick(booking) {
+  if (booking.code === 'LOCK') return
+  emit('edit-booking', { code: booking.code, id: booking.bookingId })
+}
+
+function startResize(bk, type, event) {
+  if (bk.code === 'LOCK') return
+
+  if (bk.type === 'InHouse') {
+    uiStore.showToast('Phòng đang In-house không được phép thay đổi ngày trên Room Plan.', 'warning')
+    return
+  }
+  if (bk.type === 'CheckedOut') {
+    uiStore.showToast('Phòng đã Check-out không được phép thay đổi ngày trên Room Plan.', 'warning')
+    return
+  }
+
+  // Only allow resizing for reservation types
+  const allowedResizeTypes = ['Reservation', 'Guaranteed', 'Tentative', 'Allotment']
+  if (!allowedResizeTypes.includes(bk.type)) {
+    uiStore.showToast('Chỉ cho phép thay đổi ngày đối với phòng trạng thái Đặt trước (Reservation).', 'warning')
+    return
+  }
+
+  // Check permission for left handle (start / arrival date change)
+  if (type === 'start') {
+    const isAllowChangeArrival = Number(hotelSettings.value?.RoomPlan_AllowChangeArrivalDate) === 1
+    if (!isAllowChangeArrival) {
+      uiStore.showToast('Không cho phép thay đổi ngày đến trên Room Plan (Cấu hình RoomPlan_AllowChangeArrivalDate đang tắt)', 'warning')
+      return
+    }
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const td = event.target.closest('td')
+  const cellWidth = td ? td.getBoundingClientRect().width : 100
+
+  const checkInDate = parseDateTime(bk.checkIn)
+  const checkOutDate = parseDateTime(bk.checkOut)
+
+  resizeState.value = {
+    booking: bk,
+    type,
+    initialX: event.clientX,
+    cellWidth,
+    originalCheckIn: checkInDate,
+    originalCheckOut: checkOutDate,
+    tempCheckIn: new Date(checkInDate),
+    tempCheckOut: new Date(checkOutDate)
+  }
+
+  window.addEventListener('mousemove', handleResizeMouseMove)
+  window.addEventListener('mouseup', handleResizeMouseUp)
+}
+
+function handleResizeMouseMove(event) {
+  if (!resizeState.value) return
+
+  const { type, initialX, cellWidth, originalCheckIn, originalCheckOut } = resizeState.value
+  const deltaX = event.clientX - initialX
+  const cellDelta = Math.round(deltaX / cellWidth)
+
+  if (type === 'start') {
+    const newCheckIn = new Date(originalCheckIn)
+    newCheckIn.setDate(originalCheckIn.getDate() + cellDelta)
+    
+    // Validate: cannot exceed or meet checkout
+    const checkOutLimit = new Date(originalCheckOut)
+    checkOutLimit.setDate(originalCheckOut.getDate() - 1)
+    
+    if (newCheckIn <= checkOutLimit) {
+      resizeState.value.tempCheckIn = newCheckIn
+    }
+  } else {
+    const newCheckOut = new Date(originalCheckOut)
+    newCheckOut.setDate(originalCheckOut.getDate() + cellDelta)
+    
+    // Validate: cannot be equal to or before checkin
+    const checkInLimit = new Date(originalCheckIn)
+    checkInLimit.setDate(originalCheckIn.getDate() + 1)
+    
+    if (newCheckOut >= checkInLimit) {
+      resizeState.value.tempCheckOut = newCheckOut
+    }
+  }
+}
+
+async function handleResizeMouseUp(event) {
+  window.removeEventListener('mousemove', handleResizeMouseMove)
+  window.removeEventListener('mouseup', handleResizeMouseUp)
+
+  if (!resizeState.value) return
+  const state = resizeState.value
+  resizeState.value = null
+
+  const checkInStr = formatDateStr(state.tempCheckIn)
+  const checkOutStr = formatDateStr(state.tempCheckOut)
+
+  const originalCheckInStr = formatDateStr(state.originalCheckIn)
+  const originalCheckOutStr = formatDateStr(state.originalCheckOut)
+
+  if (checkInStr !== originalCheckInStr || checkOutStr !== originalCheckOutStr) {
+    try {
+      emit('loading', true)
+      
+      const payload = {
+        arrival_date: checkInStr,
+        departure_date: checkOutStr
+      }
+
+      const res = await updateBookingRoom(state.booking.bookingId, state.booking.bookingRoomId, payload)
+
+      if (res && res.data && res.data.success) {
+        uiStore.showToast('Cập nhật ngày lưu trú thành công!', 'success')
+      } else {
+        uiStore.showToast(res?.data?.message || 'Không thể cập nhật ngày lưu trú.', 'error')
+      }
+      await loadBookings()
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật ngày lưu trú.', 'error')
+      await loadBookings()
+    } finally {
+      emit('loading', false)
+    }
+  }
+}
+
 function handleBookingContextMenu(booking, event) {
   event.preventDefault()
   event.stopPropagation()
@@ -1799,7 +1974,9 @@ function handleBookingContextMenu(booking, event) {
   const menuWidth = 180
   
   let type = 'green-booking'
-  if (booking.type === 'InHouse') {
+  if (booking.code === 'LOCK') {
+    type = 'lock-actions'
+  } else if (booking.type === 'InHouse') {
     type = 'blue-booking'
   } else if (booking.type === 'Guaranteed') {
     type = 'green-booking'
@@ -1807,7 +1984,7 @@ function handleBookingContextMenu(booking, event) {
     type = 'green-booking'
   }
 
-  const menuHeight = type === 'green-booking' ? 150 : 50
+  const menuHeight = type === 'lock-actions' ? 50 : (type === 'green-booking' ? 150 : 50)
 
   if (x + menuWidth > window.innerWidth) {
     x = window.innerWidth - menuWidth - 8
@@ -1877,6 +2054,34 @@ async function triggerMenuAction(actionName) {
       }
     } else {
       uiStore.showToast('Không tìm thấy thông tin đăng ký.', 'error')
+    }
+  } else if (actionName === 'Mở khóa phòng') {
+    const booking = contextMenu.value.booking
+    if (booking && booking.lockId) {
+      const confirmUnlock = window.confirm('Bạn có chắc chắn muốn mở khóa phòng này không?')
+      if (confirmUnlock) {
+        try {
+          loadingBookings.value = true
+          emit('loading', true)
+          const res = await roomService.deleteRoomLock(booking.lockId)
+          if (res && res.data && res.data.success) {
+            uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
+            await roomStore.fetchRooms()
+            await loadBookings()
+            if (bc) bc.postMessage('rooms-updated')
+          } else {
+            uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast(err.response?.data?.message || 'Không thể mở khóa phòng.', 'error')
+        } finally {
+          loadingBookings.value = false
+          emit('loading', false)
+        }
+      }
+    } else {
+      uiStore.showToast('Không tìm thấy thông tin khóa phòng.', 'error')
     }
   } else if (actionName === 'Hủy phòng') {
     const booking = contextMenu.value.booking
@@ -1966,6 +2171,16 @@ async function triggerMenuAction(actionName) {
 }
 
 function handleDragStart(bk, event) {
+  if (bk.type === 'InHouse') {
+    uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+    event.preventDefault()
+    return
+  }
+  if (bk.type === 'CheckedOut') {
+    uiStore.showToast('Phòng đã Check-out không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+    event.preventDefault()
+    return
+  }
   if (bk.isDoNotMove) {
     uiStore.showToast('Phòng đang bị khóa di chuyển (Do Not Move). Không thể kéo thả.', 'warning')
     event.preventDefault()
@@ -1996,12 +2211,7 @@ async function handleDrop(targetRoom, targetDay, event) {
     return
   }
 
-  if (targetRoom.isVirtual) {
-    uiStore.showToast('Không thể kéo thả vào dòng Chưa Gán Phòng.', 'error')
-    return
-  }
-
-  const targetRoomNumber = targetRoom.room
+  const targetRoomNumber = targetRoom.isVirtual ? null : targetRoom.room
   const targetRoomClass = targetRoom.type
   const originalRoomClass = bk.typeClass
 
@@ -2216,10 +2426,25 @@ async function saveLockRoom() {
         end_date: `${range.checkOut} 12:00`,
         lock_type: lockRoomType.value,
         reason: lockRoomForm.value.note || 'Bảo trì phòng',
-        force: true
+        force: false
       }
 
-      await roomService.createRoomLock(lockObj)
+      try {
+        await roomService.createRoomLock(lockObj)
+      } catch (err) {
+        const resData = err.response?.data
+        if (resData && resData.require_confirm) {
+          const proceed = window.confirm(resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?')
+          if (proceed) {
+            lockObj.force = true
+            await roomService.createRoomLock(lockObj)
+          } else {
+            return
+          }
+        } else {
+          throw err
+        }
+      }
     }
 
     await roomStore.fetchRooms()
@@ -2688,7 +2913,7 @@ function isTodayDate(dateVal) {
                 class="border-r border-slate-300 h-full p-0 relative"
                 :class="[
                   isCellSelected(item.room, day.fullDate)
-                    ? 'ring-2 ring-blue-600 bg-[#2563eb] z-20 shadow-sm'
+                    ? 'ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm'
                     : (item.isVirtual
                         ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
                         : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
@@ -2706,6 +2931,7 @@ function isTodayDate(dateVal) {
                     @mouseenter="showTooltip(bk, $event)"
                     @mousemove="updateTooltipPosition($event)"
                     @mouseleave="hideTooltip"
+                    @dblclick.prevent.stop="handleBookingDblClick(bk)"
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="true"
                     @dragstart="handleDragStart(bk, $event)"
@@ -2720,6 +2946,22 @@ function isTodayDate(dateVal) {
                       ...(isBookingMatched(bk) ? getBookingStyle(bk.type) : {})
                     }"
                   >
+                    <!-- Left resize handle -->
+                    <div 
+                      v-if="bk.code !== 'LOCK'"
+                      class="absolute top-0 bottom-0 left-0 w-2 z-20 select-none"
+                      :style="{ cursor: Number(hotelSettings?.RoomPlan_AllowChangeArrivalDate) === 1 ? 'w-resize' : 'not-allowed' }"
+                      @mousedown.stop="startResize(bk, 'start', $event)"
+                    ></div>
+
+                    <!-- Right resize handle -->
+                    <div 
+                      v-if="bk.code !== 'LOCK'"
+                      class="absolute top-0 bottom-0 right-0 w-2 z-20 select-none"
+                      style="cursor: e-resize;"
+                      @mousedown.stop="startResize(bk, 'end', $event)"
+                    ></div>
+
                     <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">
                       <svg 
                         v-if="bk.isDoNotMove"
@@ -3076,6 +3318,16 @@ function isTodayDate(dateVal) {
           Mở Khóa Di Chuyển Phòng
         </button>
       </template>
+
+      <!-- Options for Room Lock -->
+      <template v-else-if="contextMenu.type === 'lock-actions'">
+        <button 
+          @click="triggerMenuAction('Mở khóa phòng')"
+          class="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border-none bg-transparent cursor-pointer transition-colors"
+        >
+          Mở khóa phòng
+        </button>
+      </template>
     </div>
 
     <!-- Filter side drawer -->
@@ -3094,38 +3346,70 @@ function isTodayDate(dateVal) {
         <!-- Content Body -->
         <div class="flex-1 p-4 flex flex-col overflow-y-auto gap-4 bg-white text-xs select-none">
           <!-- 1. Lọc Công ty -->
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2 relative" id="filter-company-dropdown-container">
             <span class="font-bold text-slate-500 uppercase text-[10px] tracking-wider font-semibold">Công ty ({{ tempSelectedCompanies.length }})</span>
-            <div class="relative flex items-center border border-slate-200 rounded bg-white px-2 py-1 shadow-xs h-[28px] mb-1.5 shrink-0">
-              <input 
-                type="text" 
-                v-model="companySearchQuery"
-                placeholder="Tìm công ty..."
-                class="search-input-reset text-slate-700 text-[11px] w-full pr-5"
-                style="border: none !important; outline: none !important; box-shadow: none !important; background-color: transparent !important; height: auto !important; padding: 0 !important; border-radius: 0 !important;"
-              />
-              <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
             
-            <div class="border border-slate-200 rounded-md p-1.5 bg-slate-50/50 max-h-[160px] overflow-y-auto flex flex-col gap-1 shadow-inner">
-              <span v-if="displayCompanies.length === 0" class="text-slate-400 text-center py-2 text-[10px]">Không tìm thấy công ty</span>
-              <label 
-                v-else
-                v-for="cName in displayCompanies" 
-                :key="cName" 
-                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-[11px] text-slate-700 font-semibold truncate"
-                :title="cName"
-              >
+            <!-- Custom Selector Box -->
+            <div 
+              @click="toggleCompanyFilterDropdown"
+              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer flex items-center justify-between text-[11px] min-h-[32px] shadow-2xs"
+            >
+              <div class="truncate max-w-[220px]">
+                <span v-if="tempSelectedCompanies.length === 0" class="text-slate-400">Chọn công ty...</span>
+                <span v-else class="text-slate-800 font-bold">
+                  {{ tempSelectedCompanies.join(', ') }}
+                </span>
+              </div>
+              <span class="text-slate-400 shrink-0 ml-1">
+                <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="showCompanyFilterDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </span>
+            </div>
+
+            <!-- Floating Searchable List Popover -->
+            <div 
+              v-if="showCompanyFilterDropdown" 
+              class="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-white border border-slate-200 rounded-lg shadow-xl flex flex-col gap-2 p-2 max-h-[220px] overflow-hidden"
+            >
+              <!-- Search box inside dropdown -->
+              <div class="relative flex items-center border border-slate-200 rounded bg-slate-50 px-2 py-1 h-[28px] shrink-0">
                 <input 
-                  type="checkbox" 
-                  :value="cName" 
-                  v-model="tempSelectedCompanies" 
-                  class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                  type="text" 
+                  v-model="companySearchQuery"
+                  placeholder="Tìm công ty..."
+                  class="search-input-reset text-slate-700 text-[11px] w-full pr-5"
+                  style="border: none !important; outline: none !important; box-shadow: none !important; background-color: transparent !important; height: auto !important; padding: 0 !important; border-radius: 0 !important;"
                 />
-                <span class="truncate">{{ cName }}</span>
-              </label>
+                <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              <!-- List of companies -->
+              <div class="overflow-y-auto flex flex-col gap-1 pr-0.5">
+                <span v-if="displayCompanies.length === 0" class="text-slate-400 text-center py-2 text-[10px]">Không tìm thấy công ty</span>
+                <label 
+                  v-else
+                  v-for="cName in displayCompanies" 
+                  :key="cName" 
+                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-[11px] text-slate-700 font-semibold truncate transition-colors"
+                  :title="cName"
+                >
+                  <input 
+                    type="checkbox" 
+                    :value="cName" 
+                    v-model="tempSelectedCompanies" 
+                    class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span class="truncate">{{ cName }}</span>
+                </label>
+              </div>
+
+              <!-- More matches indicator -->
+              <div v-if="companyFilterData.hasMore" class="text-slate-400 text-center py-1.5 text-[9px] italic border-t border-slate-100 mt-1 select-none pointer-events-none shrink-0 leading-tight">
+                Chỉ hiển thị 20 kết quả đầu tiên.<br/>Nhập thêm ký tự để thu hẹp tìm kiếm...
+              </div>
             </div>
           </div>
 

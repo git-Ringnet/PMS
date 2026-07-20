@@ -227,7 +227,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'AllowExtendDateRoomOverDateBooking', 'value' => '1', 'description' => 'Cho phép gia hạn phòng vượt quá ngày của booking', 'is_visible' => false],
             ['name' => 'AllowInputOverAV', 'value' => '0', 'description' => 'AllowInputOverAV', 'is_visible' => false],
             ['name' => 'AllowOverRoomTypeRoomKind', 'value' => '0', 'description' => 'Cho phép khóa phòng dẫn đến âm phòng (0: không cho, 1: cho phép kèm cảnh báo)', 'is_visible' => true],
-            ['name' => 'AllowLockRoomCauseUnassignableRoomBK', 'value' => '0', 'description' => 'AllowLockRoomCauseUnassignableRoomBK', 'is_visible' => false],
+            ['name' => 'AllowLockRoomCauseUnassignableRoomBK', 'value' => '0', 'description' => 'Cho phép khóa phòng khi vẫn còn trống dẫn đến các booking không thể gán số phòng (0: không cho, 1: cho phép kèm cảnh báo)', 'is_visible' => true],
             ['name' => 'AllowNegativeAmountDeposit', 'value' => '', 'description' => 'AllowNegativeAmountDeposit', 'is_visible' => false],
             ['name' => 'OOOCheckDepartment', 'value' => '0', 'description' => 'Kiểm tra bộ phận khi mở khóa OOO (0: không kiểm tra, 1: kiểm tra)', 'is_visible' => true],
             ['name' => 'OOSCheckDepartment', 'value' => '0', 'description' => 'Kiểm tra bộ phận khi mở khóa OOS (0: không kiểm tra, 1: kiểm tra)', 'is_visible' => true],
@@ -241,6 +241,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoomPlan_ColorRoomLateCheckout', 'value' => '#FCF55F', 'description' => 'màu phòng trả phòng trễ', 'is_visible' => true],
             ['name' => 'RoomPlan_ColorOOO', 'value' => '#107eeb', 'description' => 'màu phòng khóa OOO', 'is_visible' => true],
             ['name' => 'RoomPlan_ColorOOS', 'value' => '#107eeb', 'description' => 'màu phòng khóa OOS', 'is_visible' => true],
+            ['name' => 'RoomPlan_AllowChangeArrivalDate', 'value' => '0', 'description' => 'Cho phép kéo thay đổi ngày đến của phòng trên Room Plan (0: không cho, 1: cho phép)', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {
