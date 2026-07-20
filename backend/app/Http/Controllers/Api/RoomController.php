@@ -23,6 +23,15 @@ class RoomController extends Controller
             $q->where('is_active', true);
         });
 
+        // Filter internal/virtual rooms (exclude by default unless include_internal=1 or is_internal parameter is passed)
+        if ($request->has('include_internal') && $request->boolean('include_internal')) {
+            // include all rooms (both physical and internal/virtual)
+        } elseif ($request->has('is_internal')) {
+            $query->where('is_internal', $request->boolean('is_internal'));
+        } else {
+            $query->where('is_internal', false);
+        }
+
         // Optional filtering
         if ($request->has('floor') && !empty($request->floor)) {
             $query->where('floor', $request->floor);
@@ -263,7 +272,7 @@ class RoomController extends Controller
     {
         $activeRoomQuery = Room::whereHas('roomClass', function($q) {
             $q->where('is_active', true);
-        });
+        })->where('is_internal', false);
 
         $stats = [
             'total' => (clone $activeRoomQuery)->count(),
@@ -300,8 +309,8 @@ class RoomController extends Controller
 
         $avService = app(\App\Services\RoomAvailabilityService::class);
 
-        // Lấy tất cả phòng của loại phòng này
-        $rooms = Room::where('room_class_id', $roomClassId)->get();
+        // Lấy tất cả phòng vật lý của loại phòng này (loại trừ phòng ảo/nội bộ)
+        $rooms = Room::where('room_class_id', $roomClassId)->where('is_internal', false)->get();
 
         $vacantRooms = [];
         foreach ($rooms as $room) {
