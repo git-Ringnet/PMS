@@ -228,7 +228,7 @@ class SystemConfigurationSeeder extends Seeder
 
         // Seed 2 Phòng ảo thử nghiệm (PM01, PM02) với is_internal = true
         Room::firstOrCreate(
-            ['room_number' => 'PM01'],
+            ['room_number' => '001'],
             [
                 'room_class_id' => $classModels['SUPD']->id ?? 1,
                 'room_form_id' => $formModels['Double']->id ?? 1,
@@ -245,7 +245,7 @@ class SystemConfigurationSeeder extends Seeder
         );
 
         Room::firstOrCreate(
-            ['room_number' => 'PM02'],
+            ['room_number' => '002'],
             [
                 'room_class_id' => $classModels['SUPD']->id ?? 1,
                 'room_form_id' => $formModels['Double']->id ?? 1,
