@@ -28,6 +28,7 @@ import {
   copyBooking,
   fetchPaymentMethods,
   fetchRegistrationStatuses,
+  fetchBookingInitDropdowns,
   fetchRoomClasses,
   fetchRoomRateCodes,
   fetchHotelSettings,
@@ -88,6 +89,7 @@ const paymentMethods = ref([])
 const registrationStatuses = ref([])
 const users = ref([])
 const roomClasses = ref([])
+const roomForms = ref([])
 const roomRateCodes = ref([])
 const activeRoomRateCodes = computed(() => {
   return (roomRateCodes.value || []).filter(rc => !rc.Disable)
@@ -780,7 +782,7 @@ function syncRoomsToAllocations(tab) {
       babies: Number(r.babies) || 0,
       children: Number(r.children) || 0,
       breakfast: r.breakfast !== undefined ? !!r.breakfast : true,
-      extraBedPrice: Number(r.extraBedPrice) || 0,
+      extraBedPrice: Number(r.extraBedQty) > 0 ? (Number(r.extraBedPrice) || 0) : 0,
       extraBedQty: Number(r.extraBedQty) || 0,
       hourly: !!r.hourly,
       arrivalTime: r.arrivalTime || '14:00',
@@ -852,78 +854,37 @@ watch(() => route.query.bookingCode, async (newCode) => {
 async function loadDropdowns() {
   try {
     diagnosticErrors.value = []
-    const results = await Promise.allSettled([
-      fetchMarkets(),
-      fetchCustomerSources(),
-      fetchBookers(),
-      fetchCompanies(),
-      fetchPaymentMethods(),
-      fetchRegistrationStatuses(),
-      fetchUsers(),
-      fetchRoomClasses(),
-      fetchRoomRateCodes(),
-      fetchCurrencies(),
-      fetchHotelServices(),
-      fetchHotelSettings(),
-      fetchSystemTime(),
-      fetchSystemDate(),
-    ])
-    
-    const [
-      mRes,
-      csRes,
-      bRes,
-      cRes,
-      pmRes,
-      rsRes,
-      uRes,
-      rcRes,
-      rrcRes,
-      currRes,
-      hsRes,
-      settingsRes,
-      sysTimeRes,
-      sysDateRes
-    ] = results
+    const res = await fetchBookingInitDropdowns()
+    const data = res.data?.data || {}
 
-    const endpointNames = [
-      'Markets', 'CustomerSources', 'Bookers', 'Companies', 'PaymentMethods',
-      'RegistrationStatuses', 'Users', 'RoomClasses', 'RoomRateCodes',
-      'Currencies', 'HotelServices', 'HotelSettings', 'SystemTime', 'SystemDate'
-    ]
+    markets.value              = data.markets || []
+    customerSources.value      = data.customer_sources || []
+    bookers.value              = data.bookers || []
+    companies.value            = (data.companies || []).filter(c => c.is_active || c.is_active === undefined)
+    paymentMethods.value       = data.payment_methods || []
+    registrationStatuses.value = data.registration_statuses || []
+    users.value                = (data.users || []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
+    roomClasses.value          = (data.room_classes || []).filter(c => c.is_active !== false)
+    roomForms.value            = data.room_forms || []
+    roomRateCodes.value        = data.room_rate_codes || []
+    currenciesList.value       = data.currencies || []
+    hotelServicesList.value    = data.hotel_services || []
+    hotelSettings.value        = data.hotel_settings || {}
 
-    results.forEach((r, idx) => {
-      if (r.status === 'rejected') {
-        diagnosticErrors.value.push(`API ${endpointNames[idx]} failed: ${r.reason?.response?.data?.message || r.reason?.message || r.reason}`)
-      }
-    })
-
-    markets.value              = mRes.status  === 'fulfilled' ? (mRes.value.data?.data  || mRes.value.data  || []) : []
-    customerSources.value      = csRes.status === 'fulfilled' ? (csRes.value.data?.data || csRes.value.data || []) : []
-    bookers.value              = bRes.status  === 'fulfilled' ? (bRes.value.data?.data  || bRes.value.data  || []) : []
-    companies.value            = (cRes.status  === 'fulfilled' ? (cRes.value.data?.data  || cRes.value.data  || []) : []).filter(c => c.is_active || c.is_active === undefined)
-    paymentMethods.value       = pmRes.status === 'fulfilled' ? (pmRes.value.data?.data || pmRes.value.data || []) : []
-    registrationStatuses.value = rsRes.status === 'fulfilled' ? (rsRes.value.data?.data || rsRes.value.data || []) : []
-    users.value                = (uRes.status  === 'fulfilled' ? (uRes.value.data?.data  || uRes.value.data  || []) : []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
-    roomClasses.value          = (rcRes.status === 'fulfilled' ? (rcRes.value.data?.data || rcRes.value.data || []) : []).filter(c => c.is_active !== false)
-    roomRateCodes.value        = rrcRes.status === 'fulfilled' ? (rrcRes.value.data?.data || rrcRes.value.data || []) : []
-    currenciesList.value       = currRes.status === 'fulfilled' ? (currRes.value.data?.data || currRes.value.data || []) : []
-    hotelServicesList.value    = hsRes.status === 'fulfilled' ? (hsRes.value.data?.data  || hsRes.value.data  || []) : []
-    hotelSettings.value        = settingsRes.status === 'fulfilled' ? (settingsRes.value.data?.data || settingsRes.value.data || {}) : {}
-    if (sysDateRes.status === 'fulfilled' && sysDateRes.value?.data?.data?.system_date) {
-      systemDate.value = sysDateRes.value.data.data.system_date
+    if (data.system_date && data.system_date.system_date) {
+      systemDate.value = data.system_date.system_date
     } else {
-      systemDate.value = sysTimeRes.status === 'fulfilled' ? (sysTimeRes.value.data?.time ? formatLocalYYYYMMDD(sysTimeRes.value.data.time) : formatLocalYYYYMMDD(new Date())) : formatLocalYYYYMMDD(new Date())
+      systemDate.value = data.system_time ? formatLocalYYYYMMDD(data.system_time) : formatLocalYYYYMMDD(new Date())
     }
 
     // Empty list checks
-    if (rcRes.status === 'fulfilled' && roomClasses.value.length === 0) {
+    if (roomClasses.value.length === 0) {
       diagnosticErrors.value.push("Room Classes API returned 0 active room classes.")
     }
-    if (uRes.status === 'fulfilled' && users.value.length === 0) {
+    if (users.value.length === 0) {
       diagnosticErrors.value.push("Users API returned 0 users.")
     }
-    if (rsRes.status === 'fulfilled' && registrationStatuses.value.length === 0) {
+    if (registrationStatuses.value.length === 0) {
       diagnosticErrors.value.push("Registration Statuses API returned 0 statuses.")
     }
   } catch (err) {
@@ -1007,7 +968,10 @@ function bookingToTab(b) {
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
         isDoNotMove: br.is_do_not_move !== undefined ? !!br.is_do_not_move : false,
         type: rc.name || 'Unknown Class',
-        shape: rc.code || '',
+        shape: (() => {
+          const matched = roomClasses.value.find(c => c.id === br.room_class_id)
+          return matched ? (matched.room_form_name || matched.code) : (rc.code || '')
+        })(),
         roomNumber: physicalRoom.room_number || '',
         checkIn: parseApiDate(br.arrival_date || b.arrival_date),
         checkOut: parseApiDate(br.departure_date || b.departure_date),
@@ -1063,7 +1027,7 @@ function bookingToTab(b) {
 
       const rc = roomClasses.value.find(c => c.id === alloc.roomClassId || c.code === alloc.roomClassCode)
       const typeName = alloc.roomClassName || (rc ? rc.name : (alloc.roomClassCode || 'Unknown Class'))
-      const shapeName = alloc.roomClassCode || (rc ? rc.code : '')
+      const shapeName = rc ? (rc.room_form_name || rc.code) : (alloc.roomClassCode || '')
 
       const roomsInAlloc = alloc.rooms || alloc.roomsDetail || []
       for (let i = 0; i < qty; i++) {
@@ -1127,6 +1091,7 @@ function bookingToTab(b) {
           discountUnit: br.discount_unit || 'percent',
           basePrice: br.base_price !== undefined ? Number(br.base_price) : (Number(br.rate) || 0),
           upgradeClassId: br.upgrade_class_id || null,
+          extraBedPrice: br.extra_bed_rate !== undefined ? Number(br.extra_bed_rate) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
           adults: br.adults || rc?.max_adults || 2,
           babies: 0,
           children: 0,
@@ -1164,6 +1129,7 @@ function bookingToTab(b) {
         discountUnit: alloc.discountUnit || 'percent',
         basePrice: alloc.basePrice !== undefined ? Number(alloc.basePrice) : (Number(alloc.price) || 0),
         upgradeClassId: alloc.upgradeClassId || alloc.upgradeRoomClassId || null,
+        extraBedPrice: alloc.extraBedPrice !== undefined ? Number(alloc.extraBedPrice) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
         adults: Number(alloc.adults) || 2,
         babies: Number(alloc.babies) || 0,
         children: Number(alloc.children) || 0,
@@ -1296,19 +1262,20 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
         departureDate: found.departureDate || checkOutDate,
         availableRooms: found.availableRooms !== undefined ? found.availableRooms : defaultAvail,
         quantity: found.quantity !== undefined ? Number(found.quantity) : 0,
-        price: found.price !== undefined ? Number(found.price) : 0,
+        price: found.price !== undefined ? Number(found.price) : (rc.room_price !== undefined ? Number(rc.room_price) : 0),
         rateCode: found.rateCode || found.ratePlanCode || '',
         discount: found.discount || 'Tăng/Giảm giá',
         discountType: found.discountType || 'down',
         discountValue: found.discountValue !== undefined ? Number(found.discountValue) : 0,
         discountUnit: found.discountUnit || 'percent',
-        basePrice: found.basePrice !== undefined ? Number(found.basePrice) : (found.price !== undefined ? Number(found.price) : 0),
+        basePrice: found.basePrice !== undefined ? Number(found.basePrice) : (found.price !== undefined ? Number(found.price) : (rc.room_price !== undefined ? Number(rc.room_price) : 0)),
         upgradeClassId: found.upgradeClassId || found.upgradeRoomClassId || null,
         adults: found.adults !== undefined ? Number(found.adults) : (rc.max_adults || 2),
         babies: found.babies !== undefined ? Number(found.babies) : 0,
         children: found.children !== undefined ? Number(found.children) : 0,
         childBreakfastRate: found.childBreakfastRate !== undefined ? Number(found.childBreakfastRate) : (hotelSettings.value?.breakfast_child_rate || 90000),
         breakfastIncluded: found.breakfastIncluded !== undefined ? !!found.breakfastIncluded : isBreakfastChecked,
+        extraBedPrice: found.extraBedPrice !== undefined ? Number(found.extraBedPrice) : (rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
       }
     }
 
@@ -1320,19 +1287,20 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
       departureDate: checkOutDate,
       availableRooms: defaultAvail,
       quantity: 0,
-      price: 0,
+      price: rc.room_price !== undefined ? Number(rc.room_price) : 0,
       rateCode: '',
       discount: 'Tăng/Giảm giá',
       discountType: 'down',
       discountValue: 0,
       discountUnit: 'percent',
-      basePrice: 0,
+      basePrice: rc.room_price !== undefined ? Number(rc.room_price) : 0,
       upgradeClassId: null,
       adults: rc.max_adults || 2,
       babies: 0,
       children: 0,
       childBreakfastRate: hotelSettings.value?.breakfast_child_rate || 90000,
       breakfastIncluded: isBreakfastChecked,
+      extraBedPrice: rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0,
     }
   })
 }
@@ -1956,7 +1924,7 @@ function updateAllocatedRooms(row) {
         babies: row.babies || 0,
         children: row.children || 0,
         breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : true,
-        extraBedPrice: 0,
+        extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : 0,
         hourly: false,
         arrivalTime: '14:00',
         hoursOut: '12:00',
@@ -2241,11 +2209,53 @@ async function handleRowNightsChangeInline(room) {
   }
 }
 
+function getNormalizedCategory(rc, forms) {
+  if (!rc || !rc.name) return ''
+  let categoryName = rc.name
+  if (forms && forms.length > 0) {
+    forms.forEach(rf => {
+      const regex = new RegExp('\\b' + rf.name + '\\b', 'gi')
+      categoryName = categoryName.replace(regex, '')
+    })
+  }
+  return categoryName.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function getAvailableFormsForRoom(room) {
+  const currentClass = roomClasses.value.find(c => c.id === room.roomClassId)
+  if (!currentClass) return []
+  const category = getNormalizedCategory(currentClass, roomForms.value)
+  const siblingClasses = roomClasses.value.filter(c => getNormalizedCategory(c, roomForms.value) === category)
+  const formIds = siblingClasses.map(c => c.room_form_id).filter(id => id !== undefined && id !== null)
+  return roomForms.value.filter(f => formIds.includes(f.id))
+}
+
+function getRoomFormId(room) {
+  const currentClass = roomClasses.value.find(c => c.id === room.roomClassId)
+  return currentClass ? currentClass.room_form_id : ''
+}
+
+function handleRoomFormChange(room, formId) {
+  const currentClass = roomClasses.value.find(c => c.id === room.roomClassId)
+  if (!currentClass) return
+  
+  const category = getNormalizedCategory(currentClass, roomForms.value)
+  const targetClass = roomClasses.value.find(c => {
+    return getNormalizedCategory(c, roomForms.value) === category && c.room_form_id === Number(formId)
+  })
+  
+  if (targetClass) {
+    const oldClassId = room.roomClassId
+    room.roomClassId = targetClass.id
+    handleRoomClassChange(room, oldClassId)
+  }
+}
+
 function handleRoomClassChange(room, oldClassId) {
   const newClass = roomClasses.value.find(c => c.id === Number(room.roomClassId))
   if (newClass) {
     room.type = newClass.name
-    room.shape = newClass.code
+    room.shape = newClass.room_form_name || newClass.code
     room.roomNumber = '' // reset số phòng cũ
   }
   
@@ -3120,6 +3130,10 @@ const isExtraBedModalOpen = ref(false)
 const extraBedModalRoom = ref(null)
 
 function openExtraBedModal(room) {
+  if (!room.extraBedPrice || Number(room.extraBedPrice) === 0) {
+    const rc = roomClasses.value.find(c => c.id === room.roomClassId)
+    room.extraBedPrice = rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 300000
+  }
   extraBedModalRoom.value = room
   isExtraBedModalOpen.value = true
 }
@@ -3584,12 +3598,11 @@ defineExpose({
                         <template v-else-if="col.key === 'shape'">
                           <select 
                             v-if="isEditing" 
-                            v-model="room.roomClassId" 
-                            @focus="room._oldClassId = room.roomClassId"
-                            @change="handleRoomClassChange(room, room._oldClassId)"
+                            :value="getRoomFormId(room)" 
+                            @change="handleRoomFormChange(room, $event.target.value)" 
                             class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer text-center"
                           >
-                            <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                            <option v-for="rf in getAvailableFormsForRoom(room)" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
                           </select>
                           <span v-else class="text-gray-900 font-semibold">{{ room.shape }}</span>
                         </template>
@@ -3843,7 +3856,7 @@ defineExpose({
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold">{{ formatCurrencyInput(room.extraBedPrice) }}</span>
+                          <span class="text-gray-900 font-semibold">{{ Number(room.extraBedQty) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -4097,12 +4110,11 @@ defineExpose({
                                 <template v-else-if="col.key === 'shape'">
                                   <select 
                                     v-if="isEditing" 
-                                    v-model="room.roomClassId" 
-                                    @focus="room._oldClassId = room.roomClassId" 
-                                    @change="handleRoomClassChange(room, room._oldClassId)" 
+                                    :value="getRoomFormId(room)" 
+                                    @change="handleRoomFormChange(room, $event.target.value)" 
                                     class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer text-center"
                                   >
-                                    <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                                    <option v-for="rf in getAvailableFormsForRoom(room)" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
                                   </select>
                                   <span v-else class="text-gray-900 font-semibold">{{ room.shape }}</span>
                                 </template>
@@ -4356,7 +4368,7 @@ defineExpose({
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <span class="text-gray-900 font-semibold">{{ formatCurrencyInput(room.extraBedPrice) }}</span>
+                                  <span class="text-gray-900 font-semibold">{{ Number(room.extraBedQty) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hourly'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75">

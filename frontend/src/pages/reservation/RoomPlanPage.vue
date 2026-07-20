@@ -5,11 +5,140 @@ import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies } from '@/services/company-service'
+import { useAuthStore } from '@/stores/auth-store'
+import http from '@/services/http'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
+const authStore = useAuthStore()
 
-const emit = defineEmits(['loading'])
+const isAdmin = computed(() => {
+  const u = authStore.user
+  if (!u) return false
+  return u.username === 'admin' || u.job_title_code === 'RL001' || u.department_code === 'MGMT'
+})
+
+const legendConfigKeys = {
+  'Reservation': 'RoomPlan_ColorRoomReservation',
+  'Guaranteed': 'RoomPlan_ColorRoomReservation',
+  'InHouse': 'RoomPlan_ColorRoomInhouse',
+  'Late Checkout': 'RoomPlan_ColorRoomLateCheckout',
+  'OOO': 'RoomPlan_ColorOOO',
+  'OOS': 'RoomPlan_ColorOOS'
+}
+
+const presetColors = [
+  '#E3E8C4', '#4a90e2', '#FCF55F', '#107eeb',
+  '#97D5FF', '#2ECC71', '#E74C3C', '#F1C40F',
+  '#9B59B6', '#1ABC9C', '#34495E', '#FFFFFF'
+]
+
+const systemDate = ref('')
+
+// Hsv/Rgb/Hex Helpers
+function hsvToRgb(h, s, v) {
+  s = s / 100
+  v = v / 100
+  let r, g, b
+  const i = Math.floor(h / 60) % 6
+  const f = h / 60 - i
+  const p = v * (1 - s)
+  const q = v * (1 - f * s)
+  const t = v * (1 - (1 - f) * s)
+  switch (i) {
+    case 0: r = v; g = t; b = p; break
+    case 1: r = q; g = v; b = p; break
+    case 2: r = p; g = v; b = t; break
+    case 3: r = p; g = q; b = v; break
+    case 4: r = t; g = p; b = v; break
+    case 5: r = v; g = p; b = q; break
+  }
+  return {
+    r: Math.round(r * 255),
+    g: Math.round(g * 255),
+    b: Math.round(b * 255)
+  }
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h, s, v = max
+  const d = max - min
+  s = max === 0 ? 0 : d / max
+  if (max === min) {
+    h = 0
+  } else {
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break
+      case g: h = (b - r) / d + 2; break
+      case b: h = (r - g) / d + 4; break
+    }
+    h /= 6
+  }
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    v: Math.round(v * 100)
+  }
+}
+
+function hexToRgb(hex) {
+  hex = hex.replace(/^#/, '')
+  if (hex.length === 3) {
+    hex = hex.split('').map(c => c + c).join('')
+  }
+  const num = parseInt(hex, 16)
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255
+  }
+}
+
+function rgbToHex(r, g, b) {
+  const toHex = (c) => {
+    const h = Math.max(0, Math.min(255, c)).toString(16)
+    return h.length === 1 ? '0' + h : h
+  }
+  return '#' + toHex(r) + toHex(g) + toHex(b)
+}
+
+function toLocalDateStr(dateVal) {
+  if (!dateVal) return ''
+  if (typeof dateVal === 'string' && !dateVal.includes('T') && !dateVal.includes('Z') && !dateVal.includes('+')) {
+    return dateVal.substring(0, 10)
+  }
+  const d = new Date(dateVal)
+  if (isNaN(d.getTime())) return ''
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const showColorPicker = ref(false)
+const pickerPosition = ref({ top: 0, left: 0 })
+const selectedLegendForColor = ref(null)
+const tempColorValue = ref('#ffffff')
+const savingColor = ref(false)
+const colorPickerRef = ref(null)
+const colorAreaRef = ref(null)
+
+const hue = ref(0)
+const saturation = ref(100)
+const value = ref(100)
+const alpha = ref(100)
+
+const computedRgb = computed(() => hsvToRgb(hue.value, saturation.value, value.value))
+const computedHex = computed(() => rgbToHex(computedRgb.value.r, computedRgb.value.g, computedRgb.value.b))
+
+const pickerPresets = [
+  '#D32F2F', '#F57C00', '#FBC02D', '#5D4037', '#7CB342', '#388E3C', '#8E24AA', '#5E35B1',
+  '#1E88E5', '#00ACC1', '#00897B', '#000000', '#424242', '#9E9E9E', '#E0E0E0', '#FFFFFF'
+]
+
+const emit = defineEmits(['loading', 'edit-booking'])
 
 const getInitialDates = () => {
   const start = new Date()
@@ -60,6 +189,7 @@ const selectedStatuses = ref([])
 const selectedCompanies = ref([])
 const tempSelectedStatuses = ref([])
 const tempSelectedCompanies = ref([])
+const showCompanyFilterDropdown = ref(false)
 const companySearchQuery = ref('')
 const allCompanies = ref([])
 
@@ -86,6 +216,9 @@ const lockRoomForm = ref({
 
 // Cell selections state
 const selectedCells = ref([])
+
+// Resize state
+const resizeState = ref(null)
 
 // Drag and drop & Splitting Room states
 const draggedBooking = ref(null)
@@ -165,7 +298,7 @@ function clearFilters() {
   selectedRoomTypes.value = []
 }
 
-const displayCompanies = computed(() => {
+const companyFilterData = computed(() => {
   const list = []
   
   allCompanies.value.forEach(c => {
@@ -191,17 +324,31 @@ const displayCompanies = computed(() => {
     return removeVietnameseTones(name.toLowerCase()).includes(query)
   })
 
-  // Display selected ones first, then others matching the query
+  // Display selected ones first, then limit others matching the query to 20 items
   const finalSet = new Set()
   tempSelectedCompanies.value.forEach(name => {
     finalSet.add(name)
   })
-  matched.forEach(name => {
-    finalSet.add(name)
-  })
 
-  return Array.from(finalSet)
+  let addedCount = 0
+  const LIMIT = 20
+  for (const name of matched) {
+    if (!finalSet.has(name)) {
+      if (addedCount < LIMIT) {
+        finalSet.add(name)
+        addedCount++
+      }
+    }
+  }
+
+  return {
+    items: Array.from(finalSet),
+    totalMatched: matched.length,
+    hasMore: matched.length > LIMIT
+  }
 })
+
+const displayCompanies = computed(() => companyFilterData.value.items)
 
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
@@ -301,8 +448,9 @@ function formatDateStr(d) {
 
 function formatDateToDMY(dateStr) {
   if (!dateStr) return ''
-  const cleanStr = dateStr.substring(0, 10)
-  const parts = cleanStr.split('-')
+  const localDate = toLocalDateStr(dateStr)
+  if (!localDate) return dateStr
+  const parts = localDate.split('-')
   if (parts.length === 3) {
     return `${parts[2]}/${parts[1]}/${parts[0]}`
   }
@@ -500,6 +648,9 @@ const dbRooms = computed(() => {
       else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
       else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
 
+      const foundRoom = roomStore.rooms ? roomStore.rooms.find(r => (r.room_class?.code || r.room_type) === type) : null
+      const classId = foundRoom ? foundRoom.room_class_id : null
+
       list.push({
         room: vRoom,
         type,
@@ -509,7 +660,8 @@ const dbRooms = computed(() => {
         hasSparkles: false,
         isVirtual: true,
         active_locks: [],
-        orders: 999999
+        orders: 999999,
+        classId
       })
     }
   })
@@ -881,30 +1033,34 @@ async function loadBookings() {
       const apiBookings = []
       
       res.data.data.forEach(b => {
+        if (Number(b.status) === 3) return
         if (!b.booking_rooms) return
 
         b.booking_rooms.forEach(br => {
+          if (Number(br.status) === 3) return
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
 
           // Map status values to matching UI classes
-          let type = 'Guaranteed'
+          let type = 'Reservation'
           if (br.status === 1) {
             type = 'InHouse'
           } else if (br.status === 2) {
-            type = 'Late Checkout' // checked out, or late checkout style
+            type = 'CheckedOut'
+          } else if (br.status === 0) {
+            type = 'Reservation'
           } else {
             const regStatus = b.registration_status?.name || ''
             if (regStatus.toLowerCase().includes('guaranteed') || regStatus.toLowerCase().includes('đảm bảo')) {
-              type = 'Guaranteed'
+              type = 'Reservation'
             } else if (regStatus.toLowerCase().includes('allotment')) {
               type = 'Allotment'
             } else if (regStatus.toLowerCase().includes('late') || regStatus.toLowerCase().includes('trễ')) {
               type = 'Late Checkout'
             } else {
-              type = 'Guaranteed'
+              type = 'Reservation'
             }
           }
 
@@ -918,8 +1074,8 @@ async function loadBookings() {
           const companyName = b.company?.company_name || 'Khách lẻ'
           const label = `${b.booking_code} - ${b.booking_name} - ${companyName} - ${priceStr}đ`
 
-          const arrivalStr = br.arrival_date ? br.arrival_date.substring(0, 10) : (b.arrival_date ? b.arrival_date.substring(0, 10) : '')
-          const departureStr = br.departure_date ? br.departure_date.substring(0, 10) : (b.departure_date ? b.departure_date.substring(0, 10) : '')
+          const arrivalStr = br.arrival_date ? toLocalDateStr(br.arrival_date) : (b.arrival_date ? toLocalDateStr(b.arrival_date) : '')
+          const departureStr = br.departure_date ? toLocalDateStr(br.departure_date) : (b.departure_date ? toLocalDateStr(b.departure_date) : '')
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
 
@@ -1006,10 +1162,27 @@ function closeDatePickerPopover() {
   showDatePickerPopover.value = false
 }
 
+function toggleCompanyFilterDropdown(event) {
+  event.stopPropagation()
+  showCompanyFilterDropdown.value = !showCompanyFilterDropdown.value
+}
+
 function handleWindowClick(event) {
-  const container = document.getElementById('quick-booking-company-container')
+  const container = document.querySelector('.quick-booking-company-search-container')
   if (container && !container.contains(event.target)) {
     showQuickBookingCompanyDropdown.value = false
+  }
+  
+  const compDropdownContainer = document.querySelector('#filter-company-dropdown-container')
+  if (compDropdownContainer && !compDropdownContainer.contains(event.target)) {
+    showCompanyFilterDropdown.value = false
+  }
+
+  if (showColorPicker.value && colorPickerRef.value && !colorPickerRef.value.contains(event.target)) {
+    const isPill = event.target.closest('.px-2.py-0.5.border.rounded')
+    if (!isPill) {
+      showColorPicker.value = false
+    }
   }
 }
 
@@ -1029,6 +1202,7 @@ onMounted(async () => {
     if (sysDateRes.status === 'fulfilled' && sysDateRes.value?.data?.data?.system_date) {
       sysDateStr = sysDateRes.value.data.data.system_date
     }
+    systemDate.value = sysDateStr || formatDateStr(new Date())
 
     // Apply user settings
     if (userSettingsRes.status === 'fulfilled' && userSettingsRes.value?.data?.data) {
@@ -1156,26 +1330,7 @@ function matchesSelectedStatus(bk) {
 }
 
 const visibleLegends = computed(() => {
-  const activeTypes = new Set()
-  
-  Object.values(processedBookings.value).forEach(roomBookings => {
-    roomBookings.forEach(bk => {
-      if (bk.type) {
-        activeTypes.add(bk.code === 'LOCK' ? (bk.type === 'OOS' ? 'OOS' : 'OOO') : bk.type)
-      }
-    })
-  })
-
-  dbRooms.value.forEach(room => {
-    if (room.active_locks && room.active_locks.length > 0) {
-      room.active_locks.forEach(lock => {
-        const type = lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'
-        activeTypes.add(type)
-      })
-    }
-  })
-
-  return legends.filter(lg => activeTypes.has(lg.name))
+  return legends
 })
 
 function getLegendDotClass(name) {
@@ -1299,7 +1454,8 @@ const processedBookings = computed(() => {
           label: `${lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'} - ${lock.lock_reason || 'Bảo trì'}`,
           isVirtual: false,
           bookingId: null,
-          bookingRoomId: null,
+          bookingRoomId: lock.id,
+          lockId: lock.id,
           phone: '',
           roomChargeDue: 0,
           serviceChargeDue: 0,
@@ -1322,8 +1478,13 @@ const processedBookings = computed(() => {
       }
     }
 
-    const checkInDate = parseDateTime(bk.checkIn)
-    const checkOutDate = parseDateTime(bk.checkOut)
+    let checkInDate = parseDateTime(bk.checkIn)
+    let checkOutDate = parseDateTime(bk.checkOut)
+
+    if (resizeState.value && resizeState.value.booking.bookingRoomId === bk.bookingRoomId) {
+      checkInDate = resizeState.value.tempCheckIn
+      checkOutDate = resizeState.value.tempCheckOut
+    }
     
     // Check if there is overlap with visible grid range
     if (checkOutDate < visibleStart || checkInDate > visibleEnd) {
@@ -1547,7 +1708,18 @@ function showTooltip(booking, event) {
 }
 
 function updateTooltipPosition(event) {
-  tooltipX.value = event.clientX
+  const tooltipWidth = 340
+  const halfWidth = tooltipWidth / 2
+  const padding = 16
+  
+  let targetX = event.clientX
+  if (targetX - halfWidth < padding) {
+    targetX = halfWidth + padding
+  } else if (targetX + halfWidth > window.innerWidth - padding) {
+    targetX = window.innerWidth - halfWidth - padding
+  }
+  
+  tooltipX.value = targetX
   tooltipY.value = event.clientY
   // If cursor is in the upper 45% of the viewport, show tooltip below the cursor
   tooltipBelow.value = event.clientY < window.innerHeight * 0.45
@@ -1562,6 +1734,7 @@ function getBookingClass(type) {
   if (type === 'InHouse') return 'bg-[#c9eeff] text-[#0369a1] border-[#7dd3fc]'
   if (type === 'Reservation') return 'bg-[#fef3c7] text-[#b45309] border-[#fde68a]'
   if (type === 'Late Checkout') return 'bg-[#fef9c3] text-[#854d0e] border-[#fef08a]'
+  if (type === 'CheckedOut') return 'bg-slate-200 text-slate-500 border-slate-300'
   if (type === 'Guaranteed') return 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]'
   if (type === 'Allotment') return 'bg-[#ffedd5] text-[#9a3412] border-[#fed7aa]'
   if (type === 'OOO') return 'bg-[repeating-linear-gradient(45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-white border-blue-400'
@@ -1570,6 +1743,9 @@ function getBookingClass(type) {
 }
 
 function getBookingStyle(type) {
+  if (type === 'CheckedOut') {
+    return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#475569' }
+  }
   if (!hotelSettings.value) return {}
   
   if (type === 'Reservation') {
@@ -1659,6 +1835,136 @@ function handleCellContextMenu(roomItem, dayItem, event) {
   }
 }
 
+function handleBookingDblClick(booking) {
+  if (booking.code === 'LOCK') return
+  emit('edit-booking', { code: booking.code, id: booking.bookingId })
+}
+
+function startResize(bk, type, event) {
+  if (bk.code === 'LOCK') return
+
+  if (bk.type === 'InHouse') {
+    uiStore.showToast('Phòng đang In-house không được phép thay đổi ngày trên Room Plan.', 'warning')
+    return
+  }
+  if (bk.type === 'CheckedOut') {
+    uiStore.showToast('Phòng đã Check-out không được phép thay đổi ngày trên Room Plan.', 'warning')
+    return
+  }
+
+  // Only allow resizing for reservation types
+  const allowedResizeTypes = ['Reservation', 'Guaranteed', 'Tentative', 'Allotment']
+  if (!allowedResizeTypes.includes(bk.type)) {
+    uiStore.showToast('Chỉ cho phép thay đổi ngày đối với phòng trạng thái Đặt trước (Reservation).', 'warning')
+    return
+  }
+
+  // Check permission for left handle (start / arrival date change)
+  if (type === 'start') {
+    const isAllowChangeArrival = Number(hotelSettings.value?.RoomPlan_AllowChangeArrivalDate) === 1
+    if (!isAllowChangeArrival) {
+      uiStore.showToast('Không cho phép thay đổi ngày đến trên Room Plan (Cấu hình RoomPlan_AllowChangeArrivalDate đang tắt)', 'warning')
+      return
+    }
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const td = event.target.closest('td')
+  const cellWidth = td ? td.getBoundingClientRect().width : 100
+
+  const checkInDate = parseDateTime(bk.checkIn)
+  const checkOutDate = parseDateTime(bk.checkOut)
+
+  resizeState.value = {
+    booking: bk,
+    type,
+    initialX: event.clientX,
+    cellWidth,
+    originalCheckIn: checkInDate,
+    originalCheckOut: checkOutDate,
+    tempCheckIn: new Date(checkInDate),
+    tempCheckOut: new Date(checkOutDate)
+  }
+
+  window.addEventListener('mousemove', handleResizeMouseMove)
+  window.addEventListener('mouseup', handleResizeMouseUp)
+}
+
+function handleResizeMouseMove(event) {
+  if (!resizeState.value) return
+
+  const { type, initialX, cellWidth, originalCheckIn, originalCheckOut } = resizeState.value
+  const deltaX = event.clientX - initialX
+  const cellDelta = Math.round(deltaX / cellWidth)
+
+  if (type === 'start') {
+    const newCheckIn = new Date(originalCheckIn)
+    newCheckIn.setDate(originalCheckIn.getDate() + cellDelta)
+    
+    // Validate: cannot exceed or meet checkout
+    const checkOutLimit = new Date(originalCheckOut)
+    checkOutLimit.setDate(originalCheckOut.getDate() - 1)
+    
+    if (newCheckIn <= checkOutLimit) {
+      resizeState.value.tempCheckIn = newCheckIn
+    }
+  } else {
+    const newCheckOut = new Date(originalCheckOut)
+    newCheckOut.setDate(originalCheckOut.getDate() + cellDelta)
+    
+    // Validate: cannot be equal to or before checkin
+    const checkInLimit = new Date(originalCheckIn)
+    checkInLimit.setDate(originalCheckIn.getDate() + 1)
+    
+    if (newCheckOut >= checkInLimit) {
+      resizeState.value.tempCheckOut = newCheckOut
+    }
+  }
+}
+
+async function handleResizeMouseUp(event) {
+  window.removeEventListener('mousemove', handleResizeMouseMove)
+  window.removeEventListener('mouseup', handleResizeMouseUp)
+
+  if (!resizeState.value) return
+  const state = resizeState.value
+  resizeState.value = null
+
+  const checkInStr = formatDateStr(state.tempCheckIn)
+  const checkOutStr = formatDateStr(state.tempCheckOut)
+
+  const originalCheckInStr = formatDateStr(state.originalCheckIn)
+  const originalCheckOutStr = formatDateStr(state.originalCheckOut)
+
+  if (checkInStr !== originalCheckInStr || checkOutStr !== originalCheckOutStr) {
+    try {
+      emit('loading', true)
+      
+      const payload = {
+        arrival_date: checkInStr,
+        departure_date: checkOutStr
+      }
+
+      const res = await updateBookingRoom(state.booking.bookingId, state.booking.bookingRoomId, payload)
+
+      if (res && res.data && res.data.success) {
+        uiStore.showToast('Cập nhật ngày lưu trú thành công!', 'success')
+      } else {
+        uiStore.showToast(res?.data?.message || 'Không thể cập nhật ngày lưu trú.', 'error')
+      }
+      await loadBookings()
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật ngày lưu trú.', 'error')
+      await loadBookings()
+    } finally {
+      emit('loading', false)
+    }
+  }
+}
+
 function handleBookingContextMenu(booking, event) {
   event.preventDefault()
   event.stopPropagation()
@@ -1668,7 +1974,9 @@ function handleBookingContextMenu(booking, event) {
   const menuWidth = 180
   
   let type = 'green-booking'
-  if (booking.type === 'InHouse') {
+  if (booking.code === 'LOCK') {
+    type = 'lock-actions'
+  } else if (booking.type === 'InHouse') {
     type = 'blue-booking'
   } else if (booking.type === 'Guaranteed') {
     type = 'green-booking'
@@ -1676,7 +1984,7 @@ function handleBookingContextMenu(booking, event) {
     type = 'green-booking'
   }
 
-  const menuHeight = type === 'green-booking' ? 150 : 50
+  const menuHeight = type === 'lock-actions' ? 50 : (type === 'green-booking' ? 150 : 50)
 
   if (x + menuWidth > window.innerWidth) {
     x = window.innerWidth - menuWidth - 8
@@ -1746,6 +2054,34 @@ async function triggerMenuAction(actionName) {
       }
     } else {
       uiStore.showToast('Không tìm thấy thông tin đăng ký.', 'error')
+    }
+  } else if (actionName === 'Mở khóa phòng') {
+    const booking = contextMenu.value.booking
+    if (booking && booking.lockId) {
+      const confirmUnlock = window.confirm('Bạn có chắc chắn muốn mở khóa phòng này không?')
+      if (confirmUnlock) {
+        try {
+          loadingBookings.value = true
+          emit('loading', true)
+          const res = await roomService.deleteRoomLock(booking.lockId)
+          if (res && res.data && res.data.success) {
+            uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
+            await roomStore.fetchRooms()
+            await loadBookings()
+            if (bc) bc.postMessage('rooms-updated')
+          } else {
+            uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast(err.response?.data?.message || 'Không thể mở khóa phòng.', 'error')
+        } finally {
+          loadingBookings.value = false
+          emit('loading', false)
+        }
+      }
+    } else {
+      uiStore.showToast('Không tìm thấy thông tin khóa phòng.', 'error')
     }
   } else if (actionName === 'Hủy phòng') {
     const booking = contextMenu.value.booking
@@ -1835,6 +2171,16 @@ async function triggerMenuAction(actionName) {
 }
 
 function handleDragStart(bk, event) {
+  if (bk.type === 'InHouse') {
+    uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+    event.preventDefault()
+    return
+  }
+  if (bk.type === 'CheckedOut') {
+    uiStore.showToast('Phòng đã Check-out không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+    event.preventDefault()
+    return
+  }
   if (bk.isDoNotMove) {
     uiStore.showToast('Phòng đang bị khóa di chuyển (Do Not Move). Không thể kéo thả.', 'warning')
     event.preventDefault()
@@ -1865,12 +2211,7 @@ async function handleDrop(targetRoom, targetDay, event) {
     return
   }
 
-  if (targetRoom.isVirtual) {
-    uiStore.showToast('Không thể kéo thả vào dòng Chưa Gán Phòng.', 'error')
-    return
-  }
-
-  const targetRoomNumber = targetRoom.room
+  const targetRoomNumber = targetRoom.isVirtual ? null : targetRoom.room
   const targetRoomClass = targetRoom.type
   const originalRoomClass = bk.typeClass
 
@@ -2085,10 +2426,25 @@ async function saveLockRoom() {
         end_date: `${range.checkOut} 12:00`,
         lock_type: lockRoomType.value,
         reason: lockRoomForm.value.note || 'Bảo trì phòng',
-        force: true
+        force: false
       }
 
-      await roomService.createRoomLock(lockObj)
+      try {
+        await roomService.createRoomLock(lockObj)
+      } catch (err) {
+        const resData = err.response?.data
+        if (resData && resData.require_confirm) {
+          const proceed = window.confirm(resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?')
+          if (proceed) {
+            lockObj.force = true
+            await roomService.createRoomLock(lockObj)
+          } else {
+            return
+          }
+        } else {
+          throw err
+        }
+      }
     }
 
     await roomStore.fetchRooms()
@@ -2107,15 +2463,160 @@ async function saveLockRoom() {
   }
 }
 
+function parseColorToHsv(colorStr) {
+  if (!colorStr) colorStr = '#ffffff'
+  const rgb = hexToRgb(colorStr)
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+  hue.value = hsv.h
+  saturation.value = hsv.s
+  value.value = hsv.v
+  alpha.value = 100
+}
+
+function handleLegendClick(legName, event) {
+  if (!isAdmin.value) return
+  const configKey = legendConfigKeys[legName]
+  if (!configKey) return
+  
+  let curColor = '#ffffff'
+  if (legName === 'Reservation' || legName === 'Guaranteed') {
+    curColor = hotelSettings.value?.RoomPlan_ColorRoomReservation || '#E3E8C4'
+  }
+  else if (legName === 'InHouse') curColor = hotelSettings.value?.RoomPlan_ColorRoomInhouse || '#4a90e2'
+  else if (legName === 'Late Checkout') curColor = hotelSettings.value?.RoomPlan_ColorRoomLateCheckout || '#FCF55F'
+  else if (legName === 'OOO') curColor = hotelSettings.value?.RoomPlan_ColorOOO || '#107eeb'
+  else if (legName === 'OOS') curColor = hotelSettings.value?.RoomPlan_ColorOOS || '#107eeb'
+  
+  selectedLegendForColor.value = { name: legName, configKey }
+  parseColorToHsv(curColor)
+  
+  const rect = event.target.getBoundingClientRect()
+  pickerPosition.value = {
+    top: rect.bottom + window.scrollY + 8,
+    left: Math.min(rect.left + window.scrollX, window.innerWidth - 280)
+  }
+  showColorPicker.value = true
+}
+
+async function saveLegendColor() {
+  if (!selectedLegendForColor.value) return
+  savingColor.value = true
+  try {
+    const key = selectedLegendForColor.value.configKey
+    const color = computedHex.value
+    await http.put('/hotel-settings', {
+      hotel_name: hotelSettings.value?.hotel_name || 'Galliot Hotel Nha Trang',
+      [key]: color
+    })
+    if (hotelSettings.value) {
+      hotelSettings.value[key] = color
+    }
+    uiStore.showToast('Cập nhật màu sắc thành công!', 'success')
+    showColorPicker.value = false
+  } catch (err) {
+    console.error(err)
+    const msg = err.response?.data?.message || 'Không thể lưu màu sắc'
+    uiStore.showToast(msg, 'error')
+  } finally {
+    savingColor.value = false
+  }
+}
+
+// Drag & Drop handlers for custom color picker
+function startDragColorArea(e) {
+  handleColorAreaDrag(e)
+  window.addEventListener('mousemove', handleColorAreaDrag)
+  window.addEventListener('mouseup', stopDragColorArea)
+}
+
+function handleColorAreaDrag(e) {
+  if (!colorAreaRef.value) return
+  const rect = colorAreaRef.value.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  let y = e.clientY - rect.top
+  x = Math.max(0, Math.min(x, rect.width))
+  y = Math.max(0, Math.min(y, rect.height))
+  
+  saturation.value = Math.round((x / rect.width) * 100)
+  value.value = Math.round((1 - y / rect.height) * 100)
+}
+
+function stopDragColorArea() {
+  window.removeEventListener('mousemove', handleColorAreaDrag)
+  window.removeEventListener('mouseup', stopDragColorArea)
+}
+
+function startDragHue(e) {
+  handleHueDrag(e)
+  window.addEventListener('mousemove', handleHueDrag)
+  window.addEventListener('mouseup', stopDragHue)
+}
+
+function handleHueDrag(e) {
+  const slider = e.target.closest('.relative')
+  if (!slider) return
+  const rect = slider.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  x = Math.max(0, Math.min(x, rect.width))
+  hue.value = Math.round((x / rect.width) * 360)
+}
+
+function stopDragHue() {
+  window.removeEventListener('mousemove', handleHueDrag)
+  window.removeEventListener('mouseup', stopDragHue)
+}
+
+function startDragAlpha(e) {
+  handleAlphaDrag(e)
+  window.addEventListener('mousemove', handleAlphaDrag)
+  window.addEventListener('mouseup', stopDragAlpha)
+}
+
+function handleAlphaDrag(e) {
+  const slider = e.target.closest('.relative')
+  if (!slider) return
+  const rect = slider.getBoundingClientRect()
+  let x = e.clientX - rect.left
+  x = Math.max(0, Math.min(x, rect.width))
+  alpha.value = Math.round((x / rect.width) * 100)
+}
+
+function stopDragAlpha() {
+  window.removeEventListener('mousemove', handleAlphaDrag)
+  window.removeEventListener('mouseup', stopDragAlpha)
+}
+
+function handleHexInputChange(e) {
+  let val = e.target.value
+  if (!val.startsWith('#')) val = '#' + val
+  const rgb = hexToRgb(val)
+  if (rgb) {
+    const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+    hue.value = hsv.h
+    saturation.value = hsv.s
+    value.value = hsv.v
+  }
+}
+
+function handleRgbInput(channel, val) {
+  const num = parseInt(val) || 0
+  const rgb = { ...computedRgb.value }
+  rgb[channel] = Math.max(0, Math.min(255, num))
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+  hue.value = hsv.h
+  saturation.value = hsv.s
+  value.value = hsv.v
+}
+
+function selectPresetColor(color) {
+  parseColorToHsv(color)
+}
+
 function isTodayDate(dateVal) {
   if (!dateVal) return false
-  const d = new Date(dateVal)
-  const today = new Date()
-  const isRealToday = d.getDate() === today.getDate() &&
-                      d.getMonth() === today.getMonth() &&
-                      d.getFullYear() === today.getFullYear()
-  if (isRealToday) return true
-  return d.getDate() === 14 && d.getMonth() === 6 && d.getFullYear() === 2026
+  const dStr = toLocalDateStr(dateVal)
+  const sysDateVal = systemDate.value ? toLocalDateStr(systemDate.value) : ''
+  return dStr === sysDateVal
 }
 </script>
 
@@ -2249,9 +2750,13 @@ function isTodayDate(dateVal) {
           <div 
             v-for="leg in visibleLegends" 
             :key="leg.name" 
-            class="px-2 py-0.5 border rounded text-[9px] font-extrabold whitespace-nowrap shadow-2xs leading-none uppercase" 
-            :class="leg.class"
+            class="px-2 py-0.5 border rounded text-[9px] font-extrabold whitespace-nowrap shadow-2xs leading-none uppercase select-none" 
+            :class="[
+              leg.class,
+              (isAdmin && legendConfigKeys[leg.name]) ? 'cursor-pointer hover:scale-105 transition-transform duration-150' : ''
+            ]"
             :style="getLegendStyle(leg.name)"
+            @click="handleLegendClick(leg.name, $event)"
           >
             {{ leg.name }}
           </div>
@@ -2314,7 +2819,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-600')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-600')
               ]"
             >
               {{ day.dow }}
@@ -2329,7 +2834,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 border-r border-slate-200 text-center text-[10px] sticky top-[32px] z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff8a65] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-50 text-slate-700')
+                isTodayDate(day.fullDate) ? 'bg-[#ff8a65] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-50 text-slate-700')
               ]"
             >
               {{ day.dateStr }}
@@ -2359,12 +2864,12 @@ function isTodayDate(dateVal) {
             </tr>
 
             <tr 
-              class="border-b border-slate-200 h-[38px] hover:bg-slate-50 relative"
+              class="border-b border-slate-300 h-[38px] hover:bg-slate-50 relative"
               :class="item.isVirtual ? 'bg-[#fdf6e2]' : ''"
             >
               <!-- Room Info (Sticky Left) -->
               <td 
-                class="p-0.5 px-1 border-r border-slate-200 sticky left-0 z-20 shadow-[inset_-1px_0_0_#e2e8f0] h-[37px] overflow-hidden"
+                class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden"
                 :class="item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white'"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
@@ -2405,13 +2910,13 @@ function isTodayDate(dateVal) {
               <td 
                 v-for="(day, dayIdx) in days" 
                 :key="dayIdx" 
-                class="border-r border-slate-100 h-full p-0 relative"
+                class="border-r border-slate-300 h-full p-0 relative"
                 :class="[
                   isCellSelected(item.room, day.fullDate)
-                    ? 'ring-2 ring-blue-500 bg-[#bae6fd] z-20 shadow-xs'
+                    ? 'ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm'
                     : (item.isVirtual
-                        ? (isTodayDate(day.fullDate) ? 'bg-[#fdf2e6]' : (day.isWeekend ? 'bg-[#f0ece0]' : 'bg-[#fdf6e2]'))
-                        : (isTodayDate(day.fullDate) ? 'bg-[#fff0eb]' : (day.isWeekend ? 'bg-[#edf5ff]' : 'bg-white')))
+                        ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
+                        : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
                 ]"
                 @click="handleCellClick(item, day, dayIdx, $event)"
                 @contextmenu.prevent="handleCellContextMenu(item, day, $event)"
@@ -2426,6 +2931,7 @@ function isTodayDate(dateVal) {
                     @mouseenter="showTooltip(bk, $event)"
                     @mousemove="updateTooltipPosition($event)"
                     @mouseleave="hideTooltip"
+                    @dblclick.prevent.stop="handleBookingDblClick(bk)"
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="true"
                     @dragstart="handleDragStart(bk, $event)"
@@ -2440,6 +2946,22 @@ function isTodayDate(dateVal) {
                       ...(isBookingMatched(bk) ? getBookingStyle(bk.type) : {})
                     }"
                   >
+                    <!-- Left resize handle -->
+                    <div 
+                      v-if="bk.code !== 'LOCK'"
+                      class="absolute top-0 bottom-0 left-0 w-2 z-20 select-none"
+                      :style="{ cursor: Number(hotelSettings?.RoomPlan_AllowChangeArrivalDate) === 1 ? 'w-resize' : 'not-allowed' }"
+                      @mousedown.stop="startResize(bk, 'start', $event)"
+                    ></div>
+
+                    <!-- Right resize handle -->
+                    <div 
+                      v-if="bk.code !== 'LOCK'"
+                      class="absolute top-0 bottom-0 right-0 w-2 z-20 select-none"
+                      style="cursor: e-resize;"
+                      @mousedown.stop="startResize(bk, 'end', $event)"
+                    ></div>
+
                     <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">
                       <svg 
                         v-if="bk.isDoNotMove"
@@ -2522,7 +3044,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ffeae2] shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]'
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]'
               ]"
               :title="'Danh sách phòng bận ngày ' + day.dateStr + ':\n' + (dynamicStats.occRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -2546,7 +3068,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 text-center text-[10px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#fff0eb]' : (day.isWeekend ? 'bg-[#edf5ff]' : 'bg-white')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
               :title="'Danh sách phòng trống ngày ' + day.dateStr + ':\n' + (dynamicStats.avRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -2570,7 +3092,7 @@ function isTodayDate(dateVal) {
               :key="idx" 
               class="p-1 text-center text-[10px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#fff0eb]' : (day.isWeekend ? 'bg-[#edf5ff]' : 'bg-white')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
               :title="'Danh sách phòng khóa bảo trì ngày ' + day.dateStr + ':\n' + (dynamicStats.oooRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -2796,6 +3318,16 @@ function isTodayDate(dateVal) {
           Mở Khóa Di Chuyển Phòng
         </button>
       </template>
+
+      <!-- Options for Room Lock -->
+      <template v-else-if="contextMenu.type === 'lock-actions'">
+        <button 
+          @click="triggerMenuAction('Mở khóa phòng')"
+          class="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border-none bg-transparent cursor-pointer transition-colors"
+        >
+          Mở khóa phòng
+        </button>
+      </template>
     </div>
 
     <!-- Filter side drawer -->
@@ -2814,38 +3346,70 @@ function isTodayDate(dateVal) {
         <!-- Content Body -->
         <div class="flex-1 p-4 flex flex-col overflow-y-auto gap-4 bg-white text-xs select-none">
           <!-- 1. Lọc Công ty -->
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2 relative" id="filter-company-dropdown-container">
             <span class="font-bold text-slate-500 uppercase text-[10px] tracking-wider font-semibold">Công ty ({{ tempSelectedCompanies.length }})</span>
-            <div class="relative flex items-center border border-slate-200 rounded bg-white px-2 py-1 shadow-xs h-[28px] mb-1.5 shrink-0">
-              <input 
-                type="text" 
-                v-model="companySearchQuery"
-                placeholder="Tìm công ty..."
-                class="search-input-reset text-slate-700 text-[11px] w-full pr-5"
-                style="border: none !important; outline: none !important; box-shadow: none !important; background-color: transparent !important; height: auto !important; padding: 0 !important; border-radius: 0 !important;"
-              />
-              <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
             
-            <div class="border border-slate-200 rounded-md p-1.5 bg-slate-50/50 max-h-[160px] overflow-y-auto flex flex-col gap-1 shadow-inner">
-              <span v-if="displayCompanies.length === 0" class="text-slate-400 text-center py-2 text-[10px]">Không tìm thấy công ty</span>
-              <label 
-                v-else
-                v-for="cName in displayCompanies" 
-                :key="cName" 
-                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-[11px] text-slate-700 font-semibold truncate"
-                :title="cName"
-              >
+            <!-- Custom Selector Box -->
+            <div 
+              @click="toggleCompanyFilterDropdown"
+              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer flex items-center justify-between text-[11px] min-h-[32px] shadow-2xs"
+            >
+              <div class="truncate max-w-[220px]">
+                <span v-if="tempSelectedCompanies.length === 0" class="text-slate-400">Chọn công ty...</span>
+                <span v-else class="text-slate-800 font-bold">
+                  {{ tempSelectedCompanies.join(', ') }}
+                </span>
+              </div>
+              <span class="text-slate-400 shrink-0 ml-1">
+                <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="showCompanyFilterDropdown ? 'rotate-180' : ''" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </span>
+            </div>
+
+            <!-- Floating Searchable List Popover -->
+            <div 
+              v-if="showCompanyFilterDropdown" 
+              class="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-white border border-slate-200 rounded-lg shadow-xl flex flex-col gap-2 p-2 max-h-[220px] overflow-hidden"
+            >
+              <!-- Search box inside dropdown -->
+              <div class="relative flex items-center border border-slate-200 rounded bg-slate-50 px-2 py-1 h-[28px] shrink-0">
                 <input 
-                  type="checkbox" 
-                  :value="cName" 
-                  v-model="tempSelectedCompanies" 
-                  class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                  type="text" 
+                  v-model="companySearchQuery"
+                  placeholder="Tìm công ty..."
+                  class="search-input-reset text-slate-700 text-[11px] w-full pr-5"
+                  style="border: none !important; outline: none !important; box-shadow: none !important; background-color: transparent !important; height: auto !important; padding: 0 !important; border-radius: 0 !important;"
                 />
-                <span class="truncate">{{ cName }}</span>
-              </label>
+                <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              <!-- List of companies -->
+              <div class="overflow-y-auto flex flex-col gap-1 pr-0.5">
+                <span v-if="displayCompanies.length === 0" class="text-slate-400 text-center py-2 text-[10px]">Không tìm thấy công ty</span>
+                <label 
+                  v-else
+                  v-for="cName in displayCompanies" 
+                  :key="cName" 
+                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-[11px] text-slate-700 font-semibold truncate transition-colors"
+                  :title="cName"
+                >
+                  <input 
+                    type="checkbox" 
+                    :value="cName" 
+                    v-model="tempSelectedCompanies" 
+                    class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span class="truncate">{{ cName }}</span>
+                </label>
+              </div>
+
+              <!-- More matches indicator -->
+              <div v-if="companyFilterData.hasMore" class="text-slate-400 text-center py-1.5 text-[9px] italic border-t border-slate-100 mt-1 select-none pointer-events-none shrink-0 leading-tight">
+                Chỉ hiển thị 20 kết quả đầu tiên.<br/>Nhập thêm ký tự để thu hẹp tìm kiếm...
+              </div>
             </div>
           </div>
 
@@ -3151,6 +3715,147 @@ function isTodayDate(dateVal) {
             <span>Lưu</span>
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Legend Color Picker Popover -->
+    <div 
+      v-if="showColorPicker && selectedLegendForColor"
+      ref="colorPickerRef"
+      class="fixed z-50 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 w-[260px] flex flex-col gap-3 select-none text-left"
+      :style="{ top: `${pickerPosition.top}px`, left: `${pickerPosition.left}px`, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)' }"
+    >
+      <!-- Color saturation/value gradient block -->
+      <div 
+        ref="colorAreaRef"
+        class="h-32 rounded-lg relative overflow-hidden cursor-crosshair border border-slate-200"
+        :style="{ backgroundColor: `hsl(${hue}, 100%, 50%)` }"
+        @mousedown="startDragColorArea"
+      >
+        <!-- White saturation gradient overlay -->
+        <div class="absolute inset-0" style="background: linear-gradient(to right, #fff, transparent);"></div>
+        <!-- Black value gradient overlay -->
+        <div class="absolute inset-0" style="background: linear-gradient(to top, #000, transparent);"></div>
+        
+        <!-- White pointer circle -->
+        <div 
+          class="absolute w-3 h-3 rounded-full border-2 border-white -translate-x-1.5 -translate-y-1.5 shadow-sm pointer-events-none"
+          :style="{ left: `${saturation}%`, top: `${100 - value}%` }"
+        ></div>
+      </div>
+
+      <!-- Hue & Alpha Sliders row next to Preview box -->
+      <div class="flex items-center gap-3">
+        <!-- Sliders stacked -->
+        <div class="flex-1 flex flex-col gap-2">
+          <!-- Hue Rainbow Slider -->
+          <div 
+            class="h-2.5 rounded relative cursor-pointer" 
+            style="background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);"
+            @mousedown="startDragHue"
+          >
+            <div 
+              class="absolute top-[-2px] bottom-[-2px] w-1.5 bg-white border border-slate-400 rounded cursor-pointer shadow-sm translate-x-[-50%]"
+              :style="{ left: `${(hue / 360) * 100}%` }"
+            ></div>
+          </div>
+
+          <!-- Alpha Opacity Slider -->
+          <div 
+            class="h-2.5 rounded relative cursor-pointer overflow-hidden border border-slate-100" 
+            style="background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0;"
+            @mousedown="startDragAlpha"
+          >
+            <!-- Overlay showing opacity to current solid color -->
+            <div 
+              class="absolute inset-0"
+              :style="{ background: `linear-gradient(to right, transparent, ${computedHex})` }"
+            ></div>
+            <div 
+              class="absolute top-[-2px] bottom-[-2px] w-1.5 bg-white border border-slate-400 rounded cursor-pointer shadow-sm translate-x-[-50%]"
+              :style="{ left: `${alpha}%` }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Solid/Current Color Preview Block -->
+        <div 
+          class="w-8 h-8 rounded border border-slate-300 shadow-3xs shrink-0" 
+          :style="{ backgroundColor: computedHex }"
+        ></div>
+      </div>
+
+      <!-- Hex & RGB Inputs Row -->
+      <div class="grid grid-cols-5 gap-1.5 text-[10px] text-slate-400 font-bold uppercase">
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="text" 
+            :value="computedHex.replace('#', '').toUpperCase()"
+            @change="handleHexInputChange"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] uppercase text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">Hex</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            :value="computedRgb.r"
+            @input="handleRgbInput('r', $event.target.value)"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">R</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            :value="computedRgb.g"
+            @input="handleRgbInput('g', $event.target.value)"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">G</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            :value="computedRgb.b"
+            @input="handleRgbInput('b', $event.target.value)"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">B</span>
+        </div>
+        <div class="flex flex-col items-center gap-0.5">
+          <input 
+            type="number" 
+            v-model="alpha"
+            min="0"
+            max="100"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+          />
+          <span class="text-[9px] font-bold text-slate-400">A</span>
+        </div>
+      </div>
+
+      <!-- Preset Grid -->
+      <div class="grid grid-cols-8 gap-1.5 pt-1.5 border-t border-slate-100 justify-items-center">
+        <button 
+          v-for="color in pickerPresets" 
+          :key="color"
+          @click="selectPresetColor(color)"
+          class="w-4 h-4 rounded-full border border-slate-200/50 cursor-pointer shadow-3xs hover:scale-115 transition-transform duration-100 p-0"
+          :style="{ backgroundColor: color }"
+        ></button>
+      </div>
+
+      <!-- Actions (Blue Save Button at bottom) -->
+      <div class="flex items-center gap-1.5 border-t border-slate-100 pt-2 shrink-0">
+        <button 
+          @click="saveLegendColor" 
+          :disabled="savingColor"
+          class="w-full py-1.5 bg-[#72b5f7] hover:bg-[#5da3e5] text-white rounded-lg font-bold text-xs border-none cursor-pointer shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+        >
+          <span v-if="savingColor" class="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
+          Save
+        </button>
       </div>
     </div>
   </div>

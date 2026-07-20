@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
@@ -122,6 +122,25 @@ function saveSettings() {
   })
   showSettings.value = false
   uiStore.showToast('Cài đặt hiển thị đã được lưu thành công!', 'success')
+}
+
+function handleEditBookingFromPlan({ code, id }) {
+  // Đảm bảo tab không nằm trong danh sách đóng (closed list) trong localStorage
+  const closedKey = 'pms_closed_registration_tabs'
+  const closedStr = localStorage.getItem(closedKey)
+  let closedList = []
+  if (closedStr !== null) {
+    try {
+      closedList = JSON.parse(closedStr) || []
+    } catch (e) {
+      closedList = []
+    }
+  }
+  // Loại bỏ id booking này khỏi closed list và lưu lại
+  const updatedClosed = closedList.filter(x => String(x) !== String(id))
+  localStorage.setItem(closedKey, JSON.stringify(updatedClosed))
+
+  router.push({ query: { ...route.query, tab: 'create-res', bookingCode: code } })
 }
 
 function resetToDefaultSettings() {
@@ -1119,7 +1138,10 @@ const uniqueFloors = computed(() => {
 
           <!-- Tab 2: Kế hoạch phòng RoomPlanPage -->
           <div v-else-if="currentTab === 'room-plan'" class="h-full overflow-hidden">
-            <RoomPlanPage @loading="val => isRoomPlanLoading = val" />
+            <RoomPlanPage 
+              @loading="val => isRoomPlanLoading = val" 
+              @edit-booking="handleEditBookingFromPlan"
+            />
           </div>
 
           <!-- Tab 3: D.S Công Việc ShiftWorkPage -->

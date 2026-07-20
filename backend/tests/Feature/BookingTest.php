@@ -33,9 +33,15 @@ class BookingTest extends TestCase
         $this->withoutExceptionHandling();
         
         $status = RegistrationStatus::first();
+        $company = \App\Models\Company::create(['name' => 'Test Company']);
+        $market = \App\Models\Market::first() ?? \App\Models\Market::create(['name' => 'Test Market', 'code' => 'TM']);
+        $customerSource = \App\Models\CustomerSource::first() ?? \App\Models\CustomerSource::create(['name' => 'Test Source', 'code' => 'TS']);
 
         $payload = [
             'booking_name' => 'NGUYEN VAN A',
+            'company_id' => $company->id,
+            'market_id' => $market->id,
+            'customer_source_id' => $customerSource->id,
             'arrival_date' => now()->toDateString(),
             'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1,
@@ -48,7 +54,7 @@ class BookingTest extends TestCase
                     'rooms' => [
                         [
                             'roomNumber' => '105',
-                            'guestName' => '', // Empty guest name to test defaulting to booking_name
+                            'guestName' => 'NGUYEN VAN A',
                             'adults' => 2,
                             'children' => 1,
                             'babies' => 0,
