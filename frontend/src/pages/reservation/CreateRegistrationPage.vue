@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
+import http from '@/services/http'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import CopyModal from './components/CopyModal.vue'
 import UpgradeModal from './components/UpgradeModal.vue'
@@ -504,19 +505,32 @@ function getRoomDisplayServices(room) {
 }
 
 function getServicesTotal(room) {
-  if (!room.services) return 0
+  if (!room.services || !Array.isArray(room.services)) return 0
   return room.services
     .filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE')
     .reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
 }
 
+function getRoomExtraBedTotal(room) {
+  if (!room) return 0
+  if (room.extraBedTotalSum !== undefined && room.extraBedTotalSum !== null) {
+    return Number(room.extraBedTotalSum) || 0
+  }
+  if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
+    return room.dailyExtraBeds.reduce((sum, d) => sum + (Number(d.total) || 0), 0)
+  }
+  const nights = Number(room.nights) || 1
+  const extraBedPrice = Number(room.extraBedPrice) || 0
+  const extraBedQty = Number(room.extraBedQty) || 0
+  return extraBedPrice * extraBedQty * nights
+}
+
 function calculateRoomTotal(room) {
   const nights = Number(room.nights) || 1
   const price = Number(room.price) || 0
-  const extraBedPrice = Number(room.extraBedPrice) || 0
-  const extraBedQty = Number(room.extraBedQty) || 0
+  const extraBedTotal = getRoomExtraBedTotal(room)
   const servicesTotal = getServicesTotal(room)
-  return (price * nights) + (extraBedPrice * extraBedQty * nights) + servicesTotal
+  return (price * nights) + extraBedTotal + servicesTotal
 }
 
 
@@ -604,8 +618,9 @@ const roomsTotalSummary = computed(() => {
     adults   += Number(r.adults) || 0
     babies   += Number(r.babies) || 0
     children += Number(r.children) || 0
-    extraBed += (Number(r.extraBedPrice) || 0) * (Number(r.extraBedQty) || 0) * (Number(r.nights) || 1)
-    total    += Number(r.total) || 0
+    const ebTotal = getRoomExtraBedTotal(r)
+    extraBed += ebTotal
+    total    += Number(r.total) || calculateRoomTotal(r)
   })
   return { count: activeTab.value.rooms.length, priceSum, adults, babies, children, extraBed, total }
 })
@@ -3182,11 +3197,55 @@ function openExtraBedModal(room) {
   isExtraBedModalOpen.value = true
 }
 
-function handleExtraBedSaved({ quantity, rate }) {
+async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRates }) {
   if (!extraBedModalRoom.value) return
-  extraBedModalRoom.value.extraBedQty = quantity
-  extraBedModalRoom.value.extraBedPrice = rate
-  extraBedModalRoom.value.total = calculateRoomTotal(extraBedModalRoom.value)
+  const room = extraBedModalRoom.value
+  room.extraBedQty = quantity
+  room.extraBedPrice = rate
+  if (totalExtraBedPrice !== undefined) {
+    room.extraBedTotalSum = totalExtraBedPrice
+  }
+  if (dailyRates) {
+    room.dailyExtraBeds = dailyRates
+  }
+  room.total = calculateRoomTotal(room)
+
+  // Nếu là booking đã lưu dưới database (có bookingRoomId), tự động đồng bộ API Dịch vụ EB & DB booking_rooms
+  if (activeTab.value?.dbId && room.bookingRoomId) {
+    try {
+      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+
+      // 1. Cập nhật trực tiếp số lượng và đơn giá extra bed vào bảng booking_rooms
+      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+        extra_bed_qty: quantity,
+        extra_bed_rate: rate
+      })
+
+      // 2. Cập nhật chi tiết từng đêm vào dịch vụ booking_room_services
+      if (dailyRates && dailyRates.length > 0) {
+        for (const d of dailyRates) {
+          if (d.isPast) continue // Không lưu/sửa đêm quá khứ
+          if (d.quantity > 0) {
+            await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+              service_code: 'EB',
+              service_name: 'Extra Bed',
+              service_date: d.dateStr,
+              quantity: d.quantity,
+              rate: d.rate,
+              is_room: d.isRoom ? 1 : 0
+            })
+          }
+        }
+      }
+
+      await loadBookings()
+      uiStore.showToast('Cập nhật Thêm giường vào Database thành công!', 'success')
+    } catch (err) {
+      console.error('Lỗi khi lưu Extra Bed:', err)
+      const detailMsg = err.response?.data?.message || err.message || ''
+      uiStore.showToast(`Lỗi khi lưu Thêm giường: ${detailMsg}`, 'error')
+    }
+  }
 }
 
 // ==================== YÊU CẦU ĐẶC BIỆT MODAL ====================
@@ -3894,13 +3953,13 @@ defineExpose({
                         <template v-else-if="col.key === 'extraBed'">
                           <div class="flex items-center justify-center gap-1">
                             <span class="font-bold text-slate-700 text-[11px]">{{ room.extraBedQty || 0 }}</span>
-                            <button v-if="isEditing" @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">
-                              <i class="fa-solid fa-pen text-[8px]"></i>
+                            <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
+                              <span>Chi tiết</span>
                             </button>
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold">{{ Number(room.extraBedQty) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
+                          <span class="text-gray-900 font-semibold" :title="`Đơn giá: ${formatCurrencyInput(room.extraBedPrice)}/đêm`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -4406,8 +4465,8 @@ defineExpose({
                                 <template v-else-if="col.key === 'extraBed'">
                                   <div class="flex items-center justify-center gap-1">
                                     <span class="font-bold text-slate-700 text-[11px]">{{ room.extraBedQty || 0 }}</span>
-                                    <button v-if="isEditing" @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">
-                                      <i class="fa-solid fa-pen text-[8px]"></i>
+                                    <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
+                                      <span>Chi tiết</span>
                                     </button>
                                   </div>
                                 </template>
@@ -5755,6 +5814,7 @@ defineExpose({
         :bookingId="activeTab?.dbId" 
         :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id)) : []" 
         :roomClasses="roomClasses" 
+        :roomForms="roomForms"
         :roomRateCodes="roomRateCodes"
         @upgraded="handleUpgraded" 
       />
@@ -5784,6 +5844,7 @@ defineExpose({
       <ExtraBedModal
         v-model:show="isExtraBedModalOpen"
         :room="extraBedModalRoom"
+        :systemDate="systemDate"
         @saved="handleExtraBedSaved"
       />
     </Teleport>

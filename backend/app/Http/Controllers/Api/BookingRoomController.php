@@ -232,14 +232,14 @@ class BookingRoomController extends Controller
         // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
         if ($isInhouse) {
             $validated = $request->validate([
-                'departure_date'  => 'sometimes|required|date|after_or_equal:arrival_date',
+                'departure_date'  => 'nullable|date',
                 'departure_time'  => 'nullable|date_format:H:i',
                 'rate'            => 'nullable|numeric|min:0',
                 'extra_bed_qty'   => 'nullable|integer|min:0',
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
                 'guest_name'      => 'nullable|string|max:100',
-                'room_number'     => 'nullable|string|exists:rooms,room_number',
+                'room_number'     => 'nullable|string',
                 'breakfast'       => 'nullable|boolean',
                 'is_day_use'      => 'nullable|boolean',
             ]);
@@ -247,7 +247,7 @@ class BookingRoomController extends Controller
             $validated = $request->validate([
                 'room_class_id'   => 'sometimes|exists:room_classes,id',
                 'arrival_date'    => 'sometimes|date',
-                'departure_date'  => 'sometimes|date|after_or_equal:arrival_date',
+                'departure_date'  => 'sometimes|date',
                 'arrival_time'    => 'nullable|date_format:H:i',
                 'departure_time'  => 'nullable|date_format:H:i',
                 'rate'            => 'nullable|numeric|min:0',
@@ -258,7 +258,7 @@ class BookingRoomController extends Controller
                 'extra_bed_qty'   => 'nullable|integer|min:0',
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
-                'room_number'     => 'nullable|string|exists:rooms,room_number',
+                'room_number'     => 'nullable|string',
                 'breakfast'       => 'nullable|boolean',
                 'is_day_use'      => 'nullable|boolean',
             ]);
