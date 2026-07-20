@@ -4812,6 +4812,7 @@ defineExpose({
         v-model:show="isGlobalSearchOpen" 
         :registrationStatuses="registrationStatuses" 
         :activeTab="activeTab" 
+        :systemDate="systemDate"
         @select-booking="handleGlobalSearchResultClick" 
       />
     </Teleport>
