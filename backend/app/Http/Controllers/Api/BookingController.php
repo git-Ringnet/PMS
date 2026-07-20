@@ -23,6 +23,44 @@ use Illuminate\Support\Facades\DB;
 class BookingController extends Controller
 {
     /**
+     * Lấy tất cả dữ liệu dropdown cần thiết cho màn tạo/sửa booking trong 1 request duy nhất.
+     */
+    public function initDropdowns()
+    {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        $systemDate = $latest
+            ? \Carbon\Carbon::parse($latest->system_date)->toDateString()
+            : now()->timezone('Asia/Ho_Chi_Minh')->toDateString();
+        $shift = $latest ? $latest->shift : '1';
+
+        $roomClasses = \App\Models\RoomClass::with(['roomClassGroup', 'standardRates.roomForm'])->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'markets' => \App\Http\Resources\MarketResource::collection(\App\Models\Market::all()),
+                'customer_sources' => \App\Http\Resources\CustomerSourceResource::collection(\App\Models\CustomerSource::all()),
+                'bookers' => \App\Http\Resources\BookerResource::collection(\App\Models\Booker::orderBy('id')->get()),
+                'companies' => \App\Http\Resources\CompanyResource::collection(\App\Models\Company::all()),
+                'payment_methods' => \App\Http\Resources\PaymentMethodResource::collection(\App\Models\PaymentMethod::all()),
+                'registration_statuses' => \App\Http\Resources\RegistrationStatusResource::collection(\App\Models\RegistrationStatus::all()),
+                'users' => \App\Models\User::all(),
+                'room_classes' => \App\Http\Resources\RoomClassResource::collection($roomClasses),
+                'room_forms' => \App\Http\Resources\RoomFormResource::collection(\App\Models\RoomForm::all()),
+                'room_rate_codes' => \App\Models\RoomRateCode::with('ratePlans', 'dailyMappings')->get(),
+                'currencies' => \App\Http\Resources\CurrencyResource::collection(\App\Models\Currency::all()),
+                'hotel_services' => \App\Http\Resources\HotelServiceResource::collection(\App\Models\HotelService::all()),
+                'hotel_settings' => new \App\Http\Resources\HotelSettingResource(\App\Models\HotelSetting::first() ?? new \App\Models\HotelSetting()),
+                'system_time' => now()->timezone('Asia/Ho_Chi_Minh')->toIso8601String(),
+                'system_date' => [
+                    'system_date' => $systemDate,
+                    'shift' => $shift
+                ]
+            ]
+        ]);
+    }
+
+    /**
      * Lấy danh sách booking (có filter).
      */
     public function index(Request $request)

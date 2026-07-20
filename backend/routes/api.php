@@ -170,6 +170,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // =====================================================================
 
     // #12 — Xuất Excel (đặt TRƯỚC apiResource để không bị override)
+    Route::get('bookings/init-dropdowns', [\App\Http\Controllers\Api\BookingController::class, 'initDropdowns']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
     Route::apiResource('bookings', \App\Http\Controllers\Api\BookingController::class);
 

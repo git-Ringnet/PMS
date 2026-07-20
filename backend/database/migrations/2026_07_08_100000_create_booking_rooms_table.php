@@ -30,16 +30,17 @@ return new class extends Migration
             // =========================================
             // Loại phòng hiện tại (có thể thay đổi khi nâng/hạ hạng)
             $table->foreignId('room_class_id')->constrained('room_classes')->restrictOnDelete();
+            // Dạng giường của phòng (Double, Twin, Triple, v.v.)
+            $table->string('RoomKind', 50)->nullable();
             // Loại phòng khởi tạo ban đầu — giữ nguyên kể cả khi nâng hạng (LP Khởi tạo / Pack4)
-            $table->unsignedBigInteger('original_room_class_id')->nullable();
-            $table->foreign('original_room_class_id')->references('id')->on('room_classes')->nullOnDelete();
+            $table->string('original_room_class_id', 50)->nullable();
 
             // =========================================
             // NGÀY GIỜ
             // =========================================
             $table->date('arrival_date');       // Ngày đến của phòng này (có thể khác header booking)
             $table->date('departure_date');     // Ngày đi của phòng này
-            $table->unsignedInteger('num_of_days')->default(1)->comment('Số đêm/ngày thuê của phòng này');
+            $table->unsignedInteger('ActutalNumOfDays')->default(1)->comment('Số đêm/ngày thuê của phòng này');
             $table->date('actual_arrival_date')->nullable(); // Ngày đến thực tế (giữ nguyên gốc khi chuyển phòng)
             $table->time('arrival_time')->nullable();    // Giờ đến
             $table->time('departure_time')->nullable();  // Giờ đi

@@ -7,6 +7,7 @@ import http from './http'
  * @param {Object} params - Filter: { search, status, registration_status_id, from_date, to_date, arrival_date }
  */
 export const fetchBookings = (params = {}) => http.get('/bookings', { params })
+export const fetchBookingInitDropdowns = () => http.get('/bookings/init-dropdowns')
 
 /**
  * Lấy chi tiết một booking
@@ -55,6 +56,7 @@ export const fetchRegistrationStatuses = (params = {}) => http.get('/registratio
 
 // ==================== ROOM CLASSES & RATE CODES ====================
 export const fetchRoomClasses = () => http.get('/room-classes')
+export const fetchRoomForms = () => http.get('/room-forms')
 export const fetchRoomRateCodes = () => http.get('/room-rate-codes')
 
 // ==================== CONFIG & SYSTEM ====================
