@@ -553,6 +553,11 @@ class BookingRoomController extends Controller
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
+            // Đồng bộ status cho khách sang CHECKED_IN
+            $bookingRoom->guests()->update([
+                'status' => BookingRoom::STATUS_CHECKED_IN
+            ]);
+
             // Nếu tất cả phòng trong booking đều đã check-in → cập nhật booking header
             $allCheckedIn = $booking->bookingRooms()
                 ->whereIn('status', [BookingRoom::STATUS_BOOKED])
@@ -594,6 +599,11 @@ class BookingRoomController extends Controller
             $bookingRoom->update([
                 'status'     => BookingRoom::STATUS_BOOKED,
                 'updated_by' => Auth::user()?->username ?? 'system',
+            ]);
+
+            // Đồng bộ status cho khách về BOOKED
+            $bookingRoom->guests()->update([
+                'status' => BookingRoom::STATUS_BOOKED
             ]);
 
             // Cập nhật booking status về STATUS_RESERVATION (0) nếu trước đó là STATUS_CHECKIN (1)

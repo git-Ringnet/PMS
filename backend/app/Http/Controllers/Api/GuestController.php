@@ -91,7 +91,7 @@ class GuestController extends Controller
                     ]);
                     BookingRoomGuest::firstOrCreate(
                         ['booking_room_id' => $room->id, 'guest_id' => $guest->id],
-                        ['is_primary' => $i === 1, 'status' => 0]
+                        ['is_primary' => $i === 1, 'status' => $room->status]
                     );
                 }
 
@@ -195,7 +195,7 @@ class GuestController extends Controller
             // Gán vào phòng (tránh duplicate)
             $pivot = \App\Models\BookingRoomGuest::firstOrCreate(
                 ['booking_room_id' => $roomId, 'guest_id' => $guest->id],
-                ['is_primary' => $request->is_primary ?? false, 'status' => 0]
+                ['is_primary' => $request->is_primary ?? false, 'status' => $room->status]
             );
 
             DB::commit();

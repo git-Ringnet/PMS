@@ -334,6 +334,7 @@ class BookingController extends Controller
                                 'booking_room_id' => $bRoom->id,
                                 'guest_id' => $guest->id,
                                 'is_primary' => 1,
+                                'status' => $bRoom->status,
                             ]);
 
                             // Tự động tạo thêm khách phụ cho đủ số lượng adults
@@ -350,6 +351,7 @@ class BookingController extends Controller
                                         'booking_room_id' => $bRoom->id,
                                         'guest_id' => $subGuest->id,
                                         'is_primary' => 0,
+                                        'status' => $bRoom->status,
                                     ]);
                                 }
                             }
@@ -701,6 +703,9 @@ class BookingController extends Controller
                                 $pivot->guest->update([
                                     'full_name' => $roomGuestName,
                                 ]);
+                                $pivot->update([
+                                    'status' => $bRoom->status,
+                                ]);
                             } else {
                                 $guest = \App\Models\Guest::create([
                                     'full_name' => $roomGuestName,
@@ -712,6 +717,7 @@ class BookingController extends Controller
                                     'booking_room_id' => $bRoom->id,
                                     'guest_id' => $guest->id,
                                     'is_primary' => 1,
+                                    'status' => $bRoom->status,
                                 ]);
                             }
 
@@ -720,6 +726,14 @@ class BookingController extends Controller
                             $secondaries = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)
                                 ->where('is_primary', 0)
                                 ->get();
+                            
+                            // Cập nhật status cho khách phụ hiện có
+                            foreach ($secondaries as $subPivot) {
+                                $subPivot->update([
+                                    'status' => $bRoom->status,
+                                ]);
+                            }
+
                             $totalCurrentGuests = 1 + $secondaries->count();
 
                             if ($totalCurrentGuests < $targetAdults) {
@@ -737,6 +751,7 @@ class BookingController extends Controller
                                         'booking_room_id' => $bRoom->id,
                                         'guest_id' => $subGuest->id,
                                         'is_primary' => 0,
+                                        'status' => $bRoom->status,
                                     ]);
                                 }
                             } elseif ($totalCurrentGuests > $targetAdults) {
@@ -1037,7 +1052,7 @@ class BookingController extends Controller
                                 'booking_room_id' => $newRoom->id,
                                 'guest_id'        => $pivotGuest->guest_id,
                                 'is_primary'      => $pivotGuest->is_primary,
-                                'status'          => 0,
+                                'status'          => $newRoom->status,
                             ]);
                         }
 
