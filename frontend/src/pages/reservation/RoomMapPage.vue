@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
@@ -21,10 +23,17 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-const currentTab = computed(() => route.query.tab || 'room-map')
+const getQueryParam = (name) => {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get(name)
+}
+
+const currentTab = computed(() => route.query.tab || getQueryParam('tab') || 'room-map')
 
 const createRegRef = ref(null)
 const showDetailModal = ref(false)
@@ -32,6 +41,17 @@ const showBookingDetailModal = ref(false)
 const selectedBookingRoom = ref(null)
 const showStatsModal = ref(false)
 const isLoaded = ref(false)
+const isInitialLoad = ref(true)
+let pollingInterval = null
+const isRoomPlanLoading = ref(false)
+
+watch(currentTab, (newTab) => {
+  if (newTab === 'room-plan') {
+    isRoomPlanLoading.value = true
+  } else {
+    isRoomPlanLoading.value = false
+  }
+}, { immediate: true })
 
 function handleMetricClick(status) {
   filterByStatus(status)
@@ -48,17 +68,35 @@ const showSettings = ref(false)
 
 const settings = ref({
   iconSizes: {
-    group1: parseInt(localStorage.getItem('pms_icon_size_g1') || '20'), // lock, birthday, honeymoon, extra-bed
-    group2: parseInt(localStorage.getItem('pms_icon_size_g2') || '20'), // clean, double-check, dirty
-    group3: parseInt(localStorage.getItem('pms_icon_size_g3') || '10'), // status dots (emerald/red)
-    group4: parseInt(localStorage.getItem('pms_icon_size_g4') || '16'), // walkin / guest count
-    group5: parseInt(localStorage.getItem('pms_icon_size_g5') || '20'), // priority, DND
+    group1: 20,
+    group2: 20,
+    group3: 10,
+    group4: 16,
+    group5: 20,
   },
-  exactPosition: localStorage.getItem('pms_exact_position') === 'true',
-  floorOrientation: localStorage.getItem('pms_floor_orientation') || 'Ngang',
-  roomWidth: parseInt(localStorage.getItem('pms_room_width') || '200'),
-  roomHeight: parseInt(localStorage.getItem('pms_room_height') || '110')
+  exactPosition: false,
+  floorOrientation: 'Ngang',
+  roomWidth: 200,
+  roomHeight: 110
 })
+
+watch(() => authStore.settings?.room_map, (newRoomMapSettings) => {
+  if (newRoomMapSettings) {
+    settings.value = {
+      iconSizes: {
+        group1: parseInt(newRoomMapSettings.iconSizes?.group1 ?? 20),
+        group2: parseInt(newRoomMapSettings.iconSizes?.group2 ?? 20),
+        group3: parseInt(newRoomMapSettings.iconSizes?.group3 ?? 10),
+        group4: parseInt(newRoomMapSettings.iconSizes?.group4 ?? 16),
+        group5: parseInt(newRoomMapSettings.iconSizes?.group5 ?? 20),
+      },
+      exactPosition: newRoomMapSettings.exactPosition === true || newRoomMapSettings.exactPosition === 'true',
+      floorOrientation: newRoomMapSettings.floorOrientation || 'Ngang',
+      roomWidth: parseInt(newRoomMapSettings.roomWidth ?? 200),
+      roomHeight: parseInt(newRoomMapSettings.roomHeight ?? 110)
+    }
+  }
+}, { immediate: true, deep: true })
 
 const cardScale = computed(() => {
   const widthScale = settings.value.roomWidth / 200
@@ -67,42 +105,54 @@ const cardScale = computed(() => {
 })
 
 function saveSettings() {
-  localStorage.setItem('pms_icon_size_g1', String(settings.value.iconSizes.group1))
-  localStorage.setItem('pms_icon_size_g2', String(settings.value.iconSizes.group2))
-  localStorage.setItem('pms_icon_size_g3', String(settings.value.iconSizes.group3))
-  localStorage.setItem('pms_icon_size_g4', String(settings.value.iconSizes.group4))
-  localStorage.setItem('pms_icon_size_g5', String(settings.value.iconSizes.group5))
-  localStorage.setItem('pms_exact_position', String(settings.value.exactPosition))
-  localStorage.setItem('pms_floor_orientation', settings.value.floorOrientation)
-  localStorage.setItem('pms_room_width', String(settings.value.roomWidth))
-  localStorage.setItem('pms_room_height', String(settings.value.roomHeight))
+  authStore.updateUserSettings({
+    room_map: {
+      iconSizes: {
+        group1: settings.value.iconSizes.group1,
+        group2: settings.value.iconSizes.group2,
+        group3: settings.value.iconSizes.group3,
+        group4: settings.value.iconSizes.group4,
+        group5: settings.value.iconSizes.group5,
+      },
+      exactPosition: settings.value.exactPosition,
+      floorOrientation: settings.value.floorOrientation,
+      roomWidth: settings.value.roomWidth,
+      roomHeight: settings.value.roomHeight
+    }
+  })
   showSettings.value = false
   uiStore.showToast('Cài đặt hiển thị đã được lưu thành công!', 'success')
 }
 
+function handleEditBookingFromPlan({ code, id }) {
+  // Đảm bảo tab không nằm trong danh sách đóng (closed list) trong localStorage
+  const closedKey = 'pms_closed_registration_tabs'
+  const closedStr = localStorage.getItem(closedKey)
+  let closedList = []
+  if (closedStr !== null) {
+    try {
+      closedList = JSON.parse(closedStr) || []
+    } catch (e) {
+      closedList = []
+    }
+  }
+  // Loại bỏ id booking này khỏi closed list và lưu lại
+  const updatedClosed = closedList.filter(x => String(x) !== String(id))
+  localStorage.setItem(closedKey, JSON.stringify(updatedClosed))
+
+  router.push({ query: { ...route.query, tab: 'create-res', bookingCode: code } })
+}
+
 function resetToDefaultSettings() {
-  settings.value = {
-    iconSizes: {
-      group1: 20,
-      group2: 20,
-      group3: 10,
-      group4: 16,
-      group5: 20,
-    },
+  const defaultRoomMap = {
+    iconSizes: { group1: 20, group2: 20, group3: 10, group4: 16, group5: 20 },
     exactPosition: false,
     floorOrientation: 'Ngang',
     roomWidth: 200,
     roomHeight: 110
   }
-  localStorage.removeItem('pms_icon_size_g1')
-  localStorage.removeItem('pms_icon_size_g2')
-  localStorage.removeItem('pms_icon_size_g3')
-  localStorage.removeItem('pms_icon_size_g4')
-  localStorage.removeItem('pms_icon_size_g5')
-  localStorage.removeItem('pms_exact_position')
-  localStorage.removeItem('pms_floor_orientation')
-  localStorage.removeItem('pms_room_width')
-  localStorage.removeItem('pms_room_height')
+  settings.value = JSON.parse(JSON.stringify(defaultRoomMap))
+  authStore.updateUserSettings({ room_map: defaultRoomMap })
   calculateScale()
   uiStore.showToast('Đã khôi phục cài đặt hiển thị mặc định!', 'success')
 }
@@ -123,9 +173,21 @@ const rawDate = ref(new Date().toISOString().split('T')[0])
 const isGridMode = ref(true)
 
 // Auto scale / zoom layout state
-const autoScale = ref(localStorage.getItem('pms_room_map_auto_scale') !== 'false')
-const manualScale = ref(parseFloat(localStorage.getItem('pms_room_map_scale') || '1.0'))
+const autoScale = ref(true)
+const manualScale = ref(1.0)
 const scaleFactor = ref(1.0)
+
+watch(() => authStore.settings?.room_map, (newRoomMapSettings) => {
+  if (newRoomMapSettings) {
+    if (newRoomMapSettings.autoScale !== undefined) {
+      autoScale.value = newRoomMapSettings.autoScale !== false && newRoomMapSettings.autoScale !== 'false'
+    }
+    if (newRoomMapSettings.scale !== undefined) {
+      manualScale.value = parseFloat(newRoomMapSettings.scale ?? 1.0)
+    }
+    calculateScale()
+  }
+}, { immediate: true, deep: true })
 
 function calculateScale() {
   if (autoScale.value) {
@@ -142,7 +204,11 @@ function calculateScale() {
 
 function toggleAutoScale() {
   autoScale.value = !autoScale.value
-  localStorage.setItem('pms_room_map_auto_scale', String(autoScale.value))
+  authStore.updateUserSettings({
+    room_map: {
+      autoScale: autoScale.value
+    }
+  })
   calculateScale()
 }
 
@@ -154,7 +220,11 @@ function adjustManualScale(direction) {
   } else {
     manualScale.value = 1.0
   }
-  localStorage.setItem('pms_room_map_scale', String(manualScale.value))
+  authStore.updateUserSettings({
+    room_map: {
+      scale: manualScale.value
+    }
+  })
   calculateScale()
 }
 
@@ -174,9 +244,20 @@ watch(isFuture, (newVal) => {
 })
 
 watch(rawDate, async () => {
-  isLoaded.value = false
-  await roomStore.fetchRooms()
-  isLoaded.value = true
+  await Promise.all([
+    roomStore.fetchRooms({ silent: true }),
+    roomStore.fetchStats()
+  ])
+})
+
+// Fetch 1 lần khi chuyển vào tab Room Map → dữ liệu luôn mới sau khi giao phòng
+watch(currentTab, async (newTab) => {
+  if (newTab === 'room-map') {
+    await Promise.all([
+      roomStore.fetchRooms({ silent: true }),
+      roomStore.fetchStats()
+    ])
+  }
 })
 
 // Circular widgets stats computed dynamically
@@ -270,7 +351,7 @@ function formatTooltipDate(dateStr) {
 
 function formatTooltipPrice(price) {
   const num = Math.round(Number(price) || 0)
-  return num.toLocaleString('vi-VN') + 'đ'
+  return num.toLocaleString('en-US') + 'đ'
 }
 
 function closeModal() {
@@ -528,6 +609,58 @@ function triggerMenuItem(actionName) {
   closeContextMenu()
 }
 
+async function lockRoomMove(room) {
+  closeContextMenu()
+  if (!room || !room.booking_code || !room.booking_room_id || !room.booking_id) {
+    uiStore.showToast('Phòng chưa được gán hoặc không tìm thấy mã đặt phòng!', 'warning')
+    return
+  }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Khóa chuyển phòng',
+    message: `Bạn có chắc chắn muốn khóa chuyển phòng ${room.room_number}?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy bỏ'
+  })
+
+  if (confirmed) {
+    try {
+      await apiLockRoomMove(room.booking_id, room.booking_room_id)
+      uiStore.showToast(`Đã khóa chuyển phòng ${room.room_number} thành công!`, 'success')
+      await roomStore.fetchRooms({ silent: true })
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Không thể khóa chuyển phòng.'
+      uiStore.showToast(msg, 'error')
+    }
+  }
+}
+
+async function unlockRoomMove(room) {
+  closeContextMenu()
+  if (!room || !room.booking_code || !room.booking_room_id || !room.booking_id) {
+    uiStore.showToast('Phòng chưa được gán hoặc không tìm thấy mã đặt phòng!', 'warning')
+    return
+  }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Mở khóa chuyển phòng',
+    message: `Bạn có chắc chắn muốn mở khóa chuyển phòng ${room.room_number}?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy bỏ'
+  })
+
+  if (confirmed) {
+    try {
+      await apiUnlockRoomMove(room.booking_id, room.booking_room_id)
+      uiStore.showToast(`Đã mở khóa chuyển phòng ${room.room_number} thành công!`, 'success')
+      await roomStore.fetchRooms({ silent: true })
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Không thể mở khóa chuyển phòng.'
+      uiStore.showToast(msg, 'error')
+    }
+  }
+}
+
 // Change room status directly from context menu
 async function changeRoomStatus(room, newStatus, lockType = null) {
   if (!room || (newStatus === room.status && lockType === room.lock_type)) return
@@ -564,6 +697,16 @@ async function changeRoomStatus(room, newStatus, lockType = null) {
 }
 
 onMounted(async () => {
+  // Fetch system date and set rawDate
+  try {
+    const dateRes = await fetchSystemDate()
+    if (dateRes?.data?.success && dateRes?.data?.data?.system_date) {
+      rawDate.value = dateRes.data.data.system_date
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải ngày hệ thống cho sơ đồ phòng:', err)
+  }
+
   // Migration to set default roomWidth to 200px for existing local storage sessions
   if (localStorage.getItem('pms_room_width_migrated_200') !== 'true') {
     settings.value.roomWidth = 200
@@ -577,6 +720,7 @@ onMounted(async () => {
     roomStore.fetchStats()
   ])
   isLoaded.value = true
+  isInitialLoad.value = false
   
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', handleClickOutsideSettings)
@@ -978,10 +1122,14 @@ const uniqueFloors = computed(() => {
       </div>
 
       <!-- Main Layout Body (Grid or list or subpages) -->
-      <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden">
+      <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
         
-        <!-- Left/Center content container -->
-        <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
+        <!-- Global Loading Overlay -->
+        <LoadingOverlay :show="!isLoaded || (currentTab === 'room-plan' && isRoomPlanLoading)" />
+
+        <template v-if="isLoaded">
+          <!-- Left/Center content container -->
+          <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
           
           <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
           <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
@@ -990,7 +1138,10 @@ const uniqueFloors = computed(() => {
 
           <!-- Tab 2: Kế hoạch phòng RoomPlanPage -->
           <div v-else-if="currentTab === 'room-plan'" class="h-full overflow-hidden">
-            <RoomPlanPage />
+            <RoomPlanPage 
+              @loading="val => isRoomPlanLoading = val" 
+              @edit-booking="handleEditBookingFromPlan"
+            />
           </div>
 
           <!-- Tab 3: D.S Công Việc ShiftWorkPage -->
@@ -1369,9 +1520,11 @@ const uniqueFloors = computed(() => {
               <div
                 v-for="(floor, floorIdx) in sortedFloors"
                 :key="floor"
-                class="floor-row-animate"
-                :class="settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2'"
-                :style="{ animationDelay: `${floorIdx * 65}ms` }"
+                :class="[
+                  settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2',
+                  isInitialLoad ? 'floor-row-animate' : ''
+                ]"
+                :style="isInitialLoad ? { animationDelay: `${floorIdx * 65}ms` } : {}"
               >
                 <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
                 <div class="floor-pill cursor-pointer"
@@ -1395,9 +1548,12 @@ const uniqueFloors = computed(() => {
                   <div
                     v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]"
                     :key="room.id"
-                    class="room-card room-card-animate"
+                    class="room-card"
+                    :class="[
+                      isInitialLoad ? 'room-card-animate' : '',
+                      (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT) ? 'occupied-room' : ''
+                    ]"
                     :style="getRoomCardStyle(room, floorIdx, roomIdx)"
-                    :class="{ 'occupied-room': room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT }"
                     @click="handleRoomClick(room)"
                     @contextmenu.prevent="handleContextMenu($event, room)"
                     @mouseenter="showTooltip($event, room)"
@@ -1419,9 +1575,15 @@ const uniqueFloors = computed(() => {
                     <!-- Room Content (Centered) -->
                     <div class="flex flex-col items-center justify-center w-full my-auto">
                       <!-- Room Number -->
-                      <div class="font-bold text-[18px] leading-tight text-center w-full">
+                      <div class="font-bold text-[18px] leading-tight text-center w-full flex items-center justify-center gap-1">
                         <span :class="isRoomNumberRed(room) ? 'text-red-600' : (room.booking_color ? 'text-inherit' : 'text-gray-900')">
                           {{ room.room_number }}
+                        </span>
+                        <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500" title="Khóa chuyển phòng (Do Not Move)">
+                          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+                          </svg>
                         </span>
                       </div>
 
@@ -1578,8 +1740,14 @@ const uniqueFloors = computed(() => {
                     </td>
                     <!-- Phòng -->
                     <td class="p-2 border-r border-slate-200 text-center text-[13px]" :class="TEXT_THEME.tableCell">
-                      <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : ''">
+                      <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : ''" class="flex items-center justify-center gap-1">
                         {{ room.room_number }}
+                        <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500" title="Khóa chuyển phòng (Do Not Move)">
+                          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
+                          </svg>
+                        </span>
                       </span>
                     </td>
                     <!-- Tên khách -->
@@ -1699,6 +1867,7 @@ const uniqueFloors = computed(() => {
           </aside>
         </div>
 
+        </template>
       </div>
     </div>
 
@@ -1875,16 +2044,41 @@ const uniqueFloors = computed(() => {
 
         <div class="h-px bg-slate-300 my-1"></div>
 
-        <!-- Chuyển Phòng -->
+        <!-- Chuyển Phòng Group -->
+        <div v-if="contextMenu.room.booking_code" class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1 border-t border-slate-300 select-none">
+          Chuyển Phòng
+        </div>
+
         <button
-          @click="triggerMenuItem('Chuyển Phòng')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
+          v-if="contextMenu.room.booking_code"
+          @click="contextMenu.room.is_do_not_move ? null : lockRoomMove(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left bg-transparent border-none"
+          :class="[
+            TEXT_THEME.menuItem,
+            contextMenu.room.is_do_not_move ? 'opacity-40 cursor-not-allowed text-slate-400' : 'hover:bg-slate-200 cursor-pointer'
+          ]"
         >
-          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 2.1a9 9 0 0 0-9 0L5 4M3 9V4h5M7 21.9a9 9 0 0 0 9 0l3-2.1M21 15v5h-5" />
+          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
-          <span>{{ t('roomMap.roomMove') }}</span>
+          <span>Khóa chuyển phòng</span>
+        </button>
+
+        <button
+          v-if="contextMenu.room.booking_code"
+          @click="!contextMenu.room.is_do_not_move ? null : unlockRoomMove(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left bg-transparent border-none"
+          :class="[
+            TEXT_THEME.menuItem,
+            !contextMenu.room.is_do_not_move ? 'opacity-40 cursor-not-allowed text-slate-400' : 'hover:bg-slate-200 cursor-pointer'
+          ]"
+        >
+          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+          </svg>
+          <span>Mở chuyển phòng</span>
         </button>
 
         <!-- Thông báo -->

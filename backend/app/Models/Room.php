@@ -25,6 +25,7 @@ class Room extends Model
         'is_internal',
         'status',
         'notes',
+        'orders',
     ];
 
     protected $casts = [
@@ -33,6 +34,7 @@ class Room extends Model
         'grid_row' => 'integer',
         'grid_column' => 'integer',
         'is_internal' => 'boolean',
+        'orders' => 'integer',
     ];
 
     public function roomForm(): BelongsTo

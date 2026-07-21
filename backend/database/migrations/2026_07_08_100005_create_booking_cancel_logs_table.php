@@ -30,7 +30,7 @@ return new class extends Migration
             // =========================================
             // Một trong hai sẽ có giá trị tùy cancel_type:
             $table->unsignedBigInteger('booking_id')->nullable();     // FK bookings (dùng khi cancel_type='booking')
-            $table->unsignedBigInteger('booking_room_id')->nullable(); // FK booking_rooms (dùng khi cancel_type='room')
+            $table->string('booking_room_id', 50)->nullable(); // FK booking_rooms (dùng khi cancel_type='room')
 
             $table->foreign('booking_id')->references('id')->on('bookings')->nullOnDelete();
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->nullOnDelete();

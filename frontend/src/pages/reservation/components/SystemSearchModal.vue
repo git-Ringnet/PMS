@@ -5,149 +5,207 @@
     @click="close"
   >
     <div 
-      class="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden border border-gray-200"
+      class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-visible border border-slate-200"
       @click.stop
     >
-      <!-- INPUT HEADER -->
-      <div class="flex items-center px-4 py-2.5 border-b border-gray-100">
-        <svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-        </svg>
+      <!-- DÒNG 1: INPUT SEARCH HEADER -->
+      <div class="flex items-center px-5 py-3 border-b border-slate-100 rounded-t-2xl bg-white relative">
+        <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm mr-3"></i>
         <input 
           type="text" 
           id="gsInput"
           v-model="globalSearchQuery" 
           placeholder="Tìm kiếm" 
-          class="flex-1 text-[13px] text-gray-800 placeholder-gray-400 outline-none bg-transparent" 
+          class="flex-1 text-sm text-slate-800 placeholder-slate-400 outline-none bg-transparent font-medium" 
           autofocus
         />
-        
-        <!-- Toggle button date filter -->
-        <button 
-          @click="filterByArrivalDate = !filterByArrivalDate" 
-          class="flex items-center space-x-1 px-2.5 py-1 rounded-md text-[10px] font-bold border transition cursor-pointer"
-          :class="filterByArrivalDate ? 'bg-sky-50 text-sky-600 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'"
+        <!-- NÚT XÓA TỪ KHÓA TÌM KIẾM -->
+        <button
+          v-if="globalSearchQuery"
+          @click="clearQuery"
+          class="text-slate-300 hover:text-slate-500 mr-3 border-none bg-transparent cursor-pointer p-1 text-sm leading-none transition"
+          title="Xóa từ khóa"
         >
-          <i class="fa-regular fa-calendar-days text-[11px]"></i>
-          <span>Xem theo ngày đến</span>
+          <i class="fa-solid fa-circle-xmark"></i>
         </button>
+        <button 
+          @click="close" 
+          class="text-slate-400 hover:text-slate-700 transition border-none bg-transparent cursor-pointer p-1 rounded-md text-base leading-none"
+          title="Đóng"
+        >
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
 
-        <span class="w-[1px] h-4 bg-gray-200 mx-2.5"></span>
+      <!-- DÒNG 2: FILTER TOOLBAR (XEM THEO NGÀY ĐẾN + KHOẢNG NGÀY + TÌNH TRẠNG) -->
+      <div class="flex items-center justify-between px-5 py-2.5 bg-slate-50/50 border-b border-slate-100 text-xs select-none">
+        <!-- BÊN TRÁI: TOGGLE XEM THEO NGÀY ĐẾN & KHOẢNG NGÀY -->
+        <div class="flex items-center space-x-3">
+          <!-- TOGGLE SWITCH XEM THEO NGÀY ĐẾN -->
+          <label class="relative inline-flex items-center cursor-pointer select-none gap-2">
+            <input 
+              type="checkbox" 
+              v-model="filterByArrivalDate" 
+              class="sr-only peer"
+              @change="handleFilterByArrivalDateChange"
+            />
+            <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+            <span class="text-xs font-semibold text-sky-600">Xem theo ngày đến</span>
+          </label>
 
-        <!-- Dropdown status -->
-        <div class="relative select-none text-[11px] font-bold text-slate-700">
-          <button 
-            type="button" 
-            @click="isStatusDropdownOpen = !isStatusDropdownOpen"
-            class="flex items-center space-x-1.5 px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md cursor-pointer transition text-left"
-          >
-            <span>Tình trạng đặt phòng:</span>
-            <span class="text-sky-600 font-extrabold max-w-[120px] truncate">{{ searchStatusLabel }}</span>
-            <i class="fa-solid fa-chevron-down text-[9px] text-slate-400 ml-1"></i>
-          </button>
-          
-          <div 
-            v-if="isStatusDropdownOpen" 
-            class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg w-52 p-2 z-[1000] space-y-1.5"
-          >
-            <label class="flex items-center space-x-2 p-1.5 hover:bg-slate-50 rounded cursor-pointer select-none font-bold text-[10.5px]">
-              <input type="checkbox" v-model="isAllStatusesChecked" class="rounded border-slate-300 w-3.5 h-3.5" />
-              <span>Tất cả</span>
-            </label>
-            <hr class="border-slate-100 my-1" />
-            <div class="max-h-48 overflow-y-auto space-y-1.5">
-              <label 
-                v-for="st in registrationStatuses" 
-                :key="st.id" 
-                class="flex items-center space-x-2 p-1 hover:bg-slate-50 rounded cursor-pointer select-none font-semibold text-[10.5px]"
-              >
-                <input type="checkbox" :value="st.id" v-model="searchStatuses" class="rounded border-slate-300 w-3.5 h-3.5" />
-                <span :style="{ color: st.color || '#333' }">{{ st.name }}</span>
-              </label>
-            </div>
+          <!-- KHOẢNG NGÀY (CHỈ HIỂN THỊ KHI BẬT) -->
+          <div v-if="filterByArrivalDate" class="flex items-center space-x-1.5 border border-slate-300 rounded-md px-2.5 py-1 bg-white shadow-2xs">
+            <input 
+              type="text" 
+              v-model="displayFromDate" 
+              @change="onDisplayFromDateBlur"
+              placeholder="dd/mm/yyyy"
+              class="w-24 text-center font-medium text-xs text-slate-800 outline-none bg-transparent"
+            />
+            <i class="fa-regular fa-calendar text-slate-400 text-[11px]"></i>
+            <span class="text-slate-400 px-1">-</span>
+            <input 
+              type="text" 
+              v-model="displayToDate" 
+              @change="onDisplayToDateBlur"
+              placeholder="dd/mm/yyyy"
+              class="w-24 text-center font-medium text-xs text-slate-800 outline-none bg-transparent"
+            />
+            <i class="fa-regular fa-calendar text-slate-400 text-[11px]"></i>
           </div>
         </div>
 
-        <button @click="close" class="ml-3 text-[11px] font-bold text-gray-500 hover:text-gray-800 transition border-none bg-transparent cursor-pointer">Hủy</button>
+        <!-- BÊN PHẢI: DROPDOWN TÌNH TRẠNG ĐĂNG KÝ (STATUS 0, 1, 2, 3, 4) -->
+        <div class="relative">
+          <button 
+            type="button" 
+            @click="isStatusDropdownOpen = !isStatusDropdownOpen"
+            class="flex items-center space-x-1.5 px-3 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-md cursor-pointer transition text-left shadow-2xs font-semibold text-slate-700"
+          >
+            <span>Tình trạng:</span>
+            <span class="text-sky-600 font-bold max-w-[120px] truncate">{{ searchStatusLabel }}</span>
+            <i class="fa-solid fa-chevron-down text-[9px] text-slate-400 ml-1"></i>
+          </button>
+          
+          <!-- POPUP DROPDOWN (ẢNH 2 MATCH) -->
+          <div 
+            v-if="isStatusDropdownOpen" 
+            class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-60 p-3 z-[1000] space-y-2 select-none animate-in"
+          >
+            <!-- TOP BAR POPUP -->
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <label class="relative inline-flex items-center cursor-pointer select-none gap-2">
+                <input 
+                  type="checkbox" 
+                  v-model="isAllStatusesChecked" 
+                  class="sr-only peer"
+                />
+                <div class="w-7 h-3.5 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[1.5px] after:left-[1.5px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:after:translate-x-3.5 shadow-2xs"></div>
+                <span class="text-xs font-bold text-slate-700">Tất cả ĐK</span>
+              </label>
+              <span class="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                Chọn: {{ tempSelectedStatuses.length }}
+              </span>
+            </div>
+
+            <!-- DANH SÁCH CHECKBOX TÌNH TRẠNG LƯU TRÚ -->
+            <div class="max-h-52 overflow-y-auto space-y-1.5 py-1">
+              <label 
+                v-for="st in statusOptions" 
+                :key="st.value" 
+                class="flex items-center space-x-2.5 p-1.5 hover:bg-slate-50 rounded-lg cursor-pointer transition font-medium text-xs text-slate-700"
+              >
+                <input 
+                  type="checkbox" 
+                  :value="st.value" 
+                  v-model="tempSelectedStatuses" 
+                  class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer" 
+                />
+                <span class="font-semibold" :class="st.textColor">{{ st.label }}</span>
+              </label>
+            </div>
+
+            <!-- FOOTER NÚT LƯU POPUP -->
+            <div class="pt-2 border-t border-slate-100 flex justify-end">
+              <button 
+                type="button"
+                @click="applyStatusFilter"
+                class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white font-bold text-xs px-4 py-1.5 rounded-lg border-none cursor-pointer shadow-xs transition"
+              >
+                Lưu
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- DATE RANGE SELECTOR -->
-      <div v-if="filterByArrivalDate" class="flex items-center px-4 py-2 bg-slate-50 border-b border-gray-100 space-x-3 text-xs font-bold text-slate-700">
-        <div class="flex items-center space-x-2">
-          <span class="text-slate-400 text-[10px] uppercase font-black">Từ ngày</span>
-          <input 
-            type="date" 
-            v-model="searchFromDate" 
-            class="border border-slate-200 rounded px-2 py-0.5 font-medium text-xs text-slate-800 bg-white"
-          />
-        </div>
-        <div class="flex items-center space-x-2">
-          <span class="text-slate-400 text-[10px] uppercase font-black">Đến ngày</span>
-          <input 
-            type="date" 
-            v-model="searchToDate" 
-            class="border border-slate-200 rounded px-2 py-0.5 font-medium text-xs text-slate-800 bg-white"
-          />
-        </div>
-      </div>
-
-      <!-- RESULTS / EMPTY STATE -->
-      <div class="max-h-[350px] overflow-y-auto">
+      <!-- BẢNG HỂN THỊ KẾT QUẢ TÌM KIẾM -->
+      <div class="max-h-[380px] overflow-y-auto rounded-b-2xl">
         <div v-if="globalSearchResults.length > 0">
-          <table class="w-full text-left text-[11px] border-collapse">
+          <table class="w-full text-left text-xs border-collapse">
             <thead>
-              <tr class="bg-gray-50 border-b border-gray-100 text-gray-400 font-bold uppercase tracking-wider h-8">
-                <th class="p-2 pl-4">Đoàn/Khách hàng</th>
-                <th class="p-2">Ngày đến/đi</th>
-                <th class="p-2">Tình trạng</th>
-                <th class="p-2 text-right pr-4">Tổng tiền (VND)</th>
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider h-9">
+                <th class="p-2.5 pl-5 w-24">MÃ ĐK</th>
+                <th class="p-2.5">TÊN ĐĂNG KÝ</th>
+                <th class="p-2.5 w-32 text-center">MÃ THAM CHIẾU</th>
+                <th class="p-2.5 w-28 text-center">NGÀY ĐẾN</th>
+                <th class="p-2.5 w-32 text-center pr-5">TRẠNG THÁI</th>
               </tr>
             </thead>
             <tbody>
               <tr 
                 v-for="b in globalSearchResults" 
                 :key="b.id"
-                class="border-b border-gray-50 hover:bg-slate-50/75 cursor-pointer font-medium text-gray-700 h-10 transition align-middle"
+                class="border-b border-slate-100 hover:bg-sky-50/50 cursor-pointer font-medium text-slate-700 h-12 transition align-middle"
                 @click="selectBooking(b)"
               >
-                <td class="p-2 pl-4">
-                  <div class="font-extrabold text-slate-800 flex items-center gap-1.5">
-                    <span class="text-sky-600 font-black font-mono tracking-wide bg-sky-50 px-1 py-0.5 rounded border border-sky-100 text-[9px] uppercase">{{ b.booking_code }}</span>
-                    <span>{{ b.booking_name }}</span>
+                <!-- MÃ ĐK -->
+                <td class="p-2.5 pl-5 font-bold font-mono text-sky-600">
+                  {{ b.booking_code || b.id }}
+                </td>
+
+                <!-- TÊN ĐĂNG KÝ -->
+                <td class="p-2.5">
+                  <div class="font-bold text-slate-800 text-xs">
+                    {{ b.booking_name }}
+                  </div>
+                  <div class="text-[11px] text-slate-400 font-normal">
+                    {{ b.company?.name || b.contact_name || 'Khách lẻ' }}
                   </div>
                 </td>
-                <td class="p-2 font-mono text-[10px] text-slate-600 font-bold">
-                  {{ formatDateVi(b.arrival_date || b.check_in) }} 
-                  <span class="text-slate-400 font-normal">→</span> 
-                  {{ formatDateVi(b.departure_date || b.check_out) }}
+
+                <!-- MÃ THAM CHIẾU -->
+                <td class="p-2.5 text-center text-slate-400 font-mono text-xs">
+                  {{ b.external_booking_code || '-' }}
                 </td>
-                <td class="p-2">
+
+                <!-- NGÀY ĐẾN -->
+                <td class="p-2.5 text-center font-semibold text-slate-700 text-xs">
+                  {{ formatDateDisplay(b.arrival_date || b.check_in) }}
+                </td>
+
+                <!-- TRẠNG THÁI (LẤY THEO STATUS 0,1,2,3,4) -->
+                <td class="p-2.5 text-center pr-5">
                   <span 
-                    class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase shadow-xs border"
-                    :style="{
-                      backgroundColor: (b.registration_status?.color || '#3b82f6') + '15',
-                      color: b.registration_status?.color || '#3b82f6',
-                      borderColor: (b.registration_status?.color || '#3b82f6') + '30'
-                    }"
+                    class="px-2.5 py-1 rounded-md text-[11px] font-bold inline-block border shadow-2xs"
+                    :class="getStatusBadgeStyle(b.status)"
                   >
-                    {{ b.registration_status?.name || 'BT' }}
+                    {{ getStatusText(b.status) }}
                   </span>
-                </td>
-                <td class="p-2 text-right pr-4 font-mono font-black text-slate-900">
-                  {{ Number(b.total_amount || 0).toLocaleString('vi-VN') }}
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <!-- EMPTY STATES -->
-        <div v-else class="px-4 py-6 text-[11px] text-gray-400 text-center bg-white">
-          <div v-if="globalSearchQuery.trim().length >= 2 || filterByArrivalDate">
-            Không tìm thấy kết quả phù hợp
+        <!-- EMPTY STATE -->
+        <div v-else class="px-5 py-10 text-xs text-slate-400 text-center bg-white">
+          <div v-if="isLoading" class="flex items-center justify-center space-x-2 text-sky-600">
+            <i class="fa-solid fa-circle-notch animate-spin text-base"></i>
+            <span class="font-bold">Đang tải danh sách Đăng ký...</span>
           </div>
           <div v-else>
-            Nhập ít nhất 2 ký tự hoặc bật Xem theo ngày đến để tìm kiếm...
+            Không tìm thấy đăng ký nào phù hợp.
           </div>
         </div>
       </div>
@@ -162,7 +220,8 @@ import { fetchBookings } from '@/services/booking-service'
 const props = defineProps({
   show: Boolean,
   registrationStatuses: Array,
-  activeTab: Object
+  activeTab: Object,
+  systemDate: String
 })
 
 const emit = defineEmits(['update:show', 'select-booking'])
@@ -170,62 +229,131 @@ const emit = defineEmits(['update:show', 'select-booking'])
 const globalSearchQuery = ref('')
 const globalSearchResults = ref([])
 const filterByArrivalDate = ref(false)
-const searchFromDate = ref(new Date().toISOString().split('T')[0])
-const searchToDate = ref(new Date().toISOString().split('T')[0])
-const searchStatuses = ref([])
+const isLoading = ref(false)
+
+const searchFromDate = ref('')
+const searchToDate = ref('')
+const displayFromDate = ref('')
+const displayToDate = ref('')
+
+// Các tùy chọn status lưu trú (0, 1, 2, 3, 4)
+const statusOptions = [
+  { value: 0, label: 'Đặt phòng', textColor: 'text-emerald-600' },
+  { value: 1, label: 'Đang ở', textColor: 'text-blue-600' },
+  { value: 2, label: 'Đã trả phòng', textColor: 'text-slate-600' },
+  { value: 3, label: 'Đã hủy', textColor: 'text-red-600' },
+  { value: 4, label: 'No Show', textColor: 'text-amber-600' }
+]
+
+const selectedStatuses = ref([0, 1, 2, 3, 4])
+const tempSelectedStatuses = ref([0, 1, 2, 3, 4])
 const isStatusDropdownOpen = ref(false)
 
 const searchStatusLabel = computed(() => {
-  const selected = searchStatuses.value
-  if (selected.length === 0) return 'Không có'
-  if (selected.length === (props.registrationStatuses || []).length) return 'Tất cả'
-  
-  const names = []
-  selected.forEach(id => {
-    const s = (props.registrationStatuses || []).find(rs => rs.id === id)
-    if (s) names.push(s.name)
-  })
-  
-  if (names.length <= 2) return names.join(', ')
-  return 'Nhiều tình trạng'
+  if (selectedStatuses.value.length === 0) return 'Không chọn'
+  if (selectedStatuses.value.length === statusOptions.length) return 'Tất cả'
+  if (selectedStatuses.value.length === 1) {
+    const s = statusOptions.find(o => o.value === selectedStatuses.value[0])
+    return s ? s.label : '1 chọn'
+  }
+  return `Chọn: ${selectedStatuses.value.length}`
 })
 
 const isAllStatusesChecked = computed({
   get() {
-    if (!props.registrationStatuses || props.registrationStatuses.length === 0) return false
-    return searchStatuses.value.length === props.registrationStatuses.length
+    return tempSelectedStatuses.value.length === statusOptions.length
   },
   set(val) {
     if (val) {
-      searchStatuses.value = (props.registrationStatuses || []).map(rs => rs.id)
+      tempSelectedStatuses.value = statusOptions.map(o => o.value)
     } else {
-      searchStatuses.value = []
+      tempSelectedStatuses.value = []
     }
   }
 })
 
+function getStatusText(status) {
+  const st = Number(status)
+  switch (st) {
+    case 0: return 'Đặt phòng'
+    case 1: return 'Đang ở'
+    case 2: return 'Đã trả phòng'
+    case 3: return 'Đã hủy'
+    case 4: return 'No Show'
+    default: return 'Khác'
+  }
+}
+
+function getStatusBadgeStyle(status) {
+  const st = Number(status)
+  switch (st) {
+    case 0: return 'bg-emerald-50 text-emerald-600 border-emerald-200'
+    case 1: return 'bg-blue-50 text-blue-600 border-blue-200'
+    case 2: return 'bg-slate-100 text-slate-600 border-slate-200'
+    case 3: return 'bg-red-50 text-red-600 border-red-200'
+    case 4: return 'bg-amber-50 text-amber-600 border-amber-200'
+    default: return 'bg-slate-50 text-slate-500 border-slate-200'
+  }
+}
+
+function formatDateDisplay(dateStr) {
+  if (!dateStr) return '-'
+  if (dateStr.includes('/')) return dateStr
+  const parts = dateStr.split('-')
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
+  return dateStr
+}
+
+function parseInputDate(displayStr) {
+  if (!displayStr) return ''
+  const parts = displayStr.trim().split('/')
+  if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+  return displayStr
+}
+
+function onDisplayFromDateBlur() {
+  searchFromDate.value = parseInputDate(displayFromDate.value)
+  executeGlobalSearch()
+}
+
+function onDisplayToDateBlur() {
+  searchToDate.value = parseInputDate(displayToDate.value)
+  executeGlobalSearch()
+}
+
+function handleFilterByArrivalDateChange() {
+  if (filterByArrivalDate.value) {
+    const sysDate = props.systemDate || new Date().toISOString().split('T')[0]
+    searchFromDate.value = sysDate
+    searchToDate.value = sysDate
+    displayFromDate.value = formatDateDisplay(sysDate)
+    displayToDate.value = formatDateDisplay(sysDate)
+  }
+  executeGlobalSearch()
+}
+
+function applyStatusFilter() {
+  selectedStatuses.value = [...tempSelectedStatuses.value]
+  isStatusDropdownOpen.value = false
+  executeGlobalSearch()
+}
+
 watch(() => props.show, (newVal) => {
   if (newVal) {
     globalSearchQuery.value = ''
-    globalSearchResults.value = []
     filterByArrivalDate.value = false
-    searchStatuses.value = []
     isStatusDropdownOpen.value = false
-    
-    if (props.activeTab) {
-      let ci = props.activeTab.checkIn
-      let co = props.activeTab.checkOut
-      if (ci && ci.includes('/')) ci = parseDateVi(ci)
-      if (co && co.includes('/')) co = parseDateVi(co)
-      
-      searchFromDate.value = ci || new Date().toISOString().split('T')[0]
-      searchToDate.value = co || new Date().toISOString().split('T')[0]
-    } else {
-      const today = new Date().toISOString().split('T')[0]
-      searchFromDate.value = today
-      searchToDate.value = today
-    }
-    
+    selectedStatuses.value = [0, 1, 2, 3, 4]
+    tempSelectedStatuses.value = [0, 1, 2, 3, 4]
+
+    const sysDate = props.systemDate || new Date().toISOString().split('T')[0]
+    searchFromDate.value = sysDate
+    searchToDate.value = sysDate
+    displayFromDate.value = formatDateDisplay(sysDate)
+    displayToDate.value = formatDateDisplay(sysDate)
+
+    executeGlobalSearch()
+
     setTimeout(() => {
       const el = document.getElementById('gsInput')
       if (el) el.focus()
@@ -234,35 +362,53 @@ watch(() => props.show, (newVal) => {
 })
 
 async function executeGlobalSearch() {
+  isLoading.value = true
   const params = {}
   
-  if (globalSearchQuery.value.trim().length >= 2) {
+  if (globalSearchQuery.value.trim().length > 0) {
     params.search = globalSearchQuery.value.trim()
-  } else if (!filterByArrivalDate.value) {
-    globalSearchResults.value = []
-    return
   }
   
   if (filterByArrivalDate.value) {
     if (searchFromDate.value) params.from_date = searchFromDate.value
     if (searchToDate.value) params.to_date = searchToDate.value
   }
-  
-  if (searchStatuses.value.length > 0) {
-    params.registration_status_id = searchStatuses.value.join(',')
+
+  // Nếu người dùng bỏ chọn tất cả status
+  if (selectedStatuses.value.length === 0) {
+    globalSearchResults.value = []
+    isLoading.value = false
+    return
+  }
+
+  // Nếu chọn một số status hoặc chọn tất cả
+  if (selectedStatuses.value.length > 0) {
+    params.status = selectedStatuses.value.join(',')
   }
   
   try {
     const res = await fetchBookings(params)
-    globalSearchResults.value = res.data?.data || res.data || []
+    let list = res.data?.data || res.data || []
+    
+    // Sắp xếp mã ĐK (id) giảm dần
+    list.sort((a, b) => Number(b.id) - Number(a.id))
+    globalSearchResults.value = list
   } catch (err) {
-    console.error(err)
+    console.error('Lỗi tìm kiếm booking:', err)
+  } finally {
+    isLoading.value = false
   }
 }
 
-watch([globalSearchQuery, filterByArrivalDate, searchFromDate, searchToDate, searchStatuses], () => {
+watch(globalSearchQuery, () => {
   executeGlobalSearch()
-}, { deep: true })
+})
+
+function clearQuery() {
+  globalSearchQuery.value = ''
+  const el = document.getElementById('gsInput')
+  if (el) el.focus()
+}
 
 function close() {
   emit('update:show', false)
@@ -271,22 +417,5 @@ function close() {
 function selectBooking(booking) {
   emit('select-booking', booking)
   close()
-}
-
-function parseDateVi(dateStr) {
-  if (!dateStr) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
-  const parts = dateStr.split('/')
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[1]}-${parts[0]}`
-  }
-  return dateStr
-}
-
-function formatDateVi(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  if (isNaN(d)) return dateStr
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 </script>

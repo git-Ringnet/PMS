@@ -101,7 +101,7 @@ const router = createRouter({
 
 // Navigation guard
 router.beforeEach(async (to, from) => {
-  const token = localStorage.getItem('pms_token')
+  const token = sessionStorage.getItem('pms_token')
 
   if (to.meta.guest) {
     if (token) {

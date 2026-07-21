@@ -23,6 +23,52 @@ Route::middleware('auth:sanctum')->group(function () {
         ]);
     });
 
+    // System date (ngày nghiệp vụ từ system_date_rolls)
+    Route::get('/system-date', function () {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        $systemDate = $latest
+            ? \Carbon\Carbon::parse($latest->system_date)->toDateString()
+            : now()->timezone('Asia/Ho_Chi_Minh')->toDateString();
+        $shift = $latest ? $latest->shift : '1';
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'system_date' => $systemDate,
+                'shift'       => $shift
+            ],
+        ]);
+    });
+
+    Route::post('/system-date/roll', function (Request $request) {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        $currentSystemDate = $latest
+            ? \Carbon\Carbon::parse($latest->system_date)
+            : now()->timezone('Asia/Ho_Chi_Minh');
+
+        $nextSystemDate = $currentSystemDate->copy()->addDay();
+
+        $newRoll = \App\Models\SystemDateRoll::create([
+            'system_date' => $nextSystemDate->toDateTimeString(),
+            'actual_date' => now()->timezone('Asia/Ho_Chi_Minh')->toDateTimeString(),
+            'shift'       => $latest ? $latest->shift : '1',
+            'username'    => auth()->user() ? auth()->user()->username : 'admin',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Rolled system date successfully to ' . $nextSystemDate->toDateString(),
+            'data'    => [
+                'system_date' => $nextSystemDate->toDateString(),
+                'shift'       => $newRoll->shift
+            ]
+        ]);
+    });
+
+
+    // User settings (thiết lập cá nhân kế hoạch phòng)
+    Route::get('/user-settings', [\App\Http\Controllers\Api\UserSettingController::class, 'show']);
+    Route::put('/user-settings', [\App\Http\Controllers\Api\UserSettingController::class, 'update']);
+
     // Room Rate Codes (Mapped to SP1340)
     Route::apiResource('room-rate-codes', RoomRateCodeController::class)->parameters([
         'room-rate-codes' => 'ma'
@@ -159,6 +205,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // =====================================================================
 
     // #12 — Xuất Excel (đặt TRƯỚC apiResource để không bị override)
+    Route::get('bookings/init-dropdowns', [\App\Http\Controllers\Api\BookingController::class, 'initDropdowns']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
     Route::apiResource('bookings', \App\Http\Controllers\Api\BookingController::class);
 
@@ -182,6 +229,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{roomId}/unassign',   [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
         // Epic 9 - Hủy phòng
         Route::delete('/{roomId}/cancel',    [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
+        // Tách phòng
+        Route::post('/{roomId}/split',        [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
         // Epic 3 - Auto assign room number
         Route::post('/{roomId}/auto-assign', [\App\Http\Controllers\Api\BookingRoomController::class, 'autoAssign']);
         // Epic 11 - Do Not Move
@@ -201,21 +250,29 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Special Requests (SP2107, SP1325) — Epic 15 ---
     Route::get('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'catalog']);
+    Route::post('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'storeMaster']);
+    Route::delete('/special-requests/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroyMaster']);
     Route::prefix('booking-rooms/{roomId}/special-requests')->group(function () {
         Route::get('/',        [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'index']);
         Route::post('/',       [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store']);
+        Route::post('/sync',   [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'sync']);
         Route::delete('/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroy']);
     });
 
     // --- Guests & Children — Epic 7, 13 ---
     Route::get('/guests/search', [\App\Http\Controllers\Api\GuestController::class, 'searchGuests']);
+    Route::get('/bookings/{bookingId}/guests',   [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
+    Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests']);
+    Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate']);
     Route::prefix('booking-rooms/{roomId}/guests')->group(function () {
         Route::get('/',             [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
         Route::post('/',            [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
+        Route::put('/{guestId}',    [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
     Route::get('/bookings/{bookingId}/children',              [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
     Route::post('/bookings/{bookingId}/children',             [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
+    Route::put('/booking-children/{childId}',                 [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);
     Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild']);
 
     // Breakfast details (Epic 13)

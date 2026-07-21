@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { 
   fetchCompanies, createCompany, updateCompany, deleteCompany,
-  fetchMarkets, fetchCustomerSources, fetchBranches, fetchBookers,
+  fetchMarkets, fetchCustomerSources, fetchBranches, fetchBookers, fetchUsers,
   createMarket, createCustomerSource, createBranch, createBooker,
   syncCompanies, exportCompaniesExcel, importCompaniesExcel, companyTemplateExcel
 } from '@/services/company-service'
@@ -14,6 +14,7 @@ const markets = ref([])
 const customerSources = ref([])
 const branches = ref([])
 const bookers = ref([])
+const users = ref([])
 const loading = ref(false)
 
 // Pagination state
@@ -35,6 +36,7 @@ const columns = ref([
   { id: 'max_debt', label: 'Công nợ tối đa', visible: true },
   { id: 'bank_account', label: 'Tài khoản ngân hàng', visible: true },
   { id: 'booker', label: 'Người đặt phòng', visible: true },
+  { id: 'sales_person', label: 'Người bán', visible: true },
   { id: 'rate_code', label: 'Mã giá phòng', visible: true },
   { id: 'branch', label: 'Chi nhánh', visible: true },
 ])
@@ -76,6 +78,7 @@ const isEditMode = ref(false)
 const currentId = ref(null)
 
 const emptyForm = () => ({
+  code: '',
   name: '',
   trading_name: '',
   address: '',
@@ -88,6 +91,7 @@ const emptyForm = () => ({
   max_debt: 0,
   bank_account: '',
   booker_id: '',
+  sales_person_id: '',
   rate_code: '',
   branch_id: '',
   is_active: true,
@@ -107,16 +111,18 @@ onBeforeUnmount(() => {
 
 const loadLookups = async () => {
   try {
-    const [mRes, csRes, bRes, bkRes] = await Promise.all([
+    const [mRes, csRes, bRes, bkRes, uRes] = await Promise.all([
       fetchMarkets(),
       fetchCustomerSources(),
       fetchBranches(),
-      fetchBookers()
+      fetchBookers(),
+      fetchUsers({ per_page: 1000 })
     ])
     markets.value = mRes.data.data || []
     customerSources.value = csRes.data.data || []
     branches.value = bRes.data.data || []
     bookers.value = bkRes.data.data || []
+    users.value = (uRes.data.data || []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
   } catch (err) {
     console.error('Error loading lookups:', err)
   }
@@ -145,6 +151,7 @@ const openEditModal = (item) => {
   isEditMode.value = true
   currentId.value = item.id
   form.value = {
+    code: item.code || '',
     name: item.name || '',
     trading_name: item.trading_name || '',
     address: item.address || '',
@@ -157,6 +164,7 @@ const openEditModal = (item) => {
     max_debt: item.max_debt || 0,
     bank_account: item.bank_account || '',
     booker_id: item.booker_id || '',
+    sales_person_id: item.sales_person_id || '',
     rate_code: item.rate_code || '',
     branch_id: item.branch_id || '',
     is_active: item.is_active !== undefined ? item.is_active : true,
@@ -188,6 +196,7 @@ const saveItem = async () => {
     if (!payload.market_id) payload.market_id = null
     if (!payload.branch_id) payload.branch_id = null
     if (!payload.booker_id) payload.booker_id = null
+    if (!payload.sales_person_id) payload.sales_person_id = null
 
     if (isEditMode.value) {
       await updateCompany(currentId.value, payload)
@@ -817,6 +826,9 @@ const handleDownloadTemplate = async () => {
               </div>
             </th>
 
+            <!-- Người bán -->
+            <th v-if="isColumnVisible('sales_person')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Người bán</th>
+
             <!-- Mã giá phòng -->
             <th v-if="isColumnVisible('rate_code')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Mã giá phòng</th>
 
@@ -873,6 +885,7 @@ const handleDownloadTemplate = async () => {
             <td v-if="isColumnVisible('max_debt')" class="p-2 border-r border-slate-200 text-slate-600 font-semibold whitespace-nowrap text-right">{{ item.max_debt ? Number(item.max_debt).toLocaleString('vi-VN') : '' }}</td>
             <td v-if="isColumnVisible('bank_account')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.bank_account || '' }}</td>
             <td v-if="isColumnVisible('booker')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.booker?.name || '' }}</td>
+            <td v-if="isColumnVisible('sales_person')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.sales_person?.name || '' }}</td>
             <td v-if="isColumnVisible('rate_code')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap">{{ item.rate_code || '' }}</td>
             <td v-if="isColumnVisible('branch')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.branch?.name || '' }}</td>
             <td class="p-2 border-r border-slate-200 text-center">
@@ -948,7 +961,7 @@ const handleDownloadTemplate = async () => {
               <span class="text-xs text-slate-500 font-semibold">Không sử dụng</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="!form.is_active" @change="form.is_active = !$event.target.checked" class="sr-only peer" />
-                <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-400"></div>
+                <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
               </label>
             </div>
           </div>
@@ -992,8 +1005,9 @@ const handleDownloadTemplate = async () => {
               <!-- Người bán -->
               <div class="flex flex-col gap-1">
                 <span class="font-bold text-slate-600">Người bán</span>
-                <select class="border border-slate-200 rounded-md p-1.5 bg-white font-semibold focus:outline-sky-500 text-xs">
+                <select v-model="form.sales_person_id" class="border border-slate-200 rounded-md p-1.5 bg-white font-semibold focus:outline-sky-500 text-xs">
                   <option value="">Người bán</option>
+                  <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
                 </select>
               </div>
             </div>

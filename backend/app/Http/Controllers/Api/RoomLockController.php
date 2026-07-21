@@ -908,7 +908,7 @@ class RoomLockController extends Controller
         $start = \Carbon\Carbon::parse($startDateStr)->copy()->startOfDay();
         $end = \Carbon\Carbon::parse($endDateStr)->copy()->endOfDay();
 
-        $totalRooms = Room::where('room_class_id', $roomClassId)->count();
+        $totalRooms = Room::where('room_class_id', $roomClassId)->where('is_internal', false)->count();
         if ($totalRooms === 0) {
             return null;
         }
@@ -954,7 +954,7 @@ class RoomLockController extends Controller
                 ];
             }
 
-            $tempDate->addDay();
+            $tempDate = $tempDate->addDay();
         }
 
         return null;

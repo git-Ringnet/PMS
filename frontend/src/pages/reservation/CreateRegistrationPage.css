@@ -83,7 +83,7 @@ input[type="number"] {
 
 /* ---------- TOP BAR ---------- */
 .topbar {
-  background: var(--navy);
+  background: var(--pms-custom-theme, var(--navy));
   display: flex;
   align-items: center;
   gap: 8px;
@@ -429,7 +429,7 @@ input[type="number"] {
 /* ---------- TABLE ---------- */
 .table-wrap {
   background: var(--panel);
-  margin: 14px 16px 90px 16px;
+  margin: 14px 16px 0 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: auto;
@@ -438,7 +438,7 @@ input[type="number"] {
 }
 .table-wrap table {
   border-collapse: collapse;
-  width: 100%;
+  min-width: 100%;
 }
 .table-wrap thead th {
   position: sticky;
@@ -501,15 +501,11 @@ tr.status-row td {
   cursor: pointer;
 }
 .page-footer {
-  position: fixed;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
-  z-index: 30;
-  background: #dde3ea;
-  border: 1px solid var(--line);
+  margin: 10px 16px 14px 16px;
+  background: #e2e8f0; /* Cool Grey slate-200 */
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  box-shadow: 0 -6px 16px rgba(18, 35, 61, 0.14);
+  box-shadow: 0 -8px 24px -4px rgba(15, 23, 42, 0.12);
   overflow: hidden;
 }
 .footer-scroll {
@@ -517,19 +513,33 @@ tr.status-row td {
 }
 table.footer-table {
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11.5px;
+  color: #1e293b;
 }
 table.footer-table td {
   padding: 10px 7px;
   font-weight: 700;
-  color: var(--navy-2);
-  border-right: 1px solid rgba(18, 35, 61, 0.06);
+  color: #1e293b; /* Dark slate text */
+  border-right: 1px solid #cbd5e1;
   white-space: nowrap;
 }
-table.footer-table td.f-total {
-  text-align: right;
-  color: var(--navy);
-  font-size: 13px;
+table.footer-table td:last-child {
+  border-right: none;
+}
+.sticky-shadow-left {
+  position: sticky !important;
+  right: 0 !important;
+  border-left: 1px solid #cbd5e1 !important;
+}
+.sticky-shadow-left::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  width: 6px;
+  background: linear-gradient(to left, rgba(15, 23, 42, 0.09), rgba(15, 23, 42, 0));
+  pointer-events: none;
 }
 .stepper-mini {
   display: inline-flex;
@@ -631,7 +641,7 @@ table.footer-table td.f-total {
   align-self: flex-start;
   margin: 14px 16px 90px 0;
   width: 52px;
-  background: var(--navy);
+  background: var(--pms-custom-theme, var(--navy));
   border-radius: 10px;
   overflow: hidden;
   transition: width 0.22s ease;
@@ -818,4 +828,24 @@ table.footer-table td.f-total {
 .dock:hover .dock-invoice .lbl {
   opacity: 1;
   transition-delay: 0.06s;
+}
+
+/* ---------- DOCK RESPONSIVE ---------- */
+@media (max-width: 1280px) {
+  .dock {
+    width: 44px;
+    margin: 10px 10px 80px 0;
+  }
+  .dock:hover {
+    width: 220px;
+  }
+  .dock-head {
+    padding: 10px 12px;
+    font-size: 10px;
+  }
+}
+@media (max-width: 900px) {
+  .dock {
+    display: none;
+  }
 }

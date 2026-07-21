@@ -19,8 +19,10 @@ return new class extends Migration
             // THAM CHIẾU ĐỐI TƯỢNG
             // =========================================
             $table->foreignId('booking_id')->nullable()->constrained('bookings')->nullOnDelete();
-            $table->foreignId('booking_room_id')->nullable()->constrained('booking_rooms')->nullOnDelete();
-            $table->foreignId('guest_id')->nullable()->constrained('guests')->nullOnDelete();
+            $table->string('booking_room_id', 50)->nullable();
+            $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->nullOnDelete();
+            $table->string('guest_id', 50)->nullable();
+            $table->foreign('guest_id')->references('id')->on('guests')->nullOnDelete();
             $table->foreignId('company_id')->nullable()->constrained('companies')->nullOnDelete();
 
             // =========================================

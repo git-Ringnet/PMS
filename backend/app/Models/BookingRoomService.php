@@ -17,6 +17,7 @@ class BookingRoomService extends Model
         'service_date',
         'quantity',
         'rate',
+        'total_amount',
         'is_room',
         'is_posted',
         'posted_at',
@@ -24,13 +25,24 @@ class BookingRoomService extends Model
         'updated_by',
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Tự động tính total_amount = quantity * rate khi tạo/cập nhật
+        static::saving(function ($model) {
+            $model->total_amount = floatval($model->quantity) * floatval($model->rate);
+        });
+    }
+
     protected $casts = [
-        'service_date' => 'date',
-        'quantity'     => 'decimal:2',
-        'rate'         => 'decimal:2',
-        'is_room'      => 'integer',
-        'is_posted'    => 'integer',
-        'posted_at'    => 'datetime',
+        'service_date'  => 'date',
+        'quantity'      => 'decimal:2',
+        'rate'          => 'decimal:2',
+        'total_amount'  => 'decimal:2',
+        'is_room'       => 'integer',
+        'is_posted'     => 'integer',
+        'posted_at'     => 'datetime',
     ];
 
     // Service code constants

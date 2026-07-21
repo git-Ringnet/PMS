@@ -30,7 +30,7 @@ class RoomAvailabilityService
         int $roomClassId,
         string $arrivalDate,
         string $departureDate,
-        ?int $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null
     ): int {
         $query = BookingRoom::where('room_class_id', $roomClassId)
             ->whereIn('status', [
@@ -66,6 +66,7 @@ class RoomAvailabilityService
     public function getLockedCount(int $roomClassId, string $arrivalDate, string $departureDate): int
     {
         $roomNumbers = \App\Models\Room::where('room_class_id', $roomClassId)
+            ->where('is_internal', false)
             ->pluck('room_number');
 
         if ($roomNumbers->isEmpty()) return 0;
@@ -78,14 +79,16 @@ class RoomAvailabilityService
     }
 
     /**
-     * Lấy tổng số phòng thuộc loại phòng.
+     * Lấy tổng số phòng thuộc loại phòng (loại trừ phòng nội bộ/phòng ảo).
      *
      * @param int $roomClassId
      * @return int
      */
     public function getTotalRooms(int $roomClassId): int
     {
-        return \App\Models\Room::where('room_class_id', $roomClassId)->count();
+        return \App\Models\Room::where('room_class_id', $roomClassId)
+            ->where('is_internal', false)
+            ->count();
     }
 
     /**
@@ -102,7 +105,7 @@ class RoomAvailabilityService
         int $roomClassId,
         string $arrivalDate,
         string $departureDate,
-        ?int $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null
     ): int {
         $total  = $this->getTotalRooms($roomClassId);
         $locked = $this->getLockedCount($roomClassId, $arrivalDate, $departureDate);
@@ -125,7 +128,8 @@ class RoomAvailabilityService
         string $roomNumber,
         string $arrivalDate,
         string $departureDate,
-        ?int $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null,
+        string|int|null $excludeBookingId = null
     ): bool {
         $query = BookingRoom::where('room_number', $roomNumber)
             ->whereIn('status', [
@@ -133,11 +137,11 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
-            ->whereHas('booking', function ($q) {
-                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
-                  ->whereHas('registrationStatus', function ($subQ) {
-                      $subQ->where('is_availability', 1);
-                  });
+            ->whereHas('booking', function ($q) use ($excludeBookingId) {
+                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW]);
+                if ($excludeBookingId) {
+                    $q->where('id', '!=', $excludeBookingId);
+                }
             })
             ->where('arrival_date', '<', $departureDate)
             ->where('departure_date', '>', $arrivalDate);
@@ -197,7 +201,7 @@ class RoomAvailabilityService
             ->get(['arrival_date', 'departure_date']);
 
         // Lấy locks
-        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId))
+        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId)->where('is_internal', false))
             ->where('is_active', true)
             ->where('start_date', '<', $endDate)
             ->where('end_date', '>', $startDate)
@@ -223,7 +227,7 @@ class RoomAvailabilityService
             )->count();
 
             $result[$dateStr] = max(0, $total - $locked - $booked);
-            $current->addDay();
+            $current = $current->addDay();
         }
 
         return $result;

@@ -196,6 +196,22 @@ export const roomService = {
       return { success: true, data: stats }
     }
   },
+
+  /**
+   * Tạo khóa phòng mới (OOO/OOS)
+   */
+  async createRoomLock(data) {
+    const response = await http.post('/room-locks', data)
+    return response.data
+  },
+
+  /**
+   * Mở khóa phòng
+   */
+  async deleteRoomLock(lockId) {
+    const response = await http.delete(`/room-locks/${lockId}`)
+    return response.data
+  }
 }
 
 export { ROOM_TYPES, ROOM_STATUSES }

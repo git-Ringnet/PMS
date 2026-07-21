@@ -16,79 +16,86 @@ class SystemConfigurationSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Seed Hotel Settings (from Screenshot 1)
-        HotelSetting::create([
-            'first_name' => null,
-            'hotel_name' => 'Galliot Hotel Nha Trang',
-            'hotel_name1' => null,
-            'address' => '195 Nguyễn Thiện Thuật, Phường Nha Trang, Tỉnh Khánh Hòa, Việt Nam',
-            'address1' => '3A Quản Trạn, Phường Nha Trang, Tỉnh Khánh Hòa, Việt Nam',
-            'phone' => '+84 258 3528 555',
-            'fax' => '',
-            'email' => 'fo.galliot@navyhotelgroup.com',
-            'website' => 'www.galliothotel.vn',
-            'account' => '3427247085770',
-            'bank_code' => 'MB',
-            'bank' => 'Ngân hàng TMCP Quân Đội - CN Khánh Hòa',
-            'tax_code' => '0313161911-001',
-            'account_name' => 'CN CTCP DV BAY VA DL BIEN TAN CANG TAI KHANH HOA',
-            'serial' => null,
-            'invoice_number' => null,
-            'invoice_number_length' => null,
-            'form_no' => null,
-            'logo' => null,
-            'invoice_address' => '195 Nguyễn Thiện Thuật, P. Nha Trang, T. Khánh Hòa',
-            'breakfast_adult_rate' => 180000,
-            'breakfast_child_rate' => 90000,
-            'extra_bed_rate' => 300000,
-            'room_number' => 131,
-            'division' => 'GAL',
-            'currency' => 'VND',
-            'prefix_booking_id' => 'GAL',
-            'channel_manager' => 'HotelLink',
-            'facebook' => '',
-            'hotel_link' => null,
-            'pos_serial' => null,
-            'pos_invoice_number' => null,
-            'pos_invoice_number_length' => null,
-            'pos_invoice_form_no' => null,
-            'pos_invoice_symbol' => null,
-            'logo_url' => 'assets/hotel-logo.png',
-            'qr_code_url' => 'assets/hotel-qr.png',
-            'allow_over_room_type' => false,
-            'booking_hidden_bk_info' => json_encode(['PaymentMethod']), // Ví dụ: ẩn PaymentMethod
-            'booking_bf_child_set_service_id' => 'BF_CHILD',
-            'booking_auto_extra_charge_bf_child' => false,
-            'check_module_before_delete' => true,
-        ]);
+        // 1. Seed Hotel Settings
+        HotelSetting::firstOrCreate(
+            ['hotel_name' => 'Galliot Hotel Nha Trang'],
+            [
+                'first_name' => null,
+                'hotel_name1' => null,
+                'address' => '195 Nguyễn Thiện Thuật, Phường Nha Trang, Tỉnh Khánh Hòa, Việt Nam',
+                'address1' => '3A Quản Trạn, Phường Nha Trang, Tỉnh Khánh Hòa, Việt Nam',
+                'phone' => '+84 258 3528 555',
+                'fax' => '',
+                'email' => 'fo.galliot@navyhotelgroup.com',
+                'website' => 'www.galliothotel.vn',
+                'account' => '3427247085770',
+                'bank_code' => 'MB',
+                'bank' => 'Ngân hàng TMCP Quân Đội - CN Khánh Hòa',
+                'tax_code' => '0313161911-001',
+                'account_name' => 'CN CTCP DV BAY VA DL BIEN TAN CANG TAI KHANH HOA',
+                'serial' => null,
+                'invoice_number' => null,
+                'invoice_number_length' => null,
+                'form_no' => null,
+                'logo' => null,
+                'invoice_address' => '195 Nguyễn Thiện Thuật, P. Nha Trang, T. Khánh Hòa',
+                'breakfast_adult_rate' => 180000,
+                'breakfast_child_rate' => 90000,
+                'extra_bed_rate' => 300000,
+                'room_number' => 131,
+                'division' => 'GAL',
+                'currency' => 'VND',
+                'prefix_booking_id' => 'GAL',
+                'channel_manager' => 'HotelLink',
+                'facebook' => '',
+                'hotel_link' => null,
+                'pos_serial' => null,
+                'pos_invoice_number' => null,
+                'pos_invoice_number_length' => null,
+                'pos_invoice_form_no' => null,
+                'pos_invoice_symbol' => null,
+                'logo_url' => 'assets/hotel-logo.png',
+                'qr_code_url' => 'assets/hotel-qr.png',
+                'allow_over_room_type' => false,
+                'booking_hidden_bk_info' => json_encode(['PaymentMethod']),
+                'booking_bf_child_set_service_id' => 'BF_CHILD',
+                'booking_auto_extra_charge_bf_child' => false,
+                'check_module_before_delete' => true,
+            ]
+        );
 
         // Seed Room Class Groups
-        $hotelGroup = \App\Models\RoomClassGroup::create([
-            'name' => 'Khách sạn',
-            'code' => 'hotel',
-            'is_active' => true,
-        ]);
+        $hotelGroup = \App\Models\RoomClassGroup::firstOrCreate(
+            ['code' => 'hotel'],
+            [
+                'name' => 'Khách sạn',
+                'is_active' => true,
+            ]
+        );
 
-        // 2. Seed Room Classes (Tên loại phòng - from Screenshot 2)
+        // 2. Seed Room Classes (Tên loại phòng)
         $classes = [
-            ['name' => 'Superior Double', 'code' => 'SUPD', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Superior Twin', 'code' => 'SUPT', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Superior Triple', 'code' => 'SUPTR', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Double City view', 'code' => 'DLXD', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Twin City View', 'code' => 'DLXT', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Double with Balcony', 'code' => 'DLXDB', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Deluxe Twin with Balcony', 'code' => 'DLXTB', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Family City View', 'code' => 'FAM', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'Suite', 'code' => 'JST', 'color' => '#ffffff', 'is_active' => true, 'room_class_group_id' => $hotelGroup->id],
-            ['name' => 'DỰ PHÒNG', 'code' => 'DP', 'color' => '#ffffff', 'is_active' => false, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Double', 'code' => 'SUPD', 'color' => '#ffffff', 'is_active' => true, 'orders' => 1, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Twin', 'code' => 'SUPT', 'color' => '#ffffff', 'is_active' => true, 'orders' => 2, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Superior Triple', 'code' => 'SUPTR', 'color' => '#ffffff', 'is_active' => true, 'orders' => 3, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Double City view', 'code' => 'DLXD', 'color' => '#ffffff', 'is_active' => true, 'orders' => 4, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Twin City View', 'code' => 'DLXT', 'color' => '#ffffff', 'is_active' => true, 'orders' => 5, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Double with Balcony', 'code' => 'DLXDB', 'color' => '#ffffff', 'is_active' => true, 'orders' => 6, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Deluxe Twin with Balcony', 'code' => 'DLXTB', 'color' => '#ffffff', 'is_active' => true, 'orders' => 7, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Family City View', 'code' => 'FAM', 'color' => '#ffffff', 'is_active' => true, 'orders' => 8, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'Suite', 'code' => 'JST', 'color' => '#ffffff', 'is_active' => true, 'orders' => 9, 'room_class_group_id' => $hotelGroup->id],
+            ['name' => 'DỰ PHÒNG', 'code' => 'DP', 'color' => '#ffffff', 'is_active' => false, 'orders' => 10, 'room_class_group_id' => $hotelGroup->id],
         ];
 
         $classModels = [];
         foreach ($classes as $c) {
-            $classModels[$c['code']] = RoomClass::create($c);
+            $classModels[$c['code']] = RoomClass::firstOrCreate(
+                ['code' => $c['code']],
+                $c
+            );
         }
 
-        // 3. Seed Room Forms (Dạng phòng - from Screenshot 3)
+        // 3. Seed Room Forms (Dạng phòng)
         $forms = [
             ['name' => 'Double', 'max_adults' => 2],
             ['name' => 'Twin', 'max_adults' => 2],
@@ -99,10 +106,13 @@ class SystemConfigurationSeeder extends Seeder
 
         $formModels = [];
         foreach ($forms as $f) {
-            $formModels[$f['name']] = RoomForm::create($f);
+            $formModels[$f['name']] = RoomForm::firstOrCreate(
+                ['name' => $f['name']],
+                $f
+            );
         }
 
-        // 4. Seed Standard Rates (Giá phòng chuẩn - from Screenshot 4)
+        // 4. Seed Standard Rates (Giá phòng chuẩn)
         $rates = [
             ['class' => 'SUPT', 'form' => 'Twin', 'price' => 540000, 'extra' => 300000],
             ['class' => 'DLXD', 'form' => 'Double', 'price' => 650000, 'extra' => 300000],
@@ -117,12 +127,16 @@ class SystemConfigurationSeeder extends Seeder
         ];
 
         foreach ($rates as $r) {
-            StandardRate::create([
-                'room_class_id' => $classModels[$r['class']]->id,
-                'room_form_id' => $formModels[$r['form']]->id,
-                'room_price' => $r['price'],
-                'extra_bed_price' => $r['extra'],
-            ]);
+            StandardRate::firstOrCreate(
+                [
+                    'room_class_id' => $classModels[$r['class']]->id,
+                    'room_form_id' => $formModels[$r['form']]->id,
+                ],
+                [
+                    'room_price' => $r['price'],
+                    'extra_bed_price' => $r['extra'],
+                ]
+            );
         }
 
         // 5. Seed Rooms (15 floors, 12 rooms per floor)
@@ -133,12 +147,6 @@ class SystemConfigurationSeeder extends Seeder
             for ($col = 1; $col <= 12; $col++) {
                 $roomNumber = $floor . str_pad($col, 2, '0', STR_PAD_LEFT);
 
-                // Phân bổ loại phòng và hạng phòng
-                $classCode = 'SUPD';
-                $formName = 'Double';
-                $guests = 2;
-
-                // Phân bổ loại phòng và hạng phòng
                 $classCode = 'SUPD';
                 $formName = 'Double';
                 $guests = 2;
@@ -200,24 +208,58 @@ class SystemConfigurationSeeder extends Seeder
         }
 
         foreach ($roomsData as $r) {
-            // Set all rooms to available for clean testing
-            $statusVal = 'available';
-
-            Room::create([
-                'room_number' => $r['room_number'],
-                'room_class_id' => $classModels[$r['class']]->id,
-                'room_form_id' => $formModels[$r['form']]->id,
-                'max_guests' => $r['guests'],
-                'floor' => $r['floor'],
-                'area' => 'Khu A',
-                'extra_beds_limit' => 1,
-                'grid_row' => $r['row'],
-                'grid_column' => $r['col'],
-                'is_internal' => false,
-                'status' => $statusVal,
-                'notes' => 'Phòng tự động tạo bằng seeder',
-            ]);
+            Room::firstOrCreate(
+                ['room_number' => $r['room_number']],
+                [
+                    'room_class_id' => $classModels[$r['class']]->id,
+                    'room_form_id' => $formModels[$r['form']]->id,
+                    'max_guests' => $r['guests'],
+                    'floor' => $r['floor'],
+                    'area' => 'Khu A',
+                    'extra_beds_limit' => 1,
+                    'grid_row' => $r['row'],
+                    'grid_column' => $r['col'],
+                    'is_internal' => false,
+                    'status' => 'available',
+                    'notes' => 'Phòng tự động tạo bằng seeder',
+                ]
+            );
         }
+
+        // Seed 2 Phòng ảo thử nghiệm (PM01, PM02) với is_internal = true
+        Room::firstOrCreate(
+            ['room_number' => '001'],
+            [
+                'room_class_id' => $classModels['SUPD']->id ?? 1,
+                'room_form_id' => $formModels['Double']->id ?? 1,
+                'max_guests' => 2,
+                'floor' => '0',
+                'area' => 'Phòng ảo',
+                'extra_beds_limit' => 0,
+                'grid_row' => 0,
+                'grid_column' => 0,
+                'is_internal' => true,
+                'status' => 'available',
+                'notes' => 'Phòng ảo thử nghiệm PM01',
+            ]
+        );
+
+        Room::firstOrCreate(
+            ['room_number' => '002'],
+            [
+                'room_class_id' => $classModels['SUPD']->id ?? 1,
+                'room_form_id' => $formModels['Double']->id ?? 1,
+                'max_guests' => 2,
+                'floor' => '0',
+                'area' => 'Phòng ảo',
+                'extra_beds_limit' => 0,
+                'grid_row' => 0,
+                'grid_column' => 0,
+                'is_internal' => true,
+                'status' => 'available',
+                'notes' => 'Phòng ảo thử nghiệm PM02',
+            ]
+        );
 
         // Seed some room locks and histories
         $room501 = Room::where('room_number', '501')->first();
@@ -226,45 +268,46 @@ class SystemConfigurationSeeder extends Seeder
 
         if ($room501 && $room502 && $room503) {
             // Room 501: Active OOS lock
-            \App\Models\RoomLock::create([
-                'room_number' => $room501->room_number,
-                'start_date' => '2026-06-09',
-                'end_date' => '2026-06-15',
-                'reason' => 'Sửa máy lạnh rò nước',
-                'maintenance_percent' => 50,
-                'status' => 'Active',
-                'username' => 'NB0016',
-                'lock_type' => 'OOS',
-                'is_active' => true,
-            ]);
-            $room501->update(['status' => 'maintenance']);
+            \App\Models\RoomLock::firstOrCreate(
+                ['room_number' => $room501->room_number, 'start_date' => '2026-06-09'],
+                [
+                    'end_date' => '2026-06-15',
+                    'reason' => 'Sửa máy lạnh rò nước',
+                    'maintenance_percent' => 50,
+                    'status' => 'Active',
+                    'username' => 'NB0016',
+                    'lock_type' => 'OOS',
+                    'is_active' => true,
+                ]
+            );
 
-            // Room 502: Inactive OOS lock (History example)
-            \App\Models\RoomLock::create([
-                'room_number' => $room502->room_number,
-                'start_date' => '2026-05-08',
-                'end_date' => '2026-05-12',
-                'reason' => 'tháo rèm giặt',
-                'maintenance_percent' => 0,
-                'status' => 'New',
-                'username' => 'NB0016',
-                'lock_type' => 'OOS',
-                'is_active' => false,
-            ]);
+            // Room 502: Inactive OOS lock
+            \App\Models\RoomLock::firstOrCreate(
+                ['room_number' => $room502->room_number, 'start_date' => '2026-05-08'],
+                [
+                    'end_date' => '2026-05-12',
+                    'reason' => 'tháo rèm giặt',
+                    'maintenance_percent' => 0,
+                    'status' => 'New',
+                    'username' => 'NB0016',
+                    'lock_type' => 'OOS',
+                    'is_active' => false,
+                ]
+            );
 
             // Room 503: Active OOO lock
-            \App\Models\RoomLock::create([
-                'room_number' => $room503->room_number,
-                'start_date' => '2026-06-10',
-                'end_date' => '2026-06-20',
-                'reason' => 'Thay đệm giường hỏng',
-                'maintenance_percent' => 100,
-                'status' => 'Active',
-                'username' => 'NB0031',
-                'lock_type' => 'OOO',
-                'is_active' => true,
-            ]);
-            $room503->update(['status' => 'maintenance']);
+            \App\Models\RoomLock::firstOrCreate(
+                ['room_number' => $room503->room_number, 'start_date' => '2026-06-10'],
+                [
+                    'end_date' => '2026-06-20',
+                    'reason' => 'Thay đệm giường hỏng',
+                    'maintenance_percent' => 100,
+                    'status' => 'Active',
+                    'username' => 'NB0031',
+                    'lock_type' => 'OOO',
+                    'is_active' => true,
+                ]
+            );
         }
     }
 }

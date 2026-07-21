@@ -14,12 +14,23 @@ class RoomController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Room::with(['roomForm', 'roomClass', 'activeLock', 'allActiveLocks']);
+        $query = Room::with(['roomForm', 'roomClass', 'activeLock', 'allActiveLocks'])
+            ->orderBy('orders', 'asc')
+            ->orderBy('room_number', 'asc');
 
         // Filter out rooms that belong to inactive room classes
         $query->whereHas('roomClass', function($q) {
             $q->where('is_active', true);
         });
+
+        // Filter internal/virtual rooms (exclude by default unless include_internal=1 or is_internal parameter is passed)
+        if ($request->has('include_internal') && $request->boolean('include_internal')) {
+            // include all rooms (both physical and internal/virtual)
+        } elseif ($request->has('is_internal')) {
+            $query->where('is_internal', $request->boolean('is_internal'));
+        } else {
+            $query->where('is_internal', false);
+        }
 
         // Optional filtering
         if ($request->has('floor') && !empty($request->floor)) {
@@ -103,6 +114,9 @@ class RoomController extends Controller
                 $room->has_vat = (bool)($br->booking?->has_vat ?? false);
                 $room->payment_method = $br->booking?->paymentMethod?->name ?? '';
                 $room->payment_value = $br->booking?->payment_value ?? 0;
+                $room->is_do_not_move = $br->is_do_not_move ?? 0;
+                $room->booking_room_id = $br->id ?? null;
+                $room->booking_id = $br->booking_id ?? null;
             }
 
             // Đảm bảo trạng thái vệ sinh hợp lệ từ database, nếu trống/null thì mặc định available
@@ -258,7 +272,7 @@ class RoomController extends Controller
     {
         $activeRoomQuery = Room::whereHas('roomClass', function($q) {
             $q->where('is_active', true);
-        });
+        })->where('is_internal', false);
 
         $stats = [
             'total' => (clone $activeRoomQuery)->count(),
@@ -295,8 +309,8 @@ class RoomController extends Controller
 
         $avService = app(\App\Services\RoomAvailabilityService::class);
 
-        // Lấy tất cả phòng của loại phòng này
-        $rooms = Room::where('room_class_id', $roomClassId)->get();
+        // Lấy tất cả phòng vật lý của loại phòng này (loại trừ phòng ảo/nội bộ)
+        $rooms = Room::where('room_class_id', $roomClassId)->where('is_internal', false)->get();
 
         $vacantRooms = [];
         foreach ($rooms as $room) {

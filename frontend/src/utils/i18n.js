@@ -56,6 +56,7 @@ const translations = {
       channelManagerRegReport: 'BÁO CÁO ĐĂNG KÝ CHANNEL MANAGER'
     },
     submenu: {
+      dayClose: 'Sang ngày',
       roomMap: 'Sơ đồ Phòng',
       vacantRooms: 'Phòng Trống',
       roomPlan: 'Kế Hoạch Phòng',
@@ -321,6 +322,7 @@ const translations = {
       channelManagerRegReport: 'CHANNEL MANAGER REGISTRY REPORT'
     },
     submenu: {
+      dayClose: 'Day Close',
       roomMap: 'Room Map',
       vacantRooms: 'Vacant Rooms',
       roomPlan: 'Room Plan',

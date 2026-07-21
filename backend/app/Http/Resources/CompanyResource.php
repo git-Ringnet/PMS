@@ -32,6 +32,13 @@ class CompanyResource extends JsonResource
             'bank_account' => $this->bank_account,
             'booker_id' => $this->booker_id,
             'booker' => new BookerResource($this->whenLoaded('booker')),
+            'sales_person_id' => $this->sales_person_id,
+            'sales_person' => $this->salesPerson ? [
+                'id' => $this->salesPerson->id,
+                'name' => $this->salesPerson->name,
+                'username' => $this->salesPerson->username,
+                'employee_code' => $this->salesPerson->employee_code,
+            ] : null,
             'rate_code' => $this->rate_code,
             'branch_id' => $this->branch_id,
             'branch' => new BranchResource($this->whenLoaded('branch')),

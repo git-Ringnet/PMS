@@ -23,6 +23,44 @@ use Illuminate\Support\Facades\DB;
 class BookingController extends Controller
 {
     /**
+     * Lấy tất cả dữ liệu dropdown cần thiết cho màn tạo/sửa booking trong 1 request duy nhất.
+     */
+    public function initDropdowns()
+    {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        $systemDate = $latest
+            ? \Carbon\Carbon::parse($latest->system_date)->toDateString()
+            : now()->timezone('Asia/Ho_Chi_Minh')->toDateString();
+        $shift = $latest ? $latest->shift : '1';
+
+        $roomClasses = \App\Models\RoomClass::with(['roomClassGroup', 'standardRates.roomForm'])->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'markets' => \App\Http\Resources\MarketResource::collection(\App\Models\Market::all()),
+                'customer_sources' => \App\Http\Resources\CustomerSourceResource::collection(\App\Models\CustomerSource::all()),
+                'bookers' => \App\Http\Resources\BookerResource::collection(\App\Models\Booker::orderBy('id')->get()),
+                'companies' => \App\Http\Resources\CompanyResource::collection(\App\Models\Company::all()),
+                'payment_methods' => \App\Http\Resources\PaymentMethodResource::collection(\App\Models\PaymentMethod::all()),
+                'registration_statuses' => \App\Http\Resources\RegistrationStatusResource::collection(\App\Models\RegistrationStatus::all()),
+                'users' => \App\Models\User::all(),
+                'room_classes' => \App\Http\Resources\RoomClassResource::collection($roomClasses),
+                'room_forms' => \App\Http\Resources\RoomFormResource::collection(\App\Models\RoomForm::all()),
+                'room_rate_codes' => \App\Models\RoomRateCode::with('ratePlans', 'dailyMappings')->get(),
+                'currencies' => \App\Http\Resources\CurrencyResource::collection(\App\Models\Currency::all()),
+                'hotel_services' => \App\Http\Resources\HotelServiceResource::collection(\App\Models\HotelService::all()),
+                'hotel_settings' => new \App\Http\Resources\HotelSettingResource(\App\Models\HotelSetting::first() ?? new \App\Models\HotelSetting()),
+                'system_time' => now()->timezone('Asia/Ho_Chi_Minh')->toIso8601String(),
+                'system_date' => [
+                    'system_date' => $systemDate,
+                    'shift' => $shift
+                ]
+            ]
+        ]);
+    }
+
+    /**
      * Lấy danh sách booking (có filter).
      */
     public function index(Request $request)
@@ -40,6 +78,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
 
@@ -125,9 +164,9 @@ class BookingController extends Controller
             'is_day_use'               => 'nullable|boolean',
             'breakfast_included'       => 'nullable|boolean',
             'has_vat'                  => 'nullable|boolean',
-            'company_id'               => 'nullable|exists:companies,id',
-            'market_id'                => 'nullable|exists:markets,id',
-            'customer_source_id'       => 'nullable|exists:customer_sources,id',
+            'company_id'               => 'required|exists:companies,id',
+            'market_id'                => 'required|exists:markets,id',
+            'customer_source_id'       => 'required|exists:customer_sources,id',
             'branch_id'                => 'nullable|exists:branches,id',
             'booker_id'                => 'nullable|exists:bookers,id',
             'contact_name'             => 'nullable|string|max:255',
@@ -261,23 +300,55 @@ class BookingController extends Controller
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $alloc['price'] ?? 0,
+                                'rate_code' => $alloc['rateCode'] ?? null,
+                                'breakfast' => !empty($alloc['breakfastIncluded']),
+                                'discount' => $alloc['discount'] ?? null,
+                                'discount_type' => $alloc['discountType'] ?? null,
+                                'discount_value' => $alloc['discountValue'] ?? 0,
+                                'discount_unit' => $alloc['discountUnit'] ?? null,
+                                'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
                                 'adults' => $detail['adults'] ?? 2,
-                                'extra_bed_qty' => empty($detail['extraBedPrice']) ? 0 : 1,
+                                'babies' => $detail['babies'] ?? 0,
+                                'children_qty' => $detail['children'] ?? 0,
+                                'extra_bed_qty' => (int)($detail['extraBedQty'] ?? (empty($detail['extraBedPrice']) ? 0 : 1)),
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
                             ]);
+                            $this->upsertExtraBedServices($bRoom);
 
                             // Thêm khách chính (guestName)
-                            if (!empty($detail['guestName'])) {
-                                $guest = \App\Models\Guest::create([
-                                    'full_name' => $detail['guestName'],
-                                    'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
-                                ]);
-                                \App\Models\BookingRoomGuest::create([
-                                    'booking_room_id' => $bRoom->id,
-                                    'guest_id' => $guest->id,
-                                    'is_primary' => 1,
-                                ]);
+                            $roomGuestName = trim($detail['guestName'] ?? '');
+                            if (empty($roomGuestName)) {
+                                $roomGuestName = 'Guest 1';
+                            }
+                            $guest = \App\Models\Guest::create([
+                                'full_name' => $roomGuestName,
+                                'title' => 'Mr.',
+                                'nationality_code' => 'VN',
+                                'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                            ]);
+                            \App\Models\BookingRoomGuest::create([
+                                'booking_room_id' => $bRoom->id,
+                                'guest_id' => $guest->id,
+                                'is_primary' => 1,
+                            ]);
+
+                            // Tự động tạo thêm khách phụ cho đủ số lượng adults
+                            $numAdults = (int)($detail['adults'] ?? 2);
+                            if ($numAdults > 1) {
+                                for ($a = 2; $a <= $numAdults; $a++) {
+                                    $subGuest = \App\Models\Guest::create([
+                                        'full_name' => 'Guest ' . $a,
+                                        'title' => 'Mr.',
+                                        'nationality_code' => 'VN',
+                                        'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                                    ]);
+                                    \App\Models\BookingRoomGuest::create([
+                                        'booking_room_id' => $bRoom->id,
+                                        'guest_id' => $subGuest->id,
+                                        'is_primary' => 0,
+                                    ]);
+                                }
                             }
 
                             // Thêm số lượng children / babies vào booking_children
@@ -368,6 +439,8 @@ class BookingController extends Controller
             'bookingRooms.room',
             'bookingRooms.guests.guest',
             'bookingRooms.children',
+            'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
 
@@ -399,6 +472,8 @@ class BookingController extends Controller
             'bookingRooms.room',
             'bookingRooms.guests.guest',
             'bookingRooms.children',
+            'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ])->find($id);
 
@@ -430,45 +505,50 @@ class BookingController extends Controller
             ], 422);
         }
 
-        $validated = $request->validate([
-            'booking_name'             => 'sometimes|required|string|max:255',
-            'arrival_date'             => 'sometimes|required|date',
-            'departure_date'           => 'sometimes|required|date|after:arrival_date',
-            'num_of_days'              => 'sometimes|required|integer|min:1',
-            'confirm_date'             => 'nullable|date',
-            'expired_date'             => 'nullable|date',
-            'arrival_flight'           => 'nullable|string|max:50',
-            'arrival_flight_date'      => 'nullable|date',
-            'departure_flight'         => 'nullable|string|max:50',
-            'departure_flight_date'    => 'nullable|date',
-            'status'                   => 'nullable|integer',
-            'registration_status_id'   => 'nullable|exists:registration_statuses,id',
-            'color'                    => 'nullable|string|max:20',
-            'is_git'                   => 'nullable|boolean',
-            'is_day_use'               => 'nullable|boolean',
-            'breakfast_included'       => 'nullable|boolean',
-            'has_vat'                  => 'nullable|boolean',
-            'company_id'               => 'nullable|exists:companies,id',
-            'market_id'                => 'nullable|exists:markets,id',
-            'customer_source_id'       => 'nullable|exists:customer_sources,id',
-            'branch_id'                => 'nullable|exists:branches,id',
-            'booker_id'                => 'nullable|exists:bookers,id',
-            'contact_name'             => 'nullable|string|max:255',
-            'contact_email'            => 'nullable|email|max:255',
-            'contact_phone'            => 'nullable|string|max:50',
-            'payment_method_id'        => 'nullable|exists:payment_methods,id',
-            'payment_value'            => 'nullable|numeric|min:0',
-            'commission'               => 'nullable|numeric|min:0',
-            'voucher_info'             => 'nullable|string|max:255',
-            'external_booking_code'    => 'nullable|string|max:100',
-            'event_code'               => 'nullable|string|max:50',
-            'note'                     => 'nullable|string',
-            'special_requests'         => 'nullable|string',
-            'sales_person'             => 'nullable|string|max:100',
-            'edit_message'             => 'nullable|string',
-            'shuttle_info'             => 'nullable|array',
-            'deposit_details'          => 'nullable|array',
-        ]);
+        try {
+            $validated = $request->validate([
+                'booking_name'             => 'sometimes|required|string|max:255',
+                'arrival_date'             => 'sometimes|required|date',
+                'departure_date'           => 'sometimes|required|date|after:arrival_date',
+                'num_of_days'              => 'sometimes|required|integer|min:1',
+                'confirm_date'             => 'nullable|date',
+                'expired_date'             => 'nullable|date',
+                'arrival_flight'           => 'nullable|string|max:50',
+                'arrival_flight_date'      => 'nullable|date',
+                'departure_flight'         => 'nullable|string|max:50',
+                'departure_flight_date'    => 'nullable|date',
+                'status'                   => 'nullable|integer',
+                'registration_status_id'   => 'nullable|exists:registration_statuses,id',
+                'color'                    => 'nullable|string|max:20',
+                'is_git'                   => 'nullable|boolean',
+                'is_day_use'               => 'nullable|boolean',
+                'breakfast_included'       => 'nullable|boolean',
+                'has_vat'                  => 'nullable|boolean',
+                'company_id'               => 'required|exists:companies,id',
+                'market_id'                => 'required|exists:markets,id',
+                'customer_source_id'       => 'required|exists:customer_sources,id',
+                'branch_id'                => 'nullable|exists:branches,id',
+                'booker_id'                => 'nullable|exists:bookers,id',
+                'contact_name'             => 'nullable|string|max:255',
+                'contact_email'            => 'nullable|email|max:255',
+                'contact_phone'            => 'nullable|string|max:50',
+                'payment_method_id'        => 'nullable|exists:payment_methods,id',
+                'payment_value'            => 'nullable|numeric|min:0',
+                'commission'               => 'nullable|numeric|min:0',
+                'voucher_info'             => 'nullable|string|max:255',
+                'external_booking_code'    => 'nullable|string|max:100',
+                'event_code'               => 'nullable|string|max:50',
+                'note'                     => 'nullable|string',
+                'special_requests'         => 'nullable|string',
+                'sales_person'             => 'nullable|string|max:100',
+                'edit_message'             => 'nullable|string',
+                'shuttle_info'             => 'nullable|array',
+                'deposit_details'          => 'nullable|array',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Illuminate\Support\Facades\Log::error('Validation failed on update booking: ' . json_encode($e->errors()));
+            throw $e;
+        }
 
         // Tự động tăng edit_count và ghi nhận người sửa
         $validated['edit_count']  = $booking->edit_count + 1;
@@ -497,19 +577,36 @@ class BookingController extends Controller
             \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request) {
                 $booking->update($validated);
 
-                // Đồng bộ room_allocations (từ UI gửi lên) - xóa cũ (trạng thái booked) và tạo mới
+                // Đồng bộ room_allocations (từ UI gửi lên) - xử lý thông minh để cập nhật thay vì xóa/tạo lại
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
-                    // Chỉ xóa các phòng đang ở trạng thái BOOKED (chưa check-in)
-                    \App\Models\BookingRoom::where('booking_id', $booking->id)
+                    // Tìm các phòng đang ở trạng thái BOOKED (chưa check-in) hiện tại trong db
+                    $existingBookedRooms = \App\Models\BookingRoom::where('booking_id', $booking->id)
                         ->where('status', \App\Models\BookingRoom::STATUS_BOOKED)
-                        ->delete();
+                        ->get();
+                    $bookedRoomIds = $existingBookedRooms->pluck('id')->toArray();
 
-                    // Thực hiện validation sau khi đã xóa phòng cũ để tránh tự xung đột với phòng cũ của chính booking này
-                    $this->validateRoomAllocations(
-                        $request->room_allocations,
-                        $validated['arrival_date'] ?? $booking->arrival_date->toDateString(),
-                        $validated['departure_date'] ?? $booking->departure_date->toDateString()
-                    );
+                    // 1. Tạm thời xóa mềm tất cả các phòng BOOKED hiện tại để validateAvailability không tính trùng chính nó
+                    if (count($bookedRoomIds) > 0) {
+                        \App\Models\BookingRoom::whereIn('id', $bookedRoomIds)->delete();
+                    }
+
+                    try {
+                        // Thực hiện validation dựa trên payload mới
+                        $this->validateRoomAllocations(
+                            $request->room_allocations,
+                            $validated['arrival_date'] ?? $booking->arrival_date->toDateString(),
+                            $validated['departure_date'] ?? $booking->departure_date->toDateString(),
+                            $booking->id
+                        );
+                    } catch (\Exception $e) {
+                        // Restore lại toàn bộ nếu validate lỗi để không mất dữ liệu của người dùng
+                        if (count($bookedRoomIds) > 0) {
+                            \App\Models\BookingRoom::withTrashed()->whereIn('id', $bookedRoomIds)->restore();
+                        }
+                        throw $e;
+                    }
+
+                    $restoredRoomIds = [];
 
                     foreach ($request->room_allocations as $alloc) {
                         $qty = (int)($alloc['quantity'] ?? 0);
@@ -519,27 +616,90 @@ class BookingController extends Controller
                         
                         for ($i = 0; $i < $qty; $i++) {
                             $detail = $details[$i] ?? [];
+                            $bRoomId = $detail['bookingRoomId'] ?? null;
                             
-                            $bRoom = \App\Models\BookingRoom::create([
+                            $bRoom = null;
+                            if (!empty($bRoomId)) {
+                                if (in_array($bRoomId, $bookedRoomIds)) {
+                                    // Restore phòng từ soft deleted
+                                    $bRoom = \App\Models\BookingRoom::onlyTrashed()->find($bRoomId);
+                                    if ($bRoom) {
+                                        $bRoom->restore();
+                                        $restoredRoomIds[] = $bRoomId;
+                                    }
+                                } else {
+                                    // Tìm phòng đang hoạt động (ví dụ phòng CheckedIn)
+                                    $bRoom = \App\Models\BookingRoom::find($bRoomId);
+                                }
+                            }
+                            
+                            // Kiểm tra chuyển phòng cho phòng đang CheckedIn
+                            if ($bRoom && $bRoom->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
+                                $oldRoomNumber = $bRoom->room_number;
+                                $newRoomNumber = $detail['roomNumber'] ?? null;
+                                if (!empty($oldRoomNumber) && !empty($newRoomNumber) && $oldRoomNumber !== $newRoomNumber) {
+                                    $currentUser = Auth::user()?->username ?? 'system';
+                                    $systemDate = $this->avService->getSystemDate();
+                                    
+                                    // Thực hiện chuyển phòng và cập nhật bRoom trỏ sang phòng mới
+                                    $newRoom = $bRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser);
+                                    $bRoom = $newRoom;
+                                }
+                            }
+                            
+                            $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? $validated['arrival_date'] ?? $booking->arrival_date;
+                            $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? $validated['departure_date'] ?? $booking->departure_date;
+
+                            $roomData = [
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
                                 'original_room_class_id' => $alloc['roomClassId'] ?? null,
-                                'arrival_date' => $alloc['arrivalDate'] ?? $alloc['arrival_date'] ?? $validated['arrival_date'] ?? $booking->arrival_date,
-                                'departure_date' => $alloc['departureDate'] ?? $alloc['departure_date'] ?? $validated['departure_date'] ?? $booking->departure_date,
+                                'arrival_date' => $roomArrival,
+                                'departure_date' => $roomDeparture,
+                                'actual_arrival_date' => $bRoom && $bRoom->actual_arrival_date ? $bRoom->actual_arrival_date->toDateString() : $roomArrival,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
-                                'rate' => $alloc['price'] ?? 0,
+                                'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
+                                'rate_code' => $detail['rateCode'] ?? $alloc['rateCode'] ?? null,
+                                'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
+                                'is_day_use' => !empty($booking->is_day_use) || ($detail['hourly'] ?? false) || ($roomArrival === $roomDeparture),
+                                'discount' => $detail['discount'] ?? $alloc['discount'] ?? null,
+                                'discount_type' => $detail['discountType'] ?? $alloc['discountType'] ?? null,
+                                'discount_value' => $detail['discountValue'] ?? $alloc['discountValue'] ?? 0,
+                                'discount_unit' => $detail['discountUnit'] ?? $alloc['discountUnit'] ?? null,
+                                'base_price' => $detail['basePrice'] ?? $alloc['basePrice'] ?? $detail['price'] ?? 0,
                                 'adults' => $detail['adults'] ?? 2,
-                                'extra_bed_qty' => empty($detail['extraBedPrice']) ? 0 : 1,
+                                'babies' => $detail['babies'] ?? 0,
+                                'children_qty' => $detail['children'] ?? 0,
+                                'extra_bed_qty' => (int)($detail['extraBedQty'] ?? (empty($detail['extraBedPrice']) ? 0 : 1)),
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
-                                'status' => \App\Models\BookingRoom::STATUS_BOOKED,
-                            ]);
+                                'status' => $bRoom ? $bRoom->status : \App\Models\BookingRoom::STATUS_BOOKED,
+                            ];
 
-                            // Thêm khách chính (guestName)
-                            if (!empty($detail['guestName'])) {
+                            if ($bRoom) {
+                                $bRoom->update($roomData);
+                            } else {
+                                $bRoom = \App\Models\BookingRoom::create($roomData);
+                            }
+                            $this->upsertExtraBedServices($bRoom);
+
+                            // Cập nhật hoặc thêm khách chính (guestName)
+                            $roomGuestName = trim($detail['guestName'] ?? '');
+                            if (empty($roomGuestName)) {
+                                $roomGuestName = 'Guest 1';
+                            }
+                            
+                            $pivot = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)->where('is_primary', 1)->first();
+                            if ($pivot && $pivot->guest) {
+                                $pivot->guest->update([
+                                    'full_name' => $roomGuestName,
+                                ]);
+                            } else {
                                 $guest = \App\Models\Guest::create([
-                                    'full_name' => $detail['guestName'],
+                                    'full_name' => $roomGuestName,
+                                    'title' => 'Mr.',
+                                    'nationality_code' => 'VN',
                                     'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
                                 ]);
                                 \App\Models\BookingRoomGuest::create([
@@ -548,6 +708,52 @@ class BookingController extends Controller
                                     'is_primary' => 1,
                                 ]);
                             }
+
+                            // Đồng bộ số lượng adults khách phụ (non-primary)
+                            $targetAdults = (int)($detail['adults'] ?? 2);
+                            $secondaries = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)
+                                ->where('is_primary', 0)
+                                ->get();
+                            $totalCurrentGuests = 1 + $secondaries->count();
+
+                            if ($totalCurrentGuests < $targetAdults) {
+                                // Cần tạo thêm khách phụ
+                                $needed = $targetAdults - $totalCurrentGuests;
+                                for ($a = 0; $a < $needed; $a++) {
+                                    $seq = $totalCurrentGuests + $a + 1;
+                                    $subGuest = \App\Models\Guest::create([
+                                        'full_name' => 'Guest ' . $seq,
+                                        'title' => 'Mr.',
+                                        'nationality_code' => 'VN',
+                                        'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                                    ]);
+                                    \App\Models\BookingRoomGuest::create([
+                                        'booking_room_id' => $bRoom->id,
+                                        'guest_id' => $subGuest->id,
+                                        'is_primary' => 0,
+                                    ]);
+                                }
+                            } elseif ($totalCurrentGuests > $targetAdults) {
+                                // Cần xóa bớt khách phụ thừa
+                                $toRemove = $totalCurrentGuests - $targetAdults;
+                                $secondariesToRemove = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)
+                                    ->where('is_primary', 0)
+                                    ->orderBy('id', 'desc')
+                                    ->take($toRemove)
+                                    ->get();
+                                foreach ($secondariesToRemove as $pivotToRemove) {
+                                    $gId = $pivotToRemove->guest_id;
+                                    $pivotToRemove->delete();
+                                    \App\Models\Guest::where('id', $gId)->delete();
+                                }
+                            }
+
+                            // Đồng bộ trẻ em: Xóa cũ của phòng này và tạo lại theo số lượng mới
+                            \App\Models\BookingChildBreakfastDetail::whereIn(
+                                'booking_child_id',
+                                \App\Models\BookingChild::where('booking_room_id', $bRoom->id)->pluck('id')
+                            )->delete();
+                            \App\Models\BookingChild::where('booking_room_id', $bRoom->id)->delete();
 
                             // Thêm số lượng children / babies vào booking_children
                             $numChildren = (int)($detail['children'] ?? 0);
@@ -573,9 +779,36 @@ class BookingController extends Controller
                             }
                         }
                     }
+
+                    // 2. Những phòng BOOKED cũ thực sự bị xóa (vẫn còn soft-deleted và không được restore)
+                    $unrestoredRoomIds = array_diff($bookedRoomIds, $restoredRoomIds);
+                    if (count($unrestoredRoomIds) > 0) {
+                        // Lấy danh sách ID khách của các phòng bị xóa hẳn này
+                        $guestIds = \App\Models\BookingRoomGuest::whereIn('booking_room_id', $unrestoredRoomIds)->pluck('guest_id');
+                        
+                        // Xóa các trẻ em liên quan đến các phòng bị xóa hẳn này
+                        \App\Models\BookingChildBreakfastDetail::whereIn(
+                            'booking_child_id',
+                            \App\Models\BookingChild::whereIn('booking_room_id', $unrestoredRoomIds)->pluck('id')
+                        )->delete();
+                        \App\Models\BookingChild::whereIn('booking_room_id', $unrestoredRoomIds)->delete();
+                        
+                        // Xóa các pivot guests
+                        \App\Models\BookingRoomGuest::whereIn('booking_room_id', $unrestoredRoomIds)->delete();
+                        
+                        // Xóa các khách tương ứng để tránh bị rác database (orphaned guests)
+                        if ($guestIds->count() > 0) {
+                            $stillReferenced = \App\Models\BookingRoomGuest::whereIn('guest_id', $guestIds)->pluck('guest_id')->unique();
+                            $orphanedGuestIds = $guestIds->diff($stillReferenced);
+                            if ($orphanedGuestIds->count() > 0) {
+                                \App\Models\Guest::whereIn('id', $orphanedGuestIds)->delete();
+                            }
+                        }
+                    }
                 }
             });
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Exception in update booking: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -594,6 +827,8 @@ class BookingController extends Controller
             'bookingRooms.room',
             'bookingRooms.guests.guest',
             'bookingRooms.children',
+            'bookingRooms.services',
+            'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
 
@@ -1028,10 +1263,11 @@ class BookingController extends Controller
     /**
      * Validate room allocations against availability, OOO/OOS locks, and occupancy.
      */
-    private function validateRoomAllocations(array $roomAllocations, string $arrivalDate, string $departureDate)
+    private function validateRoomAllocations(array $roomAllocations, string $arrivalDate, string $departureDate, $excludeBookingId = null)
     {
         $avService = app(RoomAvailabilityService::class);
         $allowOver = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
+        $payloadAssignments = [];
 
         foreach ($roomAllocations as $alloc) {
             $roomClassId = $alloc['roomClassId'] ?? null;
@@ -1042,24 +1278,26 @@ class BookingController extends Controller
             $qty = (int)($alloc['quantity'] ?? 0);
             if ($qty <= 0) continue;
 
-            // Validate AV
-            $allocArrival = $alloc['arrivalDate'] ?? $alloc['arrival_date'] ?? $arrivalDate;
-            $allocDeparture = $alloc['departureDate'] ?? $alloc['departure_date'] ?? $departureDate;
-
-            $av = $avService->getAvailability(
-                $roomClassId,
-                $allocArrival,
-                $allocDeparture
-            );
-
-            if ($av < $qty && !$allowOver) {
-                $roomClass = \App\Models\RoomClass::find($roomClassId);
-                throw new \Exception('Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định') . '. Số phòng trống hiện tại: ' . $av);
-            }
-
             $details = $alloc['rooms'] ?? [];
             for ($i = 0; $i < $qty; $i++) {
                 $detail = $details[$i] ?? [];
+                
+                // Lấy ngày đến/đi riêng của phòng con này nếu có, nếu không lấy của booking
+                $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? $arrivalDate;
+                $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? $departureDate;
+
+                // Validate AV cho khoảng ngày của phòng con này
+                $av = $avService->getAvailability(
+                    $roomClassId,
+                    $roomArrival,
+                    $roomDeparture
+                );
+
+                if ($av < $qty && !$allowOver) {
+                    $roomClass = \App\Models\RoomClass::find($roomClassId);
+                    throw new \Exception('Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định') . '. Số phòng trống hiện tại: ' . $av);
+                }
+
                 if (!empty($detail['roomNumber'])) {
                     $roomNumber = $detail['roomNumber'];
                     $room = \App\Models\Room::where('room_number', $roomNumber)->first();
@@ -1070,11 +1308,27 @@ class BookingController extends Controller
                         throw new \Exception('Số phòng ' . $roomNumber . ' không thuộc loại phòng đã chọn.');
                     }
 
+                    // Check duplicate assignment within the same request payload on overlapping dates
+                    foreach ($payloadAssignments as $assignment) {
+                        if ($assignment['room_number'] === $roomNumber) {
+                            if ($roomArrival < $assignment['departure'] && $assignment['arrival'] < $roomDeparture) {
+                                throw new \Exception('Số phòng ' . $roomNumber . ' bị trùng lặp trong cùng một lượt lưu với thời gian ở trùng nhau.');
+                            }
+                        }
+                    }
+
+                    // Record this assignment
+                    $payloadAssignments[] = [
+                        'room_number' => $roomNumber,
+                        'arrival' => $roomArrival,
+                        'departure' => $roomDeparture,
+                    ];
+
                     // Check OOO/OOS Lock
                     $isLocked = \App\Models\RoomLock::where('room_number', $roomNumber)
                         ->where('is_active', 1)
-                        ->where('start_date', '<', $allocDeparture)
-                        ->where('end_date', '>', $allocArrival)
+                        ->where('start_date', '<', $roomDeparture)
+                        ->where('end_date', '>', $roomArrival)
                         ->exists();
 
                     if ($isLocked) {
@@ -1084,8 +1338,10 @@ class BookingController extends Controller
                     // Check occupied by another booking
                     $isOccupied = $avService->isRoomNumberOccupied(
                         $roomNumber,
-                        $allocArrival,
-                        $allocDeparture
+                        $roomArrival,
+                        $roomDeparture,
+                        $detail['bookingRoomId'] ?? null,
+                        $excludeBookingId
                     );
                     if ($isOccupied) {
                         throw new \Exception('Số phòng ' . $roomNumber . ' đã được gán cho lượt đăng ký khác trong giai đoạn này.');
@@ -1130,7 +1386,74 @@ class BookingController extends Controller
                 'amount'           => $amount,
             ]);
 
-            $current->addDay();
+            $current = $current->addDay();
+        }
+    }
+
+    /**
+     * Upsert dịch vụ Extra Bed (EB) theo từng ngày trong giai đoạn ở.
+     */
+    private function upsertExtraBedServices(BookingRoom $room): void
+    {
+        $arrivalDate   = $room->arrival_date->toDateString();
+        $departureDate = $room->departure_date->toDateString();
+
+        if ($room->extra_bed_qty <= 0) {
+            // Chỉ xóa các dịch vụ EB chưa được post
+            $room->services()
+                ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+                ->where('is_posted', 0)
+                ->forceDelete();
+            return;
+        }
+
+        // 1. Lấy danh sách dịch vụ EB hiện tại
+        $existingServices = $room->services()
+            ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+            ->get()
+            ->keyBy(function ($item) {
+                return $item->service_date->toDateString();
+            });
+
+        // 2. Xóa các ngày nằm ngoài giai đoạn ở mới (nếu thu hẹp ngày ở) mà chưa post
+        $current = Carbon::parse($arrivalDate);
+        $end     = Carbon::parse($departureDate);
+        $stayDates = [];
+        while ($current->lt($end)) {
+            $stayDates[] = $current->toDateString();
+            $current = $current->addDay();
+        }
+
+        $room->services()
+            ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+            ->whereNotIn('service_date', $stayDates)
+            ->where('is_posted', 0)
+            ->forceDelete();
+
+        // 3. Upsert cho từng ngày
+        foreach ($stayDates as $dateStr) {
+            $existing = $existingServices->get($dateStr);
+            if ($existing && $existing->is_posted == 1) {
+                // Đã post rồi thì không được ghi đè hay thay đổi giá/số lượng
+                continue;
+            }
+
+            \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
+                [
+                    'booking_room_id' => $room->id,
+                    'service_code'    => \App\Models\BookingRoomService::CODE_EXTRA_BED,
+                    'service_date'    => $dateStr,
+                ],
+                [
+                    'service_name' => 'Extra Bed',
+                    'quantity'     => $room->extra_bed_qty,
+                    'rate'         => $room->extra_bed_rate,
+                    'is_room'      => 1,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ]
+            );
         }
     }
 }

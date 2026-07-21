@@ -205,7 +205,7 @@ const formatCurrencyInput = (val, currency) => {
   if (currency === 'VND') {
     clean = clean.replace(/\D/g, '');
     if (!clean) return '';
-    return Number(clean).toLocaleString('vi-VN');
+    return Number(clean).toLocaleString('en-US');
   } else {
     clean = clean.replace(/,/g, '');
     let parts = clean.split('.');

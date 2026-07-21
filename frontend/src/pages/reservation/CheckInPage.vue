@@ -268,6 +268,12 @@ const handleCheckIn = async () => {
     })
   })
 
+  const unassigned = selectedRoomsToProcess.filter(item => !item.roomNumber)
+  if (unassigned.length > 0) {
+    uiStore.showToast('Có phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi giao phòng!', 'warning')
+    return
+  }
+
   loading.value = true
   let successCount = 0
   let errorMessages = []

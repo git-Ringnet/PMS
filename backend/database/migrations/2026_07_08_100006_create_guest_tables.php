@@ -21,10 +21,14 @@ return new class extends Migration
         // Thông tin khách người lớn — dùng chung, có thể kế thừa cho booking mới
         // =============================================
         Schema::create('guests', function (Blueprint $table) {
-            $table->id();
+            $table->string('id', 50)->primary();
             $table->string('full_name', 200);                  // Họ tên đầy đủ (viết hoa)
+            $table->string('title', 20)->nullable();           // Danh xưng: Mr./Mrs./Ms./Miss/Kid.
+            $table->string('id_type', 50)->nullable();         // Loại giấy tờ: CCCD/CMND/Hộ chiếu/...
             $table->string('id_number', 50)->nullable();       // Số CCCD/CMND
+            $table->date('id_issue_date')->nullable();         // Ngày cấp giấy tờ
             $table->string('passport_number', 50)->nullable(); // Số hộ chiếu
+            $table->date('passport_expiry')->nullable();       // Ngày hết hạn hộ chiếu/CCCD
             $table->date('dob')->nullable();                   // Ngày sinh
             // 0 = Nam, 1 = Nữ, 2 = Khác
             $table->unsignedTinyInteger('gender')->nullable();
@@ -32,6 +36,19 @@ return new class extends Migration
             $table->string('phone', 20)->nullable();
             $table->string('email', 150)->nullable();
             $table->string('address', 500)->nullable();
+            $table->string('guest_type', 50)->nullable();      // Loại khách: FIT/GIT/VIP/...
+            $table->string('province', 100)->nullable();       // Tỉnh/Thành phố
+            $table->string('district', 100)->nullable();       // Quận/Huyện
+            $table->string('ward', 100)->nullable();           // Phường/Xã
+            $table->string('residence_type', 20)->nullable();  // Thường trú/Tạm trú
+            $table->date('temp_residence_to')->nullable();     // Tạm trú đến
+            $table->string('visa_no', 50)->nullable();         // Số Visa
+            $table->date('entry_date')->nullable();            // Ngày nhập cảnh
+            $table->date('visa_expiry_date')->nullable();      // Ngày hết hạn visa
+            $table->string('entry_purpose', 200)->nullable();  // Mục đích nhập cảnh
+            $table->string('border_gate', 100)->nullable();    // Cửa khẩu
+            $table->string('occupation', 200)->nullable();     // Công việc
+            $table->text('note')->nullable();                  // Ghi chú
             // 0 = Active, 3 = Cancelled (cascade từ hủy phòng)
             $table->unsignedTinyInteger('guest_status')->default(0);
             $table->timestamps();
@@ -42,18 +59,17 @@ return new class extends Migration
             $table->index('full_name');
         });
 
+
         // =============================================
         // 2. booking_room_guests (SP2200 — PhongThueKhach)
         // Bảng pivot: gán khách (người lớn) vào từng phòng thuê
         // =============================================
         Schema::create('booking_room_guests', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_room_id')
-                ->constrained('booking_rooms')
-                ->cascadeOnDelete();
-            $table->foreignId('guest_id')
-                ->constrained('guests')
-                ->restrictOnDelete();
+            $table->string('booking_room_id', 50);
+            $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
+            $table->string('guest_id', 50);
+            $table->foreign('guest_id')->references('id')->on('guests')->restrictOnDelete();
             // 1 = Khách đại diện chính của phòng (guest phải có đầy đủ thông tin hơn)
             $table->boolean('is_primary')->default(false);
             // 0 = Active, 3 = Cancelled
@@ -71,14 +87,17 @@ return new class extends Migration
         // SP2500 chỉ là pivot đơn giản (booking_child_id + booking_room_id) nên gộp vào đây
         // =============================================
         Schema::create('booking_children', function (Blueprint $table) {
-            $table->id();
+            $table->string('id', 50)->primary();
             $table->foreignId('booking_id')
                 ->constrained('bookings')
                 ->cascadeOnDelete();
             // NULL nếu chưa gán vào phòng cụ thể; có giá trị khi đã assign (gộp SP2500)
-            $table->unsignedBigInteger('booking_room_id')->nullable();
+            $table->string('booking_room_id', 50)->nullable();
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->nullOnDelete();
             $table->string('full_name', 200)->nullable(); // Tên trẻ em (tùy chọn)
+            $table->string('title', 20)->nullable();      // Danh xưng: Kid./Baby.
+            $table->date('dob')->nullable();              // Ngày sinh
+            $table->string('nationality_code', 5)->nullable()->default('VN'); // Quốc tịch
             // 'baby'  = Em bé (mặc định ăn sáng miễn phí, không tính phụ phí)
             // 'child' = Trẻ em (có thể tính phụ phí ăn sáng tùy cấu hình)
             $table->enum('age_group', ['baby', 'child'])->default('child');
@@ -90,15 +109,15 @@ return new class extends Migration
             $table->index('booking_room_id');
         });
 
+
         // =============================================
         // 4. booking_child_breakfast_details (SP2401 — TreEmAnSangChiTiet)
         // Chi tiết ăn sáng trẻ em theo từng ngày trong giai đoạn ở
         // =============================================
         Schema::create('booking_child_breakfast_details', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_child_id')
-                ->constrained('booking_children')
-                ->cascadeOnDelete();
+            $table->string('booking_child_id', 50);
+            $table->foreign('booking_child_id')->references('id')->on('booking_children')->cascadeOnDelete();
             $table->date('service_date');           // Ngày ăn sáng
             $table->boolean('breakfast')->default(false);       // 1 = Có ăn sáng ngày này
             $table->boolean('is_free')->default(true);          // 1 = Miễn phí (giá = 0đ)

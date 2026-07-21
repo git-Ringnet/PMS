@@ -32,6 +32,7 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
+        $user->load('setting');
         $token = $user->createToken('auth_token')->plainTextToken;
         \App\Services\ActivityLogService::logLogin($request, $user, true);
 
@@ -60,6 +61,8 @@ class AuthController extends Controller
      */
     public function me(Request $request)
     {
-        return response()->json($request->user());
+        $user = $request->user();
+        $user->load('setting');
+        return response()->json($user);
     }
 }

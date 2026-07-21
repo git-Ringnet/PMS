@@ -93,7 +93,7 @@ class SystemDefinitionSeeder extends Seeder
         ];
 
         foreach ($paymentMethods as $pm) {
-            PaymentMethod::create($pm);
+            PaymentMethod::firstOrCreate(['code' => $pm['code']], $pm);
         }
 
         // 2. Currencies
@@ -112,7 +112,7 @@ class SystemDefinitionSeeder extends Seeder
         ];
 
         foreach ($currencies as $curr) {
-            Currency::create($curr);
+            Currency::firstOrCreate(['code' => $curr['code']], $curr);
         }
 
         // 3. Units of Measure
@@ -130,7 +130,7 @@ class SystemDefinitionSeeder extends Seeder
         ];
 
         foreach ($units as $u) {
-            UnitOfMeasure::create($u);
+            UnitOfMeasure::firstOrCreate(['code' => $u['code']], $u);
         }
 
         // 4. Room Rate Codes (using new SP1340 structure)
@@ -162,7 +162,7 @@ class SystemDefinitionSeeder extends Seeder
         ];
 
         foreach ($rateCodes as $rc) {
-            RoomRateCode::create($rc);
+            RoomRateCode::firstOrCreate(['Ma' => $rc['Ma']], $rc);
         }
 
         // 5. Registration Statuses
@@ -234,7 +234,7 @@ class SystemDefinitionSeeder extends Seeder
         ];
 
         foreach ($statuses as $st) {
-            RegistrationStatus::create($st);
+            RegistrationStatus::firstOrCreate(['name' => $st['name']], $st);
         }
     }
 }

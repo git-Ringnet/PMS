@@ -21,8 +21,30 @@ class HotelSettingController extends Controller
         $resource = new HotelSettingResource($setting);
         $data = $resource->toArray(request());
         
-        $colorConfig = \App\Models\HotelConfig::where('name', 'ColorDefaultBookingRoomMap')->first();
-        $data['ColorDefaultBookingRoomMap'] = $colorConfig ? $colorConfig->value : '#97D5FF';
+        $configs = \App\Models\HotelConfig::whereIn('name', [
+            'ColorDefaultBookingRoomMap',
+            'RoomPlan_ColorRoomReservation',
+            'RoomPlan_ColorRoomInhouse',
+            'RoomPlan_ColorRoomLateCheckout',
+            'RoomPlan_ColorOOO',
+            'RoomPlan_ColorOOS',
+            'RoomPlan_AllowChangeArrivalDate',
+            'AllowOverRoomTypeRoomKind',
+            'AllowLockRoomCauseUnassignableRoomBK'
+        ])->get()->pluck('value', 'name');
+
+        $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
+        $data['RoomPlan_ColorRoomReservation'] = $configs->get('RoomPlan_ColorRoomReservation', '#E3E8C4');
+        $data['RoomPlan_ColorRoomInhouse'] = $configs->get('RoomPlan_ColorRoomInhouse', '#4a90e2');
+        $data['RoomPlan_ColorRoomLateCheckout'] = $configs->get('RoomPlan_ColorRoomLateCheckout', '#FCF55F');
+        $data['RoomPlan_ColorOOO'] = $configs->get('RoomPlan_ColorOOO', '#107eeb');
+        $data['RoomPlan_ColorOOS'] = $configs->get('RoomPlan_ColorOOS', '#107eeb');
+        $data['RoomPlan_AllowChangeArrivalDate'] = $configs->get('RoomPlan_AllowChangeArrivalDate', '0');
+        $data['AllowOverRoomTypeRoomKind'] = $configs->get('AllowOverRoomTypeRoomKind', '0');
+        $data['AllowLockRoomCauseUnassignableRoomBK'] = $configs->get('AllowLockRoomCauseUnassignableRoomBK', '0');
+        
+        $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
+        $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;
         
         return response()->json([
             'success' => true,
@@ -78,6 +100,11 @@ class HotelSettingController extends Controller
             'pos_invoice_symbol' => 'nullable|string|max:100',
             'logo_url' => 'nullable|string|max:255',
             'qr_code_url' => 'nullable|string|max:255',
+            'RoomPlan_ColorRoomReservation' => 'nullable|string|max:7',
+            'RoomPlan_ColorRoomInhouse' => 'nullable|string|max:7',
+            'RoomPlan_ColorRoomLateCheckout' => 'nullable|string|max:7',
+            'RoomPlan_ColorOOO' => 'nullable|string|max:7',
+            'RoomPlan_ColorOOS' => 'nullable|string|max:7',
         ], [
             'hotel_name.required' => 'Tên khách sạn không được để trống.',
             'email.email' => 'Email không đúng định dạng.',
@@ -89,6 +116,21 @@ class HotelSettingController extends Controller
 
         $setting->fill($validated);
         $setting->save();
+
+        foreach ([
+            'RoomPlan_ColorRoomReservation',
+            'RoomPlan_ColorRoomInhouse',
+            'RoomPlan_ColorRoomLateCheckout',
+            'RoomPlan_ColorOOO',
+            'RoomPlan_ColorOOS'
+        ] as $cfgKey) {
+            if ($request->has($cfgKey)) {
+                \App\Models\HotelConfig::updateOrCreate(
+                    ['name' => $cfgKey],
+                    ['value' => $request->input($cfgKey)]
+                );
+            }
+        }
 
         return new HotelSettingResource($setting);
     }

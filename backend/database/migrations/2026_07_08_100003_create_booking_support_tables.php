@@ -51,7 +51,8 @@ return new class extends Migration
         // =============================================
         Schema::create('room_do_not_move_locks', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('booking_room_id')->constrained('booking_rooms')->cascadeOnDelete();
+            $table->string('booking_room_id', 50);
+            $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
             $table->unsignedBigInteger('locked_by_user_id');   // ID user đã khóa
             $table->string('locked_by_username')->nullable();   // Username người khóa (lưu lại cho display)
             $table->dateTime('locked_at');                     // Thời điểm khóa

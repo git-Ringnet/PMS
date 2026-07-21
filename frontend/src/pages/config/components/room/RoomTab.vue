@@ -168,7 +168,7 @@ const fetchRoomForms = async () => {
 const fetchRooms = async () => {
   loading.value = true
   try {
-    const res = await http.get('/rooms')
+    const res = await http.get('/rooms', { params: { include_internal: 1 } })
     rooms.value = res.data.data || []
   } catch (err) {
     console.error('Lỗi khi tải danh sách phòng:', err)

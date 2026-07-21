@@ -7,6 +7,7 @@ import http from './http'
  * @param {Object} params - Filter: { search, status, registration_status_id, from_date, to_date, arrival_date }
  */
 export const fetchBookings = (params = {}) => http.get('/bookings', { params })
+export const fetchBookingInitDropdowns = () => http.get('/bookings/init-dropdowns')
 
 /**
  * Lấy chi tiết một booking
@@ -42,6 +43,10 @@ export const checkInRoom = (bookingId, roomId) => http.patch(`/bookings/${bookin
 export const undoCheckInRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/undo-checkin`)
 export const upgradeRoom = (bookingId, roomId, data) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/upgrade`, data)
 export const cancelBookingRoom = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`)
+export const lockRoomMove = (bookingId, roomId, data = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/lock-move`, data)
+export const unlockRoomMove = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/lock-move`)
+export const updateBookingRoom = (bookingId, roomId, data) => http.put(`/bookings/${bookingId}/rooms/${roomId}`, data)
+export const splitBookingRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/split`, data)
 
 // ==================== PAYMENT METHODS (PHƯƠNG THỨC THANH TOÁN) ====================
 export const fetchPaymentMethods = (params = {}) => http.get('/payment-methods', { params })
@@ -51,11 +56,17 @@ export const fetchRegistrationStatuses = (params = {}) => http.get('/registratio
 
 // ==================== ROOM CLASSES & RATE CODES ====================
 export const fetchRoomClasses = () => http.get('/room-classes')
+export const fetchRoomForms = () => http.get('/room-forms')
 export const fetchRoomRateCodes = () => http.get('/room-rate-codes')
 
 // ==================== CONFIG & SYSTEM ====================
 export const fetchHotelSettings = () => http.get('/hotel-settings')
 export const fetchSystemTime = () => http.get('/system-time')
+export const fetchSystemDate = () => http.get('/system-date')
+
+// ==================== USER SETTINGS ====================
+export const fetchUserSettings = () => http.get('/user-settings')
+export const updateUserSettings = (data) => http.put('/user-settings', data)
 
 // ==================== PAYMENTS (ĐẶT CỌC) ====================
 export const fetchPayments = (bookingId) => http.get(`/bookings/${bookingId}/payments`)
@@ -86,12 +97,30 @@ export const fetchCurrencies = (params = {}) => http.get('/currencies', { params
 export const fetchAvailability = (params = {}) => http.get('/availability', { params })
 export const checkAvailability = (params = {}) => http.get('/availability/check', { params })
 export const fetchVacantRooms = (params = {}) => http.get('/rooms/vacant', { params })
-export const autoAssignRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/auto-assign`)
+export const autoAssignRoom = (bookingId, roomId, params = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/auto-assign`, null, { params })
 export const fetchFOServicesList = () => http.get('/booking-services/fo-list')
 export const fetchBookingRoomServices = (roomId) => http.get(`/booking-rooms/${roomId}/services`)
 export const createBookingRoomService = (roomId, data) => http.post(`/booking-rooms/${roomId}/services`, data)
 export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/booking-rooms/${roomId}/services/bulk`, { data })
 export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
+
+// ==================== CHILD BREAKFAST ====================
+export const fetchBookingChildren = (bookingId) => http.get(`/bookings/${bookingId}/children`)
+export const updateChildBreakfastDetail = (childId, detailId, data) => http.patch(`/booking-children/${childId}/breakfast-details/${detailId}`, data)
+
+// ==================== SPECIAL REQUESTS (YÊU CẦU ĐẶC BIỆT) ====================
+export const fetchSpecialRequestsCatalog = () => http.get('/special-requests')
+export const createSpecialRequestMaster = (data) => http.post('/special-requests', data)
+export const deleteSpecialRequestMaster = (id) => http.delete(`/special-requests/${id}`)
+export const fetchBookingRoomSpecialRequests = (roomId) => http.get(`/booking-rooms/${roomId}/special-requests`)
+export const syncBookingRoomSpecialRequests = (roomId, data) => http.post(`/booking-rooms/${roomId}/special-requests/sync`, data)
+
+// ==================== GUESTS (THÔNG TIN KHÁCH) ====================
+export const fetchBookingGuests = (bookingId) => http.get(`/bookings/${bookingId}/guests`)
+export const initBookingGuests = (bookingId) => http.post(`/bookings/${bookingId}/init-guests`)
+export const updateBookingRoomGuest = (roomId, guestId, data) => http.put(`/booking-rooms/${roomId}/guests/${guestId}`, data)
+export const updateBookingChild = (childId, data) => http.put(`/booking-children/${childId}`, data)
+export const bulkUpdateBookingGuests = (bookingId, data) => http.post(`/bookings/${bookingId}/bulk-update-guests`, data)
 
 
 
