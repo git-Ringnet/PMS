@@ -414,7 +414,8 @@ function hasExtraBed(room) {
 
 // Room number red color warning rule
 function isRoomNumberRed(room) {
-  return room.status === ROOM_STATUSES.MAINTENANCE || room.booking_status === 'checkout' || !!room.has_issue
+  if (room.status === ROOM_STATUSES.MAINTENANCE) return false
+  return room.booking_status === 'checkout' || !!room.has_issue
 }
 
 // Show Broom icon for dirty rooms
@@ -1579,12 +1580,6 @@ const uniqueFloors = computed(() => {
                         <span :class="isRoomNumberRed(room) ? 'text-red-600' : (room.booking_color ? 'text-inherit' : 'text-gray-900')">
                           {{ room.room_number }}
                         </span>
-                        <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500" title="Khóa chuyển phòng (Do Not Move)">
-                          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
-                          </svg>
-                        </span>
                       </div>
 
                       <!-- Room Type (e.g. SUPT) -->
@@ -1627,8 +1622,8 @@ const uniqueFloors = computed(() => {
                     >
                       <!-- OOO or OOS lock icon -->
                       <template v-if="room.status === ROOM_STATUSES.MAINTENANCE">
-                        <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                        <RoomIcon v-else name="ooo" :monochrome="true" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-emerald-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-else name="ooo" :monochrome="true" class="text-amber-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
 
                       <!-- Housekeeping (broom) icon -->
@@ -1715,8 +1710,8 @@ const uniqueFloors = computed(() => {
                         
                         <!-- Dịch vụ dọn phòng / Khóa phòng -->
                         <template v-else-if="room.status === ROOM_STATUSES.MAINTENANCE">
-                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-slate-600" />
-                          <RoomIcon v-else name="ooo" :monochrome="true" class="w-5 h-5 text-slate-600" />
+                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-emerald-500" />
+                          <RoomIcon v-else name="ooo" :monochrome="true" class="w-5 h-5 text-amber-500" />
                         </template>
                         
                         <!-- Phòng ưu tiên -->
