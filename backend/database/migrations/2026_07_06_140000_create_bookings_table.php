@@ -43,6 +43,7 @@ return new class extends Migration
             // Tình trạng vận hành phòng (Status):
             // 0=Reservation, 1=Checked In, 2=Checked Out, 3=Deleted, 4=No Show, 100=Chuyển phòng
             $table->unsignedTinyInteger('status')->default(0);
+            $table->foreign('status')->references('id')->on('booking_statuses');
             // Tình trạng đặt phòng (BookingStatus) — FK tới registration_statuses (Guaranteed, Allotment, Tentative...)
             $table->foreignId('registration_status_id')->nullable()->constrained('registration_statuses')->nullOnDelete();
             $table->string('color', 20)->nullable(); // Màu hiển thị trên sơ đồ phòng (Color)

@@ -255,6 +255,64 @@ const emptyForm = () => ({
 
 const modalForm = ref(emptyForm())
 const isColorChanged = ref(false)
+const isColorPickerOpen = ref(false)
+
+const bkColorList = [
+  { hex: '#C00000', order: 1 },
+  { hex: '#FF0000', order: 2 },
+  { hex: '#FFC000', order: 3 },
+  { hex: '#FFFF00', order: 4 },
+  { hex: '#92D050', order: 5 },
+  { hex: '#00B050', order: 6 },
+  { hex: '#00B0F0', order: 7 },
+  { hex: '#0070C0', order: 8 },
+  { hex: '#002060', order: 9 },
+  { hex: '#6A5ACD', order: 10 },
+  { hex: '#800000', order: 11 },
+  { hex: '#DC143C', order: 13 },
+  { hex: '#CD5C5C', order: 14 },
+  { hex: '#D2691E', order: 16 },
+  { hex: '#FF4500', order: 17 },
+  { hex: '#FF6347', order: 18 },
+  { hex: '#FFA500', order: 19 },
+  { hex: '#FFD700', order: 20 },
+  { hex: '#FFDEAD', order: 21 },
+  { hex: '#F0E68C', order: 23 },
+  { hex: '#00FF00', order: 24 },
+  { hex: '#00FF7F', order: 25 },
+  { hex: '#228B22', order: 26 },
+  { hex: '#008B8B', order: 27 },
+  { hex: '#008080', order: 28 },
+  { hex: '#00CED1', order: 29 },
+  { hex: '#48D1CC', order: 30 },
+  { hex: '#7FFFD4', order: 31 },
+  { hex: '#00FFFF', order: 32 },
+  { hex: '#97D5FF', order: 33 },
+  { hex: '#0000FF', order: 35 },
+  { hex: '#800080', order: 38 },
+  { hex: '#FF1493', order: 39 },
+  { hex: '#FF69B4', order: 40 },
+  { hex: '#808080', order: 41 },
+  { hex: '#D3D3D3', order: 42 },
+]
+
+const currentColorRgb = computed(() => {
+  const hex = (modalForm.value?.color || '#97D5FF').replace('#', '')
+  let clean = hex
+  if (clean.length === 3) clean = clean.split('').map(c => c + c).join('')
+  const num = parseInt(clean, 16) || 0
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255
+  }
+})
+
+function selectBkColor(hex) {
+  modalForm.value.color = hex
+  isColorChanged.value = true
+  isColorPickerOpen.value = false
+}
 
 const activeDepositsList = computed(() => {
   if (!modalForm.value || !modalForm.value.deposits) return []
@@ -571,14 +629,6 @@ const filteredActiveRooms = computed(() => {
   if (!activeTab.value || !activeTab.value.rooms) return []
   let list = activeTab.value.rooms
 
-  // Filter out cancelled rooms (status 3) unless the overall booking status is also cancelled (status 3)
-  list = list.filter(r => {
-    if (Number(r.bookingRoomStatus) === 3) {
-      return Number(activeTab.value.status) === 3
-    }
-    return true
-  })
-
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
     list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
   }
@@ -676,7 +726,7 @@ function getStatusOrderAndName(status) {
   if (s === 0)   return { order: 0, name: 'Đăng ký' }
   if (s === 1)   return { order: 1, name: 'Đang ở' }
   if (s === 2)   return { order: 2, name: 'Phòng đi' }
-  if (s === 3 || s === 100) return { order: 3, name: 'Phòng chuyển' }
+  if (s === 3 || s === 100) return { order: 3, name: 'Hủy/Chuyển' }
   if (s === 4)   return { order: 4, name: 'Khách không đến' }
   return { order: 5, name: 'Khác' }
 }
@@ -693,11 +743,11 @@ const groupedRooms = computed(() => {
 
   const groupsList = Object.keys(groupsMap).map(typeName => {
     const rooms = groupsMap[typeName]
-    // Sort rooms by bookingRoomId ascending
+    // Sort rooms by bookingRoomId ascending (natural order)
     rooms.sort((a, b) => {
-      const idA = a.bookingRoomId || ''
-      const idB = b.bookingRoomId || ''
-      return idA.localeCompare(idB)
+      const idA = String(a.bookingRoomId || '')
+      const idB = String(b.bookingRoomId || '')
+      return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
     })
 
     const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
@@ -745,11 +795,11 @@ const groupedRoomsNested = computed(() => {
   const sortedStatusGroups = Object.values(statusGroupsMap).map(statusGroup => {
     const typeGroupsList = Object.keys(statusGroup.typeGroupsMap).map(typeName => {
       const rooms = statusGroup.typeGroupsMap[typeName]
-      // Sort rooms by bookingRoomId ascending
+      // Sort rooms by bookingRoomId ascending (natural order)
       rooms.sort((a, b) => {
-        const idA = a.bookingRoomId || ''
-        const idB = b.bookingRoomId || ''
-        return idA.localeCompare(idB)
+        const idA = String(a.bookingRoomId || '')
+        const idB = String(b.bookingRoomId || '')
+        return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
       })
 
       const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
@@ -955,8 +1005,6 @@ function bookingToTab(b) {
   // Nếu API trả về booking_rooms (dữ liệu mới)
   if (b.booking_rooms && b.booking_rooms.length > 0) {
     b.booking_rooms.forEach(br => {
-      // Chỉ ẩn phòng hủy (br.status = 3) nếu bản thân booking không hủy (b.status !== 3)
-      if (Number(br.status) === 3 && Number(b.status) !== 3) return
       const rc = br.room_class || {}
       const physicalRoom = br.room || {}
       
@@ -1517,6 +1565,7 @@ function closeDiscountPopover() {
 }
 
 function handleGlobalClick(event) {
+  isColorPickerOpen.value = false
   closeDiscountPopover()
   const toggleBtn = document.getElementById('column-selector-toggle')
   const selectorContainer = document.getElementById('column-selector-container')
@@ -2375,6 +2424,7 @@ function copyConfirmDate() {
 async function handleSaveNewBooking() {
   if (!modalForm.value.bookingName.trim()) { uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning'); return }
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) { uiStore.showToast('Vui lòng chọn ngày đến và ngày đi!', 'warning'); return }
+  if (!modalForm.value.registrationStatusId) { uiStore.showToast('Vui lòng chọn Tình trạng đăng ký!', 'warning'); return }
   if (!modalForm.value.companyId)        { uiStore.showToast('Vui lòng chọn Công ty!', 'warning'); return }
   if (!modalForm.value.marketId)         { uiStore.showToast('Vui lòng chọn Thị trường!', 'warning'); return }
   if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
@@ -3572,19 +3622,25 @@ defineExpose({
           <div class="table-wrap flex-1 min-h-[300px]" id="tableWrap" ref="tableWrapRef" @scroll="handleTableScroll">
           <table :style="{ width: tableWidth }" class="text-left border-collapse text-xs table-auto">
             <colgroup>
-              <col style="width: 35px" />
-              <col style="width: 50px" />
-              <col style="width: 45px" />
+              <col style="width: 30px" />
+              <col style="width: 30px" />
+              <col style="width: 30px" />
+              <col style="width: 30px" />
+              <col style="width: 40px" />
               <col v-for="col in columns.filter(c => c.visible)" :key="col.key" :style="{ width: getColWidthPx(col) }" />
               <col style="width: 120px" />
             </colgroup>
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold select-none whitespace-nowrap h-9 text-xs">
-                <th class="p-2 border-r border-slate-200 text-center w-[35px]"></th>
-                <th class="p-2 border-r border-slate-200 text-center w-[50px]">
-                  <input type="checkbox" @change="handleRowSelectAll" :checked="selectedRows.length === activeTab.rooms.length && activeTab.rooms.length > 0" />
+                <th class="p-0 border-r border-slate-200 text-center" colspan="4">
+                  <div class="flex items-center justify-start h-full">
+                    <div class="w-[30px] shrink-0"></div>
+                    <div class="w-[30px] shrink-0 flex items-center justify-center">
+                      <input type="checkbox" @change="handleRowSelectAll" :checked="selectedRows.length === activeTab.rooms.length && activeTab.rooms.length > 0" />
+                    </div>
+                  </div>
                 </th>
-                <th class="p-2 border-r border-slate-200 text-center w-[45px]">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[40px]">STT</th>
                 <th v-for="col in columns.filter(c => c.visible)" 
                     :key="col.key"
                     draggable="true"
@@ -3604,22 +3660,29 @@ defineExpose({
             </thead>
             <tbody class="font-semibold text-gray-900 select-text">
               <!-- Collapsible Section: Tình trạng Đăng Ký (3) -->
-              <tr class="bg-slate-100/60 border-b border-slate-200 font-bold h-9 text-gray-900">
-                <td class="p-2 border-r border-slate-200 text-center">
+              <tr 
+                class="bg-slate-100/60 border-b border-slate-200 font-bold h-9 text-gray-900 cursor-pointer select-none"
+                @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus"
+              >
+                <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                   <button 
                     @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus" 
-                    class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
+                    class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
                     style="font-size: 13px; line-height: 1;"
                   >
                     {{ collapsedSections.registrationStatus ? '+' : '−' }}
                   </button>
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center">
-                  <input type="checkbox" :checked="selectRangeVal === roomsTotalSummary.count" disabled />
+                <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                  <input 
+                    type="checkbox" 
+                    :checked="activeTab.rooms.length > 0 && activeTab.rooms.every(r => selectedRows.includes(r.id))" 
+                    @change="e => handleSelectAllInGroup(activeTab.rooms, e.target.checked)" 
+                  />
                 </td>
-                <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2">
+                <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2">
                   <div class="flex items-center gap-2.5">
-                    <span class="text-gray-900 text-xs font-bold uppercase tracking-wider">Tình trạng: Đăng ký ({{ roomsTotalSummary.count }})</span>
+                    <span class="text-gray-900 text-xs font-bold uppercase tracking-wider">Danh sách phòng ({{ roomsTotalSummary.count }})</span>
                   </div>
                 </td>
                 <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
@@ -3631,11 +3694,15 @@ defineExpose({
                 <template v-if="!hasStatusGroups">
                   <template v-for="group in groupedRooms" :key="group.typeName">
                     <!-- Type Group Header Row -->
-                    <tr class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900">
-                      <td class="p-2 border-r border-slate-200 text-center">
+                    <tr 
+                      class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900 cursor-pointer select-none"
+                      @click="toggleGroupCollapse(group.typeName)"
+                    >
+                      <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
+                      <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                         <button 
                           @click="toggleGroupCollapse(group.typeName)" 
-                          class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
+                          class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections[group.typeName] ? '+' : '−' }}
@@ -3648,7 +3715,7 @@ defineExpose({
                           @change="e => handleSelectAllInGroup(group.rooms, e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider">
+                      <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider pl-4">
                         {{ group.typeName }} ({{ group.rooms.length }})
                       </td>
                       <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
@@ -3663,6 +3730,8 @@ defineExpose({
                         @click="handleRowSelect(room.id)"
                         :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
                       >
+                        <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
+                        <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
                         <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                           <button 
                             @click="toggleRoomExpand(room)"
@@ -3676,7 +3745,7 @@ defineExpose({
                         <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                           <input type="checkbox" :checked="selectedRows.includes(room.id)" @change="handleRowSelect(room.id)" />
                         </td>
-                        <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold bg-slate-50/30">{{ idx + 1 }}</td>
                         <td v-for="col in columns.filter(c => c.visible)" 
                             :key="col.key" 
                             class="p-2 border-r border-slate-200" 
@@ -4067,7 +4136,10 @@ defineExpose({
                       <tr v-if="expandedRooms.includes(room.id)" :key="`services-${room.id}`" class="bg-slate-50/30">
                         <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
                         <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                        <td :colspan="columns.filter(c => c.visible).length + 2" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left">
+                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                        <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
                           <div class="max-w-[750px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
                             <table class="w-full text-left border-collapse text-[11px] table-fixed">
                               <colgroup>
@@ -4120,11 +4192,16 @@ defineExpose({
                 <template v-else>
                   <template v-for="statusGroup in groupedRoomsNested" :key="statusGroup.statusName">
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
-                    <tr class="bg-[#dbeafe]/60 border-b border-blue-200 font-bold h-8 text-blue-900">
-                      <td class="p-2 border-r border-blue-200 text-center">
+                    <tr 
+                      class="border-b font-bold h-8 cursor-pointer select-none"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-red-50/70 border-red-200 text-red-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
+                    >
+                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
-                          class="w-5 h-5 flex items-center justify-center rounded bg-blue-400 hover:bg-blue-500 text-white font-bold select-none cursor-pointer"
+                          class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-red-400 hover:bg-red-500' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
@@ -4137,21 +4214,25 @@ defineExpose({
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-blue-900 font-bold text-xs uppercase tracking-wider">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-700' : 'text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="bg-[#bfdbfe] sticky-shadow-left z-10"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-100' : 'bg-[#bfdbfe]'"></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
                     <template v-if="!collapsedSections['status_' + statusGroup.statusName]">
                       <template v-for="group in statusGroup.typeGroups" :key="group.typeName">
                         <!-- Sub-group Header (Room Type) -->
-                        <tr class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900">
-                          <td class="p-2 border-r border-slate-200 text-center">
+                        <tr 
+                          class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900 cursor-pointer select-none"
+                          @click="toggleGroupCollapse(statusGroup.statusName + '_' + group.typeName)"
+                        >
+                          <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
+                          <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                             <button 
                               @click="toggleGroupCollapse(statusGroup.statusName + '_' + group.typeName)" 
-                              class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer"
+                              class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
                               style="font-size: 13px; line-height: 1;"
                             >
                               {{ collapsedSections[statusGroup.statusName + '_' + group.typeName] ? '+' : '−' }}
@@ -4164,7 +4245,7 @@ defineExpose({
                               @change="e => handleSelectAllInGroup(group.rooms, e.target.checked)" 
                             />
                           </td>
-                          <td :colspan="columns.filter(c => c.visible).length + 1" class="p-2 text-gray-700 font-bold text-xs uppercase tracking-wider pl-6">
+                          <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-gray-700 font-bold text-xs uppercase tracking-wider pl-4">
                             {{ group.typeName }} ({{ group.rooms.length }})
                           </td>
                           <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
@@ -4174,11 +4255,16 @@ defineExpose({
                         <template v-if="!collapsedSections[statusGroup.statusName + '_' + group.typeName]">
                           <template v-for="(room, idx) in group.rooms" :key="room.id">
                             <tr 
-                              class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
-                              :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
+                              class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
+                              :class="[
+                                selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
+                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-500 bg-red-50/15' : ''
+                              ]"
                               @click="handleRowSelect(room.id)"
                               :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
                             >
+                              <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
+                              <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
                               <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                                 <button 
                                   @click="toggleRoomExpand(room)"
@@ -4192,7 +4278,7 @@ defineExpose({
                               <td class="p-2 border-r border-slate-200 text-center" @click.stop>
                                 <input type="checkbox" :checked="selectedRows.includes(room.id)" @change="handleRowSelect(room.id)" />
                               </td>
-                              <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold">{{ idx + 1 }}</td>
+                              <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold bg-slate-50/30">{{ idx + 1 }}</td>
                               <td v-for="col in columns.filter(c => c.visible)" 
                                   :key="col.key" 
                                   class="p-2 border-r border-slate-200" 
@@ -4582,7 +4668,10 @@ defineExpose({
                             <tr v-if="expandedRooms.includes(room.id)" :key="`services-b-${room.id}`" class="bg-slate-50/30">
                               <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
                               <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                              <td :colspan="columns.filter(c => c.visible).length + 2" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left">
+                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                              <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
                                 <div class="max-w-[750px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
                                   <table class="w-full text-left border-collapse text-[11px] table-fixed">
                                     <colgroup>
@@ -4838,9 +4927,49 @@ defineExpose({
                 <span>{{ isEditModal ? 'THÔNG TIN ĐĂNG KÝ' : 'TẠO ĐĂNG KÝ' }}</span>
             </div>
             <div class="flex items-center space-x-3">
-                <div class="flex items-center space-x-1.5 bg-white/10 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner">
-                    <span class="text-xs font-medium text-gray-300 select-none">Màu BK</span>
-                    <input type="color" v-model="modalForm.color" @change="isColorChanged = true" class="w-3.5 h-3.5 cursor-pointer bg-transparent border-none p-0 outline-none">
+                <div class="relative">
+                    <button 
+                      type="button"
+                      @click.stop="isColorPickerOpen = !isColorPickerOpen"
+                      class="flex items-center space-x-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner cursor-pointer select-none transition"
+                    >
+                        <span class="text-xs font-medium text-gray-200">Màu BK</span>
+                        <span class="w-3.5 h-3.5 rounded-full inline-block border border-white/40 shadow-xs" :style="{ backgroundColor: modalForm.color || '#97D5FF' }"></span>
+                    </button>
+
+                    <!-- COLOR PICKER POPOVER (Match Image 1) -->
+                    <div 
+                      v-if="isColorPickerOpen" 
+                      class="absolute left-0 top-full mt-1.5 bg-white border border-gray-200 rounded-lg shadow-2xl p-2.5 z-[99999] w-[232px] select-none text-gray-800 animate-in"
+                      @click.stop
+                    >
+                        <div class="grid grid-cols-9 gap-1 mb-2">
+                            <button
+                              v-for="c in bkColorList"
+                              :key="c.hex"
+                              type="button"
+                              @click="selectBkColor(c.hex)"
+                              class="w-5 h-5 rounded-xs relative flex items-center justify-center cursor-pointer border border-black/10 hover:scale-110 transition-transform p-0"
+                              :style="{ backgroundColor: c.hex }"
+                              :title="c.hex"
+                            >
+                                <span v-if="modalForm.color && modalForm.color.toUpperCase() === c.hex.toUpperCase()" class="w-1.5 h-1.5 rounded-full bg-black/80 inline-block"></span>
+                            </button>
+                        </div>
+
+                        <!-- FOOTER: HEX + RGB -->
+                        <div class="flex items-center justify-between pt-1.5 border-t border-gray-200 text-[11px] font-sans text-gray-600">
+                            <div class="flex items-center space-x-1">
+                                <span class="w-3 h-3 rounded-xs border border-gray-300 inline-block" :style="{ backgroundColor: modalForm.color || '#97D5FF' }"></span>
+                                <span class="font-bold text-gray-800 text-[10px]">{{ (modalForm.color || '#97D5FF').toUpperCase() }}</span>
+                            </div>
+                            <div class="text-[10px] font-medium text-gray-500 flex space-x-1">
+                                <span>R <span class="font-bold text-gray-800">{{ currentColorRgb.r }}</span></span>
+                                <span>G <span class="font-bold text-gray-800">{{ currentColorRgb.g }}</span></span>
+                                <span>B <span class="font-bold text-gray-800">{{ currentColorRgb.b }}</span></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex items-center space-x-1.5">
@@ -4926,7 +5055,7 @@ defineExpose({
                 </div>
             </div>
             <div class="flex flex-col">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Tình trạng đăng ký</div>
+                <div class="text-xs text-gray-500 font-semibold mb-0.5">Tình trạng đăng ký <span class="text-red-500">*</span></div>
                 <div class="relative w-full flex items-center">
                     <select 
                       v-model="modalForm.registrationStatusId"
@@ -5875,3 +6004,12 @@ defineExpose({
 </template>
 
 <style src="./CreateRegistrationPage.css"></style>
+
+<style>
+.cancelled-room,
+.cancelled-room span,
+.cancelled-room td {
+  color: #ef4444 !important;
+  text-decoration: line-through !important;
+}
+</style>

@@ -111,6 +111,11 @@ class Booking extends Model
         return $this->belongsTo(RegistrationStatus::class);
     }
 
+    public function bookingStatus()
+    {
+        return $this->belongsTo(BookingStatus::class, 'status', 'id');
+    }
+
     public function company()
     {
         return $this->belongsTo(Company::class);

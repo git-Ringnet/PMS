@@ -197,6 +197,11 @@ class BookingRoom extends Model
         return $this->belongsTo(Room::class, 'room_number', 'room_number');
     }
 
+    public function bookingStatus()
+    {
+        return $this->belongsTo(BookingStatus::class, 'status', 'id');
+    }
+
     public function roomClass()
     {
         return $this->belongsTo(RoomClass::class);
