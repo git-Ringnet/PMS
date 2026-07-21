@@ -158,7 +158,7 @@ class BookingController extends Controller
             'departure_flight'         => 'nullable|string|max:50',
             'departure_flight_date'    => 'nullable|date',
             'status'                   => 'nullable|integer',
-            'registration_status_id'   => 'nullable|exists:registration_statuses,id',
+            'registration_status_id'   => 'required|exists:registration_statuses,id',
             'color'                    => 'nullable|string|max:20',
             'is_git'                   => 'nullable|boolean',
             'is_day_use'               => 'nullable|boolean',
@@ -188,6 +188,9 @@ class BookingController extends Controller
             'module'                   => 'nullable|string|max:50',
             'shuttle_info'             => 'nullable|array',
             'deposit_details'          => 'nullable|array',
+        ], [
+            'registration_status_id.required' => 'Vui lòng chọn Tình trạng đăng ký!',
+            'registration_status_id.exists'   => 'Tình trạng đăng ký không tồn tại!',
         ]);
 
         // Lấy ngày hệ thống
@@ -518,7 +521,7 @@ class BookingController extends Controller
                 'departure_flight'         => 'nullable|string|max:50',
                 'departure_flight_date'    => 'nullable|date',
                 'status'                   => 'nullable|integer',
-                'registration_status_id'   => 'nullable|exists:registration_statuses,id',
+                'registration_status_id'   => 'required|exists:registration_statuses,id',
                 'color'                    => 'nullable|string|max:20',
                 'is_git'                   => 'nullable|boolean',
                 'is_day_use'               => 'nullable|boolean',
@@ -544,6 +547,9 @@ class BookingController extends Controller
                 'edit_message'             => 'nullable|string',
                 'shuttle_info'             => 'nullable|array',
                 'deposit_details'          => 'nullable|array',
+            ], [
+                'registration_status_id.required' => 'Vui lòng chọn Tình trạng đăng ký!',
+                'registration_status_id.exists'   => 'Tình trạng đăng ký không tồn tại!',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Illuminate\Support\Facades\Log::error('Validation failed on update booking: ' . json_encode($e->errors()));

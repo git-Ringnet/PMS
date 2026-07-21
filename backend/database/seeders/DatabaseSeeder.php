@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $this->call([
+            BookingStatusSeeder::class,
             SystemConfigurationSeeder::class,
             HotelDefinitionSeeder::class,
             TemplateContentSeeder::class,

@@ -69,8 +69,8 @@ return new class extends Migration
             // 0 = Booked (đã đặt, chưa check-in)
             // 1 = CheckedIn (đang ở)
             // 2 = CheckedOut (đã trả phòng)
-            // 3 = Cancelled (đã hủy)
             $table->unsignedTinyInteger('status')->default(0);
+            $table->foreign('status')->references('id')->on('booking_statuses');
 
             // Do Not Move — khóa không cho chuyển số phòng (1 = đang khóa)
             $table->unsignedTinyInteger('is_do_not_move')->default(0);
