@@ -20,7 +20,7 @@ import PromotionTab from './tabs/PromotionTab.vue'
 import AddProductCategoryModal from './modals/AddProductCategoryModal.vue'
 import AddProductModal from './modals/AddProductModal.vue'
 import BulkEditOutletActiveModal from './modals/BulkEditOutletActiveModal.vue'
-import ConfirmDeleteModal from './tabs/ConfirmDeleteModal.vue'
+import ConfirmReasonModal from '@/pages/fnb/components/restaurant/modals/ConfirmReasonModal.vue'
 
 defineEmits(['back'])
 
@@ -50,22 +50,50 @@ const confirmDeleteModal = ref({
   isOpen: false,
   title: 'Xác nhận xóa',
   message: '',
-  action: null
+  actionType: '',
+  targetData: null
 })
 
-const showConfirmDelete = (title, message, action) => {
+const showConfirmDelete = (title, message, actionType, targetData) => {
   confirmDeleteModal.value = {
     isOpen: true,
     title,
     message,
-    action
+    actionType,
+    targetData
   }
 }
 
-const executeConfirmDelete = async () => {
-  if (confirmDeleteModal.value.action) {
-    await confirmDeleteModal.value.action()
+const executeConfirmDelete = async (reason) => {
+  const { actionType, targetData } = confirmDeleteModal.value
+  
+  if (actionType === 'category') {
+    try {
+      isLoading.value = true
+      await deleteProductCategory(targetData.id, reason)
+      uiStore.showToast('Xóa nhóm món thành công!', 'success')
+      if (activeCategory.value === targetData.id) {
+        activeCategory.value = 'all'
+      }
+      await loadData()
+    } catch (err) {
+      uiStore.showToast('Không thể xóa nhóm món này!', 'error')
+    } finally {
+      isLoading.value = false
+    }
+  } else if (actionType === 'product') {
+    try {
+      isLoading.value = true
+      await deleteProduct(targetData.id, reason)
+      uiStore.showToast('Xóa món ăn thành công!', 'success')
+      await loadData()
+    } catch (err) {
+      uiStore.showToast('Không thể xóa món ăn này!', 'error')
+    } finally {
+      isLoading.value = false
+    }
   }
+  
   confirmDeleteModal.value.isOpen = false
 }
 
@@ -371,21 +399,8 @@ const confirmDeleteCategory = (cat) => {
   showConfirmDelete(
     'Xóa nhóm món',
     `Bạn có chắc chắn muốn xóa nhóm món "${cat.name}"?`,
-    async () => {
-      try {
-        isLoading.value = true
-        await deleteProductCategory(cat.id)
-        uiStore.showToast('Xóa nhóm món thành công!', 'success')
-        if (activeCategory.value === cat.id) {
-          activeCategory.value = 'all'
-        }
-        await loadData()
-      } catch (err) {
-        uiStore.showToast('Không thể xóa nhóm món này!', 'error')
-      } finally {
-        isLoading.value = false
-      }
-    }
+    'category',
+    cat
   )
 }
 
@@ -424,18 +439,8 @@ const confirmDeleteProduct = (prod) => {
   showConfirmDelete(
     'Xóa món ăn',
     `Bạn có chắc chắn muốn xóa món ăn "${prod.name}"?`,
-    async () => {
-      try {
-        isLoading.value = true
-        await deleteProduct(prod.id)
-        uiStore.showToast('Xóa món ăn thành công!', 'success')
-        await loadData()
-      } catch (err) {
-        uiStore.showToast('Không thể xóa món ăn này!', 'error')
-      } finally {
-        isLoading.value = false
-      }
-    }
+    'product',
+    prod
   )
 }
 
@@ -962,10 +967,9 @@ const handleBulkToggleGlobalActive = async () => {
       @save="saveBulkEditOutlets"
     />
 
-    <ConfirmDeleteModal
+    <ConfirmReasonModal
       :is-open="confirmDeleteModal.isOpen"
       :title="confirmDeleteModal.title"
-      :message="confirmDeleteModal.message"
       @close="confirmDeleteModal.isOpen = false"
       @confirm="executeConfirmDelete"
     />

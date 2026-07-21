@@ -132,6 +132,16 @@ class FbProductController extends Controller
 
         $product->load(['outletPrices.outlet', 'comboItems.child']);
         $product->outletPrices->each(fn($op) => $op->outlet_code = $op->outlet?->code);
+
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            $product,
+            'fnb',
+            'FbProductController',
+            "Tạo món ăn/dịch vụ: {$product->name}",
+            $product->product_code
+        );
+
         return response()->json($product, 201);
     }
 
@@ -258,16 +268,38 @@ class FbProductController extends Controller
 
         $product->load(['outletPrices.outlet', 'comboItems.child']);
         $product->outletPrices->each(fn($op) => $op->outlet_code = $op->outlet?->code);
+
+        \App\Services\ActivityLogService::logUpdate(
+            $request,
+            $product,
+            [],
+            'fnb',
+            'FbProductController',
+            "Cập nhật món ăn/dịch vụ: {$product->name}",
+            $product->product_code
+        );
+
         return response()->json($product);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $product = FbProduct::findOrFail($id);
 
         if ($product->image) {
             Storage::disk('public')->delete($product->image);
         }
+
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            $product,
+            'fnb',
+            'FbProductController',
+            "Xoá món ăn/dịch vụ: {$product->name} - Lý do: {$reason}",
+            $product->product_code
+        );
+
         $product->delete();
         return response()->json(['message' => 'Deleted successfully']);
     }
@@ -280,9 +312,33 @@ class FbProductController extends Controller
         ]);
 
         $products = FbProduct::whereIn('id', $validated['ids'])->get();
+        $oldStates = [];
+        $newStates = [];
         foreach ($products as $product) {
+            $oldStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
             $product->update(['is_active' => !$product->is_active]);
+            $newStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
         }
+
+        $count = $products->count();
+        \App\Services\ActivityLogService::log([
+            'user_id' => $request->user()?->id,
+            'user_name' => $request->user()?->name ?? 'Hệ thống',
+            'employee_code' => $request->user()?->employee_code,
+            'action' => 'update',
+            'module' => 'fnb',
+            'component' => 'FbProductController',
+            'description' => "Thay đổi trạng thái {$count} sản phẩm",
+            'target_type' => 'FbProduct',
+            'target_label' => "{$count} sản phẩm",
+            'old_values' => $oldStates,
+            'new_values' => $newStates,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'request_method' => $request->method(),
+            'request_url' => $request->fullUrl(),
+            'response_status' => 200,
+        ]);
 
         return response()->json(['message' => 'Toggled successfully']);
     }
@@ -301,11 +357,35 @@ class FbProductController extends Controller
         $action = $validated['action'];
 
         if ($action === 'toggle_global') {
-            // We just toggle the global is_active for all provided ids
             $products = FbProduct::whereIn('id', $ids)->get();
+            $oldStates = [];
+            $newStates = [];
             foreach ($products as $product) {
+                $oldStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
                 $product->update(['is_active' => !$product->is_active]);
+                $newStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
             }
+
+            $count = $products->count();
+            \App\Services\ActivityLogService::log([
+                'user_id' => $request->user()?->id,
+                'user_name' => $request->user()?->name ?? 'Hệ thống',
+                'employee_code' => $request->user()?->employee_code,
+                'action' => 'update',
+                'module' => 'fnb',
+                'component' => 'FbProductController',
+                'description' => "Cập nhật hàng loạt trạng thái {$count} sản phẩm",
+                'target_type' => 'FbProduct',
+                'target_label' => "{$count} sản phẩm",
+                'old_values' => $oldStates,
+                'new_values' => $newStates,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'request_method' => $request->method(),
+                'request_url' => $request->fullUrl(),
+                'response_status' => 200,
+            ]);
+
             return response()->json(['message' => 'Global active status toggled successfully']);
         }
 
@@ -325,6 +405,32 @@ class FbProductController extends Controller
                     $outlet->save();
                 }
             }
+
+            $count = count($ids);
+            \App\Services\ActivityLogService::log([
+                'user_id' => $request->user()?->id,
+                'user_name' => $request->user()?->name ?? 'Hệ thống',
+                'employee_code' => $request->user()?->employee_code,
+                'action' => 'update',
+                'module' => 'fnb',
+                'component' => 'FbProductController',
+                'description' => "Cập nhật trạng thái outlet cho {$count} sản phẩm",
+                'target_type' => 'FbProductOutlet',
+                'target_label' => "{$count} sản phẩm",
+                'new_values' => [
+                    'product_count' => $count,
+                    'outlets' => collect($outlets)->map(fn($o) => [
+                        'outlet_id' => $o['outlet_id'],
+                        'is_active' => $o['is_active'] ? 'Hoạt động' : 'Ngưng',
+                    ])->toArray(),
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'request_method' => $request->method(),
+                'request_url' => $request->fullUrl(),
+                'response_status' => 200,
+            ]);
+
             return response()->json(['message' => 'Outlet statuses updated successfully']);
         }
 

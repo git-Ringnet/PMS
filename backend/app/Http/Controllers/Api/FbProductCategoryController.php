@@ -33,6 +33,15 @@ class FbProductCategoryController extends Controller
 
         $category = FbProductCategory::create($validated);
 
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            $category,
+            'fnb',
+            'FbProductCategoryController',
+            "Tạo danh mục sản phẩm: {$category->name}",
+            $category->code
+        );
+
         return response()->json($category, 201);
     }
 
@@ -64,16 +73,37 @@ class FbProductCategoryController extends Controller
 
         $category->update($validated);
 
+        \App\Services\ActivityLogService::logUpdate(
+            $request,
+            $category,
+            [],
+            'fnb',
+            'FbProductCategoryController',
+            "Cập nhật danh mục sản phẩm: {$category->name}",
+            $category->code
+        );
+
         return response()->json($category);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $category = FbProductCategory::findOrFail($id);
 
         if ($category->image) {
             Storage::disk('public')->delete($category->image);
         }
+
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            $category,
+            'fnb',
+            'FbProductCategoryController',
+            "Xoá danh mục sản phẩm: {$category->name} - Lý do: {$reason}",
+            $category->code
+        );
+
         $category->delete();
         return response()->json(['message' => 'Deleted successfully']);
     }

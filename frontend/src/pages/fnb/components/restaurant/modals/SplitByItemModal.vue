@@ -34,27 +34,60 @@
           <span class="font-bold text-sky-800 text-sm">Tổng cộng tách sang bill mới:</span>
           <span class="font-extrabold text-sky-600 text-lg">{{ totalAmount.toLocaleString('vi-VN') }} ₫</span>
         </div>
+
+        <div class="mt-4 space-y-2">
+          <label class="block text-sm font-medium text-slate-700">
+            Lý do <span class="text-rose-500">*</span>
+          </label>
+          <input 
+            type="text" 
+            v-model="reason"
+            class="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            :class="showError && !reason.trim() ? 'border-red-500 bg-red-50' : 'border-slate-300'"
+            placeholder="Nhập lý do tách đơn..."
+            @keyup.enter="handleConfirm"
+          />
+          <p v-if="showError && !reason.trim()" class="text-[10px] text-red-500 mt-0.5">Vui lòng nhập lý do tách đơn.</p>
+        </div>
       </div>
       
       <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
         <button @click="$emit('close')" class="px-4 py-1.5 rounded bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors font-medium text-sm">Hủy</button>
-        <button @click="$emit('confirm')" class="px-4 py-1.5 rounded bg-sky-500 text-white hover:bg-sky-600 transition-colors font-medium text-sm">Xác nhận tách đơn</button>
+        <button @click="handleConfirm" class="px-4 py-1.5 rounded bg-sky-500 text-white hover:bg-sky-600 transition-colors font-medium text-sm">Xác nhận tách đơn</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   isOpen: { type: Boolean, required: true },
   items: { type: Array, required: true }
 })
 
-defineEmits(['close', 'confirm'])
+const emit = defineEmits(['close', 'confirm'])
+
+const reason = ref('')
+const showError = ref(false)
+
+watch(() => props.isOpen, (newVal) => {
+  if (newVal) {
+    reason.value = ''
+    showError.value = false
+  }
+})
 
 const totalAmount = computed(() => {
   return props.items.reduce((sum, item) => sum + Math.max(0, item.price * item.quantity - (item.discount || 0) + (item.surcharge || 0)), 0)
 })
+
+const handleConfirm = () => {
+  if (!reason.value.trim()) {
+    showError.value = true
+    return
+  }
+  emit('confirm', reason.value.trim())
+}
 </script>

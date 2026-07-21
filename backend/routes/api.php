@@ -192,6 +192,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
     
     // F&B Orders (Bills)
+    Route::get('/fnb/orders', [\App\Http\Controllers\FbOrderController::class, 'search']);
     Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
     Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders']);
     Route::get('/fnb/orders/{orderId}/print-logs', [\App\Http\Controllers\FbPrintLogController::class, 'getByOrder']);

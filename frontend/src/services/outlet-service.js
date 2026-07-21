@@ -4,7 +4,7 @@ import http from './http'
 export const fetchOutlets = () => http.get('/outlets')
 export const createOutlet = (data) => http.post('/outlets', data)
 export const updateOutlet = (id, data) => http.put(`/outlets/${id}`, data)
-export const deleteOutlet = (id) => http.delete(`/outlets/${id}`)
+export const deleteOutlet = (id, reason) => http.delete(`/outlets/${id}`, { data: { reason } })
 export const reorderOutlets = (orders) => http.post('/outlets/reorder', { orders })
 
 // ==================== DEPARTMENTS ====================
@@ -21,7 +21,7 @@ export const createFbLocation = (formData) => http.post('/fb-locations', formDat
 export const updateFbLocation = (id, formData) => http.post(`/fb-locations/${id}?_method=PUT`, formData, {
   headers: { 'Content-Type': 'multipart/form-data' }
 })
-export const deleteFbLocation = (id) => http.delete(`/fb-locations/${id}`)
+export const deleteFbLocation = (id, reason) => http.delete(`/fb-locations/${id}`, { data: { reason } })
 
 // ==================== FB TABLES ====================
 export const fetchFbTables = (params) => {
@@ -30,17 +30,17 @@ export const fetchFbTables = (params) => {
 }
 export const createFbTable = (data) => http.post('/fb-tables', data)
 export const updateFbTable = (id, data) => http.put(`/fb-tables/${id}`, data)
-export const deleteFbTable = (id) => http.delete(`/fb-tables/${id}`)
+export const deleteFbTable = (id, reason) => http.delete(`/fb-tables/${id}`, { data: { reason } })
 export const bulkCreateFbTables = (data) => http.post('/fb-tables/bulk-create', data)
 export const deleteFbTableRow = (data) => http.post('/fb-tables/delete-row', data)
 
 // ==================== FB ORDERS (BILLS) ====================
 export const fetchActiveOrders = (tableId) => http.get(`/fnb/tables/${tableId}/active-orders`)
 export const syncOrders = (tableId, data) => http.post(`/fnb/tables/${tableId}/orders/sync`, data)
-export const transferTable = (fromId, toId) => http.post(`/fb-tables/${fromId}/transfer/${toId}`)
+export const transferTable = (fromId, toId, payload = {}) => http.post(`/fb-tables/${fromId}/transfer/${toId}`, payload)
 
 export const transferItems = (fromId, toId, payload) => http.post(`/fb-tables/${fromId}/transfer-items/${toId}`, payload)
 export const fetchPrintLogs = (orderId) => http.get(`/fnb/orders/${orderId}/print-logs`)
 
-
-
+// ==================== FB PRINTERS ====================
+export const fetchFbPrinters = (params) => http.get('/fb-printers', { params })

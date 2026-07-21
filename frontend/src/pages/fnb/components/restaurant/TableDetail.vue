@@ -5,7 +5,8 @@ import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 
 import { fetchProductCategories, fetchProducts, fetchPromotions, fetchUnitsOfMeasure } from '@/services/product-service'
-import { fetchActiveOrders, transferTable, transferItems, syncOrders } from '@/services/outlet-service'
+import { fetchActiveOrders, transferTable, transferItems, syncOrders, fetchFbPrinters } from '@/services/outlet-service'
+import ConfirmReasonModal from './modals/ConfirmReasonModal.vue'
 
 import CustomerInfoModal from './modals/CustomerInfoModal.vue'
 
@@ -79,6 +80,39 @@ const emit = defineEmits(['back', 'save', 'split-success', 'transfer-success', '
 
 const showActionMenu = ref(false)
 
+const confirmReasonConfig = ref({
+  isOpen: false,
+  title: '',
+  message: '',
+  requireReason: false,
+  confirmText: '',
+  action: null,
+  data: null
+})
+
+const deletedItems = ref([])
+const deletedBills = ref([])
+const pendingActionLogs = ref([])
+
+const handleConfirmReasonClose = () => {
+  confirmReasonConfig.value.isOpen = false
+}
+
+const handleConfirmReasonSuccess = async (reason) => {
+  const { action, data } = confirmReasonConfig.value
+  confirmReasonConfig.value.isOpen = false
+
+  if (action === 'save') {
+    executeSave()
+  } else if (action === 'deleteItem') {
+    executeRemoveBillItem(data.item, reason)
+  } else if (action === 'deleteBill') {
+    executeDeleteBill(reason)
+  } else if (action === 'transferTable') {
+    executeTransferTable(data.targetTable, reason)
+  }
+}
+
 
 
 // Tabs for Bills
@@ -89,6 +123,18 @@ const bills = ref(
     ? JSON.parse(JSON.stringify(props.table.bills))
     : [{ id: Date.now(), name: 'Bill 1', items: [] }]
 )
+
+watch(() => props.table.bills, (newBills) => {
+  if (newBills && newBills.length > 0) {
+    bills.value = JSON.parse(JSON.stringify(newBills))
+    if (!bills.value.find(b => b.id === activeBillId.value)) {
+      activeBillId.value = bills.value[0].id
+    }
+  } else {
+    bills.value = [{ id: Date.now(), name: 'Bill 1', items: [] }]
+    activeBillId.value = bills.value[0].id
+  }
+}, { deep: true })
 
 const activeBillId = ref(bills.value[0].id)
 
@@ -134,7 +180,7 @@ const isCategoryDropdownOpen = ref(false)
 const isDirty = ref(false)
 
 const units = ref([])
-
+const fbPrinters = ref([])
 
 
 const rootCategories = computed(() => {
@@ -206,6 +252,9 @@ const loadMenuData = async () => {
 
     promotions.value = promRes.data.data || promRes.data || []
     units.value = unitRes.data.data || unitRes.data || []
+    
+    const printersRes = await fetchFbPrinters()
+    fbPrinters.value = printersRes.data.data || printersRes.data || []
 
     // If opening an empty table, auto-apply promotion
     if (bills.value.length === 1 && bills.value[0].items.length === 0 && !bills.value[0].promotionId) {
@@ -603,19 +652,30 @@ watch(() => activeBill.value?.items, (newItems, oldItems) => {
 
 
 const removeBillItem = (item) => {
+  confirmReasonConfig.value = {
+    isOpen: true,
+    title: 'Xác nhận xóa món',
+    message: `Bạn có chắc chắn muốn xóa món ${item.name}?`,
+    requireReason: true,
+    confirmText: 'Xóa món',
+    action: 'deleteItem',
+    data: { item }
+  }
+}
 
+const executeRemoveBillItem = (item, reason) => {
   const bill = activeBill.value
-
   if (!bill) return
+  
+  if (item.id && !isNaN(item.id) && Number(item.id) < 1000000000000) {
+    deletedItems.value.push({ id: Number(item.id), reason })
+  }
 
   bill.items = bill.items.filter(i => i.id !== item.id)
-
   if (bill.promotionId) {
     handleApplyPromotion(bill.promotionId);
   }
-
   isDirty.value = true
-
 }
 
 
@@ -678,7 +738,11 @@ const handlePrintBill = async () => {
     
     let printerStr = 'Chưa cài đặt'
     if (Array.isArray(printerIds) && printerIds.length > 0) {
-      printerStr = 'Máy in ' + printerIds.join(', ')
+      const printerNames = printerIds.map(id => {
+        const p = fbPrinters.value.find(pr => String(pr.id) === String(id))
+        return p ? p.name : `Máy in ${id}`
+      })
+      printerStr = printerNames.join(', ')
     }
 
     return {
@@ -686,7 +750,7 @@ const handlePrintBill = async () => {
       code: item.product?.code || item.product?.id || '-',
       name: item.product?.name || 'Món chưa rõ',
       billCode: bill.name || ('HD' + bill.id),
-      corderCode: '-',
+      corderCode: (item.product?.product_code || '') + (item.product?.barcode || '') || '-',
       printer: printerStr,
       printerType: 'Bếp/Bar',
       status: item.is_printed ? 'Đã in' : 'Chưa in',
@@ -772,7 +836,7 @@ const openSplitByAmountModal = () => {
 
 
 
-const handleConfirmSplitByItem = () => {
+const handleConfirmSplitByItem = (reason) => {
 
   const bill = activeBill.value
 
@@ -842,6 +906,12 @@ const handleConfirmSplitByItem = () => {
   isSplitByItemModalOpen.value = false
 
   isDirty.value = true
+
+  pendingActionLogs.value.push({
+    action: 'split_items',
+    description: `Tách món sang ${bills.value[bills.value.length - 1].name}`,
+    reason: reason
+  })
 
   handleSave()
 
@@ -1126,7 +1196,7 @@ const handleConfirmSplitByAmount = (amount) => {
 
 
 
-const handleConfirmMergeBills = (selectedIds) => {
+const handleConfirmMergeBills = (selectedIds, reason) => {
 
   if (selectedIds.length < 2) return
 
@@ -1219,25 +1289,38 @@ const handleConfirmMergeBills = (selectedIds) => {
 
   showActionMenu.value = false
 
+  pendingActionLogs.value.push({
+    action: 'merge_bills',
+    description: `Gộp các bill: ${selectedIds.join(', ')} vào bill ${primaryBill.name}`,
+    reason: reason
+  })
+
   handleSave()
 
 }
 
 
-const handleConfirmTransferItems = async (targetTable, transferredItems) => {
+const handleConfirmTransferItems = async (targetTable, transferredItems, reason) => {
   try {
     isTransferItemsModalOpen.value = false
 
     // Auto-save if there are unsaved changes
     if (isDirty.value) {
       await syncOrders(props.table.id, {
-        bills: JSON.parse(JSON.stringify(bills.value))
+        bills: JSON.parse(JSON.stringify(bills.value)),
+        deleted_items: JSON.parse(JSON.stringify(deletedItems.value)),
+        deleted_bills: JSON.parse(JSON.stringify(deletedBills.value)),
+        pending_action_logs: JSON.parse(JSON.stringify(pendingActionLogs.value))
       })
       isDirty.value = false
+      deletedItems.value = []
+      deletedBills.value = []
+      pendingActionLogs.value = []
     }
     // Build payload from selected items with adjusted quantities
     const sourceItems = transferredItems || itemsToSplit.value
     const payload = {
+      reason: reason,
       items: sourceItems.map(item => {
         const origQty = item.quantity || 1
         const transferQty = (item.transferQty != null) ? item.transferQty : origQty
@@ -1315,12 +1398,24 @@ const handleConfirmTransferItems = async (targetTable, transferredItems) => {
   }
 }
 
-const handleTransferTable = async (targetTable) => {
+const handleTransferTable = (targetTable) => {
+  isTransferTableModalOpen.value = false
+  confirmReasonConfig.value = {
+    isOpen: true,
+    title: 'Lý do chuyển bàn',
+    message: `Vui lòng nhập lý do chuyển sang bàn ${targetTable.name}`,
+    requireReason: true,
+    confirmText: 'Chuyển bàn',
+    action: 'transferTable',
+    data: { targetTable }
+  }
+}
+
+const executeTransferTable = async (targetTable, reason) => {
   try {
     // Call API to transfer
-    await transferTable(props.table.id, targetTable.id)
+    await transferTable(props.table.id, targetTable.id, { reason })
     
-    isTransferTableModalOpen.value = false
     uiStore.alert(`Chuyển bàn thành công tới: ${targetTable.name}`)
     // Emit an event that tells the parent (RestaurantPage) that a transfer occurred.
     // The parent should refresh both tables' status and switch the selected table or close the detail.
@@ -1384,6 +1479,18 @@ const handleBack = async () => {
 }
 
 const handleSave = () => {
+  confirmReasonConfig.value = {
+    isOpen: true,
+    title: 'Xác nhận lưu thay đổi',
+    message: 'Bạn có chắc chắn muốn lưu lại các thay đổi?',
+    requireReason: false,
+    confirmText: 'Lưu',
+    action: 'save',
+    data: null
+  }
+}
+
+const executeSave = () => {
   isDirty.value = false
   uiStore.alert('Đã lưu bill thành công!')
   
@@ -1405,8 +1512,46 @@ const handleSave = () => {
     guest: billInfo.value.guestCount || 1,
     time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     totalAmount: totalAmount,
-    bills: JSON.parse(JSON.stringify(bills.value))
+    bills: JSON.parse(JSON.stringify(bills.value)),
+    deletedItems: JSON.parse(JSON.stringify(deletedItems.value)),
+    deletedBills: JSON.parse(JSON.stringify(deletedBills.value)),
+    pendingActionLogs: JSON.parse(JSON.stringify(pendingActionLogs.value))
   })
+  
+  deletedItems.value = []
+  deletedBills.value = []
+  pendingActionLogs.value = []
+}
+
+const handleDeleteBillClick = () => {
+  confirmReasonConfig.value = {
+    isOpen: true,
+    title: 'Lý do xóa đơn',
+    message: 'Vui lòng nhập lý do xóa đơn hàng này.',
+    requireReason: true,
+    confirmText: 'Xóa đơn',
+    action: 'deleteBill',
+    data: null
+  }
+}
+
+const executeDeleteBill = (reason) => {
+  const bill = activeBill.value
+  if (!bill) return
+  
+  if (bill.id && !isNaN(bill.id) && Number(bill.id) < 1000000000000) {
+     deletedBills.value.push({ id: Number(bill.id), reason })
+  }
+  
+  bills.value = bills.value.filter(b => b.id !== bill.id)
+  if (bills.value.length > 0) {
+     activeBillId.value = bills.value[0].id
+  } else {
+     const newId = Date.now()
+     bills.value = [{ id: newId, name: 'Bill 1', items: [] }]
+     activeBillId.value = newId
+  }
+  isDirty.value = true
 }
 
 // Bill Info
@@ -2145,7 +2290,7 @@ onUnmounted(() => {
                 Chuyển món
               </button>
               <div class="border-t border-slate-100 my-1"></div>
-              <button class="w-full text-left px-3 py-2 text-xs flex items-center gap-2 font-semibold text-rose-500 hover:bg-rose-50 transition-colors">
+              <button @click="handleDeleteBillClick" class="w-full text-left px-3 py-2 text-xs flex items-center gap-2 font-semibold text-rose-500 hover:bg-rose-50 transition-colors">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                 Xóa đơn
               </button>
@@ -2249,6 +2394,16 @@ onUnmounted(() => {
       :editing-item="editingBillItem"
       @close="handleComboClose"
       @confirm="handleComboConfirm"
+    />
+
+    <ConfirmReasonModal
+      :is-open="confirmReasonConfig.isOpen"
+      :title="confirmReasonConfig.title"
+      :message="confirmReasonConfig.message"
+      :require-reason="confirmReasonConfig.requireReason"
+      :confirm-text="confirmReasonConfig.confirmText"
+      @close="handleConfirmReasonClose"
+      @confirm="handleConfirmReasonSuccess"
     />
 
   </div>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 
 use App\Models\Outlet;
+use App\Services\ActivityLogService;
 
 class OutletController extends Controller
 {
@@ -35,6 +36,14 @@ class OutletController extends Controller
         ]);
 
         $outlet = Outlet::create($validated);
+
+        ActivityLogService::logCreate(
+            $request,
+            $outlet,
+            'fnb',
+            'Điểm bán hàng',
+            'Thêm mới điểm bán hàng: ' . $outlet->name
+        );
 
         return response()->json([
             'message' => 'Outlet created successfully',
@@ -71,15 +80,34 @@ class OutletController extends Controller
 
         $outlet->update($validated);
 
+        ActivityLogService::logUpdate(
+            $request,
+            $outlet,
+            $outlet->getOriginal(),
+            'fnb',
+            'Điểm bán hàng',
+            'Cập nhật điểm bán hàng: ' . $outlet->name
+        );
+
         return response()->json([
             'message' => 'Outlet updated successfully',
             'data' => $outlet->load(['department', 'service'])
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $outlet = Outlet::findOrFail($id);
+        
+        $reason = $request->input('reason', '');
+        ActivityLogService::logDelete(
+            $request,
+            $outlet,
+            'fnb',
+            'Điểm bán hàng',
+            "Xóa điểm bán hàng: {$outlet->name}. Lý do: {$reason}"
+        );
+        
         $outlet->delete();
 
         return response()->json([

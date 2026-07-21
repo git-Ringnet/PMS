@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import AddPromotionModal from '../modals/AddPromotionModal.vue'
+import ConfirmReasonModal from '@/pages/fnb/components/restaurant/modals/ConfirmReasonModal.vue'
 import { fetchOutlets } from '@/services/outlet-service'
 
 const uiStore = useUiStore()
@@ -67,24 +68,27 @@ const savePromotion = async (data) => {
     }
 }
 
-const deletePromotion = async (id, e) => {
+const showReasonModal = ref(false)
+const cancelTargetData = ref(null)
+
+const deletePromotion = (id, e) => {
   if (e) e.stopPropagation()
-  const confirmed = await uiStore.confirm({
-    title: 'Xác nhận xóa',
-    message: 'Bạn có chắc chắn muốn xóa khuyến mãi này?'
-  })
-  if (!confirmed) return
-  
+  cancelTargetData.value = id
+  showReasonModal.value = true
+}
+
+const handleConfirmDelete = async (reason) => {
+  showReasonModal.value = false
   try {
-        isLoading.value = true
-        await http.delete(`/fb-promotions/${id}`)
-        uiStore.showToast('Xóa khuyến mãi thành công', 'success')
-        await loadPromotions()
-    } catch (e) {
-        uiStore.showToast('Lỗi xóa khuyến mãi', 'error')
-    } finally {
-        isLoading.value = false
-    }
+      isLoading.value = true
+      await http.delete(`/fb-promotions/${cancelTargetData.value}`, { data: { reason } })
+      uiStore.showToast('Xóa khuyến mãi thành công', 'success')
+      await loadPromotions()
+  } catch (e) {
+      uiStore.showToast('Lỗi xóa khuyến mãi', 'error')
+  } finally {
+      isLoading.value = false
+  }
 }
 
 const formatDate = (dateStr) => {
@@ -162,6 +166,12 @@ const formatDate = (dateStr) => {
       :outletsList="outletsList"
       @close="showAddModal = false"
       @save="savePromotion"
+    />
+    <ConfirmReasonModal
+      :is-open="showReasonModal"
+      title="Xác nhận xóa"
+      @close="showReasonModal = false"
+      @confirm="handleConfirmDelete"
     />
   </div>
 </template>

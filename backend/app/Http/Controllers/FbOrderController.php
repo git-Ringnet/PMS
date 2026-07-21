@@ -7,6 +7,7 @@ use App\Models\FbOrder;
 use App\Models\FbOrderItem;
 use App\Models\FbTable;
 use Illuminate\Support\Facades\DB;
+use App\Services\ActivityLogService;
 
 class FbOrderController extends Controller
 {
@@ -84,11 +85,82 @@ class FbOrderController extends Controller
     public function syncOrders(Request $request, $tableId)
     {
         $bills = $request->input('bills', []);
-        \Illuminate\Support\Facades\Log::info("SYNC_ORDERS: Payload received for table $tableId", ['bills' => $bills]);
+        $deletedItems = $request->input('deleted_items', []);
+        $deletedBills = $request->input('deleted_bills', []);
+        $pendingActionLogs = $request->input('pending_action_logs', []);
+
+        \Illuminate\Support\Facades\Log::info("SYNC_ORDERS: Payload received for table $tableId", ['bills' => $bills, 'deletedItems' => $deletedItems, 'deletedBills' => $deletedBills, 'pendingActionLogs' => $pendingActionLogs]);
         
         DB::beginTransaction();
         try {
             $table = FbTable::findOrFail($tableId);
+            
+            // Get original active orders and their items before modifications
+            $oldOrdersWithItems = FbOrder::where('table_id', $tableId)
+                ->whereIn('status', ['serving', 'waiting'])
+                ->with('items')
+                ->get();
+            
+            $oldSummaryLines = [];
+            foreach ($oldOrdersWithItems as $o) {
+                $oldSummaryLines[] = "• Đơn hàng: {$o->name} (Khách: {$o->guest_count})";
+                foreach ($o->items as $it) {
+                    $noteStr = $it->note ? " [Ghi chú: {$it->note}]" : "";
+                    $surStr = $it->surcharge > 0 ? " [Phụ thu: " . number_format($it->surcharge) . " ₫]" : "";
+                    $discStr = $it->discount > 0 ? " [Giảm giá: " . number_format($it->discount) . " ₫]" : "";
+                    $oldSummaryLines[] = "  - " . $it->product_name . " x" . (float)$it->quantity . " (" . number_format($it->price) . " ₫)" . $discStr . $surStr . $noteStr;
+                }
+            }
+            $oldDetailsSummary = count($oldSummaryLines) > 0 ? implode("\n", $oldSummaryLines) : "Trống";
+            
+            $changesToLog = [];
+            
+            // Process deleted bills
+            if (is_array($deletedBills)) {
+                foreach ($deletedBills as $delBill) {
+                    $orderId = $delBill['id'] ?? null;
+                    $reason = $delBill['reason'] ?? 'Không có lý do';
+                    if ($orderId) {
+                        $order = FbOrder::find($orderId);
+                        if ($order) {
+                            ActivityLogService::logDelete(
+                                $request, 
+                                $order, 
+                                'fnb', 
+                                'FbOrderController', 
+                                "Xóa đơn hàng: " . $order->name . " - Lý do: " . $reason, 
+                                $order->name
+                            );
+                            $order->status = 'cancelled';
+                            $order->save();
+                        }
+                    }
+                }
+            }
+
+            // Process deleted items
+            if (is_array($deletedItems)) {
+                foreach ($deletedItems as $delItem) {
+                    $itemId = $delItem['id'] ?? null;
+                    $reason = $delItem['reason'] ?? 'Không có lý do';
+                    if ($itemId) {
+                        $item = FbOrderItem::find($itemId);
+                        if ($item) {
+                            ActivityLogService::logDelete(
+                                $request, 
+                                $item, 
+                                'fnb', 
+                                'FbOrderController', 
+                                "Xóa món: " . $item->product_name . " x" . (float)$item->quantity . " - Lý do: " . $reason,
+                                $item->product_name
+                            );
+                            // We don't necessarily need to delete it here if the payload already omits it
+                            // but if it's logged, it's good. The sync logic below will delete it anyway
+                            // since it deletes all items and re-inserts.
+                        }
+                    }
+                }
+            }
             
             // Get existing active orders
             $existingOrders = FbOrder::where('table_id', $tableId)
@@ -144,20 +216,51 @@ class FbOrderController extends Controller
                 }
 
                 // Sync items
+                // Fetch old items to compare before deleting
+                $oldItems = FbOrderItem::where('order_id', $order->id)->get()->keyBy('id');
+                
                 // Delete existing items
                 FbOrderItem::where('order_id', $order->id)->delete();
                 
                 // Re-insert items
                 foreach ($items as $item) {
                     $productId = $item['product_id'] ?? ($item['product']['id'] ?? $item['id']);
+                    $productName = $item['name'] ?? ($item['product']['name'] ?? 'Unknown');
+                    $newQty = $item['quantity'] ?? 1;
+                    $newDiscount = $item['discount'] ?? 0;
+                    $newPrice = $item['price'] ?? 0;
+
+                    // Check if this is an existing item or a new item
+                    $isExistingItem = isset($item['id']) && is_numeric($item['id']) && $oldItems->has($item['id']);
+                    
+                    if ($isExistingItem) {
+                        // Log updates for existing items
+                        $oldItem = $oldItems->get($item['id']);
+                        $newSurcharge = $item['surcharge'] ?? 0;
+                        $newNote = $item['note'] ?? null;
+                        
+                        if (floatval($oldItem->quantity) != floatval($newQty) || floatval($oldItem->discount) != floatval($newDiscount) || floatval($oldItem->price) != floatval($newPrice) || floatval($oldItem->surcharge) != floatval($newSurcharge) || $oldItem->note !== $newNote) {
+                            $changes = [];
+                            if (floatval($oldItem->quantity) != floatval($newQty)) $changes[] = "Số lượng (" . floatval($oldItem->quantity) . " -> " . floatval($newQty) . ")";
+                            if (floatval($oldItem->price) != floatval($newPrice)) $changes[] = "Giá (" . number_format($oldItem->price) . " -> " . number_format($newPrice) . ")";
+                            if (floatval($oldItem->discount) != floatval($newDiscount)) $changes[] = "Giảm giá (" . number_format($oldItem->discount) . " -> " . number_format($newDiscount) . ")";
+                            if (floatval($oldItem->surcharge) != floatval($newSurcharge)) $changes[] = "Phụ thu (" . number_format($oldItem->surcharge) . " -> " . number_format($newSurcharge) . ")";
+                            if ($oldItem->note !== $newNote) $changes[] = "Ghi chú";
+                            
+                            $changeStr = implode(', ', $changes);
+                            $changesToLog[] = "Cập nhật món {$productName} ({$changeStr}) trên hóa đơn {$order->name}";
+                        }
+                    } else {
+                        $changesToLog[] = "Thêm món {$productName} x{$newQty} trên hóa đơn {$order->name}";
+                    }
                     
                     $newItem = FbOrderItem::create([
                         'order_id' => $order->id,
                         'product_id' => $productId,
-                        'product_name' => $item['name'] ?? ($item['product']['name'] ?? 'Unknown'),
-                        'quantity' => $item['quantity'] ?? 1,
-                        'price' => $item['price'] ?? 0,
-                        'discount' => $item['discount'] ?? 0,
+                        'product_name' => $productName,
+                        'quantity' => $newQty,
+                        'price' => $newPrice,
+                        'discount' => $newDiscount,
                         'surcharge' => $item['surcharge'] ?? 0,
                         'base_discount' => $item['baseDiscount'] ?? 0,
                         'base_surcharge' => $item['baseSurcharge'] ?? 0,
@@ -205,6 +308,92 @@ class FbOrderController extends Controller
             }
             $table->save();
             
+            // Log pending actions (split, merge)
+            if (is_array($pendingActionLogs)) {
+                foreach ($pendingActionLogs as $log) {
+                    $desc = $log['description'] ?? 'Thao tác không xác định';
+                    $reason = $log['reason'] ?? 'Không có lý do';
+                    $changesToLog[] = "{$desc} (Lý do: {$reason})";
+                }
+            }
+
+            // Refresh and load new state of orders with items
+            $newOrdersWithItems = FbOrder::where('table_id', $tableId)
+                ->whereIn('status', ['serving', 'waiting'])
+                ->with('items')
+                ->get();
+
+            $newSummaryLines = [];
+            foreach ($newOrdersWithItems as $o) {
+                $newSummaryLines[] = "• Đơn hàng: {$o->name} (Khách: {$o->guest_count})";
+                foreach ($o->items as $it) {
+                    $noteStr = $it->note ? " [Ghi chú: {$it->note}]" : "";
+                    $surStr = $it->surcharge > 0 ? " [Phụ thu: " . number_format($it->surcharge) . " ₫]" : "";
+                    $discStr = $it->discount > 0 ? " [Giảm giá: " . number_format($it->discount) . " ₫]" : "";
+                    $newSummaryLines[] = "  - " . $it->product_name . " x" . (float)$it->quantity . " (" . number_format($it->price) . " ₫)" . $discStr . $surStr . $noteStr;
+                }
+            }
+            $newDetailsSummary = count($newSummaryLines) > 0 ? implode("\n", $newSummaryLines) : "Trống";
+
+            // If we have changes, log exactly ONE combined entry
+            if (!empty($changesToLog)) {
+                $addedCount = 0;
+                $updatedCount = 0;
+                $splitCount = 0;
+                $mergeCount = 0;
+                $otherCount = 0;
+                foreach ($changesToLog as $logLine) {
+                    if (str_starts_with($logLine, "Thêm")) {
+                        $addedCount++;
+                    } elseif (str_starts_with($logLine, "Cập nhật")) {
+                        $updatedCount++;
+                    } elseif (str_contains($logLine, "Tách")) {
+                        $splitCount++;
+                    } elseif (str_contains($logLine, "Gộp")) {
+                        $mergeCount++;
+                    } else {
+                        $otherCount++;
+                    }
+                }
+                
+                $summaryParts = [];
+                if ($addedCount > 0) $summaryParts[] = "Thêm {$addedCount} món";
+                if ($updatedCount > 0) $summaryParts[] = "Cập nhật {$updatedCount} món";
+                if ($splitCount > 0) $summaryParts[] = "Tách bill";
+                if ($mergeCount > 0) $summaryParts[] = "Gộp bill";
+                if ($otherCount > 0) $summaryParts[] = "Thao tác khác ({$otherCount})";
+                
+                $descriptionSummary = implode(", ", $summaryParts);
+                if (empty($descriptionSummary)) {
+                    $descriptionSummary = "Thay đổi đơn hàng";
+                }
+
+                \App\Services\ActivityLogService::log([
+                    'user_id' => $request->user()?->id,
+                    'user_name' => $request->user()?->name ?? 'Hệ thống',
+                    'employee_code' => $request->user()?->employee_code,
+                    'action' => 'update',
+                    'module' => 'fnb',
+                    'component' => 'FbOrderController',
+                    'description' => "Đồng bộ đơn hàng Bàn {$table->name}: {$descriptionSummary}",
+                    'target_type' => 'FbTable',
+                    'target_id' => $table->id,
+                    'target_label' => $table->name,
+                    'old_values' => [
+                        'items' => $oldDetailsSummary
+                    ],
+                    'new_values' => [
+                        'actions' => implode("\n", $changesToLog),
+                        'items' => $newDetailsSummary
+                    ],
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'request_method' => $request->method(),
+                    'request_url' => $request->fullUrl(),
+                    'response_status' => 200,
+                ]);
+            }
+            
             DB::commit();
             return response()->json(['message' => 'Orders synchronized successfully', 'table_status' => $table->status]);
         } catch (\Exception $e) {
@@ -215,9 +404,31 @@ class FbOrderController extends Controller
     }
 
     /**
+     * Search orders (bills)
+     */
+    public function search(Request $request)
+    {
+        $query = FbOrder::with(['table', 'creator'])->withCount('items');
+        
+        if ($search = $request->query('search')) {
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('id', 'like', "%{$search}%")
+                  ->orWhere('customer_name', 'like', "%{$search}%")
+                  ->orWhere('outlet_code', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = $request->query('per_page', 100);
+        $orders = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        return response()->json($orders);
+    }
+
+    /**
      * Transfer orders from one table to another
      */
-    public function transferTable($fromId, $toId)
+    public function transferTable(Request $request, $fromId, $toId)
     {
         try {
             DB::beginTransaction();
@@ -250,6 +461,37 @@ class FbOrderController extends Controller
             $toTable->status = 'serving';
             $toTable->save();
 
+            // Log activity
+            $reason = $request->input('reason', 'Không có lý do');
+            \App\Services\ActivityLogService::log([
+                'user_id' => $request->user()?->id,
+                'user_name' => $request->user()?->name ?? 'Hệ thống',
+                'employee_code' => $request->user()?->employee_code,
+                'action' => 'transfer',
+                'module' => 'fnb',
+                'component' => 'FbOrderController',
+                'description' => "Chuyển bàn từ {$fromTable->name} sang {$toTable->name} - Lý do: {$reason}",
+                'target_type' => 'FbTable',
+                'target_id' => $fromTable->id,
+                'target_label' => $fromTable->name,
+                'old_values' => [
+                    'table_name' => $fromTable->name,
+                    'table_code' => $fromTable->table_code,
+                    'status' => 'serving',
+                ],
+                'new_values' => [
+                    'table_name' => $toTable->name,
+                    'table_code' => $toTable->table_code,
+                    'status' => 'serving',
+                    'reason' => $reason,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'request_method' => $request->method(),
+                'request_url' => $request->fullUrl(),
+                'response_status' => 200,
+            ]);
+
             DB::commit();
 
             return response()->json([
@@ -280,6 +522,7 @@ class FbOrderController extends Controller
             'items.*.base_discount' => 'nullable|numeric',
             'items.*.base_surcharge' => 'nullable|numeric',
             'items.*.note' => 'nullable|string',
+            'reason' => 'nullable|string',
         ]);
 
         try {
@@ -380,6 +623,39 @@ class FbOrderController extends Controller
                     return ($item->price * $item->quantity) - $item->discount + $item->surcharge;
                 });
             $toOrder->save();
+            $toOrder->save();
+
+            $reason = $request->input('reason', 'Không có lý do');
+            $transferredNames = collect($validated['items'])->map(function($i) {
+                return ($i['product_name'] ?? 'Món') . ' x' . ($i['quantity'] ?? 1);
+            })->implode(', ');
+            
+            \App\Services\ActivityLogService::log([
+                'user_id' => $request->user()?->id,
+                'user_name' => $request->user()?->name ?? 'Hệ thống',
+                'employee_code' => $request->user()?->employee_code,
+                'action' => 'transfer',
+                'module' => 'fnb',
+                'component' => 'FbOrderController',
+                'description' => "Chuyển món từ bàn {$fromTable->name} sang {$toTable->name} - Lý do: {$reason}",
+                'target_type' => 'FbTable',
+                'target_id' => $fromTable->id,
+                'target_label' => $fromTable->name,
+                'old_values' => [
+                    'from_table' => $fromTable->name,
+                    'items' => $transferredNames,
+                ],
+                'new_values' => [
+                    'to_table' => $toTable->name,
+                    'items' => $transferredNames,
+                    'reason' => $reason,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'request_method' => $request->method(),
+                'request_url' => $request->fullUrl(),
+                'response_status' => 200,
+            ]);
 
             DB::commit();
 

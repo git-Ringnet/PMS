@@ -488,6 +488,11 @@ watch([
 })
 
 const handleSave = () => {
+  if (conflictStatus.value === 'conflict') {
+    uiStore.alert('Không thể lưu vì trùng lịch. Vui lòng chọn lại thời gian hoặc địa điểm khác.')
+    return
+  }
+  
   if (!form.value.arrivalDate) {
     uiStore.alert('Vui lòng chọn Ngày đến.')
     return

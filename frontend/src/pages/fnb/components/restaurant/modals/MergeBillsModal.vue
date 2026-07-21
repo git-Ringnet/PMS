@@ -37,6 +37,21 @@
         <div v-if="selectedIds.length > 0" class="mt-4 p-3 bg-amber-50 rounded border border-amber-100 text-xs text-amber-800">
           Tất cả các món ăn từ các đơn được chọn sẽ được gộp vào <strong>{{ getFirstSelectedBillName() }}</strong>. Các hóa đơn còn lại sẽ bị xóa.
         </div>
+
+        <div class="mt-4 space-y-2">
+          <label class="block text-sm font-medium text-slate-700">
+            Lý do <span class="text-rose-500">*</span>
+          </label>
+          <input 
+            type="text" 
+            v-model="reason"
+            class="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            :class="showError && !reason.trim() ? 'border-red-500 bg-red-50' : 'border-slate-300'"
+            placeholder="Nhập lý do gộp đơn..."
+            @keyup.enter="handleConfirm"
+          />
+          <p v-if="showError && !reason.trim()" class="text-[10px] text-red-500 mt-0.5">Vui lòng nhập lý do gộp đơn.</p>
+        </div>
       </div>
       
       <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
@@ -65,10 +80,14 @@ const props = defineProps({
 const emit = defineEmits(['close', 'confirm'])
 
 const selectedIds = ref([])
+const reason = ref('')
+const showError = ref(false)
 
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
     selectedIds.value = []
+    reason.value = ''
+    showError.value = false
   }
 })
 
@@ -80,9 +99,11 @@ const getFirstSelectedBillName = () => {
 }
 
 const handleConfirm = () => {
-  if (selectedIds.value.length >= 2) {
-    // Make a copy to pass to parent
-    emit('confirm', [...selectedIds.value])
+  if (selectedIds.value.length < 2) return
+  if (!reason.value.trim()) {
+    showError.value = true
+    return
   }
+  emit('confirm', [...selectedIds.value], reason.value.trim())
 }
 </script>
