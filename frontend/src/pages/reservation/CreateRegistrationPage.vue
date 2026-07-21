@@ -1371,7 +1371,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
 function syncAllocationToRooms(row) {
   if (!modalForm.value.rooms) return
   modalForm.value.rooms.forEach(r => {
-    if (r.roomClassId === row.roomClassId) {
+    if (r.roomClassId === row.roomClassId && !r.bookingRoomId) {
       r.price = Number(row.price) || 0
       r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
       r.adults = Number(row.adults) || 2
@@ -1740,7 +1740,7 @@ async function openEditModal() {
     shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
       ? JSON.parse(JSON.stringify(tab.shuttleInfo))
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
-    roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
+    roomAllocations: initRoomAllocations([], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
     createdBy: tab.createdBy || '',
@@ -1938,15 +1938,7 @@ async function updateRoomAvailability() {
           minAv = 0
         }
         
-        if (isEditModal.value && modalForm.value.dbId) {
-          const originalBooking = tabs.value.find(t => t.dbId === modalForm.value.dbId)
-          if (originalBooking) {
-            const matchingAlloc = originalBooking.roomAllocations?.find(a => a.roomClassId === alloc.roomClassId)
-            if (matchingAlloc) {
-              minAv += Number(matchingAlloc.quantity) || 0
-            }
-          }
-        }
+
 
         alloc.availableRooms = minAv
       })
@@ -1967,7 +1959,7 @@ function updateAllocatedRooms(row) {
     modalForm.value.rooms = []
   }
 
-  const currentRooms = modalForm.value.rooms.filter(r => r.roomClassId === row.roomClassId)
+  const currentRooms = modalForm.value.rooms.filter(r => r.roomClassId === row.roomClassId && !r.bookingRoomId)
   const diff = row.quantity - currentRooms.length
 
   if (diff > 0) {
@@ -2011,7 +2003,7 @@ function updateAllocatedRooms(row) {
     const toRemoveCount = Math.abs(diff)
     let removed = 0
     modalForm.value.rooms = modalForm.value.rooms.filter(r => {
-      if (r.roomClassId === row.roomClassId && removed < toRemoveCount) {
+      if (r.roomClassId === row.roomClassId && !r.bookingRoomId && removed < toRemoveCount) {
         removed++
         return false
       }
@@ -2024,7 +2016,7 @@ watch(() => modalForm.value.roomAllocations, (newAllocations) => {
   if (!newAllocations || !modalForm.value.rooms) return
   newAllocations.forEach(alloc => {
     modalForm.value.rooms.forEach(r => {
-      if (r.roomClassId === alloc.roomClassId) {
+      if (r.roomClassId === alloc.roomClassId && !r.bookingRoomId) {
         if (r.price !== alloc.price) {
           r.price = alloc.price
           r.total = (alloc.price || 0) * (r.nights || 1)
@@ -2043,7 +2035,7 @@ watch(() => modalForm.value.rooms, (newRooms) => {
   const counts = {}
   if (newRooms) {
     newRooms.forEach(r => {
-      if (r.roomClassId) {
+      if (r.roomClassId && !r.bookingRoomId) {
         counts[r.roomClassId] = (counts[r.roomClassId] || 0) + 1
       }
     })
@@ -2167,7 +2159,7 @@ async function handleRowDateChange(row) {
 
     if (modalForm.value.rooms) {
       modalForm.value.rooms.forEach(r => {
-        if (r.roomClassId === row.roomClassId) {
+        if (r.roomClassId === row.roomClassId && !r.bookingRoomId) {
           r.checkIn = row.arrivalDate
           r.checkOut = row.departureDate
           r.nights = row.nights
@@ -2182,7 +2174,7 @@ async function handleRowDateChange(row) {
         room_class_id: row.roomClassId,
         arrival_date: row.arrivalDate,
         departure_date: row.departureDate,
-        exclude_booking_room_id: modalForm.value.dbId || undefined
+        exclude_booking_room_id: undefined
       })
       row.availableRooms = res.data?.av !== undefined ? Number(res.data.av) : 0
     } catch(e) {
