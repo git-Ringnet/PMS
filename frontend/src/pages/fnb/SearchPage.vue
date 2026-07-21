@@ -5,7 +5,7 @@
       <div class="bg-white p-4 rounded-xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex items-center justify-between hover:shadow-md transition-all duration-300 hover:-translate-y-0.5">
         <div>
           <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Tổng đơn</div>
-          <div class="text-xl font-bold text-slate-800">0</div>
+          <div class="text-xl font-bold text-slate-800">{{ stats.totalOrders }}</div>
         </div>
         <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shadow-inner">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -14,7 +14,7 @@
       <div class="bg-white p-4 rounded-xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex items-center justify-between hover:shadow-md transition-all duration-300 hover:-translate-y-0.5">
         <div>
           <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Đã thanh toán</div>
-          <div class="text-xl font-bold text-emerald-600">0</div>
+          <div class="text-xl font-bold text-emerald-600">{{ stats.paidOrders }}</div>
         </div>
         <div class="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-500 shadow-inner">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -23,7 +23,7 @@
       <div class="bg-white p-4 rounded-xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex items-center justify-between hover:shadow-md transition-all duration-300 hover:-translate-y-0.5">
         <div>
           <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Chưa thanh toán</div>
-          <div class="text-xl font-bold text-orange-600">0</div>
+          <div class="text-xl font-bold text-orange-600">{{ stats.unpaidOrders }}</div>
         </div>
         <div class="w-9 h-9 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-500 shadow-inner">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -32,7 +32,7 @@
       <div class="bg-white p-4 rounded-xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex items-center justify-between hover:shadow-md transition-all duration-300 hover:-translate-y-0.5">
         <div>
           <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Tổng tiền</div>
-          <div class="text-xl font-bold text-sky-700">0</div>
+          <div class="text-xl font-bold text-sky-700">{{ formatCurrency(stats.totalAmount) }}</div>
         </div>
         <div class="w-9 h-9 rounded-full bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shadow-inner">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
@@ -41,7 +41,7 @@
       <div class="bg-white p-4 rounded-xl shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex items-center justify-between hover:shadow-md transition-all duration-300 hover:-translate-y-0.5">
         <div>
           <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Tổng khách</div>
-          <div class="text-xl font-bold text-slate-700">0</div>
+          <div class="text-xl font-bold text-slate-700">{{ stats.totalGuests }}</div>
         </div>
         <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shadow-inner">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
@@ -64,7 +64,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
-          <input type="text" class="pl-9 pr-3 py-1.5 w-64 border border-slate-200 rounded-lg text-xs text-slate-700 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 transition-all placeholder-slate-400 font-semibold" placeholder="Tìm kiếm mã đơn, quầy..." />
+          <input type="text" v-model="searchQuery" @input="handleSearchInput" class="pl-9 pr-3 py-1.5 w-64 border border-slate-200 rounded-lg text-xs text-slate-700 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 transition-all placeholder-slate-400 font-semibold" placeholder="Tìm kiếm mã đơn, quầy..." />
         </div>
       </div>
       <button class="bg-sky-100 hover:bg-sky-200 text-sky-700 border border-sky-200 px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all duration-200 shadow-xs cursor-pointer">
@@ -112,8 +112,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
-            <!-- Empty state row that takes full height -->
-            <tr>
+            <tr v-if="orders.length === 0 && !loading">
               <td colspan="18" class="p-0 h-[400px]">
                 <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
                   <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center shadow-inner border border-slate-100">
@@ -127,6 +126,35 @@
                   </div>
                 </div>
               </td>
+            </tr>
+            <tr v-for="order in orders" :key="order.id" class="hover:bg-slate-50 transition-colors">
+              <td class="sticky left-0 z-10 bg-white border-b border-slate-100 px-4 py-2 text-sky-600 font-medium">#{{ order.id }}</td>
+              <td class="sticky left-[140px] z-10 bg-white border-b border-slate-100 px-4 py-2">{{ order.name }}</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-slate-400">N/A</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-slate-400">N/A</td>
+              <td class="border-b border-slate-100 px-4 py-2">{{ order.outlet_code || 'N/A' }}</td>
+              <td class="border-b border-slate-100 px-4 py-2">{{ order.table?.name || 'N/A' }}</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-slate-400">N/A</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-right font-medium text-emerald-600">{{ formatCurrency(order.total_amount) }}</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-center">{{ order.guest_count || 0 }}</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-center">{{ order.items_count || 0 }}</td>
+              <td class="border-b border-slate-100 px-4 py-2">{{ formatDate(order.created_at) }}</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-slate-400">N/A</td>
+              <td class="border-b border-slate-100 px-4 py-2">{{ order.customer_name || 'Khách lẻ' }}</td>
+              <td class="border-b border-slate-100 px-4 py-2">{{ order.creator?.name || 'N/A' }}</td>
+              <td class="border-b border-slate-100 px-4 py-2 text-slate-400">N/A</td>
+              <td class="border-b border-slate-100 px-4 py-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold" 
+                      :class="{
+                        'bg-blue-100 text-blue-700': order.status === 'serving',
+                        'bg-emerald-100 text-emerald-700': order.status === 'paid',
+                        'bg-slate-100 text-slate-700': order.status === 'cancelled'
+                      }">
+                  {{ order.status === 'serving' ? 'Đang phục vụ' : (order.status === 'paid' ? 'Đã thanh toán' : 'Đã hủy') }}
+                </span>
+              </td>
+              <td class="border-b border-slate-100 px-4 py-2 text-slate-400">N/A</td>
+              <td class="border-b border-slate-100 px-4 py-2 max-w-[130px] truncate" :title="order.public_note || ''">{{ order.public_note || '' }}</td>
             </tr>
           </tbody>
         </table>
@@ -153,18 +181,20 @@
 
       <!-- Pagination -->
       <div class="flex items-center gap-4 text-slate-600">
-        <span class="font-bold">1-1 trên 1 đơn</span>
+        <span class="font-bold">{{ pagination.total > 0 ? (pagination.current_page - 1) * pagination.per_page + 1 : 0 }}-{{ Math.min(pagination.current_page * pagination.per_page, pagination.total) }} trên {{ pagination.total }} đơn</span>
         <div class="flex gap-1.5">
-          <button class="w-7 h-7 flex items-center justify-center border border-slate-200 rounded-md bg-white text-slate-400 cursor-not-allowed shadow-sm">
+          <button @click="changePage(pagination.current_page - 1)" :disabled="pagination.current_page <= 1" class="w-7 h-7 flex items-center justify-center border border-slate-200 rounded-md bg-white text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-50 shadow-sm transition-colors">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <button class="w-7 h-7 flex items-center justify-center border border-[#7ec0f3] rounded-md bg-[#e0f2fe] text-sky-700 font-bold shadow-sm">1</button>
-          <button class="w-7 h-7 flex items-center justify-center border border-slate-200 rounded-md bg-white text-slate-400 cursor-not-allowed shadow-sm">
+          <button class="w-7 h-7 flex items-center justify-center border border-[#7ec0f3] rounded-md bg-[#e0f2fe] text-sky-700 font-bold shadow-sm">{{ pagination.current_page }}</button>
+          <button @click="changePage(pagination.current_page + 1)" :disabled="pagination.current_page >= pagination.last_page" class="w-7 h-7 flex items-center justify-center border border-slate-200 rounded-md bg-white text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-50 shadow-sm transition-colors">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
           </button>
         </div>
-        <select class="border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 text-xs font-semibold focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-200 shadow-sm">
-          <option>100 / trang</option>
+        <select v-model="pagination.per_page" @change="fetchOrders(1)" class="border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 text-xs font-semibold focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-200 shadow-sm">
+          <option :value="20">20 / trang</option>
+          <option :value="50">50 / trang</option>
+          <option :value="100">100 / trang</option>
         </select>
       </div>
     </div>
@@ -172,6 +202,81 @@
 </template>
 
 <script setup>
+import { ref, onMounted, computed } from 'vue'
+import api from '@/services/http'
+import { format } from 'date-fns'
+
+const orders = ref([])
+const loading = ref(false)
+const searchQuery = ref('')
+const pagination = ref({
+  current_page: 1,
+  last_page: 1,
+  per_page: 100,
+  total: 0
+})
+
+const stats = computed(() => {
+  return {
+    totalOrders: pagination.value.total,
+    paidOrders: orders.value.filter(o => o.status === 'paid').length,
+    unpaidOrders: orders.value.filter(o => o.status !== 'paid' && o.status !== 'cancelled').length,
+    totalAmount: orders.value.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0),
+    totalGuests: orders.value.reduce((sum, o) => sum + (Number(o.guest_count) || 0), 0)
+  }
+})
+
+const fetchOrders = async (page = 1) => {
+  loading.value = true
+  try {
+    const response = await api.get('/fnb/orders', {
+      params: {
+        page: page,
+        per_page: pagination.value.per_page,
+        search: searchQuery.value
+      }
+    })
+    orders.value = response.data.data
+    pagination.value = {
+      current_page: response.data.current_page,
+      last_page: response.data.last_page,
+      per_page: response.data.per_page,
+      total: response.data.total
+    }
+  } catch (error) {
+    console.error('Error fetching orders:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const changePage = (page) => {
+  if (page >= 1 && page <= pagination.value.last_page) {
+    fetchOrders(page)
+  }
+}
+
+let searchTimeout = null
+const handleSearchInput = () => {
+  clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    fetchOrders(1)
+  }, 500)
+}
+
+const formatCurrency = (value) => {
+  if (!value) return '0 ₫'
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value)
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  return format(new Date(dateString), 'dd/MM/yyyy HH:mm')
+}
+
+onMounted(() => {
+  fetchOrders()
+})
 </script>
 
 <style scoped>

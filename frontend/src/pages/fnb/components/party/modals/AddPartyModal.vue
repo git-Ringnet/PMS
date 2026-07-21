@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import AddSubPartyModal from './AddSubPartyModal.vue'
+import ConfirmReasonModal from '@/pages/fnb/components/restaurant/modals/ConfirmReasonModal.vue'
 import { fetchCompanies, fetchUsers, fetchBookers, createBooker } from '@/services/company-service'
 import { getParty, cancelParty, completeSubParty } from '@/services/fb-party-service'
 import http from '@/services/http'
@@ -359,14 +360,16 @@ const viewConfirmationSlip = () => {
 const printConfirmationSlip = () => {
   uiStore.alert('Đang in phiếu xác nhận của đặt tiệc ' + (form.value.partyCode || ''))
 }
-const handleCancelParty = async () => {
-  const confirmed = await uiStore.confirm({
-    title: 'Xác nhận hủy tiệc',
-    message: 'Bạn có chắc chắn muốn hủy đặt tiệc này không?'
-  })
-  if (!confirmed) return
+const showCancelReasonModal = ref(false)
+
+const handleCancelParty = () => {
+  showCancelReasonModal.value = true
+}
+
+const handleConfirmCancelParty = async (reason) => {
+  showCancelReasonModal.value = false
   try {
-    const res = await cancelParty(form.value.id)
+    const res = await cancelParty(form.value.id, reason)
     uiStore.alert(res.data?.message || 'Đã huỷ tiệc thành công.')
     emit('refresh')
     emit('close')
@@ -912,4 +915,11 @@ defineExpose({
       </div>
     </div>
   </div>
+
+  <ConfirmReasonModal
+    :is-open="showCancelReasonModal"
+    title="Xác nhận huỷ tiệc"
+    @close="showCancelReasonModal = false"
+    @confirm="handleConfirmCancelParty"
+  />
 </template>

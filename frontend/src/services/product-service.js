@@ -15,7 +15,7 @@ export const updateProductCategory = (id, formData) => http.post(`/fb-product-ca
   headers: { 'Content-Type': 'multipart/form-data' }
 })
 
-export const deleteProductCategory = (id) => http.delete(`/fb-product-categories/${id}`)
+export const deleteProductCategory = (id, reason) => http.delete(`/fb-product-categories/${id}`, { data: { reason } })
 
 // ==================== PRODUCTS (Thực đơn / Món ăn) ====================
 // Changed to call dedicated F&B API endpoints: /fb-products
@@ -29,7 +29,7 @@ export const updateProduct = (id, formData) => http.post(`/fb-products/${id}?_me
   headers: { 'Content-Type': 'multipart/form-data' }
 })
 
-export const deleteProduct = (id) => http.delete(`/fb-products/${id}`)
+export const deleteProduct = (id, reason) => http.delete(`/fb-products/${id}`, { data: { reason } })
 
 export const bulkToggleActiveProducts = (ids) => http.post('/fb-products/bulk-toggle-active', { ids })
 export const bulkUpdateProductStatus = (payload) => http.post('/fb-products/bulk-update-status', payload)

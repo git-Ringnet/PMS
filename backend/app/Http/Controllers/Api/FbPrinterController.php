@@ -39,6 +39,14 @@ class FbPrinterController extends Controller
 
         $printer = FbPrinter::create($validated);
 
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            $printer,
+            'fnb',
+            'FbPrinterController',
+            "Tạo máy in: {$printer->name}"
+        );
+
         return response()->json($printer->load('outlet'), 201);
     }
 
@@ -68,15 +76,34 @@ class FbPrinterController extends Controller
 
         $printer->update($validated);
 
+        \App\Services\ActivityLogService::logUpdate(
+            $request,
+            $printer,
+            [],
+            'fnb',
+            'FbPrinterController',
+            "Cập nhật máy in: {$printer->name}"
+        );
+
         return response()->json($printer->load('outlet'));
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
         $printer = FbPrinter::findOrFail($id);
+
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            $printer,
+            'fnb',
+            'FbPrinterController',
+            "Xoá máy in: {$printer->name} - Lý do: {$reason}"
+        );
+
         $printer->delete();
 
         return response()->json(['message' => 'Xóa máy in thành công!']);

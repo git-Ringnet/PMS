@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\FbPromotion;
 use Illuminate\Support\Facades\DB;
+use App\Services\ActivityLogService;
 
 class FbPromotionController extends Controller
 {
@@ -53,6 +54,17 @@ class FbPromotionController extends Controller
             }
 
             DB::commit();
+
+            DB::commit();
+
+            ActivityLogService::logCreate(
+                $request,
+                $promotion,
+                'fnb',
+                'Khuyến mãi',
+                'Thêm mới khuyến mãi: ' . $promotion->name
+            );
+
             return response()->json($promotion->load('products.product.outletPrices'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -113,6 +125,18 @@ class FbPromotionController extends Controller
             }
 
             DB::commit();
+
+            DB::commit();
+
+            ActivityLogService::logUpdate(
+                $request,
+                $promotion,
+                $promotion->getOriginal(),
+                'fnb',
+                'Khuyến mãi',
+                'Cập nhật khuyến mãi: ' . $promotion->name
+            );
+
             return response()->json($promotion->load('products.product.outletPrices'));
         } catch (\Exception $e) {
             DB::rollBack();
@@ -120,9 +144,19 @@ class FbPromotionController extends Controller
         }
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $promotion = FbPromotion::findOrFail($id);
+        
+        $reason = $request->input('reason', '');
+        ActivityLogService::logDelete(
+            $request,
+            $promotion,
+            'fnb',
+            'Khuyến mãi',
+            "Xóa khuyến mãi: {$promotion->name}. Lý do: {$reason}"
+        );
+        
         $promotion->products()->delete();
         $promotion->delete();
 

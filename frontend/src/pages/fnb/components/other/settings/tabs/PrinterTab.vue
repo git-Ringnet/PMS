@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import AddPrinterModal from '../modals/AddPrinterModal.vue'
-import ConfirmDeleteModal from './ConfirmDeleteModal.vue'
+import ConfirmReasonModal from '@/pages/fnb/components/restaurant/modals/ConfirmReasonModal.vue'
 
 const uiStore = useUiStore()
 const isLoading = ref(false)
@@ -20,24 +20,31 @@ const editingPrinter = ref(null)
 const confirmDeleteModal = ref({
   isOpen: false,
   title: 'Xác nhận xóa',
-  message: '',
-  action: null
+  targetId: null
 })
 
-const showConfirmDelete = (title, message, action) => {
+const showConfirmDelete = (title, targetId) => {
   confirmDeleteModal.value = {
     isOpen: true,
     title,
-    message,
-    action
+    targetId
   }
 }
 
-const executeConfirmDelete = async () => {
-  if (confirmDeleteModal.value.action) {
-    await confirmDeleteModal.value.action()
+const executeConfirmDelete = async (reason) => {
+  const { targetId } = confirmDeleteModal.value
+  try {
+    isLoading.value = true
+    await http.delete(`/fb-printers/${targetId}`, { data: { reason } })
+    uiStore.showToast('Xóa máy in thành công!', 'success')
+    await fetchPrinters()
+  } catch (error) {
+    console.error('Lỗi khi xóa máy in:', error)
+    uiStore.showToast('Xóa máy in thất bại!', 'error')
+  } finally {
+    isLoading.value = false
+    confirmDeleteModal.value.isOpen = false
   }
-  confirmDeleteModal.value.isOpen = false
 }
 
 const fetchOutlets = async () => {
@@ -123,20 +130,7 @@ const handleSavePrinter = async (printerData) => {
 const handleDeletePrinter = (id) => {
   showConfirmDelete(
     'Xóa máy in',
-    'Bạn có chắc chắn muốn xóa máy in này?',
-    async () => {
-      try {
-        isLoading.value = true
-        await http.delete(`/fb-printers/${id}`)
-        uiStore.showToast('Xóa máy in thành công!', 'success')
-        await fetchPrinters()
-      } catch (error) {
-        console.error('Lỗi khi xóa máy in:', error)
-        uiStore.showToast('Xóa máy in thất bại!', 'error')
-      } finally {
-        isLoading.value = false
-      }
-    }
+    id
   )
 }
 </script>
@@ -255,10 +249,9 @@ const handleDeletePrinter = (id) => {
       @save="handleSavePrinter"
     />
 
-    <ConfirmDeleteModal
+    <ConfirmReasonModal
       :is-open="confirmDeleteModal.isOpen"
       :title="confirmDeleteModal.title"
-      :message="confirmDeleteModal.message"
       @close="confirmDeleteModal.isOpen = false"
       @confirm="executeConfirmDelete"
     />

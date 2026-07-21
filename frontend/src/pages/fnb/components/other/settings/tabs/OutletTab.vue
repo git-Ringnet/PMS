@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import AddOutletModal from '../modals/AddOutletModal.vue'
 import { fetchOutlets, createOutlet, updateOutlet, deleteOutlet, reorderOutlets } from '@/services/outlet-service'
+import ConfirmReasonModal from '@/pages/fnb/components/restaurant/modals/ConfirmReasonModal.vue'
 
 const uiStore = useUiStore()
 
@@ -63,14 +64,18 @@ const handleSave = async (formData) => {
   }
 }
 
-const handleDelete = async (id) => {
-  const confirm = await uiStore.confirm({
-    title: 'Xác nhận xóa outlet',
-    message: 'Bạn có chắc chắn muốn xóa outlet này?'
-  })
-  if (!confirm) return
+const showReasonModal = ref(false)
+const cancelTargetData = ref(null)
+
+const handleDelete = (id) => {
+  cancelTargetData.value = id
+  showReasonModal.value = true
+}
+
+const handleConfirmDelete = async (reason) => {
+  showReasonModal.value = false
   try {
-    await deleteOutlet(id)
+    await deleteOutlet(cancelTargetData.value, reason)
     uiStore.showToast('Xóa outlet thành công', 'success')
     await loadOutlets()
   } catch (error) {
@@ -229,6 +234,13 @@ const onDrop = async (index, event) => {
       :outlet="selectedOutlet"
       @close="isModalOpen = false"
       @save="handleSave"
+    />
+
+    <ConfirmReasonModal
+      :is-open="showReasonModal"
+      title="Xác nhận xóa"
+      @close="showReasonModal = false"
+      @confirm="handleConfirmDelete"
     />
   </div>
 </template>

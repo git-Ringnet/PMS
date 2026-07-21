@@ -93,7 +93,12 @@ const loadData = async () => {
 const filteredProducts = computed(() => {
   let filtered = products.value
   if (selectedCategoryId.value) {
-    filtered = filtered.filter(p => p.category_id === selectedCategoryId.value)
+    // Collect selected category + all its children IDs
+    const childIds = categories.value
+      .filter(c => c.parent_id === selectedCategoryId.value)
+      .map(c => c.id)
+    const matchIds = [selectedCategoryId.value, ...childIds]
+    filtered = filtered.filter(p => matchIds.includes(p.fb_product_category_id || p.category_id))
   }
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
@@ -246,7 +251,7 @@ const formatNum = (val) => {
           <!-- Products Grid (3-column) -->
           <div v-else-if="filteredProducts.length > 0" class="grid grid-cols-3 gap-2">
             <div v-for="prod in filteredProducts" :key="'prod-'+prod.id" @click="addToCart(prod)"
-                 class="border border-slate-200 rounded-lg overflow-hidden bg-white cursor-pointer hover:border-emerald-400 hover:shadow-sm transition-all flex flex-col p-2 relative h-[140px]">
+                 class="border border-slate-200 rounded-lg overflow-hidden bg-white cursor-pointer hover:border-emerald-400 hover:shadow-sm transition-all flex flex-col p-2 relative h-[160px]">
               <div v-if="isProductInCart(prod.id)" class="absolute top-1 right-1 w-5 h-5 bg-sky-500 rounded-full flex items-center justify-center text-white shadow-sm z-10">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
               </div>
@@ -254,8 +259,8 @@ const formatNum = (val) => {
                 <img v-if="prod.image" :src="getImageUrl(prod.image)" class="w-full h-full object-cover" />
                 <span v-else class="text-[10px] text-slate-400 font-bold px-1 text-center truncate">{{ prod.code || prod.product_code }}</span>
               </div>
-              <span class="text-[10px] font-bold text-slate-800 line-clamp-2 leading-tight flex-1">[{{ prod.code || prod.product_code }}] {{ prod.name }}</span>
-              <span class="text-[11px] text-emerald-600 font-bold mt-1 text-right whitespace-nowrap">{{ formatNum(prod.price) }} ₫</span>
+              <div class="text-[10px] font-bold text-slate-800 leading-tight mb-1">[{{ prod.code || prod.product_code }}] {{ prod.name }}</div>
+              <div class="text-[11px] text-emerald-600 font-bold mt-auto text-right whitespace-nowrap">{{ formatNum(prod.price) }} ₫</div>
             </div>
           </div>
   
@@ -276,7 +281,7 @@ const formatNum = (val) => {
             <thead>
               <tr class="text-slate-500 font-semibold border-b-2 border-slate-200">
                 <th class="py-2 px-2 text-left w-6">#</th>
-                <th class="py-2 px-2 text-left w-48">Tên món</th>
+                <th class="py-2 px-2 text-left w-64">Tên món</th>
                 <th class="py-2 px-2 text-center w-14">SL</th>
                 <th class="py-2 px-2 text-center w-12">ĐVT</th>
                 <th class="py-2 px-2 text-right w-24">Đơn giá</th>
@@ -302,7 +307,7 @@ const formatNum = (val) => {
                 <!-- Index -->
                 <td class="py-3 w-6 text-slate-400 font-semibold">{{ idx + 1 }}</td>
                 <!-- Tên SP -->
-                <td class="py-3 font-semibold text-slate-800 pr-2 w-32">
+                <td class="py-3 font-semibold text-slate-800 pr-2 w-64">
                   <div class="line-clamp-2 leading-tight text-xs">
                     <span v-if="item.code" class="text-slate-500 font-normal mr-1">[{{ item.code }}]</span>
                     {{ item.name }}

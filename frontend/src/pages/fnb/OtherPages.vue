@@ -91,12 +91,12 @@ const SettingsTab = defineAsyncComponent(() => import('./components/other/Settin
           v-for="item in sidebarItems"
           :key="item.id"
           @click="activeTab = item.id"
-          class="relative flex items-center gap-2.5 rounded-lg cursor-pointer transition-all duration-150 font-medium text-[13px] group overflow-hidden"
+          class="relative flex items-center rounded-lg cursor-pointer transition-all duration-150 font-medium text-[13px] group overflow-hidden"
           :class="[
             activeTab === item.id
               ? 'bg-[#e0f2fe] text-[#0369a1] border border-[#bae6fd] font-semibold'
               : 'text-slate-600 hover:bg-slate-50 border border-transparent',
-            isSidebarCollapsed ? 'px-0 py-2 justify-center' : 'px-3 py-2'
+            isSidebarCollapsed ? 'px-0 py-2 justify-center gap-0' : 'px-3 py-2 gap-2.5'
           ]"
           :title="isSidebarCollapsed ? item.name + ' · Ctrl+' + item.shortcut : ''"
         >
@@ -123,8 +123,8 @@ const SettingsTab = defineAsyncComponent(() => import('./components/other/Settin
 
           <!-- Label -->
           <span
-            class="truncate transition-all duration-200 flex-1"
-            :class="isSidebarCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'opacity-100'"
+            class="truncate transition-all duration-200"
+            :class="isSidebarCollapsed ? 'w-0 flex-none opacity-0 pointer-events-none' : 'flex-1 opacity-100'"
           >{{ item.name }}</span>
 
           <!-- Shortcut badge -->

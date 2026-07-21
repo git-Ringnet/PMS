@@ -50,6 +50,15 @@ class FbLocationController extends Controller
 
         $location = FbLocation::create($validated);
 
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            $location,
+            'fnb',
+            'FbLocationController',
+            "Tạo khu vực: {$location->name}",
+            $location->id
+        );
+
         return response()->json([
             'success' => true,
             'data' => $location
@@ -88,19 +97,39 @@ class FbLocationController extends Controller
 
         $location->update($validated);
 
+        \App\Services\ActivityLogService::logUpdate(
+            $request,
+            $location,
+            [],
+            'fnb',
+            'FbLocationController',
+            "Cập nhật khu vực: {$location->name}",
+            $location->id
+        );
+
         return response()->json([
             'success' => true,
             'data' => $location
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $location = FbLocation::findOrFail($id);
 
         if ($location->image) {
             Storage::disk('public')->delete($location->image);
         }
+
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            $location,
+            'fnb',
+            'FbLocationController',
+            "Xoá khu vực: {$location->name} - Lý do: {$reason}",
+            $location->id
+        );
 
         $location->delete();
 

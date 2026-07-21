@@ -61,11 +61,11 @@ class ActivityLogController extends Controller
 
         // Lọc theo khoảng thời gian (theo múi giờ Asia/Ho_Chi_Minh)
         if ($request->filled('date_from')) {
-            $dateFrom = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_from, 'Asia/Ho_Chi_Minh')->startOfDay()->timezone('UTC');
+            $dateFrom = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_from, 'Asia/Ho_Chi_Minh')->startOfDay();
             $query->where('created_at', '>=', $dateFrom);
         }
         if ($request->filled('date_to')) {
-            $dateTo = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_to, 'Asia/Ho_Chi_Minh')->endOfDay()->timezone('UTC');
+            $dateTo = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_to, 'Asia/Ho_Chi_Minh')->endOfDay();
             $query->where('created_at', '<=', $dateTo);
         }
 
@@ -110,7 +110,7 @@ class ActivityLogController extends Controller
      */
     public function stats()
     {
-        $today = now()->timezone('Asia/Ho_Chi_Minh')->startOfDay()->timezone('UTC');
+        $today = now()->timezone('Asia/Ho_Chi_Minh')->startOfDay();
 
         $totalToday = ActivityLog::where('created_at', '>=', $today)->count();
         $loginsToday = ActivityLog::where('created_at', '>=', $today)

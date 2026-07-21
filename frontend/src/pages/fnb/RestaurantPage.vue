@@ -344,8 +344,11 @@ const handleTableSave = async (saveData) => {
 
     const res = await syncOrders(selectedTable.value.id, {
 
-      bills: saveData.bills
+      bills: saveData.bills,
 
+      deleted_items: saveData.deletedItems || [],
+      deleted_bills: saveData.deletedBills || [],
+      pending_action_logs: saveData.pendingActionLogs || []
     })
 
     
@@ -364,7 +367,18 @@ const handleTableSave = async (saveData) => {
 
       t.totalAmount = saveData.totalAmount || t.totalAmount
 
-      t.bills = saveData.bills || t.bills
+      // Fetch fresh orders to get new IDs after sync
+      try {
+        const activeOrdersRes = await fetchActiveOrders(selectedTable.value.id)
+        if (activeOrdersRes.data && activeOrdersRes.data.length > 0) {
+          t.bills = activeOrdersRes.data
+        } else {
+          t.bills = []
+        }
+      } catch (err) {
+        console.error('Lỗi lấy dữ liệu bills sau khi lưu:', err)
+        t.bills = saveData.bills || t.bills
+      }
 
     }
 

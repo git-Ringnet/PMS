@@ -16,8 +16,8 @@ export const updateParty = (id, partyData) => {
   return http.put(`/fb-parties/${id}`, partyData)
 }
 
-export const cancelParty = (id) => {
-  return http.post(`/fb-parties/${id}/cancel`)
+export const cancelParty = (id, reason) => {
+  return http.post(`/fb-parties/${id}/cancel`, { reason })
 }
 
 export const completeSubParty = (partyId, subPartyId) => {

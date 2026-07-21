@@ -1378,25 +1378,43 @@ const monthCells = computed(() => {
     const dateStr = `${String(i).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`
     
     const dayBookingsMap = {}
-    parties.value.filter(p => p.arrivalDate === dateStr).forEach(p => {
-      if (!dayBookingsMap[p.code]) {
-        dayBookingsMap[p.code] = {
-          id: p.id,
-          code: p.code,
-          customer: p.customer,
-          itemsCount: p.detailsCount || 1,
-          totalAmount: p.totalAmount,
-          status: p.status,
-          subEvents: []
+    parties.value.forEach(p => {
+      const subParties = (p.subParties && p.subParties.length > 0) ? p.subParties : [{
+        ...p,
+        location: p.area,
+        code: p.code
+      }]
+      
+      subParties.forEach((sub, idx) => {
+        let subDate = sub.arrivalDate || p.arrivalDate
+        if (subDate && subDate.includes('-')) {
+          const [y, m, d] = subDate.split('-')
+          subDate = `${d}/${m}/${y}`
         }
-      }
-      dayBookingsMap[p.code].subEvents.push({
-        id: p.id,
-        time: p.time,
-        tables: p.tablesCount,
-        price: p.totalAmount,
-        area: p.area,
-        guest: p.customer
+        
+        if (subDate === dateStr) {
+          if (!dayBookingsMap[p.code]) {
+            dayBookingsMap[p.code] = {
+              id: p.id,
+              code: p.code,
+              customer: p.customer,
+              itemsCount: p.detailsCount || 1,
+              totalAmount: p.totalAmount,
+              status: p.status,
+              subEvents: []
+            }
+          }
+          dayBookingsMap[p.code].subEvents.push({
+            id: p.id,
+            subId: sub.id || `${p.id}-${idx}`,
+            time: sub.time || (sub.arrivalTime ? `${sub.arrivalTime} - ${sub.departureTime}` : p.time || '12:00 - 14:00'),
+            tables: sub.tables || p.tablesCount || 'A1',
+            price: p.totalAmount,
+            area: sub.location || sub.area || p.area || 'Chưa phân khu vực',
+            guest: parseCustomerInfo(sub.customer || sub.guest || p.customer).guestName,
+            status: getSubPartyDynamicStatus(p.status, sub.status, subDate, sub.time || (sub.arrivalTime ? `${sub.arrivalTime} - ${sub.departureTime}` : p.time))
+          })
+        }
       })
     })
     
@@ -2168,26 +2186,52 @@ const rangeDays = computed(() => {
 const rangeBookings = computed(() => {
   const bookingsMap = {}
   parties.value.forEach(p => {
+    const subCount = (p.subParties && p.subParties.length > 0) ? p.subParties.length : 1
     if (!bookingsMap[p.code]) {
       bookingsMap[p.code] = {
         code: p.code,
         name: p.name || 'Tiệc',
         customer: p.customer,
-        itemsCount: 1
+        itemsCount: subCount
       }
     } else {
-      bookingsMap[p.code].itemsCount++
+      bookingsMap[p.code].itemsCount += subCount
     }
   })
   return Object.values(bookingsMap)
 })
 
 const getRangeEvents = (bookingCode, fullDateStr) => {
-  return parties.value.filter(p => p.code === bookingCode && p.arrivalDate === fullDateStr).map(p => ({
-    id: p.id,
-    time: p.time ? p.time.split(' - ')[0] : '12:00',
-    tables: p.tablesCount || 1
-  }))
+  const events = []
+  const partyList = parties.value.filter(p => p.code === bookingCode)
+  
+  partyList.forEach(party => {
+    const subParties = (party.subParties && party.subParties.length > 0) ? party.subParties : [{
+      id: party.id,
+      arrivalDate: party.arrivalDate,
+      time: party.time,
+      tables: party.tablesCount || 1
+    }]
+
+    subParties.forEach((sub) => {
+      let subDate = sub.arrivalDate || party.arrivalDate
+      if (subDate && subDate.includes('-')) {
+        const [y, m, d] = subDate.split('-')
+        subDate = `${d}/${m}/${y}`
+      }
+      
+      if (subDate === fullDateStr) {
+        let timeStr = sub.time || (sub.arrivalTime ? `${sub.arrivalTime}` : party.time)
+        events.push({
+          id: sub.bookingCode || party.id,
+          time: timeStr ? timeStr.split(' - ')[0] : '12:00',
+          tables: sub.tables || party.tablesCount || 1
+        })
+      }
+    })
+  })
+  
+  return events
 }
 
 const getRangeEventBg = (code) => {

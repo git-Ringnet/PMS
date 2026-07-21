@@ -33,4 +33,9 @@ class FbOrder extends Model
     {
         return $this->belongsTo(FbTable::class, 'table_id');
     }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'creator_id');
+    }
 }

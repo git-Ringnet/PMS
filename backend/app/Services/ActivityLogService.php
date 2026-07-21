@@ -68,7 +68,7 @@ class ActivityLogService
      */
     public static function logCreate(
         Request $request,
-        Model $model,
+        ?Model $model,
         string $module,
         string $component,
         string $description,
@@ -83,10 +83,10 @@ class ActivityLogService
             'module' => $module,
             'component' => $component,
             'description' => $description,
-            'target_type' => class_basename($model),
-            'target_id' => $model->id,
+            'target_type' => $model ? class_basename($model) : null,
+            'target_id' => $model ? $model->id : null,
             'target_label' => $targetLabel,
-            'new_values' => $model->toArray(),
+            'new_values' => $model ? $model->toArray() : [],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'request_method' => $request->method(),
@@ -100,7 +100,7 @@ class ActivityLogService
      */
     public static function logUpdate(
         Request $request,
-        Model $model,
+        ?Model $model,
         array $oldValues,
         string $module,
         string $component,
@@ -108,7 +108,7 @@ class ActivityLogService
         ?string $targetLabel = null
     ): ActivityLog {
         $user = $request->user();
-        $newValues = $model->fresh()?->toArray() ?? $model->toArray();
+        $newValues = $model ? ($model->fresh()?->toArray() ?? $model->toArray()) : [];
         $diff = self::diffValues($oldValues, $newValues);
 
         return self::log([
@@ -119,8 +119,8 @@ class ActivityLogService
             'module' => $module,
             'component' => $component,
             'description' => $description,
-            'target_type' => class_basename($model),
-            'target_id' => $model->id,
+            'target_type' => $model ? class_basename($model) : null,
+            'target_id' => $model ? $model->id : null,
             'target_label' => $targetLabel,
             'old_values' => $diff['old'],
             'new_values' => $diff['new'],
@@ -137,7 +137,7 @@ class ActivityLogService
      */
     public static function logDelete(
         Request $request,
-        Model $model,
+        ?Model $model,
         string $module,
         string $component,
         string $description,
@@ -152,10 +152,10 @@ class ActivityLogService
             'module' => $module,
             'component' => $component,
             'description' => $description,
-            'target_type' => class_basename($model),
-            'target_id' => $model->id,
+            'target_type' => $model ? class_basename($model) : null,
+            'target_id' => $model ? $model->id : null,
             'target_label' => $targetLabel,
-            'old_values' => $model->toArray(),
+            'old_values' => $model ? $model->toArray() : [],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'request_method' => $request->method(),

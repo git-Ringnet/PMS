@@ -16,12 +16,16 @@ import {
 import { useUiStore } from '@/stores/ui-store'
 import AddLocationModal from './modals/AddLocationModal.vue'
 import AddTableModal from './modals/AddTableModal.vue'
+import ConfirmReasonModal from '@/pages/fnb/components/restaurant/modals/ConfirmReasonModal.vue'
 
 defineEmits(['back'])
 
 const uiStore = useUiStore()
 
 const isLoading = ref(false)
+const showReasonModal = ref(false)
+const cancelActionType = ref('')
+const cancelTargetData = ref(null)
 
 // Outlets
 const selectedOutlet = ref('')
@@ -271,37 +275,58 @@ const handleSaveTableBulk = async (data) => {
   }
 }
 
-const handleDeleteTable = async (tableId) => {
-  const confirm = await uiStore.confirm({
-    title: 'Xác nhận xóa bàn',
-    message: 'Bạn có chắc chắn muốn xóa bàn này?'
-  })
-  if (!confirm) return
+const handleQuickAddTables = async (formData) => {
   try {
-    await deleteFbTable(tableId)
-    uiStore.showToast('Xóa bàn thành công!', 'success')
-    showTableModal.value = false
+    await bulkCreateFbTables({
+      location_id: activeAreaId.value,
+      ...formData
+    })
+    uiStore.showToast('Thêm nhanh bàn thành công!', 'success')
     await loadTables()
   } catch (error) {
-    uiStore.showToast('Lỗi khi xóa bàn!', 'error')
+    uiStore.showToast('Lỗi khi thêm nhanh bàn!', 'error')
   }
 }
 
-const handleDeleteRow = async (rowIndex) => {
-  const confirm = await uiStore.confirm({
-    title: 'Xác nhận xóa hàng',
-    message: `Bạn có chắc chắn muốn xóa toàn bộ các bàn thuộc HÀNG ${rowIndex}?`
-  })
-  if (!confirm) return
+const handleDeleteTable = (tableId) => {
+  cancelActionType.value = 'table'
+  cancelTargetData.value = tableId
+  showReasonModal.value = true
+}
+
+const handleDeleteRow = (rowIndex) => {
+  cancelActionType.value = 'row'
+  cancelTargetData.value = rowIndex
+  showReasonModal.value = true
+}
+
+const handleConfirmDelete = async (reason) => {
+  showReasonModal.value = false
   try {
-    await deleteFbTableRow({
-      location_id: activeAreaId.value,
-      row_index: rowIndex
-    })
-    uiStore.showToast(`Xóa toàn bộ bàn ở HÀNG ${rowIndex} thành công!`, 'success')
-    await loadTables()
+    if (cancelActionType.value === 'area') {
+      const area = cancelTargetData.value
+      await deleteFbLocation(area.id, reason)
+      uiStore.showToast('Xóa khu vực thành công!', 'success')
+      if (activeAreaId.value === area.id) activeAreaId.value = null
+      await loadLocations()
+    } else if (cancelActionType.value === 'table') {
+      const tableId = cancelTargetData.value
+      await deleteFbTable(tableId, reason)
+      uiStore.showToast('Xóa bàn thành công!', 'success')
+      showTableModal.value = false
+      await loadTables()
+    } else if (cancelActionType.value === 'row') {
+      const rowIndex = cancelTargetData.value
+      await deleteFbTableRow({
+        location_id: activeAreaId.value,
+        row_index: rowIndex,
+        reason
+      })
+      uiStore.showToast(`Xóa toàn bộ bàn ở HÀNG ${rowIndex} thành công!`, 'success')
+      await loadTables()
+    }
   } catch (error) {
-    uiStore.showToast('Lỗi khi xóa hàng bàn!', 'error')
+    uiStore.showToast('Lỗi khi xóa!', 'error')
   }
 }
 </script>
@@ -481,6 +506,13 @@ const handleDeleteRow = async (rowIndex) => {
       @saveSingle="handleSaveTableSingle"
       @saveBulk="handleSaveTableBulk"
       @delete="handleDeleteTable"
+    />
+
+    <ConfirmReasonModal
+      :is-open="showReasonModal"
+      title="Xác nhận xóa"
+      @close="showReasonModal = false"
+      @confirm="handleConfirmDelete"
     />
   </div>
 </template>

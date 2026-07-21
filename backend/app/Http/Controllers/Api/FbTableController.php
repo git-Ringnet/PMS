@@ -83,6 +83,15 @@ class FbTableController extends Controller
 
         $table = FbTable::create($validated);
 
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            $table,
+            'fnb',
+            'FbTableController',
+            "Tạo bàn: {$table->name}",
+            $table->table_code
+        );
+
         return response()->json([
             'success' => true,
             'data' => $table
@@ -116,15 +125,36 @@ class FbTableController extends Controller
 
         $table->update($validated);
 
+        \App\Services\ActivityLogService::logUpdate(
+            $request,
+            $table,
+            [],
+            'fnb',
+            'FbTableController',
+            "Cập nhật bàn: {$table->name}",
+            $table->table_code
+        );
+
         return response()->json([
             'success' => true,
             'data' => $table
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $table = FbTable::findOrFail($id);
+        
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            $table,
+            'fnb',
+            'FbTableController',
+            "Xoá bàn: {$table->name} - Lý do: {$reason}",
+            $table->table_code
+        );
+
         $table->delete();
 
         return response()->json([
@@ -176,6 +206,14 @@ class FbTableController extends Controller
             $createdTables[] = $table;
         }
 
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            null,
+            'fnb',
+            'FbTableController',
+            "Tạo hàng loạt {$total} bàn ở khu vực ID {$locationId}"
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Bulk tables created successfully',
@@ -189,6 +227,15 @@ class FbTableController extends Controller
             'location_id' => 'required|exists:fb_locations,id',
             'row_index' => 'required|integer',
         ]);
+
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            null,
+            'fnb',
+            'FbTableController',
+            "Xoá hàng {$validated['row_index']} ở khu vực ID {$validated['location_id']} - Lý do: {$reason}"
+        );
 
         FbTable::where('location_id', $validated['location_id'])
             ->where('row_index', $validated['row_index'])

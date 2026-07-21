@@ -30,6 +30,8 @@ const selectedZoneId = ref('')
 const selectedTableId = ref(null)
 
 const localItems = ref([])
+const reason = ref('')
+const showError = ref(false)
 
 const canEditQuantity = (item) => {
   return Number.isInteger(item.quantity) && item.quantity > 0
@@ -113,6 +115,8 @@ const loadTables = async () => {
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
     selectedTableId.value = null
+    reason.value = ''
+    showError.value = false
     localItems.value = props.items.map(item => ({
       ...item,
       transferQty: item.quantity
@@ -144,9 +148,13 @@ const handleClose = () => {
 
 const handleConfirm = () => {
   if (!selectedTableId.value) return
+  if (!reason.value.trim()) {
+    showError.value = true
+    return
+  }
   const targetTable = tables.value.find(t => t.id === selectedTableId.value)
   if (targetTable) {
-    emit('transfer', targetTable, localItems.value)
+    emit('transfer', targetTable, localItems.value, reason.value.trim())
   }
 }
 
@@ -342,18 +350,33 @@ const selectTargetTable = (table) => {
         </div>
 
         <!-- Footer -->
-        <div class="px-4 py-3 border-t border-slate-200 bg-white flex justify-end gap-3 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
-          <button @click="handleClose" class="px-5 py-1.5 rounded text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors">
-            Hủy
-          </button>
-          <button 
-            @click="handleConfirm" 
-            :disabled="!selectedTableId"
-            :class="selectedTableId ? 'bg-sky-500 hover:bg-sky-600 shadow-sm shadow-sky-500/20' : 'bg-slate-300 cursor-not-allowed'"
-            class="px-5 py-1.5 rounded text-sm font-semibold text-white transition-all flex items-center gap-1.5"
-          >
-            Chuyển món
-          </button>
+        <div class="px-4 py-3 border-t border-slate-200 bg-white flex justify-between items-center gap-3 shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+          <div class="flex-1 max-w-sm relative">
+            <input 
+              type="text" 
+              v-model="reason"
+              placeholder="Nhập lý do chuyển món (bắt buộc)..."
+              class="w-full px-3 py-1.5 text-sm border rounded focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+              :class="showError && !reason.trim() ? 'border-red-500 bg-red-50' : 'border-slate-300'"
+              @keyup.enter="handleConfirm"
+            />
+            <p v-if="showError && !reason.trim()" class="text-[10px] text-red-500 absolute top-full left-0 mt-0.5">
+              Vui lòng nhập lý do chuyển món.
+            </p>
+          </div>
+          <div class="flex gap-3">
+            <button @click="handleClose" class="px-5 py-1.5 rounded text-sm font-semibold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors">
+              Hủy
+            </button>
+            <button 
+              @click="handleConfirm" 
+              :disabled="!selectedTableId"
+              :class="selectedTableId ? 'bg-sky-500 hover:bg-sky-600 shadow-sm shadow-sky-500/20' : 'bg-slate-300 cursor-not-allowed'"
+              class="px-5 py-1.5 rounded text-sm font-semibold text-white transition-all flex items-center gap-1.5"
+            >
+              Chuyển món
+            </button>
+          </div>
         </div>
       </div>
     </div>
