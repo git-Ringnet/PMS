@@ -389,10 +389,15 @@ class BookingRoomController extends Controller
 
         $bookingRoom->load(['roomClass', 'room']);
 
+        $warning = (isset($av) && $av < 0 && $this->allowOverAV())
+            ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $av . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
+            : null;
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom,
-            'message' => 'Cập nhật phòng thành công!',
+            'message' => 'Cập nhật phòng thành công!' . ($warning ? ' ' . $warning : ''),
+            'warning' => $warning,
         ]);
     }
 

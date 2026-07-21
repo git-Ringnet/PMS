@@ -1103,7 +1103,7 @@ async function loadBookings() {
         if (!b.booking_rooms) return
 
         b.booking_rooms.forEach(br => {
-          if (Number(br.status) === 3) return
+          if (![0, 1, 2].includes(Number(br.status))) return
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
@@ -1999,22 +1999,28 @@ function handleResizeMouseMove(event) {
     const newCheckIn = new Date(originalCheckIn)
     newCheckIn.setDate(originalCheckIn.getDate() + cellDelta)
     
-    // Validate: cannot exceed or meet checkout
+    // Validate: cannot exceed or meet checkout (must be at least 1 day before checkout)
     const checkOutLimit = new Date(originalCheckOut)
     checkOutLimit.setDate(originalCheckOut.getDate() - 1)
     
-    if (newCheckIn <= checkOutLimit) {
+    const newCheckInDay = new Date(newCheckIn).setHours(0, 0, 0, 0)
+    const checkOutLimitDay = new Date(checkOutLimit).setHours(0, 0, 0, 0)
+
+    if (newCheckInDay <= checkOutLimitDay) {
       resizeState.value.tempCheckIn = newCheckIn
     }
   } else {
     const newCheckOut = new Date(originalCheckOut)
     newCheckOut.setDate(originalCheckOut.getDate() + cellDelta)
     
-    // Validate: cannot be equal to or before checkin
+    // Validate: cannot be equal to or before checkin (must be at least 1 day after checkin)
     const checkInLimit = new Date(originalCheckIn)
     checkInLimit.setDate(originalCheckIn.getDate() + 1)
     
-    if (newCheckOut >= checkInLimit) {
+    const newCheckOutDay = new Date(newCheckOut).setHours(0, 0, 0, 0)
+    const checkInLimitDay = new Date(checkInLimit).setHours(0, 0, 0, 0)
+
+    if (newCheckOutDay >= checkInLimitDay) {
       resizeState.value.tempCheckOut = newCheckOut
     }
   }
@@ -2046,7 +2052,11 @@ async function handleResizeMouseUp(event) {
       const res = await updateBookingRoom(state.booking.bookingId, state.booking.bookingRoomId, payload)
 
       if (res && res.data && res.data.success) {
-        uiStore.showToast('Cập nhật ngày lưu trú thành công!', 'success')
+        if (res.data.warning) {
+          uiStore.showToast(res.data.warning, 'warning')
+        } else {
+          uiStore.showToast('Cập nhật ngày lưu trú thành công!', 'success')
+        }
       } else {
         uiStore.showToast(res?.data?.message || 'Không thể cập nhật ngày lưu trú.', 'error')
       }
@@ -2410,24 +2420,38 @@ function handleDragStart(bk, event) {
   event.dataTransfer.effectAllowed = 'move'
 }
 
-let scrollInterval = null
+let scrollAnimationFrame = null
 let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
 
 function stopDragAutoScroll() {
-  if (scrollInterval) {
-    clearInterval(scrollInterval)
-    scrollInterval = null
+  if (scrollAnimationFrame) {
+    cancelAnimationFrame(scrollAnimationFrame)
+    scrollAnimationFrame = null
   }
   currentScrollX = 0
   currentScrollY = 0
   scrollContainer = null
 }
 
+function startAutoScrollLoop() {
+  if (scrollAnimationFrame) return
+  const loop = () => {
+    if (scrollContainer && (currentScrollX !== 0 || currentScrollY !== 0)) {
+      scrollContainer.scrollLeft += currentScrollX
+      scrollContainer.scrollTop += currentScrollY
+      scrollAnimationFrame = requestAnimationFrame(loop)
+    } else {
+      scrollAnimationFrame = null
+    }
+  }
+  scrollAnimationFrame = requestAnimationFrame(loop)
+}
+
 function handleDragOver(event, item, dayIdx) {
   event.preventDefault()
-  if (item && draggedOverRoom.value !== item.room) {
+  if (item && item.room && draggedOverRoom.value !== item.room) {
     draggedOverRoom.value = item.room
   }
   if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
@@ -2435,7 +2459,7 @@ function handleDragOver(event, item, dayIdx) {
   }
 
   // Measure boundary of container to auto-scroll
-  const container = event.currentTarget.closest('.overflow-auto')
+  const container = event.currentTarget.closest('.overflow-auto') || event.currentTarget.closest('.overflow-y-auto')
   if (!container) return
   scrollContainer = container
 
@@ -2443,36 +2467,29 @@ function handleDragOver(event, item, dayIdx) {
   const x = event.clientX - rect.left
   const y = event.clientY - rect.top
 
-  const threshold = 65
-  const scrollSpeed = 22
+  const threshold = 90
+  const maxSpeed = 30
 
   let scrollX = 0
   let scrollY = 0
 
   if (x < threshold) {
-    scrollX = -scrollSpeed
+    scrollX = -Math.round(maxSpeed * (1 - Math.max(0, x) / threshold))
   } else if (rect.width - x < threshold) {
-    scrollX = scrollSpeed
+    scrollX = Math.round(maxSpeed * (1 - Math.max(0, rect.width - x) / threshold))
   }
 
   if (y < threshold) {
-    scrollY = -scrollSpeed
+    scrollY = -Math.round(maxSpeed * (1 - Math.max(0, y) / threshold))
   } else if (rect.height - y < threshold) {
-    scrollY = scrollSpeed
+    scrollY = Math.round(maxSpeed * (1 - Math.max(0, rect.height - y) / threshold))
   }
 
   currentScrollX = scrollX
   currentScrollY = scrollY
 
   if (scrollX !== 0 || scrollY !== 0) {
-    if (!scrollInterval) {
-      scrollInterval = setInterval(() => {
-        if (scrollContainer) {
-          scrollContainer.scrollLeft += currentScrollX
-          scrollContainer.scrollTop += currentScrollY
-        }
-      }, 35)
-    }
+    startAutoScrollLoop()
   } else {
     stopDragAutoScroll()
   }
@@ -2491,7 +2508,13 @@ async function handleDrop(targetRoom, targetDay, event) {
   draggedOverDayIdx.value = null
   stopDragAutoScroll()
 
-  const bk = draggedBooking.value
+  let bk = draggedBooking.value
+  if (!bk && event.dataTransfer) {
+    const brId = event.dataTransfer.getData('text/plain')
+    if (brId) {
+      bk = bookings.value.find(b => String(b.bookingRoomId) === String(brId))
+    }
+  }
   if (!bk) return
   draggedBooking.value = null
 
@@ -2527,7 +2550,11 @@ async function handleDrop(targetRoom, targetDay, event) {
       const res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, payload)
 
       if (res && res.data && res.data.success) {
-        uiStore.showToast('Chuyển phòng thành công!', 'success')
+        if (res.data.warning) {
+          uiStore.showToast(res.data.warning, 'warning')
+        } else {
+          uiStore.showToast('Chuyển phòng thành công!', 'success')
+        }
         await loadBookings()
       } else {
         uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi chuyển phòng.', 'error')
@@ -3282,7 +3309,7 @@ function getRoomStatusIconName(item) {
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
                       splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
-                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-10 border-dashed pointer-events-none' : ''
+                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-40 border-dashed' : ''
                     ]"
                     :style="{
                       left: `${bk.leftRatio * 100}%`,
