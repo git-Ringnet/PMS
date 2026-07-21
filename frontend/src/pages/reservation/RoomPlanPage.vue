@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
+import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies } from '@/services/company-service'
 import { useAuthStore } from '@/stores/auth-store'
@@ -597,17 +598,23 @@ const dbRooms = computed(() => {
   } else {
     list = roomStore.rooms.map(r => {
       const type = r.room_class?.code || r.room_type || ''
-      let shape = 'Family'
-      const tLower = type.toLowerCase()
-      if (tLower.includes('double') || tLower.includes('d')) shape = 'Double'
-      else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
-      else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
+      let shape = r.room_form?.name || r.room_form?.code || ''
+      if (!shape) {
+        const tLower = (type + ' ' + (r.room_class?.name || '')).toLowerCase()
+        if (tLower.includes('double') || tLower.includes('d')) shape = 'Double'
+        else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
+        else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
+        else shape = 'Family'
+      }
 
       return {
         room: r.room_number,
         type,
         floor: r.floor || r.room_number.substring(0, r.room_number.length - 2) || '1',
         shape,
+        status: r.status,
+        is_clean: r.is_clean !== undefined ? r.is_clean : true,
+        lock_type: r.lock_type || (r.active_locks && r.active_locks.length > 0 ? r.active_locks[0].lock_type : null),
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
@@ -633,6 +640,9 @@ const dbRooms = computed(() => {
         })
       }
     })
+    if (!room.lock_type && room.active_locks.length > 0) {
+      room.lock_type = room.active_locks[0].lock_type
+    }
   })
 
   // 2. Append virtual rooms from active bookings
@@ -703,7 +713,7 @@ const dbRooms = computed(() => {
       if (ordA !== ordB) return ordA - ordB
 
       return a.room.localeCompare(b.room)
-    } else if (activeGroupSetting.value === 'Dạng phòng') {
+    } else if (activeGroupSetting.value === 'Loại giường' || activeGroupSetting.value === 'Dạng phòng') {
       const sA = a.shape || ''
       const sB = b.shape || ''
       const comp = sA.localeCompare(sB)
@@ -1713,21 +1723,51 @@ function showTooltip(booking, event) {
 }
 
 function updateTooltipPosition(event) {
-  const tooltipWidth = 340
-  const halfWidth = tooltipWidth / 2
-  const padding = 16
-  
-  let targetX = event.clientX
-  if (targetX - halfWidth < padding) {
-    targetX = halfWidth + padding
-  } else if (targetX + halfWidth > window.innerWidth - padding) {
-    targetX = window.innerWidth - halfWidth - padding
+  const tooltipWidth = 360
+  const tooltipHeight = 420
+  const minTop = 65 // Không bị khuất dưới thanh tabbar ở trên
+  const padding = 10
+
+  let rect = null
+  if (event && event.currentTarget && event.currentTarget.getBoundingClientRect) {
+    rect = event.currentTarget.getBoundingClientRect()
   }
-  
-  tooltipX.value = targetX
-  tooltipY.value = event.clientY
-  // If cursor is in the upper 45% of the viewport, show tooltip below the cursor
-  tooltipBelow.value = event.clientY < window.innerHeight * 0.45
+
+  let left = 0
+  let top = 0
+
+  if (rect) {
+    // Hiển thị bên PHẢI thẻ booking
+    left = rect.right + 12
+    if (left + tooltipWidth > window.innerWidth - padding) {
+      // Nếu tràn mép phải màn hình thì chuyển sang bên TRÁI thẻ booking
+      left = rect.left - tooltipWidth - 12
+    }
+    top = rect.top
+  } else {
+    left = event.clientX + 15
+    if (left + tooltipWidth > window.innerWidth - padding) {
+      left = event.clientX - tooltipWidth - 15
+    }
+    top = event.clientY
+  }
+
+  // Đảm bảo không tràn lề ngang màn hình
+  if (left < padding) left = padding
+  if (left + tooltipWidth > window.innerWidth - padding) {
+    left = window.innerWidth - tooltipWidth - padding
+  }
+
+  // Khống chế không bị khuất dưới tabbar top (minTop) và không vượt quá đáy màn hình
+  if (top + tooltipHeight > window.innerHeight - padding) {
+    top = window.innerHeight - tooltipHeight - padding
+  }
+  if (top < minTop) {
+    top = minTop
+  }
+
+  tooltipX.value = left
+  tooltipY.value = top
 }
 
 function hideTooltip() {
@@ -2695,6 +2735,39 @@ function isTodayDate(dateVal) {
   const sysDateVal = systemDate.value ? toLocalDateStr(systemDate.value) : ''
   return dStr === sysDateVal
 }
+
+function isTodayOrActiveBooking(b) {
+  if (!b || !b.checkIn || !b.checkOut) return false
+  const sysDateStr = systemDate.value ? toLocalDateStr(systemDate.value) : toLocalDateStr(new Date())
+  const inStr = toLocalDateStr(b.checkIn)
+  const outStr = toLocalDateStr(b.checkOut)
+  return sysDateStr >= inStr && sysDateStr < outStr
+}
+
+function getRoomStatusIconName(item) {
+  if (!item) return 'double-check'
+  // 1. Lock (OOO / OOS / Active Locks)
+  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos' || (item.active_locks && item.active_locks.length > 0)) {
+    return item.lock_type === 'OOS' ? 'oos' : 'ooo'
+  }
+  // 2. Dirty Room / Housekeeping needed
+  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean) {
+    return 'dirty'
+  }
+  // 3. Sparkles ONLY for clean vacant available room without active booking today
+  const hasBookingToday = item.hasCurrentBooking || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
+  if (item.is_clean && (item.status === 'available' || !item.status) && !hasBookingToday && !item.booking_status) {
+    return 'clean'
+  }
+  // 4. Room with booking / Occupied / Available -> double-check icon (✓✓)
+  if (item.status === 'available' || item.status === 'occupied' || hasBookingToday || !item.status) {
+    return 'double-check'
+  }
+  if (item.status === 'reserved') {
+    return 'priority'
+  }
+  return 'double-check'
+}
 </script>
 
 <template>
@@ -2788,7 +2861,7 @@ function isTodayDate(dateVal) {
               v-for="opt in [
                 { value: 'Phòng', label: 'Số phòng' },
                 { value: 'Loại phòng', label: 'Loại phòng' },
-                { value: 'Dạng phòng', label: 'Dạng phòng' },
+                { value: 'Loại giường', label: 'Loại giường' },
                 { value: 'Tầng', label: 'Tầng' }
               ]" 
               :key="opt.value"
@@ -2879,10 +2952,10 @@ function isTodayDate(dateVal) {
 
     <!-- Timeline Grid Matrix -->
     <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative">
-      <!-- Col width: 62px, sticky room header: 90px -->
+      <!-- Col width: 62px, sticky room header: 120px -->
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
-          <col class="w-[90px] sticky left-0 z-30" />
+          <col class="w-[120px] sticky left-0 z-30" />
           <col v-for="(day, idx) in days" :key="idx" class="w-[62px]" />
         </colgroup>
 
@@ -2923,11 +2996,12 @@ function isTodayDate(dateVal) {
         <tbody>
           <!-- Timeline Rows -->
           <template v-for="(item, idx) in dbRooms" :key="item.room">
-            <!-- Group Header Row for Room Type or Floor -->
+            <!-- Group Header Row for Room Type, Bed Type (Loại giường), or Floor -->
             <tr 
               v-if="(item.isVirtual && (idx === 0 || !dbRooms[idx - 1].isVirtual)) || 
                     (!item.isVirtual && (
                       (activeGroupSetting === 'Loại phòng' && (idx === 0 || dbRooms[idx - 1].type !== item.type || dbRooms[idx - 1].isVirtual)) || 
+                      ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') && (idx === 0 || dbRooms[idx - 1].shape !== item.shape || dbRooms[idx - 1].isVirtual)) ||
                       (activeGroupSetting === 'Tầng' && (idx === 0 || dbRooms[idx - 1].floor !== item.floor || dbRooms[idx - 1].isVirtual))
                     ))"
               class="border-b border-slate-200 select-none h-6 bg-slate-100"
@@ -2936,7 +3010,7 @@ function isTodayDate(dateVal) {
                 :colspan="days.length + 1" 
                 class="p-1 pl-3 font-bold text-slate-800 bg-slate-100 border-r border-slate-200 sticky left-0 z-20 text-[11px] shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
               >
-                {{ item.isVirtual ? 'CHƯA GÁN PHÒNG' : (activeGroupSetting === 'Tầng' ? `TẦNG ${item.floor}` : item.type) }}
+                {{ item.isVirtual ? 'CHƯA GÁN PHÒNG' : (activeGroupSetting === 'Tầng' ? `TẦNG ${item.floor}` : ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') ? item.shape : item.type)) }}
               </td>
             </tr>
 
@@ -2962,24 +3036,19 @@ function isTodayDate(dateVal) {
                   </span>
                   
                   <!-- Details & Status (Right side) -->
-                  <div class="flex items-center gap-0.5 select-none shrink-0">
+                  <div class="flex items-center gap-1 select-none shrink-0">
                     <div class="flex flex-col items-end text-[9px] leading-tight font-normal text-slate-500">
                       <span class="font-normal text-slate-700 uppercase text-[10px]">{{ item.type }}</span>
                       <span class="text-slate-500 font-normal text-[8px]">{{ item.shape }}</span>
                     </div>
-                    <!-- Status Icon -->
-                    <div class="w-3 h-3 flex items-center justify-center shrink-0 text-slate-500">
-                      <!-- Broom Icon (Dirty status) -->
-                      <svg v-if="item.hasBroom" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                        <path d="M19 19L5 5M12 12l2.5-2.5m1.5-1.5l1.5-1.5M7.5 7.5L5 5" />
-                        <path d="M5.5 19.5c.6.6 1.4 1 2.3 1H10l9-9c1-1 1-2.6 0-3.5l-1.5-1.5c-1-1-2.6-1-3.5 0l-9 9v2.2c0 .9.4 1.7 1 2.3Z" />
-                      </svg>
-                      <!-- Sparkle Icon (Clean Available status) -->
-                      <svg v-else-if="item.hasSparkles" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/>
-                        <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5Z"/>
-                        <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1Z"/>
-                      </svg>
+
+                    <!-- Status Icon (Synchronized with RoomMapPage) -->
+                    <div class="w-4 h-4 flex items-center justify-center shrink-0">
+                      <RoomIcon 
+                        :name="getRoomStatusIconName(item)" 
+                        :monochrome="getRoomStatusIconName(item) === 'ooo'"
+                        class="w-4 h-4 text-slate-600" 
+                      />
                     </div>
                   </div>
                 </div>
@@ -3191,11 +3260,10 @@ function isTodayDate(dateVal) {
     <!-- Custom Tooltip -->
     <div 
       v-if="hoveredBooking" 
-      class="fixed z-50 bg-white text-slate-800 text-[11px] rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none min-w-[340px] font-sans"
+      class="fixed z-[9999] bg-white text-slate-800 text-[11px] rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none w-[360px] max-h-[calc(100vh-80px)] overflow-y-auto font-sans"
       :style="{
         left: `${tooltipX}px`,
-        top: `${tooltipY}px`,
-        transform: tooltipBelow ? 'translate(-50%, 15px)' : 'translate(-50%, -100%) translateY(-15px)'
+        top: `${tooltipY}px`
       }"
     >
       <!-- Mode 1: OOO / OOS Locks -->
