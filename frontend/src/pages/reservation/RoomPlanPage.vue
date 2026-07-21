@@ -3,8 +3,9 @@ import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
+import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
-import { fetchCompanies } from '@/services/company-service'
+import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 
@@ -196,10 +197,15 @@ const allCompanies = ref([])
 // Quick booking modal states
 const showQuickBookingModal = ref(false)
 const rateCodes = ref([])
+const standardRates = ref([])
+const allMarkets = ref([])
+const allCustomerSources = ref([])
 const quickBookingCompanySearch = ref('KHÁCH LẺ')
 const showQuickBookingCompanyDropdown = ref(false)
 const quickBookingForm = ref({
   company: 'KHÁCH LẺ',
+  marketId: null,
+  customerSourceId: null,
   marketSegment: 'Free Individual Traveler',
   sourceCode: 'Free Individual Traveler',
   bookingName: 'Walkin Guest',
@@ -355,18 +361,64 @@ const companyFilterData = computed(() => {
 
 const displayCompanies = computed(() => companyFilterData.value.items)
 
+const allCompanyNames = computed(() => {
+  const list = ['KHÁCH LẺ']
+  if (allCompanies.value && allCompanies.value.length > 0) {
+    allCompanies.value.forEach(c => {
+      const name = c.company_name || c.name || c.company_code
+      if (name && !list.some(item => item.toLowerCase() === String(name).toLowerCase())) {
+        list.push(name)
+      }
+    })
+  }
+  if (bookings.value) {
+    bookings.value.forEach(b => {
+      if (b.company && !list.some(item => item.toLowerCase() === String(b.company).toLowerCase())) {
+        list.push(b.company)
+      }
+    })
+  }
+  return list
+})
+
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
-  const list = ['KHÁCH LẺ', ...displayCompanies.value]
   
-  if (!query) return list
-  return list.filter(cName => removeVietnameseTones(cName.toLowerCase()).includes(query))
+  if (!query || query === 'khach le') {
+    return allCompanyNames.value
+  }
+  
+  return allCompanyNames.value.filter(cName => removeVietnameseTones(String(cName).toLowerCase()).includes(query))
 })
 
 function selectQuickBookingCompany(cName) {
   quickBookingForm.value.company = cName
   quickBookingCompanySearch.value = cName
   showQuickBookingCompanyDropdown.value = false
+
+  const co = allCompanies.value.find(c => {
+    const name = c.company_name || c.name || c.company_code
+    return name && String(name).toLowerCase() === String(cName).toLowerCase()
+  })
+
+  if (co) {
+    if (co.market_id) {
+      quickBookingForm.value.marketId = co.market_id
+    } else if (co.market?.id) {
+      quickBookingForm.value.marketId = co.market.id
+    }
+
+    if (co.customer_source_id) {
+      quickBookingForm.value.customerSourceId = co.customer_source_id
+    } else if (co.customer_source?.id) {
+      quickBookingForm.value.customerSourceId = co.customer_source.id
+    }
+
+    if (co.rate_code) {
+      quickBookingForm.value.rateCode = co.rate_code
+      calculateQuickBookingPrice()
+    }
+  }
 }
 
 watch(showRoomTypePopover, (isOpen) => {
@@ -597,17 +649,23 @@ const dbRooms = computed(() => {
   } else {
     list = roomStore.rooms.map(r => {
       const type = r.room_class?.code || r.room_type || ''
-      let shape = 'Family'
-      const tLower = type.toLowerCase()
-      if (tLower.includes('double') || tLower.includes('d')) shape = 'Double'
-      else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
-      else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
+      let shape = r.room_form?.name || r.room_form?.code || ''
+      if (!shape) {
+        const tLower = (type + ' ' + (r.room_class?.name || '')).toLowerCase()
+        if (tLower.includes('double') || tLower.includes('d')) shape = 'Double'
+        else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
+        else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
+        else shape = 'Family'
+      }
 
       return {
         room: r.room_number,
         type,
         floor: r.floor || r.room_number.substring(0, r.room_number.length - 2) || '1',
         shape,
+        status: r.status,
+        is_clean: r.is_clean !== undefined ? r.is_clean : true,
+        lock_type: r.lock_type || (r.active_locks && r.active_locks.length > 0 ? r.active_locks[0].lock_type : null),
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
@@ -633,6 +691,9 @@ const dbRooms = computed(() => {
         })
       }
     })
+    if (!room.lock_type && room.active_locks.length > 0) {
+      room.lock_type = room.active_locks[0].lock_type
+    }
   })
 
   // 2. Append virtual rooms from active bookings
@@ -703,7 +764,7 @@ const dbRooms = computed(() => {
       if (ordA !== ordB) return ordA - ordB
 
       return a.room.localeCompare(b.room)
-    } else if (activeGroupSetting.value === 'Dạng phòng') {
+    } else if (activeGroupSetting.value === 'Loại giường' || activeGroupSetting.value === 'Dạng phòng') {
       const sA = a.shape || ''
       const sB = b.shape || ''
       const comp = sA.localeCompare(sB)
@@ -1042,7 +1103,7 @@ async function loadBookings() {
         if (!b.booking_rooms) return
 
         b.booking_rooms.forEach(br => {
-          if (Number(br.status) === 3) return
+          if (![0, 1, 2].includes(Number(br.status))) return
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
@@ -1713,21 +1774,51 @@ function showTooltip(booking, event) {
 }
 
 function updateTooltipPosition(event) {
-  const tooltipWidth = 340
-  const halfWidth = tooltipWidth / 2
-  const padding = 16
-  
-  let targetX = event.clientX
-  if (targetX - halfWidth < padding) {
-    targetX = halfWidth + padding
-  } else if (targetX + halfWidth > window.innerWidth - padding) {
-    targetX = window.innerWidth - halfWidth - padding
+  const tooltipWidth = 360
+  const tooltipHeight = 420
+  const minTop = 65 // Không bị khuất dưới thanh tabbar ở trên
+  const padding = 10
+
+  let rect = null
+  if (event && event.currentTarget && event.currentTarget.getBoundingClientRect) {
+    rect = event.currentTarget.getBoundingClientRect()
   }
-  
-  tooltipX.value = targetX
-  tooltipY.value = event.clientY
-  // If cursor is in the upper 45% of the viewport, show tooltip below the cursor
-  tooltipBelow.value = event.clientY < window.innerHeight * 0.45
+
+  let left = 0
+  let top = 0
+
+  if (rect) {
+    // Hiển thị bên PHẢI thẻ booking
+    left = rect.right + 12
+    if (left + tooltipWidth > window.innerWidth - padding) {
+      // Nếu tràn mép phải màn hình thì chuyển sang bên TRÁI thẻ booking
+      left = rect.left - tooltipWidth - 12
+    }
+    top = rect.top
+  } else {
+    left = event.clientX + 15
+    if (left + tooltipWidth > window.innerWidth - padding) {
+      left = event.clientX - tooltipWidth - 15
+    }
+    top = event.clientY
+  }
+
+  // Đảm bảo không tràn lề ngang màn hình
+  if (left < padding) left = padding
+  if (left + tooltipWidth > window.innerWidth - padding) {
+    left = window.innerWidth - tooltipWidth - padding
+  }
+
+  // Khống chế không bị khuất dưới tabbar top (minTop) và không vượt quá đáy màn hình
+  if (top + tooltipHeight > window.innerHeight - padding) {
+    top = window.innerHeight - tooltipHeight - padding
+  }
+  if (top < minTop) {
+    top = minTop
+  }
+
+  tooltipX.value = left
+  tooltipY.value = top
 }
 
 function hideTooltip() {
@@ -1908,22 +1999,28 @@ function handleResizeMouseMove(event) {
     const newCheckIn = new Date(originalCheckIn)
     newCheckIn.setDate(originalCheckIn.getDate() + cellDelta)
     
-    // Validate: cannot exceed or meet checkout
+    // Validate: cannot exceed or meet checkout (must be at least 1 day before checkout)
     const checkOutLimit = new Date(originalCheckOut)
     checkOutLimit.setDate(originalCheckOut.getDate() - 1)
     
-    if (newCheckIn <= checkOutLimit) {
+    const newCheckInDay = new Date(newCheckIn).setHours(0, 0, 0, 0)
+    const checkOutLimitDay = new Date(checkOutLimit).setHours(0, 0, 0, 0)
+
+    if (newCheckInDay <= checkOutLimitDay) {
       resizeState.value.tempCheckIn = newCheckIn
     }
   } else {
     const newCheckOut = new Date(originalCheckOut)
     newCheckOut.setDate(originalCheckOut.getDate() + cellDelta)
     
-    // Validate: cannot be equal to or before checkin
+    // Validate: cannot be equal to or before checkin (must be at least 1 day after checkin)
     const checkInLimit = new Date(originalCheckIn)
     checkInLimit.setDate(originalCheckIn.getDate() + 1)
     
-    if (newCheckOut >= checkInLimit) {
+    const newCheckOutDay = new Date(newCheckOut).setHours(0, 0, 0, 0)
+    const checkInLimitDay = new Date(checkInLimit).setHours(0, 0, 0, 0)
+
+    if (newCheckOutDay >= checkInLimitDay) {
       resizeState.value.tempCheckOut = newCheckOut
     }
   }
@@ -1955,7 +2052,11 @@ async function handleResizeMouseUp(event) {
       const res = await updateBookingRoom(state.booking.bookingId, state.booking.bookingRoomId, payload)
 
       if (res && res.data && res.data.success) {
-        uiStore.showToast('Cập nhật ngày lưu trú thành công!', 'success')
+        if (res.data.warning) {
+          uiStore.showToast(res.data.warning, 'warning')
+        } else {
+          uiStore.showToast('Cập nhật ngày lưu trú thành công!', 'success')
+        }
       } else {
         uiStore.showToast(res?.data?.message || 'Không thể cập nhật ngày lưu trú.', 'error')
       }
@@ -2013,6 +2114,122 @@ function closeContextMenu() {
   contextMenu.value.show = false
 }
 
+async function loadDropdownsAndPrices() {
+  try {
+    const promises = []
+    if (allCompanies.value.length === 0) promises.push(fetchCompanies().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: allCompanies.value }))
+
+    if (rateCodes.value.length === 0) promises.push(fetchRoomRateCodes().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: rateCodes.value }))
+
+    if (standardRates.value.length === 0) promises.push(http.get('/standard-rates').catch(() => ({ data: { data: [] } })))
+    else promises.push(Promise.resolve({ data: standardRates.value }))
+
+    if (allMarkets.value.length === 0) promises.push(fetchMarkets().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: allMarkets.value }))
+
+    if (allCustomerSources.value.length === 0) promises.push(fetchCustomerSources().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: allCustomerSources.value }))
+
+    const [compRes, rcRes, srRes, mktRes, srcRes] = await Promise.all(promises)
+    
+    if (compRes?.data) allCompanies.value = compRes.data.data || compRes.data || []
+    if (rcRes?.data) rateCodes.value = rcRes.data.data || rcRes.data || []
+    if (srRes?.data) standardRates.value = srRes.data.data || srRes.data || []
+    if (mktRes?.data) allMarkets.value = mktRes.data.data || mktRes.data || []
+    if (srcRes?.data) allCustomerSources.value = srcRes.data.data || srcRes.data || []
+
+    // If company is selected, auto-set default market & source code
+    if (quickBookingCompanySearch.value && allCompanies.value.length > 0) {
+      const co = allCompanies.value.find(c => {
+        const name = c.company_name || c.name || c.company_code
+        return name && String(name).toLowerCase() === String(quickBookingCompanySearch.value).toLowerCase()
+      })
+      if (co) {
+        if (co.market_id) quickBookingForm.value.marketId = co.market_id
+        else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
+        if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
+        else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
+      }
+    }
+    // Fallback if not set
+    if (!quickBookingForm.value.marketId && allMarkets.value.length > 0) {
+      quickBookingForm.value.marketId = allMarkets.value[0].id
+    }
+    if (!quickBookingForm.value.customerSourceId && allCustomerSources.value.length > 0) {
+      quickBookingForm.value.customerSourceId = allCustomerSources.value[0].id
+    }
+  } catch (err) {
+    console.error('Error loading quick booking data:', err)
+  }
+}
+
+loadDropdownsAndPrices()
+
+function getRoomUnitPrice(roomNo, rateCodeMa) {
+  const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(roomNo)) : null
+  const roomClassId = roomObj ? roomObj.room_class_id : null
+  const roomFormId = roomObj ? roomObj.room_form_id : null
+
+  // 1. Nếu có chọn Rate Code
+  if (rateCodeMa && rateCodeMa !== 'Vui lòng chọn giá phòng') {
+    const matchedRc = rateCodes.value.find(rc => rc.Ma === rateCodeMa)
+    if (matchedRc) {
+      if (matchedRc.ratePlans && matchedRc.ratePlans.length > 0) {
+        for (const plan of matchedRc.ratePlans) {
+          if (plan.Period) {
+            let periodObj = plan.Period
+            if (typeof periodObj === 'string') {
+              try { periodObj = JSON.parse(periodObj) } catch (e) { periodObj = {} }
+            }
+            if (roomClassId && periodObj[roomClassId]) {
+              const price = Number(periodObj[roomClassId])
+              if (!isNaN(price) && price > 0) return price
+            }
+          }
+        }
+      }
+      if (matchedRc.Value && Number(matchedRc.Value) > 0) {
+        return Number(matchedRc.Value)
+      }
+    }
+  }
+
+  // 2. Nếu KHÔNG chọn Rate Code: Tra cứu từ bảng standard_rates
+  if (standardRates.value && standardRates.value.length > 0 && roomClassId) {
+    const matchedSr = standardRates.value.find(sr => 
+      Number(sr.room_class_id) === Number(roomClassId) && 
+      (!roomFormId || Number(sr.room_form_id) === Number(roomFormId))
+    )
+    if (matchedSr && Number(matchedSr.room_price) > 0) {
+      return Number(matchedSr.room_price)
+    }
+  }
+
+  // 3. Fallback: Lấy giá niêm yết của roomClass / room
+  if (roomObj) {
+    if (roomObj.room_class && Number(roomObj.room_class.price) > 0) return Number(roomObj.room_class.price)
+    if (Number(roomObj.price) > 0) return Number(roomObj.price)
+  }
+  return 890000
+}
+
+function calculateQuickBookingPrice() {
+  const ranges = selectedRoomsRanges.value
+  if (!ranges || ranges.length === 0) return 0
+
+  let totalPrice = 0
+  ranges.forEach(range => {
+    const unitPrice = getRoomUnitPrice(range.room, quickBookingForm.value.rateCode)
+    const nights = range.nights || 1
+    totalPrice += unitPrice * nights
+  })
+
+  quickBookingForm.value.rate = totalPrice
+  return totalPrice
+}
+
 async function triggerMenuAction(actionName) {
   closeContextMenu()
   
@@ -2025,8 +2242,10 @@ async function triggerMenuAction(actionName) {
       sourceCode: 'Free Individual Traveler',
       bookingName: 'Walkin Guest',
       rateCode: 'Vui lòng chọn giá phòng',
-      rate: '890000'
+      rate: '0'
     }
+    await loadDropdownsAndPrices()
+    calculateQuickBookingPrice()
   } else if (actionName === 'Khóa phòng OOO') {
     lockRoomType.value = 'OOO'
     lockRoomForm.value.note = ''
@@ -2201,24 +2420,38 @@ function handleDragStart(bk, event) {
   event.dataTransfer.effectAllowed = 'move'
 }
 
-let scrollInterval = null
+let scrollAnimationFrame = null
 let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
 
 function stopDragAutoScroll() {
-  if (scrollInterval) {
-    clearInterval(scrollInterval)
-    scrollInterval = null
+  if (scrollAnimationFrame) {
+    cancelAnimationFrame(scrollAnimationFrame)
+    scrollAnimationFrame = null
   }
   currentScrollX = 0
   currentScrollY = 0
   scrollContainer = null
 }
 
+function startAutoScrollLoop() {
+  if (scrollAnimationFrame) return
+  const loop = () => {
+    if (scrollContainer && (currentScrollX !== 0 || currentScrollY !== 0)) {
+      scrollContainer.scrollLeft += currentScrollX
+      scrollContainer.scrollTop += currentScrollY
+      scrollAnimationFrame = requestAnimationFrame(loop)
+    } else {
+      scrollAnimationFrame = null
+    }
+  }
+  scrollAnimationFrame = requestAnimationFrame(loop)
+}
+
 function handleDragOver(event, item, dayIdx) {
   event.preventDefault()
-  if (item && draggedOverRoom.value !== item.room) {
+  if (item && item.room && draggedOverRoom.value !== item.room) {
     draggedOverRoom.value = item.room
   }
   if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
@@ -2226,7 +2459,7 @@ function handleDragOver(event, item, dayIdx) {
   }
 
   // Measure boundary of container to auto-scroll
-  const container = event.currentTarget.closest('.overflow-auto')
+  const container = event.currentTarget.closest('.overflow-auto') || event.currentTarget.closest('.overflow-y-auto')
   if (!container) return
   scrollContainer = container
 
@@ -2234,36 +2467,29 @@ function handleDragOver(event, item, dayIdx) {
   const x = event.clientX - rect.left
   const y = event.clientY - rect.top
 
-  const threshold = 65
-  const scrollSpeed = 22
+  const threshold = 90
+  const maxSpeed = 30
 
   let scrollX = 0
   let scrollY = 0
 
   if (x < threshold) {
-    scrollX = -scrollSpeed
+    scrollX = -Math.round(maxSpeed * (1 - Math.max(0, x) / threshold))
   } else if (rect.width - x < threshold) {
-    scrollX = scrollSpeed
+    scrollX = Math.round(maxSpeed * (1 - Math.max(0, rect.width - x) / threshold))
   }
 
   if (y < threshold) {
-    scrollY = -scrollSpeed
+    scrollY = -Math.round(maxSpeed * (1 - Math.max(0, y) / threshold))
   } else if (rect.height - y < threshold) {
-    scrollY = scrollSpeed
+    scrollY = Math.round(maxSpeed * (1 - Math.max(0, rect.height - y) / threshold))
   }
 
   currentScrollX = scrollX
   currentScrollY = scrollY
 
   if (scrollX !== 0 || scrollY !== 0) {
-    if (!scrollInterval) {
-      scrollInterval = setInterval(() => {
-        if (scrollContainer) {
-          scrollContainer.scrollLeft += currentScrollX
-          scrollContainer.scrollTop += currentScrollY
-        }
-      }, 35)
-    }
+    startAutoScrollLoop()
   } else {
     stopDragAutoScroll()
   }
@@ -2282,7 +2508,13 @@ async function handleDrop(targetRoom, targetDay, event) {
   draggedOverDayIdx.value = null
   stopDragAutoScroll()
 
-  const bk = draggedBooking.value
+  let bk = draggedBooking.value
+  if (!bk && event.dataTransfer) {
+    const brId = event.dataTransfer.getData('text/plain')
+    if (brId) {
+      bk = bookings.value.find(b => String(b.bookingRoomId) === String(brId))
+    }
+  }
   if (!bk) return
   draggedBooking.value = null
 
@@ -2318,7 +2550,11 @@ async function handleDrop(targetRoom, targetDay, event) {
       const res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, payload)
 
       if (res && res.data && res.data.success) {
-        uiStore.showToast('Chuyển phòng thành công!', 'success')
+        if (res.data.warning) {
+          uiStore.showToast(res.data.warning, 'warning')
+        } else {
+          uiStore.showToast('Chuyển phòng thành công!', 'success')
+        }
         await loadBookings()
       } else {
         uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi chuyển phòng.', 'error')
@@ -2421,58 +2657,79 @@ async function saveQuickBooking() {
     loadingBookings.value = true
     emit('loading', true)
 
-    // Find company ID
+    // 1. Công ty ID từ database
     const companyName = quickBookingForm.value.company || 'KHÁCH LẺ'
     const companyObj = allCompanies.value.find(c => c.company_name?.toLowerCase() === companyName.toLowerCase())
     const companyId = companyObj ? companyObj.id : 1
 
-    for (const range of ranges) {
-      // Find room class ID
-      const roomObj = roomStore.rooms.find(r => r.room_number === range.room)
+    // 2. Xác định ngày đến sớm nhất và ngày đi muộn nhất
+    let overallArrival = ranges[0].checkIn
+    let overallDeparture = ranges[0].checkOut
+
+    ranges.forEach(r => {
+      if (r.checkIn < overallArrival) overallArrival = r.checkIn
+      if (r.checkOut > overallDeparture) overallDeparture = r.checkOut
+    })
+
+    const overallNights = Math.round((new Date(overallDeparture) - new Date(overallArrival)) / (1000 * 60 * 60 * 24)) || 1
+    const selectedRateCode = quickBookingForm.value.rateCode !== 'Vui lòng chọn giá phòng' ? quickBookingForm.value.rateCode : null
+
+    // 3. Gom nhóm phòng theo roomClassId, checkIn, checkOut cho room_allocations
+    const allocationsMap = {}
+
+    ranges.forEach(range => {
+      const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(range.room)) : null
       const roomClassId = roomObj ? roomObj.room_class_id : 1
+      const unitPrice = getRoomUnitPrice(range.room, quickBookingForm.value.rateCode)
 
-      // Format date strings
-      const arrivalDate = range.checkIn // YYYY-MM-DD
-      const departureDate = range.checkOut // YYYY-MM-DD
-      const durationNights = range.nights
+      const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
 
-      const rateVal = Number(quickBookingForm.value.rate) || 890000
-
-      const payload = {
-        booking_name: quickBookingForm.value.bookingName || 'Walkin Guest',
-        arrival_date: arrivalDate,
-        departure_date: departureDate,
-        num_of_days: durationNights,
-        company_id: companyId,
-        market_id: 1, // Free Individual Traveler
-        customer_source_id: 1, // Walk-in / Direct
-        contact_name: quickBookingForm.value.bookingName || 'Walkin Guest',
-        contact_phone: '',
-        note: '',
-        room_allocations: [
-          {
-            quantity: 1,
-            roomClassId: roomClassId,
-            price: rateVal,
-            rateCode: quickBookingForm.value.rateCode !== 'Vui lòng chọn giá phòng' ? quickBookingForm.value.rateCode : null,
-            breakfastIncluded: true,
-            rooms: [
-              {
-                roomNumber: range.room,
-                guestName: quickBookingForm.value.bookingName || 'Walkin Guest',
-                adults: 2,
-                children: 0,
-                babies: 0
-              }
-            ]
-          }
-        ]
+      if (!allocationsMap[groupKey]) {
+        allocationsMap[groupKey] = {
+          quantity: 0,
+          roomClassId: roomClassId,
+          arrivalDate: range.checkIn,
+          departureDate: range.checkOut,
+          price: unitPrice,
+          rateCode: selectedRateCode,
+          breakfastIncluded: true,
+          rooms: []
+        }
       }
 
-      await createBooking(payload)
+      allocationsMap[groupKey].quantity += 1
+      allocationsMap[groupKey].rooms.push({
+        roomNumber: range.room,
+        guestName: quickBookingForm.value.bookingName || 'Walkin Guest',
+        arrivalDate: range.checkIn,
+        departureDate: range.checkOut,
+        nights: range.nights || 1,
+        adults: 2,
+        children: 0,
+        babies: 0
+      })
+    })
+
+    const room_allocations = Object.values(allocationsMap)
+
+    // 4. Gọi 1 request duy nhất tạo 1 phiếu Booking
+    const payload = {
+      booking_name: quickBookingForm.value.bookingName || 'Walkin Guest',
+      arrival_date: overallArrival,
+      departure_date: overallDeparture,
+      num_of_days: overallNights,
+      company_id: companyId,
+      market_id: quickBookingForm.value.marketId || 1,
+      customer_source_id: quickBookingForm.value.customerSourceId || 1,
+      contact_name: quickBookingForm.value.bookingName || 'Walkin Guest',
+      contact_phone: '',
+      note: '',
+      room_allocations: room_allocations
     }
 
-    uiStore.showToast('Đã tạo đăng ký nhanh thành công!', 'success')
+    await createBooking(payload)
+
+    uiStore.showToast('Đã tạo phiếu đăng ký nhanh thành công!', 'success')
     showQuickBookingModal.value = false
     selectedCells.value = []
     
@@ -2695,6 +2952,39 @@ function isTodayDate(dateVal) {
   const sysDateVal = systemDate.value ? toLocalDateStr(systemDate.value) : ''
   return dStr === sysDateVal
 }
+
+function isTodayOrActiveBooking(b) {
+  if (!b || !b.checkIn || !b.checkOut) return false
+  const sysDateStr = systemDate.value ? toLocalDateStr(systemDate.value) : toLocalDateStr(new Date())
+  const inStr = toLocalDateStr(b.checkIn)
+  const outStr = toLocalDateStr(b.checkOut)
+  return sysDateStr >= inStr && sysDateStr < outStr
+}
+
+function getRoomStatusIconName(item) {
+  if (!item) return 'double-check'
+  // 1. Lock (OOO / OOS / Active Locks)
+  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos' || (item.active_locks && item.active_locks.length > 0)) {
+    return item.lock_type === 'OOS' ? 'oos' : 'ooo'
+  }
+  // 2. Dirty Room / Housekeeping needed
+  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean) {
+    return 'dirty'
+  }
+  // 3. Sparkles ONLY for clean vacant available room without active booking today
+  const hasBookingToday = item.hasCurrentBooking || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
+  if (item.is_clean && (item.status === 'available' || !item.status) && !hasBookingToday && !item.booking_status) {
+    return 'clean'
+  }
+  // 4. Room with booking / Occupied / Available -> double-check icon (✓✓)
+  if (item.status === 'available' || item.status === 'occupied' || hasBookingToday || !item.status) {
+    return 'double-check'
+  }
+  if (item.status === 'reserved') {
+    return 'priority'
+  }
+  return 'double-check'
+}
 </script>
 
 <template>
@@ -2788,7 +3078,7 @@ function isTodayDate(dateVal) {
               v-for="opt in [
                 { value: 'Phòng', label: 'Số phòng' },
                 { value: 'Loại phòng', label: 'Loại phòng' },
-                { value: 'Dạng phòng', label: 'Dạng phòng' },
+                { value: 'Loại giường', label: 'Loại giường' },
                 { value: 'Tầng', label: 'Tầng' }
               ]" 
               :key="opt.value"
@@ -2879,10 +3169,10 @@ function isTodayDate(dateVal) {
 
     <!-- Timeline Grid Matrix -->
     <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative">
-      <!-- Col width: 62px, sticky room header: 90px -->
+      <!-- Col width: 62px, sticky room header: 120px -->
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
-          <col class="w-[90px] sticky left-0 z-30" />
+          <col class="w-[120px] sticky left-0 z-30" />
           <col v-for="(day, idx) in days" :key="idx" class="w-[62px]" />
         </colgroup>
 
@@ -2923,11 +3213,12 @@ function isTodayDate(dateVal) {
         <tbody>
           <!-- Timeline Rows -->
           <template v-for="(item, idx) in dbRooms" :key="item.room">
-            <!-- Group Header Row for Room Type or Floor -->
+            <!-- Group Header Row for Room Type, Bed Type (Loại giường), or Floor -->
             <tr 
               v-if="(item.isVirtual && (idx === 0 || !dbRooms[idx - 1].isVirtual)) || 
                     (!item.isVirtual && (
                       (activeGroupSetting === 'Loại phòng' && (idx === 0 || dbRooms[idx - 1].type !== item.type || dbRooms[idx - 1].isVirtual)) || 
+                      ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') && (idx === 0 || dbRooms[idx - 1].shape !== item.shape || dbRooms[idx - 1].isVirtual)) ||
                       (activeGroupSetting === 'Tầng' && (idx === 0 || dbRooms[idx - 1].floor !== item.floor || dbRooms[idx - 1].isVirtual))
                     ))"
               class="border-b border-slate-200 select-none h-6 bg-slate-100"
@@ -2936,7 +3227,7 @@ function isTodayDate(dateVal) {
                 :colspan="days.length + 1" 
                 class="p-1 pl-3 font-bold text-slate-800 bg-slate-100 border-r border-slate-200 sticky left-0 z-20 text-[11px] shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
               >
-                {{ item.isVirtual ? 'CHƯA GÁN PHÒNG' : (activeGroupSetting === 'Tầng' ? `TẦNG ${item.floor}` : item.type) }}
+                {{ item.isVirtual ? 'CHƯA GÁN PHÒNG' : (activeGroupSetting === 'Tầng' ? `TẦNG ${item.floor}` : ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') ? item.shape : item.type)) }}
               </td>
             </tr>
 
@@ -2962,24 +3253,19 @@ function isTodayDate(dateVal) {
                   </span>
                   
                   <!-- Details & Status (Right side) -->
-                  <div class="flex items-center gap-0.5 select-none shrink-0">
+                  <div class="flex items-center gap-1 select-none shrink-0">
                     <div class="flex flex-col items-end text-[9px] leading-tight font-normal text-slate-500">
                       <span class="font-normal text-slate-700 uppercase text-[10px]">{{ item.type }}</span>
                       <span class="text-slate-500 font-normal text-[8px]">{{ item.shape }}</span>
                     </div>
-                    <!-- Status Icon -->
-                    <div class="w-3 h-3 flex items-center justify-center shrink-0 text-slate-500">
-                      <!-- Broom Icon (Dirty status) -->
-                      <svg v-if="item.hasBroom" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                        <path d="M19 19L5 5M12 12l2.5-2.5m1.5-1.5l1.5-1.5M7.5 7.5L5 5" />
-                        <path d="M5.5 19.5c.6.6 1.4 1 2.3 1H10l9-9c1-1 1-2.6 0-3.5l-1.5-1.5c-1-1-2.6-1-3.5 0l-9 9v2.2c0 .9.4 1.7 1 2.3Z" />
-                      </svg>
-                      <!-- Sparkle Icon (Clean Available status) -->
-                      <svg v-else-if="item.hasSparkles" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/>
-                        <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5Z"/>
-                        <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1Z"/>
-                      </svg>
+
+                    <!-- Status Icon (Synchronized with RoomMapPage) -->
+                    <div class="w-4 h-4 flex items-center justify-center shrink-0">
+                      <RoomIcon 
+                        :name="getRoomStatusIconName(item)" 
+                        :monochrome="getRoomStatusIconName(item) === 'ooo'"
+                        class="w-4 h-4 text-slate-600" 
+                      />
                     </div>
                   </div>
                 </div>
@@ -3023,7 +3309,7 @@ function isTodayDate(dateVal) {
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
                       splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
-                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-10 border-dashed pointer-events-none' : ''
+                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-40 border-dashed' : ''
                     ]"
                     :style="{
                       left: `${bk.leftRatio * 100}%`,
@@ -3191,11 +3477,10 @@ function isTodayDate(dateVal) {
     <!-- Custom Tooltip -->
     <div 
       v-if="hoveredBooking" 
-      class="fixed z-50 bg-white text-slate-800 text-[11px] rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none min-w-[340px] font-sans"
+      class="fixed z-[9999] bg-white text-slate-800 text-[11px] rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none w-[360px] max-h-[calc(100vh-80px)] overflow-y-auto font-sans"
       :style="{
         left: `${tooltipX}px`,
-        top: `${tooltipY}px`,
-        transform: tooltipBelow ? 'translate(-50%, 15px)' : 'translate(-50%, -100%) translateY(-15px)'
+        top: `${tooltipY}px`
       }"
     >
       <!-- Mode 1: OOO / OOS Locks -->
@@ -3678,14 +3963,20 @@ function isTodayDate(dateVal) {
           <div class="grid grid-cols-2 gap-4">
             <div class="flex flex-col gap-1.5">
               <label class="font-bold text-slate-700 text-left w-full block">Market Segment</label>
-              <select v-model="quickBookingForm.marketSegment" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-                <option value="Free Individual Traveler">Free Individual Traveler</option>
+              <select v-model="quickBookingForm.marketId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+                <option :value="null" disabled>— Chọn thị trường —</option>
+                <option v-for="m in allMarkets" :key="m.id" :value="m.id">
+                  {{ m.name }}
+                </option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="font-bold text-slate-700 text-left w-full block">Source Code</label>
-              <select v-model="quickBookingForm.sourceCode" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-                <option value="Free Individual Traveler">Free Individual Traveler</option>
+              <select v-model="quickBookingForm.customerSourceId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+                <option :value="null" disabled>— Chọn nguồn khách —</option>
+                <option v-for="s in allCustomerSources" :key="s.id" :value="s.id">
+                  {{ s.name }}
+                </option>
               </select>
             </div>
           </div>
@@ -3699,8 +3990,8 @@ function isTodayDate(dateVal) {
           <!-- Rate Code -->
           <div class="flex flex-col gap-1.5">
             <label class="font-bold text-slate-700 text-left w-full block">Rate Code:</label>
-            <select v-model="quickBookingForm.rateCode" class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-              <option value="Vui lòng chọn giá phòng" disabled>Vui lòng chọn giá phòng</option>
+            <select v-model="quickBookingForm.rateCode" @change="calculateQuickBookingPrice" class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+              <option value="Vui lòng chọn giá phòng">Vui lòng chọn giá phòng</option>
               <option v-for="rc in rateCodes" :key="rc.Ma" :value="rc.Ma">
                 {{ rc.Ma }} - {{ rc.Description || 'Không có mô tả' }}
               </option>

@@ -133,28 +133,69 @@ class SystemDefinitionSeeder extends Seeder
             UnitOfMeasure::firstOrCreate(['code' => $u['code']], $u);
         }
 
-        // 4. Room Rate Codes (using new SP1340 structure)
+        // 4. Room Rate Codes & Plans
         $rateCodes = [
             [
+                'Ma' => 'STANDARD',
+                'Description' => 'Giá Tiêu Chuẩn / Công Bố',
+                'BeginDate' => '2020-01-01',
+                'EndDate' => '2030-12-31',
+                'IncludeBF' => true,
+                'Currency' => 'VND',
+                'Type' => 'FIT',
+                'Value' => 950000,
+                'Disable' => false,
+                'AllowChangeRate' => true,
+                'IsChannelManager' => false,
+            ],
+            [
+                'Ma' => 'PROMO2026',
+                'Description' => 'Chương Trình Khuyến Mãi Hè 2026',
+                'BeginDate' => '2026-01-01',
+                'EndDate' => '2026-12-31',
+                'IncludeBF' => true,
+                'Currency' => 'VND',
+                'Type' => 'PROMO',
+                'Value' => 750000,
+                'Disable' => false,
+                'AllowChangeRate' => true,
+                'IsChannelManager' => false,
+            ],
+            [
+                'Ma' => 'CORP',
+                'Description' => 'Giá Ưu Đãi Khách Doanh Nghiệp',
+                'BeginDate' => '2020-01-01',
+                'EndDate' => '2030-12-31',
+                'IncludeBF' => true,
+                'Currency' => 'VND',
+                'Type' => 'CORP',
+                'Value' => 850000,
+                'Disable' => false,
+                'AllowChangeRate' => true,
+                'IsChannelManager' => false,
+            ],
+            [
                 'Ma' => 'FOC',
-                'Description' => 'FOC',
+                'Description' => 'Miễn Phí (Free of Charge)',
                 'BeginDate' => '2018-12-31',
                 'EndDate' => '2029-12-31',
                 'IncludeBF' => true,
                 'Currency' => 'VND',
                 'Type' => 'FIT',
+                'Value' => 0,
                 'Disable' => false,
                 'AllowChangeRate' => false,
                 'IsChannelManager' => false,
             ],
             [
                 'Ma' => 'HU',
-                'Description' => 'House Use',
+                'Description' => 'Phục Vụ Nội Bộ (House Use)',
                 'BeginDate' => '2019-06-03',
                 'EndDate' => '2030-06-03',
                 'IncludeBF' => true,
                 'Currency' => 'VND',
                 'Type' => 'FIT',
+                'Value' => 0,
                 'Disable' => false,
                 'AllowChangeRate' => false,
                 'IsChannelManager' => false,
@@ -162,7 +203,21 @@ class SystemDefinitionSeeder extends Seeder
         ];
 
         foreach ($rateCodes as $rc) {
-            RoomRateCode::firstOrCreate(['Ma' => $rc['Ma']], $rc);
+            $createdRc = RoomRateCode::updateOrCreate(['Ma' => $rc['Ma']], $rc);
+            
+            // Khởi tạo bảng giá plan tương ứng
+            \App\Models\RoomRatePlan::updateOrCreate(
+                ['RateCode' => $createdRc->Ma, 'Code' => 'DEFAULT'],
+                [
+                    'Description' => $createdRc->Description,
+                    'Period' => [
+                        1 => $rc['Value'] > 0 ? $rc['Value'] : 0,
+                        2 => $rc['Value'] > 0 ? $rc['Value'] + 200000 : 0,
+                        3 => $rc['Value'] > 0 ? $rc['Value'] + 400000 : 0,
+                        4 => $rc['Value'] > 0 ? $rc['Value'] + 600000 : 0,
+                    ]
+                ]
+            );
         }
 
         // 5. Registration Statuses
