@@ -5,7 +5,7 @@ import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
-import { fetchCompanies } from '@/services/company-service'
+import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 
@@ -197,10 +197,15 @@ const allCompanies = ref([])
 // Quick booking modal states
 const showQuickBookingModal = ref(false)
 const rateCodes = ref([])
+const standardRates = ref([])
+const allMarkets = ref([])
+const allCustomerSources = ref([])
 const quickBookingCompanySearch = ref('KHÁCH LẺ')
 const showQuickBookingCompanyDropdown = ref(false)
 const quickBookingForm = ref({
   company: 'KHÁCH LẺ',
+  marketId: null,
+  customerSourceId: null,
   marketSegment: 'Free Individual Traveler',
   sourceCode: 'Free Individual Traveler',
   bookingName: 'Walkin Guest',
@@ -356,18 +361,64 @@ const companyFilterData = computed(() => {
 
 const displayCompanies = computed(() => companyFilterData.value.items)
 
+const allCompanyNames = computed(() => {
+  const list = ['KHÁCH LẺ']
+  if (allCompanies.value && allCompanies.value.length > 0) {
+    allCompanies.value.forEach(c => {
+      const name = c.company_name || c.name || c.company_code
+      if (name && !list.some(item => item.toLowerCase() === String(name).toLowerCase())) {
+        list.push(name)
+      }
+    })
+  }
+  if (bookings.value) {
+    bookings.value.forEach(b => {
+      if (b.company && !list.some(item => item.toLowerCase() === String(b.company).toLowerCase())) {
+        list.push(b.company)
+      }
+    })
+  }
+  return list
+})
+
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
-  const list = ['KHÁCH LẺ', ...displayCompanies.value]
   
-  if (!query) return list
-  return list.filter(cName => removeVietnameseTones(cName.toLowerCase()).includes(query))
+  if (!query || query === 'khach le') {
+    return allCompanyNames.value
+  }
+  
+  return allCompanyNames.value.filter(cName => removeVietnameseTones(String(cName).toLowerCase()).includes(query))
 })
 
 function selectQuickBookingCompany(cName) {
   quickBookingForm.value.company = cName
   quickBookingCompanySearch.value = cName
   showQuickBookingCompanyDropdown.value = false
+
+  const co = allCompanies.value.find(c => {
+    const name = c.company_name || c.name || c.company_code
+    return name && String(name).toLowerCase() === String(cName).toLowerCase()
+  })
+
+  if (co) {
+    if (co.market_id) {
+      quickBookingForm.value.marketId = co.market_id
+    } else if (co.market?.id) {
+      quickBookingForm.value.marketId = co.market.id
+    }
+
+    if (co.customer_source_id) {
+      quickBookingForm.value.customerSourceId = co.customer_source_id
+    } else if (co.customer_source?.id) {
+      quickBookingForm.value.customerSourceId = co.customer_source.id
+    }
+
+    if (co.rate_code) {
+      quickBookingForm.value.rateCode = co.rate_code
+      calculateQuickBookingPrice()
+    }
+  }
 }
 
 watch(showRoomTypePopover, (isOpen) => {
@@ -2053,6 +2104,122 @@ function closeContextMenu() {
   contextMenu.value.show = false
 }
 
+async function loadDropdownsAndPrices() {
+  try {
+    const promises = []
+    if (allCompanies.value.length === 0) promises.push(fetchCompanies().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: allCompanies.value }))
+
+    if (rateCodes.value.length === 0) promises.push(fetchRoomRateCodes().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: rateCodes.value }))
+
+    if (standardRates.value.length === 0) promises.push(http.get('/standard-rates').catch(() => ({ data: { data: [] } })))
+    else promises.push(Promise.resolve({ data: standardRates.value }))
+
+    if (allMarkets.value.length === 0) promises.push(fetchMarkets().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: allMarkets.value }))
+
+    if (allCustomerSources.value.length === 0) promises.push(fetchCustomerSources().catch(() => ({ data: [] })))
+    else promises.push(Promise.resolve({ data: allCustomerSources.value }))
+
+    const [compRes, rcRes, srRes, mktRes, srcRes] = await Promise.all(promises)
+    
+    if (compRes?.data) allCompanies.value = compRes.data.data || compRes.data || []
+    if (rcRes?.data) rateCodes.value = rcRes.data.data || rcRes.data || []
+    if (srRes?.data) standardRates.value = srRes.data.data || srRes.data || []
+    if (mktRes?.data) allMarkets.value = mktRes.data.data || mktRes.data || []
+    if (srcRes?.data) allCustomerSources.value = srcRes.data.data || srcRes.data || []
+
+    // If company is selected, auto-set default market & source code
+    if (quickBookingCompanySearch.value && allCompanies.value.length > 0) {
+      const co = allCompanies.value.find(c => {
+        const name = c.company_name || c.name || c.company_code
+        return name && String(name).toLowerCase() === String(quickBookingCompanySearch.value).toLowerCase()
+      })
+      if (co) {
+        if (co.market_id) quickBookingForm.value.marketId = co.market_id
+        else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
+        if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
+        else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
+      }
+    }
+    // Fallback if not set
+    if (!quickBookingForm.value.marketId && allMarkets.value.length > 0) {
+      quickBookingForm.value.marketId = allMarkets.value[0].id
+    }
+    if (!quickBookingForm.value.customerSourceId && allCustomerSources.value.length > 0) {
+      quickBookingForm.value.customerSourceId = allCustomerSources.value[0].id
+    }
+  } catch (err) {
+    console.error('Error loading quick booking data:', err)
+  }
+}
+
+loadDropdownsAndPrices()
+
+function getRoomUnitPrice(roomNo, rateCodeMa) {
+  const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(roomNo)) : null
+  const roomClassId = roomObj ? roomObj.room_class_id : null
+  const roomFormId = roomObj ? roomObj.room_form_id : null
+
+  // 1. Nếu có chọn Rate Code
+  if (rateCodeMa && rateCodeMa !== 'Vui lòng chọn giá phòng') {
+    const matchedRc = rateCodes.value.find(rc => rc.Ma === rateCodeMa)
+    if (matchedRc) {
+      if (matchedRc.ratePlans && matchedRc.ratePlans.length > 0) {
+        for (const plan of matchedRc.ratePlans) {
+          if (plan.Period) {
+            let periodObj = plan.Period
+            if (typeof periodObj === 'string') {
+              try { periodObj = JSON.parse(periodObj) } catch (e) { periodObj = {} }
+            }
+            if (roomClassId && periodObj[roomClassId]) {
+              const price = Number(periodObj[roomClassId])
+              if (!isNaN(price) && price > 0) return price
+            }
+          }
+        }
+      }
+      if (matchedRc.Value && Number(matchedRc.Value) > 0) {
+        return Number(matchedRc.Value)
+      }
+    }
+  }
+
+  // 2. Nếu KHÔNG chọn Rate Code: Tra cứu từ bảng standard_rates
+  if (standardRates.value && standardRates.value.length > 0 && roomClassId) {
+    const matchedSr = standardRates.value.find(sr => 
+      Number(sr.room_class_id) === Number(roomClassId) && 
+      (!roomFormId || Number(sr.room_form_id) === Number(roomFormId))
+    )
+    if (matchedSr && Number(matchedSr.room_price) > 0) {
+      return Number(matchedSr.room_price)
+    }
+  }
+
+  // 3. Fallback: Lấy giá niêm yết của roomClass / room
+  if (roomObj) {
+    if (roomObj.room_class && Number(roomObj.room_class.price) > 0) return Number(roomObj.room_class.price)
+    if (Number(roomObj.price) > 0) return Number(roomObj.price)
+  }
+  return 890000
+}
+
+function calculateQuickBookingPrice() {
+  const ranges = selectedRoomsRanges.value
+  if (!ranges || ranges.length === 0) return 0
+
+  let totalPrice = 0
+  ranges.forEach(range => {
+    const unitPrice = getRoomUnitPrice(range.room, quickBookingForm.value.rateCode)
+    const nights = range.nights || 1
+    totalPrice += unitPrice * nights
+  })
+
+  quickBookingForm.value.rate = totalPrice
+  return totalPrice
+}
+
 async function triggerMenuAction(actionName) {
   closeContextMenu()
   
@@ -2065,8 +2232,10 @@ async function triggerMenuAction(actionName) {
       sourceCode: 'Free Individual Traveler',
       bookingName: 'Walkin Guest',
       rateCode: 'Vui lòng chọn giá phòng',
-      rate: '890000'
+      rate: '0'
     }
+    await loadDropdownsAndPrices()
+    calculateQuickBookingPrice()
   } else if (actionName === 'Khóa phòng OOO') {
     lockRoomType.value = 'OOO'
     lockRoomForm.value.note = ''
@@ -2461,58 +2630,79 @@ async function saveQuickBooking() {
     loadingBookings.value = true
     emit('loading', true)
 
-    // Find company ID
+    // 1. Công ty ID từ database
     const companyName = quickBookingForm.value.company || 'KHÁCH LẺ'
     const companyObj = allCompanies.value.find(c => c.company_name?.toLowerCase() === companyName.toLowerCase())
     const companyId = companyObj ? companyObj.id : 1
 
-    for (const range of ranges) {
-      // Find room class ID
-      const roomObj = roomStore.rooms.find(r => r.room_number === range.room)
+    // 2. Xác định ngày đến sớm nhất và ngày đi muộn nhất
+    let overallArrival = ranges[0].checkIn
+    let overallDeparture = ranges[0].checkOut
+
+    ranges.forEach(r => {
+      if (r.checkIn < overallArrival) overallArrival = r.checkIn
+      if (r.checkOut > overallDeparture) overallDeparture = r.checkOut
+    })
+
+    const overallNights = Math.round((new Date(overallDeparture) - new Date(overallArrival)) / (1000 * 60 * 60 * 24)) || 1
+    const selectedRateCode = quickBookingForm.value.rateCode !== 'Vui lòng chọn giá phòng' ? quickBookingForm.value.rateCode : null
+
+    // 3. Gom nhóm phòng theo roomClassId, checkIn, checkOut cho room_allocations
+    const allocationsMap = {}
+
+    ranges.forEach(range => {
+      const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(range.room)) : null
       const roomClassId = roomObj ? roomObj.room_class_id : 1
+      const unitPrice = getRoomUnitPrice(range.room, quickBookingForm.value.rateCode)
 
-      // Format date strings
-      const arrivalDate = range.checkIn // YYYY-MM-DD
-      const departureDate = range.checkOut // YYYY-MM-DD
-      const durationNights = range.nights
+      const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
 
-      const rateVal = Number(quickBookingForm.value.rate) || 890000
-
-      const payload = {
-        booking_name: quickBookingForm.value.bookingName || 'Walkin Guest',
-        arrival_date: arrivalDate,
-        departure_date: departureDate,
-        num_of_days: durationNights,
-        company_id: companyId,
-        market_id: 1, // Free Individual Traveler
-        customer_source_id: 1, // Walk-in / Direct
-        contact_name: quickBookingForm.value.bookingName || 'Walkin Guest',
-        contact_phone: '',
-        note: '',
-        room_allocations: [
-          {
-            quantity: 1,
-            roomClassId: roomClassId,
-            price: rateVal,
-            rateCode: quickBookingForm.value.rateCode !== 'Vui lòng chọn giá phòng' ? quickBookingForm.value.rateCode : null,
-            breakfastIncluded: true,
-            rooms: [
-              {
-                roomNumber: range.room,
-                guestName: quickBookingForm.value.bookingName || 'Walkin Guest',
-                adults: 2,
-                children: 0,
-                babies: 0
-              }
-            ]
-          }
-        ]
+      if (!allocationsMap[groupKey]) {
+        allocationsMap[groupKey] = {
+          quantity: 0,
+          roomClassId: roomClassId,
+          arrivalDate: range.checkIn,
+          departureDate: range.checkOut,
+          price: unitPrice,
+          rateCode: selectedRateCode,
+          breakfastIncluded: true,
+          rooms: []
+        }
       }
 
-      await createBooking(payload)
+      allocationsMap[groupKey].quantity += 1
+      allocationsMap[groupKey].rooms.push({
+        roomNumber: range.room,
+        guestName: quickBookingForm.value.bookingName || 'Walkin Guest',
+        arrivalDate: range.checkIn,
+        departureDate: range.checkOut,
+        nights: range.nights || 1,
+        adults: 2,
+        children: 0,
+        babies: 0
+      })
+    })
+
+    const room_allocations = Object.values(allocationsMap)
+
+    // 4. Gọi 1 request duy nhất tạo 1 phiếu Booking
+    const payload = {
+      booking_name: quickBookingForm.value.bookingName || 'Walkin Guest',
+      arrival_date: overallArrival,
+      departure_date: overallDeparture,
+      num_of_days: overallNights,
+      company_id: companyId,
+      market_id: quickBookingForm.value.marketId || 1,
+      customer_source_id: quickBookingForm.value.customerSourceId || 1,
+      contact_name: quickBookingForm.value.bookingName || 'Walkin Guest',
+      contact_phone: '',
+      note: '',
+      room_allocations: room_allocations
     }
 
-    uiStore.showToast('Đã tạo đăng ký nhanh thành công!', 'success')
+    await createBooking(payload)
+
+    uiStore.showToast('Đã tạo phiếu đăng ký nhanh thành công!', 'success')
     showQuickBookingModal.value = false
     selectedCells.value = []
     
@@ -3746,14 +3936,20 @@ function getRoomStatusIconName(item) {
           <div class="grid grid-cols-2 gap-4">
             <div class="flex flex-col gap-1.5">
               <label class="font-bold text-slate-700 text-left w-full block">Market Segment</label>
-              <select v-model="quickBookingForm.marketSegment" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-                <option value="Free Individual Traveler">Free Individual Traveler</option>
+              <select v-model="quickBookingForm.marketId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+                <option :value="null" disabled>— Chọn thị trường —</option>
+                <option v-for="m in allMarkets" :key="m.id" :value="m.id">
+                  {{ m.name }}
+                </option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="font-bold text-slate-700 text-left w-full block">Source Code</label>
-              <select v-model="quickBookingForm.sourceCode" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-                <option value="Free Individual Traveler">Free Individual Traveler</option>
+              <select v-model="quickBookingForm.customerSourceId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+                <option :value="null" disabled>— Chọn nguồn khách —</option>
+                <option v-for="s in allCustomerSources" :key="s.id" :value="s.id">
+                  {{ s.name }}
+                </option>
               </select>
             </div>
           </div>
@@ -3767,8 +3963,8 @@ function getRoomStatusIconName(item) {
           <!-- Rate Code -->
           <div class="flex flex-col gap-1.5">
             <label class="font-bold text-slate-700 text-left w-full block">Rate Code:</label>
-            <select v-model="quickBookingForm.rateCode" class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-              <option value="Vui lòng chọn giá phòng" disabled>Vui lòng chọn giá phòng</option>
+            <select v-model="quickBookingForm.rateCode" @change="calculateQuickBookingPrice" class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+              <option value="Vui lòng chọn giá phòng">Vui lòng chọn giá phòng</option>
               <option v-for="rc in rateCodes" :key="rc.Ma" :value="rc.Ma">
                 {{ rc.Ma }} - {{ rc.Description || 'Không có mô tả' }}
               </option>
