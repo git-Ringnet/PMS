@@ -817,11 +817,8 @@ const groupedRooms = computed(() => {
   return groupsList
 })
 
-// Whether any room has been checked-in/checked-out so we show status headers
-const hasStatusGroups = computed(() => {
-  if (!activeTab.value?.rooms) return false
-  return activeTab.value.rooms.some(r => Number(r.bookingRoomStatus) >= 1)
-})
+// Whether any room status headers are shown (Always show status headers)
+const hasStatusGroups = computed(() => true)
 
 // Build nested: Returns sorted array of status groups, each containing typeGroups sorted by room class order
 const groupedRoomsNested = computed(() => {
