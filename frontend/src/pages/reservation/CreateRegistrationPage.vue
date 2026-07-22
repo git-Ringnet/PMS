@@ -681,6 +681,15 @@ const filteredActiveRooms = computed(() => {
   if (!activeTab.value || !activeTab.value.rooms) return []
   let list = activeTab.value.rooms
 
+  // Check if ALL rooms in this registration are cancelled
+  const allRoomsCancelled = activeTab.value.status === 'CANCELLED' || 
+    (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3 || Number(r.bookingRoomStatus) === 100))
+
+  // If not all rooms are cancelled, hide individual cancelled/transferred rooms
+  if (!allRoomsCancelled) {
+    list = list.filter(r => Number(r.bookingRoomStatus) !== 3 && Number(r.bookingRoomStatus) !== 100)
+  }
+
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
     list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
   }
@@ -4215,14 +4224,14 @@ defineExpose({
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr 
                       class="border-b font-bold h-8 cursor-pointer select-none"
-                      :class="statusGroup.statusOrder === 3 ? 'bg-red-50/70 border-red-200 text-red-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-red-100 border-red-300 text-red-900 font-extrabold' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
                       <td class="p-2 border-r border-blue-200 text-center" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
-                          :class="statusGroup.statusOrder === 3 ? 'bg-red-400 hover:bg-red-500' : 'bg-blue-400 hover:bg-blue-500'"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
@@ -4235,10 +4244,10 @@ defineExpose({
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-700' : 'text-blue-900'">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-900 font-black' : 'text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-100' : 'bg-[#bfdbfe]'"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-200' : 'bg-[#bfdbfe]'"></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
@@ -4279,7 +4288,7 @@ defineExpose({
                               class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
                               :class="[
                                 selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
-                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-500 bg-red-50/15' : ''
+                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
                               ]"
                               @click="handleRowSelect(room.id)"
                               :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
@@ -6033,7 +6042,6 @@ defineExpose({
 .cancelled-room,
 .cancelled-room span,
 .cancelled-room td {
-  color: #ef4444 !important;
-  text-decoration: line-through !important;
+  color: #b91c1c !important;
 }
 </style>
