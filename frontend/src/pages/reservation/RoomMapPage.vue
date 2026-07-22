@@ -1625,9 +1625,9 @@ const uniqueFloors = computed(() => {
                       }"
                     >
                       <!-- OOO or OOS lock icon -->
-                      <template v-if="room.status === ROOM_STATUSES.MAINTENANCE">
+                      <template v-if="room.status === ROOM_STATUSES.MAINTENANCE && room.lock_type">
                         <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-emerald-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                        <RoomIcon v-else name="ooo" :monochrome="true" class="text-amber-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-else-if="room.lock_type === 'OOO'" name="ooo" :monochrome="true" class="text-amber-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
 
                       <!-- Housekeeping (broom) icon -->
@@ -1642,8 +1642,9 @@ const uniqueFloors = computed(() => {
 
                       <!-- Other statuses (e.g. available, reserved) -->
                       <template v-else>
-                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE || !room.status" name="clean" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                         <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :monochrome="room.id % 2 === 0" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                        <RoomIcon v-else name="clean" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </template>
                     </div>
                   </div>

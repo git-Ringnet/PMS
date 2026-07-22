@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\RoomLock;
 use App\Models\Room;
+use App\Models\BookingRoom;
 use Illuminate\Http\Request;
 
 class RoomLockController extends Controller
@@ -100,58 +101,30 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => 'Không được phép khóa phòng do phòng đã có lịch khóa OOO/OOS khác trùng lặp thời gian này.'], 422);
         }
 
-        // 3 & 4. Check booking overlap and AV capacity
-        $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
-        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $room->room_number);
+        // 3. Check booking overlap (STRICT BLOCK ALWAYS)
+        if (!empty($booking)) {
+            $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+            $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
+            return response()->json([
+                'success' => false,
+                'message' => "Không được phép khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr})."
+            ], 422);
+        }
 
-        $hasBookingOverlap = !empty($booking);
-        $hasAvOverlap = !empty($avError);
-
-        if (($hasBookingOverlap || $hasAvOverlap) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            $allowLockConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
-            $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
-
-            // Check if any strict block is triggered
-            $bookingBlocked = $hasBookingOverlap && ($allowLockConfig === '0');
-            $avBlocked = $hasAvOverlap && ($allowOverAv === '0');
-
-            if ($bookingBlocked || $avBlocked) {
-                $messages = [];
-                if ($bookingBlocked) {
-                    $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-                    $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
-                    $messages[] = "Không được phép khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
-                }
-                if ($avBlocked) {
-                    $messages[] = "Không thể khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}.";
-                }
+        // 4. Check AV capacity
+        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
+        if (!empty($avError) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            if ($allowOverAv === '0') {
                 return response()->json([
                     'success' => false,
-                    'message' => implode(' ', $messages)
+                    'message' => "Không thể khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
                 ], 422);
-            }
-
-            // Warnings requiring confirmation
-            $warnings = [];
-            if ($hasBookingOverlap) {
-                $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-                $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
-                $warnings[] = "Phòng này trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
-            }
-            if ($hasAvOverlap) {
-                $warnings[] = "Loại phòng {$avError['class_name']} sẽ bị âm phòng vào ngày {$avError['date']}.";
-            }
-
-            $message = implode(' ', $warnings) . " Bạn có chắc chắn vẫn muốn khóa phòng không?";
-            if ($hasAvOverlap && !$hasBookingOverlap) {
-                $message = "Phòng bị âm. Bạn có muốn tiếp tục thao tác?";
             }
 
             return response()->json([
                 'success' => false,
                 'require_confirm' => true,
-                'message' => $message,
-                'booking_code' => $booking['booking_code'] ?? null
+                'message' => "Phòng bị âm. Bạn có muốn tiếp tục thao tác?",
             ], 422);
         }
 
@@ -271,24 +244,15 @@ class RoomLockController extends Controller
                 return response()->json(['success' => false, 'message' => "Không được phép khóa phòng do phòng {$room->room_number} đã có lịch khóa OOO/OOS khác trùng lặp thời gian này."], 422);
             }
 
-            // Check booking overlap
+            // Check booking overlap (STRICT BLOCK ALWAYS)
             $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
             if ($booking) {
-                if ($allowLockConfig === '0') {
-                    $bookingBlockedRooms[] = [
-                        'room_number' => $room->room_number,
-                        'booking_code' => $booking['booking_code'],
-                        'start' => \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y'),
-                        'end' => \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y')
-                    ];
-                } else {
-                    $bookingWarningRooms[] = [
-                        'room_number' => $room->room_number,
-                        'booking_code' => $booking['booking_code'],
-                        'start' => \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y'),
-                        'end' => \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y')
-                    ];
-                }
+                $bookingBlockedRooms[] = [
+                    'room_number' => $room->room_number,
+                    'booking_code' => $booking['booking_code'],
+                    'start' => \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y'),
+                    'end' => \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y')
+                ];
             }
 
             // Check AV
@@ -310,12 +274,21 @@ class RoomLockController extends Controller
             }
         }
 
-        // If any strict blocks
-        if ((!empty($bookingBlockedRooms) || !empty($avBlockedRooms)) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+        // If any booking blocked rooms (STRICT BLOCK - CANNOT FORCE OVERRIDE)
+        if (!empty($bookingBlockedRooms)) {
             $messages = [];
             foreach ($bookingBlockedRooms as $b) {
                 $messages[] = "Không được phép khóa phòng {$b['room_number']} vì trùng lịch với booking {$b['booking_code']} ({$b['start']} ~ {$b['end']}).";
             }
+            return response()->json([
+                'success' => false,
+                'message' => implode(' ', $messages)
+            ], 422);
+        }
+
+        // If any AV strict blocks
+        if (!empty($avBlockedRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            $messages = [];
             foreach ($avBlockedRooms as $av) {
                 $messages[] = "Không thể khóa phòng {$av['room_number']} vì loại phòng {$av['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$av['date']}.";
             }
@@ -325,25 +298,12 @@ class RoomLockController extends Controller
             ], 422);
         }
 
-        // If warnings
-        if ((!empty($bookingWarningRooms) || !empty($avWarningRooms)) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            $warnings = [];
-            foreach ($bookingWarningRooms as $b) {
-                $warnings[] = "Phòng {$b['room_number']} trùng lịch đặt trước của booking {$b['booking_code']} ({$b['start']} ~ {$b['end']}).";
-            }
-            foreach ($avWarningRooms as $av) {
-                $warnings[] = "Phòng {$av['room_number']} thuộc loại phòng {$av['class_name']} sẽ bị âm phòng vào ngày {$av['date']}.";
-            }
-
-            $message = implode(' ', $warnings) . " Bạn có chắc chắn vẫn muốn khóa các phòng đã chọn?";
-            if (!empty($avWarningRooms) && empty($bookingWarningRooms)) {
-                $message = "Có phòng bị âm. Bạn có muốn tiếp tục thao tác?";
-            }
-
+        // If AV warnings requiring confirmation
+        if (!empty($avWarningRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
             return response()->json([
                 'success' => false,
                 'require_confirm' => true,
-                'message' => $message
+                'message' => "Có phòng bị âm. Bạn có muốn tiếp tục thao tác?"
             ], 422);
         }
 
@@ -681,58 +641,32 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => 'Không được phép khóa phòng do phòng đã có lịch khóa OOO/OOS khác trùng lặp thời gian này.'], 422);
         }
 
-        // 4. Check booking overlap and AV capacity
+        // 4. Check booking overlap (STRICT BLOCK ALWAYS)
         $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
+        if ($booking) {
+            $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
+            $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
+            return response()->json([
+                'success' => false,
+                'message' => "Không được phép cập nhật khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr})."
+            ], 422);
+        }
+
+        // 5. Check AV capacity
+        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
         $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $lock->room_number);
-
-        $hasBookingOverlap = !empty($booking);
-        $hasAvOverlap = !empty($avError);
-
-        if (($hasBookingOverlap || $hasAvOverlap) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            $allowLockConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
-            $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
-
-            // Check if any strict block is triggered
-            $bookingBlocked = $hasBookingOverlap && ($allowLockConfig === '0');
-            $avBlocked = $hasAvOverlap && ($allowOverAv === '0');
-
-            if ($bookingBlocked || $avBlocked) {
-                $messages = [];
-                if ($bookingBlocked) {
-                    $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-                    $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
-                    $messages[] = "Không được phép cập nhật khóa phòng vì trùng lịch với booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
-                }
-                if ($avBlocked) {
-                    $messages[] = "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}.";
-                }
+        if (!empty($avError) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            if ($allowOverAv === '0') {
                 return response()->json([
                     'success' => false,
-                    'message' => implode(' ', $messages)
+                    'message' => "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
                 ], 422);
-            }
-
-            // Warnings requiring confirmation
-            $warnings = [];
-            if ($hasBookingOverlap) {
-                $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
-                $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
-                $warnings[] = "Phòng này trùng lịch đặt trước của booking {$booking['booking_code']} ({$bkStartStr} ~ {$bkEndStr}).";
-            }
-            if ($hasAvOverlap) {
-                $warnings[] = "Loại phòng {$avError['class_name']} sẽ bị âm phòng vào ngày {$avError['date']}.";
-            }
-
-            $message = implode(' ', $warnings) . " Bạn có chắc chắn vẫn muốn cập nhật lịch khóa phòng không?";
-            if ($hasAvOverlap && !$hasBookingOverlap) {
-                $message = "Phòng bị âm. Bạn có muốn tiếp tục thao tác?";
             }
 
             return response()->json([
                 'success' => false,
                 'require_confirm' => true,
-                'message' => $message,
-                'booking_code' => $booking['booking_code'] ?? null
+                'message' => "Phòng bị âm. Bạn có muốn tiếp tục thao tác?",
             ], 422);
         }
 
@@ -849,6 +783,15 @@ class RoomLockController extends Controller
         $start = \Carbon\Carbon::parse($startDateStr);
         $end = \Carbon\Carbon::parse($endDateStr);
 
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
+        if ($start->toDateString() < $sysDateStr) {
+            return 'Ngày bắt đầu khóa không được nhỏ hơn Ngày hệ thống (' . $sysDateStr . ').';
+        }
+
         if ($end->lt($start)) {
             if ($start->isSameDay($end)) {
                 return 'Giờ kết thúc không được nhỏ hơn giờ bắt đầu (trong cùng ngày).';
@@ -879,24 +822,50 @@ class RoomLockController extends Controller
     }
 
     /**
-     * Check overlap with mock bookings.
+     * Check overlap with real database bookings and mock bookings.
      */
     private function checkBookingOverlap($roomNumber, $startDateStr, $endDateStr)
     {
-        $start = \Carbon\Carbon::parse($startDateStr)->copy()->startOfDay();
-        $end = \Carbon\Carbon::parse($endDateStr)->copy()->endOfDay();
+        $startStr = \Carbon\Carbon::parse($startDateStr)->format('Y-m-d');
+        $endStr = \Carbon\Carbon::parse($endDateStr)->format('Y-m-d');
 
-        $bookings = $this->getMockBookings();
-        foreach ($bookings as $bk) {
-            if ($bk['room_number'] === $roomNumber) {
-                $bkStart = \Carbon\Carbon::parse($bk['start_date'])->startOfDay();
-                $bkEnd = \Carbon\Carbon::parse($bk['end_date'])->endOfDay();
+        // Query real database bookings for this room number
+        $dbBookings = BookingRoom::with('booking')
+            ->where('room_number', (string)$roomNumber)
+            ->whereIn('status', [
+                BookingRoom::STATUS_BOOKED,
+                BookingRoom::STATUS_CHECKED_IN,
+            ])
+            ->get();
 
-                if ($start->lte($bkEnd) && $end->gte($bkStart)) {
+        foreach ($dbBookings as $b) {
+            $arrStr = \Carbon\Carbon::parse($b->arrival_date)->format('Y-m-d');
+            $depStr = \Carbon\Carbon::parse($b->departure_date)->format('Y-m-d');
+
+            if ($startStr < $depStr && $endStr >= $arrStr) {
+                return [
+                    'booking_id' => $b->booking_id,
+                    'booking_code' => $b->booking?->reservation_code ?? "BK-{$b->booking_id}",
+                    'room_number' => (string)$b->room_number,
+                    'start_date' => $arrStr,
+                    'end_date' => $depStr,
+                    'guest_name' => $b->guest_name ?? 'Inhouse Guest',
+                ];
+            }
+        }
+
+        $mockBookings = $this->getMockBookings();
+        foreach ($mockBookings as $bk) {
+            if ($bk['room_number'] === (string)$roomNumber) {
+                $arrStr = \Carbon\Carbon::parse($bk['start_date'])->format('Y-m-d');
+                $depStr = \Carbon\Carbon::parse($bk['end_date'])->format('Y-m-d');
+
+                if ($startStr < $depStr && $endStr >= $arrStr) {
                     return $bk;
                 }
             }
         }
+
         return null;
     }
 
@@ -933,17 +902,17 @@ class RoomLockController extends Controller
 
             $lockedCount = $lockedQuery->count();
 
-            $bookingsCount = 0;
-            $mockBookings = $this->getMockBookings();
-            foreach ($mockBookings as $bk) {
-                if ($bk['room_type'] === $roomClassCode) {
-                    $bkStart = \Carbon\Carbon::parse($bk['start_date'])->startOfDay();
-                    $bkEnd = \Carbon\Carbon::parse($bk['end_date'])->endOfDay();
-                    if ($tempDate->gte($bkStart) && $tempDate->lte($bkEnd)) {
-                        $bookingsCount++;
-                    }
-                }
-            }
+            $bookingsCount = BookingRoom::where('room_class_id', $roomClassId)
+                ->whereIn('status', [
+                    BookingRoom::STATUS_BOOKED,
+                    BookingRoom::STATUS_CHECKED_IN,
+                ])
+                ->where('arrival_date', '<=', $dateStr)
+                ->where('departure_date', '>', $dateStr)
+                ->whereHas('booking.registrationStatus', function ($query) {
+                    $query->where('is_availability', 1);
+                })
+                ->count();
 
             $av = $totalRooms - $lockedCount - $bookingsCount;
             if (($av - 1) < 0) {

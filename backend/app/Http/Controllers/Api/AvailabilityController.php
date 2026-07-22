@@ -28,9 +28,14 @@ class AvailabilityController extends Controller
         $startDateInput = $request->input('start_date');
         $endDateInput   = $request->input('end_date');
 
+        $latestSysRoll = SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestSysRoll
+            ? Carbon::parse($latestSysRoll->system_date)->toDateString()
+            : now()->timezone('Asia/Ho_Chi_Minh')->toDateString();
+
         $startDate = $startDateInput
             ? Carbon::parse($startDateInput)->startOfDay()
-            : now()->timezone('Asia/Ho_Chi_Minh')->startOfDay();
+            : Carbon::parse($sysDateStr)->startOfDay();
 
         $endDate = $endDateInput
             ? Carbon::parse($endDateInput)->endOfDay()
@@ -328,8 +333,8 @@ class AvailabilityController extends Controller
                 $unavailableRooms = array_merge($oooRooms, $oosRooms, $occRooms);
                 $avRooms          = array_values(array_diff($allClassRoomNumbers, $unavailableRooms));
 
-                $sellable = max(0, $total - $oooCount - $oosCount);
-                $av       = max(0, $sellable - $occupied - $almCount);
+                $sellable = $total - $oooCount - $oosCount;
+                $av       = $sellable - $occupied - $almCount;
 
                 $grid[$code][$dStr] = [
                     'av'         => $av,

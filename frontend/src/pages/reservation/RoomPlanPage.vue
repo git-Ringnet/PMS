@@ -665,7 +665,7 @@ const dbRooms = computed(() => {
         shape,
         status: r.status,
         is_clean: r.is_clean !== undefined ? r.is_clean : true,
-        lock_type: r.lock_type || (r.active_locks && r.active_locks.length > 0 ? r.active_locks[0].lock_type : null),
+        lock_type: r.status === 'maintenance' ? r.lock_type : null,
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
@@ -691,9 +691,6 @@ const dbRooms = computed(() => {
         })
       }
     })
-    if (!room.lock_type && room.active_locks.length > 0) {
-      room.lock_type = room.active_locks[0].lock_type
-    }
   })
 
   // 2. Append virtual rooms from active bookings
@@ -1410,12 +1407,25 @@ function getLegendDotClass(name) {
 }
 
 function isCellOccupied(roomNo, date) {
-  const roomBookings = processedBookings.value[roomNo] || []
-  const targetTime = new Date(date).setHours(12, 0, 0, 0)
+  const rKey = String(roomNo)
+  const roomBookings = processedBookings.value[rKey] || processedBookings.value[roomNo] || []
+  if (!roomBookings || roomBookings.length === 0) return false
+
+  const targetDateStr = formatDateStr(date)
+
   return roomBookings.some(bk => {
-    const start = parseDateTime(bk.checkIn).setHours(12, 0, 0, 0)
-    const end = parseDateTime(bk.checkOut).setHours(12, 0, 0, 0)
-    return targetTime >= start && targetTime < end
+    const checkInDateStr = formatDateStr(parseDateTime(bk.checkIn))
+    const checkOutDateStr = formatDateStr(parseDateTime(bk.checkOut))
+
+    const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
+    if (isLockItem) {
+      return targetDateStr >= checkInDateStr && targetDateStr <= checkOutDateStr
+    } else {
+      if (checkInDateStr === checkOutDateStr) {
+        return targetDateStr === checkInDateStr
+      }
+      return targetDateStr >= checkInDateStr && targetDateStr < checkOutDateStr
+    }
   })
 }
 
@@ -1426,6 +1436,7 @@ function isCellSelected(roomNo, date) {
 
 function handleCellClick(roomItem, dayItem, dayIdx, event) {
   if (roomItem.isVirtual || isCellOccupied(roomItem.room, dayItem.fullDate)) {
+    uiStore.showToast(`Phòng ${roomItem.room} ngày ${formatDateStr(dayItem.fullDate)} đã có đặt phòng/khóa phòng, không thể chọn.`, 'warning')
     return
   }
 
@@ -1473,6 +1484,7 @@ const selectedRoomsRanges = computed(() => {
       room: roomNo,
       checkIn,
       checkOut,
+      lastDate: dateStrings[dateStrings.length - 1],
       nights: dateStrings.length
     })
   })
@@ -1519,9 +1531,8 @@ const processedBookings = computed(() => {
           price: '0',
           label: `${lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'} - ${lock.lock_reason || 'Bảo trì'}`,
           isVirtual: false,
-          bookingId: null,
-          bookingRoomId: lock.id,
-          lockId: lock.id,
+          bookingRoomId: lock.id || lock.lock_id,
+          lockId: lock.id || lock.lock_id,
           phone: '',
           roomChargeDue: 0,
           serviceChargeDue: 0,
@@ -1597,7 +1608,8 @@ const processedBookings = computed(() => {
     const leftRatio = showNights.value ? 0 : 0.5
 
     // Total columns spanned (occupy full cells or half cells)
-    const span = Math.max(1, endIdx - startIdx)
+    const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
+    const span = Math.max(1, isLockItem ? (endIdx - startIdx + 1) : (endIdx - startIdx))
     const showCheckOutIndicator = !showNights.value && isCheckOutVisible
 
     // Formatting for tooltip display
@@ -1768,12 +1780,13 @@ watch(showNotes, (newVal) => {
 })
 
 function showTooltip(booking, event) {
-  if (!showNotes.value) return
+  if (!showNotes.value || draggedBooking.value) return
   hoveredBooking.value = booking
   updateTooltipPosition(event)
 }
 
 function updateTooltipPosition(event) {
+  if (draggedBooking.value) return
   const tooltipWidth = 360
   const tooltipHeight = 420
   const minTop = 65 // Không bị khuất dưới thanh tabbar ở trên
@@ -2080,7 +2093,7 @@ function handleBookingContextMenu(booking, event) {
   const menuWidth = 180
   
   let type = 'green-booking'
-  if (booking.code === 'LOCK') {
+  if (booking.code === 'LOCK' || booking.type === 'OOO' || booking.type === 'OOS' || booking.isLockRoom) {
     type = 'lock-actions'
   } else if (booking.type === 'InHouse') {
     type = 'blue-booking'
@@ -2281,20 +2294,21 @@ async function triggerMenuAction(actionName) {
     }
   } else if (actionName === 'Mở khóa phòng') {
     const booking = contextMenu.value.booking
-    if (booking && booking.lockId) {
+    const lockId = booking?.lockId || booking?.bookingRoomId
+    if (booking && lockId) {
       const confirmUnlock = window.confirm('Bạn có chắc chắn muốn mở khóa phòng này không?')
       if (confirmUnlock) {
         try {
           loadingBookings.value = true
           emit('loading', true)
-          const res = await roomService.deleteRoomLock(booking.lockId)
-          if (res && res.data && res.data.success) {
+          const res = await roomService.deleteRoomLock(lockId)
+          if (res && (res.success || res.data?.success)) {
             uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
             await roomStore.fetchRooms()
             await loadBookings()
             if (bc) bc.postMessage('rooms-updated')
           } else {
-            uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
+            uiStore.showToast(res?.message || res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
           }
         } catch (err) {
           console.error(err)
@@ -2418,12 +2432,71 @@ function handleDragStart(bk, event) {
   draggedBooking.value = bk
   event.dataTransfer.setData('text/plain', bk.bookingRoomId)
   event.dataTransfer.effectAllowed = 'move'
+
+  window.addEventListener('wheel', handleDragWheel, { passive: true })
+  window.addEventListener('dragover', handleGlobalDragOver)
 }
 
 let scrollAnimationFrame = null
 let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
+
+function handleDragWheel(e) {
+  if (!draggedBooking.value) return
+  if (!scrollContainer) {
+    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  }
+  if (scrollContainer) {
+    scrollContainer.scrollTop += e.deltaY
+    if (e.deltaX) {
+      scrollContainer.scrollLeft += e.deltaX
+    }
+  }
+}
+
+function handleGlobalDragOver(event) {
+  if (!draggedBooking.value) return
+  event.preventDefault()
+
+  if (!scrollContainer) {
+    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  }
+  if (!scrollContainer) return
+
+  const rect = scrollContainer.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+
+  const threshold = 120
+  const maxSpeed = 35
+
+  let scrollX = 0
+  let scrollY = 0
+
+  if (x < threshold && x > -50) {
+    scrollX = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, x)) / threshold))
+  } else if (rect.width - x < threshold && x < rect.width + 50) {
+    scrollX = Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, rect.width - x)) / threshold))
+  }
+
+  // Vertical Scrolling
+  if (y < threshold && y > -50) {
+    scrollY = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, y)) / threshold))
+  } else if (rect.height - y < threshold || event.clientY > rect.bottom - threshold) {
+    const distFromBottom = rect.bottom - event.clientY
+    scrollY = Math.round(maxSpeed * Math.max(0.3, (threshold - Math.max(-50, distFromBottom)) / threshold))
+  }
+
+  currentScrollX = scrollX
+  currentScrollY = scrollY
+
+  if (scrollX !== 0 || scrollY !== 0) {
+    startAutoScrollLoop()
+  } else {
+    stopDragAutoScroll()
+  }
+}
 
 function stopDragAutoScroll() {
   if (scrollAnimationFrame) {
@@ -2433,6 +2506,8 @@ function stopDragAutoScroll() {
   currentScrollX = 0
   currentScrollY = 0
   scrollContainer = null
+  window.removeEventListener('wheel', handleDragWheel)
+  window.removeEventListener('dragover', handleGlobalDragOver)
 }
 
 function startAutoScrollLoop() {
@@ -2458,41 +2533,7 @@ function handleDragOver(event, item, dayIdx) {
     draggedOverDayIdx.value = dayIdx
   }
 
-  // Measure boundary of container to auto-scroll
-  const container = event.currentTarget.closest('.overflow-auto') || event.currentTarget.closest('.overflow-y-auto')
-  if (!container) return
-  scrollContainer = container
-
-  const rect = container.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
-
-  const threshold = 90
-  const maxSpeed = 30
-
-  let scrollX = 0
-  let scrollY = 0
-
-  if (x < threshold) {
-    scrollX = -Math.round(maxSpeed * (1 - Math.max(0, x) / threshold))
-  } else if (rect.width - x < threshold) {
-    scrollX = Math.round(maxSpeed * (1 - Math.max(0, rect.width - x) / threshold))
-  }
-
-  if (y < threshold) {
-    scrollY = -Math.round(maxSpeed * (1 - Math.max(0, y) / threshold))
-  } else if (rect.height - y < threshold) {
-    scrollY = Math.round(maxSpeed * (1 - Math.max(0, rect.height - y) / threshold))
-  }
-
-  currentScrollX = scrollX
-  currentScrollY = scrollY
-
-  if (scrollX !== 0 || scrollY !== 0) {
-    startAutoScrollLoop()
-  } else {
-    stopDragAutoScroll()
-  }
+  handleGlobalDragOver(event)
 }
 
 function handleDragEnd() {
@@ -2532,6 +2573,33 @@ async function handleDrop(targetRoom, targetDay, event) {
   const originalCheckOut = parseDateTime(bk.checkOut)
   const arrivalStr = formatDateStr(originalCheckIn)
   const departureStr = formatDateStr(originalCheckOut)
+
+  // Check if target room is currently locked (OOO/OOS) or occupied
+  if (targetRoomNumber) {
+    const dStart = new Date(arrivalStr)
+    const dEnd = new Date(departureStr)
+    for (let d = new Date(dStart); d < dEnd; d.setDate(d.getDate() + 1)) {
+      const dateStr = formatDateStr(d)
+      const rKey = String(targetRoomNumber)
+      const roomBookings = processedBookings.value[rKey] || processedBookings.value[targetRoomNumber] || []
+
+      const isLockedOrOccupied = roomBookings.some(b => {
+        if (b.bookingRoomId === bk.bookingRoomId) return false
+        const startStr = formatDateStr(parseDateTime(b.checkIn))
+        const endStr = formatDateStr(parseDateTime(b.checkOut))
+        const isLockItem = b.code === 'LOCK' || b.type === 'OOO' || b.type === 'OOS'
+        if (isLockItem) {
+          return dateStr >= startStr && dateStr <= endStr
+        }
+        return dateStr >= startStr && dateStr < endStr
+      })
+
+      if (isLockedOrOccupied) {
+        uiStore.showToast(`Phòng ${targetRoomNumber} đang bị khóa (OOO/OOS) hoặc đã có khách trong khoảng thời gian này. Không thể kéo chuyển phòng!`, 'error')
+        return
+      }
+    }
+  }
 
   const proceedMove = async (differentClass = false) => {
     try {
@@ -2749,17 +2817,53 @@ async function saveLockRoom() {
   const ranges = selectedRoomsRanges.value
   if (ranges.length === 0) return
 
+  const note = lockRoomForm.value.note ? lockRoomForm.value.note.trim() : ''
+  if (!note) {
+    uiStore.showToast('Vui lòng nhập ghi chú (Note) cho khóa phòng.', 'warning')
+    return
+  }
+
   try {
     loadingBookings.value = true
     emit('loading', true)
 
+    // Verify no selected cell is occupied
     for (const range of ranges) {
+      const dStart = new Date(range.checkIn)
+      const dEnd = new Date(range.lastDate || range.checkIn)
+      for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
+        if (isCellOccupied(range.room, d)) {
+          uiStore.showToast(`Phòng ${range.room} ngày ${formatDateStr(d)} đã có lịch đặt/khóa phòng, không thể thực hiện khóa.`, 'error')
+          loadingBookings.value = false
+          emit('loading', false)
+          return
+        }
+      }
+    }
+
+    const sysDateStr = systemDate.value || formatDateStr(new Date())
+    const endTimeConfig = hotelSettings.value?.FrmOOO_DefineLockByTime || '23:59:59'
+    const formattedEndTime = endTimeConfig.includes(':') && endTimeConfig.split(':').length === 2 ? `${endTimeConfig}:59` : endTimeConfig
+
+    for (const range of ranges) {
+      const lockStartDate = range.checkIn
+      const lockEndDate = range.lastDate || range.checkIn
+
+      let startTimeStr = '00:00:00'
+      if (lockStartDate <= sysDateStr) {
+        const now = new Date()
+        const hh = String(now.getHours()).padStart(2, '0')
+        const mm = String(now.getMinutes()).padStart(2, '0')
+        const ss = String(now.getSeconds()).padStart(2, '0')
+        startTimeStr = `${hh}:${mm}:${ss}`
+      }
+
       const lockObj = {
         room_number: range.room,
-        start_date: `${range.checkIn} 14:00`,
-        end_date: `${range.checkOut} 12:00`,
+        start_date: `${lockStartDate} ${startTimeStr}`,
+        end_date: `${lockEndDate} ${formattedEndTime}`,
         lock_type: lockRoomType.value,
-        reason: lockRoomForm.value.note || 'Bảo trì phòng',
+        reason: note,
         force: false
       }
 
@@ -2963,8 +3067,8 @@ function isTodayOrActiveBooking(b) {
 
 function getRoomStatusIconName(item) {
   if (!item) return 'double-check'
-  // 1. Lock (OOO / OOS / Active Locks)
-  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos' || (item.active_locks && item.active_locks.length > 0)) {
+  // 1. Lock (OOO / OOS) - Only when currently locked today
+  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
     return item.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
   // 2. Dirty Room / Housekeeping needed
@@ -3168,7 +3272,7 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative">
+    <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragover="handleGlobalDragOver($event)">
       <!-- Col width: 62px, sticky room header: 120px -->
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
@@ -3367,7 +3471,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Handle / Control -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId"
+                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       class="absolute top-0 bottom-0 w-[4px] bg-white cursor-ew-resize z-40 shadow-[0_0_4px_rgba(0,0,0,0.5)]"
                       :style="{ left: `calc(${((splitIndex - bk.startIndex) / bk.span) * 100}% - 2px)` }"
                       @mousedown.prevent.stop="startDragSplitBar($event)"
@@ -3375,7 +3479,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Buttons Overlay -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId"
+                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       class="absolute bottom-[-22px] left-0 flex gap-1 z-50 select-none bg-white border border-slate-200 shadow-lg rounded p-0.5"
                     >
                       <button 
@@ -3398,7 +3502,7 @@ function getRoomStatusIconName(item) {
           </template>
         </tbody>
         <!-- Summary Footers wrapped inside tfoot for gapless sticky bottom rendering -->
-        <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200">
+        <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200" @dragover="handleGlobalDragOver($event)">
           <!-- Summary OCC Footer Row -->
           <tr class="h-[38px] font-black text-slate-800">
             <td 
@@ -4066,7 +4170,7 @@ function getRoomStatusIconName(item) {
 
         <!-- Form Body -->
         <div class="p-5 flex flex-col gap-2.5 text-xs text-left">
-          <label class="font-bold text-slate-700 text-[13px] text-left w-full block">Note</label>
+          <label class="font-bold text-slate-700 text-[13px] text-left w-full block">Note <span class="text-red-500">*</span></label>
           <input type="text" v-model="lockRoomForm.note" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold" placeholder="Nhập ghi chú khóa phòng..." />
         </div>
 
