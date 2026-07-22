@@ -389,10 +389,15 @@ class BookingRoomController extends Controller
 
         $bookingRoom->load(['roomClass', 'room']);
 
+        $warning = (isset($av) && $av < 0 && $this->allowOverAV())
+            ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $av . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
+            : null;
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom,
-            'message' => 'Cập nhật phòng thành công!',
+            'message' => 'Cập nhật phòng thành công!' . ($warning ? ' ' . $warning : ''),
+            'warning' => $warning,
         ]);
     }
 
@@ -553,6 +558,11 @@ class BookingRoomController extends Controller
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
+            // Đồng bộ status cho khách sang CHECKED_IN
+            $bookingRoom->guests()->update([
+                'status' => BookingRoom::STATUS_CHECKED_IN
+            ]);
+
             // Nếu tất cả phòng trong booking đều đã check-in → cập nhật booking header
             $allCheckedIn = $booking->bookingRooms()
                 ->whereIn('status', [BookingRoom::STATUS_BOOKED])
@@ -594,6 +604,11 @@ class BookingRoomController extends Controller
             $bookingRoom->update([
                 'status'     => BookingRoom::STATUS_BOOKED,
                 'updated_by' => Auth::user()?->username ?? 'system',
+            ]);
+
+            // Đồng bộ status cho khách về BOOKED
+            $bookingRoom->guests()->update([
+                'status' => BookingRoom::STATUS_BOOKED
             ]);
 
             // Cập nhật booking status về STATUS_RESERVATION (0) nếu trước đó là STATUS_CHECKIN (1)

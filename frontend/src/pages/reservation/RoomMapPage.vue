@@ -126,7 +126,7 @@ function saveSettings() {
 
 function handleEditBookingFromPlan({ code, id }) {
   // Đảm bảo tab không nằm trong danh sách đóng (closed list) trong localStorage
-  const closedKey = 'pms_closed_registration_tabs'
+  const closedKey = 'pms_closed_tabs'
   const closedStr = localStorage.getItem(closedKey)
   let closedList = []
   if (closedStr !== null) {
@@ -137,10 +137,14 @@ function handleEditBookingFromPlan({ code, id }) {
     }
   }
   // Loại bỏ id booking này khỏi closed list và lưu lại
-  const updatedClosed = closedList.filter(x => String(x) !== String(id))
+  const updatedClosed = closedList.filter(x => String(x) !== String(id) && String(x) !== String(code))
   localStorage.setItem(closedKey, JSON.stringify(updatedClosed))
 
   router.push({ query: { ...route.query, tab: 'create-res', bookingCode: code } })
+
+  if (createRegRef.value && typeof createRegRef.value.openBookingModalByCode === 'function') {
+    createRegRef.value.openBookingModalByCode(code)
+  }
 }
 
 function resetToDefaultSettings() {
@@ -362,6 +366,10 @@ function closeModal() {
 function closeBookingDetailModal() {
   showBookingDetailModal.value = false
   selectedBookingRoom.value = null
+}
+ 
+async function refreshRoomMapAfterGuestChange() {
+  await roomStore.fetchRooms({ silent: true })
 }
 
 // Checkbox helper for filters
@@ -1872,6 +1880,7 @@ const uniqueFloors = computed(() => {
       v-if="showBookingDetailModal && selectedBookingRoom"
       :room="selectedBookingRoom"
       @close="closeBookingDetailModal"
+      @refresh="refreshRoomMapAfterGuestChange"
     />
 
     <!-- Hover Tooltip -->

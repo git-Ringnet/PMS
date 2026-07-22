@@ -82,15 +82,15 @@ class ActivityLogController extends Controller
         }
 
         // Sắp xếp
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortDir = $request->get('sort_dir', 'desc');
+        $sortBy = $request->input('sort_by', 'created_at');
+        $sortDir = $request->input('sort_dir', 'desc');
         $allowedSort = ['id', 'created_at', 'user_name', 'action', 'module', 'component'];
         if (in_array($sortBy, $allowedSort)) {
             $query->orderBy($sortBy, $sortDir === 'asc' ? 'asc' : 'desc');
         }
 
         // Phân trang
-        $perPage = min((int) $request->get('per_page', 30), 100);
+        $perPage = min((int) $request->input('per_page', 30), 100);
         $logs = $query->paginate($perPage);
 
         return response()->json([

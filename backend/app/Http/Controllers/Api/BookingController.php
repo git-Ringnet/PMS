@@ -331,9 +331,13 @@ class BookingController extends Controller
                                 'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
                             ]);
                             \App\Models\BookingRoomGuest::create([
-                                'booking_room_id' => $bRoom->id,
-                                'guest_id' => $guest->id,
-                                'is_primary' => 1,
+                                'booking_room_id'     => $bRoom->id,
+                                'guest_id'            => $guest->id,
+                                'is_primary'          => 1,
+                                'status'              => $bRoom->status,
+                                'actual_arrival_date' => $bRoom->arrival_date,
+                                'checkin_by'          => Auth::user()?->username ?? 'system',
+                                'breakfast'           => $bRoom->breakfast,
                             ]);
 
                             // Tự động tạo thêm khách phụ cho đủ số lượng adults
@@ -341,15 +345,19 @@ class BookingController extends Controller
                             if ($numAdults > 1) {
                                 for ($a = 2; $a <= $numAdults; $a++) {
                                     $subGuest = \App\Models\Guest::create([
-                                        'full_name' => 'Guest ' . $a,
-                                        'title' => 'Mr.',
+                                        'full_name'    => 'Guest ' . $a,
+                                        'title'        => 'Mr.',
                                         'nationality_code' => 'VN',
                                         'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
                                     ]);
                                     \App\Models\BookingRoomGuest::create([
-                                        'booking_room_id' => $bRoom->id,
-                                        'guest_id' => $subGuest->id,
-                                        'is_primary' => 0,
+                                        'booking_room_id'     => $bRoom->id,
+                                        'guest_id'            => $subGuest->id,
+                                        'is_primary'          => 0,
+                                        'status'              => $bRoom->status,
+                                        'actual_arrival_date' => $bRoom->arrival_date,
+                                        'checkin_by'          => Auth::user()?->username ?? 'system',
+                                        'breakfast'           => $bRoom->breakfast,
                                     ]);
                                 }
                             }
@@ -701,17 +709,24 @@ class BookingController extends Controller
                                 $pivot->guest->update([
                                     'full_name' => $roomGuestName,
                                 ]);
+                                $pivot->update([
+                                    'status' => $bRoom->status,
+                                ]);
                             } else {
                                 $guest = \App\Models\Guest::create([
-                                    'full_name' => $roomGuestName,
-                                    'title' => 'Mr.',
+                                    'full_name'        => $roomGuestName,
+                                    'title'            => 'Mr.',
                                     'nationality_code' => 'VN',
-                                    'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                                    'guest_status'     => \App\Models\Guest::STATUS_ACTIVE,
                                 ]);
                                 \App\Models\BookingRoomGuest::create([
-                                    'booking_room_id' => $bRoom->id,
-                                    'guest_id' => $guest->id,
-                                    'is_primary' => 1,
+                                    'booking_room_id'     => $bRoom->id,
+                                    'guest_id'            => $guest->id,
+                                    'is_primary'          => 1,
+                                    'status'              => $bRoom->status,
+                                    'actual_arrival_date' => $bRoom->arrival_date,
+                                    'checkin_by'          => Auth::user()?->username ?? 'system',
+                                    'breakfast'           => $bRoom->breakfast,
                                 ]);
                             }
 
@@ -720,6 +735,14 @@ class BookingController extends Controller
                             $secondaries = \App\Models\BookingRoomGuest::where('booking_room_id', $bRoom->id)
                                 ->where('is_primary', 0)
                                 ->get();
+                            
+                            // Cập nhật status cho khách phụ hiện có
+                            foreach ($secondaries as $subPivot) {
+                                $subPivot->update([
+                                    'status' => $bRoom->status,
+                                ]);
+                            }
+
                             $totalCurrentGuests = 1 + $secondaries->count();
 
                             if ($totalCurrentGuests < $targetAdults) {
@@ -728,15 +751,19 @@ class BookingController extends Controller
                                 for ($a = 0; $a < $needed; $a++) {
                                     $seq = $totalCurrentGuests + $a + 1;
                                     $subGuest = \App\Models\Guest::create([
-                                        'full_name' => 'Guest ' . $seq,
-                                        'title' => 'Mr.',
+                                        'full_name'        => 'Guest ' . $seq,
+                                        'title'            => 'Mr.',
                                         'nationality_code' => 'VN',
-                                        'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+                                        'guest_status'     => \App\Models\Guest::STATUS_ACTIVE,
                                     ]);
                                     \App\Models\BookingRoomGuest::create([
-                                        'booking_room_id' => $bRoom->id,
-                                        'guest_id' => $subGuest->id,
-                                        'is_primary' => 0,
+                                        'booking_room_id'     => $bRoom->id,
+                                        'guest_id'            => $subGuest->id,
+                                        'is_primary'          => 0,
+                                        'status'              => $bRoom->status,
+                                        'actual_arrival_date' => $bRoom->arrival_date,
+                                        'checkin_by'          => Auth::user()?->username ?? 'system',
+                                        'breakfast'           => $bRoom->breakfast,
                                     ]);
                                 }
                             } elseif ($totalCurrentGuests > $targetAdults) {
@@ -1031,13 +1058,16 @@ class BookingController extends Controller
                             'created_by'             => Auth::user()?->username ?? 'system',
                         ]);
 
-                        // Copy khách
+                        // Copy khách — actual_arrival_date = arrival_date phòng mới (không copy ngày cũ)
                         foreach ($srcRoom->guests as $pivotGuest) {
                             BookingRoomGuest::create([
-                                'booking_room_id' => $newRoom->id,
-                                'guest_id'        => $pivotGuest->guest_id,
-                                'is_primary'      => $pivotGuest->is_primary,
-                                'status'          => 0,
+                                'booking_room_id'     => $newRoom->id,
+                                'guest_id'            => $pivotGuest->guest_id,
+                                'is_primary'          => $pivotGuest->is_primary,
+                                'status'              => $newRoom->status,
+                                'actual_arrival_date' => $newRoom->arrival_date,
+                                'checkin_by'          => Auth::user()?->username ?? 'system',
+                                'breakfast'           => $newRoom->breakfast,
                             ]);
                         }
 

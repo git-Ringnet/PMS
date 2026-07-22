@@ -885,13 +885,7 @@ onMounted(async () => {
     await Promise.all([loadDropdowns(), loadBookings()])
     
     if (route.query.bookingCode) {
-      const foundTab = tabs.value.find(t => t.id === route.query.bookingCode)
-      if (foundTab) {
-        activeTabId.value = foundTab.id
-        if (route.query.openModal === 'true') {
-          await openEditModal()
-        }
-      }
+      await openBookingModalByCode(route.query.bookingCode)
     }
   } catch (err) {
     console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
@@ -906,13 +900,7 @@ onBeforeUnmount(() => {
 
 watch(() => route.query.bookingCode, async (newCode) => {
   if (newCode) {
-    const foundTab = tabs.value.find(t => t.id === newCode)
-    if (foundTab) {
-      activeTabId.value = foundTab.id
-      if (route.query.openModal === 'true') {
-        await openEditModal()
-      }
-    }
+    await openBookingModalByCode(newCode)
   }
 })
 
@@ -3350,24 +3338,30 @@ async function handleServicesSaved() {
 }
 
 async function openBookingModalByCode(bookingCode) {
-  const foundTab = tabs.value.find(t => t.id === bookingCode)
+  if (!bookingCode) return
+  let foundTab = tabs.value.find(t => String(t.id) === String(bookingCode) || String(t.dbId) === String(bookingCode))
+  
   if (foundTab) {
+    removeClosedTabId(foundTab.dbId)
     activeTabId.value = foundTab.id
-    await openEditModal()
   } else {
     try {
       const res = await fetchBookings({ search: bookingCode })
       const list = res.data?.data || res.data || []
       if (list.length > 0) {
-        const tabObj = bookingToTab(list[0])
-        // Xóa khỏi closed list khi mở lại qua URL
-        removeClosedTabId(list[0].id)
-        tabs.value.push(tabObj)
+        const bItem = list.find(b => String(b.booking_code) === String(bookingCode) || String(b.id) === String(bookingCode)) || list[0]
+        removeClosedTabId(bItem.id)
+        const tabObj = bookingToTab(bItem)
+        const existingIdx = tabs.value.findIndex(t => t.id === tabObj.id)
+        if (existingIdx > -1) {
+          tabs.value[existingIdx] = tabObj
+        } else {
+          tabs.value.push(tabObj)
+        }
         activeTabId.value = tabObj.id
-        await openEditModal()
       }
     } catch (err) {
-      console.error(err)
+      console.error('Lỗi khi mở booking theo mã:', err)
     }
   }
 }

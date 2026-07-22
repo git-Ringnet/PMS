@@ -41,7 +41,7 @@ class CompanyController extends Controller
             $query->where('branch_id', $request->branch_id);
         }
 
-        $perPage = $request->get('per_page', 100);
+        $perPage = $request->input('per_page', 100);
         $companies = $query->orderBy('id')->paginate($perPage);
 
         return response()->json([
