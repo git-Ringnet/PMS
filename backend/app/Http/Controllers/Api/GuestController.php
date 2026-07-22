@@ -170,6 +170,7 @@ class GuestController extends Controller
             'address'         => 'nullable|string|max:500',
             'is_primary'      => 'nullable|boolean',
             'inherit_guest_id'=> 'nullable|exists:guests,id', // Kế thừa từ khách cũ
+            'avatar'          => 'nullable|string|max:255',
         ]);
 
         DB::beginTransaction();
@@ -189,13 +190,13 @@ class GuestController extends Controller
                 if ($existingGuest) {
                     // Update thông tin mới vào guest hiện có
                     $existingGuest->update($request->only([
-                        'full_name', 'dob', 'gender', 'nationality_code', 'phone', 'email', 'address',
+                        'full_name', 'dob', 'gender', 'nationality_code', 'phone', 'email', 'address', 'avatar',
                     ]));
                     $guest = $existingGuest;
                 } else {
                     $guest = \App\Models\Guest::create($request->only([
                         'full_name', 'id_number', 'passport_number', 'dob', 'gender',
-                        'nationality_code', 'phone', 'email', 'address',
+                        'nationality_code', 'phone', 'email', 'address', 'avatar',
                     ]));
                 }
             }
@@ -217,6 +218,9 @@ class GuestController extends Controller
                     'breakfast'           => $room->breakfast,
                 ]
             );
+
+            // Cập nhật lại số lượng adults trên booking_rooms
+            $room->update(['adults' => max(1, $room->guests()->count())]);
 
             DB::commit();
         } catch (\Exception $e) {
@@ -325,6 +329,7 @@ class GuestController extends Controller
             'border_gate'       => 'nullable|string|max:100',
             'occupation'        => 'nullable|string|max:200',
             'note'              => 'nullable|string',
+            'avatar'            => 'nullable|string|max:255',
         ]);
 
         $guest->update($request->only([
@@ -334,9 +339,34 @@ class GuestController extends Controller
             'province', 'district', 'ward',
             'residence_type', 'temp_residence_to',
             'visa_no', 'entry_date', 'visa_expiry_date',
-            'entry_purpose', 'border_gate', 'occupation', 'note',
+            'entry_purpose', 'border_gate', 'occupation', 'note', 'avatar',
         ]));
 
+        // Cập nhật thông tin vào bảng pivot booking_room_guests cho từng khách cụ thể
+        $pivotData = [];
+        if ($request->has('arrival_date'))   $pivotData['actual_arrival_date']  = $request->arrival_date;
+        if ($request->has('arrival_time'))   $pivotData['actual_arrival_time']  = $request->arrival_time;
+        if ($request->has('departure_date')) $pivotData['actual_checkout_date'] = $request->departure_date;
+        if ($request->has('departure_time')) $pivotData['actual_checkout_time'] = $request->departure_time;
+        if (!empty($pivotData)) {
+            $pivot->update($pivotData);
+        }
+
+        // Cập nhật các trường thông tin lưu trú của BookingRoom lên MySQL CSDL
+        $room = BookingRoom::find($roomId);
+        if ($room) {
+            $roomData = [];
+            if ($request->has('arrival_date'))   $roomData['arrival_date']   = $request->arrival_date;
+            if ($request->has('departure_date')) $roomData['departure_date'] = $request->departure_date;
+            if ($request->has('arrival_time'))   $roomData['arrival_time']   = $request->arrival_time;
+            if ($request->has('departure_time')) $roomData['departure_time'] = $request->departure_time;
+            if ($request->has('rate'))           $roomData['rate']           = $request->rate;
+            if ($request->has('extra_bed_qty'))  $roomData['extra_bed_qty']  = $request->extra_bed_qty;
+            if ($request->has('extra_bed_rate')) $roomData['extra_bed_rate'] = $request->extra_bed_rate;
+            if (!empty($roomData)) {
+                $room->update($roomData);
+            }
+        }
 
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
     }
@@ -348,7 +378,21 @@ class GuestController extends Controller
             ->where('guest_id', $guestId)
             ->delete();
 
-        return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng.']);
+        // Xóa hẳn bản ghi trong bảng guests nếu khách không còn gán ở phòng nào khác
+        $otherCount = BookingRoomGuest::where('guest_id', $guestId)->count();
+        if ($otherCount === 0) {
+            $guest = Guest::find($guestId);
+            if ($guest) {
+                $guest->delete();
+            }
+        }
+
+        $room = BookingRoom::find($roomId);
+        if ($room) {
+            $room->update(['adults' => max(1, $room->guests()->count())]);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng và cơ sở dữ liệu.']);
     }
 
     // GET /guests/search?q=keyword — Tìm khách để kế thừa thông tin
@@ -409,6 +453,13 @@ class GuestController extends Controller
         // Auto-generate breakfast detail rows cho mỗi ngày nếu có room
         if ($request->booking_room_id) {
             $this->generateBreakfastDetails($child);
+            $r = BookingRoom::find($request->booking_room_id);
+            if ($r) {
+                $r->update([
+                    'children_qty' => $r->children()->where('age_group', 'child')->count(),
+                    'babies'       => $r->children()->where('age_group', 'baby')->count(),
+                ]);
+            }
         }
 
         return response()->json([
@@ -440,8 +491,19 @@ class GuestController extends Controller
     public function removeChild($bookingId, $childId)
     {
         $child = BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
+        $roomId = $child->booking_room_id;
         $child->breakfastDetails()->delete();
         $child->delete();
+
+        if ($roomId) {
+            $r = BookingRoom::find($roomId);
+            if ($r) {
+                $r->update([
+                    'children_qty' => $r->children()->where('age_group', 'child')->count(),
+                    'babies'       => $r->children()->where('age_group', 'baby')->count(),
+                ]);
+            }
+        }
 
         return response()->json(['success' => true, 'message' => 'Đã xóa trẻ em.']);
     }
@@ -573,6 +635,50 @@ class GuestController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Cập nhật thông tin khách hàng loạt thành công!']);
+    }
+
+    public function uploadAvatar(Request $request, $id)
+    {
+        $request->validate([
+            'avatar' => 'required|image|max:10240',
+        ], [
+            'avatar.required' => 'Vui lòng chọn ảnh đại diện.',
+            'avatar.image' => 'File tải lên phải là hình ảnh.',
+            'avatar.max' => 'Dung lượng ảnh không được vượt quá 10MB.',
+            'avatar.uploaded' => 'Tải ảnh lên thất bại. Vui lòng kiểm tra lại dung lượng file (tối đa 10MB) hoặc cấu hình máy chủ PHP.',
+        ]);
+
+        $guest = Guest::find($id);
+        if (!$guest) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy khách hàng'], 404);
+        }
+
+        if ($request->hasFile('avatar')) {
+            // Remove old file
+            if ($guest->avatar && file_exists(public_path($guest->avatar))) {
+                @unlink(public_path($guest->avatar));
+            }
+
+            $file = $request->file('avatar');
+            $filename = 'avatar_' . $guest->id . '_' . time() . '_' . $file->getClientOriginalName();
+            
+            // Ensure directory exists
+            $dirPath = public_path('uploads/avatars');
+            if (!file_exists($dirPath)) {
+                mkdir($dirPath, 0755, true);
+            }
+            
+            $file->move($dirPath, $filename);
+            
+            $guest->avatar = 'uploads/avatars/' . $filename;
+            $guest->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'avatar' => $guest->avatar,
+            'message' => 'Tải ảnh đại diện lên thành công.',
+        ]);
     }
 
     // =========================================

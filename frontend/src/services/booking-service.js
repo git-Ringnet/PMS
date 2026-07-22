@@ -128,3 +128,8 @@ export const addRoomGuest = (roomId, data) => http.post(`/booking-rooms/${roomId
 export const addBookingChild = (bookingId, data) => http.post(`/bookings/${bookingId}/children`, data)
 export const removeBookingChild = (bookingId, childId) => http.delete(`/bookings/${bookingId}/children/${childId}`)
 export const removeRoomGuest = (roomId, guestId) => http.delete(`/booking-rooms/${roomId}/guests/${guestId}`)
+export const uploadGuestAvatar = (guestId, formData) => http.post(`/guests/${guestId}/avatar`, formData, {
+  headers: {
+    'Content-Type': 'multipart/form-data'
+  }
+})
