@@ -367,6 +367,10 @@ function closeBookingDetailModal() {
   showBookingDetailModal.value = false
   selectedBookingRoom.value = null
 }
+ 
+async function refreshRoomMapAfterGuestChange() {
+  await roomStore.fetchRooms({ silent: true })
+}
 
 // Checkbox helper for filters
 function toggleStatusFilter(status) {
@@ -1876,6 +1880,7 @@ const uniqueFloors = computed(() => {
       v-if="showBookingDetailModal && selectedBookingRoom"
       :room="selectedBookingRoom"
       @close="closeBookingDetailModal"
+      @refresh="refreshRoomMapAfterGuestChange"
     />
 
     <!-- Hover Tooltip -->

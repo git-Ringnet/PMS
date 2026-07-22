@@ -72,6 +72,20 @@ return new class extends Migration
             $table->foreign('guest_id')->references('id')->on('guests')->restrictOnDelete();
             // 1 = Khách đại diện chính của phòng (guest phải có đầy đủ thông tin hơn)
             $table->boolean('is_primary')->default(false);
+
+            // Ngày thực tế khách đến/rời phòng
+            $table->date('actual_arrival_date')->nullable();
+            $table->time('actual_arrival_time')->nullable();
+            $table->date('actual_checkout_date')->nullable();
+            $table->time('actual_checkout_time')->nullable();
+
+            // Người thực hiện checkin/checkout cho khách này (username)
+            $table->string('checkin_by', 100)->nullable();
+            $table->string('checkout_by', 100)->nullable();
+
+            // Ăn sáng riêng: NULL = kế thừa từ phòng, true/false = override riêng
+            $table->boolean('breakfast')->nullable();
+
             // 0 = Active, 3 = Cancelled
             $table->unsignedTinyInteger('status')->default(0);
             $table->timestamps();

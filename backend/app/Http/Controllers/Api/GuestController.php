@@ -91,7 +91,13 @@ class GuestController extends Controller
                     ]);
                     BookingRoomGuest::firstOrCreate(
                         ['booking_room_id' => $room->id, 'guest_id' => $guest->id],
-                        ['is_primary' => $i === 1, 'status' => $room->status]
+                        [
+                            'is_primary'          => $i === 1,
+                            'status'              => $room->status,
+                            'actual_arrival_date' => $room->arrival_date,
+                            'checkin_by'          => Auth::user()?->username ?? 'system',
+                            'breakfast'           => $room->breakfast,
+                        ]
                     );
                 }
 
@@ -136,7 +142,9 @@ class GuestController extends Controller
     public function roomGuests($roomId)
     {
         $room   = BookingRoom::findOrFail($roomId);
-        $guests = $room->guests()->with('guest')->get();
+        $guests = $room->guests()->with(['guest' => function ($query) {
+            $query->withCount('bookingRoomGuests');
+        }])->get();
 
         return response()->json(['success' => true, 'data' => $guests]);
     }
@@ -193,9 +201,21 @@ class GuestController extends Controller
             }
 
             // Gán vào phòng (tránh duplicate)
+            // actual_arrival_date: Nếu phòng đang inhouse (status=1) thì dùng ngày hệ thống hiện tại,
+            // Nếu phòng chưa check-in (status=0) thì dùng arrival_date của phòng.
+            $actualArrival = ($room->status === \App\Models\BookingRoom::STATUS_CHECKED_IN)
+                ? now()->toDateString()
+                : $room->arrival_date->toDateString();
+
             $pivot = \App\Models\BookingRoomGuest::firstOrCreate(
                 ['booking_room_id' => $roomId, 'guest_id' => $guest->id],
-                ['is_primary' => $request->is_primary ?? false, 'status' => $room->status]
+                [
+                    'is_primary'          => $request->is_primary ?? false,
+                    'status'              => $room->status,
+                    'actual_arrival_date' => $actualArrival,
+                    'checkin_by'          => Auth::user()?->username ?? 'system',
+                    'breakfast'           => $room->breakfast,
+                ]
             );
 
             DB::commit();
@@ -209,6 +229,63 @@ class GuestController extends Controller
             'data'    => $pivot->load('guest'),
             'message' => 'Đã thêm khách vào phòng.',
         ], 201);
+    }
+
+    // POST /booking-rooms/{roomId}/guests/{guestId}/checkout — Checkout lẻ từng khách
+    // TODO: Tích hợp thêm nút "Checkout riêng" trên giao diện UI (tab Danh sách khách của phòng) sau.
+    public function checkoutGuest(Request $request, $roomId, $guestId)
+    {
+        $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
+            ->where('guest_id', $guestId)
+            ->firstOrFail();
+
+        if ($pivot->status === BookingRoomGuest::STATUS_CHECKED_OUT) {
+            return response()->json(['success' => false, 'message' => 'Khách đã checkout rồi.'], 422);
+        }
+        if ($pivot->status === BookingRoomGuest::STATUS_CANCELLED) {
+            return response()->json(['success' => false, 'message' => 'Khách đã bị hủy.'], 422);
+        }
+
+        $avService = app(\App\Services\AvailabilityService::class);
+        $systemDate = $avService->getSystemDate();
+
+        $pivot->update([
+            'status'               => BookingRoomGuest::STATUS_CHECKED_OUT,
+            'actual_checkout_date' => $systemDate->toDateString(),
+            'actual_checkout_time' => now()->format('H:i:s'),
+            'checkout_by'          => Auth::user()?->username ?? 'system',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $pivot->fresh()->load('guest'),
+            'message' => 'Checkout khách thành công.',
+        ]);
+    }
+
+    // GET /booking-rooms/{roomId}/guests/on-date?date=YYYY-MM-DD — Khách đang ở trong phòng ngày X
+    public function getGuestsOnDate(Request $request, $roomId)
+    {
+        $request->validate([
+            'date' => 'required|date_format:Y-m-d',
+        ]);
+
+        $date = $request->date;
+
+        $guests = BookingRoomGuest::where('booking_room_id', $roomId)
+            ->where('actual_arrival_date', '<=', $date)
+            ->where(function ($q) use ($date) {
+                $q->whereNull('actual_checkout_date')
+                  ->orWhere('actual_checkout_date', '>=', $date);
+            })
+            ->whereNotIn('status', [
+                BookingRoomGuest::STATUS_CHECKED_OUT,
+                BookingRoomGuest::STATUS_CANCELLED,
+            ])
+            ->with('guest')
+            ->get();
+
+        return response()->json(['success' => true, 'data' => $guests]);
     }
 
     // PUT /booking-rooms/{roomId}/guests/{guestId} — Cập nhật thông tin guest
@@ -292,10 +369,20 @@ class GuestController extends Controller
     // =========================================
 
     // GET /bookings/{bookingId}/children
-    public function bookingChildren($bookingId)
+    public function bookingChildren(Request $request, $bookingId)
     {
         $booking  = Booking::findOrFail($bookingId);
-        $children = $booking->children()->with('bookingRoom', 'breakfastDetails')->get();
+        $query    = $booking->children()->with('bookingRoom', 'breakfastDetails');
+
+        if ($request->filled('booking_room_id')) {
+            $roomId = $request->booking_room_id;
+            $query->where(function ($q) use ($roomId) {
+                $q->where('booking_room_id', $roomId)
+                  ->orWhereNull('booking_room_id');
+            });
+        }
+
+        $children = $query->get();
 
         return response()->json(['success' => true, 'data' => $children]);
     }
