@@ -232,6 +232,7 @@ class BookingRoomController extends Controller
         // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
         if ($isInhouse) {
             $validated = $request->validate([
+                'arrival_date'    => 'nullable|date',
                 'departure_date'  => 'nullable|date',
                 'departure_time'  => 'nullable|date_format:H:i',
                 'rate'            => 'nullable|numeric|min:0',
@@ -297,7 +298,7 @@ class BookingRoomController extends Controller
             $roomNumberChanged = (isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number);
 
             if ($datesChanged || $roomNumberChanged) {
-                if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId)) {
+                if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId, $bookingId)) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Số phòng ' . $targetRoomNumber . ' đã được gán cho booking khác trong cùng khoảng thời gian.',
@@ -558,6 +559,12 @@ class BookingRoomController extends Controller
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
+            if ($bookingRoom->room_number) {
+                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
+                    'status' => 'dirty'
+                ]);
+            }
+
             // Đồng bộ status cho khách sang CHECKED_IN
             $bookingRoom->guests()->update([
                 'status' => BookingRoom::STATUS_CHECKED_IN
@@ -605,6 +612,12 @@ class BookingRoomController extends Controller
                 'status'     => BookingRoom::STATUS_BOOKED,
                 'updated_by' => Auth::user()?->username ?? 'system',
             ]);
+
+            if ($bookingRoom->room_number) {
+                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
+                    'status' => 'available'
+                ]);
+            }
 
             // Đồng bộ status cho khách về BOOKED
             $bookingRoom->guests()->update([

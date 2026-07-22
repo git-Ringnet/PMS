@@ -429,7 +429,30 @@ function shouldShowBroom(room) {
 
 // Show Sparkles icon for clean vacant rooms
 function shouldShowSparkles(room) {
-  return !!room.is_clean && room.status === ROOM_STATUSES.AVAILABLE && !room.booking_status
+  const hasBooking = !!room.guest_name || !!room.booking_code || !!room.booking_status
+  return !!room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status) && !hasBooking
+}
+
+function getRoomStatusIconName(room) {
+  if (!room) return 'double-check'
+  if (room.status === ROOM_STATUSES.MAINTENANCE || room.status === 'ooo' || room.status === 'oos') {
+    return room.lock_type === 'OOS' ? 'oos' : 'ooo'
+  }
+  const hasInhouseGuest = room.booking_status === 'occupied' || room.booking_status === 'checkout' || room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean
+  if (hasInhouseGuest) {
+    return 'dirty'
+  }
+  const hasBookingToday = !!room.guest_name || !!room.booking_code || !!room.booking_status
+  if (hasBookingToday) {
+    return 'double-check'
+  }
+  if (room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status)) {
+    return 'clean'
+  }
+  if (room.status === ROOM_STATUSES.RESERVED) {
+    return 'priority'
+  }
+  return 'double-check'
 }
 
 function getStatusIconSize(room) {
@@ -1624,28 +1647,12 @@ const uniqueFloors = computed(() => {
                         bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
                       }"
                     >
-                      <!-- OOO or OOS lock icon -->
-                      <template v-if="room.status === ROOM_STATUSES.MAINTENANCE && room.lock_type">
-                        <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="text-emerald-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                        <RoomIcon v-else-if="room.lock_type === 'OOO'" name="ooo" :monochrome="true" class="text-amber-500" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                      </template>
-
-                      <!-- Housekeeping (broom) icon -->
-                      <template v-else-if="room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean">
-                        <RoomIcon name="dirty" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                      </template>
-
-                      <!-- Sparkles (clean) icon -->
-                      <template v-else-if="shouldShowSparkles(room)">
-                        <RoomIcon name="clean" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                      </template>
-
-                      <!-- Other statuses (e.g. available, reserved) -->
-                      <template v-else>
-                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE || !room.status" name="clean" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :monochrome="room.id % 2 === 0" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                        <RoomIcon v-else name="clean" class="text-gray-600" :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
-                      </template>
+                      <RoomIcon 
+                        :name="getRoomStatusIconName(room)" 
+                        :monochrome="getRoomStatusIconName(room) === 'ooo'"
+                        class="text-gray-600" 
+                        :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" 
+                      />
                     </div>
                   </div>
                 </div>
@@ -1704,26 +1711,11 @@ const uniqueFloors = computed(() => {
                     <!-- TT Phòng (Status Icon) -->
                     <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
                       <div class="flex items-center justify-center">
-                        <!-- Sẵn sàng -->
-                        <RoomIcon v-if="room.status === ROOM_STATUSES.AVAILABLE" name="double-check" class="w-5 h-5 text-slate-600" />
-                        
-                        <!-- Phòng bẩn -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.DIRTY" name="dirty" class="w-5 h-5 text-slate-600" />
-                        
-                        <!-- Lau dọn -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.CHECKOUT" name="clean" class="w-5 h-5 text-slate-600" />
-                        
-                        <!-- Dịch vụ dọn phòng / Khóa phòng -->
-                        <template v-else-if="room.status === ROOM_STATUSES.MAINTENANCE">
-                          <RoomIcon v-if="room.lock_type === 'OOS'" name="oos" class="w-5 h-5 text-emerald-500" />
-                          <RoomIcon v-else name="ooo" :monochrome="true" class="w-5 h-5 text-amber-500" />
-                        </template>
-                        
-                        <!-- Phòng ưu tiên -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.RESERVED" :name="room.id % 2 === 0 ? 'priority-paid' : 'priority'" :monochrome="room.id % 2 === 0" class="w-5 h-5 text-slate-600" />
-                        
-                        <!-- Phòng không làm phiền -->
-                        <RoomIcon v-else-if="room.status === ROOM_STATUSES.OCCUPIED" name="dnd" class="w-5 h-5 text-slate-600" />
+                        <RoomIcon 
+                          :name="getRoomStatusIconName(room)" 
+                          :monochrome="getRoomStatusIconName(room) === 'ooo'"
+                          class="w-5 h-5 text-slate-600" 
+                        />
                       </div>
                     </td>
                     <!-- Thêm giường -->

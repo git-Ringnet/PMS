@@ -4,7 +4,7 @@ import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
-import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
+import { fetchBookings, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
@@ -2402,10 +2402,59 @@ async function triggerMenuAction(actionName) {
         emit('loading', false)
       }
     }
+  } else if (actionName === 'Giao phòng') {
+    const booking = contextMenu.value.booking
+    if (booking && booking.bookingId && booking.bookingRoomId) {
+      if (!canCheckInBooking(booking)) {
+        uiStore.showToast('Phòng không đủ điều kiện giao phòng (Ngày đến phải bằng ngày hệ thống)!', 'warning')
+        return
+      }
+      uiStore.confirm({
+        title: 'Xác nhận giao phòng',
+        message: `Bạn có chắc chắn muốn giao phòng ${booking.room} cho đăng ký ${booking.code}?`,
+        confirmText: 'Đồng ý',
+        cancelText: 'Hủy'
+      }).then(async (confirmed) => {
+        if (!confirmed) return
+        try {
+          loadingBookings.value = true
+          emit('loading', true)
+          const res = await checkInRoom(booking.bookingId, booking.bookingRoomId)
+          if (res && res.data && res.data.success !== false) {
+            uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
+            await roomStore.fetchRooms()
+            await loadBookings()
+            if (bc) bc.postMessage('rooms-updated')
+          } else {
+            uiStore.showToast(res?.data?.message || 'Giao phòng thất bại.', 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          const msg = err.response?.data?.message || 'Có lỗi xảy ra khi giao phòng.'
+          uiStore.showToast(msg, 'error')
+        } finally {
+          loadingBookings.value = false
+          emit('loading', false)
+        }
+      })
+    } else {
+      uiStore.showToast('Không tìm thấy thông tin đăng ký phòng.', 'error')
+    }
   } else {
     const bookingCode = contextMenu.value.booking ? contextMenu.value.booking.code : ''
     uiStore.showToast(`Đã thực hiện: "${actionName}"` + (bookingCode ? ` cho đăng ký ${bookingCode}` : ''), 'success')
   }
+}
+
+function canCheckInBooking(bk) {
+  if (!bk || bk.code === 'LOCK' || bk.isVirtual || !bk.bookingId || !bk.bookingRoomId) return false
+  if (bk.type === 'InHouse' || bk.type === 'CheckedOut' || bk.status === 1) return false
+  if (!bk.room) return false
+
+  const arrivalDateStr = bk.checkIn ? bk.checkIn.split(' ')[0] : (bk.arrival_date || '')
+  const sysDateStr = systemDate.value || formatDateStr(new Date())
+
+  return arrivalDateStr === sysDateStr
 }
 
 function handleDragStart(bk, event) {
@@ -2780,12 +2829,19 @@ async function saveQuickBooking() {
 
     const room_allocations = Object.values(allocationsMap)
 
+    const sysDateStr = systemDate.value || formatDateStr(new Date())
+    if (overallArrival < sysDateStr) {
+      uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'error')
+      return
+    }
+
     // 4. Gọi 1 request duy nhất tạo 1 phiếu Booking
     const payload = {
       booking_name: quickBookingForm.value.bookingName || 'Walkin Guest',
       arrival_date: overallArrival,
       departure_date: overallDeparture,
       num_of_days: overallNights,
+      registration_status_id: quickBookingForm.value.registrationStatusId || 1,
       company_id: companyId,
       market_id: quickBookingForm.value.marketId || 1,
       customer_source_id: quickBookingForm.value.customerSourceId || 1,
@@ -3071,18 +3127,19 @@ function getRoomStatusIconName(item) {
   if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
     return item.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-  // 2. Dirty Room / Housekeeping needed
-  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean) {
+  // 2. Dirty Room / In-house guest / Housekeeping needed -> broom icon
+  const hasInhouseGuest = item.booking_status === 'occupied' || item.booking_status === 'checkout' || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && b.type === 'InHouse' && isTodayOrActiveBooking(b)))
+  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean || hasInhouseGuest) {
     return 'dirty'
   }
-  // 3. Sparkles ONLY for clean vacant available room without active booking today
-  const hasBookingToday = item.hasCurrentBooking || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
-  if (item.is_clean && (item.status === 'available' || !item.status) && !hasBookingToday && !item.booking_status) {
-    return 'clean'
-  }
-  // 4. Room with booking / Occupied / Available -> double-check icon (✓✓)
-  if (item.status === 'available' || item.status === 'occupied' || hasBookingToday || !item.status) {
+  // 3. Has reserved booking today -> double-check icon (✓✓)
+  const hasBookingToday = item.hasCurrentBooking || !!item.guest_name || !!item.booking_code || !!item.booking_status || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
+  if (hasBookingToday) {
     return 'double-check'
+  }
+  // 4. Sparkles ONLY for clean vacant available room without active booking today
+  if (item.is_clean && (item.status === 'available' || !item.status)) {
+    return 'clean'
   }
   if (item.status === 'reserved') {
     return 'priority'
@@ -3404,6 +3461,7 @@ function getRoomStatusIconName(item) {
                     @mouseenter="showTooltip(bk, $event)"
                     @mousemove="updateTooltipPosition($event)"
                     @mouseleave="hideTooltip"
+                    @click.stop
                     @dblclick.prevent.stop="handleBookingDblClick(bk)"
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="true"
@@ -3740,6 +3798,13 @@ function getRoomStatusIconName(item) {
 
       <!-- Options for Green Booking -->
       <template v-else-if="contextMenu.type === 'green-booking'">
+        <button 
+          v-if="canCheckInBooking(contextMenu.booking)"
+          @click="triggerMenuAction('Giao phòng')"
+          class="w-full text-left px-4 py-2.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50 border-none bg-transparent cursor-pointer transition-colors"
+        >
+          Giao phòng
+        </button>
         <button 
           v-if="!contextMenu.booking?.isVirtual"
           @click="triggerMenuAction('Tách Phòng')"

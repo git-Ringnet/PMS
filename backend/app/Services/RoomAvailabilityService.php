@@ -146,6 +146,10 @@ class RoomAvailabilityService
             ->where('arrival_date', '<', $departureDate)
             ->where('departure_date', '>', $arrivalDate);
 
+        if ($excludeBookingRoomId) {
+            $query->where('id', '!=', $excludeBookingRoomId);
+        }
+
         if ($query->exists()) {
             return true;
         }

@@ -61,7 +61,20 @@ import {
 const route = useRoute()
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
+import { useRoomStore } from '@/stores/room-store'
 const authStore = useAuthStore()
+const roomStore = useRoomStore()
+
+let pmsBc = null
+if (typeof BroadcastChannel !== 'undefined') {
+  pmsBc = new BroadcastChannel('pms-room-updates')
+}
+
+function notifyRoomUpdates() {
+  roomStore.fetchRooms({ silent: true })
+  roomStore.fetchStats()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
+}
 
 // ==================== CONFIG & SYSTEM ====================
 function formatLocalYYYYMMDD(dVal) {
@@ -894,6 +907,12 @@ onMounted(async () => {
   }
 })
 
+function handleTabsWheel(e) {
+  if (e.deltaY) {
+    e.currentTarget.scrollLeft += e.deltaY
+  }
+}
+
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
 })
@@ -1042,7 +1061,7 @@ function bookingToTab(b) {
         isPreassigned: !!physicalRoom.room_number,
         initialRoomClass: rc.code || '',
         transferredFrom: '',
-        roomStatus: 'Sạch',
+        roomStatus: (br.status === 1 || physicalRoom.status === 'dirty') ? 'Bẩn' : (physicalRoom.status === 'cleaning' ? 'Đang dọn' : (physicalRoom.status === 'inspecting' ? 'Kiểm tra' : 'Sạch')),
         allotmentCode: '',
         roomCode: br.id || '',
         total: totalNum,
@@ -2408,7 +2427,13 @@ async function handleSaveNewBooking() {
   if (!modalForm.value.companyId)        { uiStore.showToast('Vui lòng chọn Công ty!', 'warning'); return }
   if (!modalForm.value.marketId)         { uiStore.showToast('Vui lòng chọn Thị trường!', 'warning'); return }
   if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
-  
+
+  const sysDateStr = systemDate.value || parseApiDate(new Date())
+  if (modalForm.value.checkIn < sysDateStr) {
+    uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'warning')
+    return
+  }
+
   const dupError = validateRoomsDuplication(modalForm.value.rooms)
   if (dupError) {
     uiStore.showToast(dupError, 'error')
@@ -2657,6 +2682,7 @@ async function triggerAction(actionName) {
           }
           const res = await updateBooking(tab.dbId, payload)
           await loadBookings()
+          notifyRoomUpdates()
           uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
         } catch (err) {
           console.error(err)
@@ -2720,7 +2746,7 @@ async function triggerAction(actionName) {
               const res = await checkInRoom(tab.dbId, r.bookingRoomId)
               if (res.data?.success) {
                 successCount++
-                r.roomStatus = 'Đang ở'
+                r.roomStatus = 'Bẩn'
               } else {
                 failCount++
                 failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
@@ -2733,6 +2759,7 @@ async function triggerAction(actionName) {
           }
 
           await loadBookings()
+          notifyRoomUpdates()
           selectedRows.value = []
 
           if (successCount > 0) {
@@ -3386,14 +3413,14 @@ defineExpose({
     </div>
     
     <!-- DYNAMIC TABS HEADER BAR (Redesigned Top Bar) -->
-    <div class="topbar shrink-0">
+    <div class="topbar shrink-0 flex items-center justify-between gap-3">
       <!-- Tabs list -->
-      <div class="flex items-center gap-1.5 overflow-x-auto max-w-[40%] scrollbar-none">
+      <div class="flex items-center gap-1.5 overflow-x-auto flex-1 min-w-0 scrollbar-none" @wheel.passive="handleTabsWheel">
         <button
           v-for="tab in tabs"
           :key="tab.id"
           @click="handleTabClick(tab.id)"
-          class="booking-tab cursor-pointer whitespace-nowrap"
+          class="booking-tab cursor-pointer whitespace-nowrap shrink-0"
           :style="tab.id === activeTabId ? 'background: var(--navy-3); border: 1px solid rgba(255,255,255,0.15)' : 'background: rgba(255,255,255,0.06); color: #c7d2e0'"
         >
           <span>{{ tab.title }}</span>
@@ -3409,7 +3436,7 @@ defineExpose({
         <!-- ADD TAB BUTTON -->
         <button
           @click="handleAddTabClick"
-          class="add-booking-btn"
+          class="add-booking-btn shrink-0"
           title="Tạo đăng ký mới"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -3417,10 +3444,8 @@ defineExpose({
         </button>
       </div>
 
-      <div class="spacer"></div>
-
       <!-- Action Buttons -->
-      <div v-if="activeTab" class="flex items-center gap-2">
+      <div v-if="activeTab" class="flex items-center gap-2 shrink-0 ml-auto">
         <button class="btn" @click="triggerAction('Thông tin đăng ký')">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
           Thông tin đăng ký
