@@ -12,7 +12,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
-    
+
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
@@ -32,9 +32,9 @@ Route::middleware('auth:sanctum')->group(function () {
         $shift = $latest ? $latest->shift : '1';
         return response()->json([
             'success' => true,
-            'data'    => [
+            'data' => [
                 'system_date' => $systemDate,
-                'shift'       => $shift
+                'shift' => $shift
             ],
         ]);
     });
@@ -50,16 +50,16 @@ Route::middleware('auth:sanctum')->group(function () {
         $newRoll = \App\Models\SystemDateRoll::create([
             'system_date' => $nextSystemDate->toDateTimeString(),
             'actual_date' => now()->timezone('Asia/Ho_Chi_Minh')->toDateTimeString(),
-            'shift'       => $latest ? $latest->shift : '1',
-            'username'    => auth()->user() ? auth()->user()->username : 'admin',
+            'shift' => $latest ? $latest->shift : '1',
+            'username' => auth()->user() ? auth()->user()->username : 'admin',
         ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Rolled system date successfully to ' . $nextSystemDate->toDateString(),
-            'data'    => [
+            'data' => [
                 'system_date' => $nextSystemDate->toDateString(),
-                'shift'       => $newRoll->shift
+                'shift' => $newRoll->shift
             ]
         ]);
     });
@@ -175,38 +175,38 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('bookings', \App\Http\Controllers\Api\BookingController::class);
 
     // #19 — Nhân bản booking
-    Route::post('bookings/{id}/copy',    [\App\Http\Controllers\Api\BookingController::class, 'copy']);
+    Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy']);
     // #22 — Khôi phục booking đã hủy
     Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore']);
 
     // --- Booking Rooms (SP2100) ---
     Route::prefix('bookings/{bookingId}/rooms')->group(function () {
-        Route::get('/',              [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
-        Route::post('/',             [\App\Http\Controllers\Api\BookingRoomController::class, 'store']);
-        Route::put('/{roomId}',      [\App\Http\Controllers\Api\BookingRoomController::class, 'update']);
-        Route::post('/bulk-update',  [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate']);
+        Route::get('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'store']);
+        Route::put('/{roomId}', [\App\Http\Controllers\Api\BookingRoomController::class, 'update']);
+        Route::post('/bulk-update', [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate']);
         // Epic 5 - Check-in
-        Route::patch('/{roomId}/check-in',   [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn']);
+        Route::patch('/{roomId}/check-in', [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn']);
         Route::post('/{roomId}/undo-checkin', [\App\Http\Controllers\Api\BookingRoomController::class, 'undoCheckIn']);
         // Epic 6 - Nâng hạng phòng
-        Route::patch('/{roomId}/upgrade',    [\App\Http\Controllers\Api\BookingRoomController::class, 'upgrade']);
+        Route::patch('/{roomId}/upgrade', [\App\Http\Controllers\Api\BookingRoomController::class, 'upgrade']);
         // Epic 8 - Gỡ số phòng
-        Route::patch('/{roomId}/unassign',   [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
+        Route::patch('/{roomId}/unassign', [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
         // Epic 9 - Hủy phòng
-        Route::delete('/{roomId}/cancel',    [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
+        Route::delete('/{roomId}/cancel', [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
         // Tách phòng
-        Route::post('/{roomId}/split',        [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
+        Route::post('/{roomId}/split', [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
         // Epic 3 - Auto assign room number
         Route::post('/{roomId}/auto-assign', [\App\Http\Controllers\Api\BookingRoomController::class, 'autoAssign']);
         // Epic 11 - Do Not Move
-        Route::post('/{roomId}/lock-move',   [\App\Http\Controllers\Api\BookingRoomController::class, 'lockMove']);
+        Route::post('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'lockMove']);
         Route::delete('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'unlockMove']);
     });
 
     // --- Booking Room Services (SP2102) — Epic 4, 10, 14 ---
     Route::prefix('booking-rooms/{roomId}/services')->group(function () {
-        Route::get('/',        [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
-        Route::post('/',       [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
+        Route::get('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
         Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete']);
     });
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
@@ -218,30 +218,32 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'storeMaster']);
     Route::delete('/special-requests/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroyMaster']);
     Route::prefix('booking-rooms/{roomId}/special-requests')->group(function () {
-        Route::get('/',        [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'index']);
-        Route::post('/',       [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store']);
-        Route::post('/sync',   [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'sync']);
+        Route::get('/', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store']);
+        Route::post('/sync', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'sync']);
         Route::delete('/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroy']);
     });
 
     // --- Guests & Children — Epic 7, 13 ---
     Route::get('/guests/search', [\App\Http\Controllers\Api\GuestController::class, 'searchGuests']);
-    Route::get('/bookings/{bookingId}/guests',   [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
+    Route::get('/bookings/{bookingId}/guests', [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
     Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests']);
     Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate']);
     Route::prefix('booking-rooms/{roomId}/guests')->group(function () {
-        Route::get('/',             [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
-        Route::post('/',            [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
-        Route::put('/{guestId}',    [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
+        Route::get('/', [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
+        Route::get('/on-date', [\App\Http\Controllers\Api\GuestController::class, 'getGuestsOnDate']);
+        Route::post('/', [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
+        Route::post('/{guestId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutGuest']);
+        Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
-    Route::get('/bookings/{bookingId}/children',              [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
-    Route::post('/bookings/{bookingId}/children',             [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
-    Route::put('/booking-children/{childId}',                 [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);
+    Route::get('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
+    Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
+    Route::put('/booking-children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);
     Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild']);
 
     // Breakfast details (Epic 13)
-    Route::get('/booking-children/{childId}/breakfast-details',              [\App\Http\Controllers\Api\GuestController::class, 'breakfastDetails']);
+    Route::get('/booking-children/{childId}/breakfast-details', [\App\Http\Controllers\Api\GuestController::class, 'breakfastDetails']);
     Route::patch('/booking-children/{childId}/breakfast-details/{detailId}', [\App\Http\Controllers\Api\GuestController::class, 'updateBreakfastDetail']);
 
     // Cancel Reasons catalog
@@ -250,14 +252,14 @@ Route::middleware('auth:sanctum')->group(function () {
     // =====================================================================
     // #18 — PAYMENTS (Đặt cọc / Deposit) routes
     // =====================================================================
-    Route::get('/bookings/{bookingId}/payments',  [\App\Http\Controllers\Api\PaymentController::class, 'index']);
+    Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
     Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store']);
-    Route::put('/payments/{id}',                  [\App\Http\Controllers\Api\PaymentController::class, 'update']);
-    Route::delete('/payments/{id}',               [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
-    Route::post('/payments/{id}/split',           [\App\Http\Controllers\Api\PaymentController::class, 'split']);
-    Route::post('/payments/{id}/transfer',        [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
+    Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update']);
+    Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
+    Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split']);
+    Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
 
     // Availability
-    Route::get('/availability',       [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+    Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 });

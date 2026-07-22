@@ -105,7 +105,7 @@ export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/boo
 export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
 
 // ==================== CHILD BREAKFAST ====================
-export const fetchBookingChildren = (bookingId) => http.get(`/bookings/${bookingId}/children`)
+export const fetchBookingChildren = (bookingId, params) => http.get(`/bookings/${bookingId}/children`, { params })
 export const updateChildBreakfastDetail = (childId, detailId, data) => http.patch(`/booking-children/${childId}/breakfast-details/${detailId}`, data)
 
 // ==================== SPECIAL REQUESTS (YÊU CẦU ĐẶC BIỆT) ====================
@@ -122,6 +122,9 @@ export const updateBookingRoomGuest = (roomId, guestId, data) => http.put(`/book
 export const updateBookingChild = (childId, data) => http.put(`/booking-children/${childId}`, data)
 export const bulkUpdateBookingGuests = (bookingId, data) => http.post(`/bookings/${bookingId}/bulk-update-guests`, data)
 
-
-
-
+// Room-level guest operations (dùng cho Room Map modal)
+export const fetchRoomGuests = (roomId) => http.get(`/booking-rooms/${roomId}/guests`)
+export const addRoomGuest = (roomId, data) => http.post(`/booking-rooms/${roomId}/guests`, data)
+export const addBookingChild = (bookingId, data) => http.post(`/bookings/${bookingId}/children`, data)
+export const removeBookingChild = (bookingId, childId) => http.delete(`/bookings/${bookingId}/children/${childId}`)
+export const removeRoomGuest = (roomId, guestId) => http.delete(`/booking-rooms/${roomId}/guests/${guestId}`)
