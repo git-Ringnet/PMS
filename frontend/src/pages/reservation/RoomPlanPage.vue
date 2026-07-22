@@ -514,35 +514,69 @@ function formatDateToDMY(dateStr) {
   return dateStr
 }
 
-const waitlistStartDate = ref(new Date('2026-07-08'))
-const waitlistEndDate = ref(new Date('2026-08-17'))
+const waitlistStartDate = ref(new Date())
+const waitlistEndDate = ref(new Date())
 
-const waitlistStartDateInput = computed({
-  get: () => formatDateStr(waitlistStartDate.value),
-  set: (val) => {
-    if (val) waitlistStartDate.value = new Date(val)
+watch(showWaitingList, (newVal) => {
+  if (newVal) {
+    if (startDate.value) waitlistStartDate.value = new Date(startDate.value)
+    if (endDate.value) waitlistEndDate.value = new Date(endDate.value)
   }
 })
 
-const waitlistEndDateInput = computed({
-  get: () => formatDateStr(waitlistEndDate.value),
-  set: (val) => {
-    if (val) waitlistEndDate.value = new Date(val)
-  }
+watch([startDate, endDate], ([newStart, newEnd]) => {
+  if (newStart) waitlistStartDate.value = new Date(newStart)
+  if (newEnd) waitlistEndDate.value = new Date(newEnd)
+}, { immediate: true })
+
+const showWaitlistDatePickerPopover = ref(false)
+const tempWaitlistStartDateStr = ref('')
+const tempWaitlistEndDateStr = ref('')
+
+const waitlistDateRangeText = computed(() => {
+  const start = formatDateToDMY(formatDateStr(waitlistStartDate.value))
+  const end = formatDateToDMY(formatDateStr(waitlistEndDate.value))
+  return `${start} ~ ${end}`
 })
+
+function toggleWaitlistDatePickerPopover() {
+  showWaitlistDatePickerPopover.value = !showWaitlistDatePickerPopover.value
+  if (showWaitlistDatePickerPopover.value) {
+    tempWaitlistStartDateStr.value = formatDateStr(waitlistStartDate.value)
+    tempWaitlistEndDateStr.value = formatDateStr(waitlistEndDate.value)
+  }
+}
+
+function closeWaitlistDatePickerPopover() {
+  showWaitlistDatePickerPopover.value = false
+}
+
+function saveWaitlistDateRange() {
+  if (tempWaitlistStartDateStr.value) {
+    waitlistStartDate.value = new Date(tempWaitlistStartDateStr.value)
+  }
+  if (tempWaitlistEndDateStr.value) {
+    waitlistEndDate.value = new Date(tempWaitlistEndDateStr.value)
+  }
+  showWaitlistDatePickerPopover.value = false
+}
 
 const waitingListItems = computed(() => {
+  if (!waitlistStartDate.value || !waitlistEndDate.value) return []
+  const startStr = formatDateStr(waitlistStartDate.value)
+  const endStr = formatDateStr(waitlistEndDate.value)
+
   return bookings.value.filter(b => {
-    if (!b.isVirtual) return false
+    if (b.code === 'LOCK') return false
+    const isUnassigned = b.isVirtual || !b.room || b.room === 'PM' || b.room === 'Chưa gán' || (typeof b.room === 'number' && b.room < 0)
+    const regName = (b.registrationStatusName || '').toLowerCase()
+    const isWaitingStatus = regName.includes('wait') || regName.includes('chờ')
+
+    if (!isUnassigned && !isWaitingStatus) return false
     if (!b.checkIn) return false
+
     const inDateStr = b.checkIn.split(' ')[0]
-    const inDate = new Date(inDateStr)
-    const checkInTime = inDate.getTime()
-    
-    const startTime = new Date(waitlistStartDate.value).setHours(0, 0, 0, 0)
-    const endTime = new Date(waitlistEndDate.value).setHours(23, 59, 59, 999)
-    
-    return checkInTime >= startTime && checkInTime <= endTime
+    return inDateStr >= startStr && inDateStr <= endStr
   }).map(b => {
     const inDate = b.checkIn ? b.checkIn.split(' ')[0] : ''
     const outDate = b.checkOut ? b.checkOut.split(' ')[0] : ''
@@ -1172,6 +1206,7 @@ async function loadBookings() {
             name: b.booking_name,
             company: b.company?.company_name || 'Khách lẻ',
             guestName,
+            registrationStatusName: b.registration_status?.name || '',
             nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
@@ -1306,6 +1341,7 @@ onMounted(async () => {
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', closePlanSettings)
   window.addEventListener('click', closeDatePickerPopover)
+  window.addEventListener('click', closeWaitlistDatePickerPopover)
   window.addEventListener('click', handleWindowClick)
 
   if (typeof BroadcastChannel !== 'undefined') {
@@ -1323,6 +1359,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', closePlanSettings)
   window.removeEventListener('click', closeDatePickerPopover)
+  window.removeEventListener('click', closeWaitlistDatePickerPopover)
   window.removeEventListener('click', handleWindowClick)
   if (bc) {
     bc.close()
@@ -1470,23 +1507,54 @@ const selectedRoomsRanges = computed(() => {
   
   const result = []
   Object.keys(groups).forEach(roomNo => {
-    const dateStrings = groups[roomNo]
-    dateStrings.sort()
-    
-    const checkIn = dateStrings[0]
-    const lastDate = new Date(dateStrings[dateStrings.length - 1])
-    
-    const nextDay = new Date(lastDate)
-    nextDay.setDate(nextDay.getDate() + 1)
-    const checkOut = formatDateStr(nextDay)
-    
-    result.push({
-      room: roomNo,
-      checkIn,
-      checkOut,
-      lastDate: dateStrings[dateStrings.length - 1],
-      nights: dateStrings.length
-    })
+    const dateStrings = [...new Set(groups[roomNo])].sort()
+    if (dateStrings.length === 0) return
+
+    let currentBlock = [dateStrings[0]]
+
+    for (let i = 1; i < dateStrings.length; i++) {
+      const prevDate = new Date(dateStrings[i - 1])
+      const currDate = new Date(dateStrings[i])
+      const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24))
+
+      if (diffDays === 1) {
+        currentBlock.push(dateStrings[i])
+      } else {
+        const checkIn = currentBlock[0]
+        const lastDateStr = currentBlock[currentBlock.length - 1]
+        const lastDateObj = new Date(lastDateStr)
+        const nextDay = new Date(lastDateObj)
+        nextDay.setDate(nextDay.getDate() + 1)
+        const checkOut = formatDateStr(nextDay)
+
+        result.push({
+          room: roomNo,
+          checkIn,
+          checkOut,
+          lastDate: lastDateStr,
+          nights: currentBlock.length
+        })
+
+        currentBlock = [dateStrings[i]]
+      }
+    }
+
+    if (currentBlock.length > 0) {
+      const checkIn = currentBlock[0]
+      const lastDateStr = currentBlock[currentBlock.length - 1]
+      const lastDateObj = new Date(lastDateStr)
+      const nextDay = new Date(lastDateObj)
+      nextDay.setDate(nextDay.getDate() + 1)
+      const checkOut = formatDateStr(nextDay)
+
+      result.push({
+        room: roomNo,
+        checkIn,
+        checkOut,
+        lastDate: lastDateStr,
+        nights: currentBlock.length
+      })
+    }
   })
   return result
 })
@@ -2296,8 +2364,13 @@ async function triggerMenuAction(actionName) {
     const booking = contextMenu.value.booking
     const lockId = booking?.lockId || booking?.bookingRoomId
     if (booking && lockId) {
-      const confirmUnlock = window.confirm('Bạn có chắc chắn muốn mở khóa phòng này không?')
-      if (confirmUnlock) {
+      uiStore.confirm({
+        title: 'Xác nhận mở khóa phòng',
+        message: 'Bạn có chắc chắn muốn mở khóa phòng này không?',
+        confirmText: 'Đồng ý',
+        cancelText: 'Hủy'
+      }).then(async (confirmUnlock) => {
+        if (!confirmUnlock) return
         try {
           loadingBookings.value = true
           emit('loading', true)
@@ -2317,7 +2390,7 @@ async function triggerMenuAction(actionName) {
           loadingBookings.value = false
           emit('loading', false)
         }
-      }
+      })
     } else {
       uiStore.showToast('Không tìm thấy thông tin khóa phòng.', 'error')
     }
@@ -2686,10 +2759,16 @@ async function handleDrop(targetRoom, targetDay, event) {
   }
 
   if (originalRoomClass !== targetRoomClass) {
-    const confirmMove = window.confirm(`Bạn đang chuyển phòng khác loại phòng (${originalRoomClass} -> ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`)
-    if (confirmMove) {
-      await proceedMove(true)
-    }
+    uiStore.confirm({
+      title: 'Xác nhận chuyển phòng khác loại',
+      message: `Bạn đang chuyển phòng khác loại phòng (${originalRoomClass} -> ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`,
+      confirmText: 'Đồng ý',
+      cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        await proceedMove(true)
+      }
+    })
   } else {
     await proceedMove(false)
   }
@@ -2928,7 +3007,12 @@ async function saveLockRoom() {
       } catch (err) {
         const resData = err.response?.data
         if (resData && resData.require_confirm) {
-          const proceed = window.confirm(resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?')
+          const proceed = await uiStore.confirm({
+            title: 'Cảnh báo phòng âm',
+            message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
+            confirmText: 'Tiếp tục',
+            cancelText: 'Hủy'
+          })
           if (proceed) {
             lockObj.force = true
             await roomService.createRoomLock(lockObj)
@@ -3994,7 +4078,7 @@ function getRoomStatusIconName(item) {
 
     <!-- Waiting List side drawer -->
     <transition name="slide">
-      <div v-if="showWaitingList" class="fixed right-4 top-20 bottom-4 w-[420px] bg-white shadow-2xl rounded-2xl border border-slate-200 flex flex-col z-[100] overflow-hidden">
+      <div v-if="showWaitingList" class="fixed right-4 top-20 bottom-4 w-[650px] max-w-[92vw] bg-white shadow-2xl rounded-2xl border border-slate-200 flex flex-col z-[100] overflow-hidden">
         <!-- Header -->
         <div class="h-[50px] bg-[#7dd3fc] flex items-center justify-between px-4 select-none shrink-0 relative">
           <div class="flex-1 flex justify-center">
@@ -4010,44 +4094,89 @@ function getRoomStatusIconName(item) {
 
         <!-- Content Body -->
         <div class="flex-1 p-4 flex flex-col overflow-hidden bg-slate-50/50">
-          <!-- Date Range Box -->
-          <div class="border border-slate-200 rounded-lg p-2.5 flex items-center bg-white mb-4 shadow-sm select-none shrink-0 gap-2">
-            <input 
-              type="date" 
-              v-model="waitlistStartDateInput"
-              class="border-none bg-transparent p-0 text-slate-700 text-xs font-semibold focus:outline-none focus:ring-0 w-[100px] cursor-pointer"
-            />
-            <span class="text-slate-400">~</span>
-            <input 
-              type="date" 
-              v-model="waitlistEndDateInput"
-              class="border-none bg-transparent p-0 text-slate-700 text-xs font-semibold focus:outline-none focus:ring-0 w-[100px] cursor-pointer"
-            />
-            <svg class="w-4.5 h-4.5 text-emerald-500 ml-auto" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
+          <!-- Date Range Control (Identical to Kế Hoạch Phòng topbar) -->
+          <div class="flex items-center gap-2 mb-4 select-none shrink-0">
+            <div class="relative">
+              <button 
+                @click.stop="toggleWaitlistDatePickerPopover"
+                class="flex items-center gap-2 border border-slate-200 rounded-lg bg-white px-3 py-1.5 shadow-sm text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer h-[32px]"
+              >
+                <span>{{ waitlistDateRangeText }}</span>
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+
+              <!-- Date Picker Popover for Waitlist -->
+              <div 
+                v-if="showWaitlistDatePickerPopover" 
+                class="absolute left-0 top-[36px] bg-white border border-slate-200 rounded-lg shadow-xl z-[150] p-3.5 flex flex-col gap-3 w-[260px]"
+                @click.stop
+              >
+                <h4 class="text-xs font-extrabold text-slate-800 m-0">Chọn khoảng thời gian</h4>
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase">Từ ngày</span>
+                    <input 
+                      type="date" 
+                      v-model="tempWaitlistStartDateStr"
+                      class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                    />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase">Đến ngày</span>
+                    <input 
+                      type="date" 
+                      v-model="tempWaitlistEndDateStr"
+                      class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                    />
+                  </div>
+                </div>
+                <div class="flex items-center justify-between border-t border-slate-100 pt-2 mt-1">
+                  <button 
+                    @click="showWaitlistDatePickerPopover = false"
+                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold border-none cursor-pointer transition-colors"
+                  >
+                    Đóng
+                  </button>
+                  <button 
+                    @click="saveWaitlistDateRange"
+                    class="px-4 py-1.5 bg-[#7dd3fc] hover:bg-sky-400 text-white rounded text-[11px] font-bold border-none shadow-sm cursor-pointer transition-colors"
+                  >
+                    Lưu
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- View Button -->
+            <button 
+              @click="saveWaitlistDateRange"
+              class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold border-none shadow-sm transition-colors cursor-pointer h-[32px]"
+            >
+              View
+            </button>
           </div>
 
           <!-- Waiting List Table Container -->
           <div class="flex-1 overflow-auto border border-slate-200 rounded-lg bg-white shadow-xs">
             <table class="w-full text-xs text-left border-collapse table-fixed select-none">
               <colgroup>
+                <col class="w-[200px]" />
                 <col class="w-[140px]" />
-                <col class="w-[95px]" />
-                <col class="w-[95px]" />
-                <col class="w-[80px]" />
+                <col class="w-[140px]" />
+                <col class="w-[120px]" />
               </colgroup>
               <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 font-bold border-b border-slate-200 h-9">
                 <tr>
                   <th class="px-3 py-2 font-bold text-slate-700 text-[11px]">Tên khách</th>
-                  <th class="px-2 py-2 text-center font-bold">
-                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-emerald-500"></span>
+                  <th class="px-2 py-2 text-center font-bold text-slate-700 text-[11px]">
+                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-emerald-500 mr-1"></span>
+                    Ngày đến
                   </th>
-                  <th class="px-2 py-2 text-center font-bold">
-                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-rose-500"></span>
+                  <th class="px-2 py-2 text-center font-bold text-slate-700 text-[11px]">
+                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-rose-500 mr-1"></span>
+                    Ngày đi
                   </th>
                   <th class="px-3 py-2 text-right font-bold text-slate-700 text-[11px]">Loại phòng</th>
                 </tr>

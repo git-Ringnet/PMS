@@ -406,38 +406,22 @@ class RoomLockController extends Controller
         foreach ($locks as $lock) {
             $affectedRoomNumbers[] = $lock->room_number;
 
-            $lockStartLocal = \Carbon\Carbon::parse($lock->start_date->format('Y-m-d H:i:s'), 'Asia/Ho_Chi_Minh');
+            $oldValues = $lock->toArray();
+            $lock->update([
+                'is_active' => 2,
+                'unlock_username' => $unlockUsername,
+                'unlocked_at' => $now
+            ]);
 
-            // If it is a future lock, delete it
-            if ($lockStartLocal->gt($localNow)) {
-                \App\Services\ActivityLogService::logDelete(
-                    $request,
-                    $lock,
-                    'reservation',
-                    'LockRoomPage',
-                    "Hủy kế hoạch khóa phòng tương lai của phòng {$lock->room_number} (Hành động: Unlock, Giai đoạn: " . $lock->start_date->format('d/m/Y') . " ~ " . $lock->end_date->format('d/m/Y') . ")",
-                    $lock->room_number
-                );
-                $lock->delete();
-            } else {
-                // Else, mark it as unlocked (is_active = 2)
-                $oldValues = $lock->toArray();
-                $lock->update([
-                    'is_active' => 2,
-                    'unlock_username' => $unlockUsername,
-                    'unlocked_at' => $now
-                ]);
-
-                \App\Services\ActivityLogService::logUpdate(
-                    $request,
-                    $lock,
-                    $oldValues,
-                    'reservation',
-                    'LockRoomPage',
-                    "Mở khóa phòng {$lock->room_number} (Hành động: Unlock, Giai đoạn: " . $lock->start_date->format('d/m/Y H:i') . " ~ " . $lock->end_date->format('d/m/Y H:i') . ")",
-                    $lock->room_number
-                );
-            }
+            \App\Services\ActivityLogService::logUpdate(
+                $request,
+                $lock,
+                $oldValues,
+                'reservation',
+                'LockRoomPage',
+                "Mở khóa phòng {$lock->room_number} (Hành động: Unlock, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
+                $lock->room_number
+            );
         }
 
         // Check and update room statuses for affected rooms
@@ -716,15 +700,24 @@ class RoomLockController extends Controller
         }
 
         $roomNumber = $lock->room_number;
-        \App\Services\ActivityLogService::logDelete(
+        $unlockUsername = $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
+        $oldValues = $lock->toArray();
+
+        $lock->update([
+            'is_active' => 2,
+            'unlock_username' => $unlockUsername,
+            'unlocked_at' => now(),
+        ]);
+
+        \App\Services\ActivityLogService::logUpdate(
             $request,
             $lock,
+            $oldValues,
             'reservation',
             'LockRoomPage',
-            "Xóa lịch khóa phòng {$lock->room_number} (Hành động: Delete, Giai đoạn: " . $lock->start_date->format('d/m/Y H:i') . " ~ " . $lock->end_date->format('d/m/Y H:i') . ")",
+            "Mở khóa phòng {$lock->room_number} (Hành động: Unlock, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
             $lock->room_number
         );
-        $lock->delete();
 
         // Check if there are other active locks
         $hasActive = RoomLock::where('room_number', $roomNumber)->where('is_active', 1)->exists();

@@ -65,6 +65,7 @@ class RoomController extends Controller
             ->with(['booking.company', 'booking.registrationStatus', 'booking.paymentMethod', 'guests.guest', 'children'])
             ->get();
 
+        /** @var Room $room */
         foreach ($rooms as $room) {
             $room->booking_status = null;
 
