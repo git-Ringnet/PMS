@@ -65,18 +65,37 @@ class RoomController extends Controller
             ->with(['booking.company', 'booking.registrationStatus', 'booking.paymentMethod', 'guests.guest', 'children'])
             ->get();
 
+        /** @var Room $room */
         foreach ($rooms as $room) {
             $room->booking_status = null;
 
-            // Ưu tiên trạng thái OOO/OOS (Active Lock)
-            if ($room->activeLock) {
+            // Ưu tiên trạng thái OOO/OOS (Active Lock hôm nay)
+            $currentLock = $room->allActiveLocks ? $room->allActiveLocks->first(function($l) use ($sysDateStr) {
+                $startStr = \Carbon\Carbon::parse($l->start_date)->toDateString();
+                $endStr = \Carbon\Carbon::parse($l->end_date)->toDateString();
+                return $sysDateStr >= $startStr && $sysDateStr <= $endStr;
+            }) : null;
+
+            if ($currentLock) {
                 $room->status = 'maintenance';
+                $room->lock_type = $currentLock->lock_type;
+                $room->setRelation('activeLock', $currentLock);
+            } else {
+                if ($room->status === 'maintenance' || $room->status === 'ooo' || $room->status === 'oos') {
+                    $room->status = 'available';
+                }
+                $room->lock_type = null;
+                $room->setRelation('activeLock', null);
             }
 
             // Tìm booking tương ứng
             $br = $bookingRoomsToday->where('room_number', $room->room_number)->first();
             if ($br) {
                 if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
+                    $room->is_clean = false;
+                    if ($room->status !== 'maintenance' && $room->status !== 'ooo' && $room->status !== 'oos') {
+                        $room->status = 'dirty';
+                    }
                     if ($br->departure_date->toDateString() === $sysDateStr) {
                         $room->booking_status = 'checkout';
                     } else {

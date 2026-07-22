@@ -4,7 +4,7 @@ import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
-import { fetchBookings, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
+import { fetchBookings, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
@@ -514,35 +514,69 @@ function formatDateToDMY(dateStr) {
   return dateStr
 }
 
-const waitlistStartDate = ref(new Date('2026-07-08'))
-const waitlistEndDate = ref(new Date('2026-08-17'))
+const waitlistStartDate = ref(new Date())
+const waitlistEndDate = ref(new Date())
 
-const waitlistStartDateInput = computed({
-  get: () => formatDateStr(waitlistStartDate.value),
-  set: (val) => {
-    if (val) waitlistStartDate.value = new Date(val)
+watch(showWaitingList, (newVal) => {
+  if (newVal) {
+    if (startDate.value) waitlistStartDate.value = new Date(startDate.value)
+    if (endDate.value) waitlistEndDate.value = new Date(endDate.value)
   }
 })
 
-const waitlistEndDateInput = computed({
-  get: () => formatDateStr(waitlistEndDate.value),
-  set: (val) => {
-    if (val) waitlistEndDate.value = new Date(val)
-  }
+watch([startDate, endDate], ([newStart, newEnd]) => {
+  if (newStart) waitlistStartDate.value = new Date(newStart)
+  if (newEnd) waitlistEndDate.value = new Date(newEnd)
+}, { immediate: true })
+
+const showWaitlistDatePickerPopover = ref(false)
+const tempWaitlistStartDateStr = ref('')
+const tempWaitlistEndDateStr = ref('')
+
+const waitlistDateRangeText = computed(() => {
+  const start = formatDateToDMY(formatDateStr(waitlistStartDate.value))
+  const end = formatDateToDMY(formatDateStr(waitlistEndDate.value))
+  return `${start} ~ ${end}`
 })
+
+function toggleWaitlistDatePickerPopover() {
+  showWaitlistDatePickerPopover.value = !showWaitlistDatePickerPopover.value
+  if (showWaitlistDatePickerPopover.value) {
+    tempWaitlistStartDateStr.value = formatDateStr(waitlistStartDate.value)
+    tempWaitlistEndDateStr.value = formatDateStr(waitlistEndDate.value)
+  }
+}
+
+function closeWaitlistDatePickerPopover() {
+  showWaitlistDatePickerPopover.value = false
+}
+
+function saveWaitlistDateRange() {
+  if (tempWaitlistStartDateStr.value) {
+    waitlistStartDate.value = new Date(tempWaitlistStartDateStr.value)
+  }
+  if (tempWaitlistEndDateStr.value) {
+    waitlistEndDate.value = new Date(tempWaitlistEndDateStr.value)
+  }
+  showWaitlistDatePickerPopover.value = false
+}
 
 const waitingListItems = computed(() => {
+  if (!waitlistStartDate.value || !waitlistEndDate.value) return []
+  const startStr = formatDateStr(waitlistStartDate.value)
+  const endStr = formatDateStr(waitlistEndDate.value)
+
   return bookings.value.filter(b => {
-    if (!b.isVirtual) return false
+    if (b.code === 'LOCK') return false
+    const isUnassigned = b.isVirtual || !b.room || b.room === 'PM' || b.room === 'Chưa gán' || (typeof b.room === 'number' && b.room < 0)
+    const regName = (b.registrationStatusName || '').toLowerCase()
+    const isWaitingStatus = regName.includes('wait') || regName.includes('chờ')
+
+    if (!isUnassigned && !isWaitingStatus) return false
     if (!b.checkIn) return false
+
     const inDateStr = b.checkIn.split(' ')[0]
-    const inDate = new Date(inDateStr)
-    const checkInTime = inDate.getTime()
-    
-    const startTime = new Date(waitlistStartDate.value).setHours(0, 0, 0, 0)
-    const endTime = new Date(waitlistEndDate.value).setHours(23, 59, 59, 999)
-    
-    return checkInTime >= startTime && checkInTime <= endTime
+    return inDateStr >= startStr && inDateStr <= endStr
   }).map(b => {
     const inDate = b.checkIn ? b.checkIn.split(' ')[0] : ''
     const outDate = b.checkOut ? b.checkOut.split(' ')[0] : ''
@@ -665,7 +699,7 @@ const dbRooms = computed(() => {
         shape,
         status: r.status,
         is_clean: r.is_clean !== undefined ? r.is_clean : true,
-        lock_type: r.lock_type || (r.active_locks && r.active_locks.length > 0 ? r.active_locks[0].lock_type : null),
+        lock_type: r.status === 'maintenance' ? r.lock_type : null,
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
@@ -691,9 +725,6 @@ const dbRooms = computed(() => {
         })
       }
     })
-    if (!room.lock_type && room.active_locks.length > 0) {
-      room.lock_type = room.active_locks[0].lock_type
-    }
   })
 
   // 2. Append virtual rooms from active bookings
@@ -1175,6 +1206,7 @@ async function loadBookings() {
             name: b.booking_name,
             company: b.company?.company_name || 'Khách lẻ',
             guestName,
+            registrationStatusName: b.registration_status?.name || '',
             nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
@@ -1309,6 +1341,7 @@ onMounted(async () => {
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', closePlanSettings)
   window.addEventListener('click', closeDatePickerPopover)
+  window.addEventListener('click', closeWaitlistDatePickerPopover)
   window.addEventListener('click', handleWindowClick)
 
   if (typeof BroadcastChannel !== 'undefined') {
@@ -1326,6 +1359,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', closePlanSettings)
   window.removeEventListener('click', closeDatePickerPopover)
+  window.removeEventListener('click', closeWaitlistDatePickerPopover)
   window.removeEventListener('click', handleWindowClick)
   if (bc) {
     bc.close()
@@ -1410,12 +1444,25 @@ function getLegendDotClass(name) {
 }
 
 function isCellOccupied(roomNo, date) {
-  const roomBookings = processedBookings.value[roomNo] || []
-  const targetTime = new Date(date).setHours(12, 0, 0, 0)
+  const rKey = String(roomNo)
+  const roomBookings = processedBookings.value[rKey] || processedBookings.value[roomNo] || []
+  if (!roomBookings || roomBookings.length === 0) return false
+
+  const targetDateStr = formatDateStr(date)
+
   return roomBookings.some(bk => {
-    const start = parseDateTime(bk.checkIn).setHours(12, 0, 0, 0)
-    const end = parseDateTime(bk.checkOut).setHours(12, 0, 0, 0)
-    return targetTime >= start && targetTime < end
+    const checkInDateStr = formatDateStr(parseDateTime(bk.checkIn))
+    const checkOutDateStr = formatDateStr(parseDateTime(bk.checkOut))
+
+    const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
+    if (isLockItem) {
+      return targetDateStr >= checkInDateStr && targetDateStr <= checkOutDateStr
+    } else {
+      if (checkInDateStr === checkOutDateStr) {
+        return targetDateStr === checkInDateStr
+      }
+      return targetDateStr >= checkInDateStr && targetDateStr < checkOutDateStr
+    }
   })
 }
 
@@ -1426,6 +1473,7 @@ function isCellSelected(roomNo, date) {
 
 function handleCellClick(roomItem, dayItem, dayIdx, event) {
   if (roomItem.isVirtual || isCellOccupied(roomItem.room, dayItem.fullDate)) {
+    uiStore.showToast(`Phòng ${roomItem.room} ngày ${formatDateStr(dayItem.fullDate)} đã có đặt phòng/khóa phòng, không thể chọn.`, 'warning')
     return
   }
 
@@ -1459,22 +1507,54 @@ const selectedRoomsRanges = computed(() => {
   
   const result = []
   Object.keys(groups).forEach(roomNo => {
-    const dateStrings = groups[roomNo]
-    dateStrings.sort()
-    
-    const checkIn = dateStrings[0]
-    const lastDate = new Date(dateStrings[dateStrings.length - 1])
-    
-    const nextDay = new Date(lastDate)
-    nextDay.setDate(nextDay.getDate() + 1)
-    const checkOut = formatDateStr(nextDay)
-    
-    result.push({
-      room: roomNo,
-      checkIn,
-      checkOut,
-      nights: dateStrings.length
-    })
+    const dateStrings = [...new Set(groups[roomNo])].sort()
+    if (dateStrings.length === 0) return
+
+    let currentBlock = [dateStrings[0]]
+
+    for (let i = 1; i < dateStrings.length; i++) {
+      const prevDate = new Date(dateStrings[i - 1])
+      const currDate = new Date(dateStrings[i])
+      const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24))
+
+      if (diffDays === 1) {
+        currentBlock.push(dateStrings[i])
+      } else {
+        const checkIn = currentBlock[0]
+        const lastDateStr = currentBlock[currentBlock.length - 1]
+        const lastDateObj = new Date(lastDateStr)
+        const nextDay = new Date(lastDateObj)
+        nextDay.setDate(nextDay.getDate() + 1)
+        const checkOut = formatDateStr(nextDay)
+
+        result.push({
+          room: roomNo,
+          checkIn,
+          checkOut,
+          lastDate: lastDateStr,
+          nights: currentBlock.length
+        })
+
+        currentBlock = [dateStrings[i]]
+      }
+    }
+
+    if (currentBlock.length > 0) {
+      const checkIn = currentBlock[0]
+      const lastDateStr = currentBlock[currentBlock.length - 1]
+      const lastDateObj = new Date(lastDateStr)
+      const nextDay = new Date(lastDateObj)
+      nextDay.setDate(nextDay.getDate() + 1)
+      const checkOut = formatDateStr(nextDay)
+
+      result.push({
+        room: roomNo,
+        checkIn,
+        checkOut,
+        lastDate: lastDateStr,
+        nights: currentBlock.length
+      })
+    }
   })
   return result
 })
@@ -1519,9 +1599,8 @@ const processedBookings = computed(() => {
           price: '0',
           label: `${lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'} - ${lock.lock_reason || 'Bảo trì'}`,
           isVirtual: false,
-          bookingId: null,
-          bookingRoomId: lock.id,
-          lockId: lock.id,
+          bookingRoomId: lock.id || lock.lock_id,
+          lockId: lock.id || lock.lock_id,
           phone: '',
           roomChargeDue: 0,
           serviceChargeDue: 0,
@@ -1597,7 +1676,8 @@ const processedBookings = computed(() => {
     const leftRatio = showNights.value ? 0 : 0.5
 
     // Total columns spanned (occupy full cells or half cells)
-    const span = Math.max(1, endIdx - startIdx)
+    const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
+    const span = Math.max(1, isLockItem ? (endIdx - startIdx + 1) : (endIdx - startIdx))
     const showCheckOutIndicator = !showNights.value && isCheckOutVisible
 
     // Formatting for tooltip display
@@ -1768,12 +1848,13 @@ watch(showNotes, (newVal) => {
 })
 
 function showTooltip(booking, event) {
-  if (!showNotes.value) return
+  if (!showNotes.value || draggedBooking.value) return
   hoveredBooking.value = booking
   updateTooltipPosition(event)
 }
 
 function updateTooltipPosition(event) {
+  if (draggedBooking.value) return
   const tooltipWidth = 360
   const tooltipHeight = 420
   const minTop = 65 // Không bị khuất dưới thanh tabbar ở trên
@@ -2080,7 +2161,7 @@ function handleBookingContextMenu(booking, event) {
   const menuWidth = 180
   
   let type = 'green-booking'
-  if (booking.code === 'LOCK') {
+  if (booking.code === 'LOCK' || booking.type === 'OOO' || booking.type === 'OOS' || booking.isLockRoom) {
     type = 'lock-actions'
   } else if (booking.type === 'InHouse') {
     type = 'blue-booking'
@@ -2281,20 +2362,26 @@ async function triggerMenuAction(actionName) {
     }
   } else if (actionName === 'Mở khóa phòng') {
     const booking = contextMenu.value.booking
-    if (booking && booking.lockId) {
-      const confirmUnlock = window.confirm('Bạn có chắc chắn muốn mở khóa phòng này không?')
-      if (confirmUnlock) {
+    const lockId = booking?.lockId || booking?.bookingRoomId
+    if (booking && lockId) {
+      uiStore.confirm({
+        title: 'Xác nhận mở khóa phòng',
+        message: 'Bạn có chắc chắn muốn mở khóa phòng này không?',
+        confirmText: 'Đồng ý',
+        cancelText: 'Hủy'
+      }).then(async (confirmUnlock) => {
+        if (!confirmUnlock) return
         try {
           loadingBookings.value = true
           emit('loading', true)
-          const res = await roomService.deleteRoomLock(booking.lockId)
-          if (res && res.data && res.data.success) {
+          const res = await roomService.deleteRoomLock(lockId)
+          if (res && (res.success || res.data?.success)) {
             uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
             await roomStore.fetchRooms()
             await loadBookings()
             if (bc) bc.postMessage('rooms-updated')
           } else {
-            uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
+            uiStore.showToast(res?.message || res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
           }
         } catch (err) {
           console.error(err)
@@ -2303,7 +2390,7 @@ async function triggerMenuAction(actionName) {
           loadingBookings.value = false
           emit('loading', false)
         }
-      }
+      })
     } else {
       uiStore.showToast('Không tìm thấy thông tin khóa phòng.', 'error')
     }
@@ -2388,10 +2475,59 @@ async function triggerMenuAction(actionName) {
         emit('loading', false)
       }
     }
+  } else if (actionName === 'Giao phòng') {
+    const booking = contextMenu.value.booking
+    if (booking && booking.bookingId && booking.bookingRoomId) {
+      if (!canCheckInBooking(booking)) {
+        uiStore.showToast('Phòng không đủ điều kiện giao phòng (Ngày đến phải bằng ngày hệ thống)!', 'warning')
+        return
+      }
+      uiStore.confirm({
+        title: 'Xác nhận giao phòng',
+        message: `Bạn có chắc chắn muốn giao phòng ${booking.room} cho đăng ký ${booking.code}?`,
+        confirmText: 'Đồng ý',
+        cancelText: 'Hủy'
+      }).then(async (confirmed) => {
+        if (!confirmed) return
+        try {
+          loadingBookings.value = true
+          emit('loading', true)
+          const res = await checkInRoom(booking.bookingId, booking.bookingRoomId)
+          if (res && res.data && res.data.success !== false) {
+            uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
+            await roomStore.fetchRooms()
+            await loadBookings()
+            if (bc) bc.postMessage('rooms-updated')
+          } else {
+            uiStore.showToast(res?.data?.message || 'Giao phòng thất bại.', 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          const msg = err.response?.data?.message || 'Có lỗi xảy ra khi giao phòng.'
+          uiStore.showToast(msg, 'error')
+        } finally {
+          loadingBookings.value = false
+          emit('loading', false)
+        }
+      })
+    } else {
+      uiStore.showToast('Không tìm thấy thông tin đăng ký phòng.', 'error')
+    }
   } else {
     const bookingCode = contextMenu.value.booking ? contextMenu.value.booking.code : ''
     uiStore.showToast(`Đã thực hiện: "${actionName}"` + (bookingCode ? ` cho đăng ký ${bookingCode}` : ''), 'success')
   }
+}
+
+function canCheckInBooking(bk) {
+  if (!bk || bk.code === 'LOCK' || bk.isVirtual || !bk.bookingId || !bk.bookingRoomId) return false
+  if (bk.type === 'InHouse' || bk.type === 'CheckedOut' || bk.status === 1) return false
+  if (!bk.room) return false
+
+  const arrivalDateStr = bk.checkIn ? bk.checkIn.split(' ')[0] : (bk.arrival_date || '')
+  const sysDateStr = systemDate.value || formatDateStr(new Date())
+
+  return arrivalDateStr === sysDateStr
 }
 
 function handleDragStart(bk, event) {
@@ -2418,12 +2554,71 @@ function handleDragStart(bk, event) {
   draggedBooking.value = bk
   event.dataTransfer.setData('text/plain', bk.bookingRoomId)
   event.dataTransfer.effectAllowed = 'move'
+
+  window.addEventListener('wheel', handleDragWheel, { passive: true })
+  window.addEventListener('dragover', handleGlobalDragOver)
 }
 
 let scrollAnimationFrame = null
 let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
+
+function handleDragWheel(e) {
+  if (!draggedBooking.value) return
+  if (!scrollContainer) {
+    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  }
+  if (scrollContainer) {
+    scrollContainer.scrollTop += e.deltaY
+    if (e.deltaX) {
+      scrollContainer.scrollLeft += e.deltaX
+    }
+  }
+}
+
+function handleGlobalDragOver(event) {
+  if (!draggedBooking.value) return
+  event.preventDefault()
+
+  if (!scrollContainer) {
+    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  }
+  if (!scrollContainer) return
+
+  const rect = scrollContainer.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+
+  const threshold = 120
+  const maxSpeed = 35
+
+  let scrollX = 0
+  let scrollY = 0
+
+  if (x < threshold && x > -50) {
+    scrollX = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, x)) / threshold))
+  } else if (rect.width - x < threshold && x < rect.width + 50) {
+    scrollX = Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, rect.width - x)) / threshold))
+  }
+
+  // Vertical Scrolling
+  if (y < threshold && y > -50) {
+    scrollY = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, y)) / threshold))
+  } else if (rect.height - y < threshold || event.clientY > rect.bottom - threshold) {
+    const distFromBottom = rect.bottom - event.clientY
+    scrollY = Math.round(maxSpeed * Math.max(0.3, (threshold - Math.max(-50, distFromBottom)) / threshold))
+  }
+
+  currentScrollX = scrollX
+  currentScrollY = scrollY
+
+  if (scrollX !== 0 || scrollY !== 0) {
+    startAutoScrollLoop()
+  } else {
+    stopDragAutoScroll()
+  }
+}
 
 function stopDragAutoScroll() {
   if (scrollAnimationFrame) {
@@ -2433,6 +2628,8 @@ function stopDragAutoScroll() {
   currentScrollX = 0
   currentScrollY = 0
   scrollContainer = null
+  window.removeEventListener('wheel', handleDragWheel)
+  window.removeEventListener('dragover', handleGlobalDragOver)
 }
 
 function startAutoScrollLoop() {
@@ -2458,41 +2655,7 @@ function handleDragOver(event, item, dayIdx) {
     draggedOverDayIdx.value = dayIdx
   }
 
-  // Measure boundary of container to auto-scroll
-  const container = event.currentTarget.closest('.overflow-auto') || event.currentTarget.closest('.overflow-y-auto')
-  if (!container) return
-  scrollContainer = container
-
-  const rect = container.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
-
-  const threshold = 90
-  const maxSpeed = 30
-
-  let scrollX = 0
-  let scrollY = 0
-
-  if (x < threshold) {
-    scrollX = -Math.round(maxSpeed * (1 - Math.max(0, x) / threshold))
-  } else if (rect.width - x < threshold) {
-    scrollX = Math.round(maxSpeed * (1 - Math.max(0, rect.width - x) / threshold))
-  }
-
-  if (y < threshold) {
-    scrollY = -Math.round(maxSpeed * (1 - Math.max(0, y) / threshold))
-  } else if (rect.height - y < threshold) {
-    scrollY = Math.round(maxSpeed * (1 - Math.max(0, rect.height - y) / threshold))
-  }
-
-  currentScrollX = scrollX
-  currentScrollY = scrollY
-
-  if (scrollX !== 0 || scrollY !== 0) {
-    startAutoScrollLoop()
-  } else {
-    stopDragAutoScroll()
-  }
+  handleGlobalDragOver(event)
 }
 
 function handleDragEnd() {
@@ -2533,6 +2696,33 @@ async function handleDrop(targetRoom, targetDay, event) {
   const arrivalStr = formatDateStr(originalCheckIn)
   const departureStr = formatDateStr(originalCheckOut)
 
+  // Check if target room is currently locked (OOO/OOS) or occupied
+  if (targetRoomNumber) {
+    const dStart = new Date(arrivalStr)
+    const dEnd = new Date(departureStr)
+    for (let d = new Date(dStart); d < dEnd; d.setDate(d.getDate() + 1)) {
+      const dateStr = formatDateStr(d)
+      const rKey = String(targetRoomNumber)
+      const roomBookings = processedBookings.value[rKey] || processedBookings.value[targetRoomNumber] || []
+
+      const isLockedOrOccupied = roomBookings.some(b => {
+        if (b.bookingRoomId === bk.bookingRoomId) return false
+        const startStr = formatDateStr(parseDateTime(b.checkIn))
+        const endStr = formatDateStr(parseDateTime(b.checkOut))
+        const isLockItem = b.code === 'LOCK' || b.type === 'OOO' || b.type === 'OOS'
+        if (isLockItem) {
+          return dateStr >= startStr && dateStr <= endStr
+        }
+        return dateStr >= startStr && dateStr < endStr
+      })
+
+      if (isLockedOrOccupied) {
+        uiStore.showToast(`Phòng ${targetRoomNumber} đang bị khóa (OOO/OOS) hoặc đã có khách trong khoảng thời gian này. Không thể kéo chuyển phòng!`, 'error')
+        return
+      }
+    }
+  }
+
   const proceedMove = async (differentClass = false) => {
     try {
       loadingBookings.value = true
@@ -2569,10 +2759,16 @@ async function handleDrop(targetRoom, targetDay, event) {
   }
 
   if (originalRoomClass !== targetRoomClass) {
-    const confirmMove = window.confirm(`Bạn đang chuyển phòng khác loại phòng (${originalRoomClass} -> ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`)
-    if (confirmMove) {
-      await proceedMove(true)
-    }
+    uiStore.confirm({
+      title: 'Xác nhận chuyển phòng khác loại',
+      message: `Bạn đang chuyển phòng khác loại phòng (${originalRoomClass} -> ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`,
+      confirmText: 'Đồng ý',
+      cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        await proceedMove(true)
+      }
+    })
   } else {
     await proceedMove(false)
   }
@@ -2712,12 +2908,19 @@ async function saveQuickBooking() {
 
     const room_allocations = Object.values(allocationsMap)
 
+    const sysDateStr = systemDate.value || formatDateStr(new Date())
+    if (overallArrival < sysDateStr) {
+      uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'error')
+      return
+    }
+
     // 4. Gọi 1 request duy nhất tạo 1 phiếu Booking
     const payload = {
       booking_name: quickBookingForm.value.bookingName || 'Walkin Guest',
       arrival_date: overallArrival,
       departure_date: overallDeparture,
       num_of_days: overallNights,
+      registration_status_id: quickBookingForm.value.registrationStatusId || 1,
       company_id: companyId,
       market_id: quickBookingForm.value.marketId || 1,
       customer_source_id: quickBookingForm.value.customerSourceId || 1,
@@ -2749,17 +2952,53 @@ async function saveLockRoom() {
   const ranges = selectedRoomsRanges.value
   if (ranges.length === 0) return
 
+  const note = lockRoomForm.value.note ? lockRoomForm.value.note.trim() : ''
+  if (!note) {
+    uiStore.showToast('Vui lòng nhập ghi chú (Note) cho khóa phòng.', 'warning')
+    return
+  }
+
   try {
     loadingBookings.value = true
     emit('loading', true)
 
+    // Verify no selected cell is occupied
     for (const range of ranges) {
+      const dStart = new Date(range.checkIn)
+      const dEnd = new Date(range.lastDate || range.checkIn)
+      for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate() + 1)) {
+        if (isCellOccupied(range.room, d)) {
+          uiStore.showToast(`Phòng ${range.room} ngày ${formatDateStr(d)} đã có lịch đặt/khóa phòng, không thể thực hiện khóa.`, 'error')
+          loadingBookings.value = false
+          emit('loading', false)
+          return
+        }
+      }
+    }
+
+    const sysDateStr = systemDate.value || formatDateStr(new Date())
+    const endTimeConfig = hotelSettings.value?.FrmOOO_DefineLockByTime || '23:59:59'
+    const formattedEndTime = endTimeConfig.includes(':') && endTimeConfig.split(':').length === 2 ? `${endTimeConfig}:59` : endTimeConfig
+
+    for (const range of ranges) {
+      const lockStartDate = range.checkIn
+      const lockEndDate = range.lastDate || range.checkIn
+
+      let startTimeStr = '00:00:00'
+      if (lockStartDate <= sysDateStr) {
+        const now = new Date()
+        const hh = String(now.getHours()).padStart(2, '0')
+        const mm = String(now.getMinutes()).padStart(2, '0')
+        const ss = String(now.getSeconds()).padStart(2, '0')
+        startTimeStr = `${hh}:${mm}:${ss}`
+      }
+
       const lockObj = {
         room_number: range.room,
-        start_date: `${range.checkIn} 14:00`,
-        end_date: `${range.checkOut} 12:00`,
+        start_date: `${lockStartDate} ${startTimeStr}`,
+        end_date: `${lockEndDate} ${formattedEndTime}`,
         lock_type: lockRoomType.value,
-        reason: lockRoomForm.value.note || 'Bảo trì phòng',
+        reason: note,
         force: false
       }
 
@@ -2768,7 +3007,12 @@ async function saveLockRoom() {
       } catch (err) {
         const resData = err.response?.data
         if (resData && resData.require_confirm) {
-          const proceed = window.confirm(resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?')
+          const proceed = await uiStore.confirm({
+            title: 'Cảnh báo phòng âm',
+            message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
+            confirmText: 'Tiếp tục',
+            cancelText: 'Hủy'
+          })
           if (proceed) {
             lockObj.force = true
             await roomService.createRoomLock(lockObj)
@@ -2963,22 +3207,23 @@ function isTodayOrActiveBooking(b) {
 
 function getRoomStatusIconName(item) {
   if (!item) return 'double-check'
-  // 1. Lock (OOO / OOS / Active Locks)
-  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos' || (item.active_locks && item.active_locks.length > 0)) {
+  // 1. Lock (OOO / OOS) - Only when currently locked today
+  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
     return item.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-  // 2. Dirty Room / Housekeeping needed
-  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean) {
+  // 2. Dirty Room / In-house guest / Housekeeping needed -> broom icon
+  const hasInhouseGuest = item.booking_status === 'occupied' || item.booking_status === 'checkout' || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && b.type === 'InHouse' && isTodayOrActiveBooking(b)))
+  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean || hasInhouseGuest) {
     return 'dirty'
   }
-  // 3. Sparkles ONLY for clean vacant available room without active booking today
-  const hasBookingToday = item.hasCurrentBooking || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
-  if (item.is_clean && (item.status === 'available' || !item.status) && !hasBookingToday && !item.booking_status) {
-    return 'clean'
-  }
-  // 4. Room with booking / Occupied / Available -> double-check icon (✓✓)
-  if (item.status === 'available' || item.status === 'occupied' || hasBookingToday || !item.status) {
+  // 3. Has reserved booking today -> double-check icon (✓✓)
+  const hasBookingToday = item.hasCurrentBooking || !!item.guest_name || !!item.booking_code || !!item.booking_status || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
+  if (hasBookingToday) {
     return 'double-check'
+  }
+  // 4. Sparkles ONLY for clean vacant available room without active booking today
+  if (item.is_clean && (item.status === 'available' || !item.status)) {
+    return 'clean'
   }
   if (item.status === 'reserved') {
     return 'priority'
@@ -3168,7 +3413,7 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative">
+    <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragover="handleGlobalDragOver($event)">
       <!-- Col width: 62px, sticky room header: 120px -->
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
@@ -3300,6 +3545,7 @@ function getRoomStatusIconName(item) {
                     @mouseenter="showTooltip(bk, $event)"
                     @mousemove="updateTooltipPosition($event)"
                     @mouseleave="hideTooltip"
+                    @click.stop
                     @dblclick.prevent.stop="handleBookingDblClick(bk)"
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="true"
@@ -3367,7 +3613,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Handle / Control -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId"
+                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       class="absolute top-0 bottom-0 w-[4px] bg-white cursor-ew-resize z-40 shadow-[0_0_4px_rgba(0,0,0,0.5)]"
                       :style="{ left: `calc(${((splitIndex - bk.startIndex) / bk.span) * 100}% - 2px)` }"
                       @mousedown.prevent.stop="startDragSplitBar($event)"
@@ -3375,7 +3621,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Buttons Overlay -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId"
+                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       class="absolute bottom-[-22px] left-0 flex gap-1 z-50 select-none bg-white border border-slate-200 shadow-lg rounded p-0.5"
                     >
                       <button 
@@ -3398,7 +3644,7 @@ function getRoomStatusIconName(item) {
           </template>
         </tbody>
         <!-- Summary Footers wrapped inside tfoot for gapless sticky bottom rendering -->
-        <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200">
+        <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200" @dragover="handleGlobalDragOver($event)">
           <!-- Summary OCC Footer Row -->
           <tr class="h-[38px] font-black text-slate-800">
             <td 
@@ -3637,6 +3883,13 @@ function getRoomStatusIconName(item) {
       <!-- Options for Green Booking -->
       <template v-else-if="contextMenu.type === 'green-booking'">
         <button 
+          v-if="canCheckInBooking(contextMenu.booking)"
+          @click="triggerMenuAction('Giao phòng')"
+          class="w-full text-left px-4 py-2.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50 border-none bg-transparent cursor-pointer transition-colors"
+        >
+          Giao phòng
+        </button>
+        <button 
           v-if="!contextMenu.booking?.isVirtual"
           @click="triggerMenuAction('Tách Phòng')"
           class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
@@ -3825,7 +4078,7 @@ function getRoomStatusIconName(item) {
 
     <!-- Waiting List side drawer -->
     <transition name="slide">
-      <div v-if="showWaitingList" class="fixed right-4 top-20 bottom-4 w-[420px] bg-white shadow-2xl rounded-2xl border border-slate-200 flex flex-col z-[100] overflow-hidden">
+      <div v-if="showWaitingList" class="fixed right-4 top-20 bottom-4 w-[650px] max-w-[92vw] bg-white shadow-2xl rounded-2xl border border-slate-200 flex flex-col z-[100] overflow-hidden">
         <!-- Header -->
         <div class="h-[50px] bg-[#7dd3fc] flex items-center justify-between px-4 select-none shrink-0 relative">
           <div class="flex-1 flex justify-center">
@@ -3841,44 +4094,89 @@ function getRoomStatusIconName(item) {
 
         <!-- Content Body -->
         <div class="flex-1 p-4 flex flex-col overflow-hidden bg-slate-50/50">
-          <!-- Date Range Box -->
-          <div class="border border-slate-200 rounded-lg p-2.5 flex items-center bg-white mb-4 shadow-sm select-none shrink-0 gap-2">
-            <input 
-              type="date" 
-              v-model="waitlistStartDateInput"
-              class="border-none bg-transparent p-0 text-slate-700 text-xs font-semibold focus:outline-none focus:ring-0 w-[100px] cursor-pointer"
-            />
-            <span class="text-slate-400">~</span>
-            <input 
-              type="date" 
-              v-model="waitlistEndDateInput"
-              class="border-none bg-transparent p-0 text-slate-700 text-xs font-semibold focus:outline-none focus:ring-0 w-[100px] cursor-pointer"
-            />
-            <svg class="w-4.5 h-4.5 text-emerald-500 ml-auto" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
+          <!-- Date Range Control (Identical to Kế Hoạch Phòng topbar) -->
+          <div class="flex items-center gap-2 mb-4 select-none shrink-0">
+            <div class="relative">
+              <button 
+                @click.stop="toggleWaitlistDatePickerPopover"
+                class="flex items-center gap-2 border border-slate-200 rounded-lg bg-white px-3 py-1.5 shadow-sm text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer h-[32px]"
+              >
+                <span>{{ waitlistDateRangeText }}</span>
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+
+              <!-- Date Picker Popover for Waitlist -->
+              <div 
+                v-if="showWaitlistDatePickerPopover" 
+                class="absolute left-0 top-[36px] bg-white border border-slate-200 rounded-lg shadow-xl z-[150] p-3.5 flex flex-col gap-3 w-[260px]"
+                @click.stop
+              >
+                <h4 class="text-xs font-extrabold text-slate-800 m-0">Chọn khoảng thời gian</h4>
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase">Từ ngày</span>
+                    <input 
+                      type="date" 
+                      v-model="tempWaitlistStartDateStr"
+                      class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                    />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase">Đến ngày</span>
+                    <input 
+                      type="date" 
+                      v-model="tempWaitlistEndDateStr"
+                      class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                    />
+                  </div>
+                </div>
+                <div class="flex items-center justify-between border-t border-slate-100 pt-2 mt-1">
+                  <button 
+                    @click="showWaitlistDatePickerPopover = false"
+                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold border-none cursor-pointer transition-colors"
+                  >
+                    Đóng
+                  </button>
+                  <button 
+                    @click="saveWaitlistDateRange"
+                    class="px-4 py-1.5 bg-[#7dd3fc] hover:bg-sky-400 text-white rounded text-[11px] font-bold border-none shadow-sm cursor-pointer transition-colors"
+                  >
+                    Lưu
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- View Button -->
+            <button 
+              @click="saveWaitlistDateRange"
+              class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold border-none shadow-sm transition-colors cursor-pointer h-[32px]"
+            >
+              View
+            </button>
           </div>
 
           <!-- Waiting List Table Container -->
           <div class="flex-1 overflow-auto border border-slate-200 rounded-lg bg-white shadow-xs">
             <table class="w-full text-xs text-left border-collapse table-fixed select-none">
               <colgroup>
+                <col class="w-[200px]" />
                 <col class="w-[140px]" />
-                <col class="w-[95px]" />
-                <col class="w-[95px]" />
-                <col class="w-[80px]" />
+                <col class="w-[140px]" />
+                <col class="w-[120px]" />
               </colgroup>
               <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 font-bold border-b border-slate-200 h-9">
                 <tr>
                   <th class="px-3 py-2 font-bold text-slate-700 text-[11px]">Tên khách</th>
-                  <th class="px-2 py-2 text-center font-bold">
-                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-emerald-500"></span>
+                  <th class="px-2 py-2 text-center font-bold text-slate-700 text-[11px]">
+                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-emerald-500 mr-1"></span>
+                    Ngày đến
                   </th>
-                  <th class="px-2 py-2 text-center font-bold">
-                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-rose-500"></span>
+                  <th class="px-2 py-2 text-center font-bold text-slate-700 text-[11px]">
+                    <span class="w-2.5 h-2.5 inline-block rounded-full bg-rose-500 mr-1"></span>
+                    Ngày đi
                   </th>
                   <th class="px-3 py-2 text-right font-bold text-slate-700 text-[11px]">Loại phòng</th>
                 </tr>
@@ -4066,7 +4364,7 @@ function getRoomStatusIconName(item) {
 
         <!-- Form Body -->
         <div class="p-5 flex flex-col gap-2.5 text-xs text-left">
-          <label class="font-bold text-slate-700 text-[13px] text-left w-full block">Note</label>
+          <label class="font-bold text-slate-700 text-[13px] text-left w-full block">Note <span class="text-red-500">*</span></label>
           <input type="text" v-model="lockRoomForm.note" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold" placeholder="Nhập ghi chú khóa phòng..." />
         </div>
 
