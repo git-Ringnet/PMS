@@ -893,7 +893,7 @@ function syncRoomsToAllocations(tab) {
     const matchingRooms = tab.rooms.filter(r => r.roomClassId === alloc.roomClassId)
     const roomsDetail = matchingRooms.map(r => ({
       roomNumber: r.roomNumber || '',
-      rateCode: r.rateCode || '',
+      rateCode: (r.rateCode && r.rateCode !== 'Vui lòng chọn giá phòng') ? r.rateCode : (alloc.rateCode || ''),
       guestName: r.guestName || '',
       adults: Number(r.adults) || 2,
       babies: Number(r.babies) || 0,
@@ -912,18 +912,18 @@ function syncRoomsToAllocations(tab) {
       roomCode: r.roomCode || '',
       bookingRoomId: r.bookingRoomId || null,
       total: Number(r.total) || 0,
-      price: r.price || 0,
-      basePrice: r.basePrice || 0,
-      discountType: r.discountType || 'down',
-      discountValue: r.discountValue || 0,
-      discountUnit: r.discountUnit || 'percent',
+      price: r.price || alloc.price || 0,
+      basePrice: r.basePrice || alloc.basePrice || alloc.price || 0,
+      discountType: r.discountType || alloc.discountType || 'down',
+      discountValue: r.discountValue !== undefined ? r.discountValue : (alloc.discountValue || 0),
+      discountUnit: r.discountUnit || alloc.discountUnit || 'percent',
       arrivalDate: r.checkIn || tab.checkIn,
       departureDate: r.checkOut || tab.checkOut,
       nights: Number(r.nights) || 1,
     }))
     return {
       ...alloc,
-      quantity: matchingRooms.length,
+      quantity: Math.max(Number(alloc.quantity) || 0, matchingRooms.length),
       rooms: roomsDetail,
     }
   })
@@ -1417,8 +1417,9 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
 function syncAllocationToRooms(row) {
   if (!modalForm.value.rooms) return
   modalForm.value.rooms.forEach(r => {
-    if (r.roomClassId === row.roomClassId && !r.bookingRoomId) {
+    if (r.roomClassId === row.roomClassId || r.type === row.roomClassName || r.shape === row.roomClassCode) {
       r.price = Number(row.price) || 0
+      r.basePrice = Number(row.basePrice || row.price) || 0
       r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
       r.adults = Number(row.adults) || 2
       r.babies = Number(row.babies) || 0
@@ -1444,6 +1445,7 @@ function syncRoomToAllocation(room) {
 }
 
 function handleRateCodeChange(row) {
+  if (!row) return
   if (row.rateCode) {
     const rcObj = roomRateCodes.value.find(rc => rc.Ma === row.rateCode)
     if (rcObj) {
@@ -1469,18 +1471,26 @@ function handleRateCodeChange(row) {
 
       row.breakfastIncluded = !!rcObj.IncludeBF
       
-      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate)
+      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId)
       if (price > 0) {
         row.price = price
         row.basePrice = price
       }
+    }
+  } else {
+    // Người dùng chọn lại "— Chọn giá phòng —" (rỗng): Lấy giá mặc định của loại phòng
+    const matchedClass = roomClasses.value?.find(c => c.id === Number(row.roomClassId) || c.code === row.roomClassCode)
+    if (matchedClass) {
+      const defaultPrice = Number(matchedClass.price ?? matchedClass.room_price ?? matchedClass.standard_rate ?? 0)
+      row.price = defaultPrice
+      row.basePrice = defaultPrice
     }
   }
   syncAllocationToRooms(row)
 }
 
 function handleRoomRateCodeChange(room) {
-  if (room.rateCode) {
+  if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
     const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
     if (rcObj) {
       // Check expiration dates
@@ -1676,13 +1686,16 @@ function getOccupancyCount(row) {
   ).length
 }
 
-function getRateCodePrice(rateCodeMa, roomClassCode, dateStr) {
-  const rcObj = roomRateCodes.value.find(rc => rc.Ma === rateCodeMa)
-  if (!rcObj || !rcObj.rate_plans) return 0
+function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId) {
+  const rcObj = roomRateCodes.value.find(rc => rc.Ma === rateCodeMa || rc.code === rateCodeMa)
+  if (!rcObj) return 0
   
+  const plans = rcObj.ratePlans || rcObj.rate_plans || []
+  if (!plans || plans.length === 0) return 0
+
   // 1. Find active plan code for the date (dateStr) from daily_mappings
   let activePlanCode = 'DEFAULT'
-  if (dateStr && rcObj.daily_mappings) {
+  if (dateStr && rcObj.daily_mappings && Array.isArray(rcObj.daily_mappings)) {
     const mapping = rcObj.daily_mappings.find(m => m.Date === dateStr)
     if (mapping) {
       activePlanCode = mapping.Code
@@ -1690,36 +1703,51 @@ function getRateCodePrice(rateCodeMa, roomClassCode, dateStr) {
   }
 
   // 2. Find the plan corresponding to activePlanCode
-  let plan = rcObj.rate_plans.find(p => p.Code === activePlanCode)
+  let plan = plans.find(p => p.Code === activePlanCode)
   if (!plan) {
-    plan = rcObj.rate_plans.find(p => p.Code === 'DEFAULT') || rcObj.rate_plans[0]
+    plan = plans.find(p => p.Code === 'DEFAULT') || plans[0]
   }
   
   if (!plan || !plan.Period) return 0
   
   const period = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period
-  const planCode = plan.Code
-  
+  if (!period) return 0
+
+  const planCode = plan.Code || 'DEFAULT'
+
+  // 3. Tra cứu theo roomClassId (VD: "9" cho JST)
+  if (roomClassId && period[roomClassId] !== undefined) {
+    const val = Number(period[roomClassId])
+    if (!isNaN(val) && val > 0) return val
+  }
+  if (roomClassId && period[String(roomClassId)] !== undefined) {
+    const val = Number(period[String(roomClassId)])
+    if (!isNaN(val) && val > 0) return val
+  }
+
+  // 4. Tra cứu theo key ${planCode}_${roomClassCode}_Double hoặc ${planCode}_${roomClassCode}_...
   const key = `${planCode}_${roomClassCode}_Double`
-  if (period && period[key] !== undefined) {
+  if (period[key] !== undefined) {
     return Number(period[key]) || 0
   }
   
   const legacyKey = `${rateCodeMa}_${roomClassCode}_Double`
-  if (period && period[legacyKey] !== undefined) {
+  if (period[legacyKey] !== undefined) {
     return Number(period[legacyKey]) || 0
   }
   
   if (period) {
     const matchingKey = Object.keys(period).find(k => 
       k.startsWith(`${planCode}_${roomClassCode}_`) || 
-      k.startsWith(`${rateCodeMa}_${roomClassCode}_`)
+      k.startsWith(`${rateCodeMa}_${roomClassCode}_`) ||
+      k.includes(`_${roomClassCode}_`)
     )
     if (matchingKey && period[matchingKey] !== undefined) {
       return Number(period[matchingKey]) || 0
     }
   }
-  return 0
+
+  return Number(rcObj.Value || rcObj.Gia || rcObj.price || 0)
 }
 
 async function handleAddTabClick() {
@@ -1786,7 +1814,7 @@ async function openEditModal() {
     shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
       ? JSON.parse(JSON.stringify(tab.shuttleInfo))
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
-    roomAllocations: initRoomAllocations([], tab.checkIn, tab.checkOut),
+    roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
     createdBy: tab.createdBy || '',
@@ -2310,6 +2338,8 @@ async function handleRowNightsChangeInline(room) {
     }
   }
 }
+
+
 
 function getNormalizedCategory(rc, forms) {
   if (!rc || !rc.name) return ''
