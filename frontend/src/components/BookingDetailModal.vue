@@ -13,6 +13,7 @@ import {
   removeBookingChild,
   fetchRoomRateCodes,
   fetchSystemDate,
+  uploadGuestAvatar,
 } from '@/services/booking-service'
 
 import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequestsModal.vue'
@@ -94,6 +95,7 @@ const formGuest = ref({
   id_issue_date: '',
   residence_type: 'Thường trú',
   address: '',
+  avatar: '',
 })
 
 const stayInfo = ref({
@@ -283,6 +285,7 @@ async function loadGuests(autoSelectId = null) {
       id_issue_date: formatDateForInput(p.guest?.id_issue_date) || '',
       residence_type:p.guest?.residence_type ?? 'Thường trú',
       address:       p.guest?.address ?? '',
+      avatar:        p.guest?.avatar ?? '',
       stay_count:    p.guest?.booking_room_guests_count || 1,
       actual_checkout_time: p.actual_checkout_time ? formatTime24h(p.actual_checkout_time) : null,
       actual_arrival_time:  p.actual_arrival_time ? formatTime24h(p.actual_arrival_time) : null,
@@ -417,6 +420,7 @@ function selectGuest(g) {
       id_issue_date: formatDateForInput(g.id_issue_date) || '',
       residence_type: g.residence_type || 'Thường trú',
       address: g.address || '',
+      avatar: g.avatar || '',
     }
     if (g.actual_checkout_time) {
       stayInfo.value.departure_time = g.actual_checkout_time
@@ -449,6 +453,48 @@ function selectChild(c) {
     id_issue_date: '',
     residence_type: 'Thường trú',
     address: '',
+    avatar: '',
+  }
+}
+
+const avatarInput = ref(null)
+
+function triggerAvatarUpload() {
+  if (!isEditingMode.value) {
+    isEditingMode.value = true
+    backupFormGuest.value = JSON.parse(JSON.stringify(formGuest.value))
+  }
+  avatarInput.value?.click()
+}
+
+async function handleAvatarFileChange(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  if (!selectedGuest.value || !selectedGuest.value.id) {
+    uiStore.showToast('Vui lòng chọn khách hàng để tải ảnh đại diện!', 'warning')
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('avatar', file)
+
+  try {
+    uiStore.showToast('Đang tải ảnh lên...', 'info')
+    const res = await uploadGuestAvatar(selectedGuest.value.id, formData)
+    if (res.data?.success) {
+      const avatarUrl = res.data.avatar
+      formGuest.value.avatar = avatarUrl
+      selectedGuest.value.avatar = avatarUrl
+      uiStore.showToast('Tải ảnh đại diện thành công!', 'success')
+      emit('refresh')
+    }
+  } catch (err) {
+    console.error(err)
+    const msg = err.response?.data?.message || err.message || 'Lỗi khi tải ảnh'
+    uiStore.showToast('Lỗi khi tải ảnh: ' + msg, 'error')
+  } finally {
+    if (event.target) event.target.value = ''
   }
 }
 
@@ -576,6 +622,7 @@ async function handleSave() {
         id_issue_date: formGuest.value.id_issue_date,
         residence_type: formGuest.value.residence_type,
         address: formGuest.value.address,
+        avatar: formGuest.value.avatar,
         ...roomFields,
       })
     } else if (selectedChild.value) {
@@ -838,13 +885,15 @@ function parseNumber(val) {
 
               <div class="avatar-block">
                 <div class="avatar-col">
-                  <div class="id-avatar">
-                    <svg width="38" height="38" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <div class="id-avatar overflow-hidden flex items-center justify-center bg-slate-100 rounded-lg cursor-pointer hover:bg-slate-200 transition-colors" @click="triggerAvatarUpload" title="Nhấp để tải/thay đổi ảnh">
+                    <img v-if="formGuest.avatar" :src="formGuest.avatar.startsWith('/') ? formGuest.avatar : '/' + formGuest.avatar" class="w-full h-full object-cover" />
+                    <svg v-else width="38" height="38" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                       <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
                     </svg>
                   </div>
                   <div class="avatar-btns">
-                    <button class="btn-xs" :disabled="!isEditingMode">
+                    <input type="file" ref="avatarInput" @change="handleAvatarFileChange" accept="image/*" class="hidden" />
+                    <button type="button" class="btn-xs cursor-pointer" @click="triggerAvatarUpload">
                       <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                       </svg>Ảnh

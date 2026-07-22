@@ -226,6 +226,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Guests & Children — Epic 7, 13 ---
     Route::get('/guests/search', [\App\Http\Controllers\Api\GuestController::class, 'searchGuests']);
+    Route::post('/guests/{id}/avatar', [\App\Http\Controllers\Api\GuestController::class, 'uploadAvatar']);
     Route::get('/bookings/{bookingId}/guests', [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
     Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests']);
     Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate']);

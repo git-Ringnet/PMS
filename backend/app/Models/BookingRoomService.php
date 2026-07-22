@@ -23,6 +23,7 @@ class BookingRoomService extends Model
         'posted_at',
         'created_by',
         'updated_by',
+        'deleted_at',
     ];
 
     protected static function boot()

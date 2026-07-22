@@ -478,7 +478,7 @@ function getRoomCardStyle(room, floorIdx, roomIdx) {
   }
 
   if (hasBkColor) {
-    const textColor = isLightColor(room.booking_color) ? '#1e293b' : '#ffffff'
+    const textColor = '#1e293b'
     return {
       ...baseStyle,
       background: room.booking_color,

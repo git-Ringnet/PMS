@@ -23,6 +23,7 @@ return new class extends Migration
         Schema::create('guests', function (Blueprint $table) {
             $table->string('id', 50)->primary();
             $table->string('full_name', 200);                  // Họ tên đầy đủ (viết hoa)
+            $table->string('avatar', 255)->nullable();         // Ảnh đại diện
             $table->string('title', 20)->nullable();           // Danh xưng: Mr./Mrs./Ms./Miss/Kid.
             $table->string('id_type', 50)->nullable();         // Loại giấy tờ: CCCD/CMND/Hộ chiếu/...
             $table->string('id_number', 50)->nullable();       // Số CCCD/CMND

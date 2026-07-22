@@ -114,7 +114,7 @@
                     class="w-3.5 h-3.5"
                   />
                   <span class="text-[11px] text-slate-600 font-mono flex-1">{{ formatDate(svc.service_date) }}</span>
-                  <span class="text-[11px] text-slate-700 font-semibold">x{{ svc.quantity }}</span>
+                  <span class="text-[11px] text-slate-700 font-semibold">x{{ parseFloat(svc.quantity) }}</span>
                   <span class="text-[11px] text-sky-700 font-bold ml-2">{{ Number(svc.rate).toLocaleString('en-US') }} VND</span>
                   <span class="text-[10px] text-slate-400 ml-2">({{ Number(svc.quantity * svc.rate).toLocaleString('en-US') }})</span>
                   <span v-if="svc.is_posted === 1" class="ml-2 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Đã post</span>

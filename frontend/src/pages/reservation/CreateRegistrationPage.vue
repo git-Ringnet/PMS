@@ -545,15 +545,44 @@ function getRoomDisplayServices(room) {
   
   // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) - chỉ hiển thị nếu DB chưa có bản ghi tiền phòng thực tế
   if (!hasDbRoomCharges) {
-    list.push({
-      id: `room-charge-${room.id}`,
-      service_date: room.checkIn,
-      service_name: 'Dịch vụ phòng nghỉ',
-      service_code: 'ROOM_CHARGE',
-      quantity: 1,
-      rate: room.price,
-      is_room: true
-    })
+    const checkIn = room.checkIn
+    const nights = Number(room.nights) || 1
+    if (checkIn) {
+      for (let i = 0; i < nights; i++) {
+        const parts = checkIn.split('-')
+        let curr = new Date()
+        if (parts.length === 3) {
+          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+        } else {
+          curr = new Date(checkIn)
+        }
+        curr.setDate(curr.getDate() + i)
+        const yyyy = curr.getFullYear()
+        const mm = String(curr.getMonth() + 1).padStart(2, '0')
+        const dd = String(curr.getDate()).padStart(2, '0')
+        const dStr = `${yyyy}-${mm}-${dd}`
+        
+        list.push({
+          id: `room-charge-${room.id}-${i}`,
+          service_date: dStr,
+          service_name: 'Dịch vụ phòng nghỉ',
+          service_code: 'ROOM_CHARGE',
+          quantity: 1,
+          rate: room.price,
+          is_room: true
+        })
+      }
+    } else {
+      list.push({
+        id: `room-charge-${room.id}`,
+        service_date: new Date().toISOString().split('T')[0],
+        service_name: 'Dịch vụ phòng nghỉ',
+        service_code: 'ROOM_CHARGE',
+        quantity: 1,
+        rate: room.price,
+        is_room: true
+      })
+    }
   }
   // 2. Các dịch vụ bổ sung
   if (room.services && room.services.length > 0) {
@@ -3655,37 +3684,8 @@ defineExpose({
               </tr>
             </thead>
             <tbody class="font-semibold text-gray-900 select-text">
-              <!-- Collapsible Section: Tình trạng Đăng Ký (3) -->
-              <tr 
-                class="bg-slate-100/60 border-b border-slate-200 font-bold h-9 text-gray-900 cursor-pointer select-none"
-                @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus"
-              >
-                <td class="p-2 border-r border-slate-200 text-center" @click.stop>
-                  <button 
-                    @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus" 
-                    class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
-                    style="font-size: 13px; line-height: 1;"
-                  >
-                    {{ collapsedSections.registrationStatus ? '+' : '−' }}
-                  </button>
-                </td>
-                <td class="p-2 border-r border-slate-200 text-center" @click.stop>
-                  <input 
-                    type="checkbox" 
-                    :checked="activeTab.rooms.length > 0 && activeTab.rooms.every(r => selectedRows.includes(r.id))" 
-                    @change="e => handleSelectAllInGroup(activeTab.rooms, e.target.checked)" 
-                  />
-                </td>
-                <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2">
-                  <div class="flex items-center gap-2.5">
-                    <span class="text-gray-900 text-xs font-bold uppercase tracking-wider">Danh sách phòng ({{ roomsTotalSummary.count }})</span>
-                  </div>
-                </td>
-                <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
-              </tr>
-
               <!-- Nested Rows of Rooms -->
-              <template v-if="!collapsedSections.registrationStatus">
+              <template v-if="true">
                 <!-- ===== MODE A: No checked-in rooms → flat group by room type ===== -->
                 <template v-if="!hasStatusGroups">
                   <template v-for="group in groupedRooms" :key="group.typeName">
@@ -4136,7 +4136,7 @@ defineExpose({
                         <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
                         <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
                         <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
-                          <div class="max-w-[750px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
+                          <div class="max-w-[850px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
                             <table class="w-full text-left border-collapse text-[11px] table-fixed">
                               <colgroup>
                                 <col style="width: 100px;" />
@@ -4145,6 +4145,7 @@ defineExpose({
                                 <col style="width: 110px;" />
                                 <col style="width: 70px;" />
                                 <col style="width: 100px;" />
+                                <col style="width: 110px;" />
                                 <col style="width: 80px;" />
                               </colgroup>
                               <thead>
@@ -4154,7 +4155,8 @@ defineExpose({
                                   <th class="p-2 border-r border-slate-200">Mã Giá Phòng</th>
                                   <th class="p-2 border-r border-slate-200">Tăng/giảm giá</th>
                                   <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
-                                  <th class="p-2 border-r border-slate-200 text-right">Giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-right">Đơn giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-right">Thành tiền</th>
                                   <th class="p-2 text-center">GIT/FIT</th>
                                 </tr>
                               </thead>
@@ -4170,6 +4172,7 @@ defineExpose({
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
                                   <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
                                   <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
                                     <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
                                   </td>
@@ -4675,13 +4678,15 @@ defineExpose({
                                       <col style="width: 200px;" />
                                       <col style="width: 70px;" />
                                       <col style="width: 100px;" />
+                                      <col style="width: 110px;" />
                                     </colgroup>
                                     <thead>
                                       <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                                         <th class="p-2 border-r border-slate-200">Ngày</th>
                                         <th class="p-2 border-r border-slate-200">Dịch vụ</th>
                                         <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
-                                        <th class="p-2 text-right">Giá</th>
+                                        <th class="p-2 border-r border-slate-200 text-right">Đơn giá</th>
+                                        <th class="p-2 text-right">Thành tiền</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -4693,7 +4698,8 @@ defineExpose({
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                         <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
-                                        <td class="p-2 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                        <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                        <td class="p-2 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                       </tr>
                                     </tbody>
                                   </table>
