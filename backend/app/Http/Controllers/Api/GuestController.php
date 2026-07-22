@@ -218,6 +218,9 @@ class GuestController extends Controller
                 ]
             );
 
+            // Cập nhật lại số lượng adults trên booking_rooms
+            $room->update(['adults' => max(1, $room->guests()->count())]);
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -337,6 +340,31 @@ class GuestController extends Controller
             'entry_purpose', 'border_gate', 'occupation', 'note',
         ]));
 
+        // Cập nhật thông tin vào bảng pivot booking_room_guests cho từng khách cụ thể
+        $pivotData = [];
+        if ($request->has('arrival_date'))   $pivotData['actual_arrival_date']  = $request->arrival_date;
+        if ($request->has('arrival_time'))   $pivotData['actual_arrival_time']  = $request->arrival_time;
+        if ($request->has('departure_date')) $pivotData['actual_checkout_date'] = $request->departure_date;
+        if ($request->has('departure_time')) $pivotData['actual_checkout_time'] = $request->departure_time;
+        if (!empty($pivotData)) {
+            $pivot->update($pivotData);
+        }
+
+        // Cập nhật các trường thông tin lưu trú của BookingRoom lên MySQL CSDL
+        $room = BookingRoom::find($roomId);
+        if ($room) {
+            $roomData = [];
+            if ($request->has('arrival_date'))   $roomData['arrival_date']   = $request->arrival_date;
+            if ($request->has('departure_date')) $roomData['departure_date'] = $request->departure_date;
+            if ($request->has('arrival_time'))   $roomData['arrival_time']   = $request->arrival_time;
+            if ($request->has('departure_time')) $roomData['departure_time'] = $request->departure_time;
+            if ($request->has('rate'))           $roomData['rate']           = $request->rate;
+            if ($request->has('extra_bed_qty'))  $roomData['extra_bed_qty']  = $request->extra_bed_qty;
+            if ($request->has('extra_bed_rate')) $roomData['extra_bed_rate'] = $request->extra_bed_rate;
+            if (!empty($roomData)) {
+                $room->update($roomData);
+            }
+        }
 
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
     }
@@ -348,7 +376,21 @@ class GuestController extends Controller
             ->where('guest_id', $guestId)
             ->delete();
 
-        return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng.']);
+        // Xóa hẳn bản ghi trong bảng guests nếu khách không còn gán ở phòng nào khác
+        $otherCount = BookingRoomGuest::where('guest_id', $guestId)->count();
+        if ($otherCount === 0) {
+            $guest = Guest::find($guestId);
+            if ($guest) {
+                $guest->delete();
+            }
+        }
+
+        $room = BookingRoom::find($roomId);
+        if ($room) {
+            $room->update(['adults' => max(1, $room->guests()->count())]);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng và cơ sở dữ liệu.']);
     }
 
     // GET /guests/search?q=keyword — Tìm khách để kế thừa thông tin
@@ -409,6 +451,13 @@ class GuestController extends Controller
         // Auto-generate breakfast detail rows cho mỗi ngày nếu có room
         if ($request->booking_room_id) {
             $this->generateBreakfastDetails($child);
+            $r = BookingRoom::find($request->booking_room_id);
+            if ($r) {
+                $r->update([
+                    'children_qty' => $r->children()->where('age_group', 'child')->count(),
+                    'babies'       => $r->children()->where('age_group', 'baby')->count(),
+                ]);
+            }
         }
 
         return response()->json([
@@ -440,8 +489,19 @@ class GuestController extends Controller
     public function removeChild($bookingId, $childId)
     {
         $child = BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
+        $roomId = $child->booking_room_id;
         $child->breakfastDetails()->delete();
         $child->delete();
+
+        if ($roomId) {
+            $r = BookingRoom::find($roomId);
+            if ($r) {
+                $r->update([
+                    'children_qty' => $r->children()->where('age_group', 'child')->count(),
+                    'babies'       => $r->children()->where('age_group', 'baby')->count(),
+                ]);
+            }
+        }
 
         return response()->json(['success' => true, 'message' => 'Đã xóa trẻ em.']);
     }

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import TimePicker24h from '@/components/TimePicker24h.vue'
 import CopyModal from './components/CopyModal.vue'
 import UpgradeModal from './components/UpgradeModal.vue'
 import DepositModal from './components/DepositModal.vue'
@@ -478,8 +479,8 @@ const columns = ref([
   { key: 'extraBedPrice', label: 'Giá thêm giường', visible: true, width: 'w-[115px]', right: true },
   { key: 'hourly', label: 'Ở theo giờ', visible: true, width: 'w-[85px]', center: true },
   { key: 'specialRequests', label: 'Yêu cầu đặc biệt', visible: true, width: 'w-[125px]', center: true },
-  { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[75px]', center: true },
-  { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[75px]', center: true },
+  { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[90px]', center: true },
+  { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[90px]', center: true },
   { key: 'isPreassigned', label: 'Đặt trước', visible: true, width: 'w-[80px]', center: true },
   { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
   { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
@@ -506,6 +507,15 @@ const tableWidth = computed(() => {
   })
   return `${total}px`
 })
+
+const time24hOptions = [
+  '00:00', '00:30', '01:00', '01:30', '02:00', '02:30', '03:00', '03:30',
+  '04:00', '04:30', '05:00', '05:30', '06:00', '06:30', '07:00', '07:30',
+  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
+  '20:00', '20:30', '21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '23:59'
+]
 
 const showTableColumnSelector = ref(false)
 const draggedColKey = ref(null)
@@ -4032,20 +4042,20 @@ defineExpose({
                           </button>
                         </template>
                         <template v-else-if="col.key === 'arrivalTime'">
-                          <input 
+                          <TimePicker24h 
                             v-if="isEditing" 
-                            type="text" 
                             v-model="room.arrivalTime" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                            default-time="14:00"
+                            :disabled="!isEditing" 
                           />
                           <span v-else>{{ room.arrivalTime || '14:00' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hoursOut'">
-                          <input 
+                          <TimePicker24h 
                             v-if="isEditing" 
-                            type="text" 
                             v-model="room.hoursOut" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                            default-time="12:00"
+                            :disabled="!isEditing" 
                           />
                           <span v-else>{{ room.hoursOut || '12:00' }}</span>
                         </template>
@@ -4561,20 +4571,20 @@ defineExpose({
                                   </button>
                                 </template>
                                 <template v-else-if="col.key === 'arrivalTime'">
-                                  <input 
+                                  <TimePicker24h 
                                     v-if="isEditing" 
-                                    type="text" 
                                     v-model="room.arrivalTime" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                                    default-time="14:00"
+                                    :disabled="!isEditing" 
                                   />
                                   <span v-else>{{ room.arrivalTime || '14:00' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hoursOut'">
-                                  <input 
+                                  <TimePicker24h 
                                     v-if="isEditing" 
-                                    type="text" 
                                     v-model="room.hoursOut" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                                    default-time="12:00"
+                                    :disabled="!isEditing" 
                                   />
                                   <span v-else>{{ room.hoursOut || '12:00' }}</span>
                                 </template>

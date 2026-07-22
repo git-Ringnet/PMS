@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import {
@@ -8,9 +8,17 @@ import {
   addBookingChild,
   fetchBookingChildren,
   updateBookingRoomGuest,
+  updateBookingChild,
   removeRoomGuest,
   removeBookingChild,
+  fetchRoomRateCodes,
+  fetchSystemDate,
 } from '@/services/booking-service'
+
+import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequestsModal.vue'
+import ChildBreakfastModal from '@/pages/reservation/components/ChildBreakfastModal.vue'
+import ExtraBedModal from '@/pages/reservation/components/ExtraBedModal.vue'
+import TimePicker24h from '@/components/TimePicker24h.vue'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -21,15 +29,48 @@ const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
 
+// ── Dropdowns Catalog ──────────────────────────────
+const titlesList = ['Mr.', 'Ms.', 'Mrs.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
+
+const nationalitiesList = [
+  { code: 'VN', label: 'VNM - Vietnam ( Việt Nam )' },
+  { code: 'US', label: 'USA - United States ( Mỹ )' },
+  { code: 'CN', label: 'CHN - China ( Trung Quốc )' },
+  { code: 'KR', label: 'KOR - Korea ( Hàn Quốc )' },
+  { code: 'JP', label: 'JPN - Japan ( Nhật Bản )' },
+  { code: 'FR', label: 'FRA - France ( Pháp )' },
+  { code: 'DE', label: 'DEU - Germany ( Đức )' },
+  { code: 'GB', label: 'GBR - United Kingdom ( Anh )' },
+  { code: 'AU', label: 'AUS - Australia ( Úc )' },
+  { code: 'SG', label: 'SGP - Singapore' },
+  { code: 'TH', label: 'THA - Thailand ( Thái Lan )' },
+  { code: 'MY', label: 'MYS - Malaysia' },
+  { code: 'RU', label: 'RUS - Russia ( Nga )' },
+]
+
 // ── Data ──────────────────────────────────────────
 const adults   = ref([])
 const children = ref([])
 const babies   = ref([])
 const loading  = ref(false)
+const submitting = ref(false)
 
-// Active guest for detail view
+// Active selection
 const selectedGuest = ref(null)
 const selectedChild = ref(null)
+
+// Sub-modals state
+const showSpecialRequestsModal = ref(false)
+const showChildBreakfastModal  = ref(false)
+const showExtraBedModal        = ref(false)
+
+// Custom 24h TimePicker state
+const showTimePicker = ref(false)
+const timePickerRef  = ref(null)
+
+// Edit mode state (Readonly / Vùng xám when false)
+const isEditingMode = ref(false)
+const backupFormGuest = ref(null)
 
 // Add-form inline states
 const addingAdult  = ref(false)
@@ -38,18 +79,17 @@ const addingBaby   = ref(false)
 const newAdultName = ref('')
 const newChildName = ref('')
 const newBabyName  = ref('')
-const submitting   = ref(false)
 
-// Form fields state (linked directly to backend guest data)
+// Form fields state
 const formGuest = ref({
-  title: '',
+  title: 'Mr.',
   name: '',
-  nationality: '',
+  nationality: 'VN',
   dob: '',
   email: '',
   phone: '',
-  stay_count: '1',
-  id_type: 'Passport - Hộ chiếu',
+  stay_count: 1,
+  id_type: 'CCCD',
   id_number: '',
   id_issue_date: '',
   residence_type: 'Thường trú',
@@ -77,11 +117,146 @@ const pricingInfo = ref({
 })
 
 // ── Computed ───────────────────────────────────────
-const bookingRoomId = computed(() => props.room.booking_room_id)
+const bookingRoomId = computed(() => props.room.booking_room_id || props.room.id)
 const bookingId     = computed(() => props.room.booking_id)
 
+const rateCodes = ref([])
+const systemDate = ref(new Date().toISOString().split('T')[0])
+
+async function loadSystemDate() {
+  try {
+    const res = await fetchSystemDate()
+    if (res.data && res.data.success && res.data.data) {
+      systemDate.value = res.data.data.system_date
+    }
+  } catch (err) {
+    console.error('loadSystemDate error:', err)
+  }
+}
+
+async function loadRateCodes() {
+  try {
+    const res = await fetchRoomRateCodes()
+    const list = res.data?.data || res.data || []
+    rateCodes.value = list
+  } catch (e) {
+    console.error('Failed to load rate codes in BookingDetailModal', e)
+  }
+}
+
+function onRateCodeChange() {
+  const selectedCode = pricingInfo.value.rate_code
+  const found = rateCodes.value.find(rc => (rc.code || rc.Ma) === selectedCode)
+  if (found) {
+    const newPrice = found.price || found.price_default || found.GiaPhuong
+    if (newPrice) {
+      pricingInfo.value.rate = formatNumber(newPrice)
+    }
+  }
+}
+
+function onExtraBedSaved(data) {
+  if (data) {
+    if (data.totalQuantity !== undefined) {
+      pricingInfo.value.extra_bed_qty = data.totalQuantity
+    }
+    if (data.totalRate !== undefined) {
+      pricingInfo.value.extra_bed_price = formatNumber(data.totalRate)
+    }
+  }
+}
+
+const formattedRoomForModals = computed(() => ({
+  ...props.room,
+  bookingRoomId: bookingRoomId.value,
+  booking_room_id: bookingRoomId.value,
+  bookingId: bookingId.value,
+  booking_id: bookingId.value,
+  roomNumber: props.room.room_number || props.room.roomNumber || '',
+  type: props.room.room_type_name || props.room.room_type || '',
+  arrival_date: stayInfo.value.arrival_date || props.room.arrival_date,
+  departure_date: stayInfo.value.departure_date || props.room.departure_date,
+  arrivalDate: stayInfo.value.arrival_date || props.room.arrival_date,
+  departureDate: stayInfo.value.departure_date || props.room.departure_date,
+  extraBedQty: Number(pricingInfo.value.extra_bed_qty || 0),
+  extraBedPrice: parseNumber(pricingInfo.value.extra_bed_price) || 300000,
+  rate: props.room.rate,
+}))
+
+// Custom 24h TimePicker Computed & Functions
+const currentHour = computed(() => {
+  if (!stayInfo.value.departure_time) return 12
+  const parts = stayInfo.value.departure_time.split(':')
+  return parseInt(parts[0], 10) || 0
+})
+
+const currentMinute = computed(() => {
+  if (!stayInfo.value.departure_time) return 0
+  const parts = stayInfo.value.departure_time.split(':')
+  return parseInt(parts[1], 10) || 0
+})
+
+function selectHour(h) {
+  const hh = String(h).padStart(2, '0')
+  const mm = String(currentMinute.value).padStart(2, '0')
+  stayInfo.value.departure_time = `${hh}:${mm}`
+}
+
+function selectMinute(m) {
+  const hh = String(currentHour.value).padStart(2, '0')
+  const mm = String(m).padStart(2, '0')
+  stayInfo.value.departure_time = `${hh}:${mm}`
+  showTimePicker.value = false
+}
+
+// Click outside to close 24h TimePicker (Use Capture Phase true to bypass @click.stop)
+function handleGlobalClick(e) {
+  if (!showTimePicker.value) return
+  const el = timePickerRef.value || document.querySelector('.time-picker-rel')
+  if (el && !el.contains(e.target)) {
+    showTimePicker.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('click', handleGlobalClick, true)
+  loadRateCodes()
+  loadSystemDate()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', handleGlobalClick, true)
+})
+
+// Helper: Calculate next incremental default name (Guest 1, Guest 2, Child 1...)
+function getNextDefaultName(type) {
+  let list = []
+  let prefix = 'Guest'
+  if (type === 'adult') {
+    list = adults.value
+    prefix = 'Guest'
+  } else if (type === 'child') {
+    list = children.value
+    prefix = 'Child'
+  } else if (type === 'baby') {
+    list = babies.value
+    prefix = 'Baby'
+  }
+
+  let maxNum = 0
+  const regex = new RegExp(`^${prefix}\\s+(\\d+)$`, 'i')
+  list.forEach(item => {
+    const match = item.name.match(regex)
+    if (match) {
+      const num = parseInt(match[1], 10)
+      if (num > maxNum) maxNum = num
+    }
+  })
+  return `${prefix} ${maxNum + 1}`
+}
+
 // ── Fetch Guests ───────────────────────────────────
-async function loadGuests() {
+async function loadGuests(autoSelectId = null) {
   if (!bookingRoomId.value) return
   loading.value = true
   try {
@@ -100,46 +275,61 @@ async function loadGuests() {
       pivot_id:      p.id,
       title:         p.guest?.title ?? 'Mr.',
       nationality:   p.guest?.nationality_code ?? 'VN',
-      dob:           formatDate(p.guest?.dob) || '',
+      dob:           formatDateForInput(p.guest?.dob) || '',
       phone:         p.guest?.phone ?? '',
       email:         p.guest?.email ?? '',
       id_type:       p.guest?.id_type ?? 'CCCD',
       id_number:     p.guest?.id_number || p.guest?.passport_number || '',
-      id_issue_date: formatDate(p.guest?.id_issue_date) || '',
+      id_issue_date: formatDateForInput(p.guest?.id_issue_date) || '',
       residence_type:p.guest?.residence_type ?? 'Thường trú',
       address:       p.guest?.address ?? '',
       stay_count:    p.guest?.booking_room_guests_count || 1,
+      actual_checkout_time: p.actual_checkout_time ? formatTime24h(p.actual_checkout_time) : null,
+      actual_arrival_time:  p.actual_arrival_time ? formatTime24h(p.actual_arrival_time) : null,
+      actual_checkout_date: p.actual_checkout_date ? formatDateForInput(p.actual_checkout_date) : null,
+      actual_arrival_date:  p.actual_arrival_date ? formatDateForInput(p.actual_arrival_date) : null,
     }))
 
     const rawChildren = cRes.data?.data ?? []
-    // Filter strictly by booking_room_id so children from other rooms in the same booking don't leak in!
     const roomChildren = rawChildren.filter(c =>
       !c.booking_room_id || String(c.booking_room_id) === String(bookingRoomId.value)
     )
 
-    let childCounter = 1
     children.value = roomChildren
       .filter(c => c.age_group === 'child')
       .map(c => ({
         id: c.id,
-        name: (c.full_name && !c.full_name.startsWith('Child')) ? c.full_name : `Child ${childCounter++}`,
+        name: c.full_name || 'Child',
+        title: c.title || 'Mr.',
+        dob: formatDateForInput(c.dob) || '',
+        nationality: c.nationality_code || 'VN',
         age_group: 'child',
       }))
 
-    let babyCounter = 1
     babies.value = roomChildren
       .filter(c => c.age_group === 'baby')
       .map(c => ({
         id: c.id,
-        name: (c.full_name && !c.full_name.startsWith('Baby')) ? c.full_name : `Baby ${babyCounter++}`,
+        name: c.full_name || 'Baby',
+        title: c.title || 'Mr.',
+        dob: formatDateForInput(c.dob) || '',
+        nationality: c.nationality_code || 'VN',
         age_group: 'baby',
       }))
 
     // Dynamically update occupants count string
     stayInfo.value.occupants_str = `${adults.value.length} / ${children.value.length} / ${babies.value.length}`
 
-    // Select primary guest by default or first guest
-    if (adults.value.length) {
+    // Handle Selection
+    if (autoSelectId) {
+      const foundAdult = adults.value.find(a => String(a.id) === String(autoSelectId))
+      if (foundAdult) {
+        selectGuest(foundAdult)
+      } else {
+        const foundChild = [...children.value, ...babies.value].find(c => String(c.id) === String(autoSelectId))
+        if (foundChild) selectChild(foundChild)
+      }
+    } else if (!selectedGuest.value && !selectedChild.value && adults.value.length) {
       selectGuest(adults.value.find(a => a.is_primary) ?? adults.value[0])
     }
   } catch (e) {
@@ -152,10 +342,10 @@ async function loadGuests() {
 watch(() => props.room, (newRoom) => {
   if (newRoom) {
     stayInfo.value = {
-      arrival_date: formatDate(newRoom.arrival_date) || '',
-      arrival_time: newRoom.check_in_time || '14:00',
-      departure_date: formatDate(newRoom.departure_date) || '',
-      departure_time: newRoom.check_out_time || '12:00',
+      arrival_date: formatDateForInput(newRoom.arrival_date) || '',
+      arrival_time: formatTime24h(newRoom.check_in_time) || '14:00',
+      departure_date: formatDateForInput(newRoom.departure_date) || '',
+      departure_time: formatTime24h(newRoom.check_out_time) || '12:00',
       nights: newRoom.nights || newRoom.ActutalNumOfDays || 1,
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
       breakfast: newRoom.breakfast !== false,
@@ -167,12 +357,48 @@ watch(() => props.room, (newRoom) => {
       rate: formatNumber(newRoom.rate) || '0',
       rate_code: newRoom.rate_code || 'RACK...',
       discount_type: 'Tăng/Giảm giá',
-      extra_bed: 'Không thêm',
-      extra_bed_price: '0',
+      extra_bed_qty: newRoom.extra_bed_qty ?? (newRoom.extra_bed && newRoom.extra_bed !== 'Không thêm' ? 1 : 0),
+      extra_bed_price: formatNumber(newRoom.extra_bed_rate || newRoom.extra_bed_price || 0),
     }
   }
   loadGuests()
 }, { immediate: true })
+
+const UNIT_EXTRA_BED_PRICE = 300000
+
+function handleExtraBedQtyChange(delta) {
+  let qty = Number(pricingInfo.value.extra_bed_qty || 0) + delta
+  if (qty < 0) qty = 0
+  pricingInfo.value.extra_bed_qty = qty
+  if (qty === 0) {
+    pricingInfo.value.extra_bed_price = '0'
+  } else {
+    pricingInfo.value.extra_bed_price = formatNumber(qty * UNIT_EXTRA_BED_PRICE)
+  }
+}
+
+function onExtraBedQtyInput(e) {
+  let qty = parseInt(e.target.value, 10)
+  if (isNaN(qty) || qty < 0) qty = 0
+  pricingInfo.value.extra_bed_qty = qty
+  if (qty === 0) {
+    pricingInfo.value.extra_bed_price = '0'
+  } else {
+    pricingInfo.value.extra_bed_price = formatNumber(qty * UNIT_EXTRA_BED_PRICE)
+  }
+}
+
+function handleExtraBedPriceChange(delta) {
+  let current = parseNumber(pricingInfo.value.extra_bed_price) || 0
+  current += delta
+  if (current < 0) current = 0
+  pricingInfo.value.extra_bed_price = formatNumber(current)
+}
+
+function onExtraBedPriceInput(e) {
+  let num = parseNumber(e.target.value) || 0
+  pricingInfo.value.extra_bed_price = formatNumber(num)
+}
 
 function selectGuest(g) {
   selectedGuest.value = g
@@ -182,15 +408,27 @@ function selectGuest(g) {
       title: g.title || 'Mr.',
       name: g.name ? g.name.toUpperCase() : '',
       nationality: g.nationality || 'VN',
-      dob: g.dob || '',
+      dob: formatDateForInput(g.dob) || '',
       email: g.email || '',
       phone: g.phone || '',
-      stay_count: String(g.stay_count || 1),
-      id_type: g.id_type || 'Passport - Hộ chiếu',
+      stay_count: Number(g.stay_count || 1),
+      id_type: g.id_type || 'CCCD',
       id_number: g.id_number || '',
-      id_issue_date: g.id_issue_date || '',
+      id_issue_date: formatDateForInput(g.id_issue_date) || '',
       residence_type: g.residence_type || 'Thường trú',
       address: g.address || '',
+    }
+    if (g.actual_checkout_time) {
+      stayInfo.value.departure_time = g.actual_checkout_time
+    }
+    if (g.actual_arrival_time) {
+      stayInfo.value.arrival_time = g.actual_arrival_time
+    }
+    if (g.actual_checkout_date) {
+      stayInfo.value.departure_date = g.actual_checkout_date
+    }
+    if (g.actual_arrival_date) {
+      stayInfo.value.arrival_date = g.actual_arrival_date
     }
   }
 }
@@ -198,72 +436,133 @@ function selectGuest(g) {
 function selectChild(c) {
   selectedChild.value = c
   selectedGuest.value = null
-  formGuest.value.name = c.name ? c.name.toUpperCase() : ''
+  formGuest.value = {
+    title: c.title || 'Mr.',
+    name: c.name ? c.name.toUpperCase() : '',
+    nationality: c.nationality || 'VN',
+    dob: formatDateForInput(c.dob) || '',
+    email: '',
+    phone: '',
+    stay_count: 1,
+    id_type: 'CCCD',
+    id_number: '',
+    id_issue_date: '',
+    residence_type: 'Thường trú',
+    address: '',
+  }
 }
 
 // ── Actions ────────────────────────────────────────
 async function doAddAdult() {
-  if (!newAdultName.value.trim()) return
+  const nameToAdd = newAdultName.value.trim() || getNextDefaultName('adult')
   submitting.value = true
   try {
+    let newId = null
     if (bookingRoomId.value) {
-      await addRoomGuest(bookingRoomId.value, {
-        full_name: newAdultName.value.trim(),
+      const res = await addRoomGuest(bookingRoomId.value, {
+        full_name: nameToAdd,
         nationality_code: 'VN',
       })
-    } else {
-      adults.value.push({
-        id: String(Date.now()),
-        name: newAdultName.value.trim(),
-        is_primary: false,
-      })
+      newId = res.data?.data?.guest_id || res.data?.data?.id
     }
     newAdultName.value = ''
     addingAdult.value = false
-    uiStore.showToast('Đã thêm người lớn thành công.', 'success')
-    await loadGuests()
+    uiStore.showToast(`Đã thêm người lớn "${nameToAdd}".`, 'success')
+    await loadGuests(newId)
+    isEditingMode.value = true
+    backupFormGuest.value = JSON.parse(JSON.stringify(formGuest.value))
     emit('refresh')
   } catch (e) {
-    uiStore.showToast('Đã thêm người lớn.', 'success')
+    uiStore.showToast('Lỗi khi thêm người lớn.', 'error')
   } finally {
     submitting.value = false
   }
 }
 
 async function doAddChild(ageGroup) {
-  let name = (ageGroup === 'child' ? newChildName.value : newBabyName.value).trim()
-  if (!name) {
-    name = ageGroup === 'child' ? `Child ${children.value.length + 1}` : `Baby ${babies.value.length + 1}`
-  }
+  const isChild = ageGroup === 'child'
+  const inputVal = isChild ? newChildName.value : newBabyName.value
+  const nameToAdd = inputVal.trim() || getNextDefaultName(ageGroup)
+  
   submitting.value = true
   try {
+    let newId = null
     if (bookingId.value) {
-      await addBookingChild(bookingId.value, {
+      const res = await addBookingChild(bookingId.value, {
         booking_room_id: bookingRoomId.value,
-        full_name: name,
+        full_name: nameToAdd,
         age_group: ageGroup,
       })
+      newId = res.data?.data?.id
     }
-    if (ageGroup === 'child') {
+    if (isChild) {
       newChildName.value = ''
       addingChild.value = false
     } else {
       newBabyName.value = ''
       addingBaby.value = false
     }
-    uiStore.showToast(`Đã thêm ${ageGroup === 'child' ? 'trẻ em' : 'em bé'}.`, 'success')
-    await loadGuests()
+    uiStore.showToast(`Đã thêm ${isChild ? 'trẻ em' : 'em bé'} "${nameToAdd}".`, 'success')
+    await loadGuests(newId)
+    isEditingMode.value = true
+    backupFormGuest.value = JSON.parse(JSON.stringify(formGuest.value))
     emit('refresh')
   } catch (e) {
-    uiStore.showToast(`Đã thêm ${ageGroup === 'child' ? 'trẻ em' : 'em bé'}.`, 'success')
+    uiStore.showToast(`Lỗi khi thêm ${isChild ? 'trẻ em' : 'em bé'}.`, 'error')
   } finally {
     submitting.value = false
   }
 }
 
+const backupStayInfo = ref(null)
+const backupPricingInfo = ref(null)
+
+function startEditing() {
+  isEditingMode.value = true
+  backupFormGuest.value   = JSON.parse(JSON.stringify(formGuest.value))
+  backupStayInfo.value    = JSON.parse(JSON.stringify(stayInfo.value))
+  backupPricingInfo.value = JSON.parse(JSON.stringify(pricingInfo.value))
+  uiStore.showToast('Vùng chỉnh sửa đã được mở. Vui lòng cập nhật thông tin và bấm Lưu.', 'info')
+}
+
+function cancelEditing() {
+  if (backupFormGuest.value) {
+    formGuest.value = JSON.parse(JSON.stringify(backupFormGuest.value))
+  }
+  if (backupStayInfo.value) {
+    stayInfo.value = JSON.parse(JSON.stringify(backupStayInfo.value))
+  }
+  if (backupPricingInfo.value) {
+    pricingInfo.value = JSON.parse(JSON.stringify(backupPricingInfo.value))
+  }
+  isEditingMode.value = false
+  showTimePicker.value = false
+  uiStore.showToast('Đã hủy bỏ thay đổi.', 'info')
+}
+
 async function handleSave() {
+  if (!isEditingMode.value) return
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận lưu thông tin',
+    message: 'Bạn có chắc chắn muốn lưu các thay đổi thông tin khách hàng này không?',
+    confirmText: 'Lưu ngay',
+    cancelText: 'Hủy',
+  })
+  if (!confirmed) return
+
   submitting.value = true
   try {
+    const roomFields = {
+      arrival_date: stayInfo.value.arrival_date,
+      arrival_time: stayInfo.value.arrival_time,
+      departure_date: stayInfo.value.departure_date,
+      departure_time: stayInfo.value.departure_time,
+      rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
+      extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
+      extra_bed_rate: pricingInfo.value.extra_bed_price ? Number(String(pricingInfo.value.extra_bed_price).replace(/\D/g, '')) : 0,
+    }
+
     if (selectedGuest.value && bookingRoomId.value) {
       await updateBookingRoomGuest(bookingRoomId.value, selectedGuest.value.id, {
         full_name: formGuest.value.name,
@@ -277,13 +576,24 @@ async function handleSave() {
         id_issue_date: formGuest.value.id_issue_date,
         residence_type: formGuest.value.residence_type,
         address: formGuest.value.address,
+        ...roomFields,
+      })
+    } else if (selectedChild.value) {
+      await updateBookingChild(selectedChild.value.id, {
+        full_name: formGuest.value.name,
+        title: formGuest.value.title,
+        nationality_code: formGuest.value.nationality,
+        dob: formGuest.value.dob,
+        ...roomFields,
       })
     }
+    isEditingMode.value = false
+    showTimePicker.value = false
     uiStore.showToast('Đã lưu thông tin khách thành công!', 'success')
-    await loadGuests()
+    await loadGuests(selectedGuest.value?.id || selectedChild.value?.id)
     emit('refresh')
   } catch (e) {
-    uiStore.showToast('Đã lưu thông tin thành công!', 'success')
+    uiStore.showToast('Đã xảy ra lỗi khi lưu thông tin.', 'error')
   } finally {
     submitting.value = false
   }
@@ -297,50 +607,94 @@ async function handleDeleteGuest() {
   const targetName = selectedGuest.value ? selectedGuest.value.name : selectedChild.value.name
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận xóa khách',
-    message: `Bạn có chắc chắn muốn xóa khách "${targetName}" không?`,
-    confirmText: 'Xóa',
+    message: `Bạn có chắc chắn muốn xóa khách "${targetName}" khỏi phòng này và CSDL không?`,
+    confirmText: 'Xóa ngay',
     cancelText: 'Hủy',
   })
   if (!confirmed) return
 
+  submitting.value = true
   try {
     if (selectedGuest.value) {
-      adults.value = adults.value.filter(a => a.id !== selectedGuest.value.id)
-      if (bookingRoomId.value) await removeRoomGuest(bookingRoomId.value, selectedGuest.value.id)
+      const guestIdToDelete = selectedGuest.value.id
+      adults.value = adults.value.filter(a => a.id !== guestIdToDelete)
+      if (bookingRoomId.value) await removeRoomGuest(bookingRoomId.value, guestIdToDelete)
     } else if (selectedChild.value) {
-      children.value = children.value.filter(c => c.id !== selectedChild.value.id)
-      babies.value = babies.value.filter(b => b.id !== selectedChild.value.id)
-      if (bookingId.value) await removeBookingChild(bookingId.value, selectedChild.value.id)
+      const childIdToDelete = selectedChild.value.id
+      children.value = children.value.filter(c => c.id !== childIdToDelete)
+      babies.value = babies.value.filter(b => b.id !== childIdToDelete)
+      if (bookingId.value) await removeBookingChild(bookingId.value, childIdToDelete)
     }
-    uiStore.showToast('Đã xóa khách thành công!', 'success')
+    selectedGuest.value = null
+    selectedChild.value = null
+    isEditingMode.value = false
+    uiStore.showToast('Đã xóa khách thành công khỏi phòng và CSDL!', 'success')
     await loadGuests()
     emit('refresh')
   } catch (e) {
-    uiStore.showToast('Đã xóa khách thành công!', 'success')
+    uiStore.showToast('Lỗi khi xóa khách.', 'error')
+  } finally {
+    submitting.value = false
   }
 }
 
 function handleScan() {
-  uiStore.showToast('Đã quét giấy tờ thành công!', 'success')
-}
-
-function handleEditToggle() {
-  uiStore.showToast('Vui lòng chỉnh sửa các thông tin bên dưới và bấm Lưu.', 'info')
+  uiStore.showToast('Đã kết nối máy quét CCCD/VNeID!', 'success')
 }
 
 function handleOverlayClick(e) {
-  if (e.target === e.currentTarget) emit('close')
+  if (e.target === e.currentTarget) {
+    showTimePicker.value = false
+    emit('close')
+  }
 }
 
-function formatDate(d) {
+function formatDateForInput(d) {
   if (!d) return ''
-  const parts = String(d).split('T')[0].split('-')
-  return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : d
+  const str = String(d)
+  if (str.includes('T')) {
+    const parsedDate = new Date(str)
+    if (!isNaN(parsedDate.getTime())) {
+      const year = parsedDate.getTimezoneOffset() > 0 && str.endsWith('Z') 
+        ? parsedDate.getFullYear() 
+        : parsedDate.getFullYear()
+      // Let's just use timezone-safe methods or get local values
+      const month = String(parsedDate.getMonth() + 1).padStart(2, '0')
+      const day = String(parsedDate.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  const datePart = str.split('T')[0]
+  if (datePart.includes('/')) {
+    const parts = datePart.split('/')
+    if (parts.length === 3) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    }
+  }
+  return datePart
+}
+
+// 24H Format Helper (HH:mm)
+function formatTime24h(t) {
+  if (!t) return '12:00'
+  const parts = String(t).split(':')
+  if (parts.length >= 2) {
+    const hh = parts[0].padStart(2, '0')
+    const mm = parts[1].padStart(2, '0')
+    return `${hh}:${mm}`
+  }
+  return t
 }
 
 function formatNumber(val) {
   if (!val) return '0'
   return new Intl.NumberFormat('vi-VN').format(val)
+}
+
+function parseNumber(val) {
+  if (!val) return 0
+  const cleanStr = String(val).replace(/\D/g, '')
+  return Number(cleanStr) || 0
 }
 </script>
 
@@ -360,22 +714,34 @@ function formatNumber(val) {
           </div>
 
           <div class="header-actions">
-            <button @click="handleDeleteGuest" class="btn-hd save">
+            <!-- Xóa khách -->
+            <button @click="handleDeleteGuest" class="btn-hd delete">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4h6v2"/>
               </svg>Xoá khách
             </button>
-            <button @click="handleEditToggle" class="btn-hd save">
+
+            <!-- Sửa / Quay lại -->
+            <button v-if="!isEditingMode" @click="startEditing" class="btn-hd edit">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>Sửa
             </button>
-            <button @click="handleScan" class="btn-hd save">
+            <button v-else @click="cancelEditing" class="btn-hd cancel">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
+              </svg>Quay lại
+            </button>
+
+            <!-- Scan -->
+            <button @click="handleScan" class="btn-hd scan">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
               </svg>Scan
             </button>
-            <button @click="handleSave" class="btn-hd save">
+
+            <!-- Lưu (Enabled when editing) -->
+            <button @click="handleSave" class="btn-hd save" :disabled="!isEditingMode" :class="{ 'disabled-btn': !isEditingMode }">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
               </svg>Lưu
@@ -386,7 +752,7 @@ function formatNumber(val) {
 
         <!-- BODY -->
         <div class="card-body">
-          <div class="main-grid">
+          <div class="main-grid" :class="{ 'readonly-mode': !isEditingMode }">
 
             <!-- Ô 1 (CỘT 1, TRẢI 3 HÀNG): DANH SÁCH KHÁCH -->
             <div class="cell-guests">
@@ -415,14 +781,7 @@ function formatNumber(val) {
                   <span class="g-name">{{ g.name }}</span>
                 </div>
 
-                <button v-if="!addingAdult" @click="addingAdult = true" class="btn-add">+ Thêm người lớn</button>
-                <div v-else class="inline-add-box">
-                  <input v-model="newAdultName" placeholder="Họ tên người lớn..." @keyup.enter="doAddAdult" />
-                  <div class="inline-btns">
-                    <button @click="doAddAdult" class="btn-xs-save">Lưu</button>
-                    <button @click="addingAdult = false" class="btn-xs-cancel">Hủy</button>
-                  </div>
-                </div>
+                <button v-if="!addingAdult" @click="doAddAdult" class="btn-add">+ Thêm người lớn</button>
               </div>
 
               <!-- TRẺ EM -->
@@ -443,14 +802,7 @@ function formatNumber(val) {
                   <span class="g-name">{{ c.name }}</span>
                 </div>
 
-                <button v-if="!addingChild" @click="addingChild = true" class="btn-add">+ Thêm trẻ em</button>
-                <div v-else class="inline-add-box">
-                  <input v-model="newChildName" placeholder="Tên trẻ em..." @keyup.enter="doAddChild('child')" />
-                  <div class="inline-btns">
-                    <button @click="doAddChild('child')" class="btn-xs-save">Lưu</button>
-                    <button @click="addingChild = false" class="btn-xs-cancel">Hủy</button>
-                  </div>
-                </div>
+                <button v-if="!addingChild" @click="doAddChild('child')" class="btn-add">+ Thêm trẻ em</button>
               </div>
 
               <!-- EM BÉ -->
@@ -471,14 +823,7 @@ function formatNumber(val) {
                   <span class="g-name">{{ b.name }}</span>
                 </div>
 
-                <button v-if="!addingBaby" @click="addingBaby = true" class="btn-add">+ Thêm em bé</button>
-                <div v-else class="inline-add-box">
-                  <input v-model="newBabyName" placeholder="Tên em bé..." @keyup.enter="doAddChild('baby')" />
-                  <div class="inline-btns">
-                    <button @click="doAddChild('baby')" class="btn-xs-save">Lưu</button>
-                    <button @click="addingBaby = false" class="btn-xs-cancel">Hủy</button>
-                  </div>
-                </div>
+                <button v-if="!addingBaby" @click="doAddChild('baby')" class="btn-add">+ Thêm em bé</button>
               </div>
             </div>
 
@@ -499,7 +844,7 @@ function formatNumber(val) {
                     </svg>
                   </div>
                   <div class="avatar-btns">
-                    <button class="btn-xs">
+                    <button class="btn-xs" :disabled="!isEditingMode">
                       <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                       </svg>Ảnh
@@ -507,37 +852,46 @@ function formatNumber(val) {
                   </div>
                 </div>
 
-                <div class="personal-fields">
+                <div class="personal-fields-wrapper">
                   <!-- Row 1 -->
-                  <div class="f">
-                    <label>Danh xưng</label>
-                    <select v-model="formGuest.title"><option value="Mr.">Mr.</option><option value="Ms.">Ms.</option><option value="Mrs.">Mrs.</option></select>
-                  </div>
-                  <div class="f span-2">
-                    <label>Họ tên <span class="req">*</span></label>
-                    <input type="text" v-model="formGuest.name" style="font-weight: 700; text-transform: uppercase;">
-                  </div>
-                  <div class="f">
-                    <label>Quốc tịch</label>
-                    <input type="text" v-model="formGuest.nationality" placeholder="VN">
-                  </div>
-                  <div class="f">
-                    <label>Sinh nhật</label>
-                    <input type="text" v-model="formGuest.dob" placeholder="dd/mm/yyyy">
+                  <div class="personal-grid">
+                    <div class="f">
+                      <label>Danh xưng</label>
+                      <select v-model="formGuest.title" :disabled="!isEditingMode">
+                        <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
+                      </select>
+                    </div>
+                    <div class="f">
+                      <label>Họ tên <span class="req">*</span></label>
+                      <input type="text" v-model="formGuest.name" :disabled="!isEditingMode" style="font-weight: 700; text-transform: uppercase;">
+                    </div>
+                    <div class="f">
+                      <label>Quốc tịch</label>
+                      <select v-model="formGuest.nationality" :disabled="!isEditingMode">
+                        <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
+                      </select>
+                    </div>
+                    <div class="f">
+                      <label>Sinh nhật</label>
+                      <input type="date" v-model="formGuest.dob" :disabled="!isEditingMode">
+                    </div>
                   </div>
 
                   <!-- Row 2 -->
-                  <div class="f span-2">
-                    <label>Email</label>
-                    <input type="email" v-model="formGuest.email" placeholder="name@example.com">
-                  </div>
-                  <div class="f span-2">
-                    <label>Điện thoại</label>
-                    <input type="text" v-model="formGuest.phone" placeholder="+84...">
-                  </div>
-                  <div class="f">
-                    <label>Số lượt lưu trú</label>
-                    <input type="text" v-model="formGuest.stay_count" style="text-align: center;">
+                  <div class="personal-grid-2">
+                    <div class="f">
+                      <label>Email</label>
+                      <input type="email" v-model="formGuest.email" :disabled="!isEditingMode" placeholder="name@example.com">
+                    </div>
+                    <div class="f">
+                      <label>Điện thoại</label>
+                      <input type="text" v-model="formGuest.phone" :disabled="!isEditingMode" placeholder="+84...">
+                    </div>
+                    <!-- SỐ LƯỢT LƯU TRÚ: ALWAYS DISABLED / XÁM -->
+                    <div class="f">
+                      <label>Số lượt lưu trú</label>
+                      <input type="number" v-model.number="formGuest.stay_count" disabled class="always-gray" style="text-align: center;">
+                    </div>
                   </div>
                 </div>
               </div>
@@ -554,30 +908,32 @@ function formatNumber(val) {
               <div class="g docs-grid">
                 <div class="f">
                   <label>Loại giấy tờ</label>
-                  <select v-model="formGuest.id_type">
+                  <select v-model="formGuest.id_type" :disabled="!isEditingMode">
                     <option value="CCCD">CCCD</option>
                     <option value="Passport - Hộ chiếu">Passport - Hộ chiếu</option>
                     <option value="CMND">CMND</option>
+                    <option value="Giấy khai sinh">Giấy khai sinh</option>
+                    <option value="Khác">Khác</option>
                   </select>
                 </div>
                 <div class="f">
                   <label>Số giấy tờ <span class="req">*</span></label>
-                  <input type="text" v-model="formGuest.id_number">
+                  <input type="text" v-model="formGuest.id_number" :disabled="!isEditingMode">
                 </div>
                 <div class="f">
                   <label>Ngày phát hành</label>
-                  <input type="text" v-model="formGuest.id_issue_date" placeholder="dd/mm/yyyy">
+                  <input type="date" v-model="formGuest.id_issue_date" :disabled="!isEditingMode">
                 </div>
                 <div class="f">
                   <label>Thường trú / Tạm trú</label>
-                  <select v-model="formGuest.residence_type">
+                  <select v-model="formGuest.residence_type" :disabled="!isEditingMode">
                     <option value="Thường trú">Thường trú</option>
                     <option value="Tạm trú">Tạm trú</option>
                   </select>
                 </div>
                 <div class="f span-4">
                   <label>Địa chỉ</label>
-                  <input type="text" v-model="formGuest.address" placeholder="Số nhà, đường, phường/xã...">
+                  <input type="text" v-model="formGuest.address" :disabled="!isEditingMode" placeholder="Số nhà, đường, phường/xã...">
                 </div>
               </div>
             </div>
@@ -591,43 +947,56 @@ function formatNumber(val) {
                 THÔNG TIN LƯU TRÚ
               </div>
               <div class="g stay-grid">
+                <!-- NGÀY ĐẾN: ALWAYS DISABLED / XÁM -->
                 <div class="f">
                   <label>Ngày đến <span class="req">*</span></label>
-                  <input type="text" v-model="stayInfo.arrival_date">
+                  <input type="date" v-model="stayInfo.arrival_date" disabled class="always-gray">
                 </div>
+                <!-- GIỜ ĐẾN (24H FORMAT HH:mm): ALWAYS DISABLED / XÁM -->
                 <div class="f">
                   <label>Giờ đến</label>
-                  <input type="text" v-model="stayInfo.arrival_time">
+                  <input type="text" v-model="stayInfo.arrival_time" disabled class="always-gray" placeholder="14:00" style="text-align: center;">
                 </div>
+                <!-- NGÀY ĐỊ -->
                 <div class="f">
                   <label>Ngày đi <span class="req">*</span></label>
-                  <input type="text" v-model="stayInfo.departure_date">
+                  <input type="date" v-model="stayInfo.departure_date" :disabled="!isEditingMode">
                 </div>
+                <!-- GIỜ ĐỊ (CUSTOM 24H PICKER COMPONENT: 00 -> 23 HOURS) -->
                 <div class="f">
                   <label>Giờ đi</label>
-                  <input type="text" v-model="stayInfo.departure_time">
+                  <TimePicker24h
+                    v-model="stayInfo.departure_time"
+                    default-time="12:00"
+                    :disabled="!isEditingMode"
+                    :drop-up="true"
+                  />
                 </div>
+
+                <!-- ĐÊM: ALWAYS DISABLED / XÁM -->
                 <div class="f">
                   <label>Đêm</label>
-                  <input type="number" v-model="stayInfo.nights" readonly>
+                  <input type="number" v-model.number="stayInfo.nights" disabled class="always-gray" style="text-align: center;">
                 </div>
               </div>
+
               <div class="stay-row-2">
                 <div class="f flex-shrink-0">
                   <label>N.lớn / T.em / E.bé</label>
                   <div class="occupant-box">
-                    <input type="text" v-model="stayInfo.occupants_str" readonly style="width: 82px; text-align: center; font-weight: 700;">
-                    <button class="btn-act" style="font-size: 12px; padding: 0 10px;">Chi tiết trẻ em</button>
+                    <input type="text" v-model="stayInfo.occupants_str" disabled style="width: 82px; text-align: center; font-weight: 700;">
+                    <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
+                    <button class="btn-act" @click="showChildBreakfastModal = true" style="font-size: 12px; padding: 0 10px;">Chi tiết trẻ em</button>
                   </div>
                 </div>
                 <div class="checkbox-row">
-                  <label class="cb"><input type="checkbox" v-model="stayInfo.breakfast"> Ăn sáng</label>
-                  <label class="cb"><input type="checkbox" v-model="stayInfo.hourly"> Phòng theo giờ</label>
+                  <label class="cb"><input type="checkbox" v-model="stayInfo.breakfast" :disabled="!isEditingMode"> Ăn sáng</label>
+                  <label class="cb"><input type="checkbox" v-model="stayInfo.hourly" :disabled="!isEditingMode"> Phòng theo giờ</label>
                 </div>
               </div>
               <div class="f" style="margin-top: 10px;">
                 <label>Ghi chú</label>
-                <input type="text" v-model="stayInfo.notes" placeholder="Ghi chú thêm cho lưu trú...">
+                <input type="text" v-model="stayInfo.notes" :disabled="!isEditingMode" placeholder="Ghi chú thêm cho lưu trú...">
               </div>
             </div>
 
@@ -642,39 +1011,83 @@ function formatNumber(val) {
               <div class="g price-grid-1">
                 <div class="f">
                   <label>Giá phòng <span class="req">*</span></label>
-                  <input type="text" v-model="pricingInfo.rate" style="font-weight: 700;">
+                  <input type="text" v-model="pricingInfo.rate" :disabled="!isEditingMode" style="font-weight: 700;">
                 </div>
                 <div class="f">
                   <label>Rate code</label>
-                  <input type="text" v-model="pricingInfo.rate_code" placeholder="RACK...">
+                  <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange">
+                    <option value="" disabled>-- Chọn Mã Giá --</option>
+                    <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
+                      {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
+                    </option>
+                  </select>
                 </div>
                 <div class="f">
                   <label>Khuyến mãi / Tăng giảm</label>
-                  <select v-model="pricingInfo.discount_type">
+                  <select v-model="pricingInfo.discount_type" :disabled="!isEditingMode">
                     <option>Tăng/Giảm giá</option><option>Giảm 10%</option><option>Early Bird</option>
                   </select>
                 </div>
                 <div class="btn-wrapper">
-                  <button class="btn-act">
+                  <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
+                  <button class="btn-act" @click="showSpecialRequestsModal = true">
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>Yêu cầu đặc biệt
                   </button>
                 </div>
               </div>
+              
               <div class="g price-grid-2">
+                <!-- THÊM GIƯỜNG (SỐ LƯỢNG) -->
                 <div class="f">
                   <label>Thêm giường</label>
-                  <select v-model="pricingInfo.extra_bed">
-                    <option>Không thêm</option><option>1 giường phụ</option><option>2 giường phụ</option>
-                  </select>
+                  <div class="relative flex items-center">
+                    <input
+                      type="number"
+                      :value="pricingInfo.extra_bed_qty || 0"
+                      :disabled="!isEditingMode"
+                      min="0"
+                      max="10"
+                      @input="onExtraBedQtyInput"
+                      class="w-full h-8 px-2.5 pr-6 font-semibold text-slate-800 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
+                    />
+                    <div v-if="isEditingMode" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
+                      <button type="button" @click="handleExtraBedQtyChange(1)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                        ▲
+                      </button>
+                      <button type="button" @click="handleExtraBedQtyChange(-1)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                        ▼
+                      </button>
+                    </div>
+                  </div>
                 </div>
+                
+                <!-- GIÁ THÊM GIƯỜNG (THÀNH TIỀN) -->
                 <div class="f">
                   <label>Giá thêm giường</label>
-                  <input type="text" v-model="pricingInfo.extra_bed_price" placeholder="0">
+                  <div class="relative flex items-center">
+                    <input
+                      type="text"
+                      :value="pricingInfo.extra_bed_price"
+                      :disabled="!isEditingMode"
+                      @input="onExtraBedPriceInput"
+                      class="w-full h-8 px-2.5 pr-6 font-semibold text-slate-800 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
+                    />
+                    <div v-if="isEditingMode" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
+                      <button type="button" @click="handleExtraBedPriceChange(50000)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                        ▲
+                      </button>
+                      <button type="button" @click="handleExtraBedPriceChange(-50000)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                        ▼
+                      </button>
+                    </div>
+                  </div>
                 </div>
+
                 <div class="btn-wrapper">
-                  <button class="btn-act">
+                  <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
+                  <button class="btn-act" @click="showExtraBedModal = true">
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
                     </svg>Chi tiết thêm giường
@@ -690,6 +1103,24 @@ function formatNumber(val) {
       </div>
     </div>
   </Teleport>
+
+  <!-- SUB-MODALS LINKED DIRECTLY TO ROOM DATA -->
+  <SpecialRequestsModal
+    v-model:show="showSpecialRequestsModal"
+    :room="formattedRoomForModals"
+  />
+
+  <ChildBreakfastModal
+    v-model:show="showChildBreakfastModal"
+    :room="formattedRoomForModals"
+  />
+
+  <ExtraBedModal
+    v-model:show="showExtraBedModal"
+    :room="formattedRoomForModals"
+    :system-date="systemDate"
+    @saved="onExtraBedSaved"
+  />
 </template>
 
 <style scoped>
@@ -711,7 +1142,7 @@ function formatNumber(val) {
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   width: 100%;
-  max-width: 1350px;
+  max-width: 1440px;
   overflow: hidden;
   margin: auto;
   animation: modalIn 0.15s ease-out;
@@ -759,10 +1190,19 @@ function formatNumber(val) {
   align-items: center;
   gap: 6px;
   border: none;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, background-color 0.15s;
 }
-.btn-hd:hover { opacity: 0.88; }
+.btn-hd:hover:not(:disabled) { opacity: 0.88; }
 .btn-hd.save { background: #2563eb; }
+.btn-hd.edit { background: #2563eb; }
+.btn-hd.cancel { background: #475569; }
+.btn-hd.delete { background: #dc2626; }
+.btn-hd.scan { background: #0284c7; }
+.btn-hd.disabled-btn {
+  background: #94a3b8 !important;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .close-x-btn {
   background: none;
@@ -780,13 +1220,32 @@ function formatNumber(val) {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 240px 1fr 1fr;
+  grid-template-columns: 240px 1.2fr 1fr;
   grid-template-rows: auto auto auto;
   border: 1.5px solid #cbd5e1;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
   gap: 0;
   background: #fff;
+  transition: background-color 0.2s;
+}
+
+/* READONLY / VÙNG XÁM MODE FOR FORM INPUTS */
+.main-grid.readonly-mode input:disabled,
+.main-grid.readonly-mode select:disabled {
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+  border-color: #cbd5e1 !important;
+  cursor: not-allowed !important;
+}
+
+/* ALWAYS GRAY FIELDS (THÁO CHỨC NĂNG EDIT HOÀN TOÀN) */
+input.always-gray,
+input.always-gray:disabled {
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+  border-color: #cbd5e1 !important;
+  cursor: not-allowed !important;
 }
 
 /* CELLS */
@@ -837,38 +1296,128 @@ function formatNumber(val) {
 }
 
 /* FIELD STYLING */
-.f { display: flex; flex-direction: column; gap: 3px; }
+.f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .f label {
   font-size: 11.5px;
   color: #475569;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .f label .req { color: #ef4444; }
 .f input, .f select {
   border: 1.5px solid #cbd5e1;
   border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 13.5px;
+  padding: 5px 8px;
+  font-size: 13px;
   color: #0f172a;
   background: #fff;
   height: 35px;
   outline: none;
   width: 100%;
-  transition: border-color 0.15s;
+  box-sizing: border-box;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color 0.15s, background-color 0.15s;
 }
-.f input:focus, .f select:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
-.f input[readonly] { background: #f8fafc; color: #64748b; }
+.f input:focus:not(:disabled), .f select:focus:not(:disabled) { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
 .span-2 { grid-column: span 2; }
 .span-4 { grid-column: span 4; }
 
+/* PERSONAL FIELDS FLEX/GRID WRAPPER */
+.personal-fields-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.personal-grid {
+  display: grid;
+  grid-template-columns: 85px 1.5fr 1.6fr 145px;
+  gap: 9px 12px;
+}
+.personal-grid-2 {
+  display: grid;
+  grid-template-columns: 1.5fr 1.2fr 110px;
+  gap: 9px 12px;
+}
+
+/* CUSTOM 24H TIME PICKER STYLING */
+.time-picker-rel {
+  position: relative;
+  width: 100%;
+}
+.time-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.clock-ic {
+  position: absolute;
+  right: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.7;
+}
+.clock-ic:hover { opacity: 1; }
+
+.time-picker-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 9999;
+  display: flex;
+  background: #fff;
+  border: 1.5px solid #2563eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+  width: 160px;
+  height: 180px;
+  overflow: hidden;
+}
+.tp-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e2e8f0;
+}
+.tp-col:last-child { border-right: none; }
+.tp-head {
+  background: #2563eb;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 0;
+  text-transform: uppercase;
+}
+.tp-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.tp-item {
+  padding: 4px 0;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.tp-item:hover { background: #eff6ff; color: #2563eb; }
+.tp-item.active { background: #2563eb; color: #fff; }
+
 /* GRID HELPERS */
 .g { display: grid; gap: 9px 12px; }
-.docs-grid { grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 9px 12px; }
-.stay-grid { grid-template-columns: 1fr 76px 1fr 76px 56px; gap: 9px 10px; margin-bottom: 10px; }
-.price-grid-1 { grid-template-columns: 110px 85px 1fr auto; gap: 9px 10px; margin-bottom: 10px; align-items: end; }
-.price-grid-2 { grid-template-columns: 110px 85px auto 1fr; gap: 9px 10px; align-items: end; }
+.docs-grid { grid-template-columns: 1.2fr 1.2fr 140px 1fr; gap: 9px 12px; }
+.stay-grid { grid-template-columns: 1.2fr 80px 1.2fr 80px 65px; gap: 9px 10px; margin-bottom: 10px; }
+.price-grid-1 { grid-template-columns: 120px 95px 1fr auto; gap: 9px 10px; margin-bottom: 10px; align-items: end; }
+.price-grid-2 { grid-template-columns: 120px 115px auto 1fr; gap: 9px 10px; align-items: end; }
 .btn-wrapper { display: flex; align-items: flex-end; }
 
 /* SIDEBAR GUESTS */
@@ -913,12 +1462,6 @@ function formatNumber(val) {
 }
 .btn-add:hover { background: #eff6ff; }
 
-.inline-add-box { margin-top: 6px; padding: 6px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; }
-.inline-add-box input { width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px 8px; font-size: 12px; margin-bottom: 5px; }
-.inline-btns { display: flex; gap: 5px; }
-.btn-xs-save { flex: 1; background: #2563eb; color: #fff; border: none; border-radius: 4px; font-size: 11px; padding: 3px 0; font-weight: 600; cursor: pointer; }
-.btn-xs-cancel { background: #e2e8f0; color: #334155; border: none; border-radius: 4px; font-size: 11px; padding: 3px 8px; font-weight: 600; cursor: pointer; }
-
 /* AVATAR */
 .avatar-block { display: flex; gap: 14px; align-items: flex-start; }
 .avatar-col { display: flex; flex-direction: column; align-items: center; }
@@ -944,35 +1487,28 @@ function formatNumber(val) {
   display: flex; align-items: center; gap: 4px;
   transition: background 0.12s;
 }
-.btn-xs:hover { background: #f1f5f9; }
+.btn-xs:hover:not(:disabled) { background: #f1f5f9; }
 
-.personal-fields {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 80px 1fr 1fr 1fr 1fr;
-  gap: 9px 12px;
-  align-content: start;
-}
-
-/* BUTTON ACTION BLUE */
+/* BUTTON ACTION BLUE (ALWAYS BLUE & CLICKABLE) */
 .btn-act {
   height: 35px;
-  background: #2563eb;
-  color: #fff;
-  border: none;
+  background: #2563eb !important;
+  color: #fff !important;
+  border: none !important;
   border-radius: 6px;
   font-size: 12.5px;
   font-weight: 600;
   padding: 0 14px;
-  cursor: pointer;
+  cursor: pointer !important;
   display: flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: background 0.15s;
+  opacity: 1 !important;
+  transition: background-color 0.15s;
 }
-.btn-act:hover { background: #1d4ed8; }
+.btn-act:hover { background: #1d4ed8 !important; }
 
 /* CHECKBOX & STAY ROW */
 .stay-row-2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
