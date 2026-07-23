@@ -72,6 +72,16 @@ class CancelReasonSeeder extends Seeder
 
             // ---- KHÁC ----
             [
+                'name'        => 'Other (Client)',
+                'description' => 'Khách - Lý do khác (tự nhập chi tiết)',
+                'is_active'   => true,
+            ],
+            [
+                'name'        => 'Other (Hotel)',
+                'description' => 'Khách sạn - Lý do khác (tự nhập chi tiết)',
+                'is_active'   => true,
+            ],
+            [
                 'name'        => 'Lý do khác',
                 'description' => 'Lý do hủy khác không thuộc danh mục trên (ghi chú thêm khi hủy)',
                 'is_active'   => true,

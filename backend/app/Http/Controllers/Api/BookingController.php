@@ -877,7 +877,7 @@ class BookingController extends Controller
      * Business Rule 4.11: chỉ xóa khi TẤT CẢ phòng ở trạng thái đăng ký
      * và booking KHÔNG có cọc chưa thanh toán.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $booking = Booking::with('bookingRooms')->find($id);
         if (!$booking) {
@@ -915,16 +915,54 @@ class BookingController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($booking) {
-            // Cascade: hủy tất cả phòng chưa hủy
-            $activeRooms = $booking->bookingRooms->whereNotIn('status', [
-                BookingRoom::STATUS_CANCELLED,
-                BookingRoom::STATUS_CHECKED_OUT,
+        $request->validate([
+            'cancel_reason_id' => 'nullable|exists:cancel_reasons,id',
+            'note'             => 'nullable|string',
+        ]);
+
+        $reasonText = $request->note;
+        if ($request->cancel_reason_id && empty($reasonText)) {
+            $cReason = \App\Models\CancelReason::find($request->cancel_reason_id);
+            $reasonText = $cReason?->name;
+        }
+
+        DB::transaction(function () use ($booking, $id, $request, $reasonText) {
+            $currentUserId = Auth::id() ?? 0;
+            $currentUsername = Auth::user()?->username ?? 'system';
+
+            // 1. Ghi log hủy toàn bộ booking (SP8053)
+            \App\Models\BookingCancelLog::create([
+                'cancel_type'           => 'booking',
+                'booking_id'            => $id,
+                'booking_room_id'       => null,
+                'cancel_reason_id'      => $request->cancel_reason_id,
+                'note'                  => $request->note,
+                'cancelled_by_user_id'  => $currentUserId,
+                'cancelled_by_username' => $currentUsername,
+                'cancelled_at'          => now(),
             ]);
-            foreach ($activeRooms as $bRoom) {
+
+            // 2. Cascade: Hủy và ghi log cho từng phòng trong booking (SP8052)
+            $allRooms = $booking->bookingRooms;
+            foreach ($allRooms as $bRoom) {
                 $bRoom->guests()->update(['status' => 3]);
                 $bRoom->children()->update(['child_status' => 3]);
-                $bRoom->update(['status' => BookingRoom::STATUS_CANCELLED]);
+                $bRoom->update([
+                    'status' => BookingRoom::STATUS_CANCELLED,
+                    'reason' => $reasonText,
+                ]);
+
+                // Log cho từng phòng (SP8052)
+                \App\Models\BookingCancelLog::create([
+                    'cancel_type'           => 'room',
+                    'booking_id'            => $id,
+                    'booking_room_id'       => $bRoom->id,
+                    'cancel_reason_id'      => $request->cancel_reason_id,
+                    'note'                  => $request->note,
+                    'cancelled_by_user_id'  => $currentUserId,
+                    'cancelled_by_username' => $currentUsername,
+                    'cancelled_at'          => now(),
+                ]);
             }
 
             // Tự chuyển booking_status về bk_definite = 4 (nếu có)
@@ -933,7 +971,7 @@ class BookingController extends Controller
             $booking->update([
                 'status'                 => Booking::STATUS_DELETED,
                 'registration_status_id' => $cancelledStatus?->id ?? $booking->registration_status_id,
-                'updated_by'             => Auth::user()?->username ?? 'system',
+                'updated_by'             => $currentUsername,
             ]);
         });
 

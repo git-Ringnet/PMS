@@ -30,6 +30,44 @@ class PaymentController extends Controller
 {
     public function __construct(protected RoomAvailabilityService $avService) {}
 
+    protected function getSystemDate(): string
+    {
+        $latest = \App\Models\SystemDateRoll::latest('id')->first();
+        return $latest
+            ? Carbon::parse($latest->system_date)->toDateString()
+            : now()->timezone('Asia/Ho_Chi_Minh')->toDateString();
+    }
+
+    protected function canOperateOldDay(): bool
+    {
+        $user = Auth::user();
+        if (!$user) return true;
+        if ($user->username === 'admin' || !empty($user->is_admin)) return true;
+
+        $settings = $user->setting?->settings ?? [];
+        if (isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) {
+            return (bool) $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
+        }
+        return true;
+    }
+
+    private function resolvePaymentMethodCode($input)
+    {
+        if (empty($input)) return null;
+        if (is_numeric($input)) {
+            $pm = PaymentMethod::find($input);
+            return $pm ? $pm->code : (string)$input;
+        }
+        return (string)$input;
+    }
+
+    private function getDepartmentId(Request $request)
+    {
+        return $request->input('department_id') 
+            ?? $request->header('X-Department-ID') 
+            ?? 'MR';
+    }
+
     // =========================================
     // GET: Danh sách cọc của booking
     // =========================================
@@ -37,7 +75,8 @@ class PaymentController extends Controller
     {
         $booking = Booking::findOrFail($bookingId);
 
-        $payments = Payment::where('booking_id', $bookingId)
+        $payments = Payment::withTrashed()
+            ->where('booking_id', $bookingId)
             ->with('paymentMethod')
             ->orderBy('date')
             ->orderBy('id')
@@ -46,6 +85,7 @@ class PaymentController extends Controller
         $totalDeposit = $payments
             ->where('pack2', Payment::PACK2_DEPOSIT)
             ->where('edit_flag', 0)
+            ->whereNull('deleted_at')
             ->sum('amount');
 
         return response()->json([
@@ -71,15 +111,28 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        $systemDate = $this->getSystemDate();
+        if (!$request->has('date') || empty($request->date)) {
+            $request->merge(['date' => $systemDate]);
+        }
+
         $request->validate([
             'date'              => 'required|date',
             'amount'            => 'required|numeric|min:0.01',
-            'payment_method_id' => 'required|exists:payment_methods,id',
+            'payment_method_id' => 'required',
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
             'booking_room_id'   => 'nullable|exists:booking_rooms,id',
             'image'             => 'nullable|file|image|max:4096',
         ]);
+
+        // Kiểm tra quyền tạo cọc ngày cũ
+        if (Carbon::parse($request->date)->toDateString() < $systemDate && !$this->canOperateOldDay()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tài khoản không được phân quyền thêm mới đặt cọc cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).',
+            ], 403);
+        }
 
         // Upload ảnh chứng từ cọc nếu có
         $imagePath = null;
@@ -87,8 +140,18 @@ class PaymentController extends Controller
             $imagePath = $request->file('image')->store('payments', 'public');
         }
 
-        // Kiểm tra payment_method — không cho Công nợ (group=4) và Miễn phí (group=5) làm cọc
-        $method = PaymentMethod::findOrFail($request->payment_method_id);
+        // Resolve payment_method code
+        $pmCode = $this->resolvePaymentMethodCode($request->payment_method_id);
+        $departmentId = $this->getDepartmentId($request);
+
+        $method = PaymentMethod::where('code', $pmCode)->orWhere('id', $request->payment_method_id)->first();
+        if (!$method) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hình thức thanh toán không hợp lệ.',
+            ], 422);
+        }
+
         if (in_array($method->payment_group, [4, 5])) {
             return response()->json([
                 'success' => false,
@@ -103,7 +166,7 @@ class PaymentController extends Controller
         // Tạo hiển thị guest: mã booking + tên
         $guestDisplay = $booking->booking_code . ' - ' . $booking->booking_name;
 
-        $payment = DB::transaction(function () use ($request, $bookingId, $booking, $description, $guestDisplay, $imagePath) {
+        $payment = DB::transaction(function () use ($request, $bookingId, $booking, $description, $guestDisplay, $imagePath, $pmCode, $departmentId) {
             $payment = Payment::create([
                 'booking_id'        => $bookingId,
                 'booking_room_id'   => $request->booking_room_id,
@@ -114,8 +177,9 @@ class PaymentController extends Controller
                 'description'       => $description,
                 'amount'            => $request->amount,
                 'pack2'             => Payment::PACK2_DEPOSIT,
-                'payment_method_id' => $request->payment_method_id,
+                'payment_method_id' => $pmCode,
                 'debit_account'     => $request->debit_account,
+                'department_id'     => $departmentId,
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
                 'created_by'        => Auth::user()?->username ?? 'system',
@@ -126,6 +190,7 @@ class PaymentController extends Controller
             $totalDeposit = Payment::where('booking_id', $bookingId)
                 ->where('pack2', Payment::PACK2_DEPOSIT)
                 ->where('edit_flag', 0)
+                ->whereNull('deleted_at')
                 ->sum('amount');
 
             $booking->update(['payment_value' => $totalDeposit]);
@@ -141,7 +206,7 @@ class PaymentController extends Controller
     }
 
     // =========================================
-    // PUT: Cập nhật cọc
+    // PUT: Cập nhật cọc (Không cho phép sửa ngày và số tiền)
     // PUT /payments/{id}
     // =========================================
     public function update(Request $request, $id)
@@ -156,16 +221,18 @@ class PaymentController extends Controller
         }
 
         $request->validate([
-            'date'              => 'sometimes|date',
-            'amount'            => 'sometimes|numeric|min:0.01',
-            'payment_method_id' => 'sometimes|exists:payment_methods,id',
+            'payment_method_id' => 'sometimes',
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
             'image'             => 'nullable|file|image|max:4096',
         ]);
 
         DB::transaction(function () use ($request, $payment) {
-            $data = $request->only(['date', 'amount', 'payment_method_id', 'description', 'debit_account']);
+            // Không cho sửa date và amount
+            $data = $request->only(['description', 'debit_account']);
+            if ($request->has('payment_method_id')) {
+                $data['payment_method_id'] = $this->resolvePaymentMethodCode($request->payment_method_id);
+            }
             if ($request->hasFile('image')) {
                 $data['image_path'] = $request->file('image')->store('payments', 'public');
             }
@@ -178,6 +245,7 @@ class PaymentController extends Controller
             $totalDeposit = Payment::where('booking_id', $payment->booking_id)
                 ->where('pack2', Payment::PACK2_DEPOSIT)
                 ->where('edit_flag', 0)
+                ->whereNull('deleted_at')
                 ->sum('amount');
 
             Booking::where('id', $payment->booking_id)->update(['payment_value' => $totalDeposit]);
@@ -194,7 +262,7 @@ class PaymentController extends Controller
     // DELETE: Xóa cọc — tạo dòng âm đối trừ (reversal)
     // DELETE /payments/{id}
     // =========================================
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
 
@@ -212,19 +280,32 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($payment) {
-            // Tạo dòng âm đối trừ
+        $systemDate = $this->getSystemDate();
+        $paymentDate = Carbon::parse($payment->date)->toDateString();
+        if ($paymentDate < $systemDate && !$this->canOperateOldDay()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tài khoản không được phân quyền xóa đặt cọc cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay). Chỉ được xóa cọc có ngày = ngày hệ thống.',
+            ], 403);
+        }
+
+        $departmentId = $this->getDepartmentId($request);
+
+        DB::transaction(function () use ($payment, $systemDate, $departmentId) {
+            // Tạo dòng âm đối trừ với ngày hệ thống hiện tại
             $reversal = Payment::create([
                 'booking_id'        => $payment->booking_id,
                 'booking_room_id'   => $payment->booking_room_id,
                 'company_id'        => $payment->company_id,
-                'date'              => now()->toDateString(),
+                'date'              => $systemDate,
                 'open_time'         => now()->format('H:i:s'),
                 'guest_display'     => $payment->guest_display,
                 'description'       => '[REVERSAL] ' . $payment->description,
                 'amount'            => -abs($payment->amount), // Số âm
                 'pack2'             => Payment::PACK2_DEPOSIT,
                 'payment_method_id' => $payment->payment_method_id,
+                'department_id'     => $departmentId,
+                'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_DELETED,
                 'edit_flag'         => 1,
@@ -237,11 +318,13 @@ class PaymentController extends Controller
                 'reversal_ref' => $reversal->id,
                 'updated_by'   => Auth::user()?->username ?? 'system',
             ]);
+            $payment->delete(); // Soft delete để cập nhật deleted_at
 
             // Sync payment_value
             $totalDeposit = Payment::where('booking_id', $payment->booking_id)
                 ->where('pack2', Payment::PACK2_DEPOSIT)
                 ->where('edit_flag', 0)
+                ->whereNull('deleted_at')
                 ->sum('amount');
 
             Booking::where('id', $payment->booking_id)->update(['payment_value' => $totalDeposit]);
@@ -282,23 +365,48 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($request, $payment) {
+        $systemDate = $this->getSystemDate();
+        $departmentId = $this->getDepartmentId($request);
+
+        DB::transaction(function () use ($request, $payment, $systemDate, $departmentId) {
             $originalAmount = $payment->amount;
+
+            // 1. Tạo dòng âm đối trừ cho cọc gốc (ngày hệ thống)
+            $reversal = Payment::create([
+                'booking_id'        => $payment->booking_id,
+                'booking_room_id'   => $payment->booking_room_id,
+                'company_id'        => $payment->company_id,
+                'date'              => $systemDate,
+                'open_time'         => now()->format('H:i:s'),
+                'guest_display'     => $payment->guest_display,
+                'description'       => '[REVERSAL] ' . $payment->description,
+                'amount'            => -abs($payment->amount),
+                'pack2'             => Payment::PACK2_DEPOSIT,
+                'payment_method_id' => $payment->payment_method_id,
+                'department_id'     => $departmentId,
+                'image_path'        => $payment->image_path,
+                'reversal_ref'      => $payment->id,
+                'status'            => Payment::STATUS_DELETED,
+                'edit_flag'         => 1,
+                'created_by'        => Auth::user()?->username ?? 'system',
+            ]);
 
             // Đánh dấu dòng gốc đã tách
             $payment->update([
                 'edit_flag'                  => 1,
+                'reversal_ref'               => $reversal->id,
                 'total_amount_before_split'  => $originalAmount,
                 'updated_by'                 => Auth::user()?->username ?? 'system',
             ]);
+            $payment->delete(); // Soft delete cọc gốc đã tách
 
-            // Tạo các dòng tách
+            // 2. Tạo các dòng cọc mới tách (ngày hệ thống)
             foreach ($request->amounts as $amt) {
                 Payment::create([
                     'booking_id'                 => $payment->booking_id,
                     'booking_room_id'            => $payment->booking_room_id,
                     'company_id'                 => $payment->company_id,
-                    'date'                       => $payment->date,
+                    'date'                       => $systemDate,
                     'open_time'                  => now()->format('H:i:s'),
                     'guest_display'              => $payment->guest_display,
                     'description'                => $payment->description . ' [Tách]',
@@ -306,15 +414,26 @@ class PaymentController extends Controller
                     'total_amount_before_split'  => $originalAmount,
                     'pack2'                      => Payment::PACK2_DEPOSIT,
                     'payment_method_id'          => $payment->payment_method_id,
+                    'department_id'              => $departmentId,
+                    'image_path'                 => $payment->image_path,
                     'reversal_ref'               => $payment->id,
                     'status'                     => Payment::STATUS_PENDING,
                     'edit_flag'                  => 0,
                     'created_by'                 => Auth::user()?->username ?? 'system',
                 ]);
             }
+
+            // Sync payment_value trên booking header
+            $totalDeposit = Payment::where('booking_id', $payment->booking_id)
+                ->where('pack2', Payment::PACK2_DEPOSIT)
+                ->where('edit_flag', 0)
+                ->whereNull('deleted_at')
+                ->sum('amount');
+
+            Booking::where('id', $payment->booking_id)->update(['payment_value' => max(0, $totalDeposit)]);
         });
 
-        $newPayments = Payment::where('reversal_ref', $payment->id)->get();
+        $newPayments = Payment::where('reversal_ref', $payment->id)->where('edit_flag', 0)->get();
 
         return response()->json([
             'success' => true,
@@ -352,26 +471,31 @@ class PaymentController extends Controller
 
         $targetBooking = Booking::findOrFail($request->target_booking_id);
 
-        if (in_array($targetBooking->status, [Booking::STATUS_CHECKOUT, Booking::STATUS_DELETED])) {
+        if (!in_array((int)$targetBooking->status, [0, 1])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Booking đích đã checkout hoặc đã hủy, không thể chuyển cọc.',
+                'message' => 'Chỉ có thể chuyển cọc sang Booking ở trạng thái Đăng ký (0) hoặc Đang ở (1).',
             ], 422);
         }
 
-        DB::transaction(function () use ($request, $payment, $targetBooking) {
+        $systemDate = $this->getSystemDate();
+        $departmentId = $this->getDepartmentId($request);
+
+        DB::transaction(function () use ($request, $payment, $targetBooking, $systemDate, $departmentId) {
             $sourceBookingId = $payment->booking_id;
 
-            // Tạo dòng âm trên booking nguồn
+            // Tạo dòng âm trên booking nguồn (ngày hệ thống)
             $reversal = Payment::create([
                 'booking_id'        => $sourceBookingId,
-                'date'              => now()->toDateString(),
+                'date'              => $systemDate,
                 'open_time'         => now()->format('H:i:s'),
                 'guest_display'     => $payment->guest_display,
                 'description'       => '[TRANSFER OUT → ' . $targetBooking->booking_code . '] ' . $payment->description,
                 'amount'            => -abs($payment->amount),
                 'pack2'             => Payment::PACK2_DEPOSIT,
                 'payment_method_id' => $payment->payment_method_id,
+                'department_id'     => $departmentId,
+                'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_DELETED,
                 'edit_flag'         => 1,
@@ -384,18 +508,21 @@ class PaymentController extends Controller
                 'reversal_ref' => $reversal->id,
                 'updated_by'   => Auth::user()?->username ?? 'system',
             ]);
+            $payment->delete(); // Soft delete cọc gốc đã chuyển
 
-            // Tạo dòng mới trên booking đích
+            // Tạo dòng mới trên booking đích (ngày hệ thống)
             $newPayment = Payment::create([
                 'booking_id'        => $request->target_booking_id,
                 'company_id'        => $targetBooking->company_id,
-                'date'              => $payment->date,
+                'date'              => $systemDate,
                 'open_time'         => now()->format('H:i:s'),
                 'guest_display'     => $targetBooking->booking_code . ' - ' . $targetBooking->booking_name,
                 'description'       => '[TRANSFER IN ← ' . Booking::find($sourceBookingId)?->booking_code . '] ' . $payment->description,
                 'amount'            => abs($payment->amount),
                 'pack2'             => Payment::PACK2_DEPOSIT,
                 'payment_method_id' => $payment->payment_method_id,
+                'department_id'     => $departmentId,
+                'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
@@ -407,6 +534,7 @@ class PaymentController extends Controller
                 $total = Payment::where('booking_id', $bkId)
                     ->where('pack2', Payment::PACK2_DEPOSIT)
                     ->where('edit_flag', 0)
+                    ->whereNull('deleted_at')
                     ->sum('amount');
                 Booking::where('id', $bkId)->update(['payment_value' => max(0, $total)]);
             }

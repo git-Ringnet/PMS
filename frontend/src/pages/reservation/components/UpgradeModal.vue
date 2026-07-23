@@ -178,10 +178,48 @@ const availableForms = computed(() => {
   return list.length > 0 ? list : (props.roomForms || [])
 })
 
-function updatePriceFromClass(cls) {
-  if (!cls) return
-  const stdPrice = cls.room_price ?? cls.price ?? cls.standard_rate ?? 0
-  if (!upgradeChangePrice.value) {
+function getRateCodePrice(rateCodeMa, classId) {
+  if (!rateCodeMa || !classId) return null
+  const matchedRc = props.roomRateCodes?.find(rc => rc.Ma === rateCodeMa || rc.code === rateCodeMa)
+  if (!matchedRc) return null
+
+  // 1. Tra cứu theo ratePlans & Period theo roomClassId
+  if (matchedRc.ratePlans && matchedRc.ratePlans.length > 0) {
+    for (const plan of matchedRc.ratePlans) {
+      if (plan.Period) {
+        let periodObj = plan.Period
+        if (typeof periodObj === 'string') {
+          try { periodObj = JSON.parse(periodObj) } catch (e) { periodObj = {} }
+        }
+        if (periodObj[classId]) {
+          const price = Number(periodObj[classId])
+          if (!isNaN(price) && price > 0) return price
+        }
+      }
+    }
+  }
+
+  // 2. Tra cứu Value / Gia / price
+  const valPrice = Number(matchedRc.Value || matchedRc.Gia || matchedRc.price || 0)
+  if (!isNaN(valPrice) && valPrice > 0) return valPrice
+
+  return null
+}
+
+function updateUpgradePrice() {
+  const classId = Number(upgradeTargetClassId.value)
+  const matchedClass = props.roomClasses?.find(c => c.id === classId)
+
+  if (upgradeChangePrice.value && upgradeTargetRateCode.value) {
+    const rcPrice = getRateCodePrice(upgradeTargetRateCode.value, classId)
+    if (rcPrice !== null) {
+      upgradeTargetPrice.value = rcPrice
+      return
+    }
+  }
+
+  if (matchedClass) {
+    const stdPrice = matchedClass.room_price ?? matchedClass.price ?? matchedClass.standard_rate ?? 0
     upgradeTargetPrice.value = Number(stdPrice)
   }
 }
@@ -190,7 +228,7 @@ function handleClassChange() {
   const matchedClass = props.roomClasses?.find(c => c.id === Number(upgradeTargetClassId.value))
   if (matchedClass) {
     upgradeTargetFormId.value = matchedClass.room_form_id || upgradeTargetFormId.value
-    updatePriceFromClass(matchedClass)
+    updateUpgradePrice()
   }
 }
 
@@ -205,27 +243,20 @@ function handleFormChange() {
 
   if (targetClass) {
     upgradeTargetClassId.value = targetClass.id
-    updatePriceFromClass(targetClass)
+    updateUpgradePrice()
   }
 }
 
 function handleRateCodeChange() {
   if (!upgradeChangePrice.value) return
-  if (!upgradeTargetRateCode.value) return
-  const matchedCode = props.roomRateCodes?.find(rc => rc.Ma === upgradeTargetRateCode.value)
-  if (matchedCode && (matchedCode.Gia || matchedCode.price)) {
-    upgradeTargetPrice.value = Number(matchedCode.Gia || matchedCode.price)
-  }
+  updateUpgradePrice()
 }
 
 function handleToggleChangePrice() {
   if (!upgradeChangePrice.value) {
     upgradeTargetRateCode.value = ''
-    const matchedClass = props.roomClasses?.find(c => c.id === Number(upgradeTargetClassId.value))
-    if (matchedClass) {
-      upgradeTargetPrice.value = Number(matchedClass.room_price ?? matchedClass.price ?? 0)
-    }
   }
+  updateUpgradePrice()
 }
 
 watch(() => props.show, (newVal) => {
@@ -308,6 +339,9 @@ async function confirmUpgrade() {
           const data = { room_class_id: classId }
           if (upgradeChangePrice.value) {
             data.rate = Number(upgradeTargetPrice.value)
+            if (upgradeTargetRateCode.value) {
+              data.rate_code = upgradeTargetRateCode.value
+            }
           }
           const res = await upgradeRoom(props.bookingId, r.bookingRoomId, data)
           if (res.data?.success) {
