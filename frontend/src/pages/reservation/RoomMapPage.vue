@@ -5,7 +5,7 @@ import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom } from '@/services/booking-service'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
@@ -264,10 +264,11 @@ watch(currentTab, async (newTab) => {
   }
 })
 
-// Circular widgets stats computed dynamically
 const checkinStats = computed(() => {
-  const count = roomStore.rooms.filter(r => r.booking_status === 'reserved').length
-  return `${count}/23`
+  const checkedIn = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
+  const reserved = roomStore.rooms.filter(r => r.booking_status === 'reserved').length
+  const total = checkedIn + reserved
+  return `${checkedIn}/${total}`
 })
 
 const checkoutStats = computed(() => {
@@ -338,6 +339,85 @@ function handleQuickCheckinFromMenu() {
   quickCheckinRoom.value = contextMenu.value.room
   showQuickCheckinModal.value = true
   closeContextMenu()
+}
+
+function isRoomNumberRed(room) {
+  if (!room) return false
+  const isOccupied = room.status === ROOM_STATUSES.OCCUPIED || room.booking_status === 'occupied' || room.status === 1
+  if (!isOccupied) return false
+
+  const checkinDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date
+  if (!checkinDate) return false
+
+  const checkinStr = String(checkinDate).split('T')[0]
+  const currentStr = String(rawDate.value).split('T')[0]
+
+  return checkinStr === currentStr
+}
+
+function isArrivingTomorrow(room) {
+  if (!room) return false
+  const isReserved = room.status === ROOM_STATUSES.RESERVED || room.booking_status === 'reserved'
+  if (!isReserved) return false
+
+  const arrivalDate = room.arrival_date || room.check_in || room.booking_arrival_date
+  if (!arrivalDate) return false
+
+  const arrStr = String(arrivalDate).split('T')[0]
+  const curr = new Date(rawDate.value)
+  curr.setDate(curr.getDate() + 1)
+  const tomorrowStr = curr.toISOString().split('T')[0]
+
+  return arrStr === tomorrowStr
+}
+
+// Undo Check-in Modal State (3-button: Đóng / Dơ / Có)
+const showUndoCheckinModal = ref(false)
+const undoCheckinRoomTarget = ref(null)
+const undoCheckinLoading = ref(false)
+
+function handleUndoCheckinFromMenu() {
+  if (!contextMenu.value.room) return
+  undoCheckinRoomTarget.value = contextMenu.value.room
+  showUndoCheckinModal.value = true
+  closeContextMenu()
+}
+
+function closeUndoCheckinModal() {
+  showUndoCheckinModal.value = false
+  undoCheckinRoomTarget.value = null
+}
+
+async function executeUndoCheckin(mode = 'clean') {
+  if (!undoCheckinRoomTarget.value) return
+  const room = undoCheckinRoomTarget.value
+  undoCheckinLoading.value = true
+
+  try {
+    const bookingId = room.booking_id || room.booking?.id
+    const roomId = room.booking_room_id || room.id
+    const res = await undoCheckInRoom(bookingId, roomId)
+    if (res.data && res.data.success !== false) {
+      if (mode === 'dirty') {
+        // Chuyển tình trạng phòng bẩn (DIRTY)
+        await roomStore.updateRoomStatus(room.id, ROOM_STATUSES.DIRTY)
+        uiStore.showToast(`Hủy nhận phòng ${room.room_number} và chuyển sang phòng bẩn thành công!`, 'success')
+      } else {
+        uiStore.showToast(`Hủy nhận phòng ${room.room_number} thành công!`, 'success')
+      }
+      closeUndoCheckinModal()
+      await roomStore.fetchRooms({ silent: true })
+      await roomStore.fetchStats()
+    } else {
+      const msg = res.data?.message || 'Không thể hủy nhận phòng.'
+      uiStore.showToast(msg, 'error')
+    }
+  } catch (err) {
+    const msg = err.response?.data?.message || 'Lỗi kết nối máy chủ'
+    uiStore.showToast(msg, 'error')
+  } finally {
+    undoCheckinLoading.value = false
+  }
 }
 
 const hoverTooltip = ref({
@@ -460,12 +540,6 @@ function getGuestCount(room) {
 
 function hasExtraBed(room) {
   return false
-}
-
-// Room number red color warning rule
-function isRoomNumberRed(room) {
-  if (room.status === ROOM_STATUSES.MAINTENANCE) return false
-  return room.booking_status === 'checkout' || !!room.has_issue
 }
 
 // Show Broom icon for dirty rooms
@@ -1646,7 +1720,7 @@ const uniqueFloors = computed(() => {
                     <div class="flex flex-col items-center justify-center w-full my-auto">
                       <!-- Room Number -->
                       <div class="font-bold text-[18px] leading-tight text-center w-full flex items-center justify-center gap-1">
-                        <span :class="isRoomNumberRed(room) ? 'text-red-600' : (room.booking_color ? 'text-inherit' : 'text-gray-900')">
+                        <span :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : (room.booking_color ? 'text-inherit' : 'text-gray-900'))">
                           {{ room.room_number }}
                         </span>
                       </div>
@@ -2338,6 +2412,24 @@ const uniqueFloors = computed(() => {
             <span>In mẫu đăng ký</span>
           </button>
 
+          <!-- Huỷ nhận phòng (Button dạng pill xanh lam Ảnh 3 - chỉ phòng mới checkin trong ngày) -->
+          <div v-if="isRoomNumberRed(contextMenu.room)" class="px-1.5 pt-1">
+            <button
+              @click="handleUndoCheckinFromMenu()"
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold transition-all cursor-pointer select-none text-white rounded-xl shadow-xs border-none"
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
+            >
+              <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 2L11 13" />
+                <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+                <circle cx="7" cy="17" r="3.5" fill="#ef4444" stroke="white" stroke-width="1.2" />
+                <line x1="5.2" y1="15.2" x2="8.8" y2="18.8" stroke="white" stroke-width="1.5" />
+                <line x1="8.8" y1="15.2" x2="5.2" y2="18.8" stroke="white" stroke-width="1.5" />
+              </svg>
+              <span>Huỷ nhận phòng</span>
+            </button>
+          </div>
+
           <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam Ảnh 3) -->
           <div class="relative group mt-1 px-1.5 pb-1">
             <div
@@ -2716,6 +2808,74 @@ const uniqueFloors = computed(() => {
                 {{ quickCheckinLoading ? 'Đang xử lý...' : 'Nhận phòng' }}
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Modal Xác nhận Hủy nhận phòng (3 nút: Đóng / Dơ / Có) -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div
+        v-if="showUndoCheckinModal"
+        class="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[1px]"
+        @click.self="closeUndoCheckinModal"
+      >
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-modal-slide">
+          <!-- Header -->
+          <div
+            class="px-5 py-3.5 flex items-center justify-between text-white"
+            :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+          >
+            <h3 class="text-base font-extrabold text-white tracking-wide">Xác nhận</h3>
+            <button
+              @click="closeUndoCheckinModal"
+              class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
+            >
+              <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="px-6 py-7 text-center">
+            <p class="text-sm font-bold text-slate-800 leading-relaxed">
+              Bạn có muốn dọn phòng này sau khi hủy đăng ký không?
+            </p>
+          </div>
+
+          <!-- Action Buttons (3 Nút: Đóng / Dơ / Có) -->
+          <div class="px-6 pb-6 flex items-center justify-center gap-2.5">
+            <button
+              @click="closeUndoCheckinModal"
+              :disabled="undoCheckinLoading"
+              class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+            >
+              Đóng
+            </button>
+            <button
+              @click="executeUndoCheckin('dirty')"
+              :disabled="undoCheckinLoading"
+              class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+            >
+              Dơ
+            </button>
+            <button
+              @click="executeUndoCheckin('clean')"
+              :disabled="undoCheckinLoading"
+              class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs flex items-center justify-center gap-1.5"
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+            >
+              <svg v-if="undoCheckinLoading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              {{ undoCheckinLoading ? 'Đang...' : 'Có' }}
+            </button>
           </div>
         </div>
       </div>
