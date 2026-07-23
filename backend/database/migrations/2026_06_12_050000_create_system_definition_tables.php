@@ -95,17 +95,21 @@ return new class extends Migration
             $table->foreign('RateCode')->references('Ma')->on('room_rate_codes')->onDelete('cascade');
         });
 
-        // 5. Registration Statuses
+        // 5. Registration Statuses (Bảng SP1311 - TinhTrangDangKy)
         Schema::create('registration_statuses', function (Blueprint $table) {
             $table->id();
+            $table->unsignedInteger('booking_status_id')->nullable()->comment('Mã ID trạng thái SP1311: 1, 20, 24, 25, 26, 27, 28, 29');
             $table->string('name');
             $table->string('color')->default('#ffffff');
-            $table->integer('confirmation_days')->default(0);
+            $table->integer('cut_off_day')->default(0);
             $table->string('description')->nullable();
             $table->string('status_value')->nullable();
             $table->boolean('is_hidden')->default(false);
             $table->boolean('is_availability')->default(true);
             $table->unsignedTinyInteger('bk_definite')->nullable()->comment('4 = trạng thái tự chuyển khi hủy booking. null = không tự chuyển.');
+            $table->string('vietnamese')->nullable();
+            $table->string('english')->nullable();
+            $table->integer('order_index')->nullable();
             $table->timestamps();
         });
 
