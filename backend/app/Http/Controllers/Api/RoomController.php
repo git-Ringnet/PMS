@@ -92,10 +92,6 @@ class RoomController extends Controller
             $br = $bookingRoomsToday->where('room_number', $room->room_number)->first();
             if ($br) {
                 if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
-                    $room->is_clean = false;
-                    if ($room->status !== 'maintenance' && $room->status !== 'ooo' && $room->status !== 'oos') {
-                        $room->status = 'dirty';
-                    }
                     if ($br->departure_date->toDateString() === $sysDateStr) {
                         $room->booking_status = 'checkout';
                     } else {

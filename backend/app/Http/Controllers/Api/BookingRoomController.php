@@ -572,7 +572,7 @@ class BookingRoomController extends Controller
 
             if ($bookingRoom->room_number) {
                 \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'dirty'
+                    'status' => 'occupied'
                 ]);
             }
 
@@ -937,8 +937,9 @@ class BookingRoomController extends Controller
         $arrivalDate   = request('arrival_date') ?? $bookingRoom->arrival_date->toDateString();
         $departureDate = request('departure_date') ?? $bookingRoom->departure_date->toDateString();
 
-        // Lấy danh sách phòng vật lý cùng loại, sắp xếp theo tầng thấp→cao
+        // Lấy danh sách phòng vật lý cùng loại (không lấy phòng ảo: is_internal = 0), sắp xếp theo tầng thấp→cao
         $candidates = \App\Models\Room::where('room_class_id', $bookingRoom->room_class_id)
+            ->where('is_internal', false)
             ->orderBy('floor', 'asc')
             ->orderBy('room_number', 'asc')
             ->get();
