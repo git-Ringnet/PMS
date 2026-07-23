@@ -10,6 +10,11 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
 
+let pmsBc = null
+if (typeof BroadcastChannel !== 'undefined') {
+  pmsBc = new BroadcastChannel('pms-room-updates')
+}
+
 const props = defineProps({
   initialDate: {
     type: String,
@@ -308,6 +313,7 @@ const handleCheckIn = async () => {
   // Reload room status & bookings
   await roomStore.fetchRooms()
   await loadBookings()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
 
   if (successCount > 0) {
     uiStore.showToast(`Đã nhận phòng thành công cho ${successCount} phòng!`, 'success')
@@ -362,6 +368,7 @@ const handleUndoCheckIn = async () => {
   // Reload room status & bookings
   await roomStore.fetchRooms()
   await loadBookings()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
 
   if (successCount > 0) {
     uiStore.showToast(`Đã hủy nhận phòng thành công cho ${successCount} phòng!`, 'success')

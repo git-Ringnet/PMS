@@ -150,7 +150,16 @@ class RoomAvailabilityService
             $query->where('id', '!=', $excludeBookingRoomId);
         }
 
-        return $query->exists();
+        if ($query->exists()) {
+            return true;
+        }
+
+        // Check if room has an active room lock (OOO / OOS) overlapping arrivalDate ~ departureDate
+        return \App\Models\RoomLock::where('room_number', $roomNumber)
+            ->where('is_active', 1)
+            ->where('start_date', '<=', $departureDate . ' 23:59:59')
+            ->where('end_date', '>=', $arrivalDate . ' 00:00:00')
+            ->exists();
     }
 
     /**

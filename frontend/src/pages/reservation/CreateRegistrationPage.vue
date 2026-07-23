@@ -62,7 +62,20 @@ import {
 const route = useRoute()
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
+import { useRoomStore } from '@/stores/room-store'
 const authStore = useAuthStore()
+const roomStore = useRoomStore()
+
+let pmsBc = null
+if (typeof BroadcastChannel !== 'undefined') {
+  pmsBc = new BroadcastChannel('pms-room-updates')
+}
+
+function notifyRoomUpdates() {
+  roomStore.fetchRooms({ silent: true })
+  roomStore.fetchStats()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
+}
 
 // ==================== CONFIG & SYSTEM ====================
 function formatLocalYYYYMMDD(dVal) {
@@ -668,6 +681,15 @@ const filteredActiveRooms = computed(() => {
   if (!activeTab.value || !activeTab.value.rooms) return []
   let list = activeTab.value.rooms
 
+  // Check if ALL rooms in this registration are cancelled
+  const allRoomsCancelled = activeTab.value.status === 'CANCELLED' || 
+    (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3 || Number(r.bookingRoomStatus) === 100))
+
+  // If not all rooms are cancelled, hide individual cancelled/transferred rooms
+  if (!allRoomsCancelled) {
+    list = list.filter(r => Number(r.bookingRoomStatus) !== 3 && Number(r.bookingRoomStatus) !== 100)
+  }
+
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
     list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
   }
@@ -804,11 +826,8 @@ const groupedRooms = computed(() => {
   return groupsList
 })
 
-// Whether any room has been checked-in/checked-out so we show status headers
-const hasStatusGroups = computed(() => {
-  if (!activeTab.value?.rooms) return false
-  return activeTab.value.rooms.some(r => Number(r.bookingRoomStatus) >= 1)
-})
+// Whether any room status headers are shown (Always show status headers)
+const hasStatusGroups = computed(() => true)
 
 // Build nested: Returns sorted array of status groups, each containing typeGroups sorted by room class order
 const groupedRoomsNested = computed(() => {
@@ -934,6 +953,12 @@ onMounted(async () => {
     isLoading.value = false
   }
 })
+
+function handleTabsWheel(e) {
+  if (e.deltaY) {
+    e.currentTarget.scrollLeft += e.deltaY
+  }
+}
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
@@ -1085,7 +1110,7 @@ function bookingToTab(b) {
         isPreassigned: !!physicalRoom.room_number,
         initialRoomClass: rc.code || '',
         transferredFrom: '',
-        roomStatus: 'Sạch',
+        roomStatus: (br.status === 1 || physicalRoom.status === 'dirty') ? 'Bẩn' : (physicalRoom.status === 'cleaning' ? 'Đang dọn' : (physicalRoom.status === 'inspecting' ? 'Kiểm tra' : 'Sạch')),
         allotmentCode: '',
         roomCode: br.id || '',
         total: totalNum,
@@ -2451,7 +2476,13 @@ async function handleSaveNewBooking() {
   if (!modalForm.value.companyId)        { uiStore.showToast('Vui lòng chọn Công ty!', 'warning'); return }
   if (!modalForm.value.marketId)         { uiStore.showToast('Vui lòng chọn Thị trường!', 'warning'); return }
   if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
-  
+
+  const sysDateStr = systemDate.value || parseApiDate(new Date())
+  if (modalForm.value.checkIn < sysDateStr) {
+    uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'warning')
+    return
+  }
+
   const dupError = validateRoomsDuplication(modalForm.value.rooms)
   if (dupError) {
     uiStore.showToast(dupError, 'error')
@@ -2700,6 +2731,7 @@ async function triggerAction(actionName) {
           }
           const res = await updateBooking(tab.dbId, payload)
           await loadBookings()
+          notifyRoomUpdates()
           uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
         } catch (err) {
           console.error(err)
@@ -2763,7 +2795,7 @@ async function triggerAction(actionName) {
               const res = await checkInRoom(tab.dbId, r.bookingRoomId)
               if (res.data?.success) {
                 successCount++
-                r.roomStatus = 'Đang ở'
+                r.roomStatus = 'Bẩn'
               } else {
                 failCount++
                 failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
@@ -2776,6 +2808,7 @@ async function triggerAction(actionName) {
           }
 
           await loadBookings()
+          notifyRoomUpdates()
           selectedRows.value = []
 
           if (successCount > 0) {
@@ -3430,14 +3463,14 @@ defineExpose({
     </div>
     
     <!-- DYNAMIC TABS HEADER BAR (Redesigned Top Bar) -->
-    <div class="topbar shrink-0">
+    <div class="topbar shrink-0 flex items-center justify-between gap-3">
       <!-- Tabs list -->
-      <div class="flex items-center gap-1.5 overflow-x-auto max-w-[40%] scrollbar-none">
+      <div class="flex items-center gap-1.5 overflow-x-auto flex-1 min-w-0 scrollbar-none" @wheel.passive="handleTabsWheel">
         <button
           v-for="tab in tabs"
           :key="tab.id"
           @click="handleTabClick(tab.id)"
-          class="booking-tab cursor-pointer whitespace-nowrap"
+          class="booking-tab cursor-pointer whitespace-nowrap shrink-0"
           :style="tab.id === activeTabId ? 'background: var(--navy-3); border: 1px solid rgba(255,255,255,0.15)' : 'background: rgba(255,255,255,0.06); color: #c7d2e0'"
         >
           <span>{{ tab.title }}</span>
@@ -3453,7 +3486,7 @@ defineExpose({
         <!-- ADD TAB BUTTON -->
         <button
           @click="handleAddTabClick"
-          class="add-booking-btn"
+          class="add-booking-btn shrink-0"
           title="Tạo đăng ký mới"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -3461,10 +3494,8 @@ defineExpose({
         </button>
       </div>
 
-      <div class="spacer"></div>
-
       <!-- Action Buttons -->
-      <div v-if="activeTab" class="flex items-center gap-2">
+      <div v-if="activeTab" class="flex items-center gap-2 shrink-0 ml-auto">
         <button class="btn" @click="triggerAction('Thông tin đăng ký')">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
           Thông tin đăng ký
@@ -4198,14 +4229,14 @@ defineExpose({
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr 
                       class="border-b font-bold h-8 cursor-pointer select-none"
-                      :class="statusGroup.statusOrder === 3 ? 'bg-red-50/70 border-red-200 text-red-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-red-100 border-red-300 text-red-900 font-extrabold' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
                       <td class="p-2 border-r border-blue-200 text-center" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
-                          :class="statusGroup.statusOrder === 3 ? 'bg-red-400 hover:bg-red-500' : 'bg-blue-400 hover:bg-blue-500'"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
@@ -4218,10 +4249,10 @@ defineExpose({
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-700' : 'text-blue-900'">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-900 font-black' : 'text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-100' : 'bg-[#bfdbfe]'"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-200' : 'bg-[#bfdbfe]'"></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
@@ -4262,7 +4293,7 @@ defineExpose({
                               class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
                               :class="[
                                 selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
-                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-500 bg-red-50/15' : ''
+                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
                               ]"
                               @click="handleRowSelect(room.id)"
                               :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
@@ -6016,7 +6047,6 @@ defineExpose({
 .cancelled-room,
 .cancelled-room span,
 .cancelled-room td {
-  color: #ef4444 !important;
-  text-decoration: line-through !important;
+  color: #b91c1c !important;
 }
 </style>
