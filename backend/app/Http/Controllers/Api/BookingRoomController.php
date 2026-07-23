@@ -1155,4 +1155,636 @@ class BookingRoomController extends Controller
             $current = $current->addDay();
         }
     }
+
+    /**
+     * GET /bookings/{bookingId}/rooms/{roomId}/move-target-rooms
+     * Lấy danh sách phòng trống khả dụng & phòng inhouse cho phép gộp
+     */
+    public function getMoveTargetRooms($bookingId, $roomId)
+    {
+        $bookingRoom = BookingRoom::where('booking_id', $bookingId)
+            ->with(['guests.guest', 'roomClass', 'children', 'services'])
+            ->findOrFail($roomId);
+
+        $systemDate = $this->avService->getSystemDate();
+        $moveDateStr = $systemDate->toDateString();
+        $departureDateStr = $bookingRoom->departure_date->toDateString();
+
+        $effectiveStartDate = ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN)
+            ? max($moveDateStr, $bookingRoom->arrival_date->toDateString())
+            : $bookingRoom->arrival_date->toDateString();
+
+        // 1. Fetch available physical rooms (excluding internal/virtual rooms)
+        $allRooms = \App\Models\Room::with(['roomClass', 'roomForm'])
+            ->physical()
+            ->where('room_number', '!=', $bookingRoom->room_number ?? '')
+            ->get();
+
+        $ratesMap = \App\Models\StandardRate::all()->keyBy('room_class_id');
+
+        $availableRooms = [];
+        $statusLabels = [
+            'available'   => 'Sẵn sàng (Vacant Clean)',
+            'clean'       => 'Vacant Clean',
+            'dirty'       => 'Vacant Dirty',
+            'checkout'    => 'Vacant Dirty',
+            'maintenance' => 'Out of Service (OOO)',
+            'occupied'    => 'Occupied',
+        ];
+
+        foreach ($allRooms as $room) {
+            $isOccupied = $this->avService->isRoomNumberOccupied(
+                $room->room_number,
+                $effectiveStartDate,
+                $departureDateStr,
+                $bookingRoom->id
+            );
+
+            if (!$isOccupied) {
+                $stdRate = $ratesMap->get($room->room_class_id);
+
+                $availableRooms[] = [
+                    'id'              => $room->id,
+                    'room_number'     => $room->room_number,
+                    'room_class_id'   => $room->room_class_id,
+                    'room_class_code' => $room->roomClass?->code ?? $room->roomClass?->Ma ?? '',
+                    'room_class_name' => $room->roomClass?->name ?? '',
+                    'room_form_name'  => $room->roomForm?->name ?? 'Double',
+                    'floor'           => $room->floor,
+                    'grid_row'        => (int)$room->grid_row,
+                    'grid_column'     => (int)$room->grid_column,
+                    'is_internal'     => (bool)$room->is_internal,
+                    'is_virtual'      => (bool)$room->is_virtual,
+                    'rate'            => (float)($stdRate?->rate ?? 0),
+                    'extra_bed_rate'  => (float)($stdRate?->extra_bed_rate ?? 0),
+                    'status'          => $room->status,
+                    'status_label'    => $statusLabels[$room->status] ?? $room->status,
+                    'is_ready'        => $room->status === 'available',
+                ];
+            }
+        }
+
+        usort($availableRooms, fn($a, $b) => strcmp($a['room_number'], $b['room_number']));
+
+        // 2. Fetch occupied (In-House) rooms for merging (departure_date >= current room's departure_date)
+        $occupiedBookingRooms = BookingRoom::where('id', '!=', $bookingRoom->id)
+            ->where('status', BookingRoom::STATUS_CHECKED_IN)
+            ->where('departure_date', '>=', $departureDateStr)
+            ->whereHas('room', fn($q) => $q->physical())
+            ->with(['guests.guest', 'roomClass', 'room.roomForm'])
+            ->get();
+
+        $occupiedRooms = [];
+        foreach ($occupiedBookingRooms as $obrItem) {
+            $primaryGuest = $obrItem->guests->firstWhere('is_primary', 1)?->guest;
+            $guestNames = $obrItem->guests->map(fn($g) => $g->guest?->full_name)->filter()->values();
+            $mainGuestName = $primaryGuest?->full_name ?? ($guestNames[0] ?? 'Khách');
+
+            $statusText = "Inhouse guest: ({$obrItem->booking_id}) " . mb_strtoupper($mainGuestName);
+
+            $occupiedRooms[] = [
+                'booking_room_id' => $obrItem->id,
+                'booking_id'      => $obrItem->booking_id,
+                'booking_code'    => $obrItem->booking?->booking_code ?? $obrItem->id,
+                'room_number'     => $obrItem->room_number,
+                'room_class_id'   => $obrItem->room_class_id,
+                'room_class_code' => $obrItem->roomClass?->code ?? $obrItem->roomClass?->Ma ?? '',
+                'room_class_name' => $obrItem->roomClass?->name ?? '',
+                'room_form_name'  => $obrItem->room?->roomForm?->name ?? 'Double',
+                'floor'           => $obrItem->room?->floor,
+                'grid_row'        => (int)($obrItem->room?->grid_row ?? 0),
+                'grid_column'     => (int)($obrItem->room?->grid_column ?? 0),
+                'is_internal'     => (bool)($obrItem->room?->is_internal ?? false),
+                'is_virtual'      => (bool)($obrItem->room?->is_virtual ?? false),
+                'guest_name'      => $mainGuestName,
+                'all_guests'      => $guestNames,
+                'arrival_date'    => $obrItem->arrival_date->toDateString(),
+                'departure_date'  => $obrItem->departure_date->toDateString(),
+                'rate'            => (float)$obrItem->rate,
+                'extra_bed_rate'  => (float)($obrItem->extra_bed_rate ?? 0),
+                'status_label'    => $statusText,
+                'adults'          => $obrItem->adults,
+                'children'        => $obrItem->children_count ?? 0,
+            ];
+        }
+
+        usort($occupiedRooms, fn($a, $b) => strcmp($a['room_number'], $b['room_number']));
+
+        $guests = $bookingRoom->guests->map(function ($gPivot) {
+            return [
+                'guest_id'   => $gPivot->guest_id,
+                'full_name'  => $gPivot->guest?->full_name ?? '',
+                'is_primary' => (bool)$gPivot->is_primary,
+                'is_child'   => false,
+            ];
+        });
+
+        $children = $bookingRoom->children
+            ? $bookingRoom->children->where('child_status', 0)->values()->map(function ($c) {
+                return [
+                    'guest_id'   => $c->id,
+                    'full_name'  => $c->full_name ?: ($c->age_group === 'baby' ? 'Em bé' : 'Trẻ em'),
+                    'is_primary' => false,
+                    'is_child'   => true,
+                    'age_group'  => $c->age_group,
+                ];
+            })
+            : collect();
+
+        if ($children->isEmpty()) {
+            $fallbackChildren = collect();
+            $childQty = (int)($bookingRoom->children_qty ?? 0);
+            $babyQty = (int)($bookingRoom->babies ?? 0);
+
+            for ($i = 1; $i <= $childQty; $i++) {
+                $fallbackChildren->push([
+                    'guest_id'   => 'CHILD_' . $i,
+                    'full_name'  => "Trẻ em {$i}",
+                    'is_primary' => false,
+                    'is_child'   => true,
+                    'age_group'  => 'child',
+                ]);
+            }
+            for ($b = 1; $b <= $babyQty; $b++) {
+                $fallbackChildren->push([
+                    'guest_id'   => 'BABY_' . $b,
+                    'full_name'  => "Em bé {$b}",
+                    'is_primary' => false,
+                    'is_child'   => true,
+                    'age_group'  => 'baby',
+                ]);
+            }
+            $children = $fallbackChildren;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'current_room' => [
+                    'id'               => $bookingRoom->id,
+                    'booking_id'       => $bookingRoom->booking_id,
+                    'booking_code'     => $bookingRoom->booking?->booking_code,
+                    'room_number'      => $bookingRoom->room_number,
+                    'room_class_id'    => $bookingRoom->room_class_id,
+                    'room_class_code'  => $bookingRoom->roomClass?->code ?? $bookingRoom->roomClass?->Ma ?? '',
+                    'room_class_name'  => $bookingRoom->roomClass?->name ?? '',
+                    'room_form_name'   => $bookingRoom->room?->roomForm?->name ?? 'Double',
+                    'arrival_date'     => $bookingRoom->arrival_date->toDateString(),
+                    'departure_date'   => $bookingRoom->departure_date->toDateString(),
+                    'move_date'        => $moveDateStr,
+                    'status'           => $bookingRoom->status,
+                    'is_do_not_move'   => (bool)$bookingRoom->is_do_not_move,
+                    'rate'             => (float)$bookingRoom->rate,
+                    'extra_bed_qty'    => (int)($bookingRoom->extra_bed_qty ?? 0),
+                    'extra_bed_rate'   => (float)($bookingRoom->extra_bed_rate ?? 0),
+                    'guests'           => $guests,
+                    'children'         => $children,
+                ],
+                'available_rooms' => $availableRooms,
+                'occupied_rooms'  => $occupiedRooms,
+            ]
+        ]);
+    }
+
+    /**
+     * POST /bookings/{bookingId}/rooms/{roomId}/move
+     * Thực hiện Chuyển phòng (Form A) hoặc Gộp phòng (Form B)
+     */
+    public function moveRoom(Request $request, $bookingId, $roomId)
+    {
+        $bookingRoom = BookingRoom::where('booking_id', $bookingId)
+            ->with(['guests', 'children', 'services'])
+            ->findOrFail($roomId);
+
+        // 1. Check lock status (is_do_not_move)
+        if ($bookingRoom->is_do_not_move) {
+            return response()->json([
+                'success' => false,
+                'message' => "Phòng {$bookingRoom->room_number} đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.",
+            ], 422);
+        }
+
+        $request->validate([
+            'move_type'          => 'required|in:available,merge',
+            'reason'             => 'required|string|max:500',
+            'target_room_number' => 'required|string',
+            'selected_guest_ids' => 'nullable|array',
+            'is_change_rate'     => 'nullable|boolean',
+            'rate'               => 'nullable|numeric|min:0',
+            'extra_bed_qty'      => 'nullable|integer|min:0',
+            'extra_bed_rate'     => 'nullable|numeric|min:0',
+        ], [
+            'reason.required' => 'Vui lòng nhập lý do chuyển phòng.',
+            'target_room_number.required' => 'Vui lòng chọn phòng đích.',
+        ]);
+
+        $moveType = $request->input('move_type');
+        $reason = trim($request->input('reason'));
+        $targetRoomNumber = trim($request->input('target_room_number'));
+        $selectedGuestIds = $request->input('selected_guest_ids', []);
+        $isChangeRate = filter_var($request->input('is_change_rate', false), FILTER_VALIDATE_BOOLEAN);
+
+        $currentUser = Auth::user()?->username ?? 'system';
+        $systemDate = $this->avService->getSystemDate();
+
+        if ($moveType === 'available') {
+            // Form A: Move to Available Room
+            $physicalRoom = \App\Models\Room::where('room_number', $targetRoomNumber)->first();
+            if (!$physicalRoom) {
+                return response()->json(['success' => false, 'message' => "Không tìm thấy số phòng {$targetRoomNumber} trong hệ thống."], 422);
+            }
+
+            // Rule 2.1: Target room MUST be in "Sẵn sàng" (status === 'available').
+            if ($physicalRoom->status !== 'available') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vui lòng kiểm tra tình trạng phòng',
+                    'detail'  => "Phòng {$targetRoomNumber} hiện chưa ở trạng thái Sẵn sàng (Trạng thái: {$physicalRoom->status})."
+                ], 422);
+            }
+
+            $moveDateStr = ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN)
+                ? max($systemDate->toDateString(), $bookingRoom->arrival_date->toDateString())
+                : $bookingRoom->arrival_date->toDateString();
+            $departureDateStr = $bookingRoom->departure_date->toDateString();
+
+            if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $moveDateStr, $departureDateStr, $bookingRoom->id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Số phòng {$targetRoomNumber} đã có khách ở hoặc đã được phân phòng trong khoảng thời gian {$moveDateStr} đến {$departureDateStr}.",
+                ], 422);
+            }
+
+            DB::beginTransaction();
+            try {
+                $now = \Carbon\Carbon::now();
+                $timeStr = $now->format('H:i:s');
+                $sysDateStr = $systemDate->toDateString();
+
+                $allGuests = $bookingRoom->guests()->get();
+                $allGuestsCount = $allGuests->count();
+                $isAllGuestsMoved = empty($selectedGuestIds) || (count($selectedGuestIds) >= $allGuestsCount);
+
+                $movedGuestPivots = empty($selectedGuestIds)
+                    ? $allGuests
+                    : $allGuests->whereIn('guest_id', $selectedGuestIds);
+                $movedGuestIds = $movedGuestPivots->pluck('guest_id')->toArray();
+
+                $movedAdultsCount = $movedGuestPivots->count(); // Count of moved adults
+                $movedChildrenCount = 0; // Count of moved children
+
+                if ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN) {
+                    $originalArrivalStr = $bookingRoom->actual_arrival_date
+                        ? $bookingRoom->actual_arrival_date->toDateString()
+                        : $bookingRoom->arrival_date->toDateString();
+                    $originalDepartureStr = $bookingRoom->departure_date->toDateString();
+
+                    // --- 1. PREPARE NEW ROOM (Sp2100) ---
+                    $attributes = $bookingRoom->getAttributes();
+                    unset($attributes['id'], $attributes['created_at'], $attributes['updated_at'], $attributes['deleted_at']);
+
+                    $attributes['room_class_id']       = $physicalRoom->room_class_id;
+                    $attributes['RoomKind']            = $physicalRoom->roomForm?->name ?? $physicalRoom->roomClass?->name ?? $bookingRoom->RoomKind;
+                    $attributes['room_number']         = $targetRoomNumber;
+                    $attributes['status']              = BookingRoom::STATUS_CHECKED_IN;
+                    $attributes['arrival_date']        = $sysDateStr;
+                    $attributes['departure_date']      = \Carbon\Carbon::parse($originalDepartureStr)->subDay()->toDateString();
+                    $attributes['actual_arrival_date'] = $originalArrivalStr;
+                    $attributes['arrival_time']        = $timeStr;
+                    $attributes['ActutalNumOfDays']    = max(1, \Carbon\Carbon::parse($sysDateStr)->diffInDays(\Carbon\Carbon::parse($originalDepartureStr)));
+                    $attributes['adults']              = $movedAdultsCount;
+                    $attributes['children_qty']        = $movedChildrenCount;
+                    $attributes['booking_date']        = $sysDateStr;
+                    $attributes['check_in_user']       = $currentUser;
+                    $attributes['check_out_user']      = null;
+                    $attributes['CheckoutDate']        = null;
+                    $attributes['CheckoutTime']        = null;
+                    $attributes['move_room']           = null;
+                    $attributes['created_by']          = $currentUser;
+                    $attributes['updated_by']          = $currentUser;
+
+                    $origArrivalFormatted = \Carbon\Carbon::parse($originalArrivalStr)->format('d-m-Y');
+                    $attributes['note'] = trim("From Room {$bookingRoom->room_number}, old arrival date: {$origArrivalFormatted}" . ($reason ? " | Lý do: {$reason}" : ""));
+
+                    if ($isChangeRate) {
+                        if ($request->has('rate')) $attributes['rate'] = $request->rate;
+                        if ($request->has('extra_bed_qty')) $attributes['extra_bed_qty'] = $request->extra_bed_qty;
+                        if ($request->has('extra_bed_rate')) $attributes['extra_bed_rate'] = $request->extra_bed_rate;
+                        if ($request->filled('rate_code')) $attributes['rate_code'] = $request->rate_code;
+                    }
+
+                    // Insert new booking room record (Sp2100)
+                    $newRoom = BookingRoom::create($attributes);
+
+                    // --- 2. HANDLE OLD ROOM (Sp2100 & Sp2200 & Sp2500) ---
+                    if ($isAllGuestsMoved) {
+                        // All guests moved -> Old room status = 100, departure_date = system_date - 1
+                        $prevDepartureDateStr = \Carbon\Carbon::parse($sysDateStr)->subDay()->toDateString();
+                        $actualDaysStayed = max(1, \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr)));
+
+                        $bookingRoom->update([
+                            'departure_date'   => $prevDepartureDateStr,
+                            'ActutalNumOfDays' => $actualDaysStayed,
+                            'status'           => 100, // Status 100 = Chuyển phòng
+                            'move_room'        => $newRoom->id,
+                            'departure_time'   => $timeStr,
+                            'CheckoutDate'     => $sysDateStr,
+                            'CheckoutTime'     => $timeStr,
+                            'check_out_user'   => $currentUser,
+                            'note'             => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển toàn bộ sang phòng {$targetRoomNumber}: {$reason}"),
+                            'updated_by'       => $currentUser,
+                        ]);
+
+                        // Update physical room status to dirty
+                        \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
+
+                        // Sp2200: Update all guests in old room -> Status = 100
+                        \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update([
+                            'status'               => 100,
+                            'actual_checkout_date' => $sysDateStr,
+                            'actual_checkout_time' => $timeStr,
+                            'checkout_by'          => $currentUser,
+                        ]);
+
+                        // Sp2500 (booking_children): Update children in old room -> Status = 100 & Clone to new room
+                        $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
+                        \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->update([
+                            'child_status' => 100,
+                        ]);
+
+                        foreach ($oldChildren as $childItem) {
+                            $oldChildId = $childItem->id;
+                            $childData = $childItem->toArray();
+                            unset($childData['id'], $childData['created_at'], $childData['updated_at']);
+                            $childData['id'] = 'BC' . uniqid();
+                            $childData['booking_room_id'] = $newRoom->id;
+                            $childData['child_status'] = 0;
+                            $newChild = \App\Models\BookingChild::create($childData);
+
+                            // Sp2401 (booking_child_breakfast_details): Transfer unbilled breakfast details >= system_date
+                            \App\Models\BookingChildBreakfastDetail::where('booking_child_id', $oldChildId)
+                                ->where('service_date', '>=', $sysDateStr)
+                                ->update(['booking_child_id' => $newChild->id]);
+                        }
+                    } else {
+                        // Partial move -> Old room remains Checked-In (Status = 1), update remaining guest count
+                        $remainingAdults = max(1, ($bookingRoom->adults ?? 1) - $movedAdultsCount);
+                        $remainingChildren = max(0, ($bookingRoom->children_qty ?? 0) - $movedChildrenCount);
+
+                        $bookingRoom->update([
+                            'adults'       => $remainingAdults,
+                            'children_qty' => $remainingChildren,
+                            'note'           => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
+                            'updated_by'     => $currentUser,
+                        ]);
+
+                        // Sp2200: Only update moved guests -> Status = 100
+                        \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
+                            ->whereIn('guest_id', $movedGuestIds)
+                            ->update([
+                                'status'               => 100,
+                                'actual_checkout_date' => $sysDateStr,
+                                'actual_checkout_time' => $timeStr,
+                                'checkout_by'          => $currentUser,
+                            ]);
+                    }
+
+                    // --- 3. INSERT GUESTS INTO NEW ROOM (Sp2200) ---
+                    foreach ($movedGuestPivots as $gPivot) {
+                        \App\Models\BookingRoomGuest::create([
+                            'booking_room_id'      => $newRoom->id,
+                            'guest_id'             => $gPivot->guest_id,
+                            'is_primary'           => $gPivot->is_primary,
+                            'status'               => BookingRoom::STATUS_CHECKED_IN,
+                            'actual_arrival_date'  => $sysDateStr,
+                            'actual_arrival_time'  => $timeStr,
+                            'checkin_by'           => $currentUser,
+                            'actual_checkout_date' => $originalDepartureStr,
+                        ]);
+                    }
+
+                    // --- 4. TRANSFER LINKED RECORDS (Sp2401, Sp2102, Sp2107, Sp3000, Sp3002) ---
+                    // Sp2401 & Sp2102 & Sp3000: Transfer future/unbilled services from system_date onwards
+                    \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
+                        ->where('service_date', '>=', $sysDateStr)
+                        ->update(['booking_room_id' => $newRoom->id]);
+
+                    // Sp2107: Transfer special requests
+                    \App\Models\BookingRoomSpecialRequest::where('booking_room_id', $bookingRoom->id)
+                        ->update(['booking_room_id' => $newRoom->id]);
+
+                    // Sp3002: Transfer room-level payments/deposits (Register-level payments with booking_room_id = null remain unchanged)
+                    \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
+                        ->update(['booking_room_id' => $newRoom->id]);
+
+                    DB::commit();
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => "Chuyển phòng {$bookingRoom->room_number} sang phòng {$targetRoomNumber} thành công!",
+                        'data'    => $newRoom->fresh(),
+                    ]);
+                } else {
+                    // Reserved state room change
+                    $oldNumber = $bookingRoom->room_number;
+                    $updateData = [
+                        'room_number' => $targetRoomNumber,
+                        'note'        => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đổi phòng từ {$oldNumber} sang {$targetRoomNumber}: {$reason}"),
+                        'updated_by'  => $currentUser,
+                    ];
+
+                    if ($isChangeRate) {
+                        if ($request->has('rate')) $updateData['rate'] = $request->rate;
+                        if ($request->has('extra_bed_qty')) $updateData['extra_bed_qty'] = $request->extra_bed_qty;
+                        if ($request->has('extra_bed_rate')) $updateData['extra_bed_rate'] = $request->extra_bed_rate;
+                        if ($request->filled('rate_code')) $updateData['rate_code'] = $request->rate_code;
+                    }
+
+                    $bookingRoom->update($updateData);
+
+                    DB::commit();
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => "Đổi số phòng sang {$targetRoomNumber} thành công!",
+                        'data'    => $bookingRoom->fresh(),
+                    ]);
+                }
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'message' => 'Lỗi khi xử lý chuyển phòng: ' . $e->getMessage()], 500);
+            }
+
+        } else if ($moveType === 'merge') {
+            $targetBookingRoom = BookingRoom::where('room_number', $targetRoomNumber)
+                ->where('status', BookingRoom::STATUS_CHECKED_IN)
+                ->where('id', '!=', $bookingRoom->id)
+                ->first();
+
+            if (!$targetBookingRoom) {
+                return response()->json(['success' => false, 'message' => "Không tìm thấy phòng đang ở (In-house) {$targetRoomNumber} để gộp."], 422);
+            }
+
+            if ($targetBookingRoom->departure_date->lt($bookingRoom->departure_date)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Phòng gộp {$targetRoomNumber} có ngày trả phòng (" . $targetBookingRoom->departure_date->toDateString() . ") trước ngày trả phòng hiện tại (" . $bookingRoom->departure_date->toDateString() . "). Không thể gộp.",
+                ], 422);
+            }
+
+            $totalRoomGuestsCount = $bookingRoom->guests()->count();
+            $selectedCount = count($selectedGuestIds);
+
+            if ($selectedCount === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vui lòng chọn ít nhất 1 khách để chuyển sang phòng gộp.',
+                ], 422);
+            }
+
+            // Check if adding moved guests will exceed target room capacity
+            $targetPhysicalRoom = \App\Models\Room::where('room_number', $targetRoomNumber)->first();
+            $maxCapacity = $targetPhysicalRoom?->max_guests
+                        ?? $targetPhysicalRoom?->roomForm?->max_adults
+                        ?? 2;
+
+            $movedAdultsCount = $selectedCount > 0 ? $selectedCount : $totalRoomGuestsCount;
+            $currentAdults = $targetBookingRoom->adults ?? 1;
+            $newTotalAdults = $currentAdults + $movedAdultsCount;
+
+            if ($newTotalAdults > $maxCapacity && !$request->boolean('confirm_exceed_capacity')) {
+                return response()->json([
+                    'success'                  => false,
+                    'require_capacity_confirm' => true,
+                    'message'                  => "Số người sau khi gộp ({$newTotalAdults} người) vượt quá sức chứa tối đa của phòng {$targetRoomNumber} ({$maxCapacity} người). Bạn có muốn tiếp tục gộp không?",
+                ], 422);
+            }
+
+            DB::beginTransaction();
+            try {
+                $timeStr = \Carbon\Carbon::now()->format('H:i:s');
+                $sysDateStr = $systemDate->toDateString();
+                $isAllGuestsMoved = empty($selectedGuestIds) || ($selectedCount >= $totalRoomGuestsCount);
+
+                $guestsToMove = empty($selectedGuestIds)
+                    ? $bookingRoom->guests
+                    : $bookingRoom->guests()->whereIn('guest_id', $selectedGuestIds)->get();
+                $movedGuestIds = $guestsToMove->pluck('guest_id')->toArray();
+
+                $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
+                $movedChildrenCount = $isAllGuestsMoved ? $oldChildren->count() : 0;
+
+                if ($isAllGuestsMoved && $oldChildren->count() > 0) {
+                    \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->update([
+                        'child_status' => 100,
+                    ]);
+
+                    foreach ($oldChildren as $childItem) {
+                        $childData = $childItem->toArray();
+                        unset($childData['id'], $childData['created_at'], $childData['updated_at']);
+                        $childData['id'] = 'BC' . uniqid();
+                        $childData['booking_room_id'] = $targetBookingRoom->id;
+                        $childData['child_status'] = 0;
+                        \App\Models\BookingChild::create($childData);
+                    }
+                }
+
+                // --- 1. UPDATE OLD ROOM GUESTS (Sp2200) -> Status = 100 ---
+                \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
+                    ->whereIn('guest_id', $movedGuestIds)
+                    ->update([
+                        'status'               => 100,
+                        'actual_checkout_date' => $sysDateStr,
+                        'actual_checkout_time' => $timeStr,
+                        'checkout_by'          => $currentUser,
+                    ]);
+
+                // --- 2. INSERT GUESTS INTO TARGET INHOUSE ROOM (Sp2200) -> Status = 1 ---
+                foreach ($guestsToMove as $gPivot) {
+                    \App\Models\BookingRoomGuest::firstOrCreate([
+                        'booking_room_id' => $targetBookingRoom->id,
+                        'guest_id'        => $gPivot->guest_id,
+                    ], [
+                        'is_primary'           => 0,
+                        'status'               => BookingRoom::STATUS_CHECKED_IN,
+                        'actual_arrival_date'  => $sysDateStr,
+                        'actual_arrival_time'  => $timeStr,
+                        'checkin_by'           => $currentUser,
+                        'actual_checkout_date' => $targetBookingRoom->departure_date->toDateString(),
+                    ]);
+                }
+
+                // --- 3. UPDATE TARGET INHOUSE ROOM (Sp2100) ---
+                $newTotalChildren = ($targetBookingRoom->children_qty ?? 0) + $movedChildrenCount;
+                $noteMsg = "Gộp khách từ phòng {$bookingRoom->room_number}: {$reason}";
+                $targetUpdateData = [
+                    'adults'       => $newTotalAdults,
+                    'children_qty' => $newTotalChildren,
+                    'note'         => trim(($targetBookingRoom->note ? $targetBookingRoom->note . ' | ' : '') . $noteMsg),
+                    'updated_by'   => $currentUser,
+                ];
+                if ($isChangeRate) {
+                    if ($request->has('rate')) $targetUpdateData['rate'] = $request->rate;
+                    if ($request->has('extra_bed_qty')) $targetUpdateData['extra_bed_qty'] = $request->extra_bed_qty;
+                    if ($request->has('extra_bed_rate')) $targetUpdateData['extra_bed_rate'] = $request->extra_bed_rate;
+                    if ($request->filled('rate_code')) $targetUpdateData['rate_code'] = $request->rate_code;
+                }
+                $targetBookingRoom->update($targetUpdateData);
+
+                // --- 4. UPDATE OLD ROOM (Sp2100) ---
+                if ($isAllGuestsMoved) {
+                    $originalArrivalStr = $bookingRoom->actual_arrival_date
+                        ? $bookingRoom->actual_arrival_date->toDateString()
+                        : $bookingRoom->arrival_date->toDateString();
+                    $prevDepartureDateStr = \Carbon\Carbon::parse($sysDateStr)->subDay()->toDateString();
+                    $actualDaysStayed = max(1, \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr)));
+
+                    $bookingRoom->update([
+                        'departure_date'   => $prevDepartureDateStr,
+                        'ActutalNumOfDays' => $actualDaysStayed,
+                        'status'           => 100, // Status 100 = Chuyển phòng / Gộp phòng
+                        'move_room'        => $targetBookingRoom->id,
+                        'departure_time'   => $timeStr,
+                        'CheckoutDate'     => $sysDateStr,
+                        'CheckoutTime'     => $timeStr,
+                        'check_out_user'   => $currentUser,
+                        'note'             => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp toàn bộ khách sang phòng {$targetRoomNumber}: {$reason}"),
+                        'updated_by'       => $currentUser,
+                    ]);
+
+                    \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
+                } else {
+                    $remainingAdults = max(1, ($bookingRoom->adults ?? 1) - $movedAdultsCount);
+                    $bookingRoom->update([
+                        'adults'     => $remainingAdults,
+                        'note'       => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
+                        'updated_by' => $currentUser,
+                    ]);
+                }
+
+                // --- 5. TRANSFER LINKED RECORDS (Sp2102, Sp2107, Sp3000, Sp3002) TO TARGET INHOUSE ROOM ---
+                \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
+                    ->where('service_date', '>=', $sysDateStr)
+                    ->update(['booking_room_id' => $targetBookingRoom->id]);
+
+                \App\Models\BookingRoomSpecialRequest::where('booking_room_id', $bookingRoom->id)
+                    ->update(['booking_room_id' => $targetBookingRoom->id]);
+
+                \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
+                    ->update(['booking_room_id' => $targetBookingRoom->id]);
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => "Gộp khách từ phòng {$bookingRoom->room_number} sang phòng {$targetRoomNumber} thành công!",
+                    'data'    => $targetBookingRoom->fresh(),
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return response()->json(['success' => false, 'message' => 'Lỗi khi gộp phòng: ' . $e->getMessage()], 500);
+            }
+        }
+    }
 }
+

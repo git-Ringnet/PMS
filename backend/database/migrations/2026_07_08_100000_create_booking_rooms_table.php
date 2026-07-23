@@ -44,6 +44,8 @@ return new class extends Migration
             $table->date('actual_arrival_date')->nullable(); // Ngày đến thực tế (giữ nguyên gốc khi chuyển phòng)
             $table->time('arrival_time')->nullable();    // Giờ đến
             $table->time('departure_time')->nullable();  // Giờ đi
+            $table->date('CheckoutDate')->nullable();    // Ngày giờ thao tác chuyển phòng / trả phòng
+            $table->time('CheckoutTime')->nullable();    // Giờ thao tác chuyển phòng / trả phòng
 
             // =========================================
             // GIÁ & GIƯỜNG PHỤ

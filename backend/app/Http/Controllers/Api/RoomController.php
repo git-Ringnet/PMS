@@ -29,7 +29,7 @@ class RoomController extends Controller
         } elseif ($request->has('is_internal')) {
             $query->where('is_internal', $request->boolean('is_internal'));
         } else {
-            $query->where('is_internal', false);
+            $query->physical();
         }
 
         // Optional filtering

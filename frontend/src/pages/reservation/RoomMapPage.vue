@@ -9,6 +9,7 @@ import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, f
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
+import RoomMoveModal from '@/components/RoomMoveModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -44,6 +45,31 @@ const isLoaded = ref(false)
 const isInitialLoad = ref(true)
 let pollingInterval = null
 const isRoomPlanLoading = ref(false)
+
+const showMoveModal = ref(false)
+const moveBookingId = ref(null)
+const moveRoomId = ref(null)
+
+function openRoomMoveModal(room) {
+  closeContextMenu()
+  if (!room || !room.booking_code || !room.booking_room_id || !room.booking_id) {
+    uiStore.showToast('Phòng chưa được gán hoặc không tìm thấy mã đặt phòng!', 'warning')
+    return
+  }
+
+  if (room.is_do_not_move) {
+    uiStore.showToast(`Phòng ${room.room_number} đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.`, 'warning')
+    return
+  }
+
+  moveBookingId.value = room.booking_id
+  moveRoomId.value = room.booking_room_id
+  showMoveModal.value = true
+}
+
+async function handleMoveSuccess() {
+  await roomStore.fetchRooms({ silent: true })
+}
 
 watch(currentTab, (newTab) => {
   if (newTab === 'room-plan') {
@@ -310,6 +336,11 @@ const hoverTooltip = ref({
 let tooltipTimeout = null
 
 function showTooltip(event, room) {
+  if (contextMenu.value.show) {
+    if (tooltipTimeout) clearTimeout(tooltipTimeout)
+    hoverTooltip.value.show = false
+    return
+  }
   if (!room || (room.booking_status !== 'occupied' && room.booking_status !== 'reserved' && room.booking_status !== 'checkout')) return
   
   if (tooltipTimeout) {
@@ -548,6 +579,12 @@ const statusItems = [
 function handleContextMenu(event, room) {
   event.preventDefault()
   
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+  hoverTooltip.value.show = false
+  
   const menuWidth = 220
   const menuHeight = 340 // Safe height estimation of context menu
   
@@ -593,7 +630,18 @@ function showRoomInfo(room) {
 
 // Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
-  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'Chuyển Phòng', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'Chuyển Phòng' || actionName === 'Chuyển phòng / Gộp phòng') {
+    if (contextMenu.value.room && contextMenu.value.room.booking_code) {
+      openRoomMoveModal(contextMenu.value.room)
+      return
+    } else {
+      uiStore.showToast('Phòng chưa được giao hoặc không có mã đăng ký!', 'warning')
+      closeContextMenu()
+      return
+    }
+  }
+
+  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
     if (contextMenu.value.room && contextMenu.value.room.booking_code) {
       router.push({
         query: {
@@ -1883,11 +1931,20 @@ const uniqueFloors = computed(() => {
       @refresh="refreshRoomMapAfterGuestChange"
     />
 
+    <!-- Room Move Modal -->
+    <RoomMoveModal
+      :show="showMoveModal"
+      :booking-id="moveBookingId"
+      :room-id="moveRoomId"
+      @close="showMoveModal = false"
+      @success="handleMoveSuccess"
+    />
+
     <!-- Hover Tooltip -->
     <Teleport to="body">
       <Transition name="tooltip-fade">
         <div
-          v-if="hoverTooltip.show && hoverTooltip.room"
+          v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
           class="fixed z-[99999] pointer-events-auto bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
           :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
           :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }"
@@ -2048,10 +2105,18 @@ const uniqueFloors = computed(() => {
 
         <div class="h-px bg-slate-300 my-1"></div>
 
-        <!-- Chuyển Phòng Group -->
-        <div v-if="contextMenu.room.booking_code" class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1 border-t border-slate-300 select-none">
-          Chuyển Phòng
-        </div>
+        <!-- Chuyển Phòng -->
+        <button
+          v-if="contextMenu.room.booking_code"
+          @click="openRoomMoveModal(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-[#0284c7] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3L4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4" />
+          </svg>
+          <span class="font-normal text-slate-800">Chuyển Phòng</span>
+        </button>
 
         <button
           v-if="contextMenu.room.booking_code"
