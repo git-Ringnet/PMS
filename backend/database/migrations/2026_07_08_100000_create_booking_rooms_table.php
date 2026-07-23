@@ -44,6 +44,8 @@ return new class extends Migration
             $table->date('actual_arrival_date')->nullable(); // Ngày đến thực tế (giữ nguyên gốc khi chuyển phòng)
             $table->time('arrival_time')->nullable();    // Giờ đến
             $table->time('departure_time')->nullable();  // Giờ đi
+            $table->date('CheckoutDate')->nullable();    // Ngày giờ thao tác chuyển phòng / trả phòng
+            $table->time('CheckoutTime')->nullable();    // Giờ thao tác chuyển phòng / trả phòng
 
             // =========================================
             // GIÁ & GIƯỜNG PHỤ
@@ -80,6 +82,7 @@ return new class extends Migration
             // GHI CHÚ
             // =========================================
             $table->text('note')->nullable(); // Ghi chú riêng của dòng phòng này
+            $table->text('reason')->nullable(); // Lý do hủy phòng hoặc lý do chuyển phòng (SP2100.Reason)
 
             // =========================================
             // NGƯỜI TẠO / CẬP NHẬT

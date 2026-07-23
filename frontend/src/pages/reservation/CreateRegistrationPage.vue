@@ -15,6 +15,7 @@ import SystemSearchModal from './components/SystemSearchModal.vue'
 import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
 import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import GuestInfoModal from './components/GuestInfoModal.vue'
+import CancelReasonModal from './components/CancelReasonModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -902,7 +903,7 @@ function syncRoomsToAllocations(tab) {
     const matchingRooms = tab.rooms.filter(r => r.roomClassId === alloc.roomClassId)
     const roomsDetail = matchingRooms.map(r => ({
       roomNumber: r.roomNumber || '',
-      rateCode: r.rateCode || '',
+      rateCode: (r.rateCode && r.rateCode !== 'Vui lòng chọn giá phòng') ? r.rateCode : (alloc.rateCode || ''),
       guestName: r.guestName || '',
       adults: Number(r.adults) || 2,
       babies: Number(r.babies) || 0,
@@ -921,18 +922,18 @@ function syncRoomsToAllocations(tab) {
       roomCode: r.roomCode || '',
       bookingRoomId: r.bookingRoomId || null,
       total: Number(r.total) || 0,
-      price: r.price || 0,
-      basePrice: r.basePrice || 0,
-      discountType: r.discountType || 'down',
-      discountValue: r.discountValue || 0,
-      discountUnit: r.discountUnit || 'percent',
+      price: r.price || alloc.price || 0,
+      basePrice: r.basePrice || alloc.basePrice || alloc.price || 0,
+      discountType: r.discountType || alloc.discountType || 'down',
+      discountValue: r.discountValue !== undefined ? r.discountValue : (alloc.discountValue || 0),
+      discountUnit: r.discountUnit || alloc.discountUnit || 'percent',
       arrivalDate: r.checkIn || tab.checkIn,
       departureDate: r.checkOut || tab.checkOut,
       nights: Number(r.nights) || 1,
     }))
     return {
       ...alloc,
-      quantity: matchingRooms.length,
+      quantity: Math.max(Number(alloc.quantity) || 0, matchingRooms.length),
       rooms: roomsDetail,
     }
   })
@@ -941,6 +942,8 @@ function syncRoomsToAllocations(tab) {
 // ==================== LIFECYCLE ====================
 onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
+  window.addEventListener('booking-updated', loadBookings)
+  window.addEventListener('deposit-updated', loadBookings)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -965,6 +968,8 @@ function handleTabsWheel(e) {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
+  window.removeEventListener('booking-updated', loadBookings)
+  window.removeEventListener('deposit-updated', loadBookings)
 })
 
 watch(() => route.query, async (newQuery) => {
@@ -1430,8 +1435,9 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
 function syncAllocationToRooms(row) {
   if (!modalForm.value.rooms) return
   modalForm.value.rooms.forEach(r => {
-    if (r.roomClassId === row.roomClassId && !r.bookingRoomId) {
+    if (r.roomClassId === row.roomClassId || r.type === row.roomClassName || r.shape === row.roomClassCode) {
       r.price = Number(row.price) || 0
+      r.basePrice = Number(row.basePrice || row.price) || 0
       r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
       r.adults = Number(row.adults) || 2
       r.babies = Number(row.babies) || 0
@@ -1457,6 +1463,7 @@ function syncRoomToAllocation(room) {
 }
 
 function handleRateCodeChange(row) {
+  if (!row) return
   if (row.rateCode) {
     const rcObj = roomRateCodes.value.find(rc => rc.Ma === row.rateCode)
     if (rcObj) {
@@ -1482,18 +1489,26 @@ function handleRateCodeChange(row) {
 
       row.breakfastIncluded = !!rcObj.IncludeBF
       
-      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate)
+      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId)
       if (price > 0) {
         row.price = price
         row.basePrice = price
       }
+    }
+  } else {
+    // Người dùng chọn lại "— Chọn giá phòng —" (rỗng): Lấy giá mặc định của loại phòng
+    const matchedClass = roomClasses.value?.find(c => c.id === Number(row.roomClassId) || c.code === row.roomClassCode)
+    if (matchedClass) {
+      const defaultPrice = Number(matchedClass.price ?? matchedClass.room_price ?? matchedClass.standard_rate ?? 0)
+      row.price = defaultPrice
+      row.basePrice = defaultPrice
     }
   }
   syncAllocationToRooms(row)
 }
 
 function handleRoomRateCodeChange(room) {
-  if (room.rateCode) {
+  if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
     const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
     if (rcObj) {
       // Check expiration dates
@@ -1689,13 +1704,16 @@ function getOccupancyCount(row) {
   ).length
 }
 
-function getRateCodePrice(rateCodeMa, roomClassCode, dateStr) {
-  const rcObj = roomRateCodes.value.find(rc => rc.Ma === rateCodeMa)
-  if (!rcObj || !rcObj.rate_plans) return 0
+function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId) {
+  const rcObj = roomRateCodes.value.find(rc => rc.Ma === rateCodeMa || rc.code === rateCodeMa)
+  if (!rcObj) return 0
   
+  const plans = rcObj.ratePlans || rcObj.rate_plans || []
+  if (!plans || plans.length === 0) return 0
+
   // 1. Find active plan code for the date (dateStr) from daily_mappings
   let activePlanCode = 'DEFAULT'
-  if (dateStr && rcObj.daily_mappings) {
+  if (dateStr && rcObj.daily_mappings && Array.isArray(rcObj.daily_mappings)) {
     const mapping = rcObj.daily_mappings.find(m => m.Date === dateStr)
     if (mapping) {
       activePlanCode = mapping.Code
@@ -1703,36 +1721,51 @@ function getRateCodePrice(rateCodeMa, roomClassCode, dateStr) {
   }
 
   // 2. Find the plan corresponding to activePlanCode
-  let plan = rcObj.rate_plans.find(p => p.Code === activePlanCode)
+  let plan = plans.find(p => p.Code === activePlanCode)
   if (!plan) {
-    plan = rcObj.rate_plans.find(p => p.Code === 'DEFAULT') || rcObj.rate_plans[0]
+    plan = plans.find(p => p.Code === 'DEFAULT') || plans[0]
   }
   
   if (!plan || !plan.Period) return 0
   
   const period = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period
-  const planCode = plan.Code
-  
+  if (!period) return 0
+
+  const planCode = plan.Code || 'DEFAULT'
+
+  // 3. Tra cứu theo roomClassId (VD: "9" cho JST)
+  if (roomClassId && period[roomClassId] !== undefined) {
+    const val = Number(period[roomClassId])
+    if (!isNaN(val) && val > 0) return val
+  }
+  if (roomClassId && period[String(roomClassId)] !== undefined) {
+    const val = Number(period[String(roomClassId)])
+    if (!isNaN(val) && val > 0) return val
+  }
+
+  // 4. Tra cứu theo key ${planCode}_${roomClassCode}_Double hoặc ${planCode}_${roomClassCode}_...
   const key = `${planCode}_${roomClassCode}_Double`
-  if (period && period[key] !== undefined) {
+  if (period[key] !== undefined) {
     return Number(period[key]) || 0
   }
   
   const legacyKey = `${rateCodeMa}_${roomClassCode}_Double`
-  if (period && period[legacyKey] !== undefined) {
+  if (period[legacyKey] !== undefined) {
     return Number(period[legacyKey]) || 0
   }
   
   if (period) {
     const matchingKey = Object.keys(period).find(k => 
       k.startsWith(`${planCode}_${roomClassCode}_`) || 
-      k.startsWith(`${rateCodeMa}_${roomClassCode}_`)
+      k.startsWith(`${rateCodeMa}_${roomClassCode}_`) ||
+      k.includes(`_${roomClassCode}_`)
     )
     if (matchingKey && period[matchingKey] !== undefined) {
       return Number(period[matchingKey]) || 0
     }
   }
-  return 0
+
+  return Number(rcObj.Value || rcObj.Gia || rcObj.price || 0)
 }
 
 async function handleAddTabClick() {
@@ -1799,7 +1832,7 @@ async function openEditModal() {
     shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
       ? JSON.parse(JSON.stringify(tab.shuttleInfo))
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
-    roomAllocations: initRoomAllocations([], tab.checkIn, tab.checkOut),
+    roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
     createdBy: tab.createdBy || '',
@@ -2323,6 +2356,8 @@ async function handleRowNightsChangeInline(room) {
     }
   }
 }
+
+
 
 function getNormalizedCategory(rc, forms) {
   if (!rc || !rc.name) return ''
@@ -2942,49 +2977,10 @@ async function triggerAction(actionName) {
     }
     const targetList = selected
 
-    uiStore.confirm({
-      title: 'Hủy phòng',
-      message: `Bạn có chắc chắn muốn hủy ${targetList.length} phòng đã chọn?`,
-      confirmText: 'Đồng ý', cancelText: 'Hủy'
-    }).then(async (confirmed) => {
-      if (confirmed) {
-        uiStore.showToast('Đang tiến hành hủy phòng...', 'info')
-        let successCount = 0
-        let failCount = 0
-        let failMessages = []
-
-        try {
-          for (const r of targetList) {
-            if (!r.bookingRoomId) continue
-            try {
-              const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId)
-              if (res.data?.success) {
-                successCount++
-              } else {
-                failCount++
-                failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
-              }
-            } catch (err) {
-              console.error(err)
-              failCount++
-              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
-            }
-          }
-
-          await loadBookings()
-          selectedRows.value = []
-
-          if (successCount > 0) {
-            uiStore.showToast(`Hủy phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
-          } else {
-            uiStore.showToast(`Hủy phòng thất bại: ${failMessages.join(', ')}`, 'error')
-          }
-        } catch (err) {
-          console.error(err)
-          uiStore.showToast('Có lỗi xảy ra khi hủy phòng!', 'error')
-        }
-      }
-    })
+    cancelPendingTarget.value = { type: 'rooms', tab, rooms: targetList }
+    cancelModalTitle.value = `Hủy ${targetList.length} phòng đã chọn`
+    cancelModalSubTitle.value = `Vui lòng chọn lý do hủy cho ${targetList.length} phòng đã chọn.`
+    isCancelReasonModalOpen.value = true
   } else if (actionName === 'Dịch vụ bổ sung') {
     const tab = activeTab.value
     if (!tab || !tab.rooms || tab.rooms.length === 0) return
@@ -3179,29 +3175,99 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
     if (!tab) return
-    uiStore.confirm({
-      title: 'Xóa đăng ký',
-      message: `Bạn có chắc chắn muốn xóa đăng ký ${tab.id}?`,
-      confirmText: 'Đồng ý', cancelText: 'Hủy'
-    }).then(async confirmed => {
-      if (!confirmed) return
-      try {
-        if (tab.dbId) await deleteBooking(tab.dbId)
+    if (!tab.dbId) {
+      const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
+      if (idx !== -1) tabs.value.splice(idx, 1)
+      if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
+      else {
+        tabs.value = []
+        activeTabId.value = null
+      }
+      return
+    }
+    cancelPendingTarget.value = { type: 'booking', tab }
+    cancelModalTitle.value = `Hủy toàn bộ đăng ký ${tab.id}`
+    cancelModalSubTitle.value = `Bạn có chắc chắn muốn hủy toàn bộ đăng ký ${tab.id}? Thao tác này sẽ ghi log hủy cho toàn bộ phòng.`
+    isCancelReasonModalOpen.value = true
+  } else {
+    uiStore.showToast(`Tính năng "${actionName}" đang được thực hiện!`, 'info')
+  }
+}
+
+// ==================== HỦY ĐĂNG KÝ / HỦY PHÒNG REASON MODAL ====================
+const isCancelReasonModalOpen = ref(false)
+const cancelModalTitle = ref('Xác nhận hủy đặt phòng')
+const cancelModalSubTitle = ref('')
+const cancelPendingTarget = ref(null)
+
+async function handleConfirmCancelReason(payload) {
+  const target = cancelPendingTarget.value
+  if (!target) return
+
+  if (target.type === 'booking') {
+    const tab = target.tab
+    try {
+      uiStore.showToast('Đang tiến hành hủy đăng ký...', 'info')
+      const res = await deleteBooking(tab.dbId, {
+        cancel_reason_id: payload.cancel_reason_id,
+        note: payload.note
+      })
+      if (res.data?.success) {
         const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
         if (idx !== -1) tabs.value.splice(idx, 1)
         if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
         else {
-          // Không còn tab nào → empty state
           tabs.value = []
           activeTabId.value = null
         }
-        uiStore.showToast('Đã xóa đăng ký thành công!', 'success')
-      } catch (err) {
-        uiStore.showToast(err.response?.data?.message || 'Không thể xóa đăng ký!', 'error')
+        uiStore.showToast('Đã hủy và xóa đăng ký thành công!', 'success')
+      } else {
+        uiStore.showToast(res.data?.message || 'Không thể xóa đăng ký!', 'error')
       }
-    })
-  } else {
-    uiStore.showToast(`Tính năng "${actionName}" đang được thực hiện!`, 'info')
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast(err.response?.data?.message || 'Không thể xóa đăng ký!', 'error')
+    }
+  } else if (target.type === 'rooms') {
+    const { tab, rooms } = target
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
+
+    uiStore.showToast('Đang tiến hành hủy phòng...', 'info')
+    try {
+      for (const r of rooms) {
+        if (!r.bookingRoomId) continue
+        try {
+          const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
+            cancel_reason_id: payload.cancel_reason_id,
+            note: payload.note
+          })
+          if (res.data?.success) {
+            successCount++
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
+          failCount++
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
+        }
+      }
+
+      await loadBookings()
+      selectedRows.value = []
+
+      if (successCount > 0) {
+        uiStore.showToast(`Đã hủy thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+      } else {
+        uiStore.showToast(`Hủy phòng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi hủy phòng!', 'error')
+    }
   }
 }
 
@@ -3608,8 +3674,8 @@ defineExpose({
       </svg>
       <div class="text-slate-400 text-sm font-medium">Chưa có đăng ký nào đang mở</div>
       <button
-        @click="openNewBookingModal"
-        class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all"
+        @click="handleAddTabClick"
+        class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all cursor-pointer hover:brightness-110 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-95 duration-200"
         style="background: linear-gradient(135deg, #006bdb, #0050a8); box-shadow: 0 2px 8px rgba(0,107,219,0.3);"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
@@ -6036,6 +6102,16 @@ defineExpose({
         v-model:show="isSpecialRequestsModalOpen"
         :room="specialRequestsModalRoom"
         @saved="handleSpecialRequestsSaved"
+      />
+    </Teleport>
+
+    <!-- HỦY PHÒNG / HỦY ĐẶC ĐĂNG KÝ MODAL -->
+    <Teleport to="body">
+      <CancelReasonModal
+        v-model:show="isCancelReasonModalOpen"
+        :title="cancelModalTitle"
+        :subTitle="cancelModalSubTitle"
+        @confirm="handleConfirmCancelReason"
       />
     </Teleport>
 

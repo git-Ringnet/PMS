@@ -11,7 +11,7 @@
                 <div class="bg-blue-400/20 p-1.5 rounded-lg">
                     <i class="fa-solid fa-file-invoice-dollar text-blue-200 text-xs"></i>
                 </div>
-                <span class="font-bold text-xs tracking-wide uppercase">Thêm đặt cọc</span>
+                <span class="font-bold text-xs tracking-wide uppercase">{{ depositForm.id ? 'Sửa đặt cọc' : 'Thêm đặt cọc' }}</span>
             </div>
             <button @click="close" class="text-slate-300 hover:text-white transition p-1.5 rounded-lg hover:bg-white/10 cursor-pointer border-none bg-transparent">
                 <i class="fa-solid fa-xmark text-sm"></i>
@@ -40,9 +40,11 @@
                           :value="formatCurrencyInput(depositForm.amount)"
                           @input="e => depositForm.amount = cleanCurrencyValue(e.target.value)"
                           @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                          :disabled="!!depositForm.id"
+                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': !!depositForm.id }"
                           class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-bold bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm"
                         >
-                        <div class="absolute right-1 top-0.5 flex flex-col">
+                        <div class="absolute right-1 top-0.5 flex flex-col" v-if="!depositForm.id">
                             <button type="button" @click="depositForm.amount++" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
                             <button type="button" @click="depositForm.amount = Math.max(0, depositForm.amount - 1)" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
                         </div>
@@ -57,7 +59,7 @@
                           class="w-full border border-blue-200 rounded-lg px-3 h-full text-xs font-medium bg-blue-50/70 text-black appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
                             <option :value="null" disabled class="text-slate-400 font-normal bg-slate-100">Phương thức đặt cọc</option>
-                            <option v-for="pm in filteredPaymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
+                            <option v-for="pm in filteredPaymentMethods" :key="pm.id" :value="pm.code || pm.id">{{ pm.name }}</option>
                         </select>
                         <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
                     </div>
@@ -81,10 +83,15 @@
 
                 <div>
                     <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Ngày <span class="text-rose-500">*</span></label>
-                    <div class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative">
+                    <div 
+                      class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative"
+                      :class="{ 'opacity-60 bg-slate-100 cursor-not-allowed': !!depositForm.id }"
+                    >
                         <input 
                           type="date" 
                           v-model="depositForm.date" 
+                          :disabled="!!depositForm.id"
+                          :min="minDepositDate"
                           class="date-span-input flex-1 text-left w-full border-none focus:outline-none bg-transparent"
                         />
                         <i class="fa-regular fa-calendar-days text-blue-500 pointer-events-none"></i>
@@ -180,7 +187,7 @@
                           v-for="dep in visibleDeposits" 
                           :key="dep.id" 
                           class="border-b border-slate-100 hover:bg-slate-50/80 transition"
-                          :class="{ 'bg-blue-50/30': selectedDepositIds.includes(dep.id) }"
+                          :class="{ 'bg-blue-50/30': selectedDepositIds.includes(dep.id), 'bg-rose-50/40 text-rose-700': dep.amount < 0 || dep.edit_flag === 1 }"
                         >
                             <td class="p-2 text-center align-middle">
                                 <input 
@@ -194,7 +201,7 @@
                             <td class="p-2 text-slate-600 align-middle">{{ dep.time }}</td>
                             <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.id === dep.paymentMethodId)?.name || 'BT' }}</td>
                             <td class="p-2 text-slate-600 align-middle">{{ dep.note }}</td>
-                            <td class="p-2 text-right font-mono font-semibold text-slate-900 align-middle">{{ dep.amount.toLocaleString('en-US') }}</td>
+                            <td class="p-2 text-right font-mono font-semibold align-middle" :class="dep.amount < 0 ? 'text-rose-600' : 'text-slate-900'">{{ dep.amount.toLocaleString('en-US') }}</td>
                             <td class="p-2 text-center text-slate-500 align-middle">{{ dep.currency }}</td>
                             <td class="p-2 text-slate-700 font-medium align-middle">{{ dep.recipient }}</td>
                             <td class="p-2 text-center align-middle">
@@ -226,30 +233,34 @@
         <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0">
             
             <div class="flex items-center space-x-2" v-if="!showDeleted">
-                <button type="button" @click="splitDeposit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
+                <button type="button" @click="splitDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
                     <i class="fa-solid fa-code-branch text-[10px]"></i>
                     <span>Tách</span>
                 </button>
-                <button type="button" @click="transferDeposit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
+                <button type="button" @click="transferDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
                     <i class="fa-solid fa-arrow-right-arrow-left text-[10px]"></i>
                     <span>Chuyển</span>
                 </button>
             </div>
 
             <div class="flex items-center space-x-2 ml-auto">
-                <button type="button" @click="deleteDeposits" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
+                <button type="button" v-if="depositForm.id" @click="resetForm(); selectedDepositIds = []" :disabled="isSubmitting" class="px-4 py-1.5 bg-slate-500 hover:bg-slate-600 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
+                    <i class="fa-solid fa-arrow-left text-[10px]"></i>
+                    <span>Quay lại</span>
+                </button>
+                <button type="button" @click="deleteDeposits" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
                     <i class="fa-solid fa-trash-can text-[10px]"></i>
                     <span>Xóa</span>
                 </button>
-                <button type="button" @click="editDeposit" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
+                <button type="button" @click="editDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
                     <i class="fa-solid fa-pen-to-square text-[10px]"></i>
                     <span>Sửa</span>
                 </button>
-                <button type="button" @click="saveDeposit" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
+                <button type="button" @click="saveDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
                     <i class="fa-regular fa-floppy-disk text-[10px]"></i>
                     <span>Lưu</span>
                 </button>
-                <button type="button" @click="addDeposit" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition flex items-center space-x-1.5 shadow-md text-xs tracking-wide cursor-pointer border-none">
+                <button type="button" v-if="!depositForm.id" @click="addDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition flex items-center space-x-1.5 shadow-md text-xs tracking-wide cursor-pointer border-none">
                     <i class="fa-solid fa-plus text-[10px]"></i>
                     <span>Thêm</span>
                 </button>
@@ -320,8 +331,8 @@
 
         <!-- CUSTOM TRANSFER DEPOSIT MODAL -->
         <div v-if="isTransferOpen" class="fixed inset-0 bg-black/60 z-[100000] flex items-center justify-center p-4 backdrop-blur-xs" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-            <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col animate-in fade-in duration-200">
-                <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2.5 border-b border-[#1a2d42]">
+            <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-visible border border-slate-200 flex flex-col animate-in fade-in duration-200 relative">
+                <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2.5 border-b border-[#1a2d42] rounded-t-xl">
                     <div class="flex items-center space-x-2">
                         <i class="fa-solid fa-arrow-right-arrow-left text-blue-200 text-xs"></i>
                         <span class="font-bold text-xs uppercase tracking-wide">Chuyển đặt cọc</span>
@@ -382,30 +393,43 @@
                             ></i>
                             <i 
                               v-else
-                              class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 text-[10px] pointer-events-none"
+                              @click="handleSearchFocus"
+                              class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 text-[10px] cursor-pointer"
                             ></i>
-                            <!-- Dropdown list overlay -->
+                            <!-- Dropdown list overlay (Định dạng chuẩn Ảnh 2: BKK và Phòng | Tên khách) -->
                             <div 
-                              v-if="showSearchDropdown && searchResults.length > 0" 
-                              class="absolute left-0 right-0 top-full mt-1 max-h-[160px] overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-[100010] py-1"
+                              v-if="showSearchDropdown && transferOptions.length > 0" 
+                              class="absolute left-0 right-0 top-full mt-1 max-h-[240px] overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-[100010] py-1 select-none"
                             >
                                 <div 
-                                  v-for="b in searchResults" 
-                                  :key="b.id"
-                                  @mousedown="selectTargetBooking(b)"
-                                  class="px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-left flex flex-col gap-0.5 border-b border-slate-100 last:border-0"
+                                  v-for="opt in transferOptions" 
+                                  :key="opt.key"
+                                  @mousedown="selectTargetBookingOption(opt)"
+                                  class="px-3.5 py-1.5 hover:bg-sky-50/80 cursor-pointer text-left flex items-center border-b border-slate-100 last:border-0 transition"
                                 >
-                                    <div class="text-xs font-bold text-slate-800">{{ b.booking_code }} - {{ b.booking_name }}</div>
-                                    <div class="text-[9px] text-slate-400 font-semibold">
-                                      Phòng: {{ b.booking_rooms?.[0]?.room_number || 'Chưa xếp phòng' }} | Ngày đến: {{ formatArrivalDate(b.arrival_date) }}
-                                    </div>
+                                    <!-- Booking Level: BKK:     GALcode - BookingName -->
+                                    <template v-if="opt.type === 'booking'">
+                                      <span class="font-black text-slate-800 text-xs tracking-wider w-12 shrink-0">BKK:</span>
+                                      <span class="font-bold text-slate-800 text-xs truncate">{{ opt.code }} - {{ opt.name }}</span>
+                                    </template>
+
+                                    <!-- Guest Level: 1503 | Mr. Guest Name -->
+                                    <template v-else-if="opt.type === 'guest'">
+                                      <div class="flex items-center text-xs pl-6 w-full">
+                                        <span class="font-bold text-slate-800 min-w-[36px] text-right pr-1">{{ opt.roomNumber }}</span>
+                                        <span class="text-slate-400 font-normal px-2">|</span>
+                                        <span :class="opt.isPrimary ? 'font-bold text-slate-900' : 'font-medium text-slate-700'" class="truncate">
+                                          {{ opt.guestName }}
+                                        </span>
+                                      </div>
+                                    </template>
                                 </div>
                             </div>
                             <div 
-                              v-else-if="showSearchDropdown && transferDestSearch && !isSearchingDest && searchResults.length === 0" 
+                              v-else-if="showSearchDropdown && transferDestSearch && !isSearchingDest && transferOptions.length === 0" 
                               class="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-[100010] p-3 text-center text-xs text-slate-400 italic"
                             >
-                                Không tìm thấy đặt phòng phù hợp
+                                Không tìm thấy đặt phòng ở trạng thái Đăng ký hoặc Đang ở
                             </div>
                         </div>
                     </div>
@@ -421,7 +445,7 @@
                         </span>
                     </div>
                 </div>
-                <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+                <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2 rounded-b-xl">
                     <button type="button" @click="isTransferOpen = false" class="px-4 py-1.5 bg-[#e2e8f0] hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs cursor-pointer border-none">
                         Hủy
                     </button>
@@ -455,15 +479,18 @@ import {
   deletePayment,
   splitPayment,
   transferPayment,
-  fetchBookings
+  fetchBookings,
+  fetchSystemDate
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const props = defineProps({
   show: Boolean,
   bookingId: Number,
   bookingName: String,
   bookingCode: String,
+  departmentId: { type: String, default: 'MR' },
   paymentMethods: Array,
   currenciesList: Array,
   deposits: Array
@@ -472,9 +499,11 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'update:deposits', 'update:paymentValue'])
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 
 const localDeposits = ref([])
 const selectedDepositIds = ref([])
+const isSubmitting = ref(false)
 
 // Hiển thị xóa toggle state
 const showDeleted = ref(false)
@@ -483,6 +512,9 @@ const showDeleted = ref(false)
 const selectedFile = ref(null)
 const fileInputKey = ref(0)
 const previewImageUrl = ref(null)
+
+// System date state
+const systemDate = ref(new Date().toISOString().split('T')[0])
 
 // Custom Split Modal States
 const isSplitOpen = ref(false)
@@ -500,13 +532,90 @@ const isSearchingDest = ref(false)
 const transferDestSearch = ref('')
 const isFocused = ref(false)
 const showSearchDropdown = computed(() => {
-  return isFocused.value && transferDestSearch.value.trim().length > 0
+  return isFocused.value
 })
 const searchResults = ref([])
+
+const transferOptions = computed(() => {
+  const list = []
+  const query = (transferDestSearch.value || '').trim().toLowerCase()
+
+  for (const b of searchResults.value) {
+    const bookingCodeStr = (b.booking_code || '').toLowerCase()
+    const bookingNameStr = (b.booking_name || '').toLowerCase()
+    const isBookingMatch = !query || bookingCodeStr.includes(query) || bookingNameStr.includes(query)
+
+    const guestItems = []
+    if (b.booking_rooms && b.booking_rooms.length > 0) {
+      const activeRooms = b.booking_rooms.filter(r => r.status === undefined || r.status === null || Number(r.status) === 1 || Number(r.status) === 0)
+      for (const room of activeRooms) {
+        if (!room.guests || room.guests.length === 0) continue
+        for (const g of room.guests) {
+          const gName = (g.guest?.full_name || g.guest_name || '').trim()
+          // Bỏ qua khách tên mặc định (Guest 1, Guest 2... hoặc rỗng) người dùng chưa nhập thực tế
+          if (!gName || /^guest\s*\d*$/i.test(gName) || gName === 'Khách chưa đặt tên') {
+            continue
+          }
+          const roomNum = String(room.room_number || room.room?.room_number || 'Chưa xếp')
+          const isGuestMatch = !query || gName.toLowerCase().includes(query) || roomNum.toLowerCase().includes(query)
+          if (isGuestMatch || isBookingMatch) {
+            guestItems.push({
+              key: `guest_${b.id}_${roomNum}_${g.id || Math.random()}`,
+              type: 'guest',
+              booking: b,
+              roomNumber: roomNum,
+              guestName: gName,
+              isPrimary: Boolean(g.is_primary)
+            })
+          }
+        }
+      }
+    }
+
+    if (isBookingMatch || guestItems.length > 0) {
+      list.push({
+        key: `bkk_${b.id}`,
+        type: 'booking',
+        booking: b,
+        code: b.booking_code,
+        name: b.booking_name
+      })
+      list.push(...guestItems)
+    }
+  }
+  return list
+})
 
 const activeCurrency = computed(() => {
   return props.currenciesList?.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
 })
+
+// Permisions & System Date
+const canOperateOldDay = computed(() => {
+  const user = authStore.user
+  if (!user) return true
+  if (user.username === 'admin' || user.is_admin) return true
+  const userSettings = authStore.settings || {}
+  if (userSettings.RuleUserCorrectOrPostBillPaymentOldDay !== undefined) {
+    return !!userSettings.RuleUserCorrectOrPostBillPaymentOldDay
+  }
+  return true
+})
+
+const minDepositDate = computed(() => {
+  return canOperateOldDay.value ? null : systemDate.value
+})
+
+async function loadSystemDate() {
+  try {
+    const res = await fetchSystemDate()
+    if (res.data?.data?.system_date) {
+      systemDate.value = res.data.data.system_date
+    }
+  } catch (err) {
+    console.error('Lỗi lấy ngày hệ thống:', err)
+  }
+}
 
 // Filter payment methods: not group 4, not group 5, not is_inactive
 const filteredPaymentMethods = computed(() => {
@@ -515,9 +624,10 @@ const filteredPaymentMethods = computed(() => {
   })
 })
 
+// Hiển thị danh sách cọc: nếu showDeleted = true -> hiển thị cả 2 dòng (gốc dương & đối trừ âm)
 const visibleDeposits = computed(() => {
   if (showDeleted.value) {
-    return localDeposits.value.filter(dep => dep.status === 3)
+    return localDeposits.value.filter(dep => dep.edit_flag === 1 || dep.status === 3 || dep.reversal_ref !== null)
   }
   return localDeposits.value.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
 })
@@ -527,7 +637,7 @@ const depositForm = ref({
   amount: 0,
   paymentMethodId: null,
   bankAccountId: 'Tài khoản ngân hàng',
-  date: new Date().toISOString().split('T')[0],
+  date: systemDate.value,
   note: '',
   recipient: 'Admin',
   image: null
@@ -545,6 +655,7 @@ watch(() => depositForm.value.paymentMethodId, (newPmId) => {
 
 watch(() => props.show, async (newVal) => {
   if (newVal) {
+    await loadSystemDate()
     resetForm()
     selectedDepositIds.value = []
     showDeleted.value = false
@@ -573,7 +684,7 @@ function resetForm() {
     amount: 0,
     paymentMethodId: defaultPmId,
     bankAccountId: 'Tài khoản ngân hàng',
-    date: new Date().toISOString().split('T')[0],
+    date: systemDate.value,
     note: defaultNote,
     recipient: 'Admin',
     image: null
@@ -623,6 +734,8 @@ async function syncDepositsFromBackend() {
 
     emit('update:deposits', localDeposits.value)
     emit('update:paymentValue', totalValue)
+    window.dispatchEvent(new CustomEvent('deposit-updated'))
+    window.dispatchEvent(new CustomEvent('booking-updated'))
   } catch (err) {
     console.error('Lỗi đồng bộ cọc:', err)
   }
@@ -638,9 +751,13 @@ function handleDepositImageUpload(event) {
 
 function getImageUrl(path) {
   if (!path) return ''
-  if (path.startsWith('blob:') || path.startsWith('data:')) return path
-  const baseUrl = import.meta.env.VITE_PROXY_TARGET || ''
-  return `${baseUrl}/storage/${path}`
+  if (path.startsWith('blob:') || path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) return path
+  const baseUrl = import.meta.env.VITE_PROXY_TARGET || 'http://localhost:8000'
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  if (cleanPath.startsWith('/storage/')) {
+    return `${baseUrl}${cleanPath}`
+  }
+  return `${baseUrl}/storage${cleanPath}`
 }
 
 function openImage(url) {
@@ -648,6 +765,7 @@ function openImage(url) {
 }
 
 async function addDeposit() {
+  if (isSubmitting.value) return
   if (!depositForm.value.amount || depositForm.value.amount <= 0) {
     uiStore.showToast('Vui lòng nhập số tiền đặt cọc hợp lệ!', 'warning')
     return
@@ -656,15 +774,23 @@ async function addDeposit() {
     uiStore.showToast('Vui lòng nhập mô tả!', 'warning')
     return
   }
+
+  // Check rule tạo cọc ngày cũ
+  if (depositForm.value.date < systemDate.value && !canOperateOldDay.value) {
+    uiStore.showToast('Tài khoản không được phân quyền thêm cọc cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay)!', 'warning')
+    return
+  }
   
-  if (props.bookingId) {
-    try {
+  isSubmitting.value = true
+  try {
+    if (props.bookingId) {
       const formData = new FormData()
       formData.append('date', depositForm.value.date)
       formData.append('amount', Number(depositForm.value.amount))
       formData.append('payment_method_id', depositForm.value.paymentMethodId)
       formData.append('description', depositForm.value.note)
       formData.append('debit_account', depositForm.value.bankAccountId || 'Tài khoản ngân hàng')
+      formData.append('department_id', props.departmentId || 'MR')
       if (selectedFile.value) {
         formData.append('image', selectedFile.value)
       }
@@ -672,37 +798,39 @@ async function addDeposit() {
       await syncDepositsFromBackend()
       uiStore.showToast('Đã thêm đặt cọc mới thành công!', 'success')
       resetForm()
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Không thể thêm cọc!', 'error')
+    } else {
+      const now = new Date()
+      const timeStr = now.toTimeString().split(' ')[0].substring(0, 5)
+      
+      const newDep = {
+        id: Date.now(),
+        date: depositForm.value.date.split('-').reverse().join('/'),
+        time: timeStr,
+        paymentMethodId: depositForm.value.paymentMethodId,
+        note: depositForm.value.note,
+        amount: Number(depositForm.value.amount),
+        currency: activeCurrency.value.code || 'VND',
+        recipient: depositForm.value.recipient || 'Admin',
+        images: depositForm.value.image ? [depositForm.value.image] : [],
+        status: 1,
+        edit_flag: 0,
+        reversal_ref: null,
+        debit_account: depositForm.value.bankAccountId || 'Tài khoản ngân hàng',
+        pack2: 'DPR'
+      }
+      
+      localDeposits.value.push(newDep)
+      const totalValue = localDeposits.value.reduce((sum, d) => sum + d.amount, 0)
+      emit('update:deposits', localDeposits.value)
+      emit('update:paymentValue', totalValue)
+      
+      resetForm()
+      uiStore.showToast('Đã thêm đặt cọc mới!', 'success')
     }
-  } else {
-    const now = new Date()
-    const timeStr = now.toTimeString().split(' ')[0].substring(0, 5)
-    
-    const newDep = {
-      id: Date.now(),
-      date: depositForm.value.date.split('-').reverse().join('/'),
-      time: timeStr,
-      paymentMethodId: depositForm.value.paymentMethodId,
-      note: depositForm.value.note,
-      amount: Number(depositForm.value.amount),
-      currency: activeCurrency.value.code || 'VND',
-      recipient: depositForm.value.recipient || 'Admin',
-      images: depositForm.value.image ? [depositForm.value.image] : [],
-      status: 1,
-      edit_flag: 0,
-      reversal_ref: null,
-      debit_account: depositForm.value.bankAccountId || 'Tài khoản ngân hàng',
-      pack2: 'DPR'
-    }
-    
-    localDeposits.value.push(newDep)
-    const totalValue = localDeposits.value.reduce((sum, d) => sum + d.amount, 0)
-    emit('update:deposits', localDeposits.value)
-    emit('update:paymentValue', totalValue)
-    
-    resetForm()
-    uiStore.showToast('Đã thêm đặt cọc mới!', 'success')
+  } catch (err) {
+    uiStore.showToast(err.response?.data?.message || 'Không thể thêm cọc!', 'error')
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -736,6 +864,7 @@ function editDeposit() {
 }
 
 async function saveDeposit() {
+  if (isSubmitting.value) return
   if (!depositForm.value.id) {
     close()
     return
@@ -745,15 +874,15 @@ async function saveDeposit() {
     return
   }
   
-  if (props.bookingId) {
-    try {
+  isSubmitting.value = true
+  try {
+    if (props.bookingId) {
       const formData = new FormData()
       formData.append('_method', 'PUT')
-      formData.append('date', depositForm.value.date)
-      formData.append('amount', Number(depositForm.value.amount))
       formData.append('payment_method_id', depositForm.value.paymentMethodId)
       formData.append('description', depositForm.value.note)
       formData.append('debit_account', depositForm.value.bankAccountId)
+      formData.append('department_id', props.departmentId || 'MR')
       if (selectedFile.value) {
         formData.append('image', selectedFile.value)
       }
@@ -761,33 +890,50 @@ async function saveDeposit() {
       await syncDepositsFromBackend()
       uiStore.showToast('Cập nhật đặt cọc thành công!', 'success')
       resetForm()
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Không thể lưu cọc!', 'error')
-    }
-  } else {
-    const idx = localDeposits.value.findIndex(d => d.id === depositForm.value.id)
-    if (idx !== -1) {
-      localDeposits.value[idx].amount = Number(depositForm.value.amount)
-      localDeposits.value[idx].paymentMethodId = depositForm.value.paymentMethodId
-      localDeposits.value[idx].date = depositForm.value.date.split('-').reverse().join('/')
-      localDeposits.value[idx].note = depositForm.value.note
-      localDeposits.value[idx].images = depositForm.value.image ? [depositForm.value.image] : []
-      
-      const totalValue = localDeposits.value.reduce((sum, d) => sum + d.amount, 0)
-      emit('update:deposits', localDeposits.value)
-      emit('update:paymentValue', totalValue)
-      
-      resetForm()
       selectedDepositIds.value = []
-      uiStore.showToast('Cập nhật đặt cọc thành công!', 'success')
+    } else {
+      const idx = localDeposits.value.findIndex(d => d.id === depositForm.value.id)
+      if (idx !== -1) {
+        localDeposits.value[idx].paymentMethodId = depositForm.value.paymentMethodId
+        localDeposits.value[idx].note = depositForm.value.note
+        localDeposits.value[idx].images = depositForm.value.image ? [depositForm.value.image] : []
+        
+        const totalValue = localDeposits.value.reduce((sum, d) => sum + d.amount, 0)
+        emit('update:deposits', localDeposits.value)
+        emit('update:paymentValue', totalValue)
+        
+        resetForm()
+        selectedDepositIds.value = []
+        uiStore.showToast('Cập nhật đặt cọc thành công!', 'success')
+      }
     }
+  } catch (err) {
+    uiStore.showToast(err.response?.data?.message || 'Không thể lưu cọc!', 'error')
+  } finally {
+    isSubmitting.value = false
   }
 }
 
 async function deleteDeposits() {
+  if (isSubmitting.value) return
   if (selectedDepositIds.value.length === 0) {
     uiStore.showToast('Vui lòng chọn các cọc muốn xóa!', 'warning')
     return
+  }
+
+  // Kiểm tra rule xóa cọc ngày cũ
+  for (const depId of selectedDepositIds.value) {
+    const dep = localDeposits.value.find(d => d.id === depId)
+    if (dep) {
+      let depDate = dep.date
+      if (depDate.includes('/')) {
+        depDate = depDate.split('/').reverse().join('-')
+      }
+      if (depDate < systemDate.value && !canOperateOldDay.value) {
+        uiStore.showToast('Bạn không có quyền xóa cọc phát sinh ở ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay)! Chỉ được xóa cọc có ngày = ngày hệ thống.', 'warning')
+        return
+      }
+    }
   }
   
   if (props.bookingId) {
@@ -798,6 +944,7 @@ async function deleteDeposits() {
       cancelText: 'Quay lại'
     }).then(async confirmed => {
       if (!confirmed) return
+      isSubmitting.value = true
       try {
         for (const depId of selectedDepositIds.value) {
           await deletePayment(depId)
@@ -807,6 +954,8 @@ async function deleteDeposits() {
         selectedDepositIds.value = []
       } catch (err) {
         uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa cọc!', 'error')
+      } finally {
+        isSubmitting.value = false
       }
     })
   } else {
@@ -869,7 +1018,7 @@ async function confirmSplit() {
 
   const targetId = selectedDepositIds.value[0]
   try {
-    await splitPayment(targetId, { amounts: [splitAmount1.value, splitAmount2.value] })
+    await splitPayment(targetId, { amounts: [splitAmount1.value, splitAmount2.value], department_id: props.departmentId || 'MR' })
     await syncDepositsFromBackend()
     uiStore.showToast('Tách cọc thành công!', 'success')
     selectedDepositIds.value = []
@@ -879,19 +1028,50 @@ async function confirmSplit() {
   }
 }
 
+function getInhouseGuests(booking) {
+  if (!booking || !booking.booking_rooms || booking.booking_rooms.length === 0) return []
+  
+  const result = []
+  // Lọc các phòng đang ở (ưu tiên r.status == 1, hoặc tất cả nếu không phân loại status phòng)
+  const activeRooms = booking.booking_rooms.filter(r => r.status === undefined || r.status === null || Number(r.status) === 1 || Number(r.status) === 0)
+  
+  for (const room of activeRooms) {
+    if (!room.guests || room.guests.length === 0) continue
+    
+    const guestList = room.guests.map(g => ({
+      name: g.guest?.full_name || g.guest_name || 'Khách chưa đặt tên',
+      isPrimary: Boolean(g.is_primary)
+    }))
+    
+    if (guestList.length > 0) {
+      result.push({
+        roomNumber: room.room_number || room.room?.room_number || 'Chưa xếp',
+        guests: guestList
+      })
+    }
+  }
+  return result
+}
+
+function getBookingRoomsText(booking) {
+  if (!booking.booking_rooms || booking.booking_rooms.length === 0) return 'Chưa xếp phòng'
+  const roomNums = booking.booking_rooms.map(r => r.room_number || r.room?.room_number).filter(Boolean)
+  return roomNums.length > 0 ? roomNums.join(', ') : 'Chưa xếp phòng'
+}
+
 async function handleSearchBookingInput(query) {
   transferDestSearch.value = query
-  if (!query || query.trim().length < 1) {
-    searchResults.value = []
-    destBookingName.value = ''
-    transferDestBooking.value = null
-    return
-  }
   isSearchingDest.value = true
   try {
-    const res = await fetchBookings({ search: query.trim() })
+    const params = { status: '0,1' }
+    if (query && query.trim().length > 0) {
+      params.search = query.trim()
+    } else {
+      params.limit = 100
+    }
+    const res = await fetchBookings(params)
     const bookings = res.data?.data || res.data || []
-    searchResults.value = bookings.filter(b => b.id !== props.bookingId)
+    searchResults.value = bookings.filter(b => b.id !== props.bookingId && (Number(b.status) === 0 || Number(b.status) === 1))
   } catch (err) {
     console.error(err)
     searchResults.value = []
@@ -902,6 +1082,9 @@ async function handleSearchBookingInput(query) {
 
 function handleSearchFocus() {
   isFocused.value = true
+  if (searchResults.value.length === 0 && !isSearchingDest.value) {
+    handleSearchBookingInput(transferDestSearch.value || '')
+  }
 }
 
 function selectTargetBooking(b) {
@@ -909,14 +1092,29 @@ function selectTargetBooking(b) {
   transferDestCode.value = b.booking_code
   transferDestSearch.value = b.booking_code
   isFocused.value = false
-  destBookingName.value = `Khách nhận: ${b.booking_name || 'Không rõ'} (${b.booking_rooms?.[0]?.room_number ? 'Phòng ' + b.booking_rooms[0].room_number : 'Chưa xếp phòng'})`
+  const roomsText = getBookingRoomsText(b)
+  destBookingName.value = `Khách nhận: ${b.booking_name || 'Không rõ'} (${roomsText !== 'Chưa xếp phòng' ? 'Phòng ' + roomsText : 'Chưa xếp phòng'})`
+}
+
+function selectTargetBookingOption(opt) {
+  const b = opt.booking
+  transferDestBooking.value = b
+  transferDestCode.value = b.booking_code
+  isFocused.value = false
+  if (opt.type === 'guest') {
+    transferDestSearch.value = `${opt.roomNumber} | ${opt.guestName}`
+    destBookingName.value = `Khách nhận: ${opt.guestName} (P.${opt.roomNumber} - ${b.booking_code})`
+  } else {
+    transferDestSearch.value = `${b.booking_code} - ${b.booking_name || ''}`
+    destBookingName.value = `Khách nhận: ${b.booking_name || 'Không rõ'} (${b.booking_code})`
+  }
 }
 
 function clearTransferSelection() {
   transferDestSearch.value = ''
   transferDestBooking.value = null
   destBookingName.value = ''
-  searchResults.value = []
+  handleSearchBookingInput('')
 }
 
 function formatArrivalDate(dateStr) {
@@ -958,9 +1156,9 @@ async function transferDeposit() {
 
   isSearchingDest.value = true
   try {
-    const res = await fetchBookings({ limit: 100 })
+    const res = await fetchBookings({ limit: 100, status: '0,1' })
     const bookings = res.data?.data || res.data || []
-    searchResults.value = bookings.filter(b => b.id !== props.bookingId)
+    searchResults.value = bookings.filter(b => b.id !== props.bookingId && (Number(b.status) === 0 || Number(b.status) === 1))
   } catch (err) {
     console.error(err)
   } finally {
@@ -975,7 +1173,7 @@ async function confirmTransfer() {
   }
   const targetId = selectedDepositIds.value[0]
   try {
-    await transferPayment(targetId, { target_booking_id: transferDestBooking.value.id })
+    await transferPayment(targetId, { target_booking_id: transferDestBooking.value.id, department_id: props.departmentId || 'MR' })
     await syncDepositsFromBackend()
     uiStore.showToast(`Đã chuyển cọc sang booking ${transferDestBooking.value.booking_code} thành công!`, 'success')
     selectedDepositIds.value = []

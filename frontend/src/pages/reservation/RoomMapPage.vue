@@ -9,6 +9,7 @@ import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, f
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
+import RoomMoveModal from '@/components/RoomMoveModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -39,6 +40,9 @@ const createRegRef = ref(null)
 const showDetailModal = ref(false)
 const showBookingDetailModal = ref(false)
 const selectedBookingRoom = ref(null)
+const showRoomMoveModal = ref(false)
+const roomMoveBookingId = ref('')
+const roomMoveBookingRoomId = ref('')
 const showStatsModal = ref(false)
 const isLoaded = ref(false)
 const isInitialLoad = ref(true)
@@ -433,7 +437,7 @@ let tooltipTimeout = null
 function showTooltip(event, room) {
   if (contextMenu.value?.show) return
   if (!room || (room.booking_status !== 'occupied' && room.booking_status !== 'reserved' && room.booking_status !== 'checkout')) return
-  
+
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout)
     tooltipTimeout = null
@@ -489,7 +493,7 @@ function closeBookingDetailModal() {
   showBookingDetailModal.value = false
   selectedBookingRoom.value = null
 }
- 
+
 async function refreshRoomMapAfterGuestChange() {
   await roomStore.fetchRooms({ silent: true })
 }
@@ -554,35 +558,25 @@ function shouldShowSparkles(room) {
 }
 
 function getRoomStatusIconName(room) {
-  if (!room) return null
-
-  // 1. Maintenance / OOO / OOS
+  if (!room) return 'double-check'
   if (room.status === ROOM_STATUSES.MAINTENANCE || room.status === 'ooo' || room.status === 'oos') {
     return room.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-
-  // 2. Dirty rooms (Phòng bẩn / vừa trả phòng / chưa dọn)
-  if (room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.booking_status === 'checkout' || room.is_clean === false || room.is_clean === 0) {
+  const hasInhouseGuest = room.booking_status === 'occupied' || room.booking_status === 'checkout' || room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean
+  if (hasInhouseGuest) {
     return 'dirty'
   }
-
-  // 3. Sparkles (Phòng sạch trống hoàn toàn)
-  if (shouldShowSparkles(room)) {
-    return 'clean'
-  }
-
-  // 4. Reserved rooms (Phòng ưu tiên)
-  if (room.status === ROOM_STATUSES.RESERVED) {
-    return room.id % 2 === 0 ? 'priority-paid' : 'priority'
-  }
-
-  // 5. Available vacant clean rooms
-  if (room.status === ROOM_STATUSES.AVAILABLE && !room.booking_status) {
+  const hasBookingToday = !!room.guest_name || !!room.booking_code || !!room.booking_status
+  if (hasBookingToday) {
     return 'double-check'
   }
-
-  // 6. Occupied clean rooms (Khách đã nhận phòng sạch) -> Không hiển thị cây chổi bẩn
-  return null
+  if (room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status)) {
+    return 'clean'
+  }
+  if (room.status === ROOM_STATUSES.RESERVED) {
+    return 'priority'
+  }
+  return 'double-check'
 }
 
 function getStatusIconSize(room) {
@@ -698,26 +692,26 @@ function handleContextMenu(event, room) {
   event.preventDefault()
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   hoverTooltip.value.show = false
-  
+
   const menuWidth = 220
   const menuHeight = 340 // Safe height estimation of context menu
-  
+
   let x = event.clientX
   let y = event.clientY
   let isBottom = false
-  
+
   // Shift left if menu would overflow the right edge
   if (x + menuWidth > window.innerWidth) {
     x = window.innerWidth - menuWidth - 8
   }
-  
+
   // Shift up if menu would overflow the bottom edge
   if (y + menuHeight > window.innerHeight) {
     y = event.clientY - menuHeight
     if (y < 8) y = 8
     isBottom = true
   }
-  
+
   const isLeft = event.clientX > window.innerWidth - 460
   contextMenu.value = {
     show: true,
@@ -742,9 +736,44 @@ function showRoomInfo(room) {
   closeContextMenu()
 }
 
+function handleRoomMoveClick(room) {
+  closeContextMenu()
+  if (!room || (!room.booking_id && !room.id) || (!room.booking_room_id && !room.id)) {
+    uiStore.showToast('Phòng chưa có khách lưu trú để thực hiện chuyển phòng!', 'warning')
+    return
+  }
+  const bId = room.booking_id
+  const brId = room.booking_room_id || room.id
+
+  if (!bId || !brId) {
+    uiStore.showToast('Không tìm thấy thông tin lượt phòng (Booking Room ID)!', 'warning')
+    return
+  }
+
+  if (room.is_do_not_move) {
+    uiStore.showToast(`Phòng ${room.room_number} đang bị Khóa di chuyển (Do Not Move). Vui lòng mở khóa trước!`, 'warning')
+    return
+  }
+
+  roomMoveBookingId.value = bId
+  roomMoveBookingRoomId.value = brId
+  showRoomMoveModal.value = true
+}
+
+async function handleRoomMoveSuccess() {
+  showRoomMoveModal.value = false
+  uiStore.showToast('Chuyển phòng thành công!', 'success')
+  await roomStore.fetchRooms({ silent: true })
+}
+
 // Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
-  if (['Giao phòng nhanh', 'Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'Chuyển Phòng', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'Chuyển Phòng') {
+    handleRoomMoveClick(contextMenu.value.room)
+    return
+  }
+
+  if (['Giao phòng nhanh', 'Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
     const room = contextMenu.value.room
     if (room && room.booking_code) {
       router.push({
@@ -841,7 +870,7 @@ async function unlockRoomMove(room) {
 // Change room status directly from context menu
 async function changeRoomStatus(room, newStatus, lockType = null) {
   if (!room || (newStatus === room.status && lockType === room.lock_type)) return
-  
+
   let statusKey = 'available'
   if (newStatus === ROOM_STATUSES.DIRTY) statusKey = 'dirty'
   else if (newStatus === ROOM_STATUSES.CHECKOUT) statusKey = 'cleaning'
@@ -850,12 +879,12 @@ async function changeRoomStatus(room, newStatus, lockType = null) {
   }
   else if (newStatus === ROOM_STATUSES.RESERVED) statusKey = 'priorityRoom'
   else if (newStatus === ROOM_STATUSES.OCCUPIED) statusKey = 'dnd'
-  
+
   const statusLabel = t(`roomMap.${statusKey}`)
-  
+
   // Close context menu BEFORE showing confirm dialog
   closeContextMenu()
-  
+
   const confirmed = await uiStore.confirm({
     title: t('roomMap.changeStatusTitle'),
     message: t('roomMap.changeStatusConfirm', { room: room.room_number, status: statusLabel }),
@@ -898,10 +927,10 @@ onMounted(async () => {
   ])
   isLoaded.value = true
   isInitialLoad.value = false
-  
+
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', handleClickOutsideSettings)
-  
+
   calculateScale()
   window.addEventListener('resize', calculateScale)
 })
@@ -935,142 +964,157 @@ const uniqueFloors = computed(() => {
   <div class="flex h-full w-full overflow-hidden bg-white">
     <!-- Main Content Area Wrapper -->
     <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white" :style="{ zoom: scaleFactor }">
-      
+
       <!-- TOP HORIZONTAL METRICS BAR (Only displayed for Room Map tab) -->
-      <div v-if="currentTab === 'room-map'" class="relative bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
+      <div v-if="currentTab === 'room-map'"
+        class="relative bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
         <div class="flex items-center gap-3 overflow-x-auto px-1.5 py-1 scrollbar-thin">
           <!-- Date card -->
           <button @click="handleCurrentClick"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu border-slate-200/80">
-            <div class="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 shrink-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="3" y="6" width="18" height="15" rx="2" fill="#F8FAFC" stroke="#6366F1" stroke-width="2"/>
-                <path d="M3 6C3 4.89543 3.89543 4 5 4H19C20.1046 4 21 4.89543 21 6V9H3V6Z" fill="#EE4444"/>
-                <path d="M8 2V5" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
-                <path d="M16 2V5" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
-                <circle cx="7" cy="13" r="1" fill="#6366F1"/>
-                <circle cx="12" cy="13" r="1" fill="#6366F1"/>
-                <circle cx="17" cy="13" r="1" fill="#6366F1"/>
-                <circle cx="7" cy="17" r="1" fill="#6366F1"/>
-                <circle cx="12" cy="17" r="1" fill="#6366F1"/>
-                <circle cx="17" cy="17" r="1" fill="#6366F1"/>
+                <rect x="3" y="6" width="18" height="15" rx="2" fill="#F8FAFC" stroke="#6366F1" stroke-width="2" />
+                <path d="M3 6C3 4.89543 3.89543 4 5 4H19C20.1046 4 21 4.89543 21 6V9H3V6Z" fill="#EE4444" />
+                <path d="M8 2V5" stroke="#475569" stroke-width="2" stroke-linecap="round" />
+                <path d="M16 2V5" stroke="#475569" stroke-width="2" stroke-linecap="round" />
+                <circle cx="7" cy="13" r="1" fill="#6366F1" />
+                <circle cx="12" cy="13" r="1" fill="#6366F1" />
+                <circle cx="17" cy="13" r="1" fill="#6366F1" />
+                <circle cx="7" cy="17" r="1" fill="#6366F1" />
+                <circle cx="12" cy="17" r="1" fill="#6366F1" />
+                <circle cx="17" cy="17" r="1" fill="#6366F1" />
               </svg>
             </div>
             <div class="flex flex-col">
               <span class="text-[12px] leading-tight" :class="TEXT_THEME.statsValue">{{ selectedDate }}</span>
-              <span class="text-[10px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current') }}</span>
+              <span class="text-[10px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
+                }}</span>
             </div>
           </button>
- 
+
           <!-- Đã đến card -->
-          <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)" 
+          <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === ROOM_STATUSES.RESERVED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V19C21 20.1046 20.1046 21 19 21Z" fill="#F0FDF4" stroke="#22C55E" stroke-width="2"/>
-                <path d="M10 17H6V7H10" stroke="#16A34A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M18 12H9" stroke="#16A34A" stroke-width="2" stroke-linecap="round"/>
-                <path d="M12 9L9 12L12 15" stroke="#16A34A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path
+                  d="M19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V19C21 20.1046 20.1046 21 19 21Z"
+                  fill="#F0FDF4" stroke="#22C55E" stroke-width="2" />
+                <path d="M10 17H6V7H10" stroke="#16A34A" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+                <path d="M18 12H9" stroke="#16A34A" stroke-width="2" stroke-linecap="round" />
+                <path d="M12 9L9 12L12 15" stroke="#16A34A" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.arrivals') }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.arrivals')
+                }}</span>
               <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkinStats }}</span>
             </div>
           </button>
- 
+
           <!-- Đã đi card -->
-          <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)" 
+          <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === ROOM_STATUSES.CHECKOUT ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V19C21 20.1046 20.1046 21 19 21Z" fill="#FEF2F2" stroke="#EF4444" stroke-width="2"/>
-                <path d="M6 17H10V7H6" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M11 12H20" stroke="#DC2626" stroke-width="2" stroke-linecap="round"/>
-                <path d="M17 9L20 12L17 15" stroke="#DC2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path
+                  d="M19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V19C21 20.1046 20.1046 21 19 21Z"
+                  fill="#FEF2F2" stroke="#EF4444" stroke-width="2" />
+                <path d="M6 17H10V7H6" stroke="#DC2626" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
+                <path d="M11 12H20" stroke="#DC2626" stroke-width="2" stroke-linecap="round" />
+                <path d="M17 9L20 12L17 15" stroke="#DC2626" stroke-width="2" stroke-linecap="round"
+                  stroke-linejoin="round" />
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.departures') }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                t('roomMap.departures') }}</span>
               <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkoutStats }}</span>
             </div>
           </button>
- 
+
           <!-- Đang ở card -->
-          <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)" 
+          <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === ROOM_STATUSES.OCCUPIED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 20V5H4V14H20V5H22V20H20V17H4V20H2C2 20 2 20 2 20Z" fill="#3B82F6"/>
-                <rect x="5" y="10" width="14" height="4" rx="1" fill="#93C5FD"/>
-                <rect x="6" y="7" width="4" height="2.5" rx="0.5" fill="#1D4ED8"/>
-                <rect x="14" y="7" width="4" height="2.5" rx="0.5" fill="#1D4ED8"/>
+                <path d="M2 20V5H4V14H20V5H22V20H20V17H4V20H2C2 20 2 20 2 20Z" fill="#3B82F6" />
+                <rect x="5" y="10" width="14" height="4" rx="1" fill="#93C5FD" />
+                <rect x="6" y="7" width="4" height="2.5" rx="0.5" fill="#1D4ED8" />
+                <rect x="14" y="7" width="4" height="2.5" rx="0.5" fill="#1D4ED8" />
               </svg>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.occupied') }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.occupied')
+                }}</span>
               <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupiedStats }}</span>
             </div>
           </button>
- 
+
           <!-- Khóa OOO card -->
-          <button @click="handleMetricClick('OOO')" 
+          <button @click="handleMetricClick('OOO')"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === 'OOO' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/50 flex items-center justify-center shadow-xs shrink-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/50 flex items-center justify-center shadow-xs shrink-0">
               <RoomIcon name="ooo" class="w-5 h-5" />
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo') }}</span>
-              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo')
+                }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.status
+                === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
             </div>
           </button>
- 
+
           <!-- Khóa OOS card -->
-          <button @click="handleMetricClick('OOS')" 
+          <button @click="handleMetricClick('OOS')"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="activeFilter === 'OOS' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/40 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
+            <div
+              class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/40 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
               <RoomIcon name="oos" class="w-5 h-5 text-emerald-600" />
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos') }}</span>
-              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos')
+                }}</span>
+              <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.status
+                === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
             </div>
           </button>
- 
+
           <!-- Công suất card -->
-          <button @click="showStatsModal = true" 
+          <button @click="showStatsModal = true"
             class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
             :class="showStatsModal ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center text-slate-800 font-extrabold text-[10px] shrink-0 relative">
+            <div
+              class="w-8 h-8 rounded-full flex items-center justify-center text-slate-800 font-extrabold text-[10px] shrink-0 relative">
               <svg class="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                <path
-                  class="text-slate-100"
-                  stroke="currentColor"
-                  stroke-width="4.5"
-                  fill="none"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
-                <path
-                  class="text-amber-500 transition-all duration-1000 ease-out progress-ring-path"
-                  :stroke-dasharray="`${roomStore.occupancyRate || 0}, 100`"
-                  stroke-width="4.5"
-                  stroke-linecap="round"
-                  fill="none"
-                  stroke="currentColor"
-                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                />
+                <path class="text-slate-100" stroke="currentColor" stroke-width="4.5" fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                <path class="text-amber-500 transition-all duration-1000 ease-out progress-ring-path"
+                  :stroke-dasharray="`${roomStore.occupancyRate || 0}, 100`" stroke-width="4.5" stroke-linecap="round"
+                  fill="none" stroke="currentColor"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
               </svg>
               <span class="relative z-10 text-[9px] leading-none" :class="TEXT_THEME.statsValue">
                 {{ occupancyRateStats }}
               </span>
             </div>
             <div class="flex flex-col">
-              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.occupancy') }}</span>
+              <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.occupancy')
+                }}</span>
               <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupancyRateStats }}</span>
             </div>
           </button>
@@ -1082,82 +1126,80 @@ const uniqueFloors = computed(() => {
           <HelpGuidePopover />
 
           <!-- Zoom Layout Controls -->
-          <div class="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5 select-none shrink-0 font-semibold text-[11.5px] text-slate-700">
+          <div
+            class="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5 select-none shrink-0 font-semibold text-[11.5px] text-slate-700">
             <!-- Auto Scale Toggle Button -->
-            <button 
-              @click="toggleAutoScale" 
+            <button @click="toggleAutoScale"
               class="px-2.5 py-1 rounded-md cursor-pointer transition-all duration-200 text-[11px] border-none"
               :class="autoScale ? 'bg-sky-500 text-white font-bold shadow-xs' : 'bg-transparent text-slate-500 hover:bg-slate-100'"
-              title="Tự động thu phóng để vừa khít màn hình"
-            >
+              title="Tự động thu phóng để vừa khít màn hình">
               Auto Fit
             </button>
-            
+
             <!-- Manual Zoom Controls (Disabled if Auto Scale is enabled) -->
-            <div class="flex items-center gap-0.5 pl-1 pr-0.5" :class="autoScale ? 'opacity-40 pointer-events-none' : ''">
-              <button 
-                @click="adjustManualScale('out')" 
+            <div class="flex items-center gap-0.5 pl-1 pr-0.5"
+              :class="autoScale ? 'opacity-40 pointer-events-none' : ''">
+              <button @click="adjustManualScale('out')"
                 class="w-5.5 h-5.5 rounded-md hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
-                title="Thu nhỏ"
-              >
+                title="Thu nhỏ">
                 -
               </button>
               <span class="w-9 text-center font-bold text-slate-800 text-[10.5px] tabular-nums">
                 {{ Math.round(scaleFactor * 100) }}%
               </span>
-              <button 
-                @click="adjustManualScale('in')" 
+              <button @click="adjustManualScale('in')"
                 class="w-5.5 h-5.5 rounded-md hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
-                title="Phóng to"
-              >
+                title="Phóng to">
                 +
               </button>
             </div>
           </div>
 
           <div class="flex items-center gap-1">
-            <button @click="isGridMode = false" 
-              class="p-2 border rounded-lg cursor-pointer transition-colors"
+            <button @click="isGridMode = false" class="p-2 border rounded-lg cursor-pointer transition-colors"
               :class="!isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
               :title="t('roomMap.listView')">
               <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
               </svg>
             </button>
-            <button @click="isGridMode = true" 
-              class="p-2 border rounded-lg cursor-pointer transition-colors"
+            <button @click="isGridMode = true" class="p-2 border rounded-lg cursor-pointer transition-colors"
               :class="isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
               :title="t('roomMap.gridView')">
               <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
               </svg>
             </button>
-            <button @click="showFilters = !showFilters" 
-              class="p-2 border rounded-lg cursor-pointer transition-colors"
+            <button @click="showFilters = !showFilters" class="p-2 border rounded-lg cursor-pointer transition-colors"
               :class="showFilters ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
               :title="t('roomMap.toggleFilter')">
               <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
               </svg>
             </button>
-            <button @click="showSettings = !showSettings" 
+            <button @click="showSettings = !showSettings"
               class="p-2 border rounded-lg cursor-pointer transition-colors settings-btn-trigger"
               :class="showSettings ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
               title="Cài đặt hiển thị">
               <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.645-.869L9.594 3.94z" />
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.645-.869L9.594 3.94z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </button>
           </div>
 
           <!-- Settings Dropdown Popover -->
-          <div v-if="showSettings" 
+          <div v-if="showSettings"
             class="absolute right-6 top-16 w-72 bg-white rounded-xl shadow-2xl border border-slate-200/80 p-5 z-[50] flex flex-col gap-4 font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
-            
+
             <div class="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
-              <button @click="showSettings = false" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors" title="Đóng">
+              <button @click="showSettings = false"
+                class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
+                title="Đóng">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1167,7 +1209,7 @@ const uniqueFloors = computed(() => {
             <!-- Icon Sizing section -->
             <div class="flex flex-col gap-3">
               <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Icon</span>
-              
+
               <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
               <div class="flex flex-col gap-1">
                 <div class="flex items-center justify-between text-slate-700">
@@ -1179,7 +1221,9 @@ const uniqueFloors = computed(() => {
                   </div>
                   <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group1 }}px</span>
                 </div>
-                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1"
+                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
               </div>
 
               <!-- Group 2: Clean, Double check, Dirty -->
@@ -1192,7 +1236,9 @@ const uniqueFloors = computed(() => {
                   </div>
                   <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group2 }}px</span>
                 </div>
-                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2"
+                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
               </div>
 
               <!-- Group 3: Green status dot, Red status dot, Split dot -->
@@ -1201,11 +1247,14 @@ const uniqueFloors = computed(() => {
                   <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white/20 shadow-xs"></span>
                     <span class="w-2.5 h-2.5 rounded-full bg-red-500 border border-white/20 shadow-xs"></span>
-                    <span class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
+                    <span
+                      class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
                   </div>
                   <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group3 }}px</span>
                 </div>
-                <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
+                <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3"
+                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
               </div>
 
               <!-- Group 4: Walkin -->
@@ -1216,7 +1265,9 @@ const uniqueFloors = computed(() => {
                   </div>
                   <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group4 }}px</span>
                 </div>
-                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4"
+                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
               </div>
 
               <!-- Group 5: Priority, DND -->
@@ -1228,7 +1279,9 @@ const uniqueFloors = computed(() => {
                   </div>
                   <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group5 }}px</span>
                 </div>
-                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5"
+                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
               </div>
             </div>
 
@@ -1239,14 +1292,17 @@ const uniqueFloors = computed(() => {
               <span class="text-xs font-bold text-slate-700">Vị trí chính xác</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" v-model="settings.exactPosition" class="sr-only peer" />
-                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                <div
+                  class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500">
+                </div>
               </label>
             </div>
 
             <!-- Floor Orientation Toggle -->
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-slate-700">Hướng của tầng</span>
-              <div class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px] font-black">
+              <div
+                class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px] font-black">
                 <button @click="settings.floorOrientation = 'Ngang'"
                   class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
                   :class="settings.floorOrientation === 'Ngang' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
@@ -1268,7 +1324,9 @@ const uniqueFloors = computed(() => {
                 <span class="text-left">Chiều dài phòng</span>
                 <span class="text-slate-500">{{ settings.roomWidth }}px</span>
               </div>
-              <input type="range" min="120" max="300" v-model.number="settings.roomWidth" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 120) / (300 - 120) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 120) / (300 - 120) * 100) + '%, #e2e8f0 100%)' }" />
+              <input type="range" min="120" max="300" v-model.number="settings.roomWidth"
+                class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 120) / (300 - 120) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 120) / (300 - 120) * 100) + '%, #e2e8f0 100%)' }" />
             </div>
 
             <!-- Room Height Slider -->
@@ -1277,19 +1335,22 @@ const uniqueFloors = computed(() => {
                 <span class="text-left">Chiều cao phòng</span>
                 <span class="text-slate-500">{{ settings.roomHeight }}px</span>
               </div>
-              <input type="range" min="80" max="200" v-model.number="settings.roomHeight" class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500" :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 100%)' }" />
+              <input type="range" min="80" max="200" v-model.number="settings.roomHeight"
+                class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 80) / (200 - 80) * 100) + '%, #e2e8f0 100%)' }" />
             </div>
 
             <!-- Buttons Group -->
             <div class="flex gap-2.5 mt-2">
-              <button @click="resetToDefaultSettings" 
+              <button @click="resetToDefaultSettings"
                 class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
                 Mặc định
               </button>
-              <button @click="saveSettings" 
+              <button @click="saveSettings"
                 class="flex-1 py-2.5 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 Lưu
               </button>
@@ -1300,713 +1361,752 @@ const uniqueFloors = computed(() => {
 
       <!-- Main Layout Body (Grid or list or subpages) -->
       <div class="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
-        
+
         <!-- Global Loading Overlay -->
         <LoadingOverlay :show="!isLoaded || (currentTab === 'room-plan' && isRoomPlanLoading)" />
 
         <template v-if="isLoaded">
           <!-- Left/Center content container -->
           <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
-          
-          <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
-          <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
-            <AvailableRoomsPage />
-          </div>
 
-          <!-- Tab 2: Kế hoạch phòng RoomPlanPage -->
-          <div v-else-if="currentTab === 'room-plan'" class="h-full overflow-hidden">
-            <RoomPlanPage 
-              @loading="val => isRoomPlanLoading = val" 
-              @edit-booking="handleEditBookingFromPlan"
-            />
-          </div>
-
-          <!-- Tab 3: D.S Công Việc ShiftWorkPage -->
-          <div v-else-if="currentTab === 'shift-work'" class="h-full overflow-hidden">
-            <ShiftWorkPage />
-          </div>
-
-          <!-- Tab 4: Công Ty CompanySettingsPage -->
-          <div v-else-if="currentTab === 'company'" class="h-full overflow-hidden">
-            <CompanySettingsPage />
-          </div>
-
-          <!-- Tab 5: Khóa Phòng LockRoomPage -->
-          <div v-else-if="currentTab === 'lock-room'" class="h-full overflow-hidden">
-            <LockRoomPage />
-          </div>
-
-          <!-- Tab 6: Quản Lý Đồ Thất Lạc LostAndFound -->
-          <div v-else-if="currentTab === 'lost-found'" class="h-full overflow-hidden">
-            <LostAndFound />
-          </div>
-
-          <!-- Tab 7: Tạo Đăng Ký CreateRegistrationPage -->
-          <div v-else-if="currentTab === 'create-res'" class="h-full overflow-hidden">
-            <CreateRegistrationPage ref="createRegRef" />
-          </div>
-
-          <!-- Tab Checkin: Nhận phòng (Đến / Đã đến) -->
-          <div v-else-if="currentTab === 'checkin'" class="h-full overflow-hidden">
-            <CheckInPage :initial-date="rawDate" />
-          </div>
-
-          <!-- Tab 8: ALLOTMENT Tab -->
-          <div v-else-if="currentTab === 'allotment'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="flex justify-between items-center pb-4 border-b border-slate-100">
-              <div>
-                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.allotmentConfigTitle') }}</h2>
-                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentConfigDesc') }}</p>
-              </div>
-              <button @click="showDevelopmentToast(t('roomMap.createNewAllotment'))" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
-                {{ t('roomMap.createNewAllotment') }}
-              </button>
-            </div>
-            
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.partnerOta') }}</th>
-                  <th class="p-2.5">{{ t('roomMap.allotmentRoomType') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentQty') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentSold') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentRemaining') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentStatus') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { partner: 'Agoda.com', type: 'Deluxe Double', allocated: 10, sold: 6, status: 'Đang mở' },
-                  { partner: 'Booking.com', type: 'Executive Suite', allocated: 5, sold: 3, status: 'Đang mở' },
-                  { partner: 'Travel Concierge', type: 'Standard Twin', allocated: 8, sold: 8, status: 'Đã hết' },
-                  { partner: 'Trip.com', type: 'Standard Double', allocated: 6, sold: 1, status: 'Đang mở' }
-                ]" :key="item.partner" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black">{{ item.partner }}</td>
-                  <td class="p-2.5">{{ item.type }}</td>
-                  <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} {{ t('roomMap.allotmentRoomsUnit') }}</td>
-                  <td class="p-2.5 text-center text-sky-600">{{ item.sold }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ item.allocated - item.sold }}</td>
-                  <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Đang mở' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'">
-                      {{ item.status === 'Đang mở' ? t('roomMap.allotmentOpen') : t('roomMap.allotmentSoldOut') }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab 9: CHI TIẾT ALLOTMENT Tab -->
-          <div v-else-if="currentTab === 'allotment-detail'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.allotmentDetailTitle') }}</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentDetailDesc') }}</p>
+            <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
+            <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
+              <AvailableRoomsPage />
             </div>
 
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.allotmentIdCode') }}</th>
-                  <th class="p-2.5">{{ t('roomMap.allotmentPartner') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentRoomNo') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentStartDate') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentEndDate') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.allotmentUnlock') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { id: 'AL-1009', partner: 'Agoda.com', room: '202', start: '10-06-2026', end: '20-06-2026', active: true },
-                  { id: 'AL-1012', partner: 'Booking.com', room: '304', start: '12-06-2026', end: '22-06-2026', active: true },
-                  { id: 'AL-1015', partner: 'Travel Concierge', room: '104', start: '15-06-2026', end: '25-06-2026', active: false }
-                ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black">{{ item.id }}</td>
-                  <td class="p-2.5 text-slate-900">{{ item.partner }}</td>
-                  <td class="p-2.5 text-center font-black">{{ item.room }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ item.start }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ item.end }}</td>
-                  <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.active ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                      {{ item.active ? t('roomMap.allotmentOpen') : t('roomMap.allotmentLocked') }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab 10: BÁO CÁO PHÂN BỔ PHÒNG ALLOTMENT -->
-          <div v-else-if="currentTab === 'allotment-report'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-6 text-slate-800">
-            <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.allotmentReportTitle') }}</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentReportDesc') }}</p>
+            <!-- Tab 2: Kế hoạch phòng RoomPlanPage -->
+            <div v-else-if="currentTab === 'room-plan'" class="h-full overflow-hidden">
+              <RoomPlanPage @loading="val => isRoomPlanLoading = val" @edit-booking="handleEditBookingFromPlan" />
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div v-for="item in [
-                { title: t('roomMap.allotmentTotalRooms'), value: '45 ' + t('roomMap.allotmentRoomsUnit'), color: 'text-blue-600', desc: t('roomMap.allotmentAllocatedMonth') },
-                { title: t('roomMap.allotmentOccupiedRooms'), value: '29 ' + t('roomMap.allotmentRoomsUnit'), color: 'text-emerald-600', desc: t('roomMap.allotmentOccupiedDesc') },
-                { title: t('roomMap.allotmentRevenueVal'), value: '38.250.000 đ', color: 'text-indigo-600', desc: t('roomMap.allotmentRevenueDesc') }
-              ]" :key="item.title" class="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <span class="text-[11px] font-black uppercase text-slate-400 tracking-wide block mb-1">{{ item.title }}</span>
-                <span class="text-xl font-black block" :class="item.color">{{ item.value }}</span>
-                <span class="text-[10px] text-slate-500 block mt-1.5 font-bold">{{ item.desc }}</span>
-              </div>
+            <!-- Tab 3: D.S Công Việc ShiftWorkPage -->
+            <div v-else-if="currentTab === 'shift-work'" class="h-full overflow-hidden">
+              <ShiftWorkPage />
             </div>
 
-            <div class="flex flex-col gap-3.5 mt-2">
-              <span class="text-xs font-black uppercase text-slate-600 tracking-wider">{{ t('roomMap.allotmentChannelPerf') }}</span>
-              <div v-for="k in [
-                { name: 'Agoda.com', percent: '80%', sold: `16/20 ${t('roomMap.allotmentRoomsUnit')}` },
-                { name: 'Booking.com', percent: '60%', sold: `9/15 ${t('roomMap.allotmentRoomsUnit')}` },
-                { name: 'Travel Concierge', percent: '40%', sold: `4/10 ${t('roomMap.allotmentRoomsUnit')}` }
-              ]" :key="k.name" class="flex flex-col gap-1.5">
-                <div class="flex justify-between text-xs font-bold text-slate-700">
-                  <span>{{ k.name }}</span>
-                  <span>{{ k.sold }} ({{ k.percent }})</span>
-                </div>
-                <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div class="h-full bg-blue-500 rounded-full" :style="{ width: k.percent }"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Tab 11: BÁO CÁO ĐĂNG KÝ Tab -->
-          <div v-else-if="currentTab === 'report-reg'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.regReportTitle') }}</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.regReportDesc') }}</p>
+            <!-- Tab 4: Công Ty CompanySettingsPage -->
+            <div v-else-if="currentTab === 'company'" class="h-full overflow-hidden">
+              <CompanySettingsPage />
             </div>
 
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.regIdCode') }}</th>
-                  <th class="p-2.5">{{ t('roomMap.regCustomer') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.regRoomNo') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.regCheckIn') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.regCheckOut') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.regStatus') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { id: 'REG-552', guest: 'Ms. Ivanova Daria', room: '102', in: '12-06-2026', out: '16-06-2026', status: 'Hoạt động' },
-                  { id: 'REG-553', guest: 'Mr. Rachid Boufarki', room: '204', in: '14-06-2026', out: '18-06-2026', status: 'Hoạt động' },
-                  { id: 'REG-554', guest: 'Walkin Guest', room: '302', in: '15-06-2026', out: '16-06-2026', status: 'Hoàn thành' }
-                ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black text-sm">{{ item.id }}</td>
-                  <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
-                  <td class="p-2.5 text-center font-black">{{ item.room }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ item.in }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ item.out }}</td>
-                  <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'Hoạt động' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
-                      {{ item.status === 'Hoạt động' ? t('roomMap.regActive') : t('roomMap.regCompleted') }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab 12: BÁO CÁO THỐNG KÊ Tab -->
-          <div v-else-if="currentTab === 'report-stats'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.statReportTitle') }}</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.statReportDesc') }}</p>
+            <!-- Tab 5: Khóa Phòng LockRoomPage -->
+            <div v-else-if="currentTab === 'lock-room'" class="h-full overflow-hidden">
+              <LockRoomPage />
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-              <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">{{ t('roomMap.statAverageOccupancy') }}</span>
-                <span class="text-3xl font-black text-blue-600 tracking-tight mt-1">72.8%</span>
-              </div>
-              <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
-                <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">{{ t('roomMap.statAverageStay') }}</span>
-                <span class="text-3xl font-black text-emerald-600 tracking-tight mt-1">2.4 {{ t('roomMap.statDaysUnit') }}</span>
-              </div>
+            <!-- Tab 6: Quản Lý Đồ Thất Lạc LostAndFound -->
+            <div v-else-if="currentTab === 'lost-found'" class="h-full overflow-hidden">
+              <LostAndFound />
             </div>
 
-            <table class="w-full text-left border-collapse text-xs mt-2">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.statRoomCategory') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.statTotalRooms') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.statOccupiedRooms') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.statRepairRooms') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.statEfficiency') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { name: 'Standard Double', total: 30, occ: 22, repair: 1, rate: '73.3%' },
-                  { name: 'Deluxe Twin', total: 25, occ: 20, repair: 0, rate: '80.0%' },
-                  { name: 'Executive Suite', total: 12, occ: 7, repair: 2, rate: '58.3%' }
-                ]" :key="item.name" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black">{{ item.name }}</td>
-                  <td class="p-2.5 text-center text-slate-800">{{ item.total }}</td>
-                  <td class="p-2.5 text-center text-sky-600">{{ item.occ }}</td>
-                  <td class="p-2.5 text-center text-rose-500">{{ item.repair }}</td>
-                  <td class="p-2.5 text-center text-slate-900">{{ item.rate }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab 13: BÁO CÁO PHÒNG Tab -->
-          <div v-else-if="currentTab === 'report-rooms'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.roomsReportTitle') }}</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.roomsReportDesc') }}</p>
+            <!-- Tab 7: Tạo Đăng Ký CreateRegistrationPage -->
+            <div v-else-if="currentTab === 'create-res'" class="h-full overflow-hidden">
+              <CreateRegistrationPage ref="createRegRef" />
             </div>
 
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.roomsReportStatus') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.roomsReportQty') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.roomsReportPct') }}</th>
-                  <th class="p-2.5">{{ t('roomMap.roomsReportNotes') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { key: 'roomsCleanVacant', count: 42, pct: '39.3%' },
-                  { key: 'roomsOccupied', count: 45, pct: '42.1%' },
-                  { key: 'roomsDirtyVacant', count: 15, pct: '14.0%' },
-                  { key: 'roomsMaintenance', count: 5, pct: '4.6%' }
-                ]" :key="item.key" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black">{{ t('roomMap.' + item.key) }}</td>
-                  <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} {{ t('roomMap.allotmentRoomsUnit') }}</td>
-                  <td class="p-2.5 text-center text-sky-600">{{ item.pct }}</td>
-                  <td class="p-2.5 text-slate-500 font-medium">{{ t('roomMap.' + item.key + 'Desc') }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab 14: BÁO CÁO HỦY PHÒNG Tab -->
-          <div v-else-if="currentTab === 'report-cancel'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="pb-4 border-b border-slate-100">
-              <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.cancelReportTitle') }}</h2>
-              <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.cancelReportDesc') }}</p>
-            </div>
-
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.cancelIdCode') }}</th>
-                  <th class="p-2.5">{{ t('roomMap.cancelGuestName') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.cancelDate') }}</th>
-                  <th class="p-2.5 text-right">{{ t('roomMap.cancelValue') }}</th>
-                  <th class="p-2.5">{{ t('roomMap.cancelReason') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { id: 'CN-201', guest: 'Mr. David Lee', date: '08-06-2026', val: '2.500.000', reasonKey: 'cancelReason1' },
-                  { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reasonKey: 'cancelReason2' },
-                  { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reasonKey: 'cancelReason3' }
-                ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-rose-600 font-black text-sm">{{ item.id }}</td>
-                  <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ item.date }}</td>
-                  <td class="p-2.5 text-right text-slate-800 font-black">{{ item.val }} đ</td>
-                  <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ t('roomMap.' + item.reasonKey) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab 15: CHANNEL MANAGER Tab -->
-          <div v-else-if="currentTab === 'channel-manager'" class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
-            <div class="flex justify-between items-center pb-4 border-b border-slate-100">
-              <div>
-                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.channelManagerTitle') }}</h2>
-                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.channelManagerDesc') }}</p>
-              </div>
-              <button @click="showDevelopmentToast(t('roomMap.channelManagerSyncNow'))" class="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
-                {{ t('roomMap.channelManagerSyncNow') }}
-              </button>
-            </div>
-
-            <table class="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                  <th class="p-2.5">{{ t('roomMap.channelManagerOtaLink') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.channelManagerAvailRooms') }}</th>
-                  <th class="p-2.5 text-right">{{ t('roomMap.channelManagerSyncRates') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.channelManagerLastSync') }}</th>
-                  <th class="p-2.5 text-center">{{ t('roomMap.channelManagerConnStatus') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
-                <tr v-for="item in [
-                  { channel: 'Agoda API Connection', rooms: 15, rate: '650.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 10, status: 'active' },
-                  { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 5, status: 'active' },
-                  { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', timeKey: 'channelManagerHourAgo', timeVal: 1, status: 'reconnecting' }
-                ]" :key="item.channel" class="hover:bg-slate-50 h-10">
-                  <td class="p-2.5 text-slate-900 font-black">{{ item.channel }}</td>
-                  <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} {{ t('roomMap.allotmentRoomsUnit') }}</td>
-                  <td class="p-2.5 text-right text-emerald-600 font-black">{{ item.rate }}</td>
-                  <td class="p-2.5 text-center text-slate-400">{{ t('roomMap.' + item.timeKey, { n: item.timeVal }) }}</td>
-                  <td class="p-2.5 text-center">
-                    <span class="px-2 py-0.5 rounded text-[10px] font-black border" :class="item.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
-                      {{ item.status === 'active' ? t('roomMap.regActive') : t('roomMap.channelManagerReconnecting') }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- THE DEFAULT ROOM MAP VIEW -->
-          <div v-else class="flex-1 flex flex-col gap-4 min-h-0">
-            
-            <!-- Check-in Page view when filtering by RESERVED (Đã đến) -->
-            <div v-if="activeFilter === ROOM_STATUSES.RESERVED" class="flex-1 flex flex-col min-h-0">
+            <!-- Tab Checkin: Nhận phòng (Đến / Đã đến) -->
+            <div v-else-if="currentTab === 'checkin'" class="h-full overflow-hidden">
               <CheckInPage :initial-date="rawDate" />
             </div>
 
-            <!-- Loading State -->
-            <div v-else-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
-              <LoadingOverlay :show="roomStore.loading" />
-            </div>
-
-            <!-- Error State -->
-            <div v-else-if="roomStore.error" class="flex items-center justify-center flex-1">
-              <div class="text-center p-8 bg-white rounded-xl shadow-sm max-w-md border border-slate-200">
-                <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-                <p class="text-slate-700 font-medium mb-2">{{ roomStore.error }}</p>
-                <button @click="roomStore.fetchRooms()" class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors cursor-pointer border-none shadow-sm">
-                  Thử lại
+            <!-- Tab 8: ALLOTMENT Tab -->
+            <div v-else-if="currentTab === 'allotment'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                <div>
+                  <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{
+                    t('roomMap.allotmentConfigTitle') }}</h2>
+                  <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentConfigDesc') }}</p>
+                </div>
+                <button @click="showDevelopmentToast(t('roomMap.createNewAllotment'))"
+                  class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
+                  {{ t('roomMap.createNewAllotment') }}
                 </button>
               </div>
-            </div>
 
-            <!-- Room Grid view (Lưới sơ đồ) -->
-            <!-- Room Grid view (Lưới sơ đồ) -->
-            <div v-else-if="isGridMode" 
-              class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
-              :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'"
-            >
-              <div
-                v-for="(floor, floorIdx) in sortedFloors"
-                :key="floor"
-                :class="[
-                  settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2',
-                  isInitialLoad ? 'floor-row-animate' : ''
-                ]"
-                :style="isInitialLoad ? { animationDelay: `${floorIdx * 65}ms` } : {}"
-              >
-                <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
-                <div class="floor-pill cursor-pointer"
-                  :style="settings.floorOrientation === 'Dọc' ? {
-                    width: settings.roomWidth + 'px',
-                    height: 'auto',
-                    position: 'static',
-                    padding: '8px 4px',
-                    flexDirection: 'row',
-                    gap: '6px'
-                  } : {}"
-                >
-                  <span>{{ t('roomMap.floor', { floor }) }}</span>
-                  <span class="text-[10px] opacity-80 font-bold mt-1" :style="settings.floorOrientation === 'Dọc' ? { marginTop: '0px' } : {}">
-                    {{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}
-                  </span>
-                </div>
-
-                <!-- Rooms horizontal/vertical flex container inside this floor -->
-                <div :class="settings.floorOrientation === 'Ngang' ? 'flex gap-1.5' : 'flex flex-col gap-1.5'">
-                  <div
-                    v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]"
-                    :key="room.id"
-                    class="room-card"
-                    :class="[
-                      isInitialLoad ? 'room-card-animate' : '',
-                      (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : ''
-                    ]"
-                    :style="getRoomCardStyle(room, floorIdx, roomIdx)"
-                    @click="handleRoomClick(room)"
-                    @contextmenu.prevent="handleContextMenu($event, room)"
-                    @mouseenter="showTooltip($event, room)"
-                    @mousemove="showTooltip($event, room)"
-                    @mouseleave="hideTooltip"
-                  >
-                    <!-- Status Indicator Dot (Top Left - Check-in Today) -->
-                    <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
-                      <span class="rounded-full block border border-white/20 shadow-sm bg-emerald-500 relative"
-                        :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
-                    </div>
-
-                    <!-- Status Indicator Dot (Top Right - Check-out Today) -->
-                    <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5">
-                      <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
-                        :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
-                    </div>
-
-                    <!-- Room Content (Centered) -->
-                    <div class="flex flex-col items-center justify-center w-full my-auto">
-                      <!-- Room Number -->
-                      <div class="font-bold text-[18px] leading-tight text-center w-full flex items-center justify-center gap-1">
-                        <span :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : (room.booking_color ? 'text-inherit' : 'text-gray-900'))">
-                          {{ room.room_number }}
-                        </span>
-                      </div>
-
-                      <!-- Room Type (e.g. SUPT) -->
-                      <div class="text-[10px] font-bold uppercase text-center w-full mt-0.5" :class="room.booking_color ? 'text-inherit opacity-80' : 'text-gray-500'">
-                        {{ room.room_type || room.room_class?.code }}
-                      </div>
-
-                      <!-- Guest Name (if occupied or reserved) -->
-                      <div v-if="room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'" class="text-[11px] font-bold leading-tight text-center w-full mt-1 truncate max-w-full" :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
-                        {{ getMockGuestName(room) }}
-                      </div>
-                    </div>
-
-                    <!-- Bottom row: Icons (Absolute Positioned to allow overflow boundaries) -->
-                    <!-- Bottom Left Corner: Guest Count and Extra Bed -->
-                    <div class="absolute flex items-center gap-1.5 pointer-events-none overflow-visible shrink-0"
-                      :style="{
-                        left: (10 - (settings.iconSizes.group4 - 16) * cardScale) + 'px',
-                        bottom: (6 - (settings.iconSizes.group4 - 16) * cardScale) + 'px'
-                      }"
-                      :class="room.booking_color ? 'text-inherit opacity-85' : 'text-slate-500'"
-                    >
-                      <template v-if="getGuestCount(room) > 0">
-                        <span class="flex items-center gap-0.5 font-bold text-[10.5px] leading-none" :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
-                          <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'" :class="room.booking_color ? 'text-inherit' : 'text-gray-600'" :style="{ width: (settings.iconSizes.group4 * cardScale) + 'px', height: (settings.iconSizes.group4 * cardScale) + 'px' }" />
-                          {{ getGuestCount(room) }}
-                        </span>
-                      </template>
-                      <template v-if="hasExtraBed(room) && (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || hasArrivalToday(room))">
-                        <RoomIcon name="extra-bed" class="text-gray-600 pl-0.5" :style="{ width: (settings.iconSizes.group1 * cardScale) + 'px', height: (settings.iconSizes.group1 * cardScale) + 'px' }" />
-                      </template>
-                    </div>
-
-                    <!-- Bottom Right Corner: Status Icon -->
-                    <div v-if="getRoomStatusIconName(room)" class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0"
-                      :style="{
-                        right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
-                        bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
-                      }"
-                    >
-                      <RoomIcon 
-                        :name="getRoomStatusIconName(room)" 
-                        :monochrome="getRoomStatusIconName(room) === 'ooo'"
-                        class="text-gray-600" 
-                        :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" 
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Room List Table view (Bảng danh sách) -->
-            <div v-else class="bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto min-h-[300px] ml-1">
-              <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1400px]">
+              <table class="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap" :class="TEXT_THEME.tableHeader">
-                    <th class="p-2 border-r border-slate-200 text-center w-[60px]">{{ t('roomMap.status') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.lateIn') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[100px] leading-tight text-[10px]">{{ t('roomMap.planMove') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.roomStatus') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{ t('roomMap.extraBed') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[80px] leading-tight text-[10px]">{{ t('roomMap.splReq') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[85px]">{{ t('roomMap.roomType') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.roomShape') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[75px]">{{ t('roomMap.roomNum') }}</th>
-                    <th class="p-2 border-r border-slate-200 w-[180px]">{{ t('roomMap.guestName') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[75px]">{{ t('roomMap.regId') }}</th>
-                    <th class="p-2 border-r border-slate-200 w-[240px]">{{ t('roomMap.regName') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.arrivalDate') }}</th>
-                    <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.departureDate') }}</th>
-                    <th class="p-2 border-r border-slate-200 w-[200px]">{{ t('roomMap.company') }}</th>
-                    <th class="p-2 text-center w-[60px]">{{ t('roomMap.floorHeader') }}</th>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.partnerOta') }}</th>
+                    <th class="p-2.5">{{ t('roomMap.allotmentRoomType') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentQty') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentSold') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentRemaining') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentStatus') }}</th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr
-                    v-for="room in roomStore.filteredRooms"
-                    :key="room.id"
-                    class="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none h-9"
-                    :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#97d5ff]/40 hover:bg-[#97d5ff]/60' : 'bg-white'"
-                    @click="handleRoomClick(room)"
-                    @contextmenu.prevent="handleContextMenu($event, room)"
-                  >
-                    <!-- TTDK (Status Dot) -->
-                    <td class="p-2 border-r border-slate-200 text-center">
-                      <div class="flex items-center justify-center gap-1">
-                        <span
-                          v-if="hasArrivalToday(room)"
-                          class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-emerald-500"
-                        ></span>
-                        <span
-                          v-if="hasDepartureToday(room)"
-                          class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-red-500"
-                        ></span>
-                      </div>
-                    </td>
-                    <!-- Nhận phòng trễ -->
-                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
-                    <!-- Chuyển phòng kế hoạch -->
-                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
-                    <!-- TT Phòng (Status Icon) -->
-                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
-                      <div class="flex items-center justify-center">
-                        <RoomIcon 
-                          :name="getRoomStatusIconName(room)" 
-                          :monochrome="getRoomStatusIconName(room) === 'ooo'"
-                          class="w-5 h-5 text-slate-600" 
-                        />
-                      </div>
-                    </td>
-                    <!-- Thêm giường -->
-                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
-                    <!-- Yêu cầu DB -->
-                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
-                    <!-- Loại phòng -->
-                    <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
-                      {{ room.room_type || room.room_class?.code }}
-                    </td>
-                    <!-- Dạng phòng -->
-                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
-                      {{ getRoomTypeShape(room) }}
-                    </td>
-                    <!-- Phòng -->
-                    <td class="p-2 border-r border-slate-200 text-center text-[13px]" :class="TEXT_THEME.tableCell">
-                      <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : ''" class="flex items-center justify-center gap-1">
-                        {{ room.room_number }}
-                        <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500" title="Khóa chuyển phòng (Do Not Move)">
-                          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
-                          </svg>
-                        </span>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { partner: 'Agoda.com', type: 'Deluxe Double', allocated: 10, sold: 6, status: 'Đang mở' },
+                    { partner: 'Booking.com', type: 'Executive Suite', allocated: 5, sold: 3, status: 'Đang mở' },
+                    { partner: 'Travel Concierge', type: 'Standard Twin', allocated: 8, sold: 8, status: 'Đã hết' },
+                    { partner: 'Trip.com', type: 'Standard Double', allocated: 6, sold: 1, status: 'Đang mở' }
+                  ]" :key="item.partner" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-slate-900 font-black">{{ item.partner }}</td>
+                    <td class="p-2.5">{{ item.type }}</td>
+                    <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} {{ t('roomMap.allotmentRoomsUnit')
+                      }}</td>
+                    <td class="p-2.5 text-center text-sky-600">{{ item.sold }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ item.allocated - item.sold }}</td>
+                    <td class="p-2.5 text-center">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-black border"
+                        :class="item.status === 'Đang mở' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'">
+                        {{ item.status === 'Đang mở' ? t('roomMap.allotmentOpen') : t('roomMap.allotmentSoldOut') }}
                       </span>
-                    </td>
-                    <!-- Tên khách -->
-                    <td class="p-2 border-r border-slate-200 truncate" :class="TEXT_THEME.tableCell">
-                      {{ getMockGuestName(room) }}
-                    </td>
-                    <!-- Mã DK -->
-                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
-                      {{ getMockRegId(room) }}
-                    </td>
-                    <!-- Tên đăng ký -->
-                    <td class="p-2 border-r border-slate-200 text-[11px] truncate" :class="TEXT_THEME.tableCell">
-                      {{ getMockRegName(room) }}
-                    </td>
-                    <!-- Ngày đến -->
-                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
-                      {{ formatDateShort(room.check_in) || (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED ? '09-06-2026' : '') }}
-                    </td>
-                    <!-- Ngày đi -->
-                    <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
-                      {{ formatDateShort(room.check_out) || (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED ? '14-06-2026' : '') }}
-                    </td>
-                    <!-- Công ty -->
-                    <td class="p-2 border-r border-slate-200 text-[11px] truncate" :class="TEXT_THEME.tableCell">
-                      {{ getMockCompany(room) }}
-                    </td>
-                    <!-- Tầng -->
-                    <td class="p-2 text-center" :class="TEXT_THEME.tableCell">
-                      {{ room.floor }}
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-          </div>
-        </div>
-
-        <!-- RIGHT FILTER PANEL (BỘ LỌC) (Only displayed for Room Map tab) -->
-        <div 
-          v-if="currentTab === 'room-map'"
-          class="filter-panel-wrapper overflow-hidden flex shrink-0 bg-white h-full"
-          :class="showFilters ? 'border-l border-slate-200' : 'border-l-0'"
-          :style="{ width: showFilters ? '320px' : '0px' }"
-        >
-          <aside class="w-80 bg-white p-5 flex flex-col gap-4 overflow-y-auto h-full select-none">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 class="text-sm uppercase tracking-wider" :class="TEXT_THEME.menuTitle">{{ t('roomMap.filterTitle') }}</h3>
-              <div class="flex items-center gap-2.5">
-                <button @click="resetAllFilters" class="text-xs text-blue-500 hover:underline bg-transparent border-none cursor-pointer font-normal">
-                  {{ t('roomMap.clearFilter') }}
-                </button>
-                <button @click="showFilters = false" class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors" :title="t('roomMap.all') === 'All' ? 'Close' : 'Đóng'">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+            <!-- Tab 9: CHI TIẾT ALLOTMENT Tab -->
+            <div v-else-if="currentTab === 'allotment-detail'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="pb-4 border-b border-slate-100">
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{
+                  t('roomMap.allotmentDetailTitle') }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentDetailDesc') }}</p>
               </div>
+
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.allotmentIdCode') }}</th>
+                    <th class="p-2.5">{{ t('roomMap.allotmentPartner') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentRoomNo') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentStartDate') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentEndDate') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.allotmentUnlock') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { id: 'AL-1009', partner: 'Agoda.com', room: '202', start: '10-06-2026', end: '20-06-2026', active: true },
+                    { id: 'AL-1012', partner: 'Booking.com', room: '304', start: '12-06-2026', end: '22-06-2026', active: true },
+                    { id: 'AL-1015', partner: 'Travel Concierge', room: '104', start: '15-06-2026', end: '25-06-2026', active: false }
+                  ]" :key="item.id" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-slate-900 font-black">{{ item.id }}</td>
+                    <td class="p-2.5 text-slate-900">{{ item.partner }}</td>
+                    <td class="p-2.5 text-center font-black">{{ item.room }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ item.start }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ item.end }}</td>
+                    <td class="p-2.5 text-center">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-black border"
+                        :class="item.active ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
+                        {{ item.active ? t('roomMap.allotmentOpen') : t('roomMap.allotmentLocked') }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            
-            <div class="flex flex-col gap-3.5 text-xs">
-              <!-- Ngày filter -->
-              <div class="flex flex-col gap-1.5">
-                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
-                <input type="date" v-model="rawDate" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" :class="TEXT_THEME.sidebarLabel" />
+
+            <!-- Tab 10: BÁO CÁO PHÂN BỔ PHÒNG ALLOTMENT -->
+            <div v-else-if="currentTab === 'allotment-report'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-6 text-slate-800">
+              <div class="pb-4 border-b border-slate-100">
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{
+                  t('roomMap.allotmentReportTitle') }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.allotmentReportDesc') }}</p>
               </div>
 
-              <!-- Tầng filter -->
-              <div class="flex flex-col gap-1.5">
-                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.floorLabel') }}</span>
-                <select v-model="roomStore.filters.floor" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" :class="TEXT_THEME.sidebarLabel">
-                  <option :value="null">{{ t('roomMap.all') }}</option>
-                  <option v-for="floor in uniqueFloors" :key="floor" :value="floor">{{ t('roomMap.floor', { floor }) }}</option>
-                </select>
-              </div>
-
-              <!-- Loại phòng filter -->
-              <div class="flex flex-col gap-1.5">
-                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.roomTypeLabel') }}</span>
-                <select v-model="roomStore.filters.roomType" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" :class="TEXT_THEME.sidebarLabel">
-                  <option :value="null">{{ t('roomMap.all') }}</option>
-                  <option v-for="type in uniqueRoomTypes" :key="type" :value="type">{{ type }}</option>
-                </select>
-              </div>
-
-              <!-- Trạng thái lưu trú checkboxes -->
-              <div class="flex flex-col gap-2 pt-2">
-                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.statusLabel') }}</span>
-                <div class="flex flex-col gap-2">
-                  <label v-for="st in [
-                    { key: ROOM_STATUSES.AVAILABLE, labelKey: 'filterVacant' },
-                    { key: ROOM_STATUSES.OCCUPIED, labelKey: 'filterOccupied' },
-                    { key: ROOM_STATUSES.RESERVED, labelKey: 'filterArrival' },
-                    { key: ROOM_STATUSES.CHECKOUT, labelKey: 'filterDeparture' },
-                    { key: ROOM_STATUSES.MAINTENANCE, labelKey: 'filterLocked' }
-                  ]" :key="st.key" class="flex items-center gap-2 cursor-pointer" :class="TEXT_THEME.sidebarLabel">
-                    <input type="checkbox" :checked="roomStore.filters.status === st.key" 
-                      @change="toggleStatusFilter(st.key)"
-                      class="rounded border-slate-300 text-sky-600 focus:ring-[#97d5ff] h-4.5 w-4.5" />
-                    <span>{{ t('roomMap.' + st.labelKey) }}</span>
-                  </label>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div v-for="item in [
+                  { title: t('roomMap.allotmentTotalRooms'), value: '45 ' + t('roomMap.allotmentRoomsUnit'), color: 'text-blue-600', desc: t('roomMap.allotmentAllocatedMonth') },
+                  { title: t('roomMap.allotmentOccupiedRooms'), value: '29 ' + t('roomMap.allotmentRoomsUnit'), color: 'text-emerald-600', desc: t('roomMap.allotmentOccupiedDesc') },
+                  { title: t('roomMap.allotmentRevenueVal'), value: '38.250.000 đ', color: 'text-indigo-600', desc: t('roomMap.allotmentRevenueDesc') }
+                ]" :key="item.title" class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <span class="text-[11px] font-black uppercase text-slate-400 tracking-wide block mb-1">{{ item.title
+                    }}</span>
+                  <span class="text-xl font-black block" :class="item.color">{{ item.value }}</span>
+                  <span class="text-[10px] text-slate-500 block mt-1.5 font-bold">{{ item.desc }}</span>
                 </div>
               </div>
 
-              <!-- Trạng thái buồng phòng -->
-              <div class="flex flex-col gap-1.5 pt-2">
-                <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.housekeepingStatus') }}</span>
-                <select class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white cursor-not-allowed opacity-60" :class="TEXT_THEME.sidebarLabel" disabled>
-                  <option value="all">{{ t('roomMap.all') }}</option>
-                </select>
+              <div class="flex flex-col gap-3.5 mt-2">
+                <span class="text-xs font-black uppercase text-slate-600 tracking-wider">{{
+                  t('roomMap.allotmentChannelPerf') }}</span>
+                <div v-for="k in [
+                  { name: 'Agoda.com', percent: '80%', sold: `16/20 ${t('roomMap.allotmentRoomsUnit')}` },
+                  { name: 'Booking.com', percent: '60%', sold: `9/15 ${t('roomMap.allotmentRoomsUnit')}` },
+                  { name: 'Travel Concierge', percent: '40%', sold: `4/10 ${t('roomMap.allotmentRoomsUnit')}` }
+                ]" :key="k.name" class="flex flex-col gap-1.5">
+                  <div class="flex justify-between text-xs font-bold text-slate-700">
+                    <span>{{ k.name }}</span>
+                    <span>{{ k.sold }} ({{ k.percent }})</span>
+                  </div>
+                  <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div class="h-full bg-blue-500 rounded-full" :style="{ width: k.percent }"></div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <button @click="resetAllFilters" class="mt-auto w-full py-3 bg-[#97d5ff] hover:bg-[#7bc4ff] text-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer font-normal">
-              {{ t('roomMap.applyFilters') }}
-            </button>
-          </aside>
-        </div>
+            <!-- Tab 11: BÁO CÁO ĐĂNG KÝ Tab -->
+            <div v-else-if="currentTab === 'report-reg'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="pb-4 border-b border-slate-100">
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.regReportTitle')
+                  }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.regReportDesc') }}</p>
+              </div>
+
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.regIdCode') }}</th>
+                    <th class="p-2.5">{{ t('roomMap.regCustomer') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.regRoomNo') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.regCheckIn') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.regCheckOut') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.regStatus') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { id: 'REG-552', guest: 'Ms. Ivanova Daria', room: '102', in: '12-06-2026', out: '16-06-2026', status: 'Hoạt động' },
+                    { id: 'REG-553', guest: 'Mr. Rachid Boufarki', room: '204', in: '14-06-2026', out: '18-06-2026', status: 'Hoạt động' },
+                    { id: 'REG-554', guest: 'Walkin Guest', room: '302', in: '15-06-2026', out: '16-06-2026', status: 'Hoàn thành' }
+                  ]" :key="item.id" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-slate-900 font-black text-sm">{{ item.id }}</td>
+                    <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
+                    <td class="p-2.5 text-center font-black">{{ item.room }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ item.in }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ item.out }}</td>
+                    <td class="p-2.5 text-center">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-black border"
+                        :class="item.status === 'Hoạt động' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
+                        {{ item.status === 'Hoạt động' ? t('roomMap.regActive') : t('roomMap.regCompleted') }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab 12: BÁO CÁO THỐNG KÊ Tab -->
+            <div v-else-if="currentTab === 'report-stats'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="pb-4 border-b border-slate-100">
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.statReportTitle')
+                  }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.statReportDesc') }}</p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
+                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">{{
+                    t('roomMap.statAverageOccupancy') }}</span>
+                  <span class="text-3xl font-black text-blue-600 tracking-tight mt-1">72.8%</span>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col justify-center">
+                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-wide">{{
+                    t('roomMap.statAverageStay') }}</span>
+                  <span class="text-3xl font-black text-emerald-600 tracking-tight mt-1">2.4 {{
+                    t('roomMap.statDaysUnit') }}</span>
+                </div>
+              </div>
+
+              <table class="w-full text-left border-collapse text-xs mt-2">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.statRoomCategory') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.statTotalRooms') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.statOccupiedRooms') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.statRepairRooms') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.statEfficiency') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { name: 'Standard Double', total: 30, occ: 22, repair: 1, rate: '73.3%' },
+                    { name: 'Deluxe Twin', total: 25, occ: 20, repair: 0, rate: '80.0%' },
+                    { name: 'Executive Suite', total: 12, occ: 7, repair: 2, rate: '58.3%' }
+                  ]" :key="item.name" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-slate-900 font-black">{{ item.name }}</td>
+                    <td class="p-2.5 text-center text-slate-800">{{ item.total }}</td>
+                    <td class="p-2.5 text-center text-sky-600">{{ item.occ }}</td>
+                    <td class="p-2.5 text-center text-rose-500">{{ item.repair }}</td>
+                    <td class="p-2.5 text-center text-slate-900">{{ item.rate }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab 13: BÁO CÁO PHÒNG Tab -->
+            <div v-else-if="currentTab === 'report-rooms'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="pb-4 border-b border-slate-100">
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{ t('roomMap.roomsReportTitle')
+                  }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.roomsReportDesc') }}</p>
+              </div>
+
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.roomsReportStatus') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.roomsReportQty') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.roomsReportPct') }}</th>
+                    <th class="p-2.5">{{ t('roomMap.roomsReportNotes') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { key: 'roomsCleanVacant', count: 42, pct: '39.3%' },
+                    { key: 'roomsOccupied', count: 45, pct: '42.1%' },
+                    { key: 'roomsDirtyVacant', count: 15, pct: '14.0%' },
+                    { key: 'roomsMaintenance', count: 5, pct: '4.6%' }
+                  ]" :key="item.key" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-slate-900 font-black">{{ t('roomMap.' + item.key) }}</td>
+                    <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} {{
+                      t('roomMap.allotmentRoomsUnit') }}</td>
+                    <td class="p-2.5 text-center text-sky-600">{{ item.pct }}</td>
+                    <td class="p-2.5 text-slate-500 font-medium">{{ t('roomMap.' + item.key + 'Desc') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab 14: BÁO CÁO HỦY PHÒNG Tab -->
+            <div v-else-if="currentTab === 'report-cancel'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="pb-4 border-b border-slate-100">
+                <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{
+                  t('roomMap.cancelReportTitle') }}</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.cancelReportDesc') }}</p>
+              </div>
+
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.cancelIdCode') }}</th>
+                    <th class="p-2.5">{{ t('roomMap.cancelGuestName') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.cancelDate') }}</th>
+                    <th class="p-2.5 text-right">{{ t('roomMap.cancelValue') }}</th>
+                    <th class="p-2.5">{{ t('roomMap.cancelReason') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { id: 'CN-201', guest: 'Mr. David Lee', date: '08-06-2026', val: '2.500.000', reasonKey: 'cancelReason1' },
+                    { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reasonKey: 'cancelReason2' },
+                    { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reasonKey: 'cancelReason3' }
+                  ]" :key="item.id" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-rose-600 font-black text-sm">{{ item.id }}</td>
+                    <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
+                    <td class="p-2.5 text-center text-slate-500">{{ item.date }}</td>
+                    <td class="p-2.5 text-right text-slate-800 font-black">{{ item.val }} đ</td>
+                    <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ t('roomMap.' +
+                      item.reasonKey) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab 15: CHANNEL MANAGER Tab -->
+            <div v-else-if="currentTab === 'channel-manager'"
+              class="bg-white rounded-xl shadow-xs border border-slate-200 p-5 flex flex-col gap-5 text-slate-800">
+              <div class="flex justify-between items-center pb-4 border-b border-slate-100">
+                <div>
+                  <h2 class="text-base font-black tracking-wide uppercase text-slate-800">{{
+                    t('roomMap.channelManagerTitle') }}</h2>
+                  <p class="text-xs text-slate-400 font-bold mt-1">{{ t('roomMap.channelManagerDesc') }}</p>
+                </div>
+                <button @click="showDevelopmentToast(t('roomMap.channelManagerSyncNow'))"
+                  class="px-3.5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-black shadow-sm transition-all border-none cursor-pointer">
+                  {{ t('roomMap.channelManagerSyncNow') }}
+                </button>
+              </div>
+
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
+                    <th class="p-2.5">{{ t('roomMap.channelManagerOtaLink') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.channelManagerAvailRooms') }}</th>
+                    <th class="p-2.5 text-right">{{ t('roomMap.channelManagerSyncRates') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.channelManagerLastSync') }}</th>
+                    <th class="p-2.5 text-center">{{ t('roomMap.channelManagerConnStatus') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
+                  <tr v-for="item in [
+                    { channel: 'Agoda API Connection', rooms: 15, rate: '650.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 10, status: 'active' },
+                    { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 5, status: 'active' },
+                    { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', timeKey: 'channelManagerHourAgo', timeVal: 1, status: 'reconnecting' }
+                  ]" :key="item.channel" class="hover:bg-slate-50 h-10">
+                    <td class="p-2.5 text-slate-900 font-black">{{ item.channel }}</td>
+                    <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} {{
+                      t('roomMap.allotmentRoomsUnit') }}</td>
+                    <td class="p-2.5 text-right text-emerald-600 font-black">{{ item.rate }}</td>
+                    <td class="p-2.5 text-center text-slate-400">{{ t('roomMap.' + item.timeKey, { n: item.timeVal }) }}
+                    </td>
+                    <td class="p-2.5 text-center">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-black border"
+                        :class="item.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
+                        {{ item.status === 'active' ? t('roomMap.regActive') : t('roomMap.channelManagerReconnecting')
+                        }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- THE DEFAULT ROOM MAP VIEW -->
+            <div v-else class="flex-1 flex flex-col gap-4 min-h-0">
+
+              <!-- Check-in Page view when filtering by RESERVED (Đã đến) -->
+              <div v-if="activeFilter === ROOM_STATUSES.RESERVED" class="flex-1 flex flex-col min-h-0">
+                <CheckInPage :initial-date="rawDate" />
+              </div>
+
+              <!-- Loading State -->
+              <div v-else-if="roomStore.loading" class="flex items-center justify-center flex-1 relative min-h-[250px]">
+                <LoadingOverlay :show="roomStore.loading" />
+              </div>
+
+              <!-- Error State -->
+              <div v-else-if="roomStore.error" class="flex items-center justify-center flex-1">
+                <div class="text-center p-8 bg-white rounded-xl shadow-sm max-w-md border border-slate-200">
+                  <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" stroke-width="1.5"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <p class="text-slate-700 font-medium mb-2">{{ roomStore.error }}</p>
+                  <button @click="roomStore.fetchRooms()"
+                    class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors cursor-pointer border-none shadow-sm">
+                    Thử lại
+                  </button>
+                </div>
+              </div>
+
+              <!-- Room Grid view (Lưới sơ đồ) -->
+              <!-- Room Grid view (Lưới sơ đồ) -->
+              <div v-else-if="isGridMode"
+                class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
+                :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
+                <div v-for="(floor, floorIdx) in sortedFloors" :key="floor" :class="[
+                  settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2',
+                  isInitialLoad ? 'floor-row-animate' : ''
+                ]" :style="isInitialLoad ? { animationDelay: `${floorIdx * 65}ms` } : {}">
+                  <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
+                  <div class="floor-pill cursor-pointer" :style="settings.floorOrientation === 'Dọc' ? {
+                    width: settings.roomWidth + 'px',
+                    height: 'auto',
+                    position: 'static',
+                    padding: '8px 4px',
+                    flexDirection: 'row',
+                    gap: '6px'
+                  } : {}">
+                    <span>{{ t('roomMap.floor', { floor }) }}</span>
+                    <span class="text-[10px] opacity-80 font-bold mt-1"
+                      :style="settings.floorOrientation === 'Dọc' ? { marginTop: '0px' } : {}">
+                      {{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}
+                    </span>
+                  </div>
+
+                  <!-- Rooms horizontal/vertical flex container inside this floor -->
+                  <div :class="settings.floorOrientation === 'Ngang' ? 'flex gap-1.5' : 'flex flex-col gap-1.5'">
+                    <div v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]" :key="room.id" class="room-card"
+                      :class="[
+                        isInitialLoad ? 'room-card-animate' : '',
+                        (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : ''
+                      ]" :style="getRoomCardStyle(room, floorIdx, roomIdx)" @click="handleRoomClick(room)"
+                      @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
+                      @mousemove="showTooltip($event, room)" @mouseleave="hideTooltip">
+                      <!-- Status Indicator Dot (Top Left - Check-in Today) -->
+                      <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
+                        <span class="rounded-full block border border-white/20 shadow-sm bg-emerald-500 relative"
+                          :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
+                      </div>
+
+                      <!-- Status Indicator Dot (Top Right - Check-out Today) -->
+                      <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5">
+                        <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
+                          :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
+                      </div>
+
+                      <!-- Room Content (Centered) -->
+                      <div class="flex flex-col items-center justify-center w-full my-auto">
+                        <!-- Room Number -->
+                        <div
+                          class="font-bold text-[18px] leading-tight text-center w-full flex items-center justify-center gap-1">
+                          <span
+                            :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : (room.booking_color ? 'text-inherit' : 'text-gray-900'))">
+                            {{ room.room_number }}
+                          </span>
+                        </div>
+
+                        <!-- Room Type (e.g. SUPT) -->
+                        <div class="text-[10px] font-bold uppercase text-center w-full mt-0.5"
+                          :class="room.booking_color ? 'text-inherit opacity-80' : 'text-gray-500'">
+                          {{ room.room_type || room.room_class?.code }}
+                        </div>
+
+                        <!-- Guest Name (if occupied or reserved) -->
+                        <div
+                          v-if="room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'"
+                          class="text-[11px] font-bold leading-tight text-center w-full mt-1 truncate max-w-full"
+                          :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
+                          {{ getMockGuestName(room) }}
+                        </div>
+                      </div>
+
+                      <!-- Bottom row: Icons (Absolute Positioned to allow overflow boundaries) -->
+                      <!-- Bottom Left Corner: Guest Count and Extra Bed -->
+                      <div class="absolute flex items-center gap-1.5 pointer-events-none overflow-visible shrink-0"
+                        :style="{
+                          left: (10 - (settings.iconSizes.group4 - 16) * cardScale) + 'px',
+                          bottom: (6 - (settings.iconSizes.group4 - 16) * cardScale) + 'px'
+                        }" :class="room.booking_color ? 'text-inherit opacity-85' : 'text-slate-500'">
+                        <template v-if="getGuestCount(room) > 0">
+                          <span class="flex items-center gap-0.5 font-bold text-[10.5px] leading-none"
+                            :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
+                            <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'"
+                              :class="room.booking_color ? 'text-inherit' : 'text-gray-600'"
+                              :style="{ width: (settings.iconSizes.group4 * cardScale) + 'px', height: (settings.iconSizes.group4 * cardScale) + 'px' }" />
+                            {{ getGuestCount(room) }}
+                          </span>
+                        </template>
+                        <template
+                          v-if="hasExtraBed(room) && (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.RESERVED || hasArrivalToday(room))">
+                          <RoomIcon name="extra-bed" class="text-gray-600 pl-0.5"
+                            :style="{ width: (settings.iconSizes.group1 * cardScale) + 'px', height: (settings.iconSizes.group1 * cardScale) + 'px' }" />
+                        </template>
+                      </div>
+
+                      <!-- Bottom Right Corner: Status Icon -->
+                      <div class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0" :style="{
+                        right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
+                        bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
+                      }">
+                        <RoomIcon :name="getRoomStatusIconName(room)"
+                          :monochrome="getRoomStatusIconName(room) === 'ooo'" class="text-gray-600"
+                          :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Room List Table view (Bảng danh sách) -->
+              <div v-else
+                class="bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto min-h-[300px] ml-1">
+                <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1400px]">
+                  <thead>
+                    <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap"
+                      :class="TEXT_THEME.tableHeader">
+                      <th class="p-2 border-r border-slate-200 text-center w-[60px]">{{ t('roomMap.status') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{
+                        t('roomMap.lateIn')
+                        }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[100px] leading-tight text-[10px]">{{
+                        t('roomMap.planMove') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{
+                        t('roomMap.roomStatus') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{
+                        t('roomMap.extraBed') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[80px] leading-tight text-[10px]">{{
+                        t('roomMap.splReq')
+                        }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[85px]">{{ t('roomMap.roomType') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.roomShape') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[75px]">{{ t('roomMap.roomNum') }}</th>
+                      <th class="p-2 border-r border-slate-200 w-[180px]">{{ t('roomMap.guestName') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[75px]">{{ t('roomMap.regId') }}</th>
+                      <th class="p-2 border-r border-slate-200 w-[240px]">{{ t('roomMap.regName') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.arrivalDate') }}</th>
+                      <th class="p-2 border-r border-slate-200 text-center w-[95px]">{{ t('roomMap.departureDate') }}
+                      </th>
+                      <th class="p-2 border-r border-slate-200 w-[200px]">{{ t('roomMap.company') }}</th>
+                      <th class="p-2 text-center w-[60px]">{{ t('roomMap.floorHeader') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="room in roomStore.filteredRooms" :key="room.id"
+                      class="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none h-9"
+                      :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#97d5ff]/40 hover:bg-[#97d5ff]/60' : 'bg-white'"
+                      @click="handleRoomClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
+                      <!-- TTDK (Status Dot) -->
+                      <td class="p-2 border-r border-slate-200 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                          <span v-if="hasArrivalToday(room)"
+                            class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-emerald-500"></span>
+                          <span v-if="hasDepartureToday(room)"
+                            class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-red-500"></span>
+                        </div>
+                      </td>
+                      <!-- Nhận phòng trễ -->
+                      <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
+                      <!-- Chuyển phòng kế hoạch -->
+                      <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
+                      <!-- TT Phòng (Status Icon) -->
+                      <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
+                        <div class="flex items-center justify-center">
+                          <RoomIcon :name="getRoomStatusIconName(room)"
+                            :monochrome="getRoomStatusIconName(room) === 'ooo'" class="w-5 h-5 text-slate-600" />
+                        </div>
+                      </td>
+                      <!-- Thêm giường -->
+                      <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
+                      <!-- Yêu cầu DB -->
+                      <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">-</td>
+                      <!-- Loại phòng -->
+                      <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
+                        {{ room.room_type || room.room_class?.code }}
+                      </td>
+                      <!-- Dạng phòng -->
+                      <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
+                        {{ getRoomTypeShape(room) }}
+                      </td>
+                      <!-- Phòng -->
+                      <td class="p-2 border-r border-slate-200 text-center text-[13px]" :class="TEXT_THEME.tableCell">
+                        <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : ''"
+                          class="flex items-center justify-center gap-1">
+                          {{ room.room_number }}
+                          <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500"
+                            title="Khóa chuyển phòng (Do Not Move)">
+                            <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor"
+                                stroke-width="2.5"></rect>
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5">
+                              </path>
+                            </svg>
+                          </span>
+                        </span>
+                      </td>
+                      <!-- Tên khách -->
+                      <td class="p-2 border-r border-slate-200 truncate" :class="TEXT_THEME.tableCell">
+                        {{ getMockGuestName(room) }}
+                      </td>
+                      <!-- Mã DK -->
+                      <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
+                        {{ getMockRegId(room) }}
+                      </td>
+                      <!-- Tên đăng ký -->
+                      <td class="p-2 border-r border-slate-200 text-[11px] truncate" :class="TEXT_THEME.tableCell">
+                        {{ getMockRegName(room) }}
+                      </td>
+                      <!-- Ngày đến -->
+                      <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
+                        {{ formatDateShort(room.check_in) || (room.status === ROOM_STATUSES.OCCUPIED || room.status ===
+                          ROOM_STATUSES.RESERVED ? '09-06-2026' : '') }}
+                      </td>
+                      <!-- Ngày đi -->
+                      <td class="p-2 border-r border-slate-200 text-center text-[11px]" :class="TEXT_THEME.tableCell">
+                        {{ formatDateShort(room.check_out) || (room.status === ROOM_STATUSES.OCCUPIED || room.status ===
+                          ROOM_STATUSES.RESERVED ? '14-06-2026' : '') }}
+                      </td>
+                      <!-- Công ty -->
+                      <td class="p-2 border-r border-slate-200 text-[11px] truncate" :class="TEXT_THEME.tableCell">
+                        {{ getMockCompany(room) }}
+                      </td>
+                      <!-- Tầng -->
+                      <td class="p-2 text-center" :class="TEXT_THEME.tableCell">
+                        {{ room.floor }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- RIGHT FILTER PANEL (BỘ LỌC) (Only displayed for Room Map tab) -->
+          <div v-if="currentTab === 'room-map'"
+            class="filter-panel-wrapper overflow-hidden flex shrink-0 bg-white h-full"
+            :class="showFilters ? 'border-l border-slate-200' : 'border-l-0'"
+            :style="{ width: showFilters ? '320px' : '0px' }">
+            <aside class="w-80 bg-white p-5 flex flex-col gap-4 overflow-y-auto h-full select-none">
+              <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 class="text-sm uppercase tracking-wider" :class="TEXT_THEME.menuTitle">{{ t('roomMap.filterTitle')
+                  }}</h3>
+                <div class="flex items-center gap-2.5">
+                  <button @click="resetAllFilters"
+                    class="text-xs text-blue-500 hover:underline bg-transparent border-none cursor-pointer font-normal">
+                    {{ t('roomMap.clearFilter') }}
+                  </button>
+                  <button @click="showFilters = false"
+                    class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
+                    :title="t('roomMap.all') === 'All' ? 'Close' : 'Đóng'">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex flex-col gap-3.5 text-xs">
+                <!-- Ngày filter -->
+                <div class="flex flex-col gap-1.5">
+                  <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
+                  <input type="date" v-model="rawDate"
+                    class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white"
+                    :class="TEXT_THEME.sidebarLabel" />
+                </div>
+
+                <!-- Tầng filter -->
+                <div class="flex flex-col gap-1.5">
+                  <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.floorLabel') }}</span>
+                  <select v-model="roomStore.filters.floor"
+                    class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white"
+                    :class="TEXT_THEME.sidebarLabel">
+                    <option :value="null">{{ t('roomMap.all') }}</option>
+                    <option v-for="floor in uniqueFloors" :key="floor" :value="floor">{{ t('roomMap.floor', { floor })
+                      }}</option>
+                  </select>
+                </div>
+
+                <!-- Loại phòng filter -->
+                <div class="flex flex-col gap-1.5">
+                  <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.roomTypeLabel') }}</span>
+                  <select v-model="roomStore.filters.roomType"
+                    class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white"
+                    :class="TEXT_THEME.sidebarLabel">
+                    <option :value="null">{{ t('roomMap.all') }}</option>
+                    <option v-for="type in uniqueRoomTypes" :key="type" :value="type">{{ type }}</option>
+                  </select>
+                </div>
+
+                <!-- Trạng thái lưu trú checkboxes -->
+                <div class="flex flex-col gap-2 pt-2">
+                  <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.statusLabel') }}</span>
+                  <div class="flex flex-col gap-2">
+                    <label v-for="st in [
+                      { key: ROOM_STATUSES.AVAILABLE, labelKey: 'filterVacant' },
+                      { key: ROOM_STATUSES.OCCUPIED, labelKey: 'filterOccupied' },
+                      { key: ROOM_STATUSES.RESERVED, labelKey: 'filterArrival' },
+                      { key: ROOM_STATUSES.CHECKOUT, labelKey: 'filterDeparture' },
+                      { key: ROOM_STATUSES.MAINTENANCE, labelKey: 'filterLocked' }
+                    ]" :key="st.key" class="flex items-center gap-2 cursor-pointer" :class="TEXT_THEME.sidebarLabel">
+                      <input type="checkbox" :checked="roomStore.filters.status === st.key"
+                        @change="toggleStatusFilter(st.key)"
+                        class="rounded border-slate-300 text-sky-600 focus:ring-[#97d5ff] h-4.5 w-4.5" />
+                      <span>{{ t('roomMap.' + st.labelKey) }}</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Trạng thái buồng phòng -->
+                <div class="flex flex-col gap-1.5 pt-2">
+                  <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.housekeepingStatus') }}</span>
+                  <select
+                    class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white cursor-not-allowed opacity-60"
+                    :class="TEXT_THEME.sidebarLabel" disabled>
+                    <option value="all">{{ t('roomMap.all') }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <button @click="resetAllFilters"
+                class="mt-auto w-full py-3 bg-[#97d5ff] hover:bg-[#7bc4ff] text-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer font-normal">
+                {{ t('roomMap.applyFilters') }}
+              </button>
+            </aside>
+          </div>
 
         </template>
       </div>
@@ -2014,125 +2114,120 @@ const uniqueFloors = computed(() => {
 
 
     <!-- Booking Detail Modal -->
-    <BookingDetailModal
-      v-if="showBookingDetailModal && selectedBookingRoom"
-      :room="selectedBookingRoom"
-      @close="closeBookingDetailModal"
-      @refresh="refreshRoomMapAfterGuestChange"
-    />
+    <BookingDetailModal v-if="showBookingDetailModal && selectedBookingRoom" :room="selectedBookingRoom"
+      @close="closeBookingDetailModal" @refresh="refreshRoomMapAfterGuestChange" />
 
     <!-- Hover Tooltip -->
     <Teleport to="body">
       <Transition name="tooltip-fade">
-        <div
-          v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
+        <div v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
           class="fixed z-[9990] pointer-events-none bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
           :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
-          :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }"
-          @mouseenter="cancelHide"
-          @mouseleave="hideTooltip"
-        >
-        <!-- Header: Dates and Booking Code -->
-        <div class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
-          <div class="flex items-center gap-1.5">
-            <span class="text-xs">🟢</span>
-            <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
-            <span class="text-neutral-500 font-normal">-</span>
-            <span class="text-xs">🔴</span>
-            <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
-          </div>
-          <div>
-            <span class="text-neutral-400 font-normal">Mã ĐK:</span>
-            <span class="ml-1 text-sky-400">{{ hoverTooltip.room.booking_code }}</span>
-          </div>
-        </div>
-
-        <!-- Details list -->
-        <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
-          <li class="flex items-start gap-1">
-            <span class="text-neutral-500">•</span>
-            <span>Tên ĐK: <strong class="text-white">{{ hoverTooltip.room.booking_name }}</strong></span>
-          </li>
-          <li class="flex items-start gap-1">
-            <span class="text-neutral-500">•</span>
-            <span>Tên: <strong class="text-white">{{ hoverTooltip.room.guest_name }}</strong></span>
-          </li>
-          <li class="flex items-start gap-1">
-            <span class="text-neutral-500">•</span>
-            <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
-          </li>
-          <li class="flex items-start gap-1">
-            <span class="text-neutral-500">•</span>
-            <span>Đêm: {{ hoverTooltip.room.nights }}</span>
-          </li>
-          <li class="flex items-center gap-2">
-            <span class="text-neutral-500">•</span>
-            <span class="flex items-center gap-1">
-              {{ hoverTooltip.room.adults }} 🧑
-              {{ hoverTooltip.room.children }} 🧒
-              {{ hoverTooltip.room.babies }} 👶
-            </span>
-          </li>
-          <li class="flex items-center justify-between">
-            <span class="flex items-center gap-1">
-              <span class="text-neutral-500">•</span>
-              <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
-            </span>
-            <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
-          </li>
-        </ul>
-
-        <!-- Divider -->
-        <div class="h-px bg-neutral-700/60 my-2"></div>
-
-        <!-- Lower Section (Description/Company details) -->
-        <div class="text-neutral-400 space-y-1">
-          <div class="uppercase font-bold text-neutral-300">
-            1 {{ hoverTooltip.room.room_type_name }} - {{ hoverTooltip.room.adults > 2 ? 'TRPL' : 'DBL' }} ({{ hoverTooltip.room.nights }} ĐÊM)*
-          </div>
-          <div>{{ formatTooltipPrice(hoverTooltip.room.rate) }}/R/N</div>
-          <div v-if="hoverTooltip.room.company_name" class="uppercase text-neutral-300">CTY: {{ hoverTooltip.room.company_name }}</div>
-          <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{ hoverTooltip.room.booking_note }}</div>
-          <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{ hoverTooltip.room.special_requests }}</div>
-
-          <div class="h-px bg-neutral-700/30 my-1.5" v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
-          
-          <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
-            <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
-            <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx" class="uppercase text-neutral-200 pl-1">
-              • {{ gName }}
+          :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }" @mouseenter="cancelHide"
+          @mouseleave="hideTooltip">
+          <!-- Header: Dates and Booking Code -->
+          <div
+            class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs">🟢</span>
+              <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
+              <span class="text-neutral-500 font-normal">-</span>
+              <span class="text-xs">🔴</span>
+              <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
             </div>
-          </template>
-        </div>
+            <div>
+              <span class="text-neutral-400 font-normal">Mã ĐK:</span>
+              <span class="ml-1 text-sky-400">{{ hoverTooltip.room.booking_code }}</span>
+            </div>
+          </div>
 
-        <!-- Triangle Pointer -->
-        <div
-          class="absolute left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent"
-          :class="hoverTooltip.isBelow
-            ? 'top-0 -translate-y-full border-b-[6px] border-b-[#2e2e2e] border-t-0'
-            : 'bottom-0 translate-y-full border-t-[6px] border-t-[#2e2e2e] border-b-0'"
-        ></div>
-      </div>
+          <!-- Details list -->
+          <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
+            <li class="flex items-start gap-1">
+              <span class="text-neutral-500">•</span>
+              <span>Tên ĐK: <strong class="text-white">{{ hoverTooltip.room.booking_name }}</strong></span>
+            </li>
+            <li class="flex items-start gap-1">
+              <span class="text-neutral-500">•</span>
+              <span>Tên: <strong class="text-white">{{ hoverTooltip.room.guest_name }}</strong></span>
+            </li>
+            <li class="flex items-start gap-1">
+              <span class="text-neutral-500">•</span>
+              <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
+            </li>
+            <li class="flex items-start gap-1">
+              <span class="text-neutral-500">•</span>
+              <span>Đêm: {{ hoverTooltip.room.nights }}</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-neutral-500">•</span>
+              <span class="flex items-center gap-1">
+                {{ hoverTooltip.room.adults }} 🧑
+                {{ hoverTooltip.room.children }} 🧒
+                {{ hoverTooltip.room.babies }} 👶
+              </span>
+            </li>
+            <li class="flex items-center justify-between">
+              <span class="flex items-center gap-1">
+                <span class="text-neutral-500">•</span>
+                <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
+              </span>
+              <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
+            </li>
+          </ul>
+
+          <!-- Divider -->
+          <div class="h-px bg-neutral-700/60 my-2"></div>
+
+          <!-- Lower Section (Description/Company details) -->
+          <div class="text-neutral-400 space-y-1">
+            <div class="uppercase font-bold text-neutral-300">
+              1 {{ hoverTooltip.room.room_type_name }} - {{ hoverTooltip.room.adults > 2 ? 'TRPL' : 'DBL' }} ({{
+                hoverTooltip.room.nights }} ĐÊM)*
+            </div>
+            <div>{{ formatTooltipPrice(hoverTooltip.room.rate) }}/R/N</div>
+            <div v-if="hoverTooltip.room.company_name" class="uppercase text-neutral-300">CTY: {{
+              hoverTooltip.room.company_name }}</div>
+            <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{
+              hoverTooltip.room.booking_note }}</div>
+            <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{
+              hoverTooltip.room.special_requests }}</div>
+
+            <div class="h-px bg-neutral-700/30 my-1.5"
+              v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
+
+            <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
+              <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
+              <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx"
+                class="uppercase text-neutral-200 pl-1">
+                • {{ gName }}
+              </div>
+            </template>
+          </div>
+
+          <!-- Triangle Pointer -->
+          <div
+            class="absolute left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent"
+            :class="hoverTooltip.isBelow
+              ? 'top-0 -translate-y-full border-b-[6px] border-b-[#2e2e2e] border-t-0'
+              : 'bottom-0 translate-y-full border-t-[6px] border-t-[#2e2e2e] border-b-0'"></div>
+        </div>
       </Transition>
     </Teleport>
 
     <!-- Teleported Context Menu -->
     <Teleport to="body">
-      <div
-        v-if="contextMenu.show && contextMenu.room"
+      <div v-if="contextMenu.show && contextMenu.room"
         class="fixed z-[99999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
-        :class="TEXT_THEME.menuItem"
-        :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
-        @click.stop
-      >
+        :class="TEXT_THEME.menuItem" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
         <!-- CASE 1: PHÒNG ĐÃ GÁN SỐ PHÒNG NHƯNG CHƯA CHECK-IN (Ảnh 1) -->
-        <template v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
+        <template
+          v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
           <!-- Đăng ký -->
-          <button
-            @click="triggerMenuItem('Đăng ký')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <line x1="19" y1="8" x2="19" y2="14" />
@@ -2144,22 +2239,20 @@ const uniqueFloors = computed(() => {
           <div class="h-px bg-slate-300 my-1"></div>
 
           <!-- Nhận phòng -->
-          <button
-            @click="handleQuickCheckinFromMenu()"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="handleQuickCheckinFromMenu()"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
             </svg>
             <span>Nhận phòng</span>
           </button>
 
           <!-- In phiếu ăn sáng -->
-          <button
-            @click="triggerMenuItem('In phiếu ăn sáng')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('In phiếu ăn sáng')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
               <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
               <line x1="6" y1="2" x2="6" y2="4" />
@@ -2170,11 +2263,10 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- In mẫu đăng ký -->
-          <button
-            @click="triggerMenuItem('In mẫu đăng ký')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('In mẫu đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="6 9 6 2 18 2 18 9" />
               <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
               <rect x="6" y="14" width="12" height="8" />
@@ -2186,10 +2278,10 @@ const uniqueFloors = computed(() => {
           <div class="relative group mt-1 px-1.5 pb-1">
             <div
               class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
-              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
-            >
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
               <span>Chuyển tình trạng phòng</span>
-              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </div>
@@ -2200,25 +2292,29 @@ const uniqueFloors = computed(() => {
               :class="[
                 contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                 'bottom-0'
-              ]"
-            >
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              ]">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Sẵn sàng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng bẩn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
-                <span>Phòng sạch</span>
+                <span>Lau dọn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng ưu tiên</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng không làm phiền</span>
               </button>
@@ -2229,11 +2325,10 @@ const uniqueFloors = computed(() => {
         <!-- CASE 2: PHÒNG TRỐNG KHÔNG CÓ GÌ CẢ (Ảnh 2) -->
         <template v-else-if="!contextMenu.room.booking_code">
           <!-- Giao phòng nhanh -->
-          <button
-            @click="triggerMenuItem('Giao phòng nhanh')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Giao phòng nhanh')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
@@ -2247,10 +2342,10 @@ const uniqueFloors = computed(() => {
           <div class="relative group mt-1 px-1.5 pb-1">
             <div
               class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
-              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
-            >
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
               <span>Chuyển tình trạng phòng</span>
-              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </div>
@@ -2261,33 +2356,39 @@ const uniqueFloors = computed(() => {
               :class="[
                 contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                 'bottom-0'
-              ]"
-            >
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              ]">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Sẵn sàng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng bẩn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
-                <span>Phòng sạch</span>
+                <span>Lau dọn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOO')" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOO')"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="ooo" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng OOO</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOS')" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOS')"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="oos" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng OOS</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng ưu tiên</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng không làm phiền</span>
               </button>
@@ -2298,11 +2399,10 @@ const uniqueFloors = computed(() => {
         <!-- CASE 3: PHÒNG ĐÃ NHẬN / IN-HOUSE (Ảnh 3) -->
         <template v-else>
           <!-- Thông tin -->
-          <button
-            @click="showRoomInfo(contextMenu.room)"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="showRoomInfo(contextMenu.room)"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="16" x2="12" y2="12" />
               <line x1="12" y1="8" x2="12.01" y2="8" />
@@ -2311,11 +2411,10 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Đăng ký -->
-          <button
-            @click="triggerMenuItem('Đăng ký')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <line x1="19" y1="8" x2="19" y2="14" />
@@ -2325,11 +2424,10 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Hóa đơn -->
-          <button
-            @click="triggerMenuItem('Hóa đơn')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Hóa đơn')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
               <line x1="16" y1="13" x2="8" y2="13" />
@@ -2339,11 +2437,10 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Nhóm hóa đơn -->
-          <button
-            @click="triggerMenuItem('Nhóm hóa đơn')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Nhóm hóa đơn')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <ellipse cx="12" cy="5" rx="9" ry="3" />
               <path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5" />
               <path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6" />
@@ -2354,22 +2451,20 @@ const uniqueFloors = computed(() => {
           <div class="h-px bg-slate-300 my-1"></div>
 
           <!-- Chuyển Phòng -->
-          <button
-            @click="triggerMenuItem('Chuyển Phòng')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Chuyển Phòng')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
             </svg>
             <span>Chuyển Phòng</span>
           </button>
 
           <!-- Thông báo -->
-          <button
-            @click="triggerMenuItem('Thông báo')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('Thông báo')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
               <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
             </svg>
@@ -2377,22 +2472,20 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- Nhận phòng -->
-          <button
-            @click="handleQuickCheckinFromMenu()"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="handleQuickCheckinFromMenu()"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
             </svg>
             <span>Nhận phòng</span>
           </button>
 
           <!-- In phiếu ăn sáng -->
-          <button
-            @click="triggerMenuItem('In phiếu ăn sáng')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('In phiếu ăn sáng')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
               <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
               <line x1="6" y1="2" x2="6" y2="4" />
@@ -2403,11 +2496,10 @@ const uniqueFloors = computed(() => {
           </button>
 
           <!-- In mẫu đăng ký -->
-          <button
-            @click="triggerMenuItem('In mẫu đăng ký')"
-            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
-          >
-            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button @click="triggerMenuItem('In mẫu đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="6 9 6 2 18 2 18 9" />
               <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
               <rect x="6" y="14" width="12" height="8" />
@@ -2417,12 +2509,11 @@ const uniqueFloors = computed(() => {
 
           <!-- Huỷ nhận phòng (Button dạng pill xanh lam Ảnh 3 - chỉ phòng mới checkin trong ngày) -->
           <div v-if="isRoomNumberRed(contextMenu.room)" class="px-1.5 pt-1">
-            <button
-              @click="handleUndoCheckinFromMenu()"
+            <button @click="handleUndoCheckinFromMenu()"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold transition-all cursor-pointer select-none text-white rounded-xl shadow-xs border-none"
-              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
-            >
-              <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
+              <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 2L11 13" />
                 <path d="M22 2l-7 20-4-9-9-4 20-7z" />
                 <circle cx="7" cy="17" r="3.5" fill="#ef4444" stroke="white" stroke-width="1.2" />
@@ -2437,10 +2528,10 @@ const uniqueFloors = computed(() => {
           <div class="relative group mt-1 px-1.5 pb-1">
             <div
               class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
-              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
-            >
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
               <span>Chuyển tình trạng phòng</span>
-              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </div>
@@ -2451,29 +2542,34 @@ const uniqueFloors = computed(() => {
               :class="[
                 contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                 'bottom-0'
-              ]"
-            >
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              ]">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Sẵn sàng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng bẩn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
-                <span>Phòng sạch</span>
+                <span>Lau dọn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="housekeeping-service" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Dịch vụ dọn phòng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng ưu tiên</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
+                class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng không làm phiền</span>
               </button>
@@ -2484,12 +2580,15 @@ const uniqueFloors = computed(() => {
     </Teleport>
 
     <!-- Thống kê Modal (Popup) -->
-    <div v-if="showStatsModal" class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 select-none">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
+    <div v-if="showStatsModal"
+      class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 select-none">
+      <div
+        class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
         <!-- Header -->
         <div class="bg-blue-600 text-white px-5 py-3 flex items-center justify-between">
           <h3 class="text-sm font-extrabold tracking-wide uppercase">Thống kê</h3>
-          <button @click="showStatsModal = false" class="text-white/80 hover:text-white bg-transparent border-none text-lg font-black cursor-pointer leading-none">
+          <button @click="showStatsModal = false"
+            class="text-white/80 hover:text-white bg-transparent border-none text-lg font-black cursor-pointer leading-none">
             ✕
           </button>
         </div>
@@ -2502,19 +2601,31 @@ const uniqueFloors = computed(() => {
             <div class="flex flex-col gap-2.5 text-xs text-slate-700">
               <div class="flex items-center justify-between">
                 <span class="font-semibold">Tổng phòng</span>
-                <span class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.length }}</span>
+                <span
+                  class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    roomStore.rooms.length }}</span>
               </div>
               <div class="flex items-center justify-between">
                 <span class="font-semibold text-amber-700">OOO</span>
-                <span class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
+                <span
+                  class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length
+                  }}</span>
               </div>
               <div class="flex items-center justify-between">
                 <span class="font-semibold text-emerald-700">OOS</span>
-                <span class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
+                <span
+                  class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length
+                  }}</span>
               </div>
-              <div class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-bold text-slate-900">
+              <div
+                class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-bold text-slate-900">
                 <span>Tổng phòng có thể bán</span>
-                <span class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{ roomStore.rooms.length - roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length }}</span>
+                <span
+                  class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{
+                    roomStore.rooms.length - roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length
+                  }}</span>
               </div>
             </div>
           </div>
@@ -2534,7 +2645,8 @@ const uniqueFloors = computed(() => {
                 <tr class="h-8">
                   <td class="font-semibold">Phòng sẵn sàng</td>
                   <td class="text-right font-bold tabular-nums">0</td>
-                  <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.AVAILABLE && r.is_clean).length }}</td>
+                  <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                    ROOM_STATUSES.AVAILABLE && r.is_clean).length }}</td>
                 </tr>
                 <tr class="h-8">
                   <td class="font-semibold">Phòng sạch</td>
@@ -2543,8 +2655,10 @@ const uniqueFloors = computed(() => {
                 </tr>
                 <tr class="h-8">
                   <td class="font-semibold">Phòng dơ</td>
-                  <td class="text-right font-bold text-red-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
-                  <td class="text-right font-bold text-red-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status !== ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
+                  <td class="text-right font-bold text-red-600 tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                    ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
+                  <td class="text-right font-bold text-red-600 tabular-nums">{{roomStore.rooms.filter(r => r.status !==
+                    ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
                 </tr>
               </tbody>
             </table>
@@ -2552,7 +2666,8 @@ const uniqueFloors = computed(() => {
 
           <!-- 3. Trạng thái phòng Card -->
           <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1">
-            <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Trạng thái phòng</h4>
+            <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Trạng thái phòng
+            </h4>
             <table class="w-full text-xs border-collapse">
               <thead>
                 <tr class="text-slate-500 font-bold border-b border-slate-100">
@@ -2569,28 +2684,44 @@ const uniqueFloors = computed(() => {
                 </tr>
                 <tr class="h-7.5">
                   <td class="font-semibold">Phòng đã trả</td>
-                  <td class="text-right font-bold text-red-500 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).length }}</td>
-                  <td class="text-right font-bold text-red-500 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                  <td class="text-right font-bold text-red-500 tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                    ROOM_STATUSES.CHECKOUT).length }}</td>
+                  <td class="text-right font-bold text-red-500 tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                    ROOM_STATUSES.CHECKOUT).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                 </tr>
                 <tr class="h-7.5">
                   <td class="font-semibold">Phòng đến</td>
-                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length }}</td>
-                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                    ===
+                    ROOM_STATUSES.RESERVED).length }}</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                    ===
+                    ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                 </tr>
                 <tr class="h-7.5">
                   <td class="font-semibold">Phòng đến đã gán phòng</td>
-                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length }}</td>
-                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                    ===
+                    ROOM_STATUSES.RESERVED).length }}</td>
+                  <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                    ===
+                    ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                 </tr>
                 <tr class="h-7.5">
                   <td class="font-semibold">Phòng đã đến</td>
-                  <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).length }}</td>
-                  <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                  <td class="text-right font-bold text-slate-800 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                    ===
+                    ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).length }}</td>
+                  <td class="text-right font-bold text-slate-800 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                    ===
+                    ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                 </tr>
                 <tr class="h-7.5">
                   <td class="font-semibold text-sky-700">Phòng đang ở</td>
-                  <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
-                  <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                  <td class="text-right font-bold text-sky-700 tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                    ROOM_STATUSES.OCCUPIED).length }}</td>
+                  <td class="text-right font-bold text-sky-700 tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                    ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                 </tr>
                 <tr class="h-7.5">
                   <td class="font-semibold">Trả phòng sớm</td>
@@ -2617,9 +2748,11 @@ const uniqueFloors = computed(() => {
           </div>
 
           <!-- 4. Dự báo cuối ngày Card -->
-          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1 flex flex-col justify-between">
+          <div
+            class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1 flex flex-col justify-between">
             <div>
-              <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Dự báo cuối ngày</h4>
+              <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Dự báo cuối ngày
+              </h4>
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
@@ -2632,8 +2765,10 @@ const uniqueFloors = computed(() => {
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-7">
                     <td class="font-semibold">Khách lẻ</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                      ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                      ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                     <td class="text-right font-bold text-slate-400">-</td>
                   </tr>
                   <tr class="h-7">
@@ -2644,8 +2779,10 @@ const uniqueFloors = computed(() => {
                   </tr>
                   <tr class="h-7">
                     <td class="font-semibold">Phòng ở (ko b/g COMP.HU)</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                      ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                      ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                     <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomStore.occupancyRate }}%</td>
                   </tr>
                   <tr class="h-7">
@@ -2656,8 +2793,10 @@ const uniqueFloors = computed(() => {
                   </tr>
                   <tr class="h-7">
                     <td class="font-semibold">Phòng ở (ko b/g HU)</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                      ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
+                      ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                     <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomStore.occupancyRate }}%</td>
                   </tr>
                   <tr class="h-7">
@@ -2668,13 +2807,19 @@ const uniqueFloors = computed(() => {
                   </tr>
                   <tr class="h-7">
                     <td class="font-semibold text-blue-700">Phòng ở</td>
-                    <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length }}</td>
-                    <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-blue-700 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                      ===
+                      ROOM_STATUSES.OCCUPIED).length }}</td>
+                    <td class="text-right font-bold text-blue-700 tabular-nums">{{roomStore.rooms.filter(r => r.status
+                      ===
+                      ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
                     <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.occupancyRate }}%</td>
                   </tr>
                   <tr class="h-7">
                     <td class="font-semibold text-red-500">Phòng trống</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">{{ roomStore.rooms.length - roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED || r.status === ROOM_STATUSES.MAINTENANCE).length }}</td>
+                    <td class="text-right font-bold text-red-500 tabular-nums">{{roomStore.rooms.length -
+                      roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED || r.status ===
+                      ROOM_STATUSES.MAINTENANCE).length }}</td>
                     <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
                     <td class="text-right font-bold text-slate-400">-</td>
                   </tr>
@@ -2683,7 +2828,8 @@ const uniqueFloors = computed(() => {
             </div>
 
             <!-- Forecast Sub-section -->
-            <div class="mt-4 pt-3.5 border-t border-slate-200 text-xs text-slate-700 flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border">
+            <div
+              class="mt-4 pt-3.5 border-t border-slate-200 text-xs text-slate-700 flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border">
               <h5 class="font-bold text-slate-900 mb-1 select-none">Dự báo</h5>
               <div class="flex items-center justify-between">
                 <span class="font-semibold">Doanh thu</span>
@@ -2709,25 +2855,23 @@ const uniqueFloors = computed(() => {
   <!-- ============================================================ -->
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div
-        v-if="showQuickCheckinModal"
-        class="fixed inset-0 z-[9999] flex items-center justify-center"
-        @click.self="closeQuickCheckinModal"
-      >
+      <div v-if="showQuickCheckinModal" class="fixed inset-0 z-[9999] flex items-center justify-center"
+        @click.self="closeQuickCheckinModal">
         <!-- Backdrop -->
         <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeQuickCheckinModal"></div>
 
         <!-- Modal Card -->
-        <div class="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-modal-slide">
+        <div
+          class="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-modal-slide">
           <!-- Header -->
-          <div
-            class="px-6 py-4 flex items-center justify-between text-white"
-            :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }"
-          >
+          <div class="px-6 py-4 flex items-center justify-between text-white"
+            :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }">
             <div class="flex items-center gap-3">
               <div class="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
-                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
                 </svg>
               </div>
               <div>
@@ -2735,10 +2879,8 @@ const uniqueFloors = computed(() => {
                 <p class="text-sky-100 text-[11px] font-medium">Quick Check-In</p>
               </div>
             </div>
-            <button
-              @click="closeQuickCheckinModal"
-              class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer"
-            >
+            <button @click="closeQuickCheckinModal"
+              class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer">
               <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -2749,26 +2891,38 @@ const uniqueFloors = computed(() => {
           <div class="px-6 py-5">
             <!-- Room info -->
             <div class="flex items-start gap-4 mb-5">
-              <div class="w-16 h-16 rounded-xl bg-sky-50 border-2 border-sky-100 flex flex-col items-center justify-center shrink-0">
+              <div
+                class="w-16 h-16 rounded-xl bg-sky-50 border-2 border-sky-100 flex flex-col items-center justify-center shrink-0">
                 <span class="text-2xl font-black text-sky-600 leading-none">{{ quickCheckinRoom?.room_number }}</span>
-                <span class="text-[10px] font-bold text-sky-400 uppercase mt-0.5">{{ quickCheckinRoom?.room_type }}</span>
+                <span class="text-[10px] font-bold text-sky-400 uppercase mt-0.5">{{ quickCheckinRoom?.room_type
+                  }}</span>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-[13px] font-black text-slate-800 truncate">{{ quickCheckinRoom?.guest_name || quickCheckinRoom?.booking_name || '(Khách trực tiếp)' }}</p>
-                <p class="text-[11px] font-bold text-slate-500 mt-0.5 truncate">{{ quickCheckinRoom?.booking_code || '' }}</p>
+                <p class="text-[13px] font-black text-slate-800 truncate">{{ quickCheckinRoom?.guest_name ||
+                  quickCheckinRoom?.booking_name || '(Khách trực tiếp)' }}</p>
+                <p class="text-[11px] font-bold text-slate-500 mt-0.5 truncate">{{ quickCheckinRoom?.booking_code || ''
+                  }}
+                </p>
                 <div class="flex items-center gap-3 mt-2">
                   <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5"
+                      viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <span>{{ quickCheckinRoom?.arrival_date ? quickCheckinRoom.arrival_date.split('-').reverse().join('/') : '' }}</span>
+                    <span>{{ quickCheckinRoom?.arrival_date ?
+                      quickCheckinRoom.arrival_date.split('-').reverse().join('/')
+                      : '' }}</span>
                   </div>
                   <span class="text-slate-300 font-medium">→</span>
                   <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                    <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" stroke-width="2.5"
+                      viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    <span>{{ quickCheckinRoom?.departure_date ? quickCheckinRoom.departure_date.split('-').reverse().join('/') : '' }}</span>
+                    <span>{{ quickCheckinRoom?.departure_date ?
+                      quickCheckinRoom.departure_date.split('-').reverse().join('/') : '' }}</span>
                   </div>
                 </div>
               </div>
@@ -2777,36 +2931,36 @@ const uniqueFloors = computed(() => {
             <!-- Confirm message -->
             <div class="bg-sky-50 border border-sky-100 rounded-xl px-4 py-3 mb-5 flex items-center gap-3">
               <div class="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
-                <svg class="w-4 h-4 text-sky-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg class="w-4 h-4 text-sky-500" fill="none" stroke="currentColor" stroke-width="2"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <p class="text-[12px] font-bold text-sky-700 leading-snug">
-                Bạn có muốn nhận phòng nhanh <span class="text-sky-600 font-black">{{ quickCheckinRoom?.room_number }}</span> không?
+                Bạn có muốn nhận phòng nhanh <span class="text-sky-600 font-black">{{ quickCheckinRoom?.room_number
+                  }}</span> không?
               </p>
             </div>
 
             <!-- Action buttons -->
             <div class="flex gap-3">
-              <button
-                @click="closeQuickCheckinModal"
-                :disabled="quickCheckinLoading"
-                class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-[13px] transition-colors border-none cursor-pointer disabled:opacity-50"
-              >
+              <button @click="closeQuickCheckinModal" :disabled="quickCheckinLoading"
+                class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-[13px] transition-colors border-none cursor-pointer disabled:opacity-50">
                 Hủy bỏ
               </button>
-              <button
-                @click="handleQuickCheckIn"
-                :disabled="quickCheckinLoading"
+              <button @click="handleQuickCheckIn" :disabled="quickCheckinLoading"
                 class="flex-1 py-2.5 text-white font-black rounded-xl text-[13px] transition-all shadow-sm border-none cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }"
-              >
+                :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }">
                 <svg v-if="quickCheckinLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                  </path>
                 </svg>
                 <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 {{ quickCheckinLoading ? 'Đang xử lý...' : 'Nhận phòng' }}
               </button>
@@ -2820,22 +2974,17 @@ const uniqueFloors = computed(() => {
   <!-- Modal Xác nhận Hủy nhận phòng (3 nút: Đóng / Dơ / Có) -->
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div
-        v-if="showUndoCheckinModal"
+      <div v-if="showUndoCheckinModal"
         class="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[1px]"
-        @click.self="closeUndoCheckinModal"
-      >
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-modal-slide">
+        @click.self="closeUndoCheckinModal">
+        <div
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-modal-slide">
           <!-- Header -->
-          <div
-            class="px-5 py-3.5 flex items-center justify-between text-white"
-            :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
-          >
+          <div class="px-5 py-3.5 flex items-center justify-between text-white"
+            :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
             <h3 class="text-base font-extrabold text-white tracking-wide">Xác nhận</h3>
-            <button
-              @click="closeUndoCheckinModal"
-              class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
-            >
+            <button @click="closeUndoCheckinModal"
+              class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white">
               <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -2851,31 +3000,24 @@ const uniqueFloors = computed(() => {
 
           <!-- Action Buttons (3 Nút: Đóng / Dơ / Có) -->
           <div class="px-6 pb-6 flex items-center justify-center gap-2.5">
-            <button
-              @click="closeUndoCheckinModal"
-              :disabled="undoCheckinLoading"
+            <button @click="closeUndoCheckinModal" :disabled="undoCheckinLoading"
               class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
-              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
-            >
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
               Đóng
             </button>
-            <button
-              @click="executeUndoCheckin('dirty')"
-              :disabled="undoCheckinLoading"
+            <button @click="executeUndoCheckin('dirty')" :disabled="undoCheckinLoading"
               class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
-              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
-            >
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
               Dơ
             </button>
-            <button
-              @click="executeUndoCheckin('clean')"
-              :disabled="undoCheckinLoading"
+            <button @click="executeUndoCheckin('clean')" :disabled="undoCheckinLoading"
               class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs flex items-center justify-center gap-1.5"
-              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
-            >
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
               <svg v-if="undoCheckinLoading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <path class="opacity-75" fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
               </svg>
               {{ undoCheckinLoading ? 'Đang...' : 'Có' }}
             </button>
@@ -2885,6 +3027,16 @@ const uniqueFloors = computed(() => {
     </Transition>
   </Teleport>
 
+  <!-- Room Move Modal -->
+  <RoomMoveModal
+    v-if="showRoomMoveModal"
+    :show="showRoomMoveModal"
+    :booking-id="roomMoveBookingId"
+    :room-id="roomMoveBookingRoomId"
+    @close="showRoomMoveModal = false"
+    @success="handleRoomMoveSuccess"
+  />
+
 </template>
 
 <style scoped>
@@ -2893,6 +3045,7 @@ const uniqueFloors = computed(() => {
     opacity: 0;
     transform: scale(0.97);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -2905,6 +3058,7 @@ const uniqueFloors = computed(() => {
     opacity: 0;
     transform: scale(0.93) translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -2930,6 +3084,7 @@ const uniqueFloors = computed(() => {
     opacity: 0;
     transform: translateY(16px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -2941,6 +3096,7 @@ const uniqueFloors = computed(() => {
     opacity: 0;
     transform: scale(0.92) translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -2963,13 +3119,16 @@ const uniqueFloors = computed(() => {
   height: 6px;
   width: 6px;
 }
+
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: #97d5ff;
   border-radius: 4px;
 }
+
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #7bc4ff;
 }
@@ -2997,9 +3156,3 @@ const uniqueFloors = computed(() => {
   transform: translate(-50%, 4px) scale(0.97) !important;
 }
 </style>
-
-
-
-
-
-
