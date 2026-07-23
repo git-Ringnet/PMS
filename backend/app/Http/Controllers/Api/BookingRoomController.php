@@ -701,13 +701,20 @@ class BookingRoomController extends Controller
             $bookingRoom->guests()->update(['status' => 3]);
             // Cascade: hủy children gắn với phòng này
             $bookingRoom->children()->update(['child_status' => 3]);
+            $reasonText = $request->note;
+            if ($request->cancel_reason_id && empty($reasonText)) {
+                $cReason = \App\Models\CancelReason::find($request->cancel_reason_id);
+                $reasonText = $cReason?->name;
+            }
+
             // Hủy phòng
             $bookingRoom->update([
                 'status'     => BookingRoom::STATUS_CANCELLED,
+                'reason'     => $reasonText,
                 'updated_by' => Auth::user()?->username ?? 'system',
             ]);
 
-            // Ghi log hủy
+            // Ghi log hủy phòng (SP8052)
             BookingCancelLog::create([
                 'cancel_type'            => 'room',
                 'booking_id'             => $bookingId,

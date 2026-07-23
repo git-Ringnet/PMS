@@ -150,6 +150,7 @@ class BookingRoom extends Model
         'is_do_not_move',
         'move_room',
         'note',
+        'reason',
         'created_by',
         'updated_by',
         'check_in_user',

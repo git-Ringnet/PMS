@@ -80,6 +80,7 @@ return new class extends Migration
             // GHI CHÚ
             // =========================================
             $table->text('note')->nullable(); // Ghi chú riêng của dòng phòng này
+            $table->text('reason')->nullable(); // Lý do hủy phòng hoặc lý do chuyển phòng (SP2100.Reason)
 
             // =========================================
             // NGƯỜI TẠO / CẬP NHẬT

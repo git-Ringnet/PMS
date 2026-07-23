@@ -31,8 +31,9 @@ export const updateBooking = (id, data) => http.put(`/bookings/${id}`, data)
 /**
  * Xóa booking
  * @param {number} id - ID booking
+ * @param {Object} data - Lý do hủy { cancel_reason_id, note }
  */
-export const deleteBooking = (id) => http.delete(`/bookings/${id}`)
+export const deleteBooking = (id, data = {}) => http.delete(`/bookings/${id}`, { data })
 export const copyBooking = (id, data) => http.post(`/bookings/${id}/copy`, data)
 
 // ==================== BOOKING ROOMS (GIAO PHÒNG / CHECK-IN) ====================
@@ -42,7 +43,7 @@ export const unassignRoom = (bookingId, roomId) => http.patch(`/bookings/${booki
 export const checkInRoom = (bookingId, roomId) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/check-in`)
 export const undoCheckInRoom = (bookingId, roomId) => http.post(`/bookings/${bookingId}/rooms/${roomId}/undo-checkin`)
 export const upgradeRoom = (bookingId, roomId, data) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/upgrade`, data)
-export const cancelBookingRoom = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`)
+export const cancelBookingRoom = (bookingId, roomId, data = {}) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`, { data })
 export const lockRoomMove = (bookingId, roomId, data = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/lock-move`, data)
 export const unlockRoomMove = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/lock-move`)
 export const updateBookingRoom = (bookingId, roomId, data) => http.put(`/bookings/${bookingId}/rooms/${roomId}`, data)
@@ -133,3 +134,5 @@ export const uploadGuestAvatar = (guestId, formData) => http.post(`/guests/${gue
     'Content-Type': 'multipart/form-data'
   }
 })
+export const fetchCancelReasons = () => http.get('/cancel-reasons')
+

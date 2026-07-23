@@ -15,6 +15,7 @@ import SystemSearchModal from './components/SystemSearchModal.vue'
 import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
 import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import GuestInfoModal from './components/GuestInfoModal.vue'
+import CancelReasonModal from './components/CancelReasonModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -2969,49 +2970,10 @@ async function triggerAction(actionName) {
     }
     const targetList = selected
 
-    uiStore.confirm({
-      title: 'Hủy phòng',
-      message: `Bạn có chắc chắn muốn hủy ${targetList.length} phòng đã chọn?`,
-      confirmText: 'Đồng ý', cancelText: 'Hủy'
-    }).then(async (confirmed) => {
-      if (confirmed) {
-        uiStore.showToast('Đang tiến hành hủy phòng...', 'info')
-        let successCount = 0
-        let failCount = 0
-        let failMessages = []
-
-        try {
-          for (const r of targetList) {
-            if (!r.bookingRoomId) continue
-            try {
-              const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId)
-              if (res.data?.success) {
-                successCount++
-              } else {
-                failCount++
-                failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
-              }
-            } catch (err) {
-              console.error(err)
-              failCount++
-              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
-            }
-          }
-
-          await loadBookings()
-          selectedRows.value = []
-
-          if (successCount > 0) {
-            uiStore.showToast(`Hủy phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
-          } else {
-            uiStore.showToast(`Hủy phòng thất bại: ${failMessages.join(', ')}`, 'error')
-          }
-        } catch (err) {
-          console.error(err)
-          uiStore.showToast('Có lỗi xảy ra khi hủy phòng!', 'error')
-        }
-      }
-    })
+    cancelPendingTarget.value = { type: 'rooms', tab, rooms: targetList }
+    cancelModalTitle.value = `Hủy ${targetList.length} phòng đã chọn`
+    cancelModalSubTitle.value = `Vui lòng chọn lý do hủy cho ${targetList.length} phòng đã chọn.`
+    isCancelReasonModalOpen.value = true
   } else if (actionName === 'Dịch vụ bổ sung') {
     const tab = activeTab.value
     if (!tab || !tab.rooms || tab.rooms.length === 0) return
@@ -3206,29 +3168,99 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
     if (!tab) return
-    uiStore.confirm({
-      title: 'Xóa đăng ký',
-      message: `Bạn có chắc chắn muốn xóa đăng ký ${tab.id}?`,
-      confirmText: 'Đồng ý', cancelText: 'Hủy'
-    }).then(async confirmed => {
-      if (!confirmed) return
-      try {
-        if (tab.dbId) await deleteBooking(tab.dbId)
+    if (!tab.dbId) {
+      const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
+      if (idx !== -1) tabs.value.splice(idx, 1)
+      if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
+      else {
+        tabs.value = []
+        activeTabId.value = null
+      }
+      return
+    }
+    cancelPendingTarget.value = { type: 'booking', tab }
+    cancelModalTitle.value = `Hủy toàn bộ đăng ký ${tab.id}`
+    cancelModalSubTitle.value = `Bạn có chắc chắn muốn hủy toàn bộ đăng ký ${tab.id}? Thao tác này sẽ ghi log hủy cho toàn bộ phòng.`
+    isCancelReasonModalOpen.value = true
+  } else {
+    uiStore.showToast(`Tính năng "${actionName}" đang được thực hiện!`, 'info')
+  }
+}
+
+// ==================== HỦY ĐĂNG KÝ / HỦY PHÒNG REASON MODAL ====================
+const isCancelReasonModalOpen = ref(false)
+const cancelModalTitle = ref('Xác nhận hủy đặt phòng')
+const cancelModalSubTitle = ref('')
+const cancelPendingTarget = ref(null)
+
+async function handleConfirmCancelReason(payload) {
+  const target = cancelPendingTarget.value
+  if (!target) return
+
+  if (target.type === 'booking') {
+    const tab = target.tab
+    try {
+      uiStore.showToast('Đang tiến hành hủy đăng ký...', 'info')
+      const res = await deleteBooking(tab.dbId, {
+        cancel_reason_id: payload.cancel_reason_id,
+        note: payload.note
+      })
+      if (res.data?.success) {
         const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
         if (idx !== -1) tabs.value.splice(idx, 1)
         if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
         else {
-          // Không còn tab nào → empty state
           tabs.value = []
           activeTabId.value = null
         }
-        uiStore.showToast('Đã xóa đăng ký thành công!', 'success')
-      } catch (err) {
-        uiStore.showToast(err.response?.data?.message || 'Không thể xóa đăng ký!', 'error')
+        uiStore.showToast('Đã hủy và xóa đăng ký thành công!', 'success')
+      } else {
+        uiStore.showToast(res.data?.message || 'Không thể xóa đăng ký!', 'error')
       }
-    })
-  } else {
-    uiStore.showToast(`Tính năng "${actionName}" đang được thực hiện!`, 'info')
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast(err.response?.data?.message || 'Không thể xóa đăng ký!', 'error')
+    }
+  } else if (target.type === 'rooms') {
+    const { tab, rooms } = target
+    let successCount = 0
+    let failCount = 0
+    let failMessages = []
+
+    uiStore.showToast('Đang tiến hành hủy phòng...', 'info')
+    try {
+      for (const r of rooms) {
+        if (!r.bookingRoomId) continue
+        try {
+          const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
+            cancel_reason_id: payload.cancel_reason_id,
+            note: payload.note
+          })
+          if (res.data?.success) {
+            successCount++
+          } else {
+            failCount++
+            failMessages.push(res.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
+          }
+        } catch (err) {
+          console.error(err)
+          failCount++
+          failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.type} thất bại.`)
+        }
+      }
+
+      await loadBookings()
+      selectedRows.value = []
+
+      if (successCount > 0) {
+        uiStore.showToast(`Đã hủy thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+      } else {
+        uiStore.showToast(`Hủy phòng thất bại: ${failMessages.join(', ')}`, 'error')
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Có lỗi xảy ra khi hủy phòng!', 'error')
+    }
   }
 }
 
@@ -6062,6 +6094,16 @@ defineExpose({
         v-model:show="isSpecialRequestsModalOpen"
         :room="specialRequestsModalRoom"
         @saved="handleSpecialRequestsSaved"
+      />
+    </Teleport>
+
+    <!-- HỦY PHÒNG / HỦY ĐẶC ĐĂNG KÝ MODAL -->
+    <Teleport to="body">
+      <CancelReasonModal
+        v-model:show="isCancelReasonModalOpen"
+        :title="cancelModalTitle"
+        :subTitle="cancelModalSubTitle"
+        @confirm="handleConfirmCancelReason"
       />
     </Teleport>
 

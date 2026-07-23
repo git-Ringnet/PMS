@@ -6,6 +6,7 @@ import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchBookings, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
+import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 
@@ -2398,23 +2399,8 @@ async function triggerMenuAction(actionName) {
     const booking = contextMenu.value.booking
     if (booking) {
       if (booking.bookingId && booking.bookingRoomId && typeof booking.bookingId === 'number' && booking.bookingId < 1e12) {
-        try {
-          loadingBookings.value = true
-          emit('loading', true)
-          const res = await cancelBookingRoom(booking.bookingId, booking.bookingRoomId)
-          if (res && res.data && res.data.success) {
-            uiStore.showToast('Đã hủy phòng thành công!', 'success')
-            await loadBookings()
-          } else {
-            uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi hủy phòng.', 'error')
-          }
-        } catch (err) {
-          console.error(err)
-          uiStore.showToast('Không thể kết nối đến máy chủ.', 'error')
-        } finally {
-          loadingBookings.value = false
-          emit('loading', false)
-        }
+        pendingCancelBooking.value = booking
+        isCancelReasonModalOpen.value = true
       } else {
         bookings.value = bookings.value.filter(b => b.bookingRoomId !== booking.bookingRoomId)
         uiStore.showToast('Đã hủy phòng thành công!', 'success')
@@ -3097,6 +3083,36 @@ async function saveLegendColor() {
     uiStore.showToast(msg, 'error')
   } finally {
     savingColor.value = false
+  }
+}
+
+// ==================== HỦY PHÒNG REASON MODAL ====================
+const isCancelReasonModalOpen = ref(false)
+const pendingCancelBooking = ref(null)
+
+async function handleConfirmCancelRoomPlan(payload) {
+  const booking = pendingCancelBooking.value
+  if (!booking || !booking.bookingId || !booking.bookingRoomId) return
+
+  try {
+    loadingBookings.value = true
+    emit('loading', true)
+    const res = await cancelBookingRoom(booking.bookingId, booking.bookingRoomId, {
+      cancel_reason_id: payload.cancel_reason_id,
+      note: payload.note
+    })
+    if (res && res.data && res.data.success) {
+      uiStore.showToast('Đã hủy phòng thành công!', 'success')
+      await loadBookings()
+    } else {
+      uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi hủy phòng.', 'error')
+    }
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast('Không thể kết nối đến máy chủ.', 'error')
+  } finally {
+    loadingBookings.value = false
+    emit('loading', false)
   }
 }
 
@@ -4532,6 +4548,16 @@ function getRoomStatusIconName(item) {
       </div>
     </div>
   </div>
+
+  <!-- HỦY PHÒNG REASON MODAL -->
+  <Teleport to="body">
+    <CancelReasonModal
+      v-model:show="isCancelReasonModalOpen"
+      title="Xác nhận hủy phòng"
+      subTitle="Vui lòng chọn lý do hủy phòng bên dưới. Nội dung sẽ được ghi log vào hệ thống."
+      @confirm="handleConfirmCancelRoomPlan"
+    />
+  </Teleport>
 </template>
 
 <style scoped>
