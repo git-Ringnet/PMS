@@ -2258,16 +2258,59 @@ function getRoomUnitPrice(roomNo, rateCodeMa) {
   if (rateCodeMa && rateCodeMa !== 'Vui lòng chọn giá phòng') {
     const matchedRc = rateCodes.value.find(rc => rc.Ma === rateCodeMa)
     if (matchedRc) {
-      if (matchedRc.ratePlans && matchedRc.ratePlans.length > 0) {
-        for (const plan of matchedRc.ratePlans) {
+      const plans = matchedRc.rate_plans || matchedRc.ratePlans || []
+      if (plans.length > 0) {
+        const roomClassCode = (roomObj?.roomClass?.Ma || roomObj?.room_class_code || roomObj?.roomClass?.name || '').toUpperCase()
+        const roomFormName = (roomObj?.roomForm?.name || roomObj?.room_form_name || '').trim()
+
+        for (const plan of plans) {
           if (plan.Period) {
             let periodObj = plan.Period
             if (typeof periodObj === 'string') {
               try { periodObj = JSON.parse(periodObj) } catch (e) { periodObj = {} }
             }
-            if (roomClassId && periodObj[roomClassId]) {
-              const price = Number(periodObj[roomClassId])
-              if (!isNaN(price) && price > 0) return price
+            if (periodObj && typeof periodObj === 'object') {
+              const planCode = (plan.Code || 'DEFAULT').toUpperCase()
+              const rcCode = roomClassCode
+              const rfName = roomFormName
+              const rfUpper = rfName.toUpperCase()
+
+              const candidateKeys = [
+                `${planCode}_${rcCode}_${rfName}`,
+                `${planCode}_${rcCode}_${rfUpper}`,
+                `${rateCodeMa}_${rcCode}_${rfName}`,
+                `${rateCodeMa}_${rcCode}_${rfUpper}`,
+                `${rcCode}_${rfName}`,
+                `${rcCode}_${rfUpper}`,
+                `${planCode}_${roomClassId}_${rfName}`,
+                `${roomClassId}_${rfName}`,
+                `${planCode}_${rcCode}`,
+                `${rateCodeMa}_${rcCode}`,
+                `${rcCode}`,
+                `${roomClassId}`,
+              ]
+
+              let found = null
+              for (const key of candidateKeys) {
+                if (key && periodObj[key] !== undefined) {
+                  const val = Number(periodObj[key])
+                  if (!isNaN(val) && val > 0) { found = val; break; }
+                }
+              }
+
+              if (found === null && rcCode) {
+                const keys = Object.keys(periodObj)
+                const matchedKey = keys.find(k => {
+                  const kUpper = k.toUpperCase()
+                  return kUpper.includes(rcCode) && (!rfUpper || kUpper.includes(rfUpper))
+                })
+                if (matchedKey && periodObj[matchedKey] !== undefined) {
+                  const val = Number(periodObj[matchedKey])
+                  if (!isNaN(val) && val > 0) found = val
+                }
+              }
+
+              if (found !== null) return found
             }
           }
         }

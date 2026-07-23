@@ -9,6 +9,7 @@ import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, f
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
+import RoomMoveModal from '@/components/RoomMoveModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -44,6 +45,31 @@ const isLoaded = ref(false)
 const isInitialLoad = ref(true)
 let pollingInterval = null
 const isRoomPlanLoading = ref(false)
+
+const showMoveModal = ref(false)
+const moveBookingId = ref(null)
+const moveRoomId = ref(null)
+
+function openRoomMoveModal(room) {
+  closeContextMenu()
+  if (!room || !room.booking_code || !room.booking_room_id || !room.booking_id) {
+    uiStore.showToast('Phòng chưa được gán hoặc không tìm thấy mã đặt phòng!', 'warning')
+    return
+  }
+
+  if (room.is_do_not_move) {
+    uiStore.showToast(`Phòng ${room.room_number} đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.`, 'warning')
+    return
+  }
+
+  moveBookingId.value = room.booking_id
+  moveRoomId.value = room.booking_room_id
+  showMoveModal.value = true
+}
+
+async function handleMoveSuccess() {
+  await roomStore.fetchRooms({ silent: true })
+}
 
 watch(currentTab, (newTab) => {
   if (newTab === 'room-plan') {
@@ -431,7 +457,11 @@ const hoverTooltip = ref({
 let tooltipTimeout = null
 
 function showTooltip(event, room) {
-  if (contextMenu.value?.show) return
+  if (contextMenu.value?.show) {
+    if (tooltipTimeout) clearTimeout(tooltipTimeout)
+    hoverTooltip.value.show = false
+    return
+  }
   if (!room || (room.booking_status !== 'occupied' && room.booking_status !== 'reserved' && room.booking_status !== 'checkout')) return
   
   if (tooltipTimeout) {
@@ -689,6 +719,12 @@ function handleContextMenu(event, room) {
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   hoverTooltip.value.show = false
   
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+  hoverTooltip.value.show = false
+  
   const menuWidth = 220
   const menuHeight = 340 // Safe height estimation of context menu
   
@@ -734,7 +770,18 @@ function showRoomInfo(room) {
 
 // Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
-  if (['Giao phòng nhanh', 'Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'Chuyển Phòng', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'Chuyển Phòng' || actionName === 'Chuyển phòng / Gộp phòng') {
+    if (contextMenu.value.room && contextMenu.value.room.booking_code) {
+      openRoomMoveModal(contextMenu.value.room)
+      return
+    } else {
+      uiStore.showToast('Phòng chưa được giao hoặc không có mã đăng ký!', 'warning')
+      closeContextMenu()
+      return
+    }
+  }
+
+  if (['Giao phòng nhanh', 'Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
     const room = contextMenu.value.room
     if (room && room.booking_code) {
       router.push({
@@ -2011,12 +2058,21 @@ const uniqueFloors = computed(() => {
       @refresh="refreshRoomMapAfterGuestChange"
     />
 
+    <!-- Room Move Modal -->
+    <RoomMoveModal
+      :show="showMoveModal"
+      :booking-id="moveBookingId"
+      :room-id="moveRoomId"
+      @close="showMoveModal = false"
+      @success="handleMoveSuccess"
+    />
+
     <!-- Hover Tooltip -->
     <Teleport to="body">
       <Transition name="tooltip-fade">
         <div
           v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
-          class="fixed z-[9990] pointer-events-none bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
+          class="fixed z-[99999] pointer-events-auto bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
           :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
           :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }"
           @mouseenter="cancelHide"
@@ -2115,6 +2171,155 @@ const uniqueFloors = computed(() => {
         :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
         @click.stop
       >
+        <!-- Thông tin -->
+        <button
+          v-if="contextMenu.room.booking_code"
+          @click="showRoomInfo(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <span>{{ t('roomMap.info') }}</span>
+        </button>
+
+        <!-- Đăng ký -->
+        <button
+          @click="triggerMenuItem('Đăng ký')"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <line x1="19" y1="8" x2="19" y2="14" />
+            <line x1="16" y1="11" x2="22" y2="11" />
+          </svg>
+          <span>{{ t('roomMap.registration') }}</span>
+        </button>
+
+        <!-- Hóa đơn -->
+        <button
+          @click="triggerMenuItem('Hóa đơn')"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <span>{{ t('roomMap.invoice') }}</span>
+        </button>
+
+        <!-- Nhóm hóa đơn -->
+        <button
+          @click="triggerMenuItem('Nhóm hóa đơn')"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3" />
+            <path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+            <path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6" />
+          </svg>
+          <span>{{ t('roomMap.groupInvoice') }}</span>
+        </button>
+
+        <div class="h-px bg-slate-300 my-1"></div>
+
+        <!-- Chuyển Phòng -->
+        <button
+          v-if="contextMenu.room.booking_code"
+          @click="openRoomMoveModal(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-[#0284c7] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3L4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4" />
+          </svg>
+          <span class="font-normal text-slate-800">Chuyển Phòng</span>
+        </button>
+
+        <button
+          v-if="contextMenu.room.booking_code"
+          @click="contextMenu.room.is_do_not_move ? null : lockRoomMove(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left bg-transparent border-none"
+          :class="[
+            TEXT_THEME.menuItem,
+            contextMenu.room.is_do_not_move ? 'opacity-40 cursor-not-allowed text-slate-400' : 'hover:bg-slate-200 cursor-pointer'
+          ]"
+        >
+          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>Khóa chuyển phòng</span>
+        </button>
+
+        <button
+          v-if="contextMenu.room.booking_code"
+          @click="!contextMenu.room.is_do_not_move ? null : unlockRoomMove(contextMenu.room)"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left bg-transparent border-none"
+          :class="[
+            TEXT_THEME.menuItem,
+            !contextMenu.room.is_do_not_move ? 'opacity-40 cursor-not-allowed text-slate-400' : 'hover:bg-slate-200 cursor-pointer'
+          ]"
+        >
+          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+          </svg>
+          <span>Mở chuyển phòng</span>
+        </button>
+
+        <!-- Thông báo -->
+        <button
+          @click="triggerMenuItem('Thông báo')"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+          </svg>
+          <span>{{ t('roomMap.notifications') }}</span>
+        </button>
+
+        <!-- In phiếu ăn sáng -->
+        <button
+          @click="triggerMenuItem('In phiếu ăn sáng')"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+            <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+            <line x1="6" y1="2" x2="6" y2="4" />
+            <line x1="10" y1="2" x2="10" y2="4" />
+            <line x1="14" y1="2" x2="14" y2="4" />
+          </svg>
+          <span>{{ t('roomMap.printBreakfast') }}</span>
+        </button>
+
+        <!-- In mẫu đăng ký -->
+        <button
+          @click="triggerMenuItem('In mẫu đăng ký')"
+          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
+          :class="TEXT_THEME.menuItem"
+        >
+          <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9" />
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+            <rect x="6" y="14" width="12" height="8" />
+          </svg>
+          <span>{{ t('roomMap.printRegForm') }}</span>
+        </button>
+
         <!-- CASE 1: PHÒNG ĐÃ GÁN SỐ PHÒNG NHƯNG CHƯA CHECK-IN (Ảnh 1) -->
         <template v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
           <!-- Đăng ký -->

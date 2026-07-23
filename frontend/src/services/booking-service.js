@@ -48,6 +48,8 @@ export const lockRoomMove = (bookingId, roomId, data = {}) => http.post(`/bookin
 export const unlockRoomMove = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/lock-move`)
 export const updateBookingRoom = (bookingId, roomId, data) => http.put(`/bookings/${bookingId}/rooms/${roomId}`, data)
 export const splitBookingRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/split`, data)
+export const fetchMoveTargetRooms = (bookingId, roomId) => http.get(`/bookings/${bookingId}/rooms/${roomId}/move-target-rooms`)
+export const moveBookingRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/move`, data)
 
 // ==================== PAYMENT METHODS (PHƯƠNG THỨC THANH TOÁN) ====================
 export const fetchPaymentMethods = (params = {}) => http.get('/payment-methods', { params })

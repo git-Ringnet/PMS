@@ -201,6 +201,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // Epic 11 - Do Not Move
         Route::post('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'lockMove']);
         Route::delete('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'unlockMove']);
+        // Chuyển phòng & Gộp phòng
+        Route::get('/{roomId}/move-target-rooms', [\App\Http\Controllers\Api\BookingRoomController::class, 'getMoveTargetRooms']);
+        Route::post('/{roomId}/move', [\App\Http\Controllers\Api\BookingRoomController::class, 'moveRoom']);
     });
 
     // --- Booking Room Services (SP2102) — Epic 4, 10, 14 ---
