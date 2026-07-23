@@ -2320,14 +2320,6 @@ const uniqueFloors = computed(() => {
           <span>{{ t('roomMap.printRegForm') }}</span>
         </button>
 
-        <!-- Chuyển tình trạng phòng (Submenu Trigger) -->
-        <div class="relative group mt-0.5">
-          <div
-            class="flex items-center justify-between px-3 py-2 text-xs font-normal transition-colors cursor-pointer select-none hover:brightness-90"
-            :style="{
-              background: 'var(--pms-custom-theme, #006bdb)',
-              color: 'var(--pms-custom-theme-text, #ffffff)'
-            }"
         <!-- CASE 1: PHÒNG ĐÃ GÁN SỐ PHÒNG NHƯNG CHƯA CHECK-IN (Ảnh 1) -->
         <template v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
           <!-- Đăng ký -->
