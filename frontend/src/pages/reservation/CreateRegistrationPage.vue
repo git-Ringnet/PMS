@@ -724,16 +724,19 @@ const selectRangeVal = computed({
 const roomsTotalSummary = computed(() => {
   if (!activeTab.value) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBed: 0, total: 0 }
   let priceSum = 0, adults = 0, babies = 0, children = 0, extraBed = 0, total = 0
-  activeTab.value.rooms.forEach(r => {
-    priceSum += Number(r.price) || 0
+  const roomList = filteredActiveRooms.value
+  roomList.forEach(r => {
+    const nights = Number(r.nights) || 1
+    const p = Number(r.price) || 0
+    priceSum += p * nights
     adults   += Number(r.adults) || 0
     babies   += Number(r.babies) || 0
     children += Number(r.children) || 0
     const ebTotal = getRoomExtraBedTotal(r)
     extraBed += ebTotal
-    total    += Number(r.total) || calculateRoomTotal(r)
+    total    += calculateRoomTotal(r)
   })
-  return { count: activeTab.value.rooms.length, priceSum, adults, babies, children, extraBed, total }
+  return { count: roomList.length, priceSum, adults, babies, children, extraBed, total }
 })
 
 const activeTabStatusName = computed(() => {
