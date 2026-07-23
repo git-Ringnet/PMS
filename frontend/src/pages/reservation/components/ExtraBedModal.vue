@@ -234,6 +234,9 @@ const dailyRates = ref([])
 const hasPastNights = computed(() => dailyRates.value.some(d => d.isPast))
 
 const computedTotalSum = computed(() => {
+  if (!dailyRates.value || dailyRates.value.length === 0) {
+    return (Number(totalQuantity.value) || 0) * (Number(totalRate.value) || 0)
+  }
   return dailyRates.value.reduce((sum, d) => sum + (Number(d.total) || 0), 0)
 })
 
@@ -263,14 +266,15 @@ function cleanCurrencyValue(val) {
 
 function buildStayDates(checkInStr, checkOutStr) {
   const dates = []
-  if (!checkInStr || !checkOutStr) return dates
+  if (!checkInStr) return [new Date().toISOString().split('T')[0]]
 
   let curr = new Date(checkInStr)
-  const end = new Date(checkOutStr)
+  let end = checkOutStr ? new Date(checkOutStr) : new Date(curr.getTime() + 86400000)
 
-  if (isNaN(curr.getTime()) || isNaN(end.getTime()) || curr >= end) {
-    const todayStr = checkInStr || new Date().toISOString().split('T')[0]
-    return [todayStr]
+  if (isNaN(curr.getTime())) curr = new Date()
+  if (isNaN(end.getTime()) || curr >= end) {
+    const dStr = checkInStr || new Date().toISOString().split('T')[0]
+    return [dStr]
   }
 
   while (curr < end) {
@@ -280,13 +284,13 @@ function buildStayDates(checkInStr, checkOutStr) {
     dates.push(`${yyyy}-${mm}-${dd}`)
     curr.setDate(curr.getDate() + 1)
   }
-  return dates
+  return dates.length ? dates : [checkInStr || new Date().toISOString().split('T')[0]]
 }
 
 watch(() => props.show, (newVal) => {
   if (newVal && props.room) {
-    const checkIn = props.room.checkIn || props.room.arrivalDate
-    const checkOut = props.room.checkOut || props.room.departureDate
+    const checkIn = props.room.checkIn || props.room.arrivalDate || props.room.arrival_date
+    const checkOut = props.room.checkOut || props.room.departureDate || props.room.departure_date
     const stayDates = buildStayDates(checkIn, checkOut)
     
     const sysDateStr = props.systemDate || new Date().toISOString().split('T')[0]

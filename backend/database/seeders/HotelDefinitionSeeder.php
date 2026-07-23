@@ -220,8 +220,9 @@ class HotelDefinitionSeeder extends Seeder
         $configs = [
             ['name' => 'AllowChangeRoomStatusAtReception', 'value' => '1', 'description' => 'AllowChangeRoomStatusAtReception', 'is_visible' => false],
             ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow', 'is_visible' => true],
-            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'AllowCheckinVacantClean', 'is_visible' => false],
+            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra/dirty (0: không cho phép, 1: cho phép)', 'is_visible' => true],
             ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow', 'is_visible' => false],
+            ['name' => 'IsCheckBookingStatusWhenCheckin', 'value' => '0', 'description' => 'Kiểm tra tình trạng đăng ký khi nhận phòng (0: không check, 1: chỉ check-in Guaranteed/Allotment)', 'is_visible' => true],
             ['name' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'value' => '1', 'description' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'is_visible' => false],
             ['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'AllowEarlyCheckout', 'is_visible' => false],
             ['name' => 'AllowExtendDateRoomOverDateBooking', 'value' => '1', 'description' => 'Cho phép gia hạn phòng vượt quá ngày của booking', 'is_visible' => false],

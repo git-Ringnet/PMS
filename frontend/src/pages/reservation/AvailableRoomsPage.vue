@@ -2,12 +2,14 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchAvailabilityGrid, fetchRegistrationStatuses } from '@/services/availability-service'
+import { fetchSystemDate } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import DateRangePicker from '@/components/DateRangePicker.vue'
 
 const uiStore = useUiStore()
 
 const isLoading = ref(true)
+const systemDate = ref('')
 const startDateYMD = ref('')
 const endDateYMD = ref('')
 const dates = ref([])
@@ -267,7 +269,17 @@ const handleClickOutside = (event) => {
 onMounted(async () => {
   window.addEventListener('click', handleClickOutside)
   
-  // 1. Fetch statuses for dropdown filters first
+  // 1. Fetch system date first
+  try {
+    const sysRes = await fetchSystemDate()
+    if (sysRes.data && sysRes.data.success && sysRes.data.data?.system_date) {
+      systemDate.value = sysRes.data.data.system_date
+    }
+  } catch (error) {
+    console.error('Error loading system date:', error)
+  }
+
+  // 2. Fetch statuses for dropdown filters
   try {
     const res = await fetchRegistrationStatuses()
     if (res.data && res.data.success) {
@@ -282,13 +294,13 @@ onMounted(async () => {
     console.error('Error loading registration statuses:', error)
   }
 
-  // 2. Load availability data
+  // 3. Load availability data
   const savedStart = localStorage.getItem('pms_availability_start_date')
   const savedEnd = localStorage.getItem('pms_availability_end_date')
   if (savedStart && savedEnd) {
     await loadAvailability(savedStart, savedEnd)
   } else {
-    await loadAvailability()
+    await loadAvailability(systemDate.value || null)
   }
 })
 
@@ -313,6 +325,7 @@ function showExportToast() {
         <DateRangePicker 
           v-model:startDate="startDateYMD" 
           v-model:endDate="endDateYMD" 
+          :systemDate="systemDate"
           @change="handleFilterSubmit"
         />
 

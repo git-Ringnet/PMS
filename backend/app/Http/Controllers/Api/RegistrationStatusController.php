@@ -28,14 +28,25 @@ class RegistrationStatusController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'id' => 'nullable|integer',
+            'booking_status_id' => 'nullable|integer',
             'name' => 'required|string|max:255',
             'color' => 'nullable|string|max:50',
+            'cut_off_day' => 'nullable|integer|min:0',
             'confirmation_days' => 'nullable|integer|min:0',
             'description' => 'nullable|string|max:255',
             'status_value' => 'nullable|string|max:255',
             'is_hidden' => 'nullable|boolean',
             'is_availability' => 'nullable|boolean',
+            'bk_definite' => 'nullable|integer',
+            'vietnamese' => 'nullable|string|max:255',
+            'english' => 'nullable|string|max:255',
+            'order_index' => 'nullable|integer',
         ]);
+
+        if (isset($validated['cut_off_day']) && !isset($validated['confirmation_days'])) {
+            $validated['confirmation_days'] = $validated['cut_off_day'];
+        }
 
         $status = RegistrationStatus::create($validated);
 
@@ -65,14 +76,24 @@ class RegistrationStatusController extends Controller
         }
 
         $validated = $request->validate([
+            'booking_status_id' => 'nullable|integer',
             'name' => 'required|string|max:255',
             'color' => 'nullable|string|max:50',
+            'cut_off_day' => 'nullable|integer|min:0',
             'confirmation_days' => 'nullable|integer|min:0',
             'description' => 'nullable|string|max:255',
             'status_value' => 'nullable|string|max:255',
             'is_hidden' => 'nullable|boolean',
             'is_availability' => 'nullable|boolean',
+            'bk_definite' => 'nullable|integer',
+            'vietnamese' => 'nullable|string|max:255',
+            'english' => 'nullable|string|max:255',
+            'order_index' => 'nullable|integer',
         ]);
+
+        if (isset($validated['cut_off_day']) && !isset($validated['confirmation_days'])) {
+            $validated['confirmation_days'] = $validated['cut_off_day'];
+        }
 
         $status->update($validated);
 

@@ -40,7 +40,7 @@ class Guest extends Model
         'residence_type', 'temp_residence_to',
         'visa_no', 'entry_date', 'visa_expiry_date',
         'entry_purpose', 'border_gate', 'occupation',
-        'note', 'guest_status',
+        'note', 'guest_status', 'avatar',
     ];
 
     protected $casts = [

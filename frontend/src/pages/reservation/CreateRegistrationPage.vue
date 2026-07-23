@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import TimePicker24h from '@/components/TimePicker24h.vue'
 import CopyModal from './components/CopyModal.vue'
 import UpgradeModal from './components/UpgradeModal.vue'
 import DepositModal from './components/DepositModal.vue'
@@ -61,7 +62,20 @@ import {
 const route = useRoute()
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
+import { useRoomStore } from '@/stores/room-store'
 const authStore = useAuthStore()
+const roomStore = useRoomStore()
+
+let pmsBc = null
+if (typeof BroadcastChannel !== 'undefined') {
+  pmsBc = new BroadcastChannel('pms-room-updates')
+}
+
+function notifyRoomUpdates() {
+  roomStore.fetchRooms({ silent: true })
+  roomStore.fetchStats()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
+}
 
 // ==================== CONFIG & SYSTEM ====================
 function formatLocalYYYYMMDD(dVal) {
@@ -478,8 +492,8 @@ const columns = ref([
   { key: 'extraBedPrice', label: 'Giá thêm giường', visible: true, width: 'w-[115px]', right: true },
   { key: 'hourly', label: 'Ở theo giờ', visible: true, width: 'w-[85px]', center: true },
   { key: 'specialRequests', label: 'Yêu cầu đặc biệt', visible: true, width: 'w-[125px]', center: true },
-  { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[75px]', center: true },
-  { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[75px]', center: true },
+  { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[90px]', center: true },
+  { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[90px]', center: true },
   { key: 'isPreassigned', label: 'Đặt trước', visible: true, width: 'w-[80px]', center: true },
   { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
   { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
@@ -506,6 +520,15 @@ const tableWidth = computed(() => {
   })
   return `${total}px`
 })
+
+const time24hOptions = [
+  '00:00', '00:30', '01:00', '01:30', '02:00', '02:30', '03:00', '03:30',
+  '04:00', '04:30', '05:00', '05:30', '06:00', '06:30', '07:00', '07:30',
+  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
+  '20:00', '20:30', '21:00', '21:30', '22:00', '22:30', '23:00', '23:30', '23:59'
+]
 
 const showTableColumnSelector = ref(false)
 const draggedColKey = ref(null)
@@ -535,15 +558,44 @@ function getRoomDisplayServices(room) {
   
   // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) - chỉ hiển thị nếu DB chưa có bản ghi tiền phòng thực tế
   if (!hasDbRoomCharges) {
-    list.push({
-      id: `room-charge-${room.id}`,
-      service_date: room.checkIn,
-      service_name: 'Dịch vụ phòng nghỉ',
-      service_code: 'ROOM_CHARGE',
-      quantity: 1,
-      rate: room.price,
-      is_room: true
-    })
+    const checkIn = room.checkIn
+    const nights = Number(room.nights) || 1
+    if (checkIn) {
+      for (let i = 0; i < nights; i++) {
+        const parts = checkIn.split('-')
+        let curr = new Date()
+        if (parts.length === 3) {
+          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+        } else {
+          curr = new Date(checkIn)
+        }
+        curr.setDate(curr.getDate() + i)
+        const yyyy = curr.getFullYear()
+        const mm = String(curr.getMonth() + 1).padStart(2, '0')
+        const dd = String(curr.getDate()).padStart(2, '0')
+        const dStr = `${yyyy}-${mm}-${dd}`
+        
+        list.push({
+          id: `room-charge-${room.id}-${i}`,
+          service_date: dStr,
+          service_name: 'Dịch vụ phòng nghỉ',
+          service_code: 'ROOM_CHARGE',
+          quantity: 1,
+          rate: room.price,
+          is_room: true
+        })
+      }
+    } else {
+      list.push({
+        id: `room-charge-${room.id}`,
+        service_date: new Date().toISOString().split('T')[0],
+        service_name: 'Dịch vụ phòng nghỉ',
+        service_code: 'ROOM_CHARGE',
+        quantity: 1,
+        rate: room.price,
+        is_room: true
+      })
+    }
   }
   // 2. Các dịch vụ bổ sung
   if (room.services && room.services.length > 0) {
@@ -628,6 +680,15 @@ const isCheckInDisabled = computed(() => {
 const filteredActiveRooms = computed(() => {
   if (!activeTab.value || !activeTab.value.rooms) return []
   let list = activeTab.value.rooms
+
+  // Check if ALL rooms in this registration are cancelled
+  const allRoomsCancelled = activeTab.value.status === 'CANCELLED' || 
+    (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3 || Number(r.bookingRoomStatus) === 100))
+
+  // If not all rooms are cancelled, hide individual cancelled/transferred rooms
+  if (!allRoomsCancelled) {
+    list = list.filter(r => Number(r.bookingRoomStatus) !== 3 && Number(r.bookingRoomStatus) !== 100)
+  }
 
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
     list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
@@ -765,11 +826,8 @@ const groupedRooms = computed(() => {
   return groupsList
 })
 
-// Whether any room has been checked-in/checked-out so we show status headers
-const hasStatusGroups = computed(() => {
-  if (!activeTab.value?.rooms) return false
-  return activeTab.value.rooms.some(r => Number(r.bookingRoomStatus) >= 1)
-})
+// Whether any room status headers are shown (Always show status headers)
+const hasStatusGroups = computed(() => true)
 
 // Build nested: Returns sorted array of status groups, each containing typeGroups sorted by room class order
 const groupedRoomsNested = computed(() => {
@@ -886,6 +944,8 @@ onMounted(async () => {
     
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
+    } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
+      await handleAddTabClick()
     }
   } catch (err) {
     console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
@@ -894,15 +954,23 @@ onMounted(async () => {
   }
 })
 
+function handleTabsWheel(e) {
+  if (e.deltaY) {
+    e.currentTarget.scrollLeft += e.deltaY
+  }
+}
+
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
 })
 
-watch(() => route.query.bookingCode, async (newCode) => {
-  if (newCode) {
-    await openBookingModalByCode(newCode)
+watch(() => route.query, async (newQuery) => {
+  if (newQuery.bookingCode) {
+    await openBookingModalByCode(newQuery.bookingCode)
+  } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
+    await handleAddTabClick()
   }
-})
+}, { deep: true })
 
 async function loadDropdowns() {
   try {
@@ -1042,7 +1110,7 @@ function bookingToTab(b) {
         isPreassigned: !!physicalRoom.room_number,
         initialRoomClass: rc.code || '',
         transferredFrom: '',
-        roomStatus: 'Sạch',
+        roomStatus: (br.status === 1 || physicalRoom.status === 'dirty') ? 'Bẩn' : (physicalRoom.status === 'cleaning' ? 'Đang dọn' : (physicalRoom.status === 'inspecting' ? 'Kiểm tra' : 'Sạch')),
         allotmentCode: '',
         roomCode: br.id || '',
         total: totalNum,
@@ -2408,7 +2476,13 @@ async function handleSaveNewBooking() {
   if (!modalForm.value.companyId)        { uiStore.showToast('Vui lòng chọn Công ty!', 'warning'); return }
   if (!modalForm.value.marketId)         { uiStore.showToast('Vui lòng chọn Thị trường!', 'warning'); return }
   if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
-  
+
+  const sysDateStr = systemDate.value || parseApiDate(new Date())
+  if (modalForm.value.checkIn < sysDateStr) {
+    uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'warning')
+    return
+  }
+
   const dupError = validateRoomsDuplication(modalForm.value.rooms)
   if (dupError) {
     uiStore.showToast(dupError, 'error')
@@ -2657,6 +2731,7 @@ async function triggerAction(actionName) {
           }
           const res = await updateBooking(tab.dbId, payload)
           await loadBookings()
+          notifyRoomUpdates()
           uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
         } catch (err) {
           console.error(err)
@@ -2720,7 +2795,7 @@ async function triggerAction(actionName) {
               const res = await checkInRoom(tab.dbId, r.bookingRoomId)
               if (res.data?.success) {
                 successCount++
-                r.roomStatus = 'Đang ở'
+                r.roomStatus = 'Bẩn'
               } else {
                 failCount++
                 failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
@@ -2733,6 +2808,7 @@ async function triggerAction(actionName) {
           }
 
           await loadBookings()
+          notifyRoomUpdates()
           selectedRows.value = []
 
           if (successCount > 0) {
@@ -3367,7 +3443,8 @@ async function openBookingModalByCode(bookingCode) {
 }
 
 defineExpose({
-  openBookingModalByCode
+  openBookingModalByCode,
+  handleAddTabClick
 })
 </script>
 
@@ -3386,14 +3463,14 @@ defineExpose({
     </div>
     
     <!-- DYNAMIC TABS HEADER BAR (Redesigned Top Bar) -->
-    <div class="topbar shrink-0">
+    <div class="topbar shrink-0 flex items-center justify-between gap-3">
       <!-- Tabs list -->
-      <div class="flex items-center gap-1.5 overflow-x-auto max-w-[40%] scrollbar-none">
+      <div class="flex items-center gap-1.5 overflow-x-auto flex-1 min-w-0 scrollbar-none" @wheel.passive="handleTabsWheel">
         <button
           v-for="tab in tabs"
           :key="tab.id"
           @click="handleTabClick(tab.id)"
-          class="booking-tab cursor-pointer whitespace-nowrap"
+          class="booking-tab cursor-pointer whitespace-nowrap shrink-0"
           :style="tab.id === activeTabId ? 'background: var(--navy-3); border: 1px solid rgba(255,255,255,0.15)' : 'background: rgba(255,255,255,0.06); color: #c7d2e0'"
         >
           <span>{{ tab.title }}</span>
@@ -3409,7 +3486,7 @@ defineExpose({
         <!-- ADD TAB BUTTON -->
         <button
           @click="handleAddTabClick"
-          class="add-booking-btn"
+          class="add-booking-btn shrink-0"
           title="Tạo đăng ký mới"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -3417,10 +3494,8 @@ defineExpose({
         </button>
       </div>
 
-      <div class="spacer"></div>
-
       <!-- Action Buttons -->
-      <div v-if="activeTab" class="flex items-center gap-2">
+      <div v-if="activeTab" class="flex items-center gap-2 shrink-0 ml-auto">
         <button class="btn" @click="triggerAction('Thông tin đăng ký')">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
           Thông tin đăng ký
@@ -3645,37 +3720,8 @@ defineExpose({
               </tr>
             </thead>
             <tbody class="font-semibold text-gray-900 select-text">
-              <!-- Collapsible Section: Tình trạng Đăng Ký (3) -->
-              <tr 
-                class="bg-slate-100/60 border-b border-slate-200 font-bold h-9 text-gray-900 cursor-pointer select-none"
-                @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus"
-              >
-                <td class="p-2 border-r border-slate-200 text-center" @click.stop>
-                  <button 
-                    @click="collapsedSections.registrationStatus = !collapsedSections.registrationStatus" 
-                    class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
-                    style="font-size: 13px; line-height: 1;"
-                  >
-                    {{ collapsedSections.registrationStatus ? '+' : '−' }}
-                  </button>
-                </td>
-                <td class="p-2 border-r border-slate-200 text-center" @click.stop>
-                  <input 
-                    type="checkbox" 
-                    :checked="activeTab.rooms.length > 0 && activeTab.rooms.every(r => selectedRows.includes(r.id))" 
-                    @change="e => handleSelectAllInGroup(activeTab.rooms, e.target.checked)" 
-                  />
-                </td>
-                <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2">
-                  <div class="flex items-center gap-2.5">
-                    <span class="text-gray-900 text-xs font-bold uppercase tracking-wider">Danh sách phòng ({{ roomsTotalSummary.count }})</span>
-                  </div>
-                </td>
-                <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
-              </tr>
-
               <!-- Nested Rows of Rooms -->
-              <template v-if="!collapsedSections.registrationStatus">
+              <template v-if="true">
                 <!-- ===== MODE A: No checked-in rooms → flat group by room type ===== -->
                 <template v-if="!hasStatusGroups">
                   <template v-for="group in groupedRooms" :key="group.typeName">
@@ -4032,20 +4078,20 @@ defineExpose({
                           </button>
                         </template>
                         <template v-else-if="col.key === 'arrivalTime'">
-                          <input 
+                          <TimePicker24h 
                             v-if="isEditing" 
-                            type="text" 
                             v-model="room.arrivalTime" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                            default-time="14:00"
+                            :disabled="!isEditing" 
                           />
                           <span v-else>{{ room.arrivalTime || '14:00' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hoursOut'">
-                          <input 
+                          <TimePicker24h 
                             v-if="isEditing" 
-                            type="text" 
                             v-model="room.hoursOut" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                            default-time="12:00"
+                            :disabled="!isEditing" 
                           />
                           <span v-else>{{ room.hoursOut || '12:00' }}</span>
                         </template>
@@ -4126,7 +4172,7 @@ defineExpose({
                         <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
                         <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
                         <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
-                          <div class="max-w-[750px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
+                          <div class="max-w-[850px] border border-slate-200 rounded shadow-xs overflow-hidden bg-white my-1" @click.stop>
                             <table class="w-full text-left border-collapse text-[11px] table-fixed">
                               <colgroup>
                                 <col style="width: 100px;" />
@@ -4135,6 +4181,7 @@ defineExpose({
                                 <col style="width: 110px;" />
                                 <col style="width: 70px;" />
                                 <col style="width: 100px;" />
+                                <col style="width: 110px;" />
                                 <col style="width: 80px;" />
                               </colgroup>
                               <thead>
@@ -4144,7 +4191,8 @@ defineExpose({
                                   <th class="p-2 border-r border-slate-200">Mã Giá Phòng</th>
                                   <th class="p-2 border-r border-slate-200">Tăng/giảm giá</th>
                                   <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
-                                  <th class="p-2 border-r border-slate-200 text-right">Giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-right">Đơn giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-right">Thành tiền</th>
                                   <th class="p-2 text-center">GIT/FIT</th>
                                 </tr>
                               </thead>
@@ -4160,6 +4208,7 @@ defineExpose({
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
                                   <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
                                   <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
                                     <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
                                   </td>
@@ -4180,14 +4229,14 @@ defineExpose({
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr 
                       class="border-b font-bold h-8 cursor-pointer select-none"
-                      :class="statusGroup.statusOrder === 3 ? 'bg-red-50/70 border-red-200 text-red-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-red-100 border-red-300 text-red-900 font-extrabold' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
                       <td class="p-2 border-r border-blue-200 text-center" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
-                          :class="statusGroup.statusOrder === 3 ? 'bg-red-400 hover:bg-red-500' : 'bg-blue-400 hover:bg-blue-500'"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
@@ -4200,10 +4249,10 @@ defineExpose({
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-700' : 'text-blue-900'">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-900 font-black' : 'text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-100' : 'bg-[#bfdbfe]'"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-200' : 'bg-[#bfdbfe]'"></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
@@ -4244,7 +4293,7 @@ defineExpose({
                               class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
                               :class="[
                                 selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
-                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-500 bg-red-50/15' : ''
+                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
                               ]"
                               @click="handleRowSelect(room.id)"
                               :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
@@ -4561,20 +4610,20 @@ defineExpose({
                                   </button>
                                 </template>
                                 <template v-else-if="col.key === 'arrivalTime'">
-                                  <input 
+                                  <TimePicker24h 
                                     v-if="isEditing" 
-                                    type="text" 
                                     v-model="room.arrivalTime" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                                    default-time="14:00"
+                                    :disabled="!isEditing" 
                                   />
                                   <span v-else>{{ room.arrivalTime || '14:00' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hoursOut'">
-                                  <input 
+                                  <TimePicker24h 
                                     v-if="isEditing" 
-                                    type="text" 
                                     v-model="room.hoursOut" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                                    default-time="12:00"
+                                    :disabled="!isEditing" 
                                   />
                                   <span v-else>{{ room.hoursOut || '12:00' }}</span>
                                 </template>
@@ -4665,13 +4714,15 @@ defineExpose({
                                       <col style="width: 200px;" />
                                       <col style="width: 70px;" />
                                       <col style="width: 100px;" />
+                                      <col style="width: 110px;" />
                                     </colgroup>
                                     <thead>
                                       <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                                         <th class="p-2 border-r border-slate-200">Ngày</th>
                                         <th class="p-2 border-r border-slate-200">Dịch vụ</th>
                                         <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
-                                        <th class="p-2 text-right">Giá</th>
+                                        <th class="p-2 border-r border-slate-200 text-right">Đơn giá</th>
+                                        <th class="p-2 text-right">Thành tiền</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -4683,7 +4734,8 @@ defineExpose({
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                         <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
-                                        <td class="p-2 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                        <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                        <td class="p-2 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                       </tr>
                                     </tbody>
                                   </table>
@@ -5995,7 +6047,6 @@ defineExpose({
 .cancelled-room,
 .cancelled-room span,
 .cancelled-room td {
-  color: #ef4444 !important;
-  text-decoration: line-through !important;
+  color: #b91c1c !important;
 }
 </style>

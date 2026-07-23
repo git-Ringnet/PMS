@@ -232,6 +232,7 @@ class BookingRoomController extends Controller
         // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
         if ($isInhouse) {
             $validated = $request->validate([
+                'arrival_date'    => 'nullable|date',
                 'departure_date'  => 'nullable|date',
                 'departure_time'  => 'nullable|date_format:H:i',
                 'rate'            => 'nullable|numeric|min:0',
@@ -297,7 +298,7 @@ class BookingRoomController extends Controller
             $roomNumberChanged = (isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number);
 
             if ($datesChanged || $roomNumberChanged) {
-                if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId)) {
+                if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId, $bookingId)) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Số phòng ' . $targetRoomNumber . ' đã được gán cho booking khác trong cùng khoảng thời gian.',
@@ -515,36 +516,47 @@ class BookingRoomController extends Controller
         }
 
         // Điều kiện 3: Trạng thái vật lý phòng phải = 'Phòng sẵn sàng' (status = 'available')
-        // Sử dụng room_number và kiểm tra room.status
+        // Nếu AllowCheckinVacantClean = 1 → cho phép check-in cả khi phòng dirty (chờ kiểm tra)
+        $allowVacantClean = HotelConfig::where('name', 'AllowCheckinVacantClean')->value('value');
         if (!empty($bookingRoom->room_number)) {
             $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
             if ($physicalRoom && $physicalRoom->status !== 'available') {
-                $statusLabels = [
-                    'available' => 'Phòng sẵn sàng',
-                    'dirty' => 'Phòng chưa dọn (dirty)',
-                    'occupied' => 'Phòng đang có khách (occupied)',
-                    'maintenance' => 'Phòng sửa chữa (OOO)',
-                    'reserved' => 'Phòng đã đặt trước',
-                    'checkout' => 'Phòng chờ dọn (checkout)',
-                ];
-                $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.',
-                    'room_status' => $physicalRoom->status,
-                ], 422);
+                $allowedWhenVacantClean = ['dirty', 'checkout'];
+                if ($allowVacantClean == '1' && in_array($physicalRoom->status, $allowedWhenVacantClean)) {
+                    // Cho phép check-in khi AllowCheckinVacantClean = 1 và phòng đang dirty/checkout
+                } else {
+                    $statusLabels = [
+                        'available' => 'Phòng sẵn sàng',
+                        'dirty'     => 'Phòng chưa dọn (dirty)',
+                        'occupied'  => 'Phòng đang có khách (occupied)',
+                        'maintenance' => 'Phòng sửa chữa (OOO)',
+                        'reserved'  => 'Phòng đã đặt trước',
+                        'checkout'  => 'Phòng chờ dọn (checkout)',
+                    ];
+                    $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
+                    $hint = ($allowVacantClean != '1' && in_array($physicalRoom->status, $allowedWhenVacantClean))
+                        ? ' (Bật AllowCheckinVacantClean để cho phép nhận phòng trong trạng thái này)'
+                        : '';
+                    return response()->json([
+                        'success'     => false,
+                        'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.' . $hint,
+                        'room_status' => $physicalRoom->status,
+                    ], 422);
+                }
             }
         }
 
         // Điều kiện 4: Check IsCheckBookingStatusWhenCheckin
+        // 0 = không kiểm tra, 1 = chỉ cho check-in khi booking_status_id = 1 (Guaranteed) hoặc 27 (Allotment)
         $checkStatusCfg = HotelConfig::where('name', 'IsCheckBookingStatusWhenCheckin')->first();
         if ($checkStatusCfg && $checkStatusCfg->value == '1') {
-            $allowedStatusValues = ['1', '27']; // Guaranteed statuses
+            $allowedStatusIds = [1, 27]; // booking_status_id: 1 = Guaranteed, 27 = Allotment
             $regStatus = $booking->registrationStatus;
-            if (!$regStatus || !in_array($regStatus->status_value, $allowedStatusValues)) {
+            if (!$regStatus || !in_array((int)$regStatus->booking_status_id, $allowedStatusIds)) {
+                $statusName = $regStatus ? ($regStatus->name ?? 'Không xác định') : 'Không có';
                 return response()->json([
                     'success' => false,
-                    'message' => 'Trạng thái booking không hợp lệ để check-in. Yêu cầu trạng thái Guaranteed hoặc tương đương.',
+                    'message' => 'Trạng thái booking "' . $statusName . '" không hợp lệ để check-in. Yêu cầu trạng thái Guaranteed hoặc Allotment.',
                 ], 422);
             }
         }
@@ -557,6 +569,12 @@ class BookingRoomController extends Controller
                 'actual_arrival_date' => $bookingRoom->actual_arrival_date ?? $bookingRoom->arrival_date,
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
+
+            if ($bookingRoom->room_number) {
+                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
+                    'status' => 'dirty'
+                ]);
+            }
 
             // Đồng bộ status cho khách sang CHECKED_IN
             $bookingRoom->guests()->update([
@@ -605,6 +623,12 @@ class BookingRoomController extends Controller
                 'status'     => BookingRoom::STATUS_BOOKED,
                 'updated_by' => Auth::user()?->username ?? 'system',
             ]);
+
+            if ($bookingRoom->room_number) {
+                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
+                    'status' => 'available'
+                ]);
+            }
 
             // Đồng bộ status cho khách về BOOKED
             $bookingRoom->guests()->update([

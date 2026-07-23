@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { fetchBookings, checkInRoom, undoCheckInRoom, fetchSystemTime } from '@/services/booking-service'
+import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemTime } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { t } from '@/utils/i18n'
@@ -9,6 +9,11 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
+
+let pmsBc = null
+if (typeof BroadcastChannel !== 'undefined') {
+  pmsBc = new BroadcastChannel('pms-room-updates')
+}
 
 const props = defineProps({
   initialDate: {
@@ -121,7 +126,11 @@ const filteredBookings = computed(() => {
     const matchesCompany = (booking.company?.name || '').toLowerCase().includes(q)
     const matchesRoom = booking.booking_rooms?.some(room => 
       (room.room_number || '').toLowerCase().includes(q) ||
-      room.guests?.some(g => (g.full_name || '').toLowerCase().includes(q))
+      room.guests?.some(g => {
+        const guestObj = g.guest || g
+        const name = guestObj.full_name || `${guestObj.first_name || ''} ${guestObj.last_name || ''}`
+        return name.toLowerCase().includes(q)
+      })
     )
     return matchesCode || matchesName || matchesContact || matchesCompany || matchesRoom
   })
@@ -274,6 +283,14 @@ const handleCheckIn = async () => {
     return
   }
 
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận nhận phòng',
+    message: `Bạn có chắc chắn muốn nhận phòng cho ${selectedRoomsToProcess.length} phòng đã chọn không?`,
+    confirmText: 'Nhận phòng',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
+
   loading.value = true
   let successCount = 0
   let errorMessages = []
@@ -296,6 +313,7 @@ const handleCheckIn = async () => {
   // Reload room status & bookings
   await roomStore.fetchRooms()
   await loadBookings()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
 
   if (successCount > 0) {
     uiStore.showToast(`Đã nhận phòng thành công cho ${successCount} phòng!`, 'success')
@@ -320,6 +338,14 @@ const handleUndoCheckIn = async () => {
     })
   })
 
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận hủy nhận phòng',
+    message: `Bạn có chắc chắn muốn hủy nhận phòng cho ${selectedRoomsToProcess.length} phòng đã chọn không?`,
+    confirmText: 'Hủy nhận phòng',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
+
   loading.value = true
   let successCount = 0
   let errorMessages = []
@@ -342,6 +368,7 @@ const handleUndoCheckIn = async () => {
   // Reload room status & bookings
   await roomStore.fetchRooms()
   await loadBookings()
+  if (pmsBc) pmsBc.postMessage('rooms-updated')
 
   if (successCount > 0) {
     uiStore.showToast(`Đã hủy nhận phòng thành công cho ${successCount} phòng!`, 'success')
@@ -353,12 +380,73 @@ const handleUndoCheckIn = async () => {
   }
 }
 
+// Cancel Selected Rooms action (Hủy đặt phòng hàng loạt)
+const handleCancelSelected = async () => {
+  if (pendingSelectedCount.value === 0) return
+
+  const selectedRoomsToProcess = []
+  chuaDenBookings.value.forEach(b => {
+    b.booking_rooms.forEach(r => {
+      if (selectedRooms.value.includes(r.id)) {
+        selectedRoomsToProcess.push({ bookingId: b.id, roomId: r.id, roomNumber: r.room_number })
+      }
+    })
+  })
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận hủy đặt phòng',
+    message: `Bạn có chắc chắn muốn hủy đặt phòng cho ${selectedRoomsToProcess.length} phòng đã chọn?`,
+    confirmText: 'Hủy đặt phòng',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
+
+  loading.value = true
+  let successCount = 0
+  let errorMessages = []
+
+  for (const item of selectedRoomsToProcess) {
+    try {
+      const res = await cancelBookingRoom(item.bookingId, item.roomId)
+      if (res.data && res.data.success !== false) {
+        successCount++
+      } else {
+        errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${res.data?.message || 'Lỗi khi hủy phòng'}`)
+      }
+    } catch (err) {
+      console.error(err)
+      const msg = err.response?.data?.message || 'Lỗi kết nối máy chủ'
+      errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${msg}`)
+    }
+  }
+
+  await roomStore.fetchRooms()
+  await loadBookings()
+
+  if (successCount > 0) {
+    uiStore.showToast(`Đã hủy đặt phòng thành công cho ${successCount} phòng!`, 'success')
+  }
+  if (errorMessages.length > 0) {
+    errorMessages.forEach(msg => uiStore.showToast(msg, 'error'))
+  }
+}
+
 // Get guest names for display
 function getRoomGuestName(room, booking) {
   if (room.guests && room.guests.length > 0) {
-    return room.guests.map(g => g.full_name).join(', ')
+    const validNames = room.guests
+      .map(g => {
+        const guestObj = g.guest || g
+        if (guestObj.full_name && guestObj.full_name.trim()) return guestObj.full_name.trim()
+        const fn = `${guestObj.first_name || ''} ${guestObj.last_name || ''}`.trim()
+        return fn !== '' ? fn : null
+      })
+      .filter(Boolean)
+    if (validNames.length > 0) return validNames.join(', ')
   }
-  return booking.contact_name || '(Trống)'
+  if (room.guest_name && room.guest_name.trim()) return room.guest_name.trim()
+  if (room.primary_guest_name && room.primary_guest_name.trim()) return room.primary_guest_name.trim()
+  return '-'
 }
 
 // Lifecycle hooks
@@ -440,19 +528,34 @@ watch(searchDate, async () => {
               {{ chuaDenRoomsCount }} PHÒNG
             </span>
           </div>
-          <button
-            @click="handleCheckIn"
-            :disabled="pendingSelectedCount === 0"
-            class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border-none"
-            :class="pendingSelectedCount > 0 
-              ? 'bg-[#006bdb] hover:bg-[#005bb8] text-white cursor-pointer active:scale-97' 
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Nhận phòng
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              @click="handleCheckIn"
+              :disabled="pendingSelectedCount === 0"
+              class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border-none"
+              :class="pendingSelectedCount > 0 
+                ? 'bg-[#006bdb] hover:bg-[#005bb8] text-white cursor-pointer active:scale-97' 
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Nhận phòng
+            </button>
+            <button
+              @click="handleCancelSelected"
+              :disabled="pendingSelectedCount === 0"
+              class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border border-red-200 bg-white"
+              :class="pendingSelectedCount > 0 
+                ? 'text-red-600 hover:bg-red-50 hover:border-red-300 cursor-pointer active:scale-97' 
+                : 'text-slate-300 border-slate-200 cursor-not-allowed'"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Hủy đặt phòng
+            </button>
+          </div>
         </div>
 
         <!-- Table 1 -->
@@ -597,7 +700,7 @@ watch(searchDate, async () => {
                   />
                 </th>
                 <th class="p-2.5 w-[130px]">Mã DK</th>
-                <th class="p-2.5 w-[140px]">Mã TC</th>
+                <th class="p-2.5 w-[140px]">Mã Tham chiếu</th>
                 <th class="p-2.5 w-[250px]">Tên BK / Khách</th>
                 <th class="p-2.5 w-[180px]">Công ty</th>
                 <th class="p-2.5 text-center w-[120px]">Trạng thái</th>

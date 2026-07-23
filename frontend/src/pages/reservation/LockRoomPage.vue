@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { fetchSystemDate } from '@/services/booking-service'
 import RoomIcon from '@/components/RoomIcon.vue'
 
 const uiStore = useUiStore()
@@ -9,6 +10,7 @@ const uiStore = useUiStore()
 // State variables
 const rooms = ref([])
 const hotelConfigs = ref([])
+const systemDate = ref('')
 const loading = ref(false)
 const selectedRowKeys = ref([]) // Binds to lock_id (if locked) or room_number (if available)
 
@@ -67,6 +69,7 @@ const defaultLockEndTime = computed(() => {
 let bc = null
 
 const getTodayString = () => {
+  if (systemDate.value) return systemDate.value
   const d = new Date()
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -83,21 +86,10 @@ const getTodayString = () => {
 
 const isEditingActiveLock = computed(() => {
   if (!editingLockId.value) return false
-  
-  let foundLock = null
-  for (const r of rooms.value) {
-    if (r.active_locks) {
-      foundLock = r.active_locks.find(l => l.lock_id === editingLockId.value)
-      if (foundLock) break
-    }
-  }
-  
-  if (!foundLock || !foundLock.lock_start_date || !foundLock.lock_end_date) return false
-  
-  const now = new Date()
-  const startDate = new Date(foundLock.lock_start_date.replace(/-/g, '/'))
-  const endDate = new Date(foundLock.lock_end_date.replace(/-/g, '/'))
-  return startDate <= now && endDate >= now
+  const startDateStr = bulkForm.value.start_date ? bulkForm.value.start_date.split(' ')[0] : ''
+  if (!startDateStr) return false
+  const sysDate = systemDate.value || getTodayString()
+  return startDateStr <= sysDate
 })
 
 watch(() => bulkForm.value.start_date, (newVal) => {
@@ -106,9 +98,17 @@ watch(() => bulkForm.value.start_date, (newVal) => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
   fetchRooms()
   fetchHotelConfigs()
+  try {
+    const sysRes = await fetchSystemDate()
+    if (sysRes.data && sysRes.data.success && sysRes.data.data?.system_date) {
+      systemDate.value = sysRes.data.data.system_date
+    }
+  } catch (e) {
+    console.error('Lỗi khi tải ngày hệ thống:', e)
+  }
   document.addEventListener('click', closeAllPopovers)
   window.addEventListener('focus', handleTabFocus)
   
@@ -611,6 +611,16 @@ const submitBulkLock = async (force = false) => {
     return
   }
 
+  const minAllowedDate = systemDate.value || getTodayString()
+  if (bulkForm.value.start_date < minAllowedDate) {
+    uiStore.showToast(`Ngày bắt đầu khóa không được nhỏ hơn Ngày hệ thống (${minAllowedDate})!`, 'warning')
+    return
+  }
+  if (bulkForm.value.end_date < bulkForm.value.start_date) {
+    uiStore.showToast('Ngày kết thúc khóa không được nhỏ hơn Ngày bắt đầu khóa!', 'warning')
+    return
+  }
+
   try {
     const payload = {
       start_date: `${bulkForm.value.start_date} ${bulkForm.value.start_time || '00:00'}:00`,
@@ -838,7 +848,7 @@ const toggleRowMenu = (rowKey, event) => {
                     :class="room.currentLock?.is_future ? 'bg-red-50/50 text-red-400 border border-red-100' : 'bg-red-50 text-red-600 border border-red-200'"
                   >
                     <span class="w-1.5 h-1.5 rounded-full" :class="room.currentLock?.is_future ? 'bg-red-300' : 'bg-red-500'"></span>
-                    OOO{{ room.currentLock?.is_future ? ' (Kế hoạch)' : '' }}
+                    OOO
                   </span>
                   <span 
                     v-else-if="room.lock_type?.toUpperCase() === 'OOS'"
@@ -846,7 +856,7 @@ const toggleRowMenu = (rowKey, event) => {
                     :class="room.currentLock?.is_future ? 'bg-orange-50/50 text-orange-400 border border-orange-100' : 'bg-orange-50 text-orange-700 border border-orange-200'"
                   >
                     <span class="w-1.5 h-1.5 rounded-full" :class="room.currentLock?.is_future ? 'bg-orange-400' : 'bg-orange-500'"></span>
-                    OOS{{ room.currentLock?.is_future ? ' (Kế hoạch)' : '' }}
+                    OOS
                   </span>
                   <span 
                     v-else
@@ -1130,6 +1140,7 @@ const toggleRowMenu = (rowKey, event) => {
                 <input 
                   type="date" 
                   v-model="bulkForm.start_date" 
+                  :min="systemDate || getTodayString()"
                   :disabled="isEditingActiveLock"
                   class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer" 
                 />
@@ -1143,6 +1154,7 @@ const toggleRowMenu = (rowKey, event) => {
                 <input 
                   type="date" 
                   v-model="bulkForm.end_date" 
+                  :min="bulkForm.start_date || systemDate || getTodayString()"
                   class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full cursor-pointer" 
                 />
               </div>

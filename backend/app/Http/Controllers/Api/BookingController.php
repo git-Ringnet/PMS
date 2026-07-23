@@ -935,7 +935,6 @@ class BookingController extends Controller
                 'registration_status_id' => $cancelledStatus?->id ?? $booking->registration_status_id,
                 'updated_by'             => Auth::user()?->username ?? 'system',
             ]);
-            $booking->delete(); // soft delete
         });
 
         return response()->json([

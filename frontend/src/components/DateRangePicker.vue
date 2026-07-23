@@ -12,6 +12,10 @@ const props = defineProps({
   endDate: {
     type: String,
     required: true
+  },
+  systemDate: {
+    type: String,
+    default: ''
   }
 })
 
@@ -47,7 +51,7 @@ const formatDateDMY = (ymdStr) => {
 
 // Preset range calculations
 const getRanges = () => {
-  const today = new Date()
+  const today = props.systemDate ? parseYMD(props.systemDate) : new Date()
   const getStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
   const todayStart = getStartOfDay(today)
 
