@@ -516,36 +516,47 @@ class BookingRoomController extends Controller
         }
 
         // Điều kiện 3: Trạng thái vật lý phòng phải = 'Phòng sẵn sàng' (status = 'available')
-        // Sử dụng room_number và kiểm tra room.status
+        // Nếu AllowCheckinVacantClean = 1 → cho phép check-in cả khi phòng dirty (chờ kiểm tra)
+        $allowVacantClean = HotelConfig::where('name', 'AllowCheckinVacantClean')->value('value');
         if (!empty($bookingRoom->room_number)) {
             $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
             if ($physicalRoom && $physicalRoom->status !== 'available') {
-                $statusLabels = [
-                    'available' => 'Phòng sẵn sàng',
-                    'dirty' => 'Phòng chưa dọn (dirty)',
-                    'occupied' => 'Phòng đang có khách (occupied)',
-                    'maintenance' => 'Phòng sửa chữa (OOO)',
-                    'reserved' => 'Phòng đã đặt trước',
-                    'checkout' => 'Phòng chờ dọn (checkout)',
-                ];
-                $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.',
-                    'room_status' => $physicalRoom->status,
-                ], 422);
+                $allowedWhenVacantClean = ['dirty', 'checkout'];
+                if ($allowVacantClean == '1' && in_array($physicalRoom->status, $allowedWhenVacantClean)) {
+                    // Cho phép check-in khi AllowCheckinVacantClean = 1 và phòng đang dirty/checkout
+                } else {
+                    $statusLabels = [
+                        'available' => 'Phòng sẵn sàng',
+                        'dirty'     => 'Phòng chưa dọn (dirty)',
+                        'occupied'  => 'Phòng đang có khách (occupied)',
+                        'maintenance' => 'Phòng sửa chữa (OOO)',
+                        'reserved'  => 'Phòng đã đặt trước',
+                        'checkout'  => 'Phòng chờ dọn (checkout)',
+                    ];
+                    $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
+                    $hint = ($allowVacantClean != '1' && in_array($physicalRoom->status, $allowedWhenVacantClean))
+                        ? ' (Bật AllowCheckinVacantClean để cho phép nhận phòng trong trạng thái này)'
+                        : '';
+                    return response()->json([
+                        'success'     => false,
+                        'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.' . $hint,
+                        'room_status' => $physicalRoom->status,
+                    ], 422);
+                }
             }
         }
 
         // Điều kiện 4: Check IsCheckBookingStatusWhenCheckin
+        // 0 = không kiểm tra, 1 = chỉ cho check-in khi booking_status_id = 1 (Guaranteed) hoặc 27 (Allotment)
         $checkStatusCfg = HotelConfig::where('name', 'IsCheckBookingStatusWhenCheckin')->first();
         if ($checkStatusCfg && $checkStatusCfg->value == '1') {
-            $allowedStatusValues = ['1', '27']; // Guaranteed statuses
+            $allowedStatusIds = [1, 27]; // booking_status_id: 1 = Guaranteed, 27 = Allotment
             $regStatus = $booking->registrationStatus;
-            if (!$regStatus || !in_array($regStatus->status_value, $allowedStatusValues)) {
+            if (!$regStatus || !in_array((int)$regStatus->booking_status_id, $allowedStatusIds)) {
+                $statusName = $regStatus ? ($regStatus->name ?? 'Không xác định') : 'Không có';
                 return response()->json([
                     'success' => false,
-                    'message' => 'Trạng thái booking không hợp lệ để check-in. Yêu cầu trạng thái Guaranteed hoặc tương đương.',
+                    'message' => 'Trạng thái booking "' . $statusName . '" không hợp lệ để check-in. Yêu cầu trạng thái Guaranteed hoặc Allotment.',
                 ], 422);
             }
         }
