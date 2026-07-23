@@ -256,6 +256,9 @@ class BookingController extends Controller
 
         // Người tạo
         $validated['created_by'] = Auth::user()?->username ?? 'system';
+        if (empty($validated['module'])) {
+            $validated['module'] = $request->input('created_module', 'reservation');
+        }
 
         // Tình trạng mặc định = Reservation
         $validated['status'] = $validated['status'] ?? Booking::STATUS_RESERVATION;
@@ -606,10 +609,12 @@ class BookingController extends Controller
 
                     try {
                         // Thực hiện validation dựa trên payload mới
+                        $bArrDate = $booking->arrival_date ? Carbon::parse($booking->arrival_date)->toDateString() : now()->toDateString();
+                        $bDepDate = $booking->departure_date ? Carbon::parse($booking->departure_date)->toDateString() : now()->toDateString();
                         $this->validateRoomAllocations(
                             $request->room_allocations,
-                            $validated['arrival_date'] ?? $booking->arrival_date->toDateString(),
-                            $validated['departure_date'] ?? $booking->departure_date->toDateString(),
+                            $validated['arrival_date'] ?? $bArrDate,
+                            $validated['departure_date'] ?? $bDepDate,
                             $booking->id
                         );
                     } catch (\Exception $e) {
@@ -653,10 +658,11 @@ class BookingController extends Controller
                                 $newRoomNumber = $detail['roomNumber'] ?? null;
                                 if (!empty($oldRoomNumber) && !empty($newRoomNumber) && $oldRoomNumber !== $newRoomNumber) {
                                     $currentUser = Auth::user()?->username ?? 'system';
-                                    $systemDate = $this->avService->getSystemDate();
+                                    $sysDateRecord = \App\Models\SystemDateRoll::latest('id')->first();
+                                    $systemDateStr = $sysDateRecord ? Carbon::parse($sysDateRecord->system_date)->toDateString() : now()->toDateString();
                                     
                                     // Thực hiện chuyển phòng và cập nhật bRoom trỏ sang phòng mới
-                                    $newRoom = $bRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser);
+                                    $newRoom = $bRoom->moveToRoom($newRoomNumber, $systemDateStr, $currentUser);
                                     $bRoom = $newRoom;
                                 }
                             }
@@ -882,6 +888,29 @@ class BookingController extends Controller
         $booking = Booking::with('bookingRooms')->find($id);
         if (!$booking) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
+        }
+
+        // Kiểm tra cấu hình CheckModuleBeforeDelete
+        $checkModuleConfig = \Illuminate\Support\Facades\DB::table('hotel_configs')
+            ->where('name', 'CheckModuleBeforeDelete')
+            ->value('value');
+
+        if ($checkModuleConfig === '1' || $checkModuleConfig === 1) {
+            $currentModule = strtolower($request->input('current_module', 'reservation'));
+            $bookingModule = strtolower($booking->module ?? 'reservation');
+
+            if ($bookingModule === 'reservation' && $currentModule === 'reception') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Đăng ký được tạo bởi bộ phận đặt phòng. Bạn không có quyền được hủy.'
+                ], 403);
+            }
+            if ($bookingModule === 'reception' && $currentModule === 'reservation') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Đăng ký được tạo bởi bộ phận lễ tân. Bạn không có quyền được hủy.'
+                ], 403);
+            }
         }
 
         // Không cho xóa booking đã checkout hay đã xóa
@@ -1468,8 +1497,8 @@ class BookingController extends Controller
      */
     private function upsertExtraBedServices(BookingRoom $room): void
     {
-        $arrivalDate   = $room->arrival_date->toDateString();
-        $departureDate = $room->departure_date->toDateString();
+        $arrivalDate   = Carbon::parse($room->arrival_date)->toDateString();
+        $departureDate = Carbon::parse($room->departure_date)->toDateString();
 
         if ($room->extra_bed_qty <= 0) {
             // Chỉ xóa các dịch vụ EB chưa được post
@@ -1485,7 +1514,7 @@ class BookingController extends Controller
             ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
             ->get()
             ->keyBy(function ($item) {
-                return $item->service_date->toDateString();
+                return Carbon::parse($item->service_date)->toDateString();
             });
 
         // 2. Xóa các ngày nằm ngoài giai đoạn ở mới (nếu thu hẹp ngày ở) mà chưa post

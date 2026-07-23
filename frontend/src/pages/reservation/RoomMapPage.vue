@@ -963,7 +963,8 @@ const uniqueFloors = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full w-full overflow-hidden bg-white">
+  <div class="h-full w-full">
+    <div class="flex h-full w-full overflow-hidden bg-white">
     <!-- Main Content Area Wrapper -->
     <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white" :style="{ zoom: scaleFactor }">
 
@@ -3029,7 +3030,6 @@ const uniqueFloors = computed(() => {
       </div>
     </Transition>
   </Teleport>
-
   <!-- Room Move Modal -->
   <RoomMoveModal
     v-if="showRoomMoveModal"
@@ -3040,6 +3040,7 @@ const uniqueFloors = computed(() => {
     @success="handleRoomMoveSuccess"
   />
 
+  </div>
 </template>
 
 <style scoped>

@@ -309,5 +309,16 @@ class SystemConfigurationSeeder extends Seeder
                 ]
             );
         }
+
+        // Seed CheckModuleBeforeDelete system parameter
+        \Illuminate\Support\Facades\DB::table('hotel_configs')->updateOrInsert(
+            ['name' => 'CheckModuleBeforeDelete'],
+            [
+                'value' => '1',
+                'description' => 'Kiểm tra bộ phận trước khi thực hiện xóa phòng hoặc BK (0: Không xét, 1: Có xét)',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
     }
 }

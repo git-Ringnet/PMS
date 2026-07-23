@@ -223,6 +223,9 @@ const lockRoomForm = ref({
 
 // Cell selections state
 const selectedCells = ref([])
+const isDragSelecting = ref(false)
+const dragSelectionStart = ref(null) // { roomIdx, dayIdx, roomNo }
+const initialSelectedCells = ref([])
 
 // Resize state
 const resizeState = ref(null)
@@ -1472,27 +1475,84 @@ function isCellSelected(roomNo, date) {
   return selectedCells.value.some(c => c.room === roomNo && c.date === dateStr)
 }
 
+function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
+  if (event.button !== 0) return // Left click only
+  if (!event.ctrlKey && !event.metaKey) return
+  if (roomItem.isVirtual || isCellOccupied(roomItem.room, dayItem.fullDate)) return
+
+  event.preventDefault()
+  isDragSelecting.value = true
+  dragSelectionStart.value = { roomIdx, dayIdx, roomNo: roomItem.room }
+
+  // Save current selection snapshot before this drag operation
+  initialSelectedCells.value = [...selectedCells.value]
+
+  updateDragSelection(roomIdx, dayIdx)
+
+  window.addEventListener('mouseup', handleGlobalCellMouseUp)
+}
+
+function handleCellMouseEnter(roomItem, dayItem, dayIdx, roomIdx, event) {
+  if (!isDragSelecting.value || !dragSelectionStart.value) return
+  if (roomItem.isVirtual) return
+
+  updateDragSelection(roomIdx, dayIdx)
+}
+
+function updateDragSelection(currentRoomIdx, currentDayIdx) {
+  const start = dragSelectionStart.value
+  if (!start) return
+
+  const minRoomIdx = Math.min(start.roomIdx, currentRoomIdx)
+  const maxRoomIdx = Math.max(start.roomIdx, currentRoomIdx)
+  const minDayIdx = Math.min(start.dayIdx, currentDayIdx)
+  const maxDayIdx = Math.max(start.dayIdx, currentDayIdx)
+
+  // Start with snapshot before current drag
+  const newSelection = [...initialSelectedCells.value]
+
+  for (let rIdx = minRoomIdx; rIdx <= maxRoomIdx; rIdx++) {
+    const roomObj = dbRooms.value[rIdx]
+    if (!roomObj || roomObj.isVirtual) continue
+    const roomNo = roomObj.room
+
+    for (let dIdx = minDayIdx; dIdx <= maxDayIdx; dIdx++) {
+      const dayObj = days.value[dIdx]
+      if (!dayObj) continue
+
+      if (isCellOccupied(roomNo, dayObj.fullDate)) continue
+
+      const dateStr = formatDateStr(dayObj.fullDate)
+      const exists = newSelection.some(c => c.room === roomNo && c.date === dateStr)
+      if (!exists) {
+        newSelection.push({
+          room: roomNo,
+          date: dateStr,
+          dayIdx: dIdx
+        })
+      }
+    }
+  }
+
+  selectedCells.value = newSelection
+}
+
+function handleGlobalCellMouseUp() {
+  if (isDragSelecting.value) {
+    isDragSelecting.value = false
+    dragSelectionStart.value = null
+    initialSelectedCells.value = []
+  }
+  window.removeEventListener('mouseup', handleGlobalCellMouseUp)
+}
+
 function handleCellClick(roomItem, dayItem, dayIdx, event) {
   if (roomItem.isVirtual || isCellOccupied(roomItem.room, dayItem.fullDate)) {
-    uiStore.showToast(`Phòng ${roomItem.room} ngày ${formatDateStr(dayItem.fullDate)} đã có đặt phòng/khóa phòng, không thể chọn.`, 'warning')
     return
   }
 
-  const dateStr = formatDateStr(dayItem.fullDate)
-
-  if (event.ctrlKey) {
-    const existingIdx = selectedCells.value.findIndex(c => c.room === roomItem.room && c.date === dateStr)
-    
-    if (existingIdx > -1) {
-      selectedCells.value.splice(existingIdx, 1)
-    } else {
-      selectedCells.value.push({
-        room: roomItem.room,
-        date: dateStr,
-        dayIdx: dayIdx
-      })
-    }
-  } else {
+  // Selection is ONLY allowed when holding Ctrl or Cmd key
+  if (!event.ctrlKey && !event.metaKey) {
     selectedCells.value = []
   }
 }
@@ -1983,12 +2043,15 @@ function handleCellContextMenu(roomItem, dayItem, event) {
   const dateStr = formatDateStr(dayItem.fullDate)
   const isAlreadySelected = selectedCells.value.some(c => c.room === roomItem.room && c.date === dateStr)
   
-  let menuType = 'cell-waitlist'
-  if (isAlreadySelected && selectedCells.value.length > 0) {
-    menuType = 'cell-actions'
-  } else {
-    selectedCells.value = []
+  if (!isAlreadySelected || selectedCells.value.length === 0) {
+    selectedCells.value = [{
+      room: roomItem.room,
+      date: dateStr,
+      dayIdx: days.value.findIndex(d => formatDateStr(d.fullDate) === dateStr)
+    }]
   }
+
+  const menuType = 'cell-actions'
 
   let x = event.clientX
   let y = event.clientY
@@ -2956,7 +3019,9 @@ async function saveQuickBooking() {
       contact_name: quickBookingForm.value.bookingName || 'Walkin Guest',
       contact_phone: '',
       note: '',
-      room_allocations: room_allocations
+      room_allocations: room_allocations,
+      module: 'reception',
+      created_module: 'reception'
     }
 
     await createBooking(payload)
@@ -3142,7 +3207,8 @@ async function handleConfirmCancelRoomPlan(payload) {
     emit('loading', true)
     const res = await cancelBookingRoom(booking.bookingId, booking.bookingRoomId, {
       cancel_reason_id: payload.cancel_reason_id,
-      note: payload.note
+      note: payload.note,
+      current_module: 'reception'
     })
     if (res && res.data && res.data.success) {
       uiStore.showToast('Đã hủy phòng thành công!', 'success')
@@ -3152,7 +3218,8 @@ async function handleConfirmCancelRoomPlan(payload) {
     }
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể kết nối đến máy chủ.', 'error')
+    const msg = err.response?.data?.message || 'Không thể kết nối đến máy chủ.'
+    uiStore.showToast(msg, 'error')
   } finally {
     loadingBookings.value = false
     emit('loading', false)
@@ -3589,6 +3656,8 @@ function getRoomStatusIconName(item) {
                               : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
                       )
                 ]"
+                @mousedown="handleCellMouseDown(item, day, dayIdx, idx, $event)"
+                @mouseenter="handleCellMouseEnter(item, day, dayIdx, idx, $event)"
                 @click="handleCellClick(item, day, dayIdx, $event)"
                 @contextmenu.prevent="handleCellContextMenu(item, day, $event)"
                 @dragover="handleDragOver($event, item, dayIdx)"

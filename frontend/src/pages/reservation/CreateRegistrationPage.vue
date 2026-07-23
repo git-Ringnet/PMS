@@ -2556,6 +2556,8 @@ async function handleSaveNewBooking() {
       shuttle_info:           modalForm.value.shuttleInfo || [],
       room_allocations:       syncRoomsToAllocations(modalForm.value),
       deposit_details:        modalForm.value.deposits || [],
+      module:                 'reservation',
+      created_module:         'reservation',
     }
     if (isEditModal.value && modalForm.value.dbId) {
       const res = await updateBooking(modalForm.value.dbId, payload)
@@ -2580,6 +2582,14 @@ async function handleSaveNewBooking() {
   } finally {
     isSavingModal.value = false
   }
+}
+
+async function handleGuestInfoSaved() {
+  await loadBookings()
+  const bc1 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-room-updates') : null
+  if (bc1) bc1.postMessage('rooms-updated')
+  const bc2 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-channel') : null
+  if (bc2) bc2.postMessage('rooms-updated')
 }
 
 function parseDateVi(dateStr) {
@@ -3210,7 +3220,8 @@ async function handleConfirmCancelReason(payload) {
       uiStore.showToast('Đang tiến hành hủy đăng ký...', 'info')
       const res = await deleteBooking(tab.dbId, {
         cancel_reason_id: payload.cancel_reason_id,
-        note: payload.note
+        note: payload.note,
+        current_module: 'reservation'
       })
       if (res.data?.success) {
         const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
@@ -3241,7 +3252,8 @@ async function handleConfirmCancelReason(payload) {
         try {
           const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
             cancel_reason_id: payload.cancel_reason_id,
-            note: payload.note
+            note: payload.note,
+            current_module: 'reservation'
           })
           if (res.data?.success) {
             successCount++
@@ -6062,7 +6074,7 @@ defineExpose({
       :show="isGuestInfoModalOpen"
       :bookingId="activeTab?.dbId"
       @close="isGuestInfoModalOpen = false"
-      @saved="loadBookings"
+      @saved="handleGuestInfoSaved"
     />
 
     <!-- XÓA DỊCH VỤ BỔ SUNG MODAL -->

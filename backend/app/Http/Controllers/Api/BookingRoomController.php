@@ -701,6 +701,32 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Không thể hủy phòng đang check-in. Vui lòng checkout trước.'], 422);
         }
 
+        // Kiểm tra cấu hình CheckModuleBeforeDelete
+        $booking = Booking::find($bookingId);
+        if ($booking) {
+            $checkModuleConfig = \Illuminate\Support\Facades\DB::table('hotel_configs')
+                ->where('name', 'CheckModuleBeforeDelete')
+                ->value('value');
+
+            if ($checkModuleConfig === '1' || $checkModuleConfig === 1) {
+                $currentModule = strtolower($request->input('current_module', 'reservation'));
+                $bookingModule = strtolower($booking->module ?? 'reservation');
+
+                if ($bookingModule === 'reservation' && $currentModule === 'reception') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Đăng ký được tạo bởi bộ phận đặt phòng. Bạn không có quyền được hủy.'
+                    ], 403);
+                }
+                if ($bookingModule === 'reception' && $currentModule === 'reservation') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Đăng ký được tạo bởi bộ phận lễ tân. Bạn không có quyền được hủy.'
+                    ], 403);
+                }
+            }
+        }
+
         $request->validate([
             'cancel_reason_id' => 'nullable|exists:cancel_reasons,id',
             'note'             => 'nullable|string',
