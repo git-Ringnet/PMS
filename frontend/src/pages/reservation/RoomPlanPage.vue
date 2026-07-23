@@ -3414,7 +3414,6 @@ function getRoomStatusIconName(item) {
 
     <!-- Timeline Grid Matrix -->
     <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragover="handleGlobalDragOver($event)">
-      <!-- Col width: 62px, sticky room header: 120px -->
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
@@ -3491,7 +3490,7 @@ function getRoomStatusIconName(item) {
                   <!-- Room Number (Left side) -->
                   <span 
                     class="font-normal text-slate-700 select-none truncate"
-                    :class="item.isVirtual ? 'text-[10px] max-w-[48px]' : 'text-[12px]'"
+                    :class="item.isVirtual ? 'text-[10px] font-medium max-w-[72px]' : 'text-[12px]'"
                     :title="item.room"
                   >
                     {{ item.room }}

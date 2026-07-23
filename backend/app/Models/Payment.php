@@ -84,7 +84,7 @@ class Payment extends Model
 
     public function paymentMethod()
     {
-        return $this->belongsTo(PaymentMethod::class);
+        return $this->belongsTo(PaymentMethod::class, 'payment_method_id', 'code');
     }
 
     public function guest()

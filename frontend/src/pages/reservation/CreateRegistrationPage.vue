@@ -938,6 +938,8 @@ function syncRoomsToAllocations(tab) {
 // ==================== LIFECYCLE ====================
 onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
+  window.addEventListener('booking-updated', loadBookings)
+  window.addEventListener('deposit-updated', loadBookings)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -960,6 +962,8 @@ function handleTabsWheel(e) {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
+  window.removeEventListener('booking-updated', loadBookings)
+  window.removeEventListener('deposit-updated', loadBookings)
 })
 
 watch(() => route.query.bookingCode, async (newCode) => {
@@ -3630,8 +3634,8 @@ defineExpose({
       </svg>
       <div class="text-slate-400 text-sm font-medium">Chưa có đăng ký nào đang mở</div>
       <button
-        @click="openNewBookingModal"
-        class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all"
+        @click="handleAddTabClick"
+        class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white transition-all cursor-pointer hover:brightness-110 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-95 duration-200"
         style="background: linear-gradient(135deg, #006bdb, #0050a8); box-shadow: 0 2px 8px rgba(0,107,219,0.3);"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
