@@ -5,7 +5,7 @@ import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate } from '@/services/booking-service'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
@@ -294,9 +294,50 @@ const sortedFloors = computed(() => {
 
 const activeFilter = computed(() => roomStore.filters.status)
 
+// Quick Check-In state
+const showQuickCheckinModal = ref(false)
+const quickCheckinRoom = ref(null)
+const quickCheckinLoading = ref(false)
+
 // Methods
 function handleRoomClick(room) {
-  // Click actions on rooms are disabled as per user request to not show room detail modal.
+  // Chuột trái không mở popup nữa (chỉ click chuột phải mới mở menu ngữ cảnh)
+}
+
+async function handleQuickCheckIn() {
+  if (!quickCheckinRoom.value) return
+  const room = quickCheckinRoom.value
+  quickCheckinLoading.value = true
+  try {
+    const res = await checkInRoom(room.booking_id, room.booking_room_id)
+    if (res.data && res.data.success !== false) {
+      uiStore.showToast(`Nhận phòng nhanh ${room.room_number} thành công!`, 'success')
+      showQuickCheckinModal.value = false
+      quickCheckinRoom.value = null
+      await roomStore.fetchRooms({ silent: true })
+      await roomStore.fetchStats()
+    } else {
+      const msg = res.data?.message || 'Không thể nhận phòng.'
+      uiStore.showToast(msg, 'error')
+    }
+  } catch (err) {
+    const msg = err.response?.data?.message || 'Lỗi kết nối máy chủ'
+    uiStore.showToast(msg, 'error')
+  } finally {
+    quickCheckinLoading.value = false
+  }
+}
+
+function closeQuickCheckinModal() {
+  showQuickCheckinModal.value = false
+  quickCheckinRoom.value = null
+}
+
+function handleQuickCheckinFromMenu() {
+  if (!contextMenu.value.room) return
+  quickCheckinRoom.value = contextMenu.value.room
+  showQuickCheckinModal.value = true
+  closeContextMenu()
 }
 
 const hoverTooltip = ref({
@@ -310,6 +351,7 @@ const hoverTooltip = ref({
 let tooltipTimeout = null
 
 function showTooltip(event, room) {
+  if (contextMenu.value?.show) return
   if (!room || (room.booking_status !== 'occupied' && room.booking_status !== 'reserved' && room.booking_status !== 'checkout')) return
   
   if (tooltipTimeout) {
@@ -547,6 +589,8 @@ const statusItems = [
 
 function handleContextMenu(event, room) {
   event.preventDefault()
+  if (tooltipTimeout) clearTimeout(tooltipTimeout)
+  hoverTooltip.value.show = false
   
   const menuWidth = 220
   const menuHeight = 340 // Safe height estimation of context menu
@@ -593,20 +637,37 @@ function showRoomInfo(room) {
 
 // Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
-  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'Chuyển Phòng', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
-    if (contextMenu.value.room && contextMenu.value.room.booking_code) {
+  if (['Giao phòng nhanh', 'Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'Chuyển Phòng', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+    const room = contextMenu.value.room
+    if (room && room.booking_code) {
       router.push({
         query: {
           ...route.query,
           tab: 'create-res',
-          bookingCode: contextMenu.value.room.booking_code
+          bookingCode: room.booking_code
         }
       })
-      uiStore.showToast(`Chuyển đến Phiếu Đăng ký ${contextMenu.value.room.booking_code} để thực hiện "${actionName}"`, 'success')
+      uiStore.showToast(`Chuyển đến Phiếu Đăng ký ${room.booking_code} để thực hiện "${actionName}"`, 'success')
       closeContextMenu()
       return
     } else {
-      uiStore.showToast('Phòng chưa được giao hoặc không có mã đăng ký!', 'warning')
+      // Phòng trống chưa có mã đăng ký -> Chuyển sang trang Đăng Ký VÀ MỞ CỬA SỔ TẠO BOOKING MỚI LUÔN
+      const roomNum = room ? room.room_number : ''
+      router.push({
+        query: {
+          ...route.query,
+          tab: 'create-res',
+          action: 'new',
+          roomNumber: roomNum,
+          roomTypeId: room ? (room.room_type_id || room.room_class_id) : ''
+        }
+      })
+      nextTick(() => {
+        if (createRegRef.value && typeof createRegRef.value.handleAddTabClick === 'function') {
+          createRegRef.value.handleAddTabClick()
+        }
+      })
+      uiStore.showToast(`Mở cửa sổ Tạo Đăng ký mới cho phòng ${roomNum}`, 'success')
       closeContextMenu()
       return
     }
@@ -1560,7 +1621,7 @@ const uniqueFloors = computed(() => {
                     class="room-card"
                     :class="[
                       isInitialLoad ? 'room-card-animate' : '',
-                      (room.status === ROOM_STATUSES.OCCUPIED || room.status === ROOM_STATUSES.CHECKOUT) ? 'occupied-room' : ''
+                      (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : ''
                     ]"
                     :style="getRoomCardStyle(room, floorIdx, roomIdx)"
                     @click="handleRoomClick(room)"
@@ -1887,8 +1948,8 @@ const uniqueFloors = computed(() => {
     <Teleport to="body">
       <Transition name="tooltip-fade">
         <div
-          v-if="hoverTooltip.show && hoverTooltip.room"
-          class="fixed z-[99999] pointer-events-auto bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
+          v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
+          class="fixed z-[9990] pointer-events-none bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
           :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
           :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }"
           @mouseenter="cancelHide"
@@ -1982,264 +2043,348 @@ const uniqueFloors = computed(() => {
     <Teleport to="body">
       <div
         v-if="contextMenu.show && contextMenu.room"
-        class="fixed z-[9999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
+        class="fixed z-[99999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
         :class="TEXT_THEME.menuItem"
         :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
         @click.stop
       >
-        <!-- Thông tin -->
-        <button
-          v-if="contextMenu.room.booking_code"
-          @click="showRoomInfo(contextMenu.room)"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-cyan-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-          <span>{{ t('roomMap.info') }}</span>
-        </button>
-
-        <!-- Đăng ký -->
-        <button
-          @click="triggerMenuItem('Đăng ký')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <line x1="19" y1="8" x2="19" y2="14" />
-            <line x1="16" y1="11" x2="22" y2="11" />
-          </svg>
-          <span>{{ t('roomMap.registration') }}</span>
-        </button>
-
-        <!-- Hóa đơn -->
-        <button
-          @click="triggerMenuItem('Hóa đơn')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-          </svg>
-          <span>{{ t('roomMap.invoice') }}</span>
-        </button>
-
-        <!-- Nhóm hóa đơn -->
-        <button
-          @click="triggerMenuItem('Nhóm hóa đơn')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <ellipse cx="12" cy="5" rx="9" ry="3" />
-            <path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-            <path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6" />
-          </svg>
-          <span>{{ t('roomMap.groupInvoice') }}</span>
-        </button>
-
-        <div class="h-px bg-slate-300 my-1"></div>
-
-        <!-- Chuyển Phòng Group -->
-        <div v-if="contextMenu.room.booking_code" class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1 border-t border-slate-300 select-none">
-          Chuyển Phòng
-        </div>
-
-        <button
-          v-if="contextMenu.room.booking_code"
-          @click="contextMenu.room.is_do_not_move ? null : lockRoomMove(contextMenu.room)"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left bg-transparent border-none"
-          :class="[
-            TEXT_THEME.menuItem,
-            contextMenu.room.is_do_not_move ? 'opacity-40 cursor-not-allowed text-slate-400' : 'hover:bg-slate-200 cursor-pointer'
-          ]"
-        >
-          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </svg>
-          <span>Khóa chuyển phòng</span>
-        </button>
-
-        <button
-          v-if="contextMenu.room.booking_code"
-          @click="!contextMenu.room.is_do_not_move ? null : unlockRoomMove(contextMenu.room)"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors text-left bg-transparent border-none"
-          :class="[
-            TEXT_THEME.menuItem,
-            !contextMenu.room.is_do_not_move ? 'opacity-40 cursor-not-allowed text-slate-400' : 'hover:bg-slate-200 cursor-pointer'
-          ]"
-        >
-          <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-          </svg>
-          <span>Mở chuyển phòng</span>
-        </button>
-
-        <!-- Thông báo -->
-        <button
-          @click="triggerMenuItem('Thông báo')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-          </svg>
-          <span>{{ t('roomMap.notifications') }}</span>
-        </button>
-
-        <!-- In phiếu ăn sáng -->
-        <button
-          @click="triggerMenuItem('In phiếu ăn sáng')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-[#0284c7]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
-            <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
-            <line x1="6" y1="2" x2="6" y2="4" />
-            <line x1="10" y1="2" x2="10" y2="4" />
-            <line x1="14" y1="2" x2="14" y2="4" />
-          </svg>
-          <span>{{ t('roomMap.printBreakfast') }}</span>
-        </button>
-
-        <!-- In mẫu đăng ký -->
-        <button
-          @click="triggerMenuItem('In mẫu đăng ký')"
-          class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-          :class="TEXT_THEME.menuItem"
-        >
-          <svg class="w-4.5 h-4.5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9" />
-            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-            <rect x="6" y="14" width="12" height="8" />
-          </svg>
-          <span>{{ t('roomMap.printRegForm') }}</span>
-        </button>
-
-        <!-- Chuyển tình trạng phòng (Submenu Trigger) -->
-        <div class="relative group mt-0.5">
-          <div
-            class="flex items-center justify-between px-3 py-2 text-xs font-normal transition-colors cursor-pointer select-none hover:brightness-90"
-            :style="{
-              background: 'var(--pms-custom-theme, #006bdb)',
-              color: 'var(--pms-custom-theme-text, #ffffff)'
-            }"
+        <!-- CASE 1: PHÒNG ĐÃ GÁN SỐ PHÒNG NHƯNG CHƯA CHECK-IN (Ảnh 1) -->
+        <template v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
+          <!-- Đăng ký -->
+          <button
+            @click="triggerMenuItem('Đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
           >
-            <div class="flex items-center gap-2.5">
-              <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-              </svg>
-              <span>{{ t('roomMap.changeRoomStatus') }}</span>
-            </div>
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6" />
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <line x1="19" y1="8" x2="19" y2="14" />
+              <line x1="16" y1="11" x2="22" y2="11" />
             </svg>
-          </div>
+            <span>Đăng ký</span>
+          </button>
 
-          <!-- Submenu Panel -->
-          <div
-            class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999]"
-            :class="[
-              contextMenu.isLeft ? 'right-full mr-1' : 'left-full ml-1',
-              'bottom-0'
-            ]"
+          <div class="h-px bg-slate-300 my-1"></div>
+
+          <!-- Nhận phòng -->
+          <button
+            @click="handleQuickCheckinFromMenu()"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
           >
-            <!-- Sẵn sàng -->
-            <button
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
-            >
-              <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
-              <span>{{ t('roomMap.available') }}</span>
-            </button>
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+            </svg>
+            <span>Nhận phòng</span>
+          </button>
 
-            <!-- Phòng bẩn -->
-            <button
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
-            >
-              <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
-              <span>{{ t('roomMap.dirty') }}</span>
-            </button>
+          <!-- In phiếu ăn sáng -->
+          <button
+            @click="triggerMenuItem('In phiếu ăn sáng')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+              <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+              <line x1="6" y1="2" x2="6" y2="4" />
+              <line x1="10" y1="2" x2="10" y2="4" />
+              <line x1="14" y1="2" x2="14" y2="4" />
+            </svg>
+            <span>In phiếu ăn sáng</span>
+          </button>
 
-            <!-- Lau dọn -->
-            <button
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
-            >
-              <RoomIcon name="clean" class="w-5 h-5 text-cyan-500" />
-              <span>{{ t('roomMap.cleaning') }}</span>
-            </button>
+          <!-- In mẫu đăng ký -->
+          <button
+            @click="triggerMenuItem('In mẫu đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            <span>In mẫu đăng ký</span>
+          </button>
 
-            <!-- Phòng OOO -->
-            <button
-              v-if="contextMenu.room && contextMenu.room.status !== ROOM_STATUSES.OCCUPIED && contextMenu.room.status !== ROOM_STATUSES.CHECKOUT"
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOO')"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
+          <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam ở dưới cùng) -->
+          <div class="relative group mt-1 px-1.5 pb-1">
+            <div
+              class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
             >
-              <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
-              <span>Phòng OOO</span>
-            </button>
+              <span>Chuyển tình trạng phòng</span>
+              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </div>
 
-            <!-- Phòng OOS -->
-            <button
-              v-if="contextMenu.room && contextMenu.room.status !== ROOM_STATUSES.OCCUPIED && contextMenu.room.status !== ROOM_STATUSES.CHECKOUT"
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOS')"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
+            <!-- Submenu Panel Case 1 -->
+            <div
+              class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
+              :class="[
+                contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
+                'bottom-0'
+              ]"
             >
-              <RoomIcon name="oos" class="w-5 h-5 text-emerald-500" />
-              <span>Phòng OOS</span>
-            </button>
-
-            <!-- Dịch vụ dọn phòng -->
-            <button
-              v-if="contextMenu.room && (contextMenu.room.status === ROOM_STATUSES.OCCUPIED || contextMenu.room.status === ROOM_STATUSES.CHECKOUT)"
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
-            >
-              <RoomIcon name="housekeeping-service" class="w-5 h-5 text-sky-500" />
-              <span>{{ t('roomMap.maintenance') }}</span>
-            </button>
-
-            <!-- Phòng ưu tiên -->
-            <button
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
-            >
-              <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
-              <span>{{ t('roomMap.priorityRoom') }}</span>
-            </button>
-
-            <!-- Phòng không làm phiền -->
-            <button
-              @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
-              class="w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer"
-              :class="TEXT_THEME.menuItem"
-            >
-              <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
-              <span>{{ t('roomMap.dnd') }}</span>
-            </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Sẵn sàng</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng bẩn</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Lau dọn</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng ưu tiên</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng không làm phiền</span>
+              </button>
+            </div>
           </div>
-        </div>
+        </template>
+
+        <!-- CASE 2: PHÒNG TRỐNG KHÔNG CÓ GÌ CẢ (Ảnh 2) -->
+        <template v-else-if="!contextMenu.room.booking_code">
+          <!-- Giao phòng nhanh -->
+          <button
+            @click="triggerMenuItem('Giao phòng nhanh')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+              <path d="M12 14v4M10 16l2 2 2-2" />
+            </svg>
+            <span>Giao phòng nhanh</span>
+          </button>
+
+          <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam) -->
+          <div class="relative group mt-1 px-1.5 pb-1">
+            <div
+              class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
+            >
+              <span>Chuyển tình trạng phòng</span>
+              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </div>
+
+            <!-- Submenu Panel Case 2 -->
+            <div
+              class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
+              :class="[
+                contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
+                'bottom-0'
+              ]"
+            >
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Sẵn sàng</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng bẩn</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Lau dọn</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOO')" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="ooo" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng OOO</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOS')" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="oos" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng OOS</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng ưu tiên</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng không làm phiền</span>
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- CASE 3: PHÒNG ĐÃ NHẬN / IN-HOUSE (Ảnh 3) -->
+        <template v-else>
+          <!-- Thông tin -->
+          <button
+            @click="showRoomInfo(contextMenu.room)"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>Thông tin</span>
+          </button>
+
+          <!-- Đăng ký -->
+          <button
+            @click="triggerMenuItem('Đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <line x1="19" y1="8" x2="19" y2="14" />
+              <line x1="16" y1="11" x2="22" y2="11" />
+            </svg>
+            <span>Đăng ký</span>
+          </button>
+
+          <!-- Hóa đơn -->
+          <button
+            @click="triggerMenuItem('Hóa đơn')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+            <span>Hóa đơn</span>
+          </button>
+
+          <!-- Nhóm hóa đơn -->
+          <button
+            @click="triggerMenuItem('Nhóm hóa đơn')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              <path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6" />
+            </svg>
+            <span>Nhóm hóa đơn</span>
+          </button>
+
+          <div class="h-px bg-slate-300 my-1"></div>
+
+          <!-- Chuyển Phòng -->
+          <button
+            @click="triggerMenuItem('Chuyển Phòng')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+            </svg>
+            <span>Chuyển Phòng</span>
+          </button>
+
+          <!-- Thông báo -->
+          <button
+            @click="triggerMenuItem('Thông báo')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+            </svg>
+            <span>Thông báo</span>
+          </button>
+
+          <!-- Nhận phòng -->
+          <button
+            @click="handleQuickCheckinFromMenu()"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+            </svg>
+            <span>Nhận phòng</span>
+          </button>
+
+          <!-- In phiếu ăn sáng -->
+          <button
+            @click="triggerMenuItem('In phiếu ăn sáng')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+              <path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z" />
+              <line x1="6" y1="2" x2="6" y2="4" />
+              <line x1="10" y1="2" x2="10" y2="4" />
+              <line x1="14" y1="2" x2="14" y2="4" />
+            </svg>
+            <span>In phiếu ăn sáng</span>
+          </button>
+
+          <!-- In mẫu đăng ký -->
+          <button
+            @click="triggerMenuItem('In mẫu đăng ký')"
+            class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800"
+          >
+            <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            <span>In mẫu đăng ký</span>
+          </button>
+
+          <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam Ảnh 3) -->
+          <div class="relative group mt-1 px-1.5 pb-1">
+            <div
+              class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
+              :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }"
+            >
+              <span>Chuyển tình trạng phòng</span>
+              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </div>
+
+            <!-- Submenu Panel Case 3 -->
+            <div
+              class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
+              :class="[
+                contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
+                'bottom-0'
+              ]"
+            >
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Sẵn sàng</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng bẩn</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Lau dọn</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="housekeeping-service" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Dịch vụ dọn phòng</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng ưu tiên</span>
+              </button>
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)" class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+                <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                <span>Phòng không làm phiền</span>
+              </button>
+            </div>
+          </div>
+        </template>
       </div>
     </Teleport>
 
@@ -2463,6 +2608,120 @@ const uniqueFloors = computed(() => {
       </div>
     </div>
   </div>
+
+  <!-- ============================================================ -->
+  <!-- QUICK CHECK-IN MODAL (Nhận phòng nhanh từ Room Map) -->
+  <!-- ============================================================ -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div
+        v-if="showQuickCheckinModal"
+        class="fixed inset-0 z-[9999] flex items-center justify-center"
+        @click.self="closeQuickCheckinModal"
+      >
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeQuickCheckinModal"></div>
+
+        <!-- Modal Card -->
+        <div class="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-modal-slide">
+          <!-- Header -->
+          <div
+            class="px-6 py-4 flex items-center justify-between text-white"
+            :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <p class="text-white font-black text-sm tracking-wide">Nhận Phòng Nhanh</p>
+                <p class="text-sky-100 text-[11px] font-medium">Quick Check-In</p>
+              </div>
+            </div>
+            <button
+              @click="closeQuickCheckinModal"
+              class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer"
+            >
+              <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="px-6 py-5">
+            <!-- Room info -->
+            <div class="flex items-start gap-4 mb-5">
+              <div class="w-16 h-16 rounded-xl bg-sky-50 border-2 border-sky-100 flex flex-col items-center justify-center shrink-0">
+                <span class="text-2xl font-black text-sky-600 leading-none">{{ quickCheckinRoom?.room_number }}</span>
+                <span class="text-[10px] font-bold text-sky-400 uppercase mt-0.5">{{ quickCheckinRoom?.room_type }}</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-[13px] font-black text-slate-800 truncate">{{ quickCheckinRoom?.guest_name || quickCheckinRoom?.booking_name || '(Khách trực tiếp)' }}</p>
+                <p class="text-[11px] font-bold text-slate-500 mt-0.5 truncate">{{ quickCheckinRoom?.booking_code || '' }}</p>
+                <div class="flex items-center gap-3 mt-2">
+                  <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>{{ quickCheckinRoom?.arrival_date ? quickCheckinRoom.arrival_date.split('-').reverse().join('/') : '' }}</span>
+                  </div>
+                  <span class="text-slate-300 font-medium">→</span>
+                  <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                    <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>{{ quickCheckinRoom?.departure_date ? quickCheckinRoom.departure_date.split('-').reverse().join('/') : '' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Confirm message -->
+            <div class="bg-sky-50 border border-sky-100 rounded-xl px-4 py-3 mb-5 flex items-center gap-3">
+              <div class="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-sky-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p class="text-[12px] font-bold text-sky-700 leading-snug">
+                Bạn có muốn nhận phòng nhanh <span class="text-sky-600 font-black">{{ quickCheckinRoom?.room_number }}</span> không?
+              </p>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex gap-3">
+              <button
+                @click="closeQuickCheckinModal"
+                :disabled="quickCheckinLoading"
+                class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-[13px] transition-colors border-none cursor-pointer disabled:opacity-50"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                @click="handleQuickCheckIn"
+                :disabled="quickCheckinLoading"
+                class="flex-1 py-2.5 text-white font-black rounded-xl text-[13px] transition-all shadow-sm border-none cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }"
+              >
+                <svg v-if="quickCheckinLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {{ quickCheckinLoading ? 'Đang xử lý...' : 'Nhận phòng' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
 </template>
 
 <style scoped>
@@ -2475,6 +2734,32 @@ const uniqueFloors = computed(() => {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* Quick Check-In Modal animations */
+@keyframes modalSlide {
+  from {
+    opacity: 0;
+    transform: scale(0.93) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-modal-slide {
+  animation: modalSlide 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
 }
 
 @keyframes slideUp {
