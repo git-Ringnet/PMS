@@ -165,6 +165,7 @@ export const useRoomStore = defineStore('room', () => {
       const room = rooms.value.find(r => r.id === roomId)
       if (room) {
         room.status = status
+        room.is_clean = status !== 'dirty'
         room.lock_type = lockType
       }
     } catch (err) {

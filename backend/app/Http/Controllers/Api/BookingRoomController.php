@@ -572,7 +572,7 @@ class BookingRoomController extends Controller
 
             if ($bookingRoom->room_number) {
                 \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'dirty'
+                    'status' => 'occupied'
                 ]);
             }
 
