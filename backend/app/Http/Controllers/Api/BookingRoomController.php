@@ -1623,7 +1623,6 @@ class BookingRoomController extends Controller
                         if ($request->has('extra_bed_rate')) $updateData['extra_bed_rate'] = $request->extra_bed_rate;
                         if ($request->filled('rate_code')) $updateData['rate_code'] = $request->rate_code;
                     }
-
                     $bookingRoom->update($updateData);
 
                     DB::commit();
@@ -1656,10 +1655,16 @@ class BookingRoomController extends Controller
                 ], 422);
             }
 
-            $totalRoomGuestsCount = $bookingRoom->guests()->count();
-            $selectedCount = count($selectedGuestIds);
+            $activeGuests = $bookingRoom->guests()->where('status', '!=', 100)->get();
+            $totalAdultsCount = $activeGuests->count();
 
-            if ($selectedCount === 0) {
+            $guestsToMove = empty($selectedGuestIds)
+                ? $activeGuests
+                : $activeGuests->whereIn('guest_id', $selectedGuestIds);
+            $movedGuestIds = $guestsToMove->pluck('guest_id')->toArray();
+            $movedAdultsCount = count($movedGuestIds);
+
+            if ($movedAdultsCount === 0) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Vui lòng chọn ít nhất 1 khách để chuyển sang phòng gộp.',
@@ -1672,7 +1677,6 @@ class BookingRoomController extends Controller
                         ?? $targetPhysicalRoom?->roomForm?->max_adults
                         ?? 2;
 
-            $movedAdultsCount = $selectedCount > 0 ? $selectedCount : $totalRoomGuestsCount;
             $currentAdults = $targetBookingRoom->adults ?? 1;
             $newTotalAdults = $currentAdults + $movedAdultsCount;
 
@@ -1688,12 +1692,7 @@ class BookingRoomController extends Controller
             try {
                 $timeStr = \Carbon\Carbon::now()->format('H:i:s');
                 $sysDateStr = $systemDate->toDateString();
-                $isAllGuestsMoved = empty($selectedGuestIds) || ($selectedCount >= $totalRoomGuestsCount);
-
-                $guestsToMove = empty($selectedGuestIds)
-                    ? $bookingRoom->guests
-                    : $bookingRoom->guests()->whereIn('guest_id', $selectedGuestIds)->get();
-                $movedGuestIds = $guestsToMove->pluck('guest_id')->toArray();
+                $isAllGuestsMoved = empty($selectedGuestIds) || ($movedAdultsCount >= $totalAdultsCount);
 
                 $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
                 $movedChildrenCount = $isAllGuestsMoved ? $oldChildren->count() : 0;
@@ -1778,7 +1777,7 @@ class BookingRoomController extends Controller
 
                     \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
                 } else {
-                    $remainingAdults = max(1, ($bookingRoom->adults ?? 1) - $movedAdultsCount);
+                    $remainingAdults = max(1, $totalAdultsCount - $movedAdultsCount);
                     $bookingRoom->update([
                         'adults'     => $remainingAdults,
                         'note'       => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
@@ -1786,16 +1785,16 @@ class BookingRoomController extends Controller
                     ]);
                 }
 
-                // --- 5. TRANSFER LINKED RECORDS (Sp2102, Sp2107, Sp3000, Sp3002) TO TARGET INHOUSE ROOM ---
-                \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
-                    ->where('service_date', '>=', $sysDateStr)
-                    ->update(['booking_room_id' => $targetBookingRoom->id]);
+                // --- 5. TRANSFER LINKED RECORDS (Sp2102, Sp2107, Sp3000, Sp3002) TO TARGET INHOUSE ROOM IF ALL MOVED ---
+                if ($isAllGuestsMoved) {
+                    \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
+                        ->where('service_date', '>=', $sysDateStr)
+                        ->update(['booking_room_id' => $targetBookingRoom->id]);
 
-                \App\Models\BookingRoomSpecialRequest::where('booking_room_id', $bookingRoom->id)
-                    ->update(['booking_room_id' => $targetBookingRoom->id]);
+                    \App\Models\BookingRoomSpecialRequest::where('booking_room_id', $bookingRoom->id)
+                        ->update(['booking_room_id' => $targetBookingRoom->id]);
 
-                \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
-                    ->update(['booking_room_id' => $targetBookingRoom->id]);
+                }
 
                 DB::commit();
 

@@ -370,4 +370,91 @@ class RoomMoveTest extends TestCase
             'status'          => BookingRoom::STATUS_CHECKED_IN,
         ]);
     }
+
+    public function test_form_b_partial_guest_merge_keeps_old_room_checked_in()
+    {
+        $booking = Booking::create([
+            'booking_name'   => 'Partial Merge Booking',
+            'booking_date'   => '2026-07-10',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'created_by'     => 'admin_test',
+            'updated_by'     => 'admin_test',
+            'booking_code'   => 'BK006',
+            'status'         => 0,
+        ]);
+
+        $room101 = BookingRoom::create([
+            'booking_id'     => $booking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+            'adults'         => 2,
+            'rate'           => 500000,
+            'is_do_not_move' => 0,
+        ]);
+
+        $room102 = BookingRoom::create([
+            'booking_id'     => $booking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '102',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+            'adults'         => 1,
+            'rate'           => 500000,
+            'is_do_not_move' => 0,
+        ]);
+
+        $guestA = Guest::create(['full_name' => 'Khach A']);
+        $guestB = Guest::create(['full_name' => 'Khach B']);
+
+        BookingRoomGuest::create([
+            'booking_room_id' => $room101->id,
+            'guest_id'        => $guestA->id,
+            'is_primary'       => 1,
+            'status'          => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        BookingRoomGuest::create([
+            'booking_room_id' => $room101->id,
+            'guest_id'        => $guestB->id,
+            'is_primary'       => 0,
+            'status'          => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        // Merge ONLY guest B into room 102 (leaving guest A in room 101)
+        $response = $this->postJson("/api/bookings/{$booking->id}/rooms/{$room101->id}/move", [
+            'move_type'          => 'merge',
+            'target_room_number' => '102',
+            'reason'             => 'Gộp 1 người sang phòng 102',
+            'selected_guest_ids' => [$guestB->id],
+        ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        // Room 101 must REMAIN Checked-In (status 1) with 1 remaining adult
+        $room101->refresh();
+        $this->assertEquals(BookingRoom::STATUS_CHECKED_IN, $room101->status);
+        $this->assertEquals(1, $room101->adults);
+
+        // Guest B status in room 101 updated to 100
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $room101->id,
+            'guest_id'        => $guestB->id,
+            'status'          => 100,
+        ]);
+
+        // Guest A in room 101 remains status 1
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $room101->id,
+            'guest_id'        => $guestA->id,
+            'status'          => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        // Target room 102 adults count increased by 1 (1 + 1 = 2)
+        $room102->refresh();
+        $this->assertEquals(2, $room102->adults);
+    }
 }
