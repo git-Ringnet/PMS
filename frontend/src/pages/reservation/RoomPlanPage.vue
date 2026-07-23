@@ -3270,9 +3270,8 @@ function getRoomStatusIconName(item) {
   if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
     return item.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-  // 2. Dirty Room / In-house guest / Housekeeping needed -> broom icon
-  const hasInhouseGuest = item.booking_status === 'occupied' || item.booking_status === 'checkout' || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && b.type === 'InHouse' && isTodayOrActiveBooking(b)))
-  if (item.status === 'dirty' || item.status === 'checkout' || !item.is_clean || hasInhouseGuest) {
+  // 2. Dirty Room / Housekeeping needed -> broom icon
+  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false) {
     return 'dirty'
   }
   // 3. Has reserved booking today -> double-check icon (✓✓)

@@ -548,7 +548,8 @@ function hasExtraBed(room) {
 
 // Show Broom icon for dirty rooms
 function shouldShowBroom(room) {
-  return room.status === ROOM_STATUSES.DIRTY || !room.is_clean
+  if (!room) return false
+  return room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.is_clean === false
 }
 
 // Show Sparkles icon for clean vacant rooms
@@ -558,17 +559,18 @@ function shouldShowSparkles(room) {
 }
 
 function getRoomStatusIconName(room) {
-  if (!room) return 'double-check'
+  if (!room) return 'clean'
   if (room.status === ROOM_STATUSES.MAINTENANCE || room.status === 'ooo' || room.status === 'oos') {
     return room.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-  const hasInhouseGuest = room.booking_status === 'occupied' || room.booking_status === 'checkout' || room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean
-  if (hasInhouseGuest) {
+  // Nếu phòng bẩn / chờ dọn -> hiện icon chổi (dirty)
+  const isDirty = room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.is_clean === false
+  if (isDirty) {
     return 'dirty'
   }
-  const hasBookingToday = !!room.guest_name || !!room.booking_code || !!room.booking_status
-  if (hasBookingToday) {
-    return 'double-check'
+  // Phòng mới nhận phòng / đang có khách nhưng sạch -> không hiển thị icon bẩn
+  if (room.booking_status === 'occupied' || room.status === ROOM_STATUSES.OCCUPIED) {
+    return null
   }
   if (room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status)) {
     return 'clean'
@@ -576,7 +578,7 @@ function getRoomStatusIconName(room) {
   if (room.status === ROOM_STATUSES.RESERVED) {
     return 'priority'
   }
-  return 'double-check'
+  return null
 }
 
 function getStatusIconSize(room) {
@@ -1878,7 +1880,7 @@ const uniqueFloors = computed(() => {
                       </div>
 
                       <!-- Bottom Right Corner: Status Icon -->
-                      <div class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0" :style="{
+                      <div v-if="getRoomStatusIconName(room)" class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0" :style="{
                         right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
                         bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
                       }">
@@ -1945,8 +1947,9 @@ const uniqueFloors = computed(() => {
                       <!-- TT Phòng (Status Icon) -->
                       <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
                         <div class="flex items-center justify-center">
-                          <RoomIcon :name="getRoomStatusIconName(room)"
+                          <RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)"
                             :monochrome="getRoomStatusIconName(room) === 'ooo'" class="w-5 h-5 text-slate-600" />
+                          <span v-else>-</span>
                         </div>
                       </td>
                       <!-- Thêm giường -->

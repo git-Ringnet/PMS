@@ -165,12 +165,15 @@ export const useRoomStore = defineStore('room', () => {
       const room = rooms.value.find(r => r.id === roomId)
       if (room) {
         room.status = status
-        room.is_clean = status !== 'dirty'
+        room.is_clean = status !== 'dirty' && status !== 'checkout'
         room.lock_type = lockType
       }
+      await fetchRooms({ silent: true })
+      await fetchStats()
     } catch (err) {
       error.value = 'Không thể cập nhật trạng thái phòng.'
       console.error('updateRoomStatus error:', err)
+      throw err
     }
   }
 
