@@ -947,6 +947,8 @@ onMounted(async () => {
     
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
+    } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
+      await handleAddTabClick()
     }
   } catch (err) {
     console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
@@ -967,11 +969,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('deposit-updated', loadBookings)
 })
 
-watch(() => route.query.bookingCode, async (newCode) => {
-  if (newCode) {
-    await openBookingModalByCode(newCode)
+watch(() => route.query, async (newQuery) => {
+  if (newQuery.bookingCode) {
+    await openBookingModalByCode(newQuery.bookingCode)
+  } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
+    await handleAddTabClick()
   }
-})
+}, { deep: true })
 
 async function loadDropdowns() {
   try {
@@ -3505,7 +3509,8 @@ async function openBookingModalByCode(bookingCode) {
 }
 
 defineExpose({
-  openBookingModalByCode
+  openBookingModalByCode,
+  handleAddTabClick
 })
 </script>
 

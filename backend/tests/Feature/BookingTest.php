@@ -25,6 +25,7 @@ class BookingTest extends TestCase
         $this->artisan('db:seed', ['--class' => 'SpecialRequestSeeder']);
         $this->artisan('db:seed', ['--class' => 'SystemDateRollSeeder']);
         $this->artisan('db:seed', ['--class' => 'SystemDefinitionSeeder']);
+        $this->artisan('db:seed', ['--class' => 'BookingStatusSeeder']);
     }
 
     public function test_booking_creation_automatically_creates_guest_and_generates_g_prefixed_ids()
