@@ -224,21 +224,9 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', closePopover)
 })
-
-const quickLinks = [
-  'Hôm nay', 'Hôm qua', '7 ngày trước', 'Tuần này', 'Tháng này', 
-  'Kì này', 'Năm này', 'Ngày mai', '7 ngày tới', '30 ngày tới', 
-  '30 ngày trước', 'Tháng trước'
-]
-
-const handleOk = () => {
-  isOpen.value = false
->>>>>>> 64dca7e (feat(fnb): tích hợp phân hệ F&B (Food & Beverage) hoàn chỉnh)
-}
 </script>
 
 <template>
-<<<<<<< HEAD
   <div class="flex items-center gap-2">
     <!-- Presets Dropdown -->
     <div class="flex items-center border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900 px-3 py-1 shadow-sm h-[32px]">

@@ -18,18 +18,15 @@ import LockRoomPage from './LockRoomPage.vue'
 import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
-<<<<<<< HEAD
 import CheckInPage from './CheckInPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
-=======
 import InventoryTab from '@/pages/housekeeping/components/InventoryTab.vue'
 import PrintTasksTab from '@/pages/housekeeping/components/PrintTasksTab.vue'
 import PostBillHousekeepingTab from '@/pages/housekeeping/components/PostBillHousekeepingTab.vue'
 import SearchInvoiceTab from '@/pages/housekeeping/components/SearchInvoiceTab.vue'
 import OperationHistoryTab from '../housekeeping/components/OperationHistoryTab.vue'
 import CreateMenuTab from '../housekeeping/components/CreateMenuTab.vue'
->>>>>>> 4a2b0c6 (feat: Redesign UI các tab Buồng phòng (Lịch sử, Tìm kiếm hóa đơn, Tồn kho, Tạo Menu, In phân công))
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -975,7 +972,6 @@ const uniqueFloors = computed(() => {
 </script>
 
 <template>
-<<<<<<< HEAD
   <div class="h-full w-full">
     <div class="flex h-full w-full overflow-hidden bg-white">
     <!-- Main Content Area Wrapper -->

@@ -199,7 +199,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
     Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
 
-<<<<<<< HEAD
     // =====================================================================
     // BOOKING (Đăng ký phòng) routes
     // =====================================================================
