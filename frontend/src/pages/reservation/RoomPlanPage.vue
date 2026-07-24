@@ -234,6 +234,8 @@ const resizeState = ref(null)
 const draggedBooking = ref(null)
 const draggedOverRoom = ref(null)
 const draggedOverDayIdx = ref(null)
+const draggedBookingRect = ref(null)
+const dragGhostY = ref(0)
 
 const activeHighlightRoom = computed(() => draggedOverRoom.value)
 const activeHighlightDayIdx = computed(() => draggedOverDayIdx.value)
@@ -2684,6 +2686,25 @@ function handleDragStart(bk, event) {
   }
   hideTooltip()
   draggedBooking.value = bk
+
+  if (event && event.currentTarget) {
+    const el = event.currentTarget
+    const rect = el.getBoundingClientRect()
+    draggedBookingRect.value = {
+      left: rect.left,
+      width: rect.width
+    }
+    dragGhostY.value = rect.top + 2
+
+    try {
+      const transparentImg = new Image()
+      transparentImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+      event.dataTransfer.setDragImage(transparentImg, 0, 0)
+    } catch (e) {
+      // Fallback if setDragImage not supported
+    }
+  }
+
   event.dataTransfer.setData('text/plain', bk.bookingRoomId)
   event.dataTransfer.effectAllowed = 'move'
 
@@ -2696,6 +2717,27 @@ let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
 
+function getDragVerticalBounds() {
+  if (!scrollContainer) {
+    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  }
+  if (!scrollContainer) {
+    return { minTop: 0, maxTop: window.innerHeight - 35, headerBottom: 0, occTop: window.innerHeight }
+  }
+
+  const containerRect = scrollContainer.getBoundingClientRect()
+  const theadEl = scrollContainer.querySelector('thead')
+  const tfootEl = scrollContainer.querySelector('tfoot')
+
+  const headerBottom = theadEl ? theadEl.getBoundingClientRect().bottom : containerRect.top + 40
+  const occTop = tfootEl ? tfootEl.getBoundingClientRect().top : containerRect.bottom - 40
+
+  const minTop = Math.max(headerBottom + 2, containerRect.top + 42)
+  const maxTop = Math.min(occTop - 35, containerRect.bottom - 40)
+
+  return { minTop, maxTop, headerBottom, occTop, containerRect }
+}
+
 function handleDragWheel(e) {
   if (!draggedBooking.value) return
   if (!scrollContainer) {
@@ -2703,9 +2745,6 @@ function handleDragWheel(e) {
   }
   if (scrollContainer) {
     scrollContainer.scrollTop += e.deltaY
-    if (e.deltaX) {
-      scrollContainer.scrollLeft += e.deltaX
-    }
   }
 }
 
@@ -2713,39 +2752,37 @@ function handleGlobalDragOver(event) {
   if (!draggedBooking.value) return
   event.preventDefault()
 
-  if (!scrollContainer) {
-    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
+  const clientY = event.clientY
+
+  // If mouse is inside or above header, clamp ghost card strictly below header!
+  if (clientY <= headerBottom) {
+    dragGhostY.value = minTop
+  } else if (clientY >= occTop) {
+    dragGhostY.value = maxTop
   }
-  if (!scrollContainer) return
 
-  const rect = scrollContainer.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
-
-  const threshold = 120
-  const maxSpeed = 35
-
-  let scrollX = 0
   let scrollY = 0
 
-  if (x < threshold && x > -50) {
-    scrollX = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, x)) / threshold))
-  } else if (rect.width - x < threshold && x < rect.width + 50) {
-    scrollX = Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, rect.width - x)) / threshold))
+  // Trigger auto-scroll UP as soon as mouse reaches within 25px of header bottom
+  if (clientY < headerBottom + 25) {
+    const overflow = Math.max(0, (headerBottom + 25) - clientY)
+    // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as mouse moves further up
+    const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
+    scrollY = -speed
+  } 
+  // Trigger auto-scroll DOWN as soon as mouse reaches within 25px of OCC top
+  else if (clientY > occTop - 25) {
+    const overflow = Math.max(0, clientY - (occTop - 25))
+    // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as mouse moves further down
+    const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
+    scrollY = speed
   }
 
-  // Vertical Scrolling
-  if (y < threshold && y > -50) {
-    scrollY = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, y)) / threshold))
-  } else if (rect.height - y < threshold || event.clientY > rect.bottom - threshold) {
-    const distFromBottom = rect.bottom - event.clientY
-    scrollY = Math.round(maxSpeed * Math.max(0.3, (threshold - Math.max(-50, distFromBottom)) / threshold))
-  }
-
-  currentScrollX = scrollX
+  currentScrollX = 0
   currentScrollY = scrollY
 
-  if (scrollX !== 0 || scrollY !== 0) {
+  if (scrollY !== 0) {
     startAutoScrollLoop()
   } else {
     stopDragAutoScroll()
@@ -2767,9 +2804,12 @@ function stopDragAutoScroll() {
 function startAutoScrollLoop() {
   if (scrollAnimationFrame) return
   const loop = () => {
-    if (scrollContainer && (currentScrollX !== 0 || currentScrollY !== 0)) {
-      scrollContainer.scrollLeft += currentScrollX
+    if (scrollContainer && currentScrollY !== 0) {
       scrollContainer.scrollTop += currentScrollY
+      const { minTop, maxTop } = getDragVerticalBounds()
+      if (draggedBooking.value) {
+        dragGhostY.value = Math.max(minTop, Math.min(dragGhostY.value, maxTop))
+      }
       scrollAnimationFrame = requestAnimationFrame(loop)
     } else {
       scrollAnimationFrame = null
@@ -2783,7 +2823,15 @@ function handleDragOver(event, item, dayIdx) {
   if (item && item.room && draggedOverRoom.value !== item.room) {
     draggedOverRoom.value = item.room
   }
-  if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
+  if (draggedBooking.value) {
+    draggedOverDayIdx.value = draggedBooking.value.startIndex
+    if (event && event.currentTarget) {
+      const cellRect = event.currentTarget.getBoundingClientRect()
+      const { minTop, maxTop } = getDragVerticalBounds()
+      const targetY = cellRect.top + 2
+      dragGhostY.value = Math.max(minTop, Math.min(targetY, maxTop))
+    }
+  } else if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
     draggedOverDayIdx.value = dayIdx
   }
 
@@ -2792,6 +2840,7 @@ function handleDragOver(event, item, dayIdx) {
 
 function handleDragEnd() {
   draggedBooking.value = null
+  draggedBookingRect.value = null
   draggedOverRoom.value = null
   draggedOverDayIdx.value = null
   stopDragAutoScroll()
@@ -4707,6 +4756,36 @@ function getRoomStatusIconName(item) {
       subTitle="Vui lòng chọn lý do hủy phòng bên dưới. Nội dung sẽ được ghi log vào hệ thống."
       @confirm="handleConfirmCancelRoomPlan"
     />
+  </Teleport>
+
+  <!-- CUSTOM VERTICAL DRAG GHOST -->
+  <Teleport to="body">
+    <div 
+      v-if="draggedBooking && draggedBookingRect"
+      class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-[9px] font-bold leading-tight select-none shadow-2xl opacity-90 transition-all duration-100 ease-out"
+      :class="[
+        isBookingMatched(draggedBooking) ? getBookingClass(draggedBooking.type) : 'bg-slate-100 text-slate-400 border-slate-200'
+      ]"
+      :style="{
+        left: `${draggedBookingRect.left}px`,
+        width: `${draggedBookingRect.width}px`,
+        top: `${dragGhostY}px`,
+        height: '33px',
+        ...(isBookingMatched(draggedBooking) ? getBookingStyle(draggedBooking.type) : {})
+      }"
+    >
+      <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">
+        <svg 
+          v-if="draggedBooking.isDoNotMove"
+          class="w-3 h-3 text-slate-700 shrink-0" 
+          fill="currentColor" 
+          viewBox="0 0 20 20"
+        >
+          <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+        </svg>
+        <span class="truncate">{{ draggedBooking.label }}</span>
+      </div>
+    </div>
   </Teleport>
 </template>
 
