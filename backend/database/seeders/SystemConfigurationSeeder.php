@@ -220,7 +220,7 @@ class SystemConfigurationSeeder extends Seeder
                     'grid_row' => $r['row'],
                     'grid_column' => $r['col'],
                     'is_internal' => false,
-                    'status' => 'available',
+                    'room_status_code' => 'vacant_ready',
                     'notes' => 'Phòng tự động tạo bằng seeder',
                 ]
             );
@@ -239,7 +239,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_row' => 0,
                 'grid_column' => 0,
                 'is_internal' => true,
-                'status' => 'available',
+                'room_status_code' => 'vacant_ready',
                 'notes' => 'Phòng ảo thử nghiệm PM01',
             ]
         );
@@ -256,7 +256,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_row' => 0,
                 'grid_column' => 0,
                 'is_internal' => true,
-                'status' => 'available',
+                'room_status_code' => 'vacant_ready',
                 'notes' => 'Phòng ảo thử nghiệm PM02',
             ]
         );
@@ -309,5 +309,16 @@ class SystemConfigurationSeeder extends Seeder
                 ]
             );
         }
+
+        // Seed CheckModuleBeforeDelete system parameter
+        \Illuminate\Support\Facades\DB::table('hotel_configs')->updateOrInsert(
+            ['name' => 'CheckModuleBeforeDelete'],
+            [
+                'value' => '1',
+                'description' => 'Kiểm tra bộ phận trước khi thực hiện xóa phòng hoặc BK (0: Không xét, 1: Có xét)',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
     }
 }

@@ -77,13 +77,12 @@ class RoomController extends Controller
             }) : null;
 
             if ($currentLock) {
-                $room->status = 'maintenance';
+                // Phòng có lock OOO/OOS -> ghi đè room_status_code tương ứng
+                $lockCode = $currentLock->lock_type === 'OOS' ? 'oos' : 'ooo';
                 $room->lock_type = $currentLock->lock_type;
                 $room->setRelation('activeLock', $currentLock);
+                $room->room_status_code = $lockCode;
             } else {
-                if ($room->status === 'maintenance' || $room->status === 'ooo' || $room->status === 'oos') {
-                    $room->status = 'available';
-                }
                 $room->lock_type = null;
                 $room->setRelation('activeLock', null);
             }
@@ -92,10 +91,6 @@ class RoomController extends Controller
             $br = $bookingRoomsToday->where('room_number', $room->room_number)->first();
             if ($br) {
                 if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
-                    $room->is_clean = false;
-                    if ($room->status !== 'maintenance' && $room->status !== 'ooo' && $room->status !== 'oos') {
-                        $room->status = 'dirty';
-                    }
                     if ($br->departure_date->toDateString() === $sysDateStr) {
                         $room->booking_status = 'checkout';
                     } else {
@@ -138,10 +133,18 @@ class RoomController extends Controller
                 $room->booking_id = $br->booking_id ?? null;
             }
 
-            // Đảm bảo trạng thái vệ sinh hợp lệ từ database, nếu trống/null thì mặc định available
-            if (!in_array($room->status, ['dirty', 'maintenance', 'checkout'])) {
-                $room->status = 'available';
-            }
+
+            // Sync legacy status từ room_status_code (để tương thích)
+            $room->status = match($room->room_status_code) {
+                'vacant_dirty', 'occupied_dirty' => 'dirty',
+                'turndown'                        => 'checkout',
+                'ooo', 'occupied_ooo'             => 'maintenance',
+                'oos'                             => 'maintenance',
+                'housekeeping'                    => 'maintenance',
+                'dnd'                             => 'dnd',
+                'vacant_priority'                 => 'reserved',
+                default                           => 'available',
+            };
         }
 
         return response()->json([
@@ -271,11 +274,17 @@ class RoomController extends Controller
             return response()->json(['message' => 'Room not found'], 404);
         }
 
+        $validCodes = [
+            'vacant_ready', 'vacant_dirty', 'vacant_clean',
+            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
+        ];
+
         $validated = $request->validate([
-            'status' => 'required|string|in:available,occupied,dirty,maintenance,reserved,checkout'
+            'room_status_code' => 'required|string|in:' . implode(',', $validCodes),
         ]);
 
-        $room->update(['status' => $validated['status']]);
+        $room->update(['room_status_code' => $validated['room_status_code']]);
         $room->load(['roomForm', 'roomClass']);
 
         return response()->json([

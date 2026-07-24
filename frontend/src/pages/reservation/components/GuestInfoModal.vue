@@ -806,6 +806,10 @@ async function saveChanges() {
       guestData.value = JSON.parse(JSON.stringify(editData.value))
       isEditing.value = false
       emit('saved')
+      const bc1 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-room-updates') : null
+      if (bc1) bc1.postMessage('rooms-updated')
+      const bc2 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-channel') : null
+      if (bc2) bc2.postMessage('rooms-updated')
     } else {
       uiStore.showToast(res.data?.message || 'Lưu thất bại!', 'error')
     }

@@ -16,13 +16,48 @@ const ROOM_TYPES = {
   'DLXOD': 'DLXOD',
 }
 
+// Mã tình trạng phòng (room_status_code) khớp với bảng room_statuses trong DB
 const ROOM_STATUSES = {
-  AVAILABLE: 'available',
-  OCCUPIED: 'occupied',
-  DIRTY: 'dirty',
-  MAINTENANCE: 'maintenance',
-  RESERVED: 'reserved',
-  CHECKOUT: 'checkout',
+  AVAILABLE:        'available',
+  OCCUPIED:         'occupied',
+  DIRTY:            'dirty',
+  MAINTENANCE:      'maintenance',
+  RESERVED:         'reserved',
+  CHECKOUT:         'checkout',
+}
+
+// Các mã tình trạng chuẩn (dùng cho context menu và API updateStatus)
+const ROOM_STATUS_CODES = {
+  VACANT_READY:    'vacant_ready',
+  VACANT_DIRTY:    'vacant_dirty',
+  VACANT_CLEAN:    'vacant_clean',
+  OOO:             'ooo',
+  OOS:             'oos',
+  TURNDOWN:        'turndown',
+  HOUSEKEEPING:    'housekeeping',
+  DND:             'dnd',
+  VACANT_PRIORITY: 'vacant_priority',
+  OCCUPIED_READY:  'occupied_ready',
+  OCCUPIED_DIRTY:  'occupied_dirty',
+  OCCUPIED_CLEAN:  'occupied_clean',
+  OCCUPIED_OOO:    'occupied_ooo',
+}
+
+// Mapping room_status_code -> icon name cho frontend
+const ROOM_STATUS_ICON_MAP = {
+  'vacant_ready':    null,
+  'vacant_dirty':    'dirty',
+  'vacant_clean':    'clean',
+  'ooo':             'ooo',
+  'oos':             'oos',
+  'turndown':        'checkout',
+  'housekeeping':    'housekeeping-service',
+  'dnd':             'dnd',
+  'vacant_priority': 'priority',
+  'occupied_ready':  null,
+  'occupied_dirty':  'dirty',
+  'occupied_clean':  null,
+  'occupied_ooo':    'ooo',
 }
 
 // Bypasses network request timeouts if VITE_API_URL is not configured
@@ -140,22 +175,22 @@ export const roomService = {
   /**
    * Cập nhật trạng thái phòng
    */
-  async updateRoomStatus(roomId, status) {
+  async updateRoomStatus(roomId, roomStatusCode) {
     if (USE_MOCK_ONLY) {
       const rooms = getMockRooms()
       const room = rooms.find(r => r.id === parseInt(roomId))
-      if (room) room.status = status
+      if (room) room.room_status_code = roomStatusCode
       return { success: true, data: room }
     }
 
     try {
-      const response = await http.put(`/rooms/${roomId}/status`, { status })
+      const response = await http.put(`/rooms/${roomId}/status`, { room_status_code: roomStatusCode })
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
       const rooms = getMockRooms()
       const room = rooms.find(r => r.id === parseInt(roomId))
-      if (room) room.status = status
+      if (room) room.room_status_code = roomStatusCode
       return { success: true, data: room }
     }
   },
@@ -214,4 +249,4 @@ export const roomService = {
   }
 }
 
-export { ROOM_TYPES, ROOM_STATUSES }
+export { ROOM_TYPES, ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP }

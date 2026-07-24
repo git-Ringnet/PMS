@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { roomService, ROOM_STATUSES } from '@/services/room-service'
+import { roomService, ROOM_STATUSES, ROOM_STATUS_ICON_MAP } from '@/services/room-service'
 
 export const useRoomStore = defineStore('room', () => {
   // State
@@ -157,19 +157,22 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
-  async function updateRoomStatus(roomId, status, lockType = null) {
+  async function updateRoomStatus(roomId, roomStatusCode) {
     error.value = null
     try {
-      await roomService.updateRoomStatus(roomId, status)
-      // Update local state
+      await roomService.updateRoomStatus(roomId, roomStatusCode)
+      // Cập nhật local state ngay lập tức để UI phản hồi nhanh
       const room = rooms.value.find(r => r.id === roomId)
       if (room) {
-        room.status = status
-        room.lock_type = lockType
+        room.room_status_code = roomStatusCode
+        room.room_status_icon = ROOM_STATUS_ICON_MAP[roomStatusCode] ?? null
       }
+      await fetchRooms({ silent: true })
+      await fetchStats()
     } catch (err) {
       error.value = 'Không thể cập nhật trạng thái phòng.'
       console.error('updateRoomStatus error:', err)
+      throw err
     }
   }
 

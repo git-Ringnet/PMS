@@ -23,10 +23,27 @@ class Room extends Model
         'owner_room',
         'linked_room',
         'is_internal',
-        'status',
+        'room_status_code',
         'notes',
         'orders',
     ];
+
+    /**
+     * Accessor cho thuộc tính legacy $room->status (suy ra từ room_status_code)
+     */
+    public function getStatusAttribute(): string
+    {
+        return match($this->attributes['room_status_code'] ?? 'vacant_ready') {
+            'vacant_dirty', 'occupied_dirty' => 'dirty',
+            'turndown'                        => 'checkout',
+            'ooo', 'occupied_ooo'             => 'maintenance',
+            'oos'                             => 'maintenance',
+            'housekeeping'                    => 'maintenance',
+            'dnd'                             => 'dnd',
+            'vacant_priority'                 => 'reserved',
+            default                           => 'available',
+        };
+    }
 
     protected $casts = [
         'max_guests' => 'integer',
@@ -45,6 +62,11 @@ class Room extends Model
     public function roomClass(): BelongsTo
     {
         return $this->belongsTo(RoomClass::class);
+    }
+
+    public function roomStatus(): BelongsTo
+    {
+        return $this->belongsTo(RoomStatus::class, 'room_status_code', 'code');
     }
 
     public function locks(): \Illuminate\Database\Eloquent\Relations\HasMany

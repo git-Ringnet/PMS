@@ -534,12 +534,9 @@ class BookingRoomController extends Controller
                         'checkout'  => 'Phòng chờ dọn (checkout)',
                     ];
                     $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
-                    $hint = ($allowVacantClean != '1' && in_array($physicalRoom->status, $allowedWhenVacantClean))
-                        ? ' (Bật AllowCheckinVacantClean để cho phép nhận phòng trong trạng thái này)'
-                        : '';
                     return response()->json([
                         'success'     => false,
-                        'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.' . $hint,
+                        'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Vui lòng kiểm tra lại thông tin.',
                         'room_status' => $physicalRoom->status,
                     ], 422);
                 }
@@ -570,11 +567,8 @@ class BookingRoomController extends Controller
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
-            if ($bookingRoom->room_number) {
-                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'dirty'
-                ]);
-            }
+            // Giữ nguyên trạng thái vệ sinh của phòng (available/dirty), không đè status = 'occupied'
+            // Trạng thái có khách (occupied) được xác định tự động qua booking_status của BookingRoom
 
             // Đồng bộ status cho khách sang CHECKED_IN
             $bookingRoom->guests()->update([
@@ -626,7 +620,7 @@ class BookingRoomController extends Controller
 
             if ($bookingRoom->room_number) {
                 \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'available'
+                    'room_status_code' => 'vacant_ready'
                 ]);
             }
 
@@ -699,6 +693,32 @@ class BookingRoomController extends Controller
         }
         if ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN) {
             return response()->json(['success' => false, 'message' => 'Không thể hủy phòng đang check-in. Vui lòng checkout trước.'], 422);
+        }
+
+        // Kiểm tra cấu hình CheckModuleBeforeDelete
+        $booking = Booking::find($bookingId);
+        if ($booking) {
+            $checkModuleConfig = \Illuminate\Support\Facades\DB::table('hotel_configs')
+                ->where('name', 'CheckModuleBeforeDelete')
+                ->value('value');
+
+            if ($checkModuleConfig === '1' || $checkModuleConfig === 1) {
+                $currentModule = strtolower($request->input('current_module', 'reservation'));
+                $bookingModule = strtolower($booking->module ?? 'reservation');
+
+                if ($bookingModule === 'reservation' && $currentModule === 'reception') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Đăng ký được tạo bởi bộ phận đặt phòng. Bạn không có quyền được hủy.'
+                    ], 403);
+                }
+                if ($bookingModule === 'reception' && $currentModule === 'reservation') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Đăng ký được tạo bởi bộ phận lễ tân. Bạn không có quyền được hủy.'
+                    ], 403);
+                }
+            }
         }
 
         $request->validate([
@@ -937,8 +957,9 @@ class BookingRoomController extends Controller
         $arrivalDate   = request('arrival_date') ?? $bookingRoom->arrival_date->toDateString();
         $departureDate = request('departure_date') ?? $bookingRoom->departure_date->toDateString();
 
-        // Lấy danh sách phòng vật lý cùng loại, sắp xếp theo tầng thấp→cao
+        // Lấy danh sách phòng vật lý cùng loại (không lấy phòng ảo: is_internal = 0), sắp xếp theo tầng thấp→cao
         $candidates = \App\Models\Room::where('room_class_id', $bookingRoom->room_class_id)
+            ->where('is_internal', false)
             ->orderBy('floor', 'asc')
             ->orderBy('room_number', 'asc')
             ->get();
@@ -1527,7 +1548,7 @@ class BookingRoomController extends Controller
                         ]);
 
                         // Update physical room status to dirty
-                        \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
+                        \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['room_status_code' => 'vacant_dirty']);
 
                         // Sp2200: Update all guests in old room -> Status = 100
                         \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update([
@@ -1782,7 +1803,7 @@ class BookingRoomController extends Controller
                         'updated_by'       => $currentUser,
                     ]);
 
-                    \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
+                    \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['room_status_code' => 'vacant_dirty']);
                 } else {
                     $remainingAdults = max(1, $totalAdultsCount - $movedAdultsCount);
                     $bookingRoom->update([
