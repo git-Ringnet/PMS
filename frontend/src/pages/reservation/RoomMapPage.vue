@@ -16,17 +16,10 @@ import RoomPlanPage from './RoomPlanPage.vue'
 import ShiftWorkPage from './ShiftWorkPage.vue'
 import LockRoomPage from './LockRoomPage.vue'
 import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
-import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import CheckInPage from './CheckInPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
-import InventoryTab from '@/pages/housekeeping/components/InventoryTab.vue'
-import PrintTasksTab from '@/pages/housekeeping/components/PrintTasksTab.vue'
-import PostBillHousekeepingTab from '@/pages/housekeeping/components/PostBillHousekeepingTab.vue'
-import SearchInvoiceTab from '@/pages/housekeeping/components/SearchInvoiceTab.vue'
-import OperationHistoryTab from '../housekeeping/components/OperationHistoryTab.vue'
-import CreateMenuTab from '../housekeeping/components/CreateMenuTab.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, shallowRef, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, shallowRef, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   LayoutGrid, Printer, Receipt, FileSearch, Warehouse,
@@ -17,11 +17,11 @@ import CreateMenuTab from './components/CreateMenuTab.vue'
 import LostAndFound from './components/LostAndFound.vue'
 import OperationHistoryTab from './components/OperationHistoryTab.vue'
 
-// Cross-module pages (reused from reservation, read-only)
-import RoomMapPage from '@/pages/reservation/RoomMapPage.vue'
-import RoomPlanPage from '@/pages/reservation/RoomPlanPage.vue'
-import LockRoomPage from '@/pages/reservation/LockRoomPage.vue'
-import ReportsPage from '@/pages/reports/ReportsPage.vue'
+// Cross-module pages (reused from reservation/reports via defineAsyncComponent to avoid circular loops)
+const RoomMapPage = defineAsyncComponent(() => import('@/pages/reservation/RoomMapPage.vue'))
+const RoomPlanPage = defineAsyncComponent(() => import('@/pages/reservation/RoomPlanPage.vue'))
+const LockRoomPage = defineAsyncComponent(() => import('@/pages/reservation/LockRoomPage.vue'))
+const ReportsPage = defineAsyncComponent(() => import('@/pages/reports/ReportsPage.vue'))
 import { t } from '@/utils/i18n'
 
 const route = useRoute()
