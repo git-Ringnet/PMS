@@ -12,8 +12,15 @@ class OutletController extends Controller
 {
     public function index()
     {
-        $outlets = Outlet::with(['department', 'service'])->orderBy('order_index', 'asc')->get();
-        return response()->json($outlets);
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('outlets')) {
+                return response()->json([]);
+            }
+            $outlets = Outlet::with(['department', 'service'])->orderBy('order_index', 'asc')->get();
+            return response()->json($outlets);
+        } catch (\Throwable $e) {
+            return response()->json([]);
+        }
     }
 
     public function store(Request $request)

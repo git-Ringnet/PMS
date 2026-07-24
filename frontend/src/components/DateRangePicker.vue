@@ -192,38 +192,7 @@ const applyRange = () => {
     emit('update:endDate', end)
     emit('change', { start, end })
   }
-=======
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-
-const props = defineProps({
-  modelValue: {
-    type: Object,
-    default: () => ({ start: '24/06/2026', end: '24/06/2026' })
-  }
-})
-
-const emit = defineEmits(['update:modelValue'])
-
-const isOpen = ref(false)
-const popoverRef = ref(null)
-
-const toggleOpen = () => {
-  isOpen.value = !isOpen.value
 }
-
-const closePopover = (e) => {
-  if (popoverRef.value && !popoverRef.value.contains(e.target)) {
-    isOpen.value = false
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('click', closePopover)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', closePopover)
-})
 </script>
 
 <template>
