@@ -567,8 +567,11 @@ class BookingRoomController extends Controller
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
-            // Giữ nguyên trạng thái vệ sinh của phòng (available/dirty), không đè status = 'occupied'
-            // Trạng thái có khách (occupied) được xác định tự động qua booking_status của BookingRoom
+            if ($bookingRoom->room_number) {
+                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
+                    'status' => 'dirty'
+                ]);
+            }
 
             // Đồng bộ status cho khách sang CHECKED_IN
             $bookingRoom->guests()->update([
