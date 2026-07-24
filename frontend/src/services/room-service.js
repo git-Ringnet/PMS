@@ -241,6 +241,14 @@ export const roomService = {
   },
 
   /**
+   * Tạo khóa phòng hàng loạt (OOO/OOS)
+   */
+  async bulkLockRooms(data) {
+    const response = await http.post('/room-locks/bulk-lock', data)
+    return response.data
+  },
+
+  /**
    * Mở khóa phòng
    */
   async deleteRoomLock(lockId) {

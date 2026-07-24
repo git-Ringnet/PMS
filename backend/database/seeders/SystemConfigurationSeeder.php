@@ -207,6 +207,7 @@ class SystemConfigurationSeeder extends Seeder
             }
         }
 
+        $orderCounter = 1;
         foreach ($roomsData as $r) {
             Room::firstOrCreate(
                 ['room_number' => $r['room_number']],
@@ -219,6 +220,7 @@ class SystemConfigurationSeeder extends Seeder
                     'extra_beds_limit' => 1,
                     'grid_row' => $r['row'],
                     'grid_column' => $r['col'],
+                    'orders' => $orderCounter++,
                     'is_internal' => false,
                     'room_status_code' => 'vacant_ready',
                     'notes' => 'Phòng tự động tạo bằng seeder',
@@ -234,13 +236,14 @@ class SystemConfigurationSeeder extends Seeder
                 'room_form_id' => $formModels['Double']->id ?? 1,
                 'max_guests' => 2,
                 'floor' => '0',
-                'area' => 'Phòng ảo',
+                'area' => 'Virtual',
                 'extra_beds_limit' => 0,
                 'grid_row' => 0,
                 'grid_column' => 0,
+                'orders' => 9991,
                 'is_internal' => true,
-                'room_status_code' => 'vacant_ready',
-                'notes' => 'Phòng ảo thử nghiệm PM01',
+                'status' => 'available',
+                'notes' => 'Phòng ảo 001',
             ]
         );
 
@@ -251,13 +254,14 @@ class SystemConfigurationSeeder extends Seeder
                 'room_form_id' => $formModels['Double']->id ?? 1,
                 'max_guests' => 2,
                 'floor' => '0',
-                'area' => 'Phòng ảo',
+                'area' => 'Virtual',
                 'extra_beds_limit' => 0,
                 'grid_row' => 0,
                 'grid_column' => 0,
+                'orders' => 9992,
                 'is_internal' => true,
-                'room_status_code' => 'vacant_ready',
-                'notes' => 'Phòng ảo thử nghiệm PM02',
+                'status' => 'available',
+                'notes' => 'Phòng ảo 002',
             ]
         );
 
