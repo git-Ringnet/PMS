@@ -534,12 +534,9 @@ class BookingRoomController extends Controller
                         'checkout'  => 'Phòng chờ dọn (checkout)',
                     ];
                     $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
-                    $hint = ($allowVacantClean != '1' && in_array($physicalRoom->status, $allowedWhenVacantClean))
-                        ? ' (Bật AllowCheckinVacantClean để cho phép nhận phòng trong trạng thái này)'
-                        : '';
                     return response()->json([
                         'success'     => false,
-                        'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Yêu cầu phòng phải ở trạng thái "Phòng sẵn sàng" trước khi check-in.' . $hint,
+                        'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Vui lòng kiểm tra lại thông tin.',
                         'room_status' => $physicalRoom->status,
                     ], 422);
                 }

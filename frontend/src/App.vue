@@ -16,11 +16,7 @@ const noLayout = computed(() => !route.name || !!route.meta.noLayout)
     <router-view />
   </div>
   <MainLayout v-else>
-    <router-view v-slot="{ Component }">
-      <transition name="fade" mode="out-in">
-        <component :is="Component" />
-      </transition>
-    </router-view>
+    <router-view />
   </MainLayout>
 
   <!-- Global UI Elements -->

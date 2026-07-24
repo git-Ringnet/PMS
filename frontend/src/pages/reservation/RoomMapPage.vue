@@ -559,18 +559,21 @@ function shouldShowSparkles(room) {
 }
 
 function getRoomStatusIconName(room) {
-  if (!room) return 'clean'
+  if (!room) return null
   if (room.status === ROOM_STATUSES.MAINTENANCE || room.status === 'ooo' || room.status === 'oos') {
     return room.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-  // Nếu phòng bẩn / chờ dọn -> hiện icon chổi (dirty)
-  const isDirty = room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.is_clean === false
+  const isDirty = room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.is_clean === false || room.is_clean === 0
   if (isDirty) {
     return 'dirty'
   }
-  // Phòng mới nhận phòng / đang có khách nhưng sạch -> không hiển thị icon bẩn
-  if (room.booking_status === 'occupied' || room.status === ROOM_STATUSES.OCCUPIED) {
+  // Nếu phòng đang có khách (occupied) và sạch sẽ -> Không hiển thị icon ở góc phải bên dưới
+  if (room.booking_status === 'occupied' || room.status === 'occupied') {
     return null
+  }
+  const hasBookingToday = !!room.guest_name || !!room.booking_code
+  if (hasBookingToday) {
+    return 'double-check'
   }
   if (room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status)) {
     return 'clean'
@@ -2859,14 +2862,11 @@ const uniqueFloors = computed(() => {
   <!-- ============================================================ -->
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div v-if="showQuickCheckinModal" class="fixed inset-0 z-[9999] flex items-center justify-center"
+      <div v-if="showQuickCheckinModal" class="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[1px]"
         @click.self="closeQuickCheckinModal">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeQuickCheckinModal"></div>
-
         <!-- Modal Card -->
         <div
-          class="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-modal-slide">
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-modal-slide">
           <!-- Header -->
           <div class="px-6 py-4 flex items-center justify-between text-white"
             :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }">
@@ -2879,8 +2879,7 @@ const uniqueFloors = computed(() => {
                 </svg>
               </div>
               <div>
-                <p class="text-white font-black text-sm tracking-wide">Nhận Phòng Nhanh</p>
-                <p class="text-sky-100 text-[11px] font-medium">Quick Check-In</p>
+                <p class="text-white font-black text-sm tracking-wide">Xác nhận</p>
               </div>
             </div>
             <button @click="closeQuickCheckinModal"
@@ -2894,7 +2893,7 @@ const uniqueFloors = computed(() => {
           <!-- Body -->
           <div class="px-6 py-5">
             <!-- Room info -->
-            <div class="flex items-start gap-4 mb-5">
+            <div class="flex items-center gap-4 mb-5">
               <div
                 class="w-16 h-16 rounded-xl bg-sky-50 border-2 border-sky-100 flex flex-col items-center justify-center shrink-0">
                 <span class="text-2xl font-black text-sky-600 leading-none">{{ quickCheckinRoom?.room_number }}</span>
@@ -2902,59 +2901,26 @@ const uniqueFloors = computed(() => {
                   }}</span>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-[13px] font-black text-slate-800 truncate">{{ quickCheckinRoom?.guest_name ||
-                  quickCheckinRoom?.booking_name || '(Khách trực tiếp)' }}</p>
-                <p class="text-[11px] font-bold text-slate-500 mt-0.5 truncate">{{ quickCheckinRoom?.booking_code || ''
-                  }}
+                <p class="text-[14px] font-bold text-slate-800 truncate">
+                  {{ quickCheckinRoom?.booking_code ? `${quickCheckinRoom.booking_code} - ` : (quickCheckinRoom?.room_type ? `${quickCheckinRoom.room_type} - ` : '') }}{{ quickCheckinRoom?.guest_name || quickCheckinRoom?.booking_name || '(Khách trực tiếp)' }}
                 </p>
-                <div class="flex items-center gap-3 mt-2">
-                  <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5"
-                      viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span>{{ quickCheckinRoom?.arrival_date ?
-                      quickCheckinRoom.arrival_date.split('-').reverse().join('/')
-                      : '' }}</span>
-                  </div>
-                  <span class="text-slate-300 font-medium">→</span>
-                  <div class="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                    <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" stroke-width="2.5"
-                      viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span>{{ quickCheckinRoom?.departure_date ?
-                      quickCheckinRoom.departure_date.split('-').reverse().join('/') : '' }}</span>
-                  </div>
-                </div>
+                <p class="text-[12px] font-medium text-slate-600 mt-1 truncate">
+                  {{ quickCheckinRoom?.arrival_date ? quickCheckinRoom.arrival_date.split('-').reverse().join('/') : '' }} - {{ quickCheckinRoom?.departure_date ? quickCheckinRoom.departure_date.split('-').reverse().join('/') : '' }}
+                </p>
               </div>
             </div>
 
             <!-- Confirm message -->
-            <div class="bg-sky-50 border border-sky-100 rounded-xl px-4 py-3 mb-5 flex items-center gap-3">
-              <div class="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center shrink-0">
-                <svg class="w-4 h-4 text-sky-500" fill="none" stroke="currentColor" stroke-width="2"
-                  viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <p class="text-[12px] font-bold text-sky-700 leading-snug">
-                Bạn có muốn nhận phòng nhanh <span class="text-sky-600 font-black">{{ quickCheckinRoom?.room_number
-                  }}</span> không?
+            <div class="mb-6">
+              <p class="text-[13px] font-medium text-slate-800 leading-relaxed">
+                Bạn có chắc chắn muốn thực hiện nhận phòng <span class="font-bold text-slate-900">{{ quickCheckinRoom?.room_number }}</span> không ?
               </p>
             </div>
 
             <!-- Action buttons -->
-            <div class="flex gap-3">
-              <button @click="closeQuickCheckinModal" :disabled="quickCheckinLoading"
-                class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-[13px] transition-colors border-none cursor-pointer disabled:opacity-50">
-                Hủy bỏ
-              </button>
+            <div class="flex justify-end">
               <button @click="handleQuickCheckIn" :disabled="quickCheckinLoading"
-                class="flex-1 py-2.5 text-white font-black rounded-xl text-[13px] transition-all shadow-sm border-none cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                class="px-5 py-2.5 text-white font-bold rounded-xl text-[13px] transition-all shadow-sm border-none cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }">
                 <svg v-if="quickCheckinLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
