@@ -567,11 +567,8 @@ class BookingRoomController extends Controller
                 'updated_by'          => Auth::user()?->username ?? 'system',
             ]);
 
-            if ($bookingRoom->room_number) {
-                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'occupied'
-                ]);
-            }
+            // Giữ nguyên trạng thái vệ sinh của phòng (available/dirty), không đè status = 'occupied'
+            // Trạng thái có khách (occupied) được xác định tự động qua booking_status của BookingRoom
 
             // Đồng bộ status cho khách sang CHECKED_IN
             $bookingRoom->guests()->update([
@@ -623,7 +620,7 @@ class BookingRoomController extends Controller
 
             if ($bookingRoom->room_number) {
                 \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'available'
+                    'room_status_code' => 'vacant_ready'
                 ]);
             }
 
@@ -1551,7 +1548,7 @@ class BookingRoomController extends Controller
                         ]);
 
                         // Update physical room status to dirty
-                        \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
+                        \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['room_status_code' => 'vacant_dirty']);
 
                         // Sp2200: Update all guests in old room -> Status = 100
                         \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update([
@@ -1806,7 +1803,7 @@ class BookingRoomController extends Controller
                         'updated_by'       => $currentUser,
                     ]);
 
-                    \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['status' => 'dirty']);
+                    \App\Models\Room::where('room_number', $bookingRoom->room_number)->update(['room_status_code' => 'vacant_dirty']);
                 } else {
                     $remainingAdults = max(1, $totalAdultsCount - $movedAdultsCount);
                     $bookingRoom->update([

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
-import { ROOM_STATUSES } from '@/services/room-service'
+import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom } from '@/services/booking-service'
@@ -403,8 +403,8 @@ async function executeUndoCheckin(mode = 'clean') {
     const res = await undoCheckInRoom(bookingId, roomId)
     if (res.data && res.data.success !== false) {
       if (mode === 'dirty') {
-        // Chuyển tình trạng phòng bẩn (DIRTY)
-        await roomStore.updateRoomStatus(room.id, ROOM_STATUSES.DIRTY)
+        // Chuyển tình trạng phòng bẩn (VACANT_DIRTY)
+        await roomStore.updateRoomStatus(room.id, ROOM_STATUS_CODES.VACANT_DIRTY)
         uiStore.showToast(`Hủy nhận phòng ${room.room_number} và chuyển sang phòng bẩn thành công!`, 'success')
       } else {
         uiStore.showToast(`Hủy nhận phòng ${room.room_number} thành công!`, 'success')
@@ -558,31 +558,39 @@ function shouldShowSparkles(room) {
   return !!room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status) && !hasBooking
 }
 
+
 function getRoomStatusIconName(room) {
   if (!room) return null
-  if (room.status === ROOM_STATUSES.MAINTENANCE || room.status === 'ooo' || room.status === 'oos') {
-    return room.lock_type === 'OOS' ? 'oos' : 'ooo'
+
+  // Dùng room_status_code từ API (nguồn duy nhất, không đoán mò)
+  const code = room.room_status_code
+  if (code && Object.prototype.hasOwnProperty.call(ROOM_STATUS_ICON_MAP, code)) {
+    return ROOM_STATUS_ICON_MAP[code]   // null = không hiển thị icon
   }
-  const isDirty = room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.is_clean === false || room.is_clean === 0
-  if (isDirty) {
-    return 'dirty'
-  }
-  // Nếu phòng đang có khách (occupied) và sạch sẽ -> Không hiển thị icon ở góc phải bên dưới
-  if (room.booking_status === 'occupied' || room.status === 'occupied') {
-    return null
-  }
-  const hasBookingToday = !!room.guest_name || !!room.booking_code
-  if (hasBookingToday) {
-    return 'double-check'
-  }
-  if (room.is_clean && (room.status === ROOM_STATUSES.AVAILABLE || !room.status)) {
-    return 'clean'
-  }
-  if (room.status === ROOM_STATUSES.RESERVED) {
-    return 'priority'
-  }
+
+  // Fallback: nếu API chưa trả room_status_code (dữ liệu cũ)
+  if (room.lock_type === 'OOS') return 'oos'
+  if (room.lock_type === 'OOO') return 'ooo'
+  if (room.status === 'dirty') return 'dirty'
+  if (room.status === 'checkout') return 'checkout'
+  if (room.status === 'reserved') return 'priority'
+  if (room.status === 'dnd') return 'dnd'
+  if (room.status === 'maintenance') return 'housekeeping-service'
+
   return null
 }
+
+function getRoomStatusIconClass(room) {
+  const iconName = getRoomStatusIconName(room)
+  if (iconName === 'ooo') return 'text-[#d97706]'
+  if (iconName === 'oos') return 'text-[#059669]'
+  if (iconName === 'dirty') return 'text-[#d97706]'
+  if (iconName === 'clean') return 'text-slate-700'
+  if (iconName === 'priority') return 'text-slate-600'
+  if (iconName === 'dnd') return 'text-sky-500'
+  return 'text-slate-600'
+}
+
 
 function getStatusIconSize(room) {
   let size = 20
@@ -873,21 +881,28 @@ async function unlockRoomMove(room) {
 }
 
 // Change room status directly from context menu
-async function changeRoomStatus(room, newStatus, lockType = null) {
-  if (!room || (newStatus === room.status && lockType === room.lock_type)) return
+// roomStatusCode: giá trị từ ROOM_STATUS_CODES (vacant_ready, dirty, ooo, ...)
+async function changeRoomStatus(room, roomStatusCode) {
+  if (!room || roomStatusCode === room.room_status_code) return
 
-  let statusKey = 'available'
-  if (newStatus === ROOM_STATUSES.DIRTY) statusKey = 'dirty'
-  else if (newStatus === ROOM_STATUSES.CHECKOUT) statusKey = 'cleaning'
-  else if (newStatus === ROOM_STATUSES.MAINTENANCE) {
-    statusKey = lockType ? (lockType === 'OOS' ? 'lockOos' : 'lockOoo') : 'maintenance'
+  // Lấy tên tình trạng để hiển thị confirm
+  const labelMap = {
+    'vacant_ready':    'Sẵn sàng',
+    'vacant_dirty':    'Phòng bẩn',
+    'vacant_clean':    'Phòng sạch',
+    'ooo':             'Phòng OOO',
+    'oos':             'Phòng OOS',
+    'turndown':        'Lau dọn',
+    'housekeeping':    'Dịch vụ dọn phòng',
+    'dnd':             'Không làm phiền',
+    'vacant_priority': 'Phòng ưu tiên',
+    'occupied_dirty':  'Chiếm dụng bẩn',
+    'occupied_clean':  'Chiếm dụng sạch',
+    'occupied_ooo':    'Chiếm dụng OOO',
   }
-  else if (newStatus === ROOM_STATUSES.RESERVED) statusKey = 'priorityRoom'
-  else if (newStatus === ROOM_STATUSES.OCCUPIED) statusKey = 'dnd'
+  const statusLabel = labelMap[roomStatusCode] || roomStatusCode
 
-  const statusLabel = t(`roomMap.${statusKey}`)
-
-  // Close context menu BEFORE showing confirm dialog
+  // Đóng context menu TRƯỚC khi hiện confirm
   closeContextMenu()
 
   const confirmed = await uiStore.confirm({
@@ -899,7 +914,7 @@ async function changeRoomStatus(room, newStatus, lockType = null) {
 
   if (confirmed) {
     try {
-      await roomStore.updateRoomStatus(room.id, newStatus, lockType)
+      await roomStore.updateRoomStatus(room.id, roomStatusCode)
       uiStore.showToast(t('roomMap.changeStatusSuccess', { room: room.room_number, status: statusLabel }), 'success')
     } catch (err) {
       uiStore.showToast(t('roomMap.changeStatusError'), 'error')
@@ -1884,12 +1899,12 @@ const uniqueFloors = computed(() => {
                       </div>
 
                       <!-- Bottom Right Corner: Status Icon -->
-                      <div v-if="getRoomStatusIconName(room)" class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0" :style="{
+                      <div v-if="getRoomStatusIconName(room)" class="absolute pointer-events-none overflow-visible shrink-0" :style="{
                         right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
                         bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
                       }">
                         <RoomIcon :name="getRoomStatusIconName(room)"
-                          :monochrome="getRoomStatusIconName(room) === 'ooo'" class="text-gray-600"
+                          :monochrome="false" :class="getRoomStatusIconClass(room)"
                           :style="{ width: getStatusIconSize(room) + 'px', height: getStatusIconSize(room) + 'px' }" />
                       </div>
                     </div>
@@ -1952,7 +1967,7 @@ const uniqueFloors = computed(() => {
                       <td class="p-2 border-r border-slate-200 text-center" :class="TEXT_THEME.tableCell">
                         <div class="flex items-center justify-center">
                           <RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)"
-                            :monochrome="getRoomStatusIconName(room) === 'ooo'" class="w-5 h-5 text-slate-600" />
+                            :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5" />
                           <span v-else>-</span>
                         </div>
                       </td>
@@ -2227,7 +2242,7 @@ const uniqueFloors = computed(() => {
       <div v-if="contextMenu.show && contextMenu.room"
         class="fixed z-[99999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
         :class="TEXT_THEME.menuItem" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
-        <!-- CASE 1: PHÒNG ĐÃ GÁN SỐ PHÒNG NHƯNG CHƯA CHECK-IN (Ảnh 1) -->
+        <!-- CASE 1: PHÒNG ĐÃ ĐĂNG KÝ NHƯNG CHƯA NHẬN PHÒNG (Ảnh 2 trong hình đính kèm) -->
         <template
           v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
           <!-- Đăng ký -->
@@ -2281,7 +2296,7 @@ const uniqueFloors = computed(() => {
             <span>In mẫu đăng ký</span>
           </button>
 
-          <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam ở dưới cùng) -->
+          <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam ở dưới cùng - Ảnh 2) -->
           <div class="relative group mt-1 px-1.5 pb-1">
             <div
               class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
@@ -2293,34 +2308,34 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
 
-            <!-- Submenu Panel Case 1 -->
+            <!-- Submenu Panel (Ảnh 2: 5 mục: Sẵn sàng, Phòng bẩn, Lau dọn, Phòng ưu tiên, Phòng không làm phiền) -->
             <div
               class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
               :class="[
                 contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                 'bottom-0'
               ]">
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Sẵn sàng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_DIRTY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng bẩn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_CLEAN)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Lau dọn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng ưu tiên</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.DND)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng không làm phiền</span>
@@ -2329,7 +2344,7 @@ const uniqueFloors = computed(() => {
           </div>
         </template>
 
-        <!-- CASE 2: PHÒNG TRỐNG KHÔNG CÓ GÌ CẢ (Ảnh 2) -->
+        <!-- CASE 2: PHÒNG TRỐNG KHÔNG CÓ GÌ CẢ (Ảnh 1 trong hình đính kèm) -->
         <template v-else-if="!contextMenu.room.booking_code">
           <!-- Giao phòng nhanh -->
           <button @click="triggerMenuItem('Giao phòng nhanh')"
@@ -2357,44 +2372,44 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
 
-            <!-- Submenu Panel Case 2 -->
+            <!-- Submenu Panel (Ảnh 1: 7 mục: Sẵn sàng, Phòng bẩn, Lau dọn, Phòng OOO, Phòng OOS, Phòng ưu tiên, Phòng không làm phiền) -->
             <div
               class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
               :class="[
                 contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                 'bottom-0'
               ]">
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Sẵn sàng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_DIRTY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng bẩn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_CLEAN)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Lau dọn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOO')"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.OOO)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="ooo" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng OOO</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE, 'OOS')"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.OOS)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="oos" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng OOS</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng ưu tiên</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.DND)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng không làm phiền</span>
@@ -2543,39 +2558,39 @@ const uniqueFloors = computed(() => {
               </svg>
             </div>
 
-            <!-- Submenu Panel Case 3 -->
+            <!-- Submenu Panel Case 3 (Occupied in-house) -->
             <div
               class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
               :class="[
                 contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                 'bottom-0'
               ]">
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.AVAILABLE)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="double-check" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Sẵn sàng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.DIRTY)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.OCCUPIED_DIRTY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dirty" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng bẩn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.CHECKOUT)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_CLEAN)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Lau dọn</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.MAINTENANCE)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.HOUSEKEEPING)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="housekeeping-service" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Dịch vụ dọn phòng</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.RESERVED)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng ưu tiên</span>
               </button>
-              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUSES.OCCUPIED)"
+              <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.DND)"
                 class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                 <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                 <span>Phòng không làm phiền</span>

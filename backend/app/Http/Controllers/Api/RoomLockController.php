@@ -142,8 +142,8 @@ class RoomLockController extends Controller
 
         $lock = RoomLock::create($validated);
 
-        // Update room status to maintenance
-        Room::where('room_number', $room->room_number)->update(['status' => 'maintenance']);
+        // Update room status to maintenance (ooo)
+        Room::where('room_number', $room->room_number)->update(['room_status_code' => 'ooo']);
 
         $lock->load(['room.roomForm', 'room.roomClass']);
 
@@ -326,8 +326,8 @@ class RoomLockController extends Controller
                 'is_active' => 1,
             ]);
 
-            // Update room status to maintenance
-            Room::where('room_number', $room->room_number)->update(['status' => 'maintenance']);
+            // Update room status to maintenance (ooo)
+            Room::where('room_number', $room->room_number)->update(['room_status_code' => 'ooo']);
 
             $locksCreated[] = $lock;
         }
@@ -429,7 +429,7 @@ class RoomLockController extends Controller
         foreach ($affectedRoomNumbers as $roomNumber) {
             $hasActive = RoomLock::where('room_number', $roomNumber)->where('is_active', 1)->exists();
             if (!$hasActive) {
-                Room::where('room_number', $roomNumber)->update(['status' => 'available']);
+                Room::where('room_number', $roomNumber)->update(['room_status_code' => 'vacant_ready']);
             }
         }
 
@@ -660,12 +660,12 @@ class RoomLockController extends Controller
         $lock->update($validated);
 
         if ($lock->is_active == 1) {
-            Room::where('room_number', $lock->room_number)->update(['status' => 'maintenance']);
+            Room::where('room_number', $lock->room_number)->update(['room_status_code' => 'ooo']);
         } else {
-            // Check if there are other active locks, otherwise restore status to available
+            // Check if there are other active locks, otherwise restore status to vacant_ready
             $hasActive = RoomLock::where('room_number', $lock->room_number)->where('is_active', 1)->exists();
             if (!$hasActive) {
-                Room::where('room_number', $lock->room_number)->update(['status' => 'available']);
+                Room::where('room_number', $lock->room_number)->update(['room_status_code' => 'vacant_ready']);
             }
         }
 
@@ -722,7 +722,7 @@ class RoomLockController extends Controller
         // Check if there are other active locks
         $hasActive = RoomLock::where('room_number', $roomNumber)->where('is_active', 1)->exists();
         if (!$hasActive) {
-            Room::where('room_number', $roomNumber)->update(['status' => 'available']);
+            Room::where('room_number', $roomNumber)->update(['room_status_code' => 'vacant_ready']);
         }
 
         return response()->json([

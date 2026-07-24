@@ -220,7 +220,7 @@ class SystemConfigurationSeeder extends Seeder
                     'grid_row' => $r['row'],
                     'grid_column' => $r['col'],
                     'is_internal' => false,
-                    'status' => 'available',
+                    'room_status_code' => 'vacant_ready',
                     'notes' => 'Phòng tự động tạo bằng seeder',
                 ]
             );
@@ -239,7 +239,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_row' => 0,
                 'grid_column' => 0,
                 'is_internal' => true,
-                'status' => 'available',
+                'room_status_code' => 'vacant_ready',
                 'notes' => 'Phòng ảo thử nghiệm PM01',
             ]
         );
@@ -256,7 +256,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_row' => 0,
                 'grid_column' => 0,
                 'is_internal' => true,
-                'status' => 'available',
+                'room_status_code' => 'vacant_ready',
                 'notes' => 'Phòng ảo thử nghiệm PM02',
             ]
         );
