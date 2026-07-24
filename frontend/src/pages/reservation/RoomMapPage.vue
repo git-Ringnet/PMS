@@ -558,15 +558,19 @@ function shouldShowSparkles(room) {
 }
 
 function getRoomStatusIconName(room) {
-  if (!room) return 'double-check'
+  if (!room) return null
   if (room.status === ROOM_STATUSES.MAINTENANCE || room.status === 'ooo' || room.status === 'oos') {
     return room.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
-  const hasInhouseGuest = room.booking_status === 'occupied' || room.booking_status === 'checkout' || room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || !room.is_clean
-  if (hasInhouseGuest) {
+  const isDirty = room.status === ROOM_STATUSES.DIRTY || room.status === ROOM_STATUSES.CHECKOUT || room.is_clean === false || room.is_clean === 0
+  if (isDirty) {
     return 'dirty'
   }
-  const hasBookingToday = !!room.guest_name || !!room.booking_code || !!room.booking_status
+  // Nếu phòng đang có khách (occupied) và sạch sẽ -> Không hiển thị icon ở góc phải bên dưới
+  if (room.booking_status === 'occupied' || room.status === 'occupied') {
+    return null
+  }
+  const hasBookingToday = !!room.guest_name || !!room.booking_code
   if (hasBookingToday) {
     return 'double-check'
   }
@@ -576,7 +580,7 @@ function getRoomStatusIconName(room) {
   if (room.status === ROOM_STATUSES.RESERVED) {
     return 'priority'
   }
-  return 'double-check'
+  return null
 }
 
 function getStatusIconSize(room) {
@@ -1878,7 +1882,7 @@ const uniqueFloors = computed(() => {
                       </div>
 
                       <!-- Bottom Right Corner: Status Icon -->
-                      <div class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0" :style="{
+                      <div v-if="getRoomStatusIconName(room)" class="absolute text-slate-400 pointer-events-none overflow-visible shrink-0" :style="{
                         right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
                         bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
                       }">
@@ -2855,14 +2859,11 @@ const uniqueFloors = computed(() => {
   <!-- ============================================================ -->
   <Teleport to="body">
     <Transition name="modal-fade">
-      <div v-if="showQuickCheckinModal" class="fixed inset-0 z-[9999] flex items-center justify-center"
+      <div v-if="showQuickCheckinModal" class="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[1px]"
         @click.self="closeQuickCheckinModal">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="closeQuickCheckinModal"></div>
-
         <!-- Modal Card -->
         <div
-          class="relative z-10 w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-modal-slide">
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-modal-slide">
           <!-- Header -->
           <div class="px-6 py-4 flex items-center justify-between text-white"
             :style="{ background: 'var(--pms-custom-theme, linear-gradient(to right, #0ea5e9, #2563eb))' }">
