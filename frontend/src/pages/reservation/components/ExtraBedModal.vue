@@ -292,20 +292,47 @@ watch(() => props.show, (newVal) => {
     const checkIn = props.room.checkIn || props.room.arrivalDate || props.room.arrival_date
     const checkOut = props.room.checkOut || props.room.departureDate || props.room.departure_date
     const stayDates = buildStayDates(checkIn, checkOut)
-    
-    const sysDateStr = props.systemDate || new Date().toISOString().split('T')[0]
+    let sysDateStr = ''
+    if (props.systemDate) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(props.systemDate)) {
+        sysDateStr = props.systemDate
+      } else if (props.systemDate.includes('T')) {
+        const d = new Date(props.systemDate)
+        if (!isNaN(d)) {
+          sysDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+        }
+      } else {
+        sysDateStr = props.systemDate.substring(0, 10)
+      }
+    }
     const defaultRate = Number(props.room.extraBedPrice) || 300000
     const defaultQty = Number(props.room.extraBedQty) || 0
 
     const existingDaily = props.room.dailyExtraBeds || []
+    const ebServices = props.room.services ? props.room.services.filter(s => s.service_code === 'EB') : []
+    const hasExplicitDaily = existingDaily.length > 0 || ebServices.length > 0
 
     dailyRates.value = stayDates.map(dStr => {
-      const isPast = dStr < sysDateStr
+      const isPast = sysDateStr ? dStr < sysDateStr : false
       const found = existingDaily.find(ed => ed.dateStr === dStr || ed.date === dStr)
+      const foundSvc = ebServices.find(s => s.service_date === dStr || s.dateStr === dStr)
 
-      let q = found ? Number(found.quantity) : defaultQty
-      let r = found ? Number(found.rate) : defaultRate
-      let isRoom = found ? !!found.isRoom : false
+      let q = 0
+      let r = defaultRate
+      let isRoom = false
+
+      if (found) {
+        q = Number(found.quantity)
+        r = Number(found.rate)
+        isRoom = !!found.isRoom
+      } else if (foundSvc) {
+        q = Number(foundSvc.quantity)
+        r = Number(foundSvc.rate)
+        isRoom = foundSvc.is_room !== 0
+      } else if (!hasExplicitDaily) {
+        q = defaultQty
+        r = defaultRate
+      }
 
       if (isPast) {
         q = 0
@@ -323,11 +350,14 @@ watch(() => props.show, (newVal) => {
       }
     })
 
-    // Compute total row values from first valid night or defaults
-    const validNight = dailyRates.value.find(d => !d.isPast)
-    totalQuantity.value = validNight ? validNight.quantity : defaultQty
-    totalRate.value = validNight ? validNight.rate : defaultRate
-    totalIsRoom.value = validNight ? validNight.isRoom : false
+    // Compute total row values from first active night or defaults
+    const activeNight = dailyRates.value.find(d => !d.isPast && d.quantity > 0)
+    const firstValidNight = dailyRates.value.find(d => !d.isPast)
+    const refNight = activeNight || firstValidNight
+
+    totalQuantity.value = refNight ? refNight.quantity : defaultQty
+    totalRate.value = refNight ? refNight.rate : defaultRate
+    totalIsRoom.value = refNight ? refNight.isRoom : false
   }
 })
 
@@ -378,8 +408,9 @@ function close() {
 
 function save() {
   const validNights = dailyRates.value.filter(d => !d.isPast)
-  const effQty = validNights.length > 0 ? Math.max(...validNights.map(d => d.quantity)) : 0
-  const effRate = validNights.length > 0 ? (validNights.find(d => d.quantity > 0)?.rate || validNights[0]?.rate || 0) : 0
+  const activeNights = validNights.filter(d => d.quantity > 0)
+  const effQty = activeNights.length > 0 ? Math.max(...activeNights.map(d => d.quantity)) : 0
+  const effRate = activeNights.length > 0 ? (activeNights[0]?.rate || 0) : (validNights[0]?.rate || 0)
 
   emit('saved', {
     quantity: effQty,

@@ -35,6 +35,16 @@ class BookingController extends Controller
 
         $roomClasses = \App\Models\RoomClass::with(['roomClassGroup', 'standardRates.roomForm'])->get();
 
+        $hotelSettingModel = \App\Models\HotelSetting::first() ?? new \App\Models\HotelSetting();
+        $hotelSettingsData = (new \App\Http\Resources\HotelSettingResource($hotelSettingModel))->resolve();
+        $configs = \App\Models\HotelConfig::pluck('value', 'name');
+        foreach ($configs as $k => $v) {
+            $hotelSettingsData[$k] = $v;
+        }
+        $bfConfig = $configs->get('DefaultBreakfast');
+        $hotelSettingsData['DefaultBreakfast'] = $bfConfig !== null ? intval($bfConfig) : 1;
+        $hotelSettingsData['default_breakfast'] = $hotelSettingsData['DefaultBreakfast'];
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -50,7 +60,7 @@ class BookingController extends Controller
                 'room_rate_codes' => \App\Models\RoomRateCode::with('ratePlans', 'dailyMappings')->get(),
                 'currencies' => \App\Http\Resources\CurrencyResource::collection(\App\Models\Currency::all()),
                 'hotel_services' => \App\Http\Resources\HotelServiceResource::collection(\App\Models\HotelService::all()),
-                'hotel_settings' => new \App\Http\Resources\HotelSettingResource(\App\Models\HotelSetting::first() ?? new \App\Models\HotelSetting()),
+                'hotel_settings' => $hotelSettingsData,
                 'system_time' => now()->timezone('Asia/Ho_Chi_Minh')->toIso8601String(),
                 'system_date' => [
                     'system_date' => $systemDate,
@@ -320,7 +330,7 @@ class BookingController extends Controller
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
                             ]);
-                            $this->upsertExtraBedServices($bRoom);
+                            $this->upsertBookingRoomServices($bRoom, $detail);
 
                             // Thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
@@ -702,7 +712,13 @@ class BookingController extends Controller
                             } else {
                                 $bRoom = \App\Models\BookingRoom::create($roomData);
                             }
-                            $this->upsertExtraBedServices($bRoom);
+                            $this->upsertBookingRoomServices($bRoom, $detail);
+
+                            // Tự động xóa dịch vụ chưa post ở ngày >= ngày đi khi bị giảm số đêm
+                            \App\Models\BookingRoomService::where('booking_room_id', $bRoom->id)
+                                ->where('service_date', '>=', $bRoom->departure_date->toDateString())
+                                ->where('is_posted', 0)
+                                ->delete();
 
                             // Cập nhật hoặc thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
@@ -1495,21 +1511,44 @@ class BookingController extends Controller
     /**
      * Upsert dịch vụ Extra Bed (EB) theo từng ngày trong giai đoạn ở.
      */
-    private function upsertExtraBedServices(BookingRoom $room): void
+    private function upsertExtraBedServices(BookingRoom $room, array $detail = []): void
     {
         $arrivalDate   = Carbon::parse($room->arrival_date)->toDateString();
         $departureDate = Carbon::parse($room->departure_date)->toDateString();
 
-        if ($room->extra_bed_qty <= 0) {
-            // Chỉ xóa các dịch vụ EB chưa được post
-            $room->services()
-                ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
-                ->where('is_posted', 0)
-                ->forceDelete();
-            return;
+        $dailyEBMap = [];
+        $dailyExtraBeds = $detail['dailyExtraBeds'] ?? $detail['daily_extra_beds'] ?? null;
+        if (is_array($dailyExtraBeds)) {
+            foreach ($dailyExtraBeds as $deb) {
+                $rawDate = $deb['dateStr'] ?? $deb['date'] ?? null;
+                if ($rawDate) {
+                    try {
+                        $dStr = Carbon::parse($rawDate)->toDateString();
+                        $dailyEBMap[$dStr] = $deb;
+                    } catch (\Exception $e) {}
+                }
+            }
+        }
+        
+        if (isset($detail['services']) && is_array($detail['services'])) {
+            foreach ($detail['services'] as $svc) {
+                if (($svc['service_code'] ?? '') === \App\Models\BookingRoomService::CODE_EXTRA_BED) {
+                    $rawDate = $svc['service_date'] ?? $svc['dateStr'] ?? null;
+                    if ($rawDate) {
+                        try {
+                            $dStr = Carbon::parse($rawDate)->toDateString();
+                            if (!isset($dailyEBMap[$dStr])) {
+                                $dailyEBMap[$dStr] = $svc;
+                            }
+                        } catch (\Exception $e) {}
+                    }
+                }
+            }
         }
 
-        // 1. Lấy danh sách dịch vụ EB hiện tại
+        $hasExplicitDailyEB = !empty($dailyEBMap);
+
+        // Lấy danh sách dịch vụ EB hiện tại
         $existingServices = $room->services()
             ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
             ->get()
@@ -1517,7 +1556,6 @@ class BookingController extends Controller
                 return Carbon::parse($item->service_date)->toDateString();
             });
 
-        // 2. Xóa các ngày nằm ngoài giai đoạn ở mới (nếu thu hẹp ngày ở) mà chưa post
         $current = Carbon::parse($arrivalDate);
         $end     = Carbon::parse($departureDate);
         $stayDates = [];
@@ -1532,11 +1570,45 @@ class BookingController extends Controller
             ->where('is_posted', 0)
             ->forceDelete();
 
-        // 3. Upsert cho từng ngày
+        $latestEBRate = null;
+        $latestEBQty  = null;
+
         foreach ($stayDates as $dateStr) {
             $existing = $existingServices->get($dateStr);
             if ($existing && $existing->is_posted == 1) {
-                // Đã post rồi thì không được ghi đè hay thay đổi giá/số lượng
+                if ($existing->rate > 0 && $latestEBRate === null) {
+                    $latestEBRate = (float)$existing->rate;
+                    $latestEBQty  = (int)$existing->quantity;
+                }
+                continue;
+            }
+
+            $debInfo = $dailyEBMap[$dateStr] ?? null;
+            if ($debInfo) {
+                $qty  = (int)($debInfo['quantity'] ?? 0);
+                $rate = (float)($debInfo['rate'] ?? 0);
+                $isRoom = !empty($debInfo['isRoom']) || (!isset($debInfo['isRoom']) && ($debInfo['is_room'] ?? 1) != 0);
+            } elseif ($hasExplicitDailyEB) {
+                // Đã có dữ liệu chi tiết hàng ngày mà ngày này không có trong map -> qty = 0
+                $qty  = 0;
+                $rate = 0;
+                $isRoom = true;
+            } else {
+                // Chưa từng có dữ liệu chi tiết -> dùng phẳng từ phòng
+                $qty  = (int)$room->extra_bed_qty;
+                $rate = (float)$room->extra_bed_rate;
+                $isRoom = true;
+            }
+
+            if ($qty > 0 && $rate > 0 && $latestEBRate === null) {
+                $latestEBRate = $rate;
+                $latestEBQty  = $qty;
+            }
+
+            if ($qty <= 0) {
+                if ($existing && $existing->is_posted == 0) {
+                    $existing->delete();
+                }
                 continue;
             }
 
@@ -1548,8 +1620,131 @@ class BookingController extends Controller
                 ],
                 [
                     'service_name' => 'Extra Bed',
-                    'quantity'     => $room->extra_bed_qty,
-                    'rate'         => $room->extra_bed_rate,
+                    'quantity'     => $qty,
+                    'rate'         => $rate,
+                    'is_room'      => $isRoom ? 1 : 0,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ]
+            );
+        }
+
+        // Cập nhật lại extra_bed_rate của booking_room nếu có đơn giá mới
+        if ($latestEBRate !== null && $latestEBRate != $room->extra_bed_rate) {
+            $room->update([
+                'extra_bed_rate' => $latestEBRate,
+                'extra_bed_qty'  => $latestEBQty ?? $room->extra_bed_qty
+            ]);
+        }
+    }
+
+    /**
+     * Upsert các dịch vụ bổ sung khác (ngoài RM và EB) từ mảng services gửi lên.
+     */
+    private function upsertAdditionalServices(BookingRoom $room, array $detail = []): void
+    {
+        $services = $detail['services'] ?? null;
+        if (!is_array($services) || empty($services)) {
+            return;
+        }
+
+        foreach ($services as $svc) {
+            $code = $svc['service_code'] ?? null;
+            if (!$code || $code === \App\Models\BookingRoomService::CODE_ROOM || $code === 'ROOM_CHARGE' || $code === \App\Models\BookingRoomService::CODE_EXTRA_BED) {
+                continue;
+            }
+
+            $rawDate = $svc['service_date'] ?? null;
+            if (!$rawDate) continue;
+            try {
+                $dateStr = Carbon::parse($rawDate)->toDateString();
+            } catch (\Exception $e) {
+                continue;
+            }
+
+            $existing = \App\Models\BookingRoomService::where('booking_room_id', $room->id)
+                ->where('service_code', $code)
+                ->where('service_date', $dateStr)
+                ->first();
+
+            if ($existing && $existing->is_posted == 1) {
+                continue;
+            }
+
+            $qty = isset($svc['quantity']) ? (float)$svc['quantity'] : 1;
+            $rate = isset($svc['rate']) ? (float)$svc['rate'] : 0;
+            $isDeleted = !empty($svc['deleted']) || $qty <= 0;
+
+            if ($isDeleted) {
+                if ($existing && $existing->is_posted == 0) {
+                    $existing->delete();
+                }
+                continue;
+            }
+
+            \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
+                [
+                    'booking_room_id' => $room->id,
+                    'service_code'    => $code,
+                    'service_date'    => $dateStr,
+                ],
+                [
+                    'service_name' => $svc['service_name'] ?? 'Dịch vụ bổ sung',
+                    'quantity'     => $qty,
+                    'rate'         => $rate,
+                    'is_room'      => isset($svc['is_room']) ? ($svc['is_room'] ? 1 : 0) : 1,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ]
+            );
+        }
+    }
+
+    /**
+     * Upsert dịch vụ Tiền phòng (RM) theo từng ngày trong giai đoạn ở khi có giá tùy chỉnh theo ngày (SP2401).
+     */
+    private function upsertRoomChargeServices(BookingRoom $room, array $detail): void
+    {
+        $dailyPrices = $detail['dailyRoomPrices'] ?? $detail['daily_prices'] ?? null;
+        if (!is_array($dailyPrices) || empty($dailyPrices)) {
+            return;
+        }
+
+        $sysDateRecord = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $sysDateRecord ? Carbon::parse($sysDateRecord->system_date)->toDateString() : null;
+
+        foreach ($dailyPrices as $rawDate => $rate) {
+            try {
+                $dateStr = Carbon::parse($rawDate)->toDateString();
+            } catch (\Exception $e) {
+                $dateStr = $rawDate;
+            }
+
+            if ($sysDateStr && $dateStr < $sysDateStr) {
+                continue;
+            }
+
+            $existing = \App\Models\BookingRoomService::where('booking_room_id', $room->id)
+                ->where('service_code', \App\Models\BookingRoomService::CODE_ROOM)
+                ->where('service_date', $dateStr)
+                ->first();
+
+            if ($existing && $existing->is_posted == 1) {
+                continue;
+            }
+
+            \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
+                [
+                    'booking_room_id' => $room->id,
+                    'service_code'    => \App\Models\BookingRoomService::CODE_ROOM,
+                    'service_date'    => $dateStr,
+                ],
+                [
+                    'service_name' => 'Dịch vụ phòng nghỉ',
+                    'quantity'     => 1,
+                    'rate'         => $rate,
                     'is_room'      => 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
@@ -1557,5 +1752,15 @@ class BookingController extends Controller
                 ]
             );
         }
+    }
+
+    /**
+     * Hàm tổng hợp upsert toàn bộ dịch vụ phòng (Room Charge, Extra Bed, Dịch vụ bổ sung).
+     */
+    private function upsertBookingRoomServices(BookingRoom $room, array $detail = []): void
+    {
+        $this->upsertRoomChargeServices($room, $detail);
+        $this->upsertExtraBedServices($room, $detail);
+        $this->upsertAdditionalServices($room, $detail);
     }
 }

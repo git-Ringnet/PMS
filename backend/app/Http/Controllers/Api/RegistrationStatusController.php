@@ -27,6 +27,12 @@ class RegistrationStatusController extends Controller
 
     public function store(Request $request)
     {
+        $rawConfirmation = $request->input('confirmation_days');
+        $rawCutoff = $request->input('cut_off_day');
+        $effectiveCutoff = ($rawConfirmation !== null && $rawConfirmation !== '') 
+            ? (int)$rawConfirmation 
+            : (($rawCutoff !== null && $rawCutoff !== '') ? (int)$rawCutoff : 0);
+
         $validated = $request->validate([
             'id' => 'nullable|integer',
             'booking_status_id' => 'nullable|integer',
@@ -44,9 +50,8 @@ class RegistrationStatusController extends Controller
             'order_index' => 'nullable|integer',
         ]);
 
-        if (isset($validated['cut_off_day']) && !isset($validated['confirmation_days'])) {
-            $validated['confirmation_days'] = $validated['cut_off_day'];
-        }
+        $validated['cut_off_day'] = $effectiveCutoff;
+        unset($validated['confirmation_days']);
 
         $status = RegistrationStatus::create($validated);
 
@@ -75,6 +80,12 @@ class RegistrationStatusController extends Controller
             return response()->json(['message' => 'Registration status not found'], 404);
         }
 
+        $rawConfirmation = $request->input('confirmation_days');
+        $rawCutoff = $request->input('cut_off_day');
+        $effectiveCutoff = ($rawConfirmation !== null && $rawConfirmation !== '') 
+            ? (int)$rawConfirmation 
+            : (($rawCutoff !== null && $rawCutoff !== '') ? (int)$rawCutoff : $status->cut_off_day);
+
         $validated = $request->validate([
             'booking_status_id' => 'nullable|integer',
             'name' => 'required|string|max:255',
@@ -91,9 +102,8 @@ class RegistrationStatusController extends Controller
             'order_index' => 'nullable|integer',
         ]);
 
-        if (isset($validated['cut_off_day']) && !isset($validated['confirmation_days'])) {
-            $validated['confirmation_days'] = $validated['cut_off_day'];
-        }
+        $validated['cut_off_day'] = $effectiveCutoff;
+        unset($validated['confirmation_days']);
 
         $status->update($validated);
 

@@ -17,7 +17,6 @@ class RegistrationStatus extends Model
         'name',
         'color',
         'cut_off_day',
-        'confirmation_days',
         'description',
         'status_value',
         'is_hidden',
@@ -31,15 +30,24 @@ class RegistrationStatus extends Model
     protected $casts = [
         'booking_status_id' => 'integer',
         'cut_off_day' => 'integer',
-        'confirmation_days' => 'integer',
         'is_hidden' => 'boolean',
         'is_availability' => 'boolean',
         'bk_definite' => 'integer',
         'order_index' => 'integer',
     ];
 
+    protected $appends = [
+        'confirmation_days',
+        'cutoff_day',
+    ];
+
+    public function getConfirmationDaysAttribute()
+    {
+        return (int)($this->attributes['cut_off_day'] ?? 0);
+    }
+
     public function getCutoffDayAttribute()
     {
-        return $this->cut_off_day ?? $this->confirmation_days ?? 0;
+        return (int)($this->attributes['cut_off_day'] ?? 0);
     }
 }

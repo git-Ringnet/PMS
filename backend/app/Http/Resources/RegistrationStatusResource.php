@@ -9,6 +9,7 @@ class RegistrationStatusResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $cutoff = (int)($this->cut_off_day ?? 0);
         return [
             'id' => $this->id,
             'booking_status_id' => $this->booking_status_id ?? $this->id,
@@ -19,10 +20,10 @@ class RegistrationStatusResource extends JsonResource
             'color' => $this->color,
             'booking_status_color' => $this->color,
             'BookingStatusColor' => $this->color,
-            'cut_off_day' => $this->cut_off_day ?? 0,
-            'cutoff_day' => $this->cut_off_day ?? 0,
-            'CutoffDay' => $this->cut_off_day ?? 0,
-            'confirmation_days' => $this->confirmation_days ?? $this->cut_off_day ?? 0,
+            'cut_off_day' => $cutoff,
+            'cutoff_day' => $cutoff,
+            'CutoffDay' => $cutoff,
+            'confirmation_days' => $cutoff,
             'description' => $this->description,
             'status_value' => $this->status_value,
             'is_hidden' => (bool)$this->is_hidden,

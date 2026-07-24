@@ -542,7 +542,11 @@ async function toggleRoomExpand(room) {
     if (room.bookingRoomId) {
       try {
         const res = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = res.data?.data || []
+        const list = res.data?.data || []
+        room.services = list.map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
       } catch (err) {
         console.error('Lỗi khi tải dịch vụ bổ sung:', err)
       }
@@ -550,6 +554,103 @@ async function toggleRoomExpand(room) {
     expandedRooms.value.push(roomId)
   } else {
     expandedRooms.value.splice(index, 1)
+  }
+}
+
+function cleanDateStr(rawDate) {
+  if (!rawDate) return ''
+  return parseApiDate(String(rawDate))
+}
+
+function isServiceRateEditable(serviceDate) {
+  if (!serviceDate) return true
+  const sysDate = systemDate.value ? parseApiDate(systemDate.value) : ''
+  if (!sysDate) return true
+  const cleanSvcDate = parseApiDate(serviceDate)
+  return cleanSvcDate >= sysDate
+}
+
+function handleServiceRateChange(room, svc, newRate) {
+  const cleanDate = cleanDateStr(svc.service_date)
+  svc.rate = newRate
+  svc.service_date = cleanDate
+
+  if (svc.service_code === 'ROOM_CHARGE') {
+    if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
+    
+    // Khởi tạo trước giá mặc định cho tất cả các ngày lưu trú nếu chưa có
+    const checkIn = room.checkIn
+    const nights = Number(room.nights) || 1
+    if (checkIn) {
+      for (let i = 0; i < nights; i++) {
+        const parts = checkIn.split('-')
+        let curr = new Date()
+        if (parts.length === 3) {
+          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+        } else {
+          curr = new Date(checkIn)
+        }
+        curr.setDate(curr.getDate() + i)
+        const yyyy = curr.getFullYear()
+        const mm = String(curr.getMonth() + 1).padStart(2, '0')
+        const dd = String(curr.getDate()).padStart(2, '0')
+        const dStr = `${yyyy}-${mm}-${dd}`
+        
+        if (room.dailyRoomPrices[dStr] === undefined) {
+          room.dailyRoomPrices[dStr] = Number(room.price) || 0
+        }
+      }
+    }
+
+    room.dailyRoomPrices[cleanDate] = newRate
+    const roomChargeSum = getRoomChargeTotal(room)
+    room.total = calculateRoomTotal(room)
+  } else if (svc.svc_ref) {
+    svc.svc_ref.rate = newRate
+    svc.svc_ref.service_date = cleanDate
+    svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
+  }
+
+  if (room.services && Array.isArray(room.services)) {
+    const target = room.services.find(s => s.id === svc.id || (s.service_code === svc.service_code && cleanDateStr(s.service_date) === cleanDate))
+    if (target) {
+      target.service_date = cleanDate
+      target.rate = newRate
+      target.total = (target.quantity || 1) * newRate
+    }
+  }
+
+  if (svc.service_code === 'EB') {
+    room.extraBedPrice = newRate
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existing) {
+      existing.dateStr = cleanDate
+      existing.date = cleanDate
+      existing.rate = newRate
+      existing.total = (existing.quantity || 1) * newRate
+    } else {
+      room.dailyExtraBeds.push({
+        dateStr: cleanDate,
+        date: cleanDate,
+        quantity: svc.quantity || 1,
+        rate: newRate,
+        total: (svc.quantity || 1) * newRate,
+        isRoom: svc.is_room !== false
+      })
+    }
+  }
+  room.total = calculateRoomTotal(room)
+  
+  // Đồng bộ với roomAllocations & activeTab
+  const tab = activeTab.value
+  if (tab) {
+    if (tab.roomAllocations) {
+      const alloc = tab.roomAllocations.find(a => a.roomClassId === room.roomClassId)
+      if (alloc) {
+        alloc.price = room.price
+      }
+    }
   }
 }
 
@@ -576,42 +677,68 @@ function getRoomDisplayServices(room) {
         const dd = String(curr.getDate()).padStart(2, '0')
         const dStr = `${yyyy}-${mm}-${dd}`
         
+        const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[dStr] !== undefined)
+          ? room.dailyRoomPrices[dStr]
+          : room.price
+
         list.push({
           id: `room-charge-${room.id}-${i}`,
           service_date: dStr,
           service_name: 'Dịch vụ phòng nghỉ',
           service_code: 'ROOM_CHARGE',
           quantity: 1,
-          rate: room.price,
+          rate: customRate,
           is_room: true
         })
       }
     } else {
+      const todayStr = systemDate.value || formatLocalYYYYMMDD(new Date())
+      const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[todayStr] !== undefined)
+        ? room.dailyRoomPrices[todayStr]
+        : room.price
       list.push({
         id: `room-charge-${room.id}`,
-        service_date: new Date().toISOString().split('T')[0],
+        service_date: todayStr,
         service_name: 'Dịch vụ phòng nghỉ',
         service_code: 'ROOM_CHARGE',
         quantity: 1,
-        rate: room.price,
+        rate: customRate,
         is_room: true
       })
     }
   }
+
   // 2. Các dịch vụ bổ sung
   if (room.services && room.services.length > 0) {
     room.services.forEach(svc => {
       list.push({
         id: svc.id,
-        service_date: svc.service_date,
+        service_date: parseApiDate(svc.service_date || ''),
         service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
         service_code: svc.service_code,
         quantity: svc.quantity || 1,
         rate: svc.rate || 0,
-        is_room: svc.is_room !== 0
+        is_room: svc.is_room !== 0,
+        svc_ref: svc
       })
     })
   }
+
+  // SẮP XẾP THEO NGÀY (ASC). Cùng ngày: ROOM_CHARGE/RM -> EB -> Dịch vụ khác
+  list.sort((a, b) => {
+    const dateA = a.service_date || ''
+    const dateB = b.service_date || ''
+    if (dateA !== dateB) {
+      return dateA.localeCompare(dateB)
+    }
+    const orderPriority = (code) => {
+      if (code === 'ROOM_CHARGE' || code === 'RM') return 1
+      if (code === 'EB') return 2
+      return 3
+    }
+    return orderPriority(a.service_code) - orderPriority(b.service_code)
+  })
+
   return list
 }
 
@@ -622,13 +749,38 @@ function getServicesTotal(room) {
     .reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
 }
 
+function getRoomExtraBedQty(room) {
+  if (!room) return 0
+  if (Number(room.extraBedQty) > 0) return Number(room.extraBedQty)
+  if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
+    const maxQty = Math.max(...room.dailyExtraBeds.map(d => Number(d.quantity) || 0))
+    if (maxQty > 0) return maxQty
+  }
+  if (room.services && Array.isArray(room.services)) {
+    const ebServices = room.services.filter(s => s.service_code === 'EB')
+    if (ebServices.length > 0) {
+      const maxQty = Math.max(...ebServices.map(s => Number(s.quantity) || 0))
+      if (maxQty > 0) return maxQty
+    }
+  }
+  return 0
+}
+
 function getRoomExtraBedTotal(room) {
   if (!room) return 0
-  if (room.extraBedTotalSum !== undefined && room.extraBedTotalSum !== null) {
-    return Number(room.extraBedTotalSum) || 0
-  }
   if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
-    return room.dailyExtraBeds.reduce((sum, d) => sum + (Number(d.total) || 0), 0)
+    const sum = room.dailyExtraBeds.reduce((s, d) => s + (Number(d.total) || (Number(d.quantity || 0) * Number(d.rate || 0))), 0)
+    if (sum > 0) return sum
+  }
+  if (room.services && Array.isArray(room.services)) {
+    const ebServices = room.services.filter(s => s.service_code === 'EB')
+    if (ebServices.length > 0) {
+      const sum = ebServices.reduce((s, d) => s + (Number(d.quantity || 1) * Number(d.rate || 0)), 0)
+      if (sum > 0) return sum
+    }
+  }
+  if (room.extraBedTotalSum !== undefined && room.extraBedTotalSum !== null && Number(room.extraBedTotalSum) > 0) {
+    return Number(room.extraBedTotalSum) || 0
   }
   const nights = Number(room.nights) || 1
   const extraBedPrice = Number(room.extraBedPrice) || 0
@@ -636,12 +788,24 @@ function getRoomExtraBedTotal(room) {
   return extraBedPrice * extraBedQty * nights
 }
 
-function calculateRoomTotal(room) {
+function getRoomChargeTotal(room) {
   const nights = Number(room.nights) || 1
-  const price = Number(room.price) || 0
+  const basePrice = Number(room.price) || 0
+  if (!room.dailyRoomPrices || Object.keys(room.dailyRoomPrices).length === 0) {
+    return basePrice * nights
+  }
+  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE')
+  if (displayServices.length > 0) {
+    return displayServices.reduce((sum, s) => sum + (Number(s.rate) || 0), 0)
+  }
+  return basePrice * nights
+}
+
+function calculateRoomTotal(room) {
+  const roomChargeTotal = getRoomChargeTotal(room)
   const extraBedTotal = getRoomExtraBedTotal(room)
   const servicesTotal = getServicesTotal(room)
-  return (price * nights) + extraBedTotal + servicesTotal
+  return roomChargeTotal + extraBedTotal + servicesTotal
 }
 
 
@@ -723,8 +887,8 @@ const selectRangeVal = computed({
 })
 
 const roomsTotalSummary = computed(() => {
-  if (!activeTab.value) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBed: 0, total: 0 }
-  let priceSum = 0, adults = 0, babies = 0, children = 0, extraBed = 0, total = 0
+  if (!activeTab.value) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
+  let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
   const roomList = filteredActiveRooms.value
   roomList.forEach(r => {
     const nights = Number(r.nights) || 1
@@ -733,11 +897,12 @@ const roomsTotalSummary = computed(() => {
     adults   += Number(r.adults) || 0
     babies   += Number(r.babies) || 0
     children += Number(r.children) || 0
+    extraBedQty += getRoomExtraBedQty(r)
     const ebTotal = getRoomExtraBedTotal(r)
     extraBed += ebTotal
     total    += calculateRoomTotal(r)
   })
-  return { count: roomList.length, priceSum, adults, babies, children, extraBed, total }
+  return { count: roomList.length, priceSum, adults, babies, children, extraBedQty, extraBed, total }
 })
 
 const activeTabStatusName = computed(() => {
@@ -791,9 +956,10 @@ function getStatusOrderAndName(status) {
   if (s === 0)   return { order: 0, name: 'Đăng ký' }
   if (s === 1)   return { order: 1, name: 'Đang ở' }
   if (s === 2)   return { order: 2, name: 'Phòng đi' }
-  if (s === 3 || s === 100) return { order: 3, name: 'Hủy/Chuyển' }
-  if (s === 4)   return { order: 4, name: 'Khách không đến' }
-  return { order: 5, name: 'Khác' }
+  if (s === 3)   return { order: 3, name: 'Hủy' }
+  if (s === 100) return { order: 4, name: 'Phòng chuyển' }
+  if (s === 4)   return { order: 5, name: 'Khách không đến' }
+  return { order: 6, name: 'Khác' }
 }
 
 // Grouped by room type (always) - Returns sorted array
@@ -930,6 +1096,16 @@ function syncRoomsToAllocations(tab) {
       arrivalDate: r.checkIn || tab.checkIn,
       departureDate: r.checkOut || tab.checkOut,
       nights: Number(r.nights) || 1,
+      dailyRoomPrices: r.dailyRoomPrices || null,
+      dailyExtraBeds: (r.dailyExtraBeds || []).map(d => ({
+        ...d,
+        dateStr: parseApiDate(d.dateStr || d.date || ''),
+        date: parseApiDate(d.dateStr || d.date || ''),
+      })),
+      services: (r.services || []).map(s => ({
+        ...s,
+        service_date: parseApiDate(s.service_date || '')
+      })),
     }))
     return {
       ...alloc,
@@ -1001,9 +1177,11 @@ async function loadDropdowns() {
     hotelSettings.value        = data.hotel_settings || {}
 
     if (data.system_date && data.system_date.system_date) {
-      systemDate.value = data.system_date.system_date
+      systemDate.value = parseApiDate(data.system_date.system_date)
+    } else if (data.system_time) {
+      systemDate.value = parseApiDate(data.system_time)
     } else {
-      systemDate.value = data.system_time ? formatLocalYYYYMMDD(data.system_time) : formatLocalYYYYMMDD(new Date())
+      systemDate.value = ''
     }
 
     // Empty list checks
@@ -1082,13 +1260,34 @@ function bookingToTab(b) {
       const priceNum = Number(br.rate) || 0
       const servicesList = br.services || []
       const servicesTotal = servicesList.filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
-      const extraBedTotal = (Number(br.extra_bed_rate) || 0) * (Number(br.extra_bed_qty) || 0) * nightsCount
-      const totalNum = (priceNum * nightsCount) + extraBedTotal + servicesTotal
+      const roomChargeTotal = servicesList.filter(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
+      const extraBedDetailTotal = servicesList.filter(svc => svc.service_code === 'EB').reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
+      const totalNum = (roomChargeTotal || (priceNum * nightsCount)) + extraBedDetailTotal + servicesTotal
 
       const primaryGuestPivot = br.guests ? br.guests.find(g => g.is_primary) || br.guests[0] : null
       const guestName = primaryGuestPivot && primaryGuestPivot.guest ? primaryGuestPivot.guest.full_name : ''
       const childrenCount = br.children ? br.children.filter(c => c.age_group === 'child').length : 0
       const babiesCount = br.children ? br.children.filter(c => c.age_group === 'baby').length : 0
+
+      const dailyRoomPrices = {}
+      servicesList.filter(s => s.service_code === 'RM' || s.service_code === 'ROOM_CHARGE').forEach(s => {
+        const dStr = parseApiDate(s.service_date)
+        if (dStr) dailyRoomPrices[dStr] = Number(s.rate) || 0
+      })
+
+      const dailyExtraBeds = servicesList.filter(s => s.service_code === 'EB').map(s => {
+        const dStr = parseApiDate(s.service_date)
+        const q = Number(s.quantity) || 0
+        const r = Number(s.rate) || 0
+        return {
+          dateStr: dStr,
+          date: dStr,
+          quantity: q,
+          rate: r,
+          total: q * r,
+          isRoom: s.is_room !== 0
+        }
+      })
 
       rooms.push({
         id: idCounter++,
@@ -1110,8 +1309,8 @@ function bookingToTab(b) {
         babies: babiesCount,
         children: childrenCount,
         breakfast: br.breakfast !== undefined ? !!br.breakfast : true,
-        extraBedPrice: br.extra_bed_rate || 0,
-        extraBedQty: br.extra_bed_qty || 0,
+        extraBedPrice: Number(br.extra_bed_rate) || (dailyExtraBeds.length ? (dailyExtraBeds.find(d => d.rate > 0)?.rate || 0) : 0),
+        extraBedQty: Number(br.extra_bed_qty) || (dailyExtraBeds.length ? Math.max(...dailyExtraBeds.map(d => d.quantity || 0)) : 0),
         hourly: false,
         arrivalTime: br.arrival_time || '14:00',
         hoursOut: br.departure_time || '12:00',
@@ -1124,6 +1323,8 @@ function bookingToTab(b) {
         total: totalNum,
         roomClassId: br.room_class_id,
         services: br.services || [],
+        dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
+        dailyExtraBeds: dailyExtraBeds.length ? dailyExtraBeds : null,
         specialRequests: br.special_requests || [],
         bookingRoomStatus: br.status !== undefined ? Number(br.status) : 0,
         upgradeClassId: null,
@@ -1364,10 +1565,16 @@ function handleCloseTab(tabId, event) {
   }
 }
 
+function getDefaultBreakfastSetting() {
+  const bfVal = hotelSettings.value?.DefaultBreakfast ?? hotelSettings.value?.default_breakfast
+  if (bfVal !== undefined && bfVal !== null) {
+    return Number(bfVal) === 1 || bfVal === '1' || bfVal === true
+  }
+  return true
+}
+
 function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
-  const isBreakfastChecked = hotelSettings.value?.DefaultBreakfast !== undefined 
-    ? (Number(hotelSettings.value.DefaultBreakfast) === 1) 
-    : true
+  const isBreakfastChecked = getDefaultBreakfastSetting()
 
   return roomClasses.value.map(rc => {
     const found = existing.find(e => e.roomClassId === rc.id || e.roomClassCode === rc.code)
@@ -1496,13 +1703,14 @@ function handleRateCodeChange(row) {
       }
     }
   } else {
-    // Người dùng chọn lại "— Chọn giá phòng —" (rỗng): Lấy giá mặc định của loại phòng
+    // Người dùng chọn lại "— Chọn giá phòng —" (rỗng): Lấy giá mặc định của loại phòng và breakfast theo DefaultBreakfast
     const matchedClass = roomClasses.value?.find(c => c.id === Number(row.roomClassId) || c.code === row.roomClassCode)
     if (matchedClass) {
       const defaultPrice = Number(matchedClass.price ?? matchedClass.room_price ?? matchedClass.standard_rate ?? 0)
       row.price = defaultPrice
       row.basePrice = defaultPrice
     }
+    row.breakfastIncluded = getDefaultBreakfastSetting()
   }
   syncAllocationToRooms(row)
 }
@@ -1548,6 +1756,14 @@ function handleRoomRateCodeChange(room) {
           alloc.basePrice = room.price
           alloc.breakfastIncluded = room.breakfast
         }
+      }
+    }
+  } else {
+    room.breakfast = getDefaultBreakfastSetting()
+    if (modalForm.value.roomAllocations) {
+      const alloc = modalForm.value.roomAllocations.find(a => a.roomClassId === room.roomClassId)
+      if (alloc) {
+        alloc.breakfastIncluded = room.breakfast
       }
     }
   }
@@ -1921,32 +2137,15 @@ function handleConfirmDateCalculation() {
   const status = registrationStatuses.value.find(s => s.id === Number(statusId))
   if (!status) return
 
-  const statusNameLower = (status.name || '').toLowerCase()
-  const isDefinite = statusNameLower.includes('guaranteed') && 
-                     !statusNameLower.includes('none') && 
-                     !statusNameLower.includes('non')
+  const sysDate = systemDate.value || parseApiDate(new Date())
+  const cutOff = Number(status.confirmation_days ?? status.cut_off_day ?? 0)
 
-  console.log('handleConfirmDateCalculation: status changed', {
-    statusId,
-    statusName: status.name,
-    isDefinite,
-    checkIn: modalForm.value.checkIn,
-    systemDate: systemDate.value
-  })
-
-  if (isDefinite) {
-    // Chắc chắn: mặc định bằng ngày tạo bk (systemDate)
-    modalForm.value.confirmDate = systemDate.value
-  } else {
-    // Không chắc chắn: ngày lưu trú - ngày xác nhận định nghĩa (cut-off)
-    const cutOff = status.confirmation_days || 0
-    if (modalForm.value.checkIn) {
-      const calcDate = addDaysToDateStr(modalForm.value.checkIn, -cutOff)
-      if (calcDate > modalForm.value.checkIn) {
-        modalForm.value.confirmDate = modalForm.value.checkIn
-      } else {
-        modalForm.value.confirmDate = calcDate
-      }
+  if (modalForm.value.checkIn) {
+    const calcDate = addDaysToDateStr(modalForm.value.checkIn, -cutOff)
+    if (calcDate < sysDate || calcDate > modalForm.value.checkIn) {
+      modalForm.value.confirmDate = modalForm.value.checkIn
+    } else {
+      modalForm.value.confirmDate = calcDate
     }
   }
 }
@@ -2071,7 +2270,7 @@ function updateAllocatedRooms(row) {
         adults: row.adults || 2,
         babies: row.babies || 0,
         children: row.children || 0,
-        breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : true,
+        breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : getDefaultBreakfastSetting(),
         extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : 0,
         hourly: false,
         arrivalTime: '14:00',
@@ -2151,6 +2350,23 @@ function validateRoomQuantity(alloc) {
   }
 }
 
+async function handleCheckInChange() {
+  if (modalForm.value.checkIn) {
+    const nights = Number(modalForm.value.nights) > 0 ? Number(modalForm.value.nights) : 1
+    modalForm.value.checkOut = addDaysToDateStr(modalForm.value.checkIn, nights)
+  }
+  await handleDateChange()
+}
+
+async function handleMainCheckInChange() {
+  const tab = activeTab.value
+  if (tab && tab.checkIn) {
+    const nights = Number(tab.nights) > 0 ? Number(tab.nights) : 1
+    tab.checkOut = addDaysToDateStr(tab.checkIn, nights)
+  }
+  await handleMainDateChange()
+}
+
 async function handleDateChange() {
   const ci = new Date(modalForm.value.checkIn)
   const co = new Date(modalForm.value.checkOut)
@@ -2172,9 +2388,24 @@ async function handleDateChange() {
         r.checkOut = modalForm.value.checkOut
         r.nights = modalForm.value.nights
         r.total = (r.price || 0) * (r.nights || 1)
+
+        if (r.dailyRoomPrices) {
+          Object.keys(r.dailyRoomPrices).forEach(dStr => {
+            if (dStr >= modalForm.value.checkOut) {
+              delete r.dailyRoomPrices[dStr]
+            }
+          })
+        }
+        if (r.services) {
+          r.services = r.services.filter(s => {
+            if (!s.service_date) return true
+            return s.service_date < modalForm.value.checkOut
+          })
+        }
       })
     }
     
+    handleConfirmDateCalculation()
     await updateRoomAvailability()
   }
 }
@@ -2202,8 +2433,23 @@ async function handleMainDateChange() {
         r.checkOut = tab.checkOut
         r.nights = tab.nights
         r.total = (r.price || 0) * (r.nights || 1)
+
+        if (r.dailyRoomPrices) {
+          Object.keys(r.dailyRoomPrices).forEach(dStr => {
+            if (dStr >= tab.checkOut) {
+              delete r.dailyRoomPrices[dStr]
+            }
+          })
+        }
+        if (r.services) {
+          r.services = r.services.filter(s => {
+            if (!s.service_date) return true
+            return s.service_date < tab.checkOut
+          })
+        }
       })
     }
+    handleConfirmDateCalculation()
     await updateRoomAvailability()
   }
 }
@@ -2221,14 +2467,28 @@ async function handleMainNightsChange() {
     if (tab.roomAllocations) {
       tab.roomAllocations.forEach(alloc => {
         alloc.departureDate = tab.checkOut
-        alloc.nights = tab.nights
+        alloc.nights = Number(tab.nights)
       })
     }
     if (tab.rooms) {
       tab.rooms.forEach(r => {
         r.checkOut = tab.checkOut
-        r.nights = tab.nights
+        r.nights = Number(tab.nights)
         r.total = (r.price || 0) * (r.nights || 1)
+
+        if (r.dailyRoomPrices) {
+          Object.keys(r.dailyRoomPrices).forEach(dStr => {
+            if (dStr >= tab.checkOut) {
+              delete r.dailyRoomPrices[dStr]
+            }
+          })
+        }
+        if (r.services) {
+          r.services = r.services.filter(s => {
+            if (!s.service_date) return true
+            return s.service_date < tab.checkOut
+          })
+        }
       })
     }
     await updateRoomAvailability()
@@ -2433,7 +2693,7 @@ function handleRoomClassChange(room, oldClassId) {
       adults: newClass.max_adults || 2,
       babies: 0,
       children: 0,
-      breakfastIncluded: true,
+      breakfastIncluded: getDefaultBreakfastSetting(),
       rooms: []
     }
     tab.roomAllocations.push(newAlloc)
@@ -2475,6 +2735,20 @@ async function handleNightsChange() {
         r.checkOut = modalForm.value.checkOut
         r.nights = Number(modalForm.value.nights)
         r.total = (r.price || 0) * (r.nights || 1)
+
+        if (r.dailyRoomPrices) {
+          Object.keys(r.dailyRoomPrices).forEach(dStr => {
+            if (dStr >= modalForm.value.checkOut) {
+              delete r.dailyRoomPrices[dStr]
+            }
+          })
+        }
+        if (r.services) {
+          r.services = r.services.filter(s => {
+            if (!s.service_date) return true
+            return s.service_date < modalForm.value.checkOut
+          })
+        }
       })
     }
     
@@ -2526,6 +2800,16 @@ async function handleSaveNewBooking() {
     uiStore.showToast(dupError, 'error')
     return
   }
+
+  const confirmed = await uiStore.confirm({
+    title: isEditModal.value ? 'Xác nhận cập nhật đăng ký' : 'Xác nhận tạo mới đăng ký',
+    message: isEditModal.value 
+      ? `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
+      : `Bạn có chắc chắn muốn tạo đơn đặt phòng mới ${modalForm.value.bookingName} với ${modalForm.value.nights} đêm?`,
+    confirmText: isEditModal.value ? 'Cập nhật' : 'Tạo mới',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
 
   isSavingModal.value = true
   try {
@@ -2716,23 +3000,32 @@ async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
     isEditing.value = true
     const tab = activeTab.value
-    if (tab && tab.rooms) {
-      tab.rooms.forEach(r => {
-        if (r.checkIn) {
-          let ci = String(r.checkIn).trim();
-          if (ci.includes('/')) ci = parseDateVi(ci);
-          r.checkIn = parseApiDate(ci);
-        }
-        if (r.checkOut) {
-          let co = String(r.checkOut).trim();
-          if (co.includes('/')) co = parseDateVi(co);
-          r.checkOut = parseApiDate(co);
-        }
-      })
+    if (tab) {
+      tab._backup = JSON.parse(JSON.stringify(tab))
+      if (tab.rooms) {
+        tab.rooms.forEach(r => {
+          if (r.checkIn) {
+            let ci = String(r.checkIn).trim();
+            if (ci.includes('/')) ci = parseDateVi(ci);
+            r.checkIn = parseApiDate(ci);
+          }
+          if (r.checkOut) {
+            let co = String(r.checkOut).trim();
+            if (co.includes('/')) co = parseDateVi(co);
+            r.checkOut = parseApiDate(co);
+          }
+        })
+      }
     }
     uiStore.showToast('Bạn có thể trực tiếp chỉnh sửa tên khách hàng hoặc mã giá phòng!', 'info')
   } else if (actionName === 'Quay lại') {
     isEditing.value = false
+    const tab = activeTab.value
+    if (tab && tab._backup) {
+      const restored = JSON.parse(JSON.stringify(tab._backup))
+      delete restored._backup
+      Object.assign(tab, restored)
+    }
   } else if (actionName === 'Lưu') {
     const tab = activeTab.value
     if (tab) {
@@ -2750,6 +3043,7 @@ async function triggerAction(actionName) {
     }).then(async (confirmed) => {
       if (!confirmed) return
       isEditing.value = false
+      if (tab) delete tab._backup
       if (tab && tab.dbId) {
         try {
           const payload = {
@@ -3408,20 +3702,18 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
         extra_bed_rate: rate
       })
 
-      // 2. Cập nhật chi tiết từng đêm vào dịch vụ booking_room_services
+      // 2. Cập nhật chi tiết từng đêm vào dịch vụ booking_room_services (gửi cả quantity = 0 để xóa)
       if (dailyRates && dailyRates.length > 0) {
         for (const d of dailyRates) {
           if (d.isPast) continue // Không lưu/sửa đêm quá khứ
-          if (d.quantity > 0) {
-            await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-              service_code: 'EB',
-              service_name: 'Extra Bed',
-              service_date: d.dateStr,
-              quantity: d.quantity,
-              rate: d.rate,
-              is_room: d.isRoom ? 1 : 0
-            })
-          }
+          await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+            service_code: 'EB',
+            service_name: 'Extra Bed',
+            service_date: d.dateStr,
+            quantity: d.quantity || 0,
+            rate: d.rate || 0,
+            is_room: d.isRoom ? 1 : 0
+          })
         }
       }
 
@@ -3722,7 +4014,7 @@ defineExpose({
             <input 
               type="date" 
               v-model="activeTab.checkIn" 
-              @change="handleMainDateChange" 
+              @change="handleMainCheckInChange" 
               class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none" 
             />
             <span>~</span>
@@ -4134,14 +4426,14 @@ defineExpose({
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
                           <div class="flex items-center justify-center gap-1">
-                            <span class="font-bold text-slate-700 text-[11px]">{{ room.extraBedQty || 0 }}</span>
+                            <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
                             <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
                               <span>Chi tiết</span>
                             </button>
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold" :title="`Đơn giá: ${formatCurrencyInput(room.extraBedPrice)}/đêm`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
+                          <span class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -4288,7 +4580,19 @@ defineExpose({
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
                                   <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
-                                  <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-right">
+                                    <input 
+                                      v-if="isEditing && isServiceRateEditable(svc.service_date)"
+                                      type="text"
+                                      :value="formatCurrencyInput(svc.rate)"
+                                      @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                      @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                      class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                    />
+                                    <span v-else class="font-bold text-slate-800">
+                                      {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
+                                    </span>
+                                  </td>
                                   <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
                                     <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
@@ -4666,14 +4970,14 @@ defineExpose({
                                 </template>
                                 <template v-else-if="col.key === 'extraBed'">
                                   <div class="flex items-center justify-center gap-1">
-                                    <span class="font-bold text-slate-700 text-[11px]">{{ room.extraBedQty || 0 }}</span>
+                                    <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
                                     <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
                                       <span>Chi tiết</span>
                                     </button>
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <span class="text-gray-900 font-semibold">{{ Number(room.extraBedQty) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
+                                  <span class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hourly'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -4732,7 +5036,7 @@ defineExpose({
                                     v-model="room.transferredFrom" 
                                     class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
                                   />
-                                  <span v-else>{{ room.transferredFrom || '-' }}</span>
+                                  <span v-else class="text-slate-700 font-bold">{{ room.transferredFrom || '-' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomStatus'">
                                   <select 
@@ -4774,7 +5078,30 @@ defineExpose({
                                   <span v-else>{{ room.roomCode || '-' }}</span>
                                 </template>
                                 <template v-else>
-                                  <span class="text-slate-400">—</span>
+                                 <tr 
+                                   v-for="svc in getRoomDisplayServices(room)" 
+                                   :key="svc.id" 
+                                   class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold"
+                                 >
+                                   <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
+                                   <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
+                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
+                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">Tăng/Giảm giá</td>
+                                   <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
+                                   <td class="p-2 border-r border-slate-100 text-right">
+                                     <input 
+                                       v-if="isEditing && isServiceRateEditable(svc.service_date)"
+                                       type="text"
+                                       :value="formatCurrencyInput(svc.rate)"
+                                       @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                       class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                     />
+                                     <span v-else class="font-bold text-slate-800">
+                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
+                                     </span>
+                                   </td>
+                                 </tr>
                                 </template>
                               </td>
                               <td class="p-2 text-right text-gray-900 font-bold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
@@ -4815,7 +5142,19 @@ defineExpose({
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                         <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
-                                        <td class="p-2 border-r border-slate-100 text-right text-slate-800 font-bold">{{ (Number(svc.rate) || 0).toLocaleString('en-US') }}</td>
+                                        <td class="p-2 border-r border-slate-100 text-right">
+                                     <input 
+                                       v-if="isEditing && isServiceRateEditable(svc.service_date)"
+                                       type="text"
+                                       :value="formatCurrencyInput(svc.rate)"
+                                       @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                       class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                     />
+                                     <span v-else class="font-bold text-slate-800">
+                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
+                                     </span>
+                                   </td>
                                         <td class="p-2 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                       </tr>
                                     </tbody>
@@ -4869,8 +5208,11 @@ defineExpose({
                   <template v-else-if="col.key === 'children'">
                     {{ roomsTotalSummary.children }}
                   </template>
+                  <template v-else-if="col.key === 'extraBed'">
+                    {{ roomsTotalSummary.extraBedQty > 0 ? roomsTotalSummary.extraBedQty : '-' }}
+                  </template>
                   <template v-else-if="col.key === 'extraBedPrice'">
-                    {{ formatCurrencyInput(roomsTotalSummary.extraBed) }}
+                    {{ roomsTotalSummary.extraBed > 0 ? formatCurrencyInput(roomsTotalSummary.extraBed) : '-' }}
                   </template>
                   <template v-else>
                     -
@@ -5142,7 +5484,7 @@ defineExpose({
                       type="date" 
                       v-model="modalForm.checkIn" 
                       :min="systemDate"
-                      @change="handleDateChange"
+                      @change="handleCheckInChange"
                       @click="$event.target.showPicker && $event.target.showPicker()"
                       class="date-span-input checkin-date-input"
                     />
