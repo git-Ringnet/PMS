@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
-import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP } from '@/services/room-service'
+import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom } from '@/services/booking-service'
@@ -905,6 +905,53 @@ async function changeRoomStatus(room, roomStatusCode) {
 
   // Đóng context menu TRƯỚC khi hiện confirm
   closeContextMenu()
+
+  if (roomStatusCode === 'ooo' || roomStatusCode === 'oos') {
+    const lockType = roomStatusCode === 'oos' ? 'OOS' : 'OOO'
+    const sysDateStr = rawDate.value ? String(rawDate.value).substring(0, 10) : new Date().toISOString().substring(0, 10)
+    const now = new Date()
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    const ss = String(now.getSeconds()).padStart(2, '0')
+    const nowTime = `${hh}:${mm}:${ss}`
+
+    const doLock = async (force = false) => {
+      const payload = {
+        room_numbers: [room.room_number],
+        start_date: `${sysDateStr} ${nowTime}`,
+        end_date: `${sysDateStr} 23:59:59`,
+        lock_type: lockType || 'OOO',
+        reason: 'Khóa phòng từ sơ đồ phòng',
+        force: force
+      }
+
+      try {
+        await roomService.bulkLockRooms(payload)
+        await roomStore.fetchRooms()
+        await roomStore.fetchStats()
+        uiStore.showToast(t('roomMap.changeStatusSuccess', { room: room.room_number, status: statusLabel }), 'success')
+      } catch (err) {
+        const resData = err.response?.data
+        if (resData && resData.require_confirm) {
+          const proceed = await uiStore.confirm({
+            title: 'Cảnh báo phòng âm',
+            message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
+            confirmText: 'Tiếp tục',
+            cancelText: 'Hủy'
+          })
+          if (proceed) {
+            await doLock(true)
+          }
+        } else {
+          const errMsg = resData?.message || t('roomMap.changeStatusError')
+          uiStore.showToast(errMsg, 'error')
+        }
+      }
+    }
+
+    await doLock(false)
+    return
+  }
 
   const confirmed = await uiStore.confirm({
     title: t('roomMap.changeStatusTitle'),
