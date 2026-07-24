@@ -102,6 +102,7 @@ class RoomLockController extends Controller
         }
 
         // 3. Check booking overlap (STRICT BLOCK ALWAYS)
+        $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
         if (!empty($booking)) {
             $bkStartStr = \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y');
             $bkEndStr = \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y');
@@ -112,19 +113,20 @@ class RoomLockController extends Controller
         }
 
         // 4. Check AV capacity
+        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $room->room_number);
         $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
         if (!empty($avError) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
             if ($allowOverAv === '0') {
                 return response()->json([
                     'success' => false,
-                    'message' => "Không thể khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
+                    'message' => "Không thể khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$avError['date']}."
                 ], 422);
             }
 
             return response()->json([
                 'success' => false,
                 'require_confirm' => true,
-                'message' => "Phòng bị âm. Bạn có muốn tiếp tục thao tác?",
+                'message' => "Khóa phòng {$room->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục thao tác khóa phòng?",
             ], 422);
         }
 
@@ -154,119 +156,148 @@ class RoomLockController extends Controller
     }
 
     /**
-     * Bulk lock multiple rooms.
+     * Bulk lock rooms.
      */
     public function bulkLock(Request $request)
     {
-        $validated = $request->validate([
-            'room_numbers' => 'required|array',
-            'room_numbers.*' => 'exists:rooms,room_number',
-            'start_date' => 'required|date',
-            'end_date' => 'required|date',
-            'reason' => 'nullable|string|max:255',
-            'maintenance_percent' => 'nullable|integer|min:0|max:100',
-            'status' => 'nullable|string|max:50',
-            'username' => 'nullable|string|max:50',
-            'lock_type' => 'required|string|in:OOO,OOS',
-            'force' => 'nullable',
-        ], [
-            'room_numbers.required' => 'Danh sách phòng là bắt buộc.',
-            'room_numbers.array' => 'Danh sách phòng phải là một mảng.',
-            'room_numbers.*.exists' => 'Một trong các phòng đã chọn không tồn tại.',
-            'start_date.required' => 'Ngày bắt đầu là bắt buộc.',
-            'start_date.date' => 'Ngày bắt đầu không đúng định dạng ngày giờ.',
-            'end_date.required' => 'Ngày mở khóa là bắt buộc.',
-            'end_date.date' => 'Ngày mở khóa không đúng định dạng ngày giờ.',
-            'lock_type.required' => 'Loại khóa phòng là bắt buộc.',
-            'lock_type.in' => 'Loại khóa phòng phải là OOO hoặc OOS.',
-        ]);
+        $inputLocks = $request->input('locks');
+        $rawLocks = [];
 
-        // Resolve room numbers to rooms and IDs
-        $roomIds = [];
-        $rooms = [];
-        foreach ($validated['room_numbers'] as $roomNumber) {
-            $room = Room::where('room_number', $roomNumber)->firstOrFail();
-            $roomIds[] = $room->id;
-            $rooms[$room->id] = $room;
-        }
+        if (is_array($inputLocks) && count($inputLocks) > 0) {
+            foreach ($inputLocks as $item) {
+                if (!empty($item['room_number']) && !empty($item['start_date']) && !empty($item['end_date'])) {
+                    $rawLocks[] = [
+                        'room_number' => (string)$item['room_number'],
+                        'start_date' => $item['start_date'],
+                        'end_date' => $item['end_date'],
+                        'lock_type' => strtoupper($item['lock_type'] ?? $request->input('lock_type', 'OOO')),
+                        'reason' => $item['reason'] ?? $request->input('reason', ''),
+                        'maintenance_percent' => $item['maintenance_percent'] ?? $request->input('maintenance_percent', 0),
+                        'status' => $item['status'] ?? $request->input('status', 'New'),
+                    ];
+                }
+            }
+        } else {
+            $validated = $request->validate([
+                'room_numbers' => 'required|array',
+                'room_numbers.*' => 'exists:rooms,room_number',
+                'start_date' => 'required|date',
+                'end_date' => 'required|date',
+                'reason' => 'nullable|string|max:255',
+                'maintenance_percent' => 'nullable|integer|min:0|max:100',
+                'status' => 'nullable|string|max:50',
+                'username' => 'nullable|string|max:50',
+                'lock_type' => 'required|string|in:OOO,OOS',
+                'force' => 'nullable',
+            ], [
+                'room_numbers.required' => 'Danh sách phòng là bắt buộc.',
+                'room_numbers.array' => 'Danh sách phòng phải là một mảng.',
+                'room_numbers.*.exists' => 'Một trong các phòng đã chọn không tồn tại.',
+                'start_date.required' => 'Ngày bắt đầu là bắt buộc.',
+                'start_date.date' => 'Ngày bắt đầu không đúng định dạng ngày giờ.',
+                'end_date.required' => 'Ngày mở khóa là bắt buộc.',
+                'end_date.date' => 'Ngày mở khóa không đúng định dạng ngày giờ.',
+                'lock_type.required' => 'Loại khóa phòng là bắt buộc.',
+                'lock_type.in' => 'Loại khóa phòng phải là OOO hoặc OOS.',
+            ]);
 
-        // Adjust dates according to start_date being today or in the future
-        $rawStart = $request->input('start_date');
-        $rawEnd = $request->input('end_date');
-
-        $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
-        $localTodayStr = $localNow->format('Y-m-d');
-
-        $reqStart = \Carbon\Carbon::parse($validated['start_date']);
-        $reqStartDateStr = $reqStart->format('Y-m-d');
-
-        $hasNoTime = !str_contains($rawStart, ' ') || str_ends_with($rawStart, ' 00:00:00') || str_ends_with($rawStart, ' 00:00');
-        if ($hasNoTime) {
-            if ($reqStartDateStr === $localTodayStr) {
-                // Start date is today, use current time
-                $validated['start_date'] = $localNow->format('Y-m-d H:i:s');
-            } elseif ($reqStartDateStr > $localTodayStr) {
-                // Start date is in the future, start at 00:00:00
-                $validated['start_date'] = $reqStart->format('Y-m-d 00:00:00');
-            } else {
-                // Start date is in the past, start at 00:00:00
-                $validated['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+            foreach ($validated['room_numbers'] as $rNo) {
+                $rawLocks[] = [
+                    'room_number' => (string)$rNo,
+                    'start_date' => $validated['start_date'],
+                    'end_date' => $validated['end_date'],
+                    'lock_type' => strtoupper($validated['lock_type']),
+                    'reason' => $validated['reason'] ?? '',
+                    'maintenance_percent' => $validated['maintenance_percent'] ?? 0,
+                    'status' => $validated['status'] ?? 'New',
+                ];
             }
         }
 
+        if (empty($rawLocks)) {
+            return response()->json(['success' => false, 'message' => 'Không có danh sách phòng cần khóa.'], 422);
+        }
+
+        $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
+        $localTodayStr = $localNow->format('Y-m-d');
         $defaultEndTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->first()?->value ?? '23:59';
-        $hasDefaultEndTime = !str_contains($rawEnd, ' ') || str_ends_with($rawEnd, ' 23:59:00') || str_ends_with($rawEnd, ' 23:59') || str_ends_with($rawEnd, ' ' . $defaultEndTime . ':00');
-        if ($hasDefaultEndTime) {
-            $reqEnd = \Carbon\Carbon::parse($validated['end_date']);
-            $validated['end_date'] = $reqEnd->format('Y-m-d ' . $defaultEndTime . ':59');
+
+        $preparedLocks = [];
+        foreach ($rawLocks as $item) {
+            $room = Room::where('room_number', $item['room_number'])->first();
+            if (!$room) {
+                return response()->json(['success' => false, 'message' => "Phòng {$item['room_number']} không tồn tại."], 422);
+            }
+
+            $rawStart = $item['start_date'];
+            $rawEnd = $item['end_date'];
+            $reqStart = \Carbon\Carbon::parse($rawStart);
+            $reqStartDateStr = $reqStart->format('Y-m-d');
+
+            $hasNoTime = !str_contains($rawStart, ' ') || str_ends_with($rawStart, ' 00:00:00') || str_ends_with($rawStart, ' 00:00');
+            if ($hasNoTime) {
+                if ($reqStartDateStr === $localTodayStr) {
+                    $item['start_date'] = $localNow->format('Y-m-d H:i:s');
+                } else {
+                    $item['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+                }
+            }
+
+            $hasDefaultEndTime = !str_contains($rawEnd, ' ') || str_ends_with($rawEnd, ' 23:59:00') || str_ends_with($rawEnd, ' 23:59') || str_ends_with($rawEnd, ' ' . $defaultEndTime . ':00');
+            if ($hasDefaultEndTime) {
+                $reqEnd = \Carbon\Carbon::parse($rawEnd);
+                $item['end_date'] = $reqEnd->format('Y-m-d ' . $defaultEndTime . ':59');
+            }
+
+            $timeError = $this->validateLockPeriod($item['start_date'], $item['end_date']);
+            if ($timeError) {
+                return response()->json(['success' => false, 'message' => $timeError], 422);
+            }
+
+            $item['room_id'] = $room->id;
+            $item['room_class_id'] = $room->room_class_id;
+            $preparedLocks[] = $item;
         }
 
-        // 1. Validate date/time bounds
-        $timeError = $this->validateLockPeriod($validated['start_date'], $validated['end_date']);
-        if ($timeError) {
-            return response()->json(['success' => false, 'message' => $timeError], 422);
-        }
-
-        // 2. Pre-check overlap locks, bookings, and AV for ALL selected rooms
-        $allowLockConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
         $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
 
         $bookingBlockedRooms = [];
         $avBlockedRooms = [];
-        $bookingWarningRooms = [];
         $avWarningRooms = [];
 
-        foreach ($roomIds as $roomId) {
-            $room = $rooms[$roomId];
+        // Count how many rooms per class are being locked in this batch request
+        $classCountsInBatch = [];
+        foreach ($preparedLocks as $pItem) {
+            $cId = $pItem['room_class_id'];
+            $classCountsInBatch[$cId] = ($classCountsInBatch[$cId] ?? 0) + 1;
+        }
 
-            // Check overlap locks (always strict block)
-            if ($this->checkOverlapLocks($room->room_number, $validated['start_date'], $validated['end_date'])) {
-                return response()->json(['success' => false, 'message' => "Không được phép khóa phòng do phòng {$room->room_number} đã có lịch khóa OOO/OOS khác trùng lặp thời gian này."], 422);
+        foreach ($preparedLocks as $pItem) {
+            if ($this->checkOverlapLocks($pItem['room_number'], $pItem['start_date'], $pItem['end_date'])) {
+                return response()->json(['success' => false, 'message' => "Không được phép khóa phòng do phòng {$pItem['room_number']} đã có lịch khóa OOO/OOS khác trùng lặp thời gian này."], 422);
             }
 
-            // Check booking overlap (STRICT BLOCK ALWAYS)
-            $booking = $this->checkBookingOverlap($room->room_number, $validated['start_date'], $validated['end_date']);
+            $booking = $this->checkBookingOverlap($pItem['room_number'], $pItem['start_date'], $pItem['end_date']);
             if ($booking) {
                 $bookingBlockedRooms[] = [
-                    'room_number' => $room->room_number,
+                    'room_number' => $pItem['room_number'],
                     'booking_code' => $booking['booking_code'],
                     'start' => \Carbon\Carbon::parse($booking['start_date'])->format('d/m/Y'),
                     'end' => \Carbon\Carbon::parse($booking['end_date'])->format('d/m/Y')
                 ];
             }
 
-            // Check AV
-            $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $room->room_number);
+            $avError = $this->checkAvForRoomClass($pItem['room_class_id'], $pItem['start_date'], $pItem['end_date'], $pItem['room_number'], 1, $preparedLocks);
             if ($avError) {
                 if ($allowOverAv === '0') {
                     $avBlockedRooms[] = [
-                        'room_number' => $room->room_number,
+                        'room_number' => $pItem['room_number'],
                         'class_name' => $avError['class_name'],
                         'date' => $avError['date']
                     ];
                 } else {
                     $avWarningRooms[] = [
-                        'room_number' => $room->room_number,
+                        'room_number' => $pItem['room_number'],
                         'class_name' => $avError['class_name'],
                         'date' => $avError['date']
                     ];
@@ -274,63 +305,57 @@ class RoomLockController extends Controller
             }
         }
 
-        // If any booking blocked rooms (STRICT BLOCK - CANNOT FORCE OVERRIDE)
         if (!empty($bookingBlockedRooms)) {
             $messages = [];
             foreach ($bookingBlockedRooms as $b) {
                 $messages[] = "Không được phép khóa phòng {$b['room_number']} vì trùng lịch với booking {$b['booking_code']} ({$b['start']} ~ {$b['end']}).";
             }
-            return response()->json([
-                'success' => false,
-                'message' => implode(' ', $messages)
-            ], 422);
+            return response()->json(['success' => false, 'message' => implode(' ', $messages)], 422);
         }
 
-        // If any AV strict blocks
         if (!empty($avBlockedRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
             $messages = [];
             foreach ($avBlockedRooms as $av) {
-                $messages[] = "Không thể khóa phòng {$av['room_number']} vì loại phòng {$av['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$av['date']}.";
+                $messages[] = "Không thể khóa phòng {$av['room_number']} vì loại phòng {$av['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$av['date']}.";
+            }
+            return response()->json(['success' => false, 'message' => implode(' ', $messages)], 422);
+        }
+
+        if (!empty($avWarningRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            $messages = [];
+            foreach ($avWarningRooms as $av) {
+                $messages[] = "Khóa phòng {$av['room_number']} sẽ làm loại phòng {$av['class_name']} bị âm phòng (AV < 0) vào ngày {$av['date']}.";
             }
             return response()->json([
                 'success' => false,
-                'message' => implode(' ', $messages)
-            ], 422);
-        }
-
-        // If AV warnings requiring confirmation
-        if (!empty($avWarningRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            return response()->json([
-                'success' => false,
                 'require_confirm' => true,
-                'message' => "Có phòng bị âm. Bạn có muốn tiếp tục thao tác?"
+                'message' => implode(' ', $messages) . ' Bạn có muốn tiếp tục thao tác khóa phòng?'
             ], 422);
         }
 
+        $username = $request->input('username') ?? $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
         $locksCreated = [];
-        $username = $validated['username'] ?? $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
-        $status = $validated['status'] ?? 'New';
-        $mPercent = $validated['maintenance_percent'] ?? 0;
 
-        foreach ($roomIds as $roomId) {
-            $room = $rooms[$roomId];
-            $lock = RoomLock::create([
-                'room_number' => $room->room_number,
-                'start_date' => $validated['start_date'],
-                'end_date' => $validated['end_date'],
-                'reason' => $validated['reason'],
-                'maintenance_percent' => $mPercent,
-                'status' => $status,
-                'username' => $username,
-                'lock_type' => $validated['lock_type'],
-                'is_active' => 1,
-            ]);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($preparedLocks, $username, &$locksCreated) {
+            foreach ($preparedLocks as $pItem) {
+                $lock = RoomLock::create([
+                    'room_number' => $pItem['room_number'],
+                    'start_date' => $pItem['start_date'],
+                    'end_date' => $pItem['end_date'],
+                    'reason' => $pItem['reason'],
+                    'maintenance_percent' => $pItem['maintenance_percent'],
+                    'status' => $pItem['status'],
+                    'username' => $username,
+                    'is_active' => 1,
+                    'lock_type' => $pItem['lock_type'],
+                ]);
 
-            // Update room status to maintenance (ooo)
-            Room::where('room_number', $room->room_number)->update(['room_status_code' => 'ooo']);
+                // Update room status to maintenance
+                Room::where('room_number', $pItem['room_number'])->update(['status' => 'maintenance']);
 
-            $locksCreated[] = $lock;
-        }
+                $locksCreated[] = $lock;
+            }
+        });
 
         return response()->json([
             'success' => true,
@@ -643,14 +668,14 @@ class RoomLockController extends Controller
             if ($allowOverAv === '0') {
                 return response()->json([
                     'success' => false,
-                    'message' => "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV <= 0) vào ngày {$avError['date']}."
+                    'message' => "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$avError['date']}."
                 ], 422);
             }
 
             return response()->json([
                 'success' => false,
                 'require_confirm' => true,
-                'message' => "Phòng bị âm. Bạn có muốn tiếp tục thao tác?",
+                'message' => "Khóa phòng {$lock->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục thao tác khóa phòng?",
             ], 422);
         }
 
@@ -865,10 +890,17 @@ class RoomLockController extends Controller
     /**
      * Check AV constraints for room class.
      */
-    private function checkAvForRoomClass($roomClassId, $startDateStr, $endDateStr, $excludeRoomNumber = null)
+    private function checkAvForRoomClass($roomClassId, $startDateStr, $endDateStr, $excludeRoomNumber = null, int $additionalLocksCount = 1, array $batchLocks = [])
     {
         $start = \Carbon\Carbon::parse($startDateStr)->copy()->startOfDay();
-        $end = \Carbon\Carbon::parse($endDateStr)->copy()->endOfDay();
+        $end = \Carbon\Carbon::parse($endDateStr)->copy();
+
+        $hasTime00 = (!str_contains($endDateStr, ' ') || str_ends_with($endDateStr, ' 00:00:00') || str_ends_with($endDateStr, ' 00:00'));
+        $lastCheckDate = $end->copy()->startOfDay();
+
+        if ($hasTime00 && $lastCheckDate->gt($start)) {
+            $lastCheckDate->subDay();
+        }
 
         $totalRooms = Room::where('room_class_id', $roomClassId)->where('is_internal', false)->count();
         if ($totalRooms === 0) {
@@ -879,7 +911,7 @@ class RoomLockController extends Controller
         $roomClassCode = $roomClass?->code;
 
         $tempDate = $start->copy();
-        while ($tempDate->lte($end)) {
+        while ($tempDate->lte($lastCheckDate)) {
             $dateStr = $tempDate->toDateString();
 
             $lockedQuery = RoomLock::where('is_active', 1)
@@ -890,7 +922,7 @@ class RoomLockController extends Controller
                 });
 
             if ($excludeRoomNumber) {
-                $lockedQuery->where('room_number', '!=', $excludeRoomNumber);
+                $lockedQuery->where('room_number', '!=', (string)$excludeRoomNumber);
             }
 
             $lockedCount = $lockedQuery->count();
@@ -902,13 +934,44 @@ class RoomLockController extends Controller
                 ])
                 ->where('arrival_date', '<=', $dateStr)
                 ->where('departure_date', '>', $dateStr)
-                ->whereHas('booking.registrationStatus', function ($query) {
-                    $query->where('is_availability', 1);
+                ->whereHas('booking', function ($q) {
+                    $q->whereNotIn('status', [\App\Models\Booking::STATUS_DELETED, \App\Models\Booking::STATUS_NO_SHOW])
+                      ->where(function ($subQ) {
+                          $subQ->whereDoesntHave('registrationStatus')
+                               ->orWhereHas('registrationStatus', function ($rQ) {
+                                   $rQ->where('is_availability', 1);
+                               });
+                      });
                 })
                 ->count();
 
             $av = $totalRooms - $lockedCount - $bookingsCount;
-            if (($av - 1) < 0) {
+
+            $locksCountOnDate = $additionalLocksCount;
+            if (!empty($batchLocks)) {
+                $locksCountOnDate = 0;
+                foreach ($batchLocks as $bLock) {
+                    if (($bLock['room_class_id'] ?? null) == $roomClassId) {
+                        $bStart = substr($bLock['start_date'], 0, 10);
+                        $bEnd = substr($bLock['end_date'], 0, 10);
+                        $bEndTime = strlen($bLock['end_date']) > 10 ? substr($bLock['end_date'], 11, 8) : '';
+
+                        $bLastDate = $bEnd;
+                        if (($bEndTime === '00:00:00' || $bEndTime === '00:00') && $bEnd > $bStart) {
+                            $bLastDate = \Carbon\Carbon::parse($bEnd)->subDay()->toDateString();
+                        }
+
+                        if ($bStart <= $dateStr && $bLastDate >= $dateStr) {
+                            $locksCountOnDate++;
+                        }
+                    }
+                }
+                if ($locksCountOnDate === 0) {
+                    $locksCountOnDate = 1;
+                }
+            }
+
+            if (($av - $locksCountOnDate) < 0) {
                 return [
                     'date' => $tempDate->format('d/m/Y'),
                     'av' => $av,

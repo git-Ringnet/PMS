@@ -234,6 +234,8 @@ const resizeState = ref(null)
 const draggedBooking = ref(null)
 const draggedOverRoom = ref(null)
 const draggedOverDayIdx = ref(null)
+const draggedBookingRect = ref(null)
+const dragGhostY = ref(0)
 
 const activeHighlightRoom = computed(() => draggedOverRoom.value)
 const activeHighlightDayIdx = computed(() => draggedOverDayIdx.value)
@@ -743,14 +745,20 @@ const dbRooms = computed(() => {
     if (!list.some(r => r.room === vRoom)) {
       const bk = bookings.value.find(b => b.room === vRoom)
       const type = bk ? bk.typeClass || 'DLXD' : 'DLXD'
-      let shape = 'Double'
-      const tLower = type.toLowerCase()
-      if (tLower.includes('double') || tLower.includes('d')) shape = 'Double'
-      else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
-      else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
-
+      
       const foundRoom = roomStore.rooms ? roomStore.rooms.find(r => (r.room_class?.code || r.room_type) === type) : null
       const classId = foundRoom ? foundRoom.room_class_id : null
+      const classOrders = foundRoom ? (foundRoom.room_class?.orders || 0) : 0
+
+      const physicalMatch = list.find(r => r.type === type && !r.isVirtual)
+      let shape = physicalMatch ? physicalMatch.shape : (foundRoom?.room_form?.name || foundRoom?.room_form?.code || '')
+      if (!shape) {
+        const tLower = type.toLowerCase()
+        if (tLower.includes('double') || tLower.includes('d')) shape = 'Double'
+        else if (tLower.includes('twin') || tLower.includes('tb')) shape = 'Twin'
+        else if (tLower.includes('triple') || tLower.includes('tr')) shape = 'Triple'
+        else shape = 'Family'
+      }
 
       list.push({
         room: vRoom,
@@ -762,6 +770,7 @@ const dbRooms = computed(() => {
         isVirtual: true,
         active_locks: [],
         orders: 999999,
+        classOrders,
         classId
       })
     }
@@ -772,55 +781,88 @@ const dbRooms = computed(() => {
     list = list.filter(r => selectedRoomTypes.value.includes(r.type))
   }
 
+  // Helper for sorting rooms by orders ASC, then room number
+  const compareByRoomOrders = (rA, rB) => {
+    const ordA = rA.orders !== undefined ? Number(rA.orders) : 0
+    const ordB = rB.orders !== undefined ? Number(rB.orders) : 0
+    if (ordA !== ordB) {
+      return ordA - ordB
+    }
+    const numA = parseInt(rA.room)
+    const numB = parseInt(rB.room)
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return numA - numB
+    }
+    return rA.room.localeCompare(rB.room)
+  }
+
   // Sort and group according to activeGroupSetting
   return [...list].sort((a, b) => {
-    // Virtual rooms always go to the bottom
-    if (a.isVirtual !== b.isVirtual) {
-      return a.isVirtual ? 1 : -1
-    }
-    
-    // If both are virtual, sort alphabetically by booking code
-    if (a.isVirtual && b.isVirtual) {
-      return a.room.localeCompare(b.room)
-    }
-
-    if (activeGroupSetting.value === 'Tầng') {
-      const fA = parseInt(a.floor) || 0
-      const fB = parseInt(b.floor) || 0
-      if (fA !== fB) return fA - fB
-      return a.room.localeCompare(b.room)
-    } else if (activeGroupSetting.value === 'Loại phòng') {
-      const oA = a.classOrders !== undefined ? Number(a.classOrders) : 9999
-      const oB = b.classOrders !== undefined ? Number(b.classOrders) : 9999
+    if (activeGroupSetting.value === 'Loại phòng') {
+      // 1. Group by Room Class orders (or type code)
+      const oA = a.classOrders !== undefined ? Number(a.classOrders) : 0
+      const oB = b.classOrders !== undefined ? Number(b.classOrders) : 0
       if (oA !== oB) return oA - oB
 
-      const ordA = a.orders !== undefined ? Number(a.orders) : 9999
-      const ordB = b.orders !== undefined ? Number(b.orders) : 9999
-      if (ordA !== ordB) return ordA - ordB
+      const typeComp = (a.type || '').localeCompare(b.type || '')
+      if (typeComp !== 0) return typeComp
 
+      // 2. Within the same Room Class group: Physical rooms first, then Virtual rooms
+      if (a.isVirtual !== b.isVirtual) {
+        return a.isVirtual ? 1 : -1
+      }
+
+      // 3. If both physical, sort by room orders ASC
+      if (!a.isVirtual && !b.isVirtual) {
+        return compareByRoomOrders(a, b)
+      }
+
+      // 4. If both virtual, sort by room / booking code
       return a.room.localeCompare(b.room)
+
     } else if (activeGroupSetting.value === 'Loại giường' || activeGroupSetting.value === 'Dạng phòng') {
+      // 1. Group by Shape / Bed Type name
       const sA = a.shape || ''
       const sB = b.shape || ''
       const comp = sA.localeCompare(sB)
       if (comp !== 0) return comp
+
+      // 2. Within the same Bed Type group: Physical rooms first, then Virtual rooms
+      if (a.isVirtual !== b.isVirtual) {
+        return a.isVirtual ? 1 : -1
+      }
+
+      // 3. If both physical, sort by room orders ASC
+      if (!a.isVirtual && !b.isVirtual) {
+        return compareByRoomOrders(a, b)
+      }
+
+      // 4. If both virtual, sort by room / booking code
       return a.room.localeCompare(b.room)
-    }
 
-    // Default (activeGroupSetting === 'Phòng'): Sort by orders first
-    const ordA = a.orders !== undefined ? Number(a.orders) : 0
-    const ordB = b.orders !== undefined ? Number(b.orders) : 0
-    if (ordA !== ordB) {
-      return ordA - ordB
-    }
+    } else if (activeGroupSetting.value === 'Tầng') {
+      // Virtual rooms always go to the bottom for Floor grouping
+      if (a.isVirtual !== b.isVirtual) {
+        return a.isVirtual ? 1 : -1
+      }
+      if (a.isVirtual && b.isVirtual) {
+        return a.room.localeCompare(b.room)
+      }
+      const fA = parseInt(a.floor) || 0
+      const fB = parseInt(b.floor) || 0
+      if (fA !== fB) return fA - fB
+      return compareByRoomOrders(a, b)
 
-    // Fallback: numeric sort if possible, otherwise string compare
-    const numA = parseInt(a.room)
-    const numB = parseInt(b.room)
-    if (!isNaN(numA) && !isNaN(numB)) {
-      return numA - numB
+    } else {
+      // Default ('Phòng'): Virtual rooms always go to the bottom
+      if (a.isVirtual !== b.isVirtual) {
+        return a.isVirtual ? 1 : -1
+      }
+      if (a.isVirtual && b.isVirtual) {
+        return a.room.localeCompare(b.room)
+      }
+      return compareByRoomOrders(a, b)
     }
-    return a.room.localeCompare(b.room)
   })
 })
 
@@ -2644,6 +2686,25 @@ function handleDragStart(bk, event) {
   }
   hideTooltip()
   draggedBooking.value = bk
+
+  if (event && event.currentTarget) {
+    const el = event.currentTarget
+    const rect = el.getBoundingClientRect()
+    draggedBookingRect.value = {
+      left: rect.left,
+      width: rect.width
+    }
+    dragGhostY.value = rect.top + 2
+
+    try {
+      const transparentImg = new Image()
+      transparentImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+      event.dataTransfer.setDragImage(transparentImg, 0, 0)
+    } catch (e) {
+      // Fallback if setDragImage not supported
+    }
+  }
+
   event.dataTransfer.setData('text/plain', bk.bookingRoomId)
   event.dataTransfer.effectAllowed = 'move'
 
@@ -2656,6 +2717,27 @@ let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
 
+function getDragVerticalBounds() {
+  if (!scrollContainer) {
+    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  }
+  if (!scrollContainer) {
+    return { minTop: 0, maxTop: window.innerHeight - 35, headerBottom: 0, occTop: window.innerHeight }
+  }
+
+  const containerRect = scrollContainer.getBoundingClientRect()
+  const theadEl = scrollContainer.querySelector('thead')
+  const tfootEl = scrollContainer.querySelector('tfoot')
+
+  const headerBottom = theadEl ? theadEl.getBoundingClientRect().bottom : containerRect.top + 40
+  const occTop = tfootEl ? tfootEl.getBoundingClientRect().top : containerRect.bottom - 40
+
+  const minTop = Math.max(headerBottom + 2, containerRect.top + 42)
+  const maxTop = Math.min(occTop - 35, containerRect.bottom - 40)
+
+  return { minTop, maxTop, headerBottom, occTop, containerRect }
+}
+
 function handleDragWheel(e) {
   if (!draggedBooking.value) return
   if (!scrollContainer) {
@@ -2663,9 +2745,6 @@ function handleDragWheel(e) {
   }
   if (scrollContainer) {
     scrollContainer.scrollTop += e.deltaY
-    if (e.deltaX) {
-      scrollContainer.scrollLeft += e.deltaX
-    }
   }
 }
 
@@ -2673,39 +2752,37 @@ function handleGlobalDragOver(event) {
   if (!draggedBooking.value) return
   event.preventDefault()
 
-  if (!scrollContainer) {
-    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+  const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
+  const clientY = event.clientY
+
+  // If mouse is inside or above header, clamp ghost card strictly below header!
+  if (clientY <= headerBottom) {
+    dragGhostY.value = minTop
+  } else if (clientY >= occTop) {
+    dragGhostY.value = maxTop
   }
-  if (!scrollContainer) return
 
-  const rect = scrollContainer.getBoundingClientRect()
-  const x = event.clientX - rect.left
-  const y = event.clientY - rect.top
-
-  const threshold = 120
-  const maxSpeed = 35
-
-  let scrollX = 0
   let scrollY = 0
 
-  if (x < threshold && x > -50) {
-    scrollX = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, x)) / threshold))
-  } else if (rect.width - x < threshold && x < rect.width + 50) {
-    scrollX = Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, rect.width - x)) / threshold))
+  // Trigger auto-scroll UP as soon as mouse reaches within 25px of header bottom
+  if (clientY < headerBottom + 25) {
+    const overflow = Math.max(0, (headerBottom + 25) - clientY)
+    // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as mouse moves further up
+    const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
+    scrollY = -speed
+  } 
+  // Trigger auto-scroll DOWN as soon as mouse reaches within 25px of OCC top
+  else if (clientY > occTop - 25) {
+    const overflow = Math.max(0, clientY - (occTop - 25))
+    // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as mouse moves further down
+    const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
+    scrollY = speed
   }
 
-  // Vertical Scrolling
-  if (y < threshold && y > -50) {
-    scrollY = -Math.round(maxSpeed * Math.max(0.2, (threshold - Math.max(0, y)) / threshold))
-  } else if (rect.height - y < threshold || event.clientY > rect.bottom - threshold) {
-    const distFromBottom = rect.bottom - event.clientY
-    scrollY = Math.round(maxSpeed * Math.max(0.3, (threshold - Math.max(-50, distFromBottom)) / threshold))
-  }
-
-  currentScrollX = scrollX
+  currentScrollX = 0
   currentScrollY = scrollY
 
-  if (scrollX !== 0 || scrollY !== 0) {
+  if (scrollY !== 0) {
     startAutoScrollLoop()
   } else {
     stopDragAutoScroll()
@@ -2727,9 +2804,12 @@ function stopDragAutoScroll() {
 function startAutoScrollLoop() {
   if (scrollAnimationFrame) return
   const loop = () => {
-    if (scrollContainer && (currentScrollX !== 0 || currentScrollY !== 0)) {
-      scrollContainer.scrollLeft += currentScrollX
+    if (scrollContainer && currentScrollY !== 0) {
       scrollContainer.scrollTop += currentScrollY
+      const { minTop, maxTop } = getDragVerticalBounds()
+      if (draggedBooking.value) {
+        dragGhostY.value = Math.max(minTop, Math.min(dragGhostY.value, maxTop))
+      }
       scrollAnimationFrame = requestAnimationFrame(loop)
     } else {
       scrollAnimationFrame = null
@@ -2743,7 +2823,15 @@ function handleDragOver(event, item, dayIdx) {
   if (item && item.room && draggedOverRoom.value !== item.room) {
     draggedOverRoom.value = item.room
   }
-  if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
+  if (draggedBooking.value) {
+    draggedOverDayIdx.value = draggedBooking.value.startIndex
+    if (event && event.currentTarget) {
+      const cellRect = event.currentTarget.getBoundingClientRect()
+      const { minTop, maxTop } = getDragVerticalBounds()
+      const targetY = cellRect.top + 2
+      dragGhostY.value = Math.max(minTop, Math.min(targetY, maxTop))
+    }
+  } else if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
     draggedOverDayIdx.value = dayIdx
   }
 
@@ -2752,6 +2840,7 @@ function handleDragOver(event, item, dayIdx) {
 
 function handleDragEnd() {
   draggedBooking.value = null
+  draggedBookingRect.value = null
   draggedOverRoom.value = null
   draggedOverDayIdx.value = null
   stopDragAutoScroll()
@@ -3074,7 +3163,7 @@ async function saveLockRoom() {
     const endTimeConfig = hotelSettings.value?.FrmOOO_DefineLockByTime || '23:59:59'
     const formattedEndTime = endTimeConfig.includes(':') && endTimeConfig.split(':').length === 2 ? `${endTimeConfig}:59` : endTimeConfig
 
-    for (const range of ranges) {
+    const locksPayload = ranges.map(range => {
       const lockStartDate = range.checkIn
       const lockEndDate = range.lastDate || range.checkIn
 
@@ -3087,35 +3176,41 @@ async function saveLockRoom() {
         startTimeStr = `${hh}:${mm}:${ss}`
       }
 
-      const lockObj = {
+      return {
         room_number: range.room,
         start_date: `${lockStartDate} ${startTimeStr}`,
         end_date: `${lockEndDate} ${formattedEndTime}`,
         lock_type: lockRoomType.value,
-        reason: note,
-        force: false
+        reason: note
       }
+    })
 
-      try {
-        await roomService.createRoomLock(lockObj)
-      } catch (err) {
-        const resData = err.response?.data
-        if (resData && resData.require_confirm) {
-          const proceed = await uiStore.confirm({
-            title: 'Cảnh báo phòng âm',
-            message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
-            confirmText: 'Tiếp tục',
-            cancelText: 'Hủy'
-          })
-          if (proceed) {
-            lockObj.force = true
-            await roomService.createRoomLock(lockObj)
-          } else {
-            return
-          }
+    const bulkLockObj = {
+      locks: locksPayload,
+      lock_type: lockRoomType.value,
+      reason: note,
+      force: false
+    }
+
+    try {
+      await roomService.bulkLockRooms(bulkLockObj)
+    } catch (err) {
+      const resData = err.response?.data
+      if (resData && resData.require_confirm) {
+        const proceed = await uiStore.confirm({
+          title: 'Cảnh báo phòng âm',
+          message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
+          confirmText: 'Tiếp tục',
+          cancelText: 'Hủy'
+        })
+        if (proceed) {
+          bulkLockObj.force = true
+          await roomService.bulkLockRooms(bulkLockObj)
         } else {
-          throw err
+          return
         }
+      } else {
+        throw err
       }
     }
 
@@ -3332,28 +3427,32 @@ function isTodayOrActiveBooking(b) {
 }
 
 function getRoomStatusIconName(item) {
-  if (!item) return 'double-check'
+  if (!item) return null
   // 1. Lock (OOO / OOS) - Only when currently locked today
   if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
     return item.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
   // 2. Dirty Room / Housekeeping needed -> broom icon
-  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false) {
+  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false || item.is_clean === 0) {
     return 'dirty'
   }
-  // 3. Has reserved booking today -> double-check icon (✓✓)
-  const hasBookingToday = item.hasCurrentBooking || !!item.guest_name || !!item.booking_code || !!item.booking_status || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
+  // 3. Occupied (In-house) and clean -> No extra icon
+  if (item.booking_status === 'occupied' || item.status === 'occupied') {
+    return null
+  }
+  // 4. Has reserved booking today -> double-check icon (✓✓)
+  const hasBookingToday = !!item.guest_name || !!item.booking_code || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b) && b.status !== 'occupied'))
   if (hasBookingToday) {
     return 'double-check'
   }
-  // 4. Sparkles ONLY for clean vacant available room without active booking today
+  // 5. Sparkles ONLY for clean vacant available room without active booking today
   if (item.is_clean && (item.status === 'available' || !item.status)) {
     return 'clean'
   }
   if (item.status === 'reserved') {
     return 'priority'
   }
-  return 'double-check'
+  return null
 }
 </script>
 
@@ -3547,33 +3646,20 @@ function getRoomStatusIconName(item) {
 
         <!-- Header -->
         <thead>
-          <!-- Day of week row -->
-          <tr class="border-b border-slate-200 text-slate-600 font-bold select-none h-8">
+          <tr class="border-b border-slate-200 text-slate-700 font-bold select-none h-10">
             <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
             <th 
               v-for="(day, idx) in days" 
               :key="idx" 
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-600')
+                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700')
               ]"
             >
-              {{ day.dow }}
-            </th>
-          </tr>
-
-          <!-- Date row -->
-          <tr class="border-b border-slate-200 text-slate-700 font-black h-8">
-            <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-[32px] z-40 bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
-            <th 
-              v-for="(day, idx) in days" 
-              :key="idx" 
-              class="p-1 border-r border-slate-200 text-center text-[10px] sticky top-[32px] z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
-              :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff8a65] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-50 text-slate-700')
-              ]"
-            >
-              {{ day.dateStr }}
+              <div class="flex flex-col items-center justify-center leading-tight py-0.5">
+                <span class="text-[11px] font-extrabold uppercase">{{ day.dow }}</span>
+                <span class="text-[10px] opacity-90 font-medium">{{ day.dateStr }}</span>
+              </div>
             </th>
           </tr>
         </thead>
@@ -3584,19 +3670,21 @@ function getRoomStatusIconName(item) {
           <template v-for="(item, idx) in dbRooms" :key="item.room">
             <!-- Group Header Row for Room Type, Bed Type (Loại giường), or Floor -->
             <tr 
-              v-if="(item.isVirtual && (idx === 0 || !dbRooms[idx - 1].isVirtual)) || 
-                    (!item.isVirtual && (
-                      (activeGroupSetting === 'Loại phòng' && (idx === 0 || dbRooms[idx - 1].type !== item.type || dbRooms[idx - 1].isVirtual)) || 
-                      ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') && (idx === 0 || dbRooms[idx - 1].shape !== item.shape || dbRooms[idx - 1].isVirtual)) ||
-                      (activeGroupSetting === 'Tầng' && (idx === 0 || dbRooms[idx - 1].floor !== item.floor || dbRooms[idx - 1].isVirtual))
-                    ))"
+              v-if="(activeGroupSetting === 'Loại phòng' && (idx === 0 || dbRooms[idx - 1].type !== item.type)) ||
+                    ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') && (idx === 0 || dbRooms[idx - 1].shape !== item.shape)) ||
+                    (activeGroupSetting === 'Tầng' && (item.isVirtual ? (idx === 0 || !dbRooms[idx - 1].isVirtual) : (idx === 0 || dbRooms[idx - 1].floor !== item.floor))) ||
+                    (activeGroupSetting === 'Phòng' && item.isVirtual && (idx === 0 || !dbRooms[idx - 1].isVirtual))"
               class="border-b border-slate-200 select-none h-6 bg-slate-100"
             >
               <td 
                 :colspan="days.length + 1" 
                 class="p-1 pl-3 font-bold text-slate-800 bg-slate-100 border-r border-slate-200 sticky left-0 z-20 text-[11px] shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
               >
-                {{ item.isVirtual ? 'CHƯA GÁN PHÒNG' : (activeGroupSetting === 'Tầng' ? `TẦNG ${item.floor}` : ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') ? item.shape : item.type)) }}
+                {{ 
+                  (activeGroupSetting === 'Phòng' || activeGroupSetting === 'Tầng') && item.isVirtual 
+                    ? 'CHƯA GÁN PHÒNG' 
+                    : (activeGroupSetting === 'Tầng' ? `TẦNG ${item.floor}` : ((activeGroupSetting === 'Loại giường' || activeGroupSetting === 'Dạng phòng') ? item.shape : item.type)) 
+                }}
               </td>
             </tr>
 
@@ -3629,7 +3717,7 @@ function getRoomStatusIconName(item) {
                     </div>
 
                     <!-- Status Icon (Synchronized with RoomMapPage) -->
-                    <div class="w-4 h-4 flex items-center justify-center shrink-0">
+                    <div v-if="getRoomStatusIconName(item)" class="w-4 h-4 flex items-center justify-center shrink-0">
                       <RoomIcon 
                         :name="getRoomStatusIconName(item)" 
                         :monochrome="getRoomStatusIconName(item) === 'ooo'"
@@ -3774,7 +3862,7 @@ function getRoomStatusIconName(item) {
           <!-- Summary OCC Footer Row -->
           <tr class="h-[38px] font-black text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#93c5fd] shadow-[inset_-1px_-1px_0_#60a5fa] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help"
+              class="p-1 sticky left-0 bg-[#93c5fd] shadow-[inset_-1px_-1px_0_#60a5fa] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
               :title="'Danh sách phòng bận ít nhất một ngày trong giai đoạn này:\n' + (dynamicStats.allPeriodOccRooms?.join(', ') || 'Không có')"
             >
               <div class="flex items-center justify-between w-full text-slate-900 text-[10px] font-black gap-0.5">
@@ -3785,7 +3873,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="idx" 
-              class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help"
+              class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]'
               ]"
@@ -3798,7 +3886,7 @@ function getRoomStatusIconName(item) {
           <!-- Summary AV Footer Row -->
           <tr class="bg-white h-[38px] font-black text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help"
+              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
               :title="'Danh sách phòng trống suốt giai đoạn này:\n' + (dynamicStats.allPeriodAvRooms?.join(', ') || 'Không có')"
             >
               <div class="flex items-center justify-between w-full text-slate-900 text-[10px] font-black gap-0.5">
@@ -3809,7 +3897,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="idx" 
-              class="p-1 text-center text-[10px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help"
+              class="p-1 text-center text-[9px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
@@ -3822,7 +3910,7 @@ function getRoomStatusIconName(item) {
           <!-- Summary OOO Footer Row -->
           <tr class="bg-white h-[38px] font-black text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help"
+              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
               :title="'Danh sách phòng khóa bảo trì ít nhất một ngày trong giai đoạn này:\n' + (dynamicStats.allPeriodOooRooms?.join(', ') || 'Không có')"
             >
               <div class="flex items-center justify-between w-full text-slate-900 text-[10px] font-black gap-0.5">
@@ -3833,7 +3921,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="idx" 
-              class="p-1 text-center text-[10px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help"
+              class="p-1 text-center text-[9px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
@@ -4668,6 +4756,36 @@ function getRoomStatusIconName(item) {
       subTitle="Vui lòng chọn lý do hủy phòng bên dưới. Nội dung sẽ được ghi log vào hệ thống."
       @confirm="handleConfirmCancelRoomPlan"
     />
+  </Teleport>
+
+  <!-- CUSTOM VERTICAL DRAG GHOST -->
+  <Teleport to="body">
+    <div 
+      v-if="draggedBooking && draggedBookingRect"
+      class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-[9px] font-bold leading-tight select-none shadow-2xl opacity-90 transition-all duration-100 ease-out"
+      :class="[
+        isBookingMatched(draggedBooking) ? getBookingClass(draggedBooking.type) : 'bg-slate-100 text-slate-400 border-slate-200'
+      ]"
+      :style="{
+        left: `${draggedBookingRect.left}px`,
+        width: `${draggedBookingRect.width}px`,
+        top: `${dragGhostY}px`,
+        height: '33px',
+        ...(isBookingMatched(draggedBooking) ? getBookingStyle(draggedBooking.type) : {})
+      }"
+    >
+      <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">
+        <svg 
+          v-if="draggedBooking.isDoNotMove"
+          class="w-3 h-3 text-slate-700 shrink-0" 
+          fill="currentColor" 
+          viewBox="0 0 20 20"
+        >
+          <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
+        </svg>
+        <span class="truncate">{{ draggedBooking.label }}</span>
+      </div>
+    </div>
   </Teleport>
 </template>
 

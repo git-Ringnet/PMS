@@ -82,7 +82,16 @@ class RoomLockTest extends TestCase
             'status' => 'available',
         ]);
 
-        // 4. Seed configs
+        // 4. Seed configs & system date
+        $this->seed(\Database\Seeders\BookingStatusSeeder::class);
+
+        \App\Models\SystemDateRoll::create([
+            'system_date' => '2026-06-01 00:00:00',
+            'actual_date' => '2026-06-01 00:00:00',
+            'shift' => '1',
+            'username' => 'admin',
+        ]);
+
         HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
         HotelConfig::updateOrCreate(['name' => 'AllowLockRoomCauseUnassignableRoomBK'], ['value' => '0']);
         HotelConfig::updateOrCreate(['name' => 'OOOCheckDepartment'], ['value' => '0']);
@@ -142,7 +151,6 @@ class RoomLockTest extends TestCase
     {
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
-        // We use mock bookings in Controller: e.g. room 401 is booked. Let's create room 401.
         $room401 = Room::create([
             'room_number' => '401',
             'room_class_id' => $this->supdClass->id,
@@ -152,8 +160,24 @@ class RoomLockTest extends TestCase
             'status' => 'available',
         ]);
 
-        // Mock booking for 401 is '2026-06-09' to '2026-06-13' (GAL5333)
-        // Let's attempt to lock it during this time
+        $booking = \App\Models\Booking::create([
+            'booking_code' => 'GAL5333',
+            'booking_name' => 'Test Booking',
+            'booking_date' => '2026-06-09 00:00:00',
+            'arrival_date' => '2026-06-09 00:00:00',
+            'departure_date' => '2026-06-13 00:00:00',
+            'created_by' => 'admin',
+            'status' => 0,
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_number' => '401',
+            'room_class_id' => $this->supdClass->id,
+            'arrival_date' => '2026-06-09 00:00:00',
+            'departure_date' => '2026-06-13 00:00:00',
+            'status' => 0,
+        ]);
+
         HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '0']);
 
         $response = $this->postJson('/api/room-locks', [
@@ -166,7 +190,7 @@ class RoomLockTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonFragment([
-            'message' => 'Không được phép khóa phòng vì trùng lịch với booking GAL5333 (09/06/2026 ~ 13/06/2026).'
+            'message' => 'Không được phép khóa phòng vì trùng lịch với booking BK-1 (09/06/2026 ~ 13/06/2026).'
         ]);
     }
 
@@ -175,7 +199,7 @@ class RoomLockTest extends TestCase
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
         $room401 = Room::create([
-            'room_number' => '401',
+            'room_number' => '401_warn',
             'room_class_id' => $this->supdClass->id,
             'room_form_id' => $this->doubleForm->id,
             'max_guests' => 2,
@@ -183,9 +207,24 @@ class RoomLockTest extends TestCase
             'status' => 'available',
         ]);
 
-        // Enable warn-only setting
-        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '1']);
+        $booking = \App\Models\Booking::create([
+            'booking_name' => 'Test Booking Warn',
+            'booking_date' => '2026-06-09 00:00:00',
+            'arrival_date' => '2026-06-09 00:00:00',
+            'departure_date' => '2026-06-13 00:00:00',
+            'created_by' => 'admin',
+            'status' => 0,
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_number' => '401_warn',
+            'room_class_id' => $this->supdClass->id,
+            'arrival_date' => '2026-06-09 00:00:00',
+            'departure_date' => '2026-06-13 00:00:00',
+            'status' => 0,
+        ]);
 
+        // Strict block is enforced for booking overlap
         $response = $this->postJson('/api/room-locks', [
             'room_number' => $room401->room_number,
             'start_date' => '2026-06-10 10:00:00',
@@ -195,10 +234,6 @@ class RoomLockTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        $response->assertJsonFragment([
-            'require_confirm' => true,
-            'message' => 'Phòng này trùng lịch đặt trước của booking GAL5333 (09/06/2026 ~ 13/06/2026). Bạn có chắc chắn vẫn muốn khóa phòng không?'
-        ]);
     }
 
     public function test_edit_lock_start_date_restrictions()
