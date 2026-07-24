@@ -26,7 +26,7 @@ return new class extends Migration
             $table->string('owner_room')->nullable(); // Phòng chủ sở hữu
             $table->string('linked_room')->nullable(); // Liên kết
             $table->boolean('is_internal')->default(false); // Phòng nội bộ
-            $table->string('status')->default('available'); // Trạng thái (available, occupied, dirty, maintenance, etc.)
+            $table->string('room_status_code')->default('vacant_ready'); // Mã tình trạng phòng (vacant_ready, vacant_dirty, ooo, oos, ...)
             $table->text('notes')->nullable(); // Ghi chú
             $table->timestamps();
         });

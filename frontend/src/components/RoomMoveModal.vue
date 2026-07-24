@@ -11,12 +11,12 @@ const props = defineProps({
     default: false,
   },
   bookingId: {
-    type: [String, Number],
-    required: true,
+    type: [String, Number, Object],
+    default: null,
   },
   roomId: {
-    type: [String, Number],
-    required: true,
+    type: [String, Number, Object],
+    default: null,
   },
 })
 

@@ -524,7 +524,7 @@ const openEditStatus = (item) => {
     id: item.id,
     name: item.name,
     color: item.color || '#4086F7',
-    confirmation_days: item.confirmation_days,
+    confirmation_days: item.confirmation_days !== undefined && item.confirmation_days !== null ? item.confirmation_days : (item.cut_off_day || 0),
     description: item.description || '',
     status_value: item.status_value || 'Guaranteed',
     is_hidden: !!item.is_hidden,
@@ -539,11 +539,16 @@ const saveStatus = async () => {
   }
   loading.value = true
   try {
+    const payload = {
+      ...statusForm,
+      confirmation_days: Number(statusForm.confirmation_days) || 0,
+      cut_off_day: Number(statusForm.confirmation_days) || 0
+    }
     if (isEditMode.value) {
-      await http.put(`/registration-statuses/${statusForm.id}`, statusForm)
+      await http.put(`/registration-statuses/${statusForm.id}`, payload)
       uiStore.showToast('Cập nhật tình trạng đăng ký thành công!', 'success')
     } else {
-      await http.post('/registration-statuses', statusForm)
+      await http.post('/registration-statuses', payload)
       uiStore.showToast('Thêm mới tình trạng đăng ký thành công!', 'success')
     }
     isStatusModalOpen.value = false

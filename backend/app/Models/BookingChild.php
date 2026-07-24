@@ -33,11 +33,20 @@ class BookingChild extends Model
     protected $fillable = [
         'booking_id', 'booking_room_id', 'full_name', 'title',
         'dob', 'nationality_code', 'age_group', 'child_status',
+        'id_type', 'id_number', 'id_issue_date', 'passport_number', 'passport_expiry', 'gender',
+        'phone', 'email', 'address', 'province', 'district', 'ward',
+        'residence_type', 'temp_residence_to', 'visa_no', 'entry_date', 'visa_expiry_date',
+        'entry_purpose', 'border_gate', 'note',
     ];
 
     protected $casts = [
-        'child_status' => 'integer',
-        'dob'          => 'date',
+        'child_status'      => 'integer',
+        'dob'               => 'date',
+        'id_issue_date'     => 'date',
+        'passport_expiry'   => 'date',
+        'temp_residence_to' => 'date',
+        'entry_date'        => 'date',
+        'visa_expiry_date'  => 'date',
     ];
 
 
