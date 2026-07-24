@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -150,6 +150,7 @@ function handleDateInputChange(e) {
     isoDate.value = val
     const [y, m, d] = val.split('-')
     selectedDate.value = `${d}/${m}/${y}`
+    loadBookingData()
   }
 }
 
@@ -191,6 +192,25 @@ function handleSort(key) {
 const filteredRows = computed(() => {
   let list = rowsData.value
 
+  // Date filter: Only include guests staying on selectedDate (ngayDen <= selectedDate <= ngayDi)
+  const targetDate = parseDate(selectedDate.value)
+  if (targetDate) {
+    targetDate.setHours(0, 0, 0, 0)
+    list = list.filter(r => {
+      const arrDate = parseDate(r.ngayDen)
+      const depDate = parseDate(r.ngayDi)
+      if (arrDate) arrDate.setHours(0, 0, 0, 0)
+      if (depDate) depDate.setHours(0, 0, 0, 0)
+
+      if (arrDate && depDate) {
+        return targetDate >= arrDate && targetDate <= depDate
+      } else if (arrDate) {
+        return targetDate >= arrDate
+      }
+      return true
+    })
+  }
+
   // Search filter
   if (searchTerm.value.trim()) {
     const s = searchTerm.value.trim().toLowerCase()
@@ -208,18 +228,6 @@ const filteredRows = computed(() => {
 
     // 3. Passport
     if (filters.value.passport && !r.hoChieu) return false
-
-    // 4. Khách đang ở (In-house) staying on selectedDate
-    if (filters.value.inHouse) {
-      const targetDate = parseDate(selectedDate.value)
-      const arrDate = parseDate(r.ngayDen)
-      const depDate = parseDate(r.ngayDi)
-      if (targetDate && arrDate && depDate) {
-        if (targetDate < arrDate || targetDate > depDate) {
-          return false
-        }
-      }
-    }
 
     return true
   })
@@ -287,10 +295,15 @@ function exportToExcel(rows) {
 
   let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`
   html += `<head><!--[if gte mso 9]><xml><x:Workbook><x:Worksheets><x:Worksheet><x:Name>Khai bao</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:Worksheet></x:Worksheets></x:Workbook></xml><![endif]--><meta charset="utf-8"/>`
-  html += `<style>body, table, tr, th, td { font-family: 'Calibri', Arial, sans-serif; font-size: 11pt; } th { font-weight: bold; background-color: #dbeafe; } </style></head>`
-  html += `<body><table border="1"><thead><tr style="background-color: #dbeafe; font-weight: bold;">`
+  html += `<style>
+    body, table, tr, th, td { font-family: 'Calibri', Arial, sans-serif; font-size: 11pt; }
+    table { border-collapse: collapse; }
+    th { font-weight: bold; background-color: #8ea9db; border: 0.5pt solid #000000; text-align: left; padding: 4px 6px; }
+    td { border: 0.5pt solid #000000; padding: 4px 6px; }
+  </style></head>`
+  html += `<body><table style="border-collapse: collapse;"><thead><tr>`
   headers.forEach(h => {
-    html += `<th>${h}</th>`
+    html += `<th style="background-color: #8ea9db; font-weight: bold; border: 0.5pt solid #000000;">${h}</th>`
   })
   html += `</tr></thead><tbody>`
 
@@ -299,35 +312,35 @@ function exportToExcel(rows) {
     const genderDisplay = r.gioiTinh ? String(r.gioiTinh).replace(/^[A-Za-z0-9\s]*-\s*/, '') : ''
     const checkinId = r.ma ? String(r.ma).replace(/^[A-Za-z]+/, '') : String(r.bookingId || '')
     html += `<tr>`
-    html += `<td>${idx + 1}</td>`
-    html += `<td>${r.ten || ''}</td>`
-    html += `<td>${r.ngaySinh || ''}</td>`
-    html += `<td>${genderDisplay}</td>`
-    html += `<td>${isVnText}</td>`
-    html += `<td>${r.soGiayTo || ''}</td>`
-    html += `<td>${r.loaiGiayTo || ''}</td>`
-    html += `<td>${r.quocTich || ''}</td>`
-    html += `<td>${r.diaChi || ''}</td>`
-    html += `<td>${r.phuongXa || ''}</td>`
-    html += `<td>${r.quanHuyen || ''}</td>`
-    html += `<td>${r.tpTinh || ''}</td>`
-    html += `<td>${r.hotelName || ''}</td>`
-    html += `<td>${checkinId}</td>`
-    html += `<td>${r.phong || ''}</td>`
-    html += `<td>${r.donGia || ''}</td>`
-    html += `<td>${r.ngayDen || ''}</td>`
-    html += `<td>${r.ngayDi || ''}</td>`
-    html += `<td>${r.ngayNhapCanh || ''}</td>`
-    html += `<td>${r.mucDichNhapCanh || ''}</td>`
-    html += `<td>${r.cuaKhau || ''}</td>`
-    html += `<td>${r.tamTruDen || ''}</td>`
-    html += `<td>${r.ngheNghiep || ''}</td>`
-    html += `<td>${r.ghiChu || ''}</td>`
-    html += `<td>${r.soDienThoai || ''}</td>`
-    html += `<td>${r.noiLamViec || ''}</td>`
-    html += `<td>${r.lyDoLuuTru || ''}</td>`
-    html += `<td>${r.thuongTru || ''}</td>`
-    html += `<td>${r.danToc || ''}</td>`
+    html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 1}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.ten || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngaySinh || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${genderDisplay}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${isVnText}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soGiayTo || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.loaiGiayTo || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.quocTich || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.diaChi || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.phuongXa || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.quanHuyen || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.tpTinh || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.hotelName || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${checkinId}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.phong || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.donGia || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngayDen || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngayDi || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngayNhapCanh || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.mucDichNhapCanh || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.cuaKhau || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.tamTruDen || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.ngheNghiep || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.ghiChu || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soDienThoai || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.noiLamViec || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.lyDoLuuTru || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.thuongTru || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.danToc || ''}</td>`
     html += `</tr>`
   })
 
@@ -722,14 +735,16 @@ function handleExport(type) {
   const selectedItems = rowsData.value.filter(r => selectedRows.value.includes(r.id))
   if (selectedItems.length === 0) return
 
-  if (type === 'KHBLT - Bộ Công An - NNN' || type.toLowerCase().includes('nnn') || type.toLowerCase().includes('nước ngoài')) {
+  const tStr = type.toLowerCase()
+
+  if (tStr.includes('nước ngoài') || tStr.includes('nnn')) {
     exportToExcelForeign(selectedItems)
-    uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang file Excel (Bộ Công An - NNN).`, 'success')
-  } else if (type === 'KHBLT - Bộ Công An - VN' || type.toLowerCase().includes('vn') || type.toLowerCase().includes('mẫu')) {
+    uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang file Excel (Mẫu khách nước ngoài).`, 'success')
+  } else if (tStr.includes('việt nam') || tStr.includes(' - vn')) {
     exportToExcelVn(selectedItems)
-    uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang file Excel (Bộ Công An - VN).`, 'success')
-  } else if (type === 'Excel' || type.toLowerCase().includes('excel')) {
-    exportToExcelVn(selectedItems)
+    uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang file Excel (Mẫu khách Việt Nam).`, 'success')
+  } else if (tStr.includes('excel') || type === 'Excel') {
+    exportToExcel(selectedItems)
     uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang file Excel.`, 'success')
   } else if (type === 'XML') {
     exportToXml(selectedItems)
@@ -784,7 +799,7 @@ async function loadBookingData() {
     const res = await fetchBookings()
     const rawList = res?.data?.data || res?.data || []
     if (Array.isArray(rawList)) {
-      // Inhouse & Guaranteed, excluding cancelled
+      // Include non-cancelled bookings (in-house, checked-out, guaranteed)
       const activeBookings = rawList.filter(b => {
         if (b.deleted_at || b.is_cancelled || b.is_canceled) return false
         
@@ -793,8 +808,10 @@ async function loadBookingData() {
 
         const statusVal = b.status !== undefined && b.status !== null ? String(b.status).toLowerCase() : ''
         
-        // ONLY allow check-in (inhouse) status
-        return statusVal === '1' || statusVal === 'inhouse' || statusVal === 'checked_in' || statusVal === 'in_house' || statusVal === 'occupied'
+        // Skip cancelled bookings
+        if (statusVal === 'cancelled' || statusVal === 'canceled' || statusVal === '3') return false
+
+        return true
       })
 
       const mapped = []
@@ -806,11 +823,12 @@ async function loadBookingData() {
         if (bookingRooms.length > 0) {
           bookingRooms.forEach(br => {
             const brStatus = br.status !== undefined && br.status !== null ? Number(br.status) : 0
-            
-            // ONLY show checked in (1) rooms that have a room number assigned
-            if (brStatus !== 1 || !br.room_number) return
+            // Skip cancelled room assignments (status 3)
+            if (brStatus === 3) return
 
             const phong = br.room_number || br.room?.room_number || b.original_room_name || b.room_name || ''
+            if (!phong) return
+
             const ngayDen = br.arrival_date || b.arrival_date || ''
             const ngayDi = br.departure_date || b.departure_date || ''
 
@@ -918,6 +936,10 @@ async function loadBookingData() {
   }
 }
 
+watch(isoDate, () => {
+  loadBookingData()
+})
+
 onMounted(() => {
   document.addEventListener('click', closeDropdowns)
   initSystemDate()
@@ -986,30 +1008,30 @@ onUnmounted(() => {
             </button>
           </div>
           <div class="export-list">
-            <button class="export-item" @click="handleExport('Excel')">
+            <button class="export-item" @click="handleExport('Xuất ra file Excel')">
               <span class="export-icon excel">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.7"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.7"/><path d="M8 13l2.5 4M13.5 13 11 17M8 17l2.5-4M13.5 17 11 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </span>
               <div class="export-item-text">
-                <span class="export-item-name">KHBLT - Excel mẫu</span>
+                <span class="export-item-name">Xuất ra file Excel</span>
               </div>
             </button>
 
-            <button class="export-item" @click="handleExport('KHBLT - Bộ Công An - VN')">
+            <button class="export-item" @click="handleExport('Xuất ra file excel - mẫu khách nước ngoài')">
               <span class="export-icon excel">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.7"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.7"/><path d="M8 13l2.5 4M13.5 13 11 17M8 17l2.5-4M13.5 17 11 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </span>
               <div class="export-item-text">
-                <span class="export-item-name">KHBLT - Bộ Công An - VN</span>
+                <span class="export-item-name">Xuất ra file excel - mẫu khách nước ngoài</span>
               </div>
             </button>
 
-            <button class="export-item" @click="handleExport('KHBLT - Bộ Công An - NNN')">
+            <button class="export-item" @click="handleExport('Xuất ra file excel - mẫu khách Việt Nam')">
               <span class="export-icon excel">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.7"/><path d="M14 2v6h6" stroke="currentColor" stroke-width="1.7"/><path d="M8 13l2.5 4M13.5 13 11 17M8 17l2.5-4M13.5 17 11 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </span>
               <div class="export-item-text">
-                <span class="export-item-name">KHBLT - Bộ Công An - NNN</span>
+                <span class="export-item-name">Xuất ra file excel - mẫu khách Việt Nam</span>
               </div>
             </button>
 
