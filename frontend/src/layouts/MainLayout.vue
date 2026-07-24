@@ -575,7 +575,19 @@ const subMenuItems = computed(() => {
   }
   
   if (route.path.startsWith('/housekeeping')) {
-    return [] // Navigation handled by HousekeepingPage sidebar
+    return [
+      { name: t('submenu.roomMap'), icon: 'grid', tab: 'room-map', active: currentTab === 'room-map' },
+      { name: t('submenu.roomPlan'), icon: 'calendar-range', tab: 'room-plan', active: currentTab === 'room-plan' },
+      { name: t('submenu.printRoomAssign'), icon: 'printer', tab: 'print-tasks', active: currentTab === 'print-tasks' },
+      { name: t('submenu.addService'), icon: 'plus-circle', tab: 'add-service', active: currentTab === 'add-service' },
+      { name: t('submenu.lostFound'), icon: 'briefcase', tab: 'lost-found', active: currentTab === 'lost-found' },
+      { name: t('submenu.inventory'), icon: 'box', tab: 'inventory', active: currentTab === 'inventory' },
+      { name: t('submenu.lockRoom'), icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
+      { name: t('submenu.invoiceSearch'), icon: 'search', tab: 'invoice-search', active: currentTab === 'invoice-search' },
+      { name: t('submenu.createMenu'), icon: 'settings', tab: 'create-menu', active: currentTab === 'create-menu' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
+    ]
   }
   
   if (route.path.startsWith('/reports')) {
