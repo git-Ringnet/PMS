@@ -3332,28 +3332,32 @@ function isTodayOrActiveBooking(b) {
 }
 
 function getRoomStatusIconName(item) {
-  if (!item) return 'double-check'
+  if (!item) return null
   // 1. Lock (OOO / OOS) - Only when currently locked today
   if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
     return item.lock_type === 'OOS' ? 'oos' : 'ooo'
   }
   // 2. Dirty Room / Housekeeping needed -> broom icon
-  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false) {
+  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false || item.is_clean === 0) {
     return 'dirty'
   }
-  // 3. Has reserved booking today -> double-check icon (✓✓)
-  const hasBookingToday = item.hasCurrentBooking || !!item.guest_name || !!item.booking_code || !!item.booking_status || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b)))
+  // 3. Occupied (In-house) and clean -> No extra icon
+  if (item.booking_status === 'occupied' || item.status === 'occupied') {
+    return null
+  }
+  // 4. Has reserved booking today -> double-check icon (✓✓)
+  const hasBookingToday = !!item.guest_name || !!item.booking_code || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b) && b.status !== 'occupied'))
   if (hasBookingToday) {
     return 'double-check'
   }
-  // 4. Sparkles ONLY for clean vacant available room without active booking today
+  // 5. Sparkles ONLY for clean vacant available room without active booking today
   if (item.is_clean && (item.status === 'available' || !item.status)) {
     return 'clean'
   }
   if (item.status === 'reserved') {
     return 'priority'
   }
-  return 'double-check'
+  return null
 }
 </script>
 
@@ -3629,7 +3633,7 @@ function getRoomStatusIconName(item) {
                     </div>
 
                     <!-- Status Icon (Synchronized with RoomMapPage) -->
-                    <div class="w-4 h-4 flex items-center justify-center shrink-0">
+                    <div v-if="getRoomStatusIconName(item)" class="w-4 h-4 flex items-center justify-center shrink-0">
                       <RoomIcon 
                         :name="getRoomStatusIconName(item)" 
                         :monochrome="getRoomStatusIconName(item) === 'ooo'"
