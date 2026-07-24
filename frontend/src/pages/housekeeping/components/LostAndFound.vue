@@ -2,7 +2,8 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
-import axios from 'axios'
+import http from '@/services/http'
+import { fetchSystemDate } from '@/services/booking-service'
 
 const route = useRoute()
 import { 
@@ -14,7 +15,7 @@ import {
 const uiStore = useUiStore()
 
 // --- API URL ---
-const API_URL = '/api/lost-and-found'
+const API_URL = '/lost-and-found'
 
 // --- Data ---
 const mockData = ref([])
@@ -22,11 +23,7 @@ const mockData = ref([])
 const fetchItems = async () => {
   try {
     isLoading.value = true
-    // Sử dụng token từ localStorage như router
-    const token = localStorage.getItem('pms_token')
-    const response = await axios.get(API_URL, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const response = await http.get(API_URL)
     mockData.value = response.data
   } catch (error) {
     uiStore.showToast('Không thể tải dữ liệu đồ thất lạc', 'error')
@@ -229,12 +226,23 @@ const isDirty = computed(() => {
   return JSON.stringify(formState) !== initialFormString.value || previewImage.value !== null
 })
 
-const openAddModal = () => {
+const openAddModal = async () => {
   isEditing.value = false
   previewImage.value = null
   const now = new Date()
-  const currentDate = now.toISOString().split('T')[0]
   const currentTime = now.toTimeString().slice(0,5)
+  let currentDate = now.toISOString().split('T')[0]
+
+  try {
+    const res = await fetchSystemDate()
+    if (res?.data?.data?.system_date) {
+      currentDate = res.data.data.system_date
+    } else if (res?.data?.system_date) {
+      currentDate = res.data.system_date
+    }
+  } catch (err) {
+    console.error('Không thể lấy ngày hệ thống', err)
+  }
   
   Object.assign(formState, {
     id: null,
@@ -296,19 +304,16 @@ const handleSave = async () => {
   }
   
   try {
-    const token = localStorage.getItem('pms_token')
-    const headers = { Authorization: `Bearer ${token}` }
-    
     // Gán ảnh nếu có
     if (previewImage.value) {
       formState.image = previewImage.value
     }
     
     if (isEditing.value) {
-      await axios.put(`${API_URL}/${formState.id}`, formState, { headers })
+      await http.put(`${API_URL}/${formState.id}`, formState)
       uiStore.showToast('Cập nhật thành công', 'success')
     } else {
-      await axios.post(API_URL, formState, { headers })
+      await http.post(API_URL, formState)
       uiStore.showToast('Thêm mới thành công', 'success')
     }
     
@@ -328,12 +333,9 @@ const handleDelete = async () => {
   if (!confirmed) return
   
   try {
-    const token = localStorage.getItem('pms_token')
-    const headers = { Authorization: `Bearer ${token}` }
-    
     // Xóa từng mục được chọn (nếu có API bulk delete thì tốt hơn, nhưng ở đây gọi từng cái)
     for (const id of selectedRows.value) {
-      await axios.delete(`${API_URL}/${id}`, { headers })
+      await http.delete(`${API_URL}/${id}`)
     }
     
     selectedRows.value = []

@@ -27,7 +27,14 @@ class LostAndFoundController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $data = $request->all();
+        foreach (['date_handling', 'time_handling', 'method_handling', 'delieved_handling', 'received_handling', 'remarks', 'image', 'log_no'] as $field) {
+            if (isset($data[$field]) && $data[$field] === '') {
+                $data[$field] = null;
+            }
+        }
+
+        $validated = \Illuminate\Support\Facades\Validator::make($data, [
             'item_found' => 'required|string|max:200',
             'time_found' => 'required',
             'date_found' => 'required|date',
@@ -42,8 +49,8 @@ class LostAndFoundController extends Controller
             'received_handling' => 'nullable|string|max:200',
             'remarks' => 'nullable|string|max:500',
             'status' => 'nullable|boolean',
-            'image' => 'nullable|string|max:200', // Could handle file upload logic here if needed
-        ]);
+            'image' => 'nullable|string',
+        ])->validate();
 
         $item = LostAndFoundItem::create($validated);
         return response()->json($item, 201);
@@ -53,7 +60,14 @@ class LostAndFoundController extends Controller
     {
         $item = LostAndFoundItem::findOrFail($id);
 
-        $validated = $request->validate([
+        $data = $request->all();
+        foreach (['date_handling', 'time_handling', 'method_handling', 'delieved_handling', 'received_handling', 'remarks', 'image', 'log_no'] as $field) {
+            if (isset($data[$field]) && $data[$field] === '') {
+                $data[$field] = null;
+            }
+        }
+
+        $validated = \Illuminate\Support\Facades\Validator::make($data, [
             'item_found' => 'required|string|max:200',
             'time_found' => 'required',
             'date_found' => 'required|date',
@@ -68,8 +82,8 @@ class LostAndFoundController extends Controller
             'received_handling' => 'nullable|string|max:200',
             'remarks' => 'nullable|string|max:500',
             'status' => 'nullable|boolean',
-            'image' => 'nullable|string|max:200',
-        ]);
+            'image' => 'nullable|string',
+        ])->validate();
 
         $item->update($validated);
         return response()->json($item);
