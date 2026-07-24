@@ -19,9 +19,12 @@ return new class extends Migration
             $table->string('status')->default('serving'); // serving, waiting, paid, cancelled
             $table->string('customer_name')->nullable();
             $table->string('customer_phone')->nullable();
+            $table->string('customer_email')->nullable();
+            $table->string('customer_address')->nullable();
             $table->integer('guest_count')->default(1);
             $table->text('public_note')->nullable();
             $table->text('internal_note')->nullable();
+            $table->text('internal_note_discount')->nullable();
             $table->unsignedBigInteger('promotion_id')->nullable();
             $table->decimal('total_amount', 15, 2)->default(0);
             $table->unsignedBigInteger('creator_id')->nullable();

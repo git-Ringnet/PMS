@@ -59,6 +59,7 @@ return new class extends Migration
             $table->integer('quantity')->default(1);
             $table->string('unit')->default('Phần');
             $table->decimal('price', 15, 2)->default(0);
+            $table->decimal('discount', 15, 2)->default(0);
             $table->string('note')->nullable();
             $table->timestamps();
         });
@@ -72,6 +73,7 @@ return new class extends Migration
             $table->string('payment_method');
             $table->decimal('amount', 15, 2);
             $table->string('note')->nullable();
+            $table->string('status')->default('active');
             $table->timestamps();
         });
     }
