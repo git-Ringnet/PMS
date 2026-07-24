@@ -161,33 +161,7 @@ onUnmounted(() => document.removeEventListener('click', closeFab))
         </div>
       </div>
 
-      <!-- Dashboard Summary Bar -->
-      <Transition name="hk-expand">
-        <div v-if="showDashboard" class="shrink-0 border-b border-slate-100 bg-slate-50/50 px-5 py-3">
-          <!-- Stat Cards -->
-          <div class="grid grid-cols-4 gap-4">
-            <button
-              v-for="stat in dashboardStats"
-              :key="stat.key"
-              @click="switchTab(stat.tab, stat.query)"
-              class="hk-card-lift flex items-center gap-3 bg-white rounded-xl border border-slate-200 p-3.5 cursor-pointer hover:border-[var(--hk-primary)] group transition-all duration-200"
-            >
-              <div
-                class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-110"
-                :style="{ backgroundColor: stat.color + '20' }"
-              >
-                <component :is="stat.icon" class="w-5 h-5" :style="{ color: stat.color }" stroke-width="2" />
-              </div>
-              <div class="text-left">
-                <div class="text-[22px] font-black text-slate-800 leading-none">
-                  {{ displayValues[stat.key] ?? 0 }}
-                </div>
-                <div class="text-[11px] text-slate-500 font-medium mt-1">{{ stat.label }}</div>
-              </div>
-            </button>
-          </div>
-        </div>
-      </Transition>
+
 
       <!-- Tab Content -->
       <div class="flex-1 overflow-hidden">
