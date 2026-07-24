@@ -19,6 +19,7 @@ import CompanySettingsPage from '@/pages/config/company/CompanySettingsPage.vue'
 import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import CheckInPage from './CheckInPage.vue'
+import ResidenceDeclarationPage from './ResidenceDeclarationPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
@@ -961,7 +962,8 @@ const uniqueFloors = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full w-full overflow-hidden bg-white">
+  <div class="h-full w-full">
+    <div class="flex h-full w-full overflow-hidden bg-white">
     <!-- Main Content Area Wrapper -->
     <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white" :style="{ zoom: scaleFactor }">
 
@@ -1407,6 +1409,11 @@ const uniqueFloors = computed(() => {
             <!-- Tab Checkin: Nhận phòng (Đến / Đã đến) -->
             <div v-else-if="currentTab === 'checkin'" class="h-full overflow-hidden">
               <CheckInPage :initial-date="rawDate" />
+            </div>
+
+            <!-- Tab Khai báo lưu trú ResidenceDeclarationPage -->
+            <div v-else-if="currentTab === 'residence-declaration' || currentTab === 'customers'" class="h-full overflow-y-auto">
+              <ResidenceDeclarationPage />
             </div>
 
             <!-- Tab 8: ALLOTMENT Tab -->
@@ -3036,7 +3043,7 @@ const uniqueFloors = computed(() => {
     @close="showRoomMoveModal = false"
     @success="handleRoomMoveSuccess"
   />
-
+  </div>
 </template>
 
 <style scoped>

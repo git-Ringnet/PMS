@@ -384,7 +384,13 @@ const menuItems = computed(() => {
       { name: t('menu.checkIn'), route: '/frontdesk' },
       { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
       { name: t('menu.invoiceManage'), route: '/frontdesk?tab=invoices' },
-      { name: t('menu.customerInfo'), route: '/frontdesk?tab=customers' },
+      {
+        name: t('menu.customerInfo'),
+        route: '/frontdesk?tab=customers',
+        dropdown: [
+          { name: t('menu.residenceDeclaration'), tab: 'residence-declaration' }
+        ]
+      },
       { name: t('menu.dayClose'), route: '/frontdesk?tab=day-close' },
       { name: t('menu.reports'), route: '/reports' },
       { name: t('menu.channelManager'), route: '/config' },
@@ -652,8 +658,11 @@ async function handleSubMenuClick(item) {
 }
 
 function handleDropdownClick(sub) {
-  if (sub.tab) {
-    router.push({ path: '/reservation', query: { tab: sub.tab } })
+  if (sub.route) {
+    router.push(sub.route)
+  } else if (sub.tab) {
+    const basePath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
+    router.push({ path: basePath, query: { tab: sub.tab } })
   }
 }
 
