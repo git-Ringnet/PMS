@@ -46,9 +46,10 @@ class PaymentController extends Controller
 
         $settings = $user->setting?->settings ?? [];
         if (isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) {
-            return (bool) $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
+            $val = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
+            return $val === true || $val === 1 || $val === '1' || $val === 'true';
         }
-        return true;
+        return false;
     }
 
     private function resolvePaymentMethodCode($input)

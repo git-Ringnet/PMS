@@ -24,6 +24,7 @@ class Room extends Model
         'linked_room',
         'is_internal',
         'room_status_code',
+        'status',
         'notes',
         'orders',
     ];
@@ -43,6 +44,23 @@ class Room extends Model
             'vacant_priority'                 => 'reserved',
             default                           => 'available',
         };
+    }
+
+    /**
+     * Mutator cho thuộc tính legacy $room->status (ánh xá sang room_status_code)
+     */
+    public function setStatusAttribute($value): void
+    {
+        $code = match($value) {
+            'dirty'       => 'vacant_dirty',
+            'checkout'    => 'turndown',
+            'maintenance' => 'ooo',
+            'dnd'         => 'dnd',
+            'reserved'    => 'vacant_priority',
+            'occupied'    => 'occupied_ready',
+            default       => 'vacant_ready',
+        };
+        $this->attributes['room_status_code'] = $code;
     }
 
     protected $casts = [
