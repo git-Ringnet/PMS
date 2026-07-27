@@ -113,6 +113,26 @@ return new class extends Migration
             $table->string('title', 20)->nullable();      // Danh xưng: Kid./Baby.
             $table->date('dob')->nullable();              // Ngày sinh
             $table->string('nationality_code', 5)->nullable()->default('VN'); // Quốc tịch
+            $table->string('id_type', 50)->nullable();
+            $table->string('id_number', 50)->nullable();
+            $table->date('id_issue_date')->nullable();
+            $table->string('passport_number', 50)->nullable();
+            $table->date('passport_expiry')->nullable();
+            $table->unsignedTinyInteger('gender')->nullable(); // 0 = Nam, 1 = Nữ, 2 = Khác
+            $table->string('phone', 20)->nullable();
+            $table->string('email', 150)->nullable();
+            $table->string('address', 500)->nullable();
+            $table->string('province', 100)->nullable();
+            $table->string('district', 100)->nullable();
+            $table->string('ward', 100)->nullable();
+            $table->string('residence_type', 20)->nullable();
+            $table->date('temp_residence_to')->nullable();
+            $table->string('visa_no', 50)->nullable();
+            $table->date('entry_date')->nullable();
+            $table->date('visa_expiry_date')->nullable();
+            $table->string('entry_purpose', 200)->nullable();
+            $table->string('border_gate', 100)->nullable();
+            $table->text('note')->nullable();
             // 'baby'  = Em bé (mặc định ăn sáng miễn phí, không tính phụ phí)
             // 'child' = Trẻ em (có thể tính phụ phí ăn sáng tùy cấu hình)
             $table->enum('age_group', ['baby', 'child'])->default('child');

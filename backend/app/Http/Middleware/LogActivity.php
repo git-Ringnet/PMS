@@ -101,6 +101,11 @@ class LogActivity
                 return;
             }
 
+            // Skip các module đã có chức năng ghi log thủ công (F&B)
+            if (preg_match('#^api/(fnb|fb-)#', $path)) {
+                return;
+            }
+
             $user = $request->user();
             $statusCode = $response->getStatusCode();
 

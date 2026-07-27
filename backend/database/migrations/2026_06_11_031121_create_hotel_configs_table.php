@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('name')->unique();
             $table->string('value')->nullable();
             $table->text('description')->nullable();
+            $table->boolean('is_visible')->default(true);
             $table->timestamps();
         });
     }

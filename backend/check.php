@@ -1,0 +1,1 @@
+<?php require 'vendor/autoload.php'; $app = require_once 'bootstrap/app.php'; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $sub = App\Models\FbSubParty::find(554); echo json_encode(['db_raw_date' => $sub->getAttributes()['arrival_date'], 'carbon_date' => (string)$sub->arrival_date, 'formatted' => $sub->arrival_date->format('d/m/Y')]);
