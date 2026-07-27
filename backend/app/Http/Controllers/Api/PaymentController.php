@@ -342,6 +342,11 @@ class PaymentController extends Controller
     // POST /payments/{id}/split
     // Body: amounts[] = danh sách số tiền sau khi tách (tổng phải = amount gốc)
     // =========================================
+    // =========================================
+    // POST: Tách cọc thành nhiều phần
+    // POST /payments/{id}/split
+    // Body: amounts[] = danh sách số tiền sau khi tách (tổng phải = amount gốc)
+    // =========================================
     public function split(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
@@ -350,6 +355,13 @@ class PaymentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Chỉ có thể tách cọc đang chờ thanh toán.',
+            ], 422);
+        }
+
+        if (!empty($payment->payment_id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không thể tách cọc đã được dùng để thanh toán.',
             ], 422);
         }
 
@@ -366,61 +378,47 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        $systemDate = $this->getSystemDate();
         $departmentId = $this->getDepartmentId($request);
 
-        DB::transaction(function () use ($request, $payment, $systemDate, $departmentId) {
-            $originalAmount = $payment->amount;
+        DB::transaction(function () use ($request, $payment, $departmentId) {
+            $originalAmount = $payment->total_amount_before_split ?? $payment->amount;
 
-            // 1. Tạo dòng âm đối trừ cho cọc gốc (ngày hệ thống)
-            $reversal = Payment::create([
-                'booking_id'        => $payment->booking_id,
-                'booking_room_id'   => $payment->booking_room_id,
-                'company_id'        => $payment->company_id,
-                'date'              => $systemDate,
-                'open_time'         => now()->format('H:i:s'),
-                'guest_display'     => $payment->guest_display,
-                'description'       => '[REVERSAL] ' . $payment->description,
-                'amount'            => -abs($payment->amount),
-                'pack2'             => Payment::PACK2_DEPOSIT,
-                'payment_method_id' => $payment->payment_method_id,
-                'department_id'     => $departmentId,
-                'image_path'        => $payment->image_path,
-                'reversal_ref'      => $payment->id,
-                'status'            => Payment::STATUS_DELETED,
-                'edit_flag'         => 1,
-                'created_by'        => Auth::user()?->username ?? 'system',
-            ]);
-
-            // Đánh dấu dòng gốc đã tách
+            // 1. Cập nhật dòng gốc: đổi amount thành số tiền phần 1, lưu total_amount_before_split
+            // Giữ nguyên edit_flag = 0, status = PENDING, KHÔNG xóa dòng gốc (SP3002 spec)
             $payment->update([
-                'edit_flag'                  => 1,
-                'reversal_ref'               => $reversal->id,
-                'total_amount_before_split'  => $originalAmount,
-                'updated_by'                 => Auth::user()?->username ?? 'system',
+                'amount'                    => $request->amounts[0],
+                'total_amount_before_split' => $originalAmount,
+                'updated_by'                => Auth::user()?->username ?? 'system',
+                'updated_at'                => now(),
             ]);
-            $payment->delete(); // Soft delete cọc gốc đã tách
 
-            // 2. Tạo các dòng cọc mới tách (ngày hệ thống)
-            foreach ($request->amounts as $amt) {
+            // 2. Tạo các dòng cọc mới tách (phần 2, phần 3...)
+            // SP3002 Spec: Date và CreateDate/created_by lấy giống dòng gốc
+            $count = count($request->amounts);
+            for ($i = 1; $i < $count; $i++) {
+                $amt = $request->amounts[$i];
                 Payment::create([
-                    'booking_id'                 => $payment->booking_id,
-                    'booking_room_id'            => $payment->booking_room_id,
-                    'company_id'                 => $payment->company_id,
-                    'date'                       => $systemDate,
-                    'open_time'                  => now()->format('H:i:s'),
-                    'guest_display'              => $payment->guest_display,
-                    'description'                => $payment->description . ' [Tách]',
-                    'amount'                     => $amt,
-                    'total_amount_before_split'  => $originalAmount,
-                    'pack2'                      => Payment::PACK2_DEPOSIT,
-                    'payment_method_id'          => $payment->payment_method_id,
-                    'department_id'              => $departmentId,
-                    'image_path'                 => $payment->image_path,
-                    'reversal_ref'               => $payment->id,
-                    'status'                     => Payment::STATUS_PENDING,
-                    'edit_flag'                  => 0,
-                    'created_by'                 => Auth::user()?->username ?? 'system',
+                    'booking_id'                => $payment->booking_id,
+                    'booking_room_id'           => $payment->booking_room_id,
+                    'guest_id'                  => $payment->guest_id,
+                    'company_id'                => $payment->company_id,
+                    'date'                      => $payment->date, // Ngày dòng gốc
+                    'open_time'                 => $payment->open_time ?? now()->format('H:i:s'),
+                    'guest_display'             => $payment->guest_display,
+                    'description'               => $payment->description,
+                    'amount'                    => $amt,
+                    'total_amount_before_split' => $originalAmount,
+                    'pack2'                     => Payment::PACK2_DEPOSIT,
+                    'payment_method_id'         => $payment->payment_method_id,
+                    'debit_account'             => $payment->debit_account,
+                    'department_id'             => $departmentId,
+                    'image_path'                => $payment->image_path,
+                    'reversal_ref'              => $payment->id,
+                    'status'                    => Payment::STATUS_PENDING,
+                    'edit_flag'                 => 0,
+                    'created_by'                => $payment->created_by ?? Auth::user()?->username ?? 'system',
+                    'created_at'                => $payment->created_at ?? now(),
+                    'updated_at'                => now(),
                 ]);
             }
 
@@ -434,13 +432,17 @@ class PaymentController extends Controller
             Booking::where('id', $payment->booking_id)->update(['payment_value' => max(0, $totalDeposit)]);
         });
 
-        $newPayments = Payment::where('reversal_ref', $payment->id)->where('edit_flag', 0)->get();
+        $activePayments = Payment::where('booking_id', $payment->booking_id)
+            ->where('pack2', Payment::PACK2_DEPOSIT)
+            ->where('edit_flag', 0)
+            ->whereNull('deleted_at')
+            ->get();
 
         return response()->json([
             'success' => true,
-            'data'    => $newPayments,
-            'message' => 'Tách cọc thành công! Đã tạo ' . count($request->amounts) . ' dòng cọc mới.',
-        ], 201);
+            'data'    => $activePayments,
+            'message' => 'Tách cọc thành công! Đã tách thành ' . count($request->amounts) . ' phần.',
+        ], 200);
     }
 
     // =========================================
@@ -493,7 +495,7 @@ class PaymentController extends Controller
         DB::transaction(function () use ($request, $payment, $targetBooking, $systemDate, $departmentId) {
             $sourceBookingId = $payment->booking_id;
 
-            // Tạo dòng âm trên booking nguồn (ngày hệ thống)
+            // 1. Tạo dòng âm trên booking nguồn (ngày hệ thống, user thao tác, edit_flag=1) - SP3002 Spec
             $reversal = Payment::create([
                 'booking_id'        => $sourceBookingId,
                 'date'              => $systemDate,
@@ -503,6 +505,7 @@ class PaymentController extends Controller
                 'amount'            => -abs($payment->amount),
                 'pack2'             => Payment::PACK2_DEPOSIT,
                 'payment_method_id' => $payment->payment_method_id,
+                'debit_account'     => $payment->debit_account,
                 'department_id'     => $departmentId,
                 'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
@@ -511,7 +514,7 @@ class PaymentController extends Controller
                 'created_by'        => Auth::user()?->username ?? 'system',
             ]);
 
-            // Đánh dấu dòng gốc đã chuyển
+            // Đánh dấu dòng gốc đã chuyển (edit_flag=1, reversal_ref trỏ sang dòng âm)
             $payment->update([
                 'edit_flag'    => 1,
                 'reversal_ref' => $reversal->id,
@@ -519,23 +522,27 @@ class PaymentController extends Controller
             ]);
             $payment->delete(); // Soft delete cọc gốc đã chuyển
 
-            // Tạo dòng mới trên booking đích (ngày hệ thống)
+            // 2. Tạo dòng dương mới trên booking đích (edit_flag=0)
+            // SP3002 Spec: Date và CreateUser/created_at GIỐNG VỚI DÒNG GỐC BAN ĐẦU
             $newPayment = Payment::create([
                 'booking_id'        => $request->target_booking_id,
                 'company_id'        => $targetBooking->company_id,
-                'date'              => $systemDate,
-                'open_time'         => now()->format('H:i:s'),
+                'date'              => $payment->date, // Ngày dòng gốc ban đầu
+                'open_time'         => $payment->open_time ?? now()->format('H:i:s'),
                 'guest_display'     => $targetBooking->booking_code . ' - ' . $targetBooking->booking_name,
                 'description'       => '[TRANSFER IN ← ' . Booking::find($sourceBookingId)?->booking_code . '] ' . $payment->description,
                 'amount'            => abs($payment->amount),
                 'pack2'             => Payment::PACK2_DEPOSIT,
                 'payment_method_id' => $payment->payment_method_id,
+                'debit_account'     => $payment->debit_account,
                 'department_id'     => $departmentId,
                 'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
-                'created_by'        => Auth::user()?->username ?? 'system',
+                'created_by'        => $payment->created_by ?? Auth::user()?->username ?? 'system',
+                'created_at'        => $payment->created_at ?? now(),
+                'updated_at'        => now(),
             ]);
 
             // Sync payment_value cả 2 booking
