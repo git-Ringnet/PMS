@@ -1,0 +1,439 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\FbProduct;
+use App\Models\Outlet;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+
+class FbProductController extends Controller
+{
+    public function index()
+    {
+        $products = FbProduct::with(['category', 'outletPrices.outlet', 'comboItems.child'])->get();
+        // Append outlet_code vào mỗi outletPrice để frontend dùng
+        $products->each(function ($product) {
+            $product->outletPrices->each(function ($op) {
+                $op->outlet_code = $op->outlet?->code;
+            });
+        });
+        return response()->json($products);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'fb_product_category_id' => 'required|exists:fb_product_categories,id',
+            'name'                   => 'required|string|max:255',
+            'product_code'           => 'nullable|string|max:100',
+            'name_en'                => 'nullable|string|max:255',
+            'short_name'             => 'nullable|string|max:255',
+            'service_group'          => 'nullable|string|max:100',
+            'vat_billing_name'       => 'nullable|string|max:255',
+            'unit_id'                => 'required|exists:units_of_measure,id',
+            'barcode'                => 'nullable|string|max:100',
+            'note'                   => 'nullable|string',
+            'price'                  => 'numeric',
+            'original_amount'        => 'nullable|numeric',
+            'service_charge_percent' => 'nullable|numeric',
+            'service_charge_amount'  => 'nullable|numeric',
+            'tax_percent'            => 'nullable|numeric',
+            'tax_amount'             => 'nullable|numeric',
+            'special_tax_percent'    => 'nullable|numeric',
+            'special_tax_amount'     => 'nullable|numeric',
+            'is_print'               => 'boolean',
+            'is_gate_ticket'         => 'boolean',
+            'is_dish_exchange'       => 'boolean',
+            'is_pre_printed'         => 'boolean',
+            'no_reinvest'            => 'boolean',
+            'is_contra'              => 'boolean',
+            'flexible_price'         => 'boolean',
+            'change_table'           => 'boolean',
+            'open_key'               => 'boolean',
+            'is_alcohol'             => 'boolean',
+            'track_stock'            => 'boolean',
+            'processing_time'        => 'integer',
+            'serving_time'           => 'integer',
+            'is_combo'               => 'boolean',
+            'is_active'              => 'boolean',
+            'entrance_ip'            => 'nullable|string|max:255',
+            'entrance_gate_ticket_type' => 'nullable|integer',
+            'exchange_limit_hours'   => 'nullable|integer',
+            'is_fixed_price'         => 'boolean',
+            'is_print_one_ticket'    => 'boolean',
+            'ticket_type'            => 'nullable|string|max:255',
+            'is_in_stock'            => 'nullable|integer',
+            'fb_printer_ids'         => 'nullable',
+            'is_get_price_from_items'=> 'boolean',
+            'is_check_combo'         => 'boolean',
+            'combo_max_items'        => 'nullable|integer',
+        ]);
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('products', 'public');
+            $validated['image'] = $path;
+        }
+
+        $product = FbProduct::create($validated);
+
+        // Sync Outlet prices (frontend gửi outlet_code, ta resolve sang outlet_id)
+        if ($request->has('outlet_prices')) {
+            $prices = is_string($request->outlet_prices) ? json_decode($request->outlet_prices, true) : $request->outlet_prices;
+            if (is_array($prices)) {
+                // Build lookup map outlet_code => outlet_id
+                $codes = array_filter(array_column($prices, 'outlet_code'));
+                $outletMap = Outlet::whereIn('code', $codes)->pluck('id', 'code');
+
+                foreach ($prices as $priceItem) {
+                    $code = $priceItem['outlet_code'] ?? null;
+                    $outletId = $outletMap[$code] ?? ($priceItem['outlet_id'] ?? null);
+                    if (!$outletId) continue;
+
+                    $product->outletPrices()->create([
+                        'outlet_id'              => $outletId,
+                        'is_active'              => filter_var($priceItem['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                        'price'                  => $priceItem['price'] ?? 0,
+                        'original_amount'        => $priceItem['original_amount'] ?? 0,
+                        'service_charge_percent' => $priceItem['service_charge_percent'] ?? 0,
+                        'service_charge_amount'  => $priceItem['service_charge_amount'] ?? 0,
+                        'tax_percent'            => $priceItem['tax_percent'] ?? 0,
+                        'tax_amount'             => $priceItem['tax_amount'] ?? 0,
+                        'special_tax_percent'    => $priceItem['special_tax_percent'] ?? 0,
+                        'special_tax_amount'     => $priceItem['special_tax_amount'] ?? 0,
+                        'combo_original'         => $priceItem['combo_original'] ?? 0,
+                        'combo_service'          => $priceItem['combo_service'] ?? 0,
+                        'combo_special'          => $priceItem['combo_special'] ?? 0,
+                        'combo_tax'              => $priceItem['combo_tax'] ?? 0,
+                        'combo_price'            => $priceItem['combo_price'] ?? 0,
+                        'update_price'           => filter_var($priceItem['update_price'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'update_combo_price'     => filter_var($priceItem['update_combo_price'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'is_expanded'            => filter_var($priceItem['is_expanded'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'selectedCounterOutlets' => $priceItem['selectedCounterOutlets'] ?? [],
+                    ]);
+                }
+            }
+        }
+
+        // Sync Combo items
+        if ($request->has('combo_items')) {
+            $combos = is_string($request->combo_items) ? json_decode($request->combo_items, true) : $request->combo_items;
+            if (is_array($combos)) {
+                foreach ($combos as $comboItem) {
+                    $product->comboItems()->create([
+                        'child_id' => $comboItem['child_id'],
+                        'quantity' => $comboItem['quantity'] ?? 1,
+                        'price'    => $comboItem['price'] ?? 0,
+                    ]);
+                }
+            }
+        }
+
+        $product->load(['outletPrices.outlet', 'comboItems.child']);
+        $product->outletPrices->each(fn($op) => $op->outlet_code = $op->outlet?->code);
+
+        \App\Services\ActivityLogService::logCreate(
+            $request,
+            $product,
+            'fnb',
+            'FbProductController',
+            "Tạo món ăn/dịch vụ: {$product->name}",
+            $product->product_code
+        );
+
+        return response()->json($product, 201);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $product = FbProduct::findOrFail($id);
+
+        $validated = $request->validate([
+            'fb_product_category_id' => 'required|exists:fb_product_categories,id',
+            'name'                   => 'required|string|max:255',
+            'product_code'           => 'nullable|string|max:100',
+            'name_en'                => 'nullable|string|max:255',
+            'short_name'             => 'nullable|string|max:255',
+            'service_group'          => 'nullable|string|max:100',
+            'vat_billing_name'       => 'nullable|string|max:255',
+            'unit_id'                => 'required|exists:units_of_measure,id',
+            'barcode'                => 'nullable|string|max:100',
+            'note'                   => 'nullable|string',
+            'price'                  => 'numeric',
+            'original_amount'        => 'nullable|numeric',
+            'service_charge_percent' => 'nullable|numeric',
+            'service_charge_amount'  => 'nullable|numeric',
+            'tax_percent'            => 'nullable|numeric',
+            'tax_amount'             => 'nullable|numeric',
+            'special_tax_percent'    => 'nullable|numeric',
+            'special_tax_amount'     => 'nullable|numeric',
+            'is_print'               => 'boolean',
+            'is_gate_ticket'         => 'boolean',
+            'is_dish_exchange'       => 'boolean',
+            'is_pre_printed'         => 'boolean',
+            'no_reinvest'            => 'boolean',
+            'is_contra'              => 'boolean',
+            'flexible_price'         => 'boolean',
+            'change_table'           => 'boolean',
+            'open_key'               => 'boolean',
+            'is_alcohol'             => 'boolean',
+            'track_stock'            => 'boolean',
+            'processing_time'        => 'integer',
+            'serving_time'           => 'integer',
+            'is_combo'               => 'boolean',
+            'is_active'              => 'boolean',
+            'entrance_ip'            => 'nullable|string|max:255',
+            'entrance_gate_ticket_type' => 'nullable|integer',
+            'exchange_limit_hours'   => 'nullable|integer',
+            'is_fixed_price'         => 'boolean',
+            'is_print_one_ticket'    => 'boolean',
+            'ticket_type'            => 'nullable|string|max:255',
+            'is_in_stock'            => 'nullable|integer',
+            'fb_printer_ids'         => 'nullable',
+            'is_get_price_from_items'=> 'boolean',
+            'is_check_combo'         => 'boolean',
+            'combo_max_items'        => 'nullable|integer',
+        ]);
+
+        if ($request->hasFile('image')) {
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
+            $path = $request->file('image')->store('products', 'public');
+            $validated['image'] = $path;
+        } elseif ($request->input('remove_image') == '1') {
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
+            $validated['image'] = null;
+        }
+
+        $product->update($validated);
+
+        // Sync Outlet prices (resolve outlet_code => outlet_id)
+        if ($request->has('outlet_prices')) {
+            $prices = is_string($request->outlet_prices) ? json_decode($request->outlet_prices, true) : $request->outlet_prices;
+            if (is_array($prices)) {
+                $product->outletPrices()->delete();
+
+                // Build lookup map outlet_code => outlet_id
+                $codes = array_filter(array_column($prices, 'outlet_code'));
+                $outletMap = Outlet::whereIn('code', $codes)->pluck('id', 'code');
+
+                foreach ($prices as $priceItem) {
+                    $code = $priceItem['outlet_code'] ?? null;
+                    $outletId = $outletMap[$code] ?? ($priceItem['outlet_id'] ?? null);
+                    if (!$outletId) continue;
+
+                    $product->outletPrices()->create([
+                        'outlet_id'              => $outletId,
+                        'is_active'              => filter_var($priceItem['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                        'price'                  => $priceItem['price'] ?? 0,
+                        'original_amount'        => $priceItem['original_amount'] ?? 0,
+                        'service_charge_percent' => $priceItem['service_charge_percent'] ?? 0,
+                        'service_charge_amount'  => $priceItem['service_charge_amount'] ?? 0,
+                        'tax_percent'            => $priceItem['tax_percent'] ?? 0,
+                        'tax_amount'             => $priceItem['tax_amount'] ?? 0,
+                        'special_tax_percent'    => $priceItem['special_tax_percent'] ?? 0,
+                        'special_tax_amount'     => $priceItem['special_tax_amount'] ?? 0,
+                        'combo_original'         => $priceItem['combo_original'] ?? 0,
+                        'combo_service'          => $priceItem['combo_service'] ?? 0,
+                        'combo_special'          => $priceItem['combo_special'] ?? 0,
+                        'combo_tax'              => $priceItem['combo_tax'] ?? 0,
+                        'combo_price'            => $priceItem['combo_price'] ?? 0,
+                        'update_price'           => filter_var($priceItem['update_price'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'update_combo_price'     => filter_var($priceItem['update_combo_price'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'is_expanded'            => filter_var($priceItem['is_expanded'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'selectedCounterOutlets' => $priceItem['selectedCounterOutlets'] ?? [],
+                    ]);
+                }
+            }
+        }
+
+        // Sync Combo items
+        if ($request->has('combo_items')) {
+            $combos = is_string($request->combo_items) ? json_decode($request->combo_items, true) : $request->combo_items;
+            if (is_array($combos)) {
+                $product->comboItems()->delete();
+                foreach ($combos as $comboItem) {
+                    $product->comboItems()->create([
+                        'child_id' => $comboItem['child_id'],
+                        'quantity' => $comboItem['quantity'] ?? 1,
+                        'price'    => $comboItem['price'] ?? 0,
+                    ]);
+                }
+            }
+        }
+
+        $product->load(['outletPrices.outlet', 'comboItems.child']);
+        $product->outletPrices->each(fn($op) => $op->outlet_code = $op->outlet?->code);
+
+        \App\Services\ActivityLogService::logUpdate(
+            $request,
+            $product,
+            [],
+            'fnb',
+            'FbProductController',
+            "Cập nhật món ăn/dịch vụ: {$product->name}",
+            $product->product_code
+        );
+
+        return response()->json($product);
+    }
+
+    public function destroy(Request $request, $id)
+    {
+        $product = FbProduct::findOrFail($id);
+
+        if ($product->image) {
+            Storage::disk('public')->delete($product->image);
+        }
+
+        $reason = $request->input('reason', 'Không có lý do');
+        \App\Services\ActivityLogService::logDelete(
+            $request,
+            $product,
+            'fnb',
+            'FbProductController',
+            "Xoá món ăn/dịch vụ: {$product->name} - Lý do: {$reason}",
+            $product->product_code
+        );
+
+        $product->delete();
+        return response()->json(['message' => 'Deleted successfully']);
+    }
+
+    public function bulkToggleActive(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer'
+        ]);
+
+        $products = FbProduct::whereIn('id', $validated['ids'])->get();
+        $oldStates = [];
+        $newStates = [];
+        foreach ($products as $product) {
+            $oldStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
+            $product->update(['is_active' => !$product->is_active]);
+            $newStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
+        }
+
+        $count = $products->count();
+        \App\Services\ActivityLogService::log([
+            'user_id' => $request->user()?->id,
+            'user_name' => $request->user()?->name ?? 'Hệ thống',
+            'employee_code' => $request->user()?->employee_code,
+            'action' => 'update',
+            'module' => 'fnb',
+            'component' => 'FbProductController',
+            'description' => "Thay đổi trạng thái {$count} sản phẩm",
+            'target_type' => 'FbProduct',
+            'target_label' => "{$count} sản phẩm",
+            'old_values' => $oldStates,
+            'new_values' => $newStates,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'request_method' => $request->method(),
+            'request_url' => $request->fullUrl(),
+            'response_status' => 200,
+        ]);
+
+        return response()->json(['message' => 'Toggled successfully']);
+    }
+    public function bulkUpdateStatus(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer',
+            'action' => 'required|string|in:toggle_global,set_outlets',
+            'outlets' => 'nullable|array',
+            'outlets.*.outlet_id' => 'required_with:outlets|integer',
+            'outlets.*.is_active' => 'required_with:outlets|boolean',
+        ]);
+
+        $ids = $validated['ids'];
+        $action = $validated['action'];
+
+        if ($action === 'toggle_global') {
+            $products = FbProduct::whereIn('id', $ids)->get();
+            $oldStates = [];
+            $newStates = [];
+            foreach ($products as $product) {
+                $oldStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
+                $product->update(['is_active' => !$product->is_active]);
+                $newStates[$product->name] = $product->is_active ? 'Hoạt động' : 'Ngưng';
+            }
+
+            $count = $products->count();
+            \App\Services\ActivityLogService::log([
+                'user_id' => $request->user()?->id,
+                'user_name' => $request->user()?->name ?? 'Hệ thống',
+                'employee_code' => $request->user()?->employee_code,
+                'action' => 'update',
+                'module' => 'fnb',
+                'component' => 'FbProductController',
+                'description' => "Cập nhật hàng loạt trạng thái {$count} sản phẩm",
+                'target_type' => 'FbProduct',
+                'target_label' => "{$count} sản phẩm",
+                'old_values' => $oldStates,
+                'new_values' => $newStates,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'request_method' => $request->method(),
+                'request_url' => $request->fullUrl(),
+                'response_status' => 200,
+            ]);
+
+            return response()->json(['message' => 'Global active status toggled successfully']);
+        }
+
+        if ($action === 'set_outlets') {
+            $outlets = $validated['outlets'] ?? [];
+            if (empty($outlets)) {
+                return response()->json(['message' => 'No outlets provided'], 400);
+            }
+
+            foreach ($ids as $productId) {
+                foreach ($outlets as $outletData) {
+                    $outlet = \App\Models\FbProductOutlet::firstOrNew([
+                        'fb_product_id' => $productId, 
+                        'outlet_id' => $outletData['outlet_id']
+                    ]);
+                    $outlet->is_active = $outletData['is_active'];
+                    $outlet->save();
+                }
+            }
+
+            $count = count($ids);
+            \App\Services\ActivityLogService::log([
+                'user_id' => $request->user()?->id,
+                'user_name' => $request->user()?->name ?? 'Hệ thống',
+                'employee_code' => $request->user()?->employee_code,
+                'action' => 'update',
+                'module' => 'fnb',
+                'component' => 'FbProductController',
+                'description' => "Cập nhật trạng thái outlet cho {$count} sản phẩm",
+                'target_type' => 'FbProductOutlet',
+                'target_label' => "{$count} sản phẩm",
+                'new_values' => [
+                    'product_count' => $count,
+                    'outlets' => collect($outlets)->map(fn($o) => [
+                        'outlet_id' => $o['outlet_id'],
+                        'is_active' => $o['is_active'] ? 'Hoạt động' : 'Ngưng',
+                    ])->toArray(),
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'request_method' => $request->method(),
+                'request_url' => $request->fullUrl(),
+                'response_status' => 200,
+            ]);
+
+            return response()->json(['message' => 'Outlet statuses updated successfully']);
+        }
+
+        return response()->json(['message' => 'Invalid action'], 400);
+    }
+}

@@ -54,7 +54,7 @@ return new class extends Migration
             // =========================================
             // PHƯƠNG THỨC THANH TOÁN
             // =========================================
-            $table->foreignId('payment_method_id')->nullable()->constrained('payment_methods')->nullOnDelete();
+            $table->string('payment_method_id', 50)->nullable();
             $table->string('debit_account')->nullable();       // Tài khoản ngân hàng
             $table->string('image_path', 255)->nullable();     // Ảnh chứng từ cọc
 

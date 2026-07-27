@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thêm dịch vụ BP</title>
+<style>
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  :root{
+    --navy:#1a6b8a; --navy-dark:#155a76;
+    --blue:#2563eb; --blue-light:#eff6ff;
+    --green:#16a34a; --green-light:#f0fdf4;
+    --red:#dc2626; --red-light:#fff1f2;
+    --orange:#d97706; --orange-light:#fffbeb;
+    --border:#e2e8f0; --border-dark:#cbd5e1;
+    --bg:#f8fafc; --bg-header:#f1f5f9;
+    --text-primary:#1e293b; --text-secondary:#475569; --text-muted:#94a3b8;
+    --radius:6px;
+  }
+  body{
+    font-family:'Segoe UI',system-ui,sans-serif;
+    background:#dde3ea;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; padding:20px;
+  }
+
+  /* ── MODAL ── */
+  .modal{
+    width:980px; max-width:100%; background:#fff; border-radius:10px;
+    overflow:hidden; box-shadow:0 8px 40px rgba(0,0,0,.18);
+    display:flex; flex-direction:column; height:88vh;
+  }
+
+  /* ── HEADER ── */
+  .modal-header{
+    background:var(--navy); color:#fff; padding:10px 18px;
+    display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+  }
+  .modal-header .title{ font-size:13.5px; font-weight:700; letter-spacing:.3px; }
+  .hdr-actions{ display:flex; gap:8px; }
+  .btn-icon{
+    background:transparent; border:none; color:rgba(255,255,255,.8);
+    cursor:pointer; font-size:15px; width:26px; height:26px;
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    transition:background .15s;
+  }
+  .btn-icon:hover{ background:rgba(255,255,255,.15); color:#fff; }
+
+  /* ── INFO STRIP ── */
+  .info-strip{
+    background:var(--bg-header); border-bottom:1px solid var(--border);
+    padding:10px 18px; display:flex; align-items:center; gap:16px; flex-shrink:0;
+    flex-wrap:wrap;
+  }
+  .info-room{
+    font-size:13px; font-weight:600; color:var(--text-primary);
+    background:#fff; border:1px solid var(--border-dark);
+    border-radius:var(--radius); padding:0 16px;
+    height:32px; display:flex; align-items:center; gap:10px;
+    min-width:260px; white-space:nowrap;
+  }
+  .info-room .room-booking{ color:var(--navy); font-size:12px; font-weight:700; }
+  .info-room .room-sep{ color:var(--border-dark); }
+  .info-room .room-no{ color:var(--text-primary); font-size:13px; font-weight:700; }
+  .info-room .room-guest{ color:var(--text-secondary); font-size:12.5px; font-weight:500; }
+  .info-field{ display:flex; flex-direction:column; gap:3px; }
+  .info-field label{ font-size:10.5px; font-weight:600; color:var(--text-primary); letter-spacing:.4px; }
+  .info-field input, .info-field select{
+    height:32px; padding:0 10px; border:1px solid var(--border-dark);
+    border-radius:var(--radius); font-size:12.5px; color:var(--text-primary);
+    font-family:inherit; background:#fff; outline:none; transition:border-color .15s;
+  }
+  .info-field input[type=date]{
+    width:140px;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  .info-field input[type=date]::-webkit-calendar-picker-indicator{
+    cursor:pointer;
+    opacity:.6;
+  }
+  .info-field input[type=date]::-webkit-calendar-picker-indicator:hover{
+    opacity:1;
+  }
+  .pct{ display:flex; align-items:center; }
+  .pct input{ border-radius:var(--radius) 0 0 var(--radius); border-right:none; width:72px; text-align:right; }
+  .pct span{
+    height:32px; padding:0 8px; border:1px solid var(--border-dark);
+    border-left:none; border-radius:0 var(--radius) var(--radius) 0;
+    background:var(--bg); font-size:12px; color:var(--text-muted); display:flex; align-items:center;
+  }
+  .info-field textarea{
+    height:32px; padding:5px 10px; resize:none;
+    border:1px solid var(--border-dark); border-radius:var(--radius);
+    font-size:12.5px; color:var(--text-primary); font-family:inherit;
+    background:#fff; outline:none; width:180px; line-height:1.3; transition:border-color .15s;
+  }
+  .info-field textarea:focus{ border-color:var(--navy); }
+
+  /* ── BODY ── */
+  .modal-body{ display:grid; grid-template-columns:260px 1fr; flex:1; overflow:hidden; }
+
+  /* ── LEFT: sản phẩm ── */
+  .col-products{ border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+  .tab-bar{ display:flex; border-bottom:2px solid var(--border); background:var(--bg-header); flex-shrink:0; }
+  .tab{
+    flex:1; padding:10px 4px; font-size:12px; font-weight:500; color:#94a3b8;
+    text-align:center; cursor:pointer; border:none; background:none;
+    border-bottom:2px solid transparent; margin-bottom:-2px;
+    transition:color .15s, border-color .15s, font-weight .15s; font-family:inherit;
+  }
+  .tab:hover{ color:var(--text-secondary); }
+  .tab.active{ color:var(--text-primary); font-weight:700; border-bottom-color:var(--navy); }
+  .product-search{ padding:8px 10px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .search-wrap{ position:relative; }
+  .search-wrap input{
+    width:100%; height:32px; padding:0 10px 0 30px;
+    font-size:12.5px; border:1px solid var(--border-dark);
+    border-radius:var(--radius); background:var(--bg); color:var(--text-primary); font-family:inherit; outline:none;
+  }
+  .search-wrap input:focus{ border-color:var(--navy); background:#fff; }
+  .search-icon{ position:absolute; left:9px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:13px; pointer-events:none; }
+  .product-list{ flex:1; overflow-y:auto; }
+  .product-item{
+    display:flex; align-items:center; gap:10px; padding:8px 14px; cursor:pointer;
+    transition:background .1s; user-select:none; border-bottom:1px solid var(--border);
+  }
+  .product-item:hover{ background:var(--blue-light); }
+  .product-item:last-child{ border-bottom:none; }
+  .product-thumb{
+    width:34px; height:34px; border-radius:6px; background:var(--bg); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;
+  }
+  .product-info{ flex:1; min-width:0; }
+  .product-name{ font-size:12.5px; color:var(--text-primary); font-weight:400; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .product-price{ font-size:11px; color:var(--navy); font-weight:600; margin-top:2px; }
+  .product-add{
+    width:24px; height:24px; border-radius:50%; background:var(--navy); color:#fff; border:none;
+    font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; transition:background .15s; line-height:1;
+  }
+  .product-add:hover{ background:var(--navy-dark); }
+
+  /* ── RIGHT: bảng ── */
+  .col-right{ display:flex; flex-direction:column; overflow:hidden; }
+
+  /*
+    Grid: STT | Sản phẩm | Giá | SL | %GG | Tiền GG | Tổng | Xóa
+    Với chế độ phụ thu: %PT | Tiền PT
+  */
+  .tbl-head{
+    display:grid;
+    grid-template-columns: 36px 1fr 88px 52px 80px 80px 88px 36px;
+    background:var(--bg-header); border-bottom:2px solid var(--border);
+    padding:0 12px; height:42px; align-items:center; gap:6px; flex-shrink:0;
+  }
+  .th{
+    font-size:11px; font-weight:700; color:var(--text-primary);
+    text-align:center; line-height:1.25;
+  }
+  .th.left{ text-align:center; }
+
+  /* Toggle header — cột giảm giá / phụ thu */
+  .th-toggle{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; cursor:pointer; user-select:none; padding:4px 2px; border-radius:4px;
+    transition:background .15s;
+  }
+  .th-toggle:hover{ background:var(--border); }
+  .th-toggle .th-main{ font-size:11px; font-weight:700; color:var(--text-primary); }
+  .th-toggle .th-hint{
+    font-size:9.5px; font-weight:400; color:var(--text-muted);
+    white-space:nowrap;
+  }
+  .th-toggle.mode-pt .th-main{ color:var(--orange); }
+  .th-toggle.mode-pt .th-hint{ color:var(--orange); opacity:.7; }
+  /* badge chỉ chế độ */
+  .mode-badge{
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px;
+    margin-left:6px; vertical-align:middle;
+  }
+  .mode-badge.gg{ background:var(--red-light); color:var(--red); }
+  .mode-badge.pt{ background:var(--orange-light); color:var(--orange); }
+
+  .tbl-body{ flex:1; overflow-y:auto; }
+
+  .tbl-row{
+    display:grid;
+    grid-template-columns: 36px 1fr 88px 52px 80px 80px 88px 36px;
+    padding:0 12px; gap:6px; align-items:center; min-height:46px;
+    border-bottom:1px solid var(--border); transition:background .1s;
+  }
+  .tbl-row:hover{ background:var(--bg); }
+
+  .cell-stt{ font-size:12px; color:var(--text-muted); text-align:center; }
+  .cell-name{ font-size:12.5px; color:var(--text-primary); font-weight:400; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cell-price{ font-size:12.5px; color:var(--text-primary); text-align:center; }
+  .cell-total{ font-size:12.5px; font-weight:600; color:var(--text-primary); text-align:center; }
+
+  /* Group header */
+  .group-header{
+    grid-column: 1 / -1;
+    padding:6px 8px 4px;
+    font-size:10.5px; font-weight:700; letter-spacing:.5px;
+    color:var(--text-muted); background:var(--bg-header);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:6px;
+  }
+  .group-header .group-dot{
+    width:7px; height:7px; border-radius:50%; background:var(--navy); flex-shrink:0;
+  }
+
+  /* Inputs chung */
+  .cell-input{
+    width:100%; height:30px; border:1px solid var(--border-dark); border-radius:var(--radius);
+    font-size:12.5px; font-family:inherit; color:var(--text-primary);
+    background:#fff; outline:none; transition:border-color .15s; padding:0 6px;
+    text-align:center;
+  }
+  .cell-input:focus{ border-color:var(--navy); }
+
+  /* Ô % giảm/phụ thu */
+  .cell-pct{ position:relative; }
+  .cell-pct input{ padding-right:20px; }
+  .cell-pct .pct-unit{
+    position:absolute; right:7px; top:50%; transform:translateY(-50%);
+    font-size:11px; color:var(--text-muted); pointer-events:none;
+  }
+  .cell-discount-val{ font-size:12.5px; text-align:center; color:var(--text-muted); }
+  .cell-discount-val.has-val{ color:var(--red); font-weight:600; }
+  /* Tiền phụ thu — cam khi có giá trị */
+  .cell-discount-val.mode-pt{ color:var(--text-muted); }
+  .cell-discount-val.mode-pt.has-val{ color:var(--orange); font-weight:600; }
+
+  /* Xóa */
+  .cell-del button{
+    background:none; border:none; cursor:pointer; color:#fca5a5; font-size:15px;
+    width:28px; height:28px; border-radius:4px;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .12s, color .12s; margin:0 auto;
+  }
+  .cell-del button:hover{ background:#fee2e2; color:var(--red); }
+
+  /* Empty */
+  .tbl-empty{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:100%; color:var(--text-muted); font-size:13px; gap:8px; padding:40px; text-align:center;
+  }
+  .tbl-empty .icon{ font-size:36px; opacity:.3; }
+
+  /* Dòng thành tiền cuối bảng */
+  .tbl-total-row{
+    display:flex; justify-content:flex-end; align-items:center; gap:8px;
+    padding:8px 14px 8px 12px;
+    border-top:2px solid var(--border-dark);
+    background:var(--bg-header);
+  }
+  .tbl-total-lbl{ font-size:12px; font-weight:600; color:var(--text-secondary); }
+  .tbl-total-val{ font-size:15px; font-weight:700; color:var(--navy); min-width:90px; text-align:right; }
+
+  /* Sub-group trong danh sách sản phẩm */
+  .subgroup-header{
+    padding:5px 14px 4px;
+    font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+    color:#fff; background:var(--navy);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:6px; opacity:.85;
+  }
+
+  /* ── FOOTER ── */
+  .modal-footer{
+    border-top:2px solid var(--border); background:var(--bg-header);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 18px; flex-shrink:0;
+  }
+  .footer-summary{ display:flex; align-items:baseline; gap:16px; }
+  .footer-item{ display:flex; align-items:baseline; gap:5px; }
+  .footer-item .lbl{ font-size:11px; font-weight:600; color:var(--text-muted); }
+  .footer-item .val{ font-size:15px; font-weight:700; color:var(--text-primary); }
+  .footer-item .val.total{ color:var(--navy); font-size:18px; }
+  .footer-item .val.discount{ color:var(--red); }
+  .footer-sep{ color:var(--border-dark); }
+  .footer-actions{ display:flex; gap:8px; }
+  .btn{
+    height:36px; padding:0 20px; border-radius:var(--radius);
+    font-size:13px; font-weight:600; cursor:pointer; border:none;
+    font-family:inherit; display:flex; align-items:center; gap:6px; transition:background .15s;
+  }
+  .btn-cancel{ background:#fff; border:1px solid var(--border-dark); color:var(--text-secondary); }
+  .btn-cancel:hover{ background:var(--bg); }
+  .btn-save{ background:var(--navy); color:#fff; }
+  .btn-save:hover{ background:var(--navy-dark); }
+
+  /* Tooltip hint */
+  .th-toggle-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; }
+  .toggle-hint{
+    position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%);
+    background:#1e293b; color:#fff; font-size:11px; font-weight:400;
+    padding:5px 10px; border-radius:6px; white-space:nowrap; pointer-events:none;
+    opacity:0; transition:opacity .15s; z-index:10; line-height:1.4; text-align:center;
+  }
+  .th-toggle:hover + .toggle-hint{ opacity:1; }
+
+  .mienPhi-wrap{
+    display:flex; align-items:center; gap:8px;
+    height:32px; cursor:pointer; user-select:none;
+    font-size:14px; font-weight:500; color:var(--text-secondary); white-space:nowrap;
+    transition:color .15s;
+  }
+  .mienPhi-wrap:hover{ color:var(--text-primary); }
+  .mienPhi-wrap:has(input:checked){ color:var(--green); font-weight:700; }
+  .mienPhi-wrap input[type=checkbox]{
+    width:18px; height:18px; accent-color:var(--green); cursor:pointer; flex-shrink:0;
+  }
+  /* Disabled state for inputs when miễn phí */
+  .strip-disabled{
+    opacity:.4; pointer-events:none;
+  }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="modal">
+
+  <!-- HEADER -->
+  <div class="modal-header">
+    <span class="title">Thêm dịch vụ buồng phòng</span>
+    <div class="hdr-actions">
+      <button class="btn-icon">?</button>
+      <button class="btn-icon">✕</button>
+    </div>
+  </div>
+
+  <!-- INFO STRIP -->
+  <div class="info-strip">
+    <div class="info-field">
+      <label>&nbsp;</label>
+      <div class="info-room">
+        <span class="room-booking">BK4558</span>
+        <span class="room-sep">·</span>
+        <span class="room-no">Phòng 603</span>
+        <span class="room-sep">·</span>
+        <span class="room-guest">Nguyễn Văn Guest 1</span>
+      </div>
+    </div>
+
+    <div class="info-field">
+      <label>Ngày</label>
+      <input type="date" value="2026-07-09" style="width:140px;">
+    </div>
+    <div class="info-field">
+      <label>Tăng giá</label>
+      <div class="pct"><input type="number" id="globalSurcharge" value="" min="0" placeholder="0" oninput="onGlobalChange('surcharge')"><span>%</span></div>
+    </div>
+    <div class="info-field">
+      <label>Chiết khấu</label>
+      <div class="pct"><input type="number" id="globalDiscount" value="" min="0" placeholder="0" oninput="onGlobalChange('discount')"><span>%</span></div>
+    </div>
+    <div class="info-field">
+      <label>&nbsp;</label>
+      <label class="mienPhi-wrap" id="mienPhiWrap">
+        <input type="checkbox" id="mienPhi" onchange="onMienPhiChange()">
+        <span>Miễn phí</span>
+      </label>
+    </div>
+    <div class="info-field" style="flex:1;">
+      <label>Ghi chú</label>
+      <textarea placeholder="Ghi chú..." spellcheck="false" style="width:100%;"></textarea>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="modal-body">
+
+    <!-- LEFT -->
+    <div class="col-products">
+      <div class="tab-bar">
+        <button class="tab active" onclick="switchTab('minibar',this)">Minibar</button>
+        <button class="tab" onclick="switchTab('giatui',this)">Giặt ủi</button>
+        <button class="tab" onclick="switchTab('dengbu',this)">Hàng đền bù</button>
+      </div>
+      <div class="product-search">
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="productSearch" placeholder="Tìm sản phẩm..." oninput="filterProducts(this.value)">
+        </div>
+      </div>
+      <div class="product-list" id="productList"></div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col-right">
+      <div class="tbl-head" id="tblHead">
+        <div class="th">STT</div>
+        <div class="th left">Sản phẩm</div>
+        <div class="th">Giá</div>
+        <div class="th">SL</div>
+        <!-- Toggle cột giảm giá / phụ thu -->
+        <div class="th-toggle-wrap">
+          <div class="th-toggle" id="toggleMode" onclick="toggleDiscountMode()">
+            <span class="th-main" id="toggleLabel">% Giảm</span>
+            <span class="th-hint" id="toggleHint">↔ click: Phụ thu</span>
+          </div>
+          <div class="toggle-hint">Click để chuyển sang chế độ Phụ thu</div>
+        </div>
+        <div class="th" id="thDiscountVal">Tiền giảm</div>
+        <div class="th">Thành tiền</div>
+        <div class="th"></div>
+      </div>
+      <div class="tbl-body" id="tblBody">
+        <div class="tbl-empty">
+          <span class="icon">🛒</span>
+          <span>Chọn sản phẩm từ danh sách bên trái để thêm</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="modal-footer" style="justify-content:flex-end;">
+    <div class="footer-actions">
+      <button class="btn btn-cancel" onclick="undoCart()" title="Xóa toàn bộ danh sách">↩ Undo</button>
+      <button class="btn btn-save">💾 Gửi về phòng</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const PRODUCTS = {
+    minibar: {
+      'Nước uống': [
+        { id:1,  name:'Nước suối Aqua 500ml',   price:15000, icon:'💧' },
+        { id:2,  name:'Nước suối Aqua 1.5L',    price:25000, icon:'💧' },
+        { id:10, name:'Nước cam ép 250ml',       price:35000, icon:'🍊' },
+      ],
+      'Nước ngọt & Bia': [
+        { id:3,  name:'Coca Cola 330ml',         price:30000, icon:'🥤' },
+        { id:4,  name:'Pepsi 330ml',             price:30000, icon:'🥤' },
+        { id:5,  name:'Bia Tiger 330ml',         price:35000, icon:'🍺' },
+        { id:6,  name:'Bia Heineken 330ml',      price:40000, icon:'🍺' },
+      ],
+      'Đồ ăn vặt': [
+        { id:7,  name:'Snack Pringles',          price:45000, icon:'🍟' },
+        { id:8,  name:'Hạt điều rang muối',      price:50000, icon:'🥜' },
+        { id:9,  name:'Chocolate Kit Kat',       price:20000, icon:'🍫' },
+      ],
+    },
+    giatui: {
+      'Giặt ướt': [
+        { id:11, name:'Giặt áo sơ mi',          price:25000, icon:'👔' },
+        { id:12, name:'Giặt quần tây',           price:30000, icon:'👖' },
+        { id:13, name:'Giặt váy/đầm',            price:35000, icon:'👗' },
+        { id:14, name:'Giặt áo khoác',           price:50000, icon:'🧥' },
+      ],
+      'Ủi & Giặt khô': [
+        { id:15, name:'Ủi áo sơ mi',            price:15000, icon:'👔' },
+        { id:16, name:'Giặt khô bộ vest',        price:80000, icon:'🤵' },
+      ],
+    },
+    dengbu: {
+      'Điện tử': [
+        { id:17, name:'Điều khiển tivi',         price:300000, icon:'📺' },
+        { id:22, name:'Điều khiển điều hòa',     price:200000, icon:'❄️' },
+      ],
+      'Vật dụng phòng': [
+        { id:18, name:'Disk Glass / Đế lót ly',  price:30000,  icon:'🥃' },
+        { id:19, name:'Móc áo',                  price:20000,  icon:'🪝' },
+        { id:20, name:'Khăn tắm lớn',            price:150000, icon:'🛁' },
+        { id:21, name:'Dép phòng',               price:50000,  icon:'🩴' },
+      ],
+    },
+  };
+
+  let currentTab = 'minibar';
+  let cart = [];           // [{product, qty, discPct}]
+  let discountMode = 'gg'; // 'gg' = giảm giá | 'pt' = phụ thu
+  let globalPct = 0;       // net global % (surcharge - discount), negative = giảm, positive = tăng
+
+  const fmt    = n => Math.round(n).toLocaleString('en-US');
+  const parseN = s => parseFloat((s+'').replace(/[^\d.]/g,'')) || 0;
+
+  function onGlobalChange(source){
+    const surchargeInp = document.getElementById('globalSurcharge');
+    const discountInp  = document.getElementById('globalDiscount');
+
+    if(source === 'surcharge' && parseN(surchargeInp.value) > 0){
+      discountInp.value = '';
+    } else if(source === 'discount' && parseN(discountInp.value) > 0){
+      surchargeInp.value = '';
+    }
+
+    const surcharge = parseN(surchargeInp.value);
+    const discount  = parseN(discountInp.value);
+
+    const prevMode = discountMode;
+    if(surcharge > 0){ discountMode = 'pt'; }
+    else              { discountMode = 'gg'; }
+
+    // Khi chuyển mode, clear discPct riêng của tất cả hàng
+    if(prevMode !== discountMode){
+      cart.forEach(item => { item.discPct = 0; });
+      _applyModeUI();
+    }
+
+    globalPct = discountMode === 'gg' ? discount : surcharge;
+    renderTable();
+  }
+
+  function _applyModeUI(){
+    const toggle  = document.getElementById('toggleMode');
+    const label   = document.getElementById('toggleLabel');
+    const hint    = document.getElementById('toggleHint');
+    const valHdr  = document.getElementById('thDiscountVal');
+    const tooltip = document.querySelector('.toggle-hint');
+    if(discountMode === 'pt'){
+      toggle.classList.add('mode-pt');
+      label.textContent = '% Phụ thu';
+      hint.textContent  = '↔ click: Giảm giá';
+      valHdr.textContent = 'Tiền phụ thu';
+      if(tooltip) tooltip.textContent = 'Click để chuyển sang chế độ Giảm giá';
+    } else {
+      toggle.classList.remove('mode-pt');
+      label.textContent = '% Giảm';
+      hint.textContent  = '↔ click: Phụ thu';
+      valHdr.textContent = 'Tiền giảm';
+      if(tooltip) tooltip.textContent = 'Click để chuyển sang chế độ Phụ thu';
+    }
+  }
+
+  // ── Tab ──
+  function switchTab(tab, el){
+    currentTab = tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('productSearch').value = '';
+    renderProducts();
+  }
+  function filterProducts(q){ renderProducts(q); }
+
+  // ── Sản phẩm ──
+  function renderProducts(filter=''){
+    const list = document.getElementById('productList');
+    list.innerHTML = '';
+    const lower = filter.toLowerCase();
+    const tabData = PRODUCTS[currentTab];
+    let totalFound = 0;
+
+    Object.entries(tabData).forEach(([subName, items]) => {
+      const filtered = items.filter(p => p.name.toLowerCase().includes(lower));
+      if(!filtered.length) return;
+      totalFound += filtered.length;
+
+      const sh = document.createElement('div');
+      sh.className = 'subgroup-header';
+      sh.textContent = subName;
+      list.appendChild(sh);
+
+      filtered.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'product-item';
+        div.innerHTML = `
+          <div class="product-thumb">${p.icon}</div>
+          <div class="product-info">
+            <div class="product-name">${p.name}</div>
+            <div class="product-price">${fmt(p.price)} đ</div>
+          </div>
+          <button class="product-add" title="Thêm">+</button>`;
+        div.querySelector('.product-add').addEventListener('click', e => { e.stopPropagation(); addToCart(p); });
+        div.addEventListener('click', () => addToCart(p));
+        list.appendChild(div);
+      });
+    });
+
+    if(!totalFound){
+      list.innerHTML = `<div class="tbl-empty" style="height:auto;padding:28px"><span class="icon">🔍</span><span>Không tìm thấy</span></div>`;
+    }
+  }
+
+  // ── Giỏ ──
+  function addToCart(product){
+    const ex = cart.find(c => c.product.id === product.id);
+    if(ex){ ex.qty++; }
+    else { cart.push({ product, qty:1, discPct:0, discVal:0 }); }
+    renderTable();
+  }
+  function removeFromCart(id){
+    cart = cart.filter(c => c.product.id !== id);
+    renderTable();
+  }
+
+  // ── Toggle chế độ cột ──
+  let isMienPhi = false;
+
+  function onMienPhiChange(){
+    isMienPhi = document.getElementById('mienPhi').checked;
+
+    // Lock/unlock tăng giá, chiết khấu, toggle cột
+    const lockEls = [
+      document.getElementById('globalSurcharge'),
+      document.getElementById('globalDiscount'),
+      document.getElementById('toggleMode'),
+    ];
+    lockEls.forEach(el => {
+      if(isMienPhi){ el.classList.add('strip-disabled'); el.style.pointerEvents='none'; el.style.opacity='.4'; }
+      else          { el.classList.remove('strip-disabled'); el.style.pointerEvents=''; el.style.opacity=''; }
+    });
+
+    // Khi miễn phí: reset global, clear discPct từng dòng
+    if(isMienPhi){
+      document.getElementById('globalSurcharge').value = '';
+      document.getElementById('globalDiscount').value  = '';
+      globalPct = 0;
+      discountMode = 'gg';
+      _applyModeUI();
+      cart.forEach(item => { item.discPct = 0; });
+    }
+
+    renderTable();
+  }
+
+  function toggleDiscountMode(){
+    discountMode = discountMode === 'gg' ? 'pt' : 'gg';
+
+    const surchargeInp = document.getElementById('globalSurcharge');
+    const discountInp  = document.getElementById('globalDiscount');
+    surchargeInp.value = '';
+    discountInp.value  = '';
+    globalPct = 0;
+
+    cart.forEach(item => { item.discPct = 0; });
+
+    _applyModeUI();
+    renderTable();
+  }
+
+  function calcRow(item){
+    const base = item.product.price * item.qty;
+    if(isMienPhi){
+      return { base, discAmt: base, totalPct: 100, net: 0 };
+    }
+    const totalPct = Math.min(100, Math.max(-100, globalPct + (item.discPct || 0)));
+    const discAmt  = Math.round(Math.abs(base * totalPct / 100));
+    const net = discountMode === 'gg'
+      ? base - Math.round(base * totalPct / 100)
+      : base + Math.round(base * totalPct / 100);
+    return { base, discAmt, totalPct, net };
+  }
+
+  const GROUP_LABELS = { minibar:'Minibar', giatui:'Giặt ủi', dengbu:'Hàng đền bù' };
+  const GROUP_COLORS = { minibar:'#2563eb', giatui:'#16a34a', dengbu:'#d97706' };
+
+  // Map product id → group (flatten sub-groups)
+  const productGroup = {};
+  Object.entries(PRODUCTS).forEach(([grp, subGroups]) =>
+    Object.values(subGroups).forEach(items => items.forEach(p => productGroup[p.id] = grp))
+  );
+
+  function renderTable(){
+    const body = document.getElementById('tblBody');
+    if(!cart.length){
+      body.innerHTML = `<div class="tbl-empty"><span class="icon">🛒</span><span>Chọn sản phẩm từ danh sách bên trái để thêm</span></div>`;
+      updateTotal(); return;
+    }
+
+    body.innerHTML = '';
+
+    // Group cart items
+    const groups = {};
+    cart.forEach(item => {
+      const grp = productGroup[item.product.id] || 'minibar';
+      if(!groups[grp]) groups[grp] = [];
+      groups[grp].push(item);
+    });
+
+    let stt = 1;
+    ['minibar','giatui','dengbu'].forEach(grp => {
+      if(!groups[grp]) return;
+
+      // Group header row
+      const ghWrap = document.createElement('div');
+      ghWrap.style.display = 'grid';
+      ghWrap.style.gridTemplateColumns = '36px 1fr 88px 52px 80px 80px 88px 36px';
+      ghWrap.style.gap = '6px';
+      const gh = document.createElement('div');
+      gh.className = 'group-header';
+      const dot = document.createElement('span');
+      dot.className = 'group-dot';
+      dot.style.background = GROUP_COLORS[grp];
+      gh.appendChild(dot);
+      gh.appendChild(document.createTextNode(GROUP_LABELS[grp]));
+      ghWrap.appendChild(gh);
+      body.appendChild(ghWrap);
+
+      groups[grp].forEach(item => {
+        const { base, discAmt, net } = calcRow(item);
+        const row = document.createElement('div');
+        row.className = 'tbl-row';
+
+        const sttEl = document.createElement('div');
+        sttEl.className = 'cell-stt'; sttEl.textContent = stt++;
+        row.appendChild(sttEl);
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'cell-name'; nameEl.textContent = item.product.name;
+        nameEl.title = item.product.name;
+        row.appendChild(nameEl);
+
+        const priceEl = document.createElement('div');
+        priceEl.className = 'cell-price'; priceEl.textContent = fmt(item.product.price);
+        row.appendChild(priceEl);
+
+        const qtyCell = document.createElement('div');
+        const qtyInp = document.createElement('input');
+        qtyInp.className = 'cell-input'; qtyInp.type = 'number'; qtyInp.value = item.qty; qtyInp.min = 1;
+        qtyInp.addEventListener('input', () => { item.qty = parseInt(qtyInp.value)||1; refreshRow(row,item); });
+        qtyCell.appendChild(qtyInp); row.appendChild(qtyCell);
+
+        const pctCell = document.createElement('div');
+        pctCell.className = 'cell-pct';
+        const pctInp = document.createElement('input');
+        pctInp.className = 'cell-input'; pctInp.type = 'number'; pctInp.min = 0; pctInp.max = 100;
+        pctInp.value = isMienPhi ? 100 : (item.discPct || '');
+        pctInp.placeholder = globalPct ? `${globalPct}` : '0';
+        pctInp.disabled = isMienPhi;
+        const pctUnit = document.createElement('span'); pctUnit.className = 'pct-unit'; pctUnit.textContent = '%';
+        pctInp.addEventListener('input', () => { item.discPct = parseN(pctInp.value); refreshRow(row,item); });
+        pctCell.appendChild(pctInp); pctCell.appendChild(pctUnit); row.appendChild(pctCell);
+
+        const discValEl = document.createElement('div');
+        discValEl.className = 'cell-discount-val'+(discountMode==='pt'?' mode-pt':'')+(discAmt>0?' has-val':'');
+        discValEl.dataset.discval = '1';
+        discValEl.textContent = discAmt > 0 ? fmt(discAmt) : '—';
+        row.appendChild(discValEl);
+
+        const totalEl = document.createElement('div');
+        totalEl.className = 'cell-total'; totalEl.dataset.total = '1';
+        totalEl.textContent = fmt(net);
+        row.appendChild(totalEl);
+
+        const delCell = document.createElement('div');
+        delCell.className = 'cell-del';
+        const delBtn = document.createElement('button');
+        delBtn.innerHTML = '🗑'; delBtn.title = 'Xóa';
+        delBtn.addEventListener('click', () => removeFromCart(item.product.id));
+        delCell.appendChild(delBtn); row.appendChild(delCell);
+
+        body.appendChild(row);
+      });
+    });
+
+    // Dòng thành tiền
+    const totalRow = document.createElement('div');
+    totalRow.className = 'tbl-total-row';
+    totalRow.id = 'tblTotalRow';
+    let grand = 0;
+    cart.forEach(item => { grand += calcRow(item).net; });
+    totalRow.innerHTML = `<span class="tbl-total-lbl">Thành tiền</span><span class="tbl-total-val" id="grandTotal">${fmt(grand)}</span>`;
+    body.appendChild(totalRow);
+  }
+
+  function refreshRow(row, item){
+    const { discAmt, net } = calcRow(item);
+    const discValEl = row.querySelector('[data-discval]');
+    const totalEl   = row.querySelector('[data-total]');
+    const pctInp    = row.querySelector('.cell-pct input');
+    if(discValEl){
+      discValEl.className = 'cell-discount-val' + (discountMode === 'pt' ? ' mode-pt' : '') + (discAmt > 0 ? ' has-val' : '');
+      discValEl.textContent = discAmt > 0 ? fmt(discAmt) : '—';
+    }
+    if(pctInp) pctInp.placeholder = globalPct ? `${globalPct}` : '0';
+    if(totalEl) totalEl.textContent = fmt(net);
+    updateGrandTotal();
+  }
+
+  function updateGrandTotal(){
+    let grand = 0;
+    cart.forEach(item => { grand += calcRow(item).net; });
+    const el = document.getElementById('grandTotal');
+    if(el) el.textContent = fmt(grand);
+  }
+
+  function undoCart(){
+    cart = [];
+    renderTable();
+  }
+
+  // INIT
+  renderProducts();
+</script>
+</body>
+</html>

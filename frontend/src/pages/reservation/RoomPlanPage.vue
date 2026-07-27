@@ -3457,7 +3457,8 @@ function getRoomStatusIconName(item) {
 </script>
 
 <template>
-  <div class="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-4 overflow-hidden h-full">
+  <div class="h-full flex flex-col">
+    <div class="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-4 overflow-hidden h-full">
     <!-- Top Filters & Controls -->
     <div class="flex items-center justify-between shrink-0">
       <!-- Left side controls -->
@@ -4787,6 +4788,7 @@ function getRoomStatusIconName(item) {
       </div>
     </div>
   </Teleport>
+  </div>
 </template>
 
 <style scoped>

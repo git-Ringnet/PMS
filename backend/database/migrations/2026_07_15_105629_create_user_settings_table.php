@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('sort_option')->default('Phòng'); // Options: 'Loại phòng', 'Dạng phòng', 'Tầng', 'Phòng'
             $table->boolean('night_view')->default(true);
             $table->boolean('show_notes')->default(true);
+            $table->json('settings')->nullable();
             $table->timestamps();
         });
     }

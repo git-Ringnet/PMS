@@ -26,6 +26,7 @@ return new class extends Migration
             $table->decimal('max_debt', 15, 2)->default(0); // Công nợ tối đa
             $table->string('bank_account')->nullable(); // Tài khoản ngân hàng
             $table->foreignId('booker_id')->nullable()->constrained('bookers')->nullOnDelete(); // Người đặt phòng
+            $table->foreignId('sales_person_id')->nullable()->constrained('users')->nullOnDelete(); // Người bán
             $table->string('rate_code')->nullable(); // Mã giá phòng
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete(); // Chi nhánh
             $table->boolean('is_active')->default(true); // Trạng thái
