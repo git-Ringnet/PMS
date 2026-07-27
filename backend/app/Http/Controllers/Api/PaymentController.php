@@ -459,6 +459,14 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        // Không cho chuyển cọc đã được dùng để thanh toán (payment_id có giá trị)
+        if (!empty($payment->payment_id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không thể chuyển cọc đã được dùng để thanh toán.',
+            ], 422);
+        }
+
         $request->validate([
             'target_booking_id' => 'required|exists:bookings,id',
         ]);
