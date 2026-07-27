@@ -35,7 +35,7 @@ const roomTabs = [
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col gap-4">
+  <div class="flex-1 flex flex-col gap-4 min-h-0">
     <!-- Sub Navigation Tabs Bar -->
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">

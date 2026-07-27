@@ -168,7 +168,7 @@ const fetchRoomForms = async () => {
 const fetchRooms = async () => {
   loading.value = true
   try {
-    const res = await http.get('/rooms', { params: { include_internal: 1 } })
+    const res = await http.get('/rooms', { params: { include_internal: 1, include_inactive: 1 } })
     rooms.value = res.data.data || []
   } catch (err) {
     console.error('Lỗi khi tải danh sách phòng:', err)
@@ -483,6 +483,10 @@ const toggleRoomInternal = async (room) => {
                     </svg>
                   </button>
                   <span>{{ g.roomClass.name || 'Loại phòng' }}</span>
+                  <span v-if="g.roomClass.is_active === false || g.roomClass.is_active === 0"
+                    class="px-2 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-600 rounded-full border border-rose-200 uppercase tracking-wider ml-1">
+                    Ngưng hoạt động
+                  </span>
                 </div>
               </td>
 
@@ -640,7 +644,7 @@ const toggleRoomInternal = async (room) => {
               <span>TÊN LOẠI PHÒNG</span>
               <select v-model="roomFormState.room_class_id"
                 class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-500 text-sm">
-                <option v-for="c in roomClasses.filter(item => item.is_active)" :key="c.id" :value="c.id">{{ c.name }}</option>
+                <option v-for="c in roomClasses" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
           </div>

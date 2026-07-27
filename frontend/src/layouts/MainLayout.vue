@@ -5,11 +5,23 @@ import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
+import { fetchOutlets } from '@/services/outlet-service'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
 const router = useRouter()
+const activeOutlets = ref([])
+
+const loadActiveOutlets = async () => {
+  try {
+    const res = await fetchOutlets()
+    activeOutlets.value = (res.data || []).filter(o => o.is_active)
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách outlet hoạt động:', err)
+  }
+}
+
 const sidebarCollapsed = ref(false)
 const currentDate = ref(new Date())
 const timeOffset = ref(0)
@@ -103,7 +115,7 @@ function updateCustomGradient() {
 
 // Compute if header bg is dark to set high-contrast white text
 const isHeaderBgDark = computed(() => {
-  if (route.path === '/pms' || route.path === '/' || route.path === '/login') {
+  if (['/pms', '/fnb', '/', '/login'].includes(route.path)) {
     return false
   }
   const bg = headerBgColor.value
@@ -193,10 +205,6 @@ const fetchSystemDate = async () => {
 }
 
 const updateActiveShift = () => {
-  if (dbShift.value) {
-    activeShiftName.value = dbShift.value
-    return
-  }
   if (shifts.value.length === 0) return
   const now = currentDate.value
   const activeShift = shifts.value.find(s => isTimeInShift(now, s.start_time, s.end_time))
@@ -355,6 +363,7 @@ onMounted(() => {
   fetchServerTime()
   fetchSystemDate()
   fetchShifts()
+  loadActiveOutlets()
   loadBranches().finally(() => {
     setTimeout(() => {
       isSwitchingBranch.value = false
@@ -362,6 +371,8 @@ onMounted(() => {
       sessionStorage.removeItem('switching_to_name')
     }, 450)
   })
+  
+  window.addEventListener('outlet-updated', loadActiveOutlets)
   
   // Cập nhật giờ và ca làm việc mỗi giây
   timeInterval = setInterval(() => {
@@ -372,6 +383,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
+  window.removeEventListener('outlet-updated', loadActiveOutlets)
   if (timeInterval) {
     clearInterval(timeInterval)
   }
@@ -383,7 +395,14 @@ const menuItems = computed(() => {
     return [
       { name: t('menu.checkIn'), route: '/frontdesk' },
       { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
-      { name: t('menu.invoiceManage'), route: '/frontdesk?tab=invoices' },
+      {
+        name: t('menu.invoiceManage'),
+        route: '/frontdesk?tab=checkout',
+        dropdown: [
+          { name: t('menu.invoicePayment') || 'Thanh toán', tab: 'checkout' },
+          { name: t('menu.invoiceVat') || 'VAT', route: '#' }
+        ]
+      },
       {
         name: t('menu.customerInfo'),
         route: '/frontdesk?tab=customers',
@@ -423,6 +442,65 @@ const menuItems = computed(() => {
       { name: t('menu.mgtReports'), route: '/reports' },
       { name: t('menu.sysConfig'), route: '/config' },
     ]
+  }
+  // trang F&B
+  if (route.path.startsWith('/fnb')) {
+    const fnbItems = []
+    
+    if (activeOutlets.value && activeOutlets.value.length > 0) {
+      activeOutlets.value.forEach(outlet => {
+        fnbItems.push({
+          name: outlet.name,
+          route: `/fnb/restaurant?outlet_code=${outlet.code}`
+        })
+      })
+    }
+
+    fnbItems.push(
+      { name: 'PARTY', route: '/fnb/party' },
+      { name: 'Tìm kiếm đơn hàng', route: '/fnb/search' },
+      { 
+        name: 'Báo cáo', 
+        route: '/fnb/report',
+        dropdown: [
+          { name: 'XÁC NHẬN KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast' },
+          { name: 'BÁO CÁO QUẢN LÝ', route: '/fnb/report', tab: 'management' },
+          { name: 'BÁO CÁO DOANH THU THEO HOÁ ĐƠN', route: '/fnb/report', tab: 'invoice' },
+          { 
+            name: 'BÁO CÁO DOANH THU SẢN PHẨM', 
+            route: '/fnb/report',
+            children: [
+              { name: 'BÁO CÁO DOANH THU SẢN PHẨM', route: '/fnb/report', tab: 'product' },
+              { name: 'BÁO CÁO DOANH THU SẢN PHẨM THEO NGÀY', route: '/fnb/report', tab: 'product-by-day' },
+              { name: 'BÁO CÁO DOANH THU HÀNG BÁN THEO SẢN PHẨM', route: '/fnb/report', tab: 'product-by-item' }
+            ]
+          },
+          { name: 'BÁO CÁO THU NGÂN FB', route: '/fnb/report', tab: 'cashier' },
+          { name: 'BÁO CÁO KHÁCH ĐẾN', route: '/fnb/report', tab: 'guest-arrival' },
+          { name: 'BÁO CÁO KHÁCH ĐI', route: '/fnb/report', tab: 'guest-departure' },
+          { name: 'BÁO CÁO KHÁCH Ở', route: '/fnb/report', tab: 'guest-staying' },
+          { name: 'BÁO CÁO CHI TIẾT ĐƠN FB', route: '/fnb/report', tab: 'order-detail' },
+          { name: 'BÁO CÁO TỔNG DOANH THU', route: '/fnb/report', tab: 'total-revenue' },
+          { name: 'BÁO CÁO DOANH THU CHI TIẾT', route: '/fnb/report', tab: 'revenue-detail' },
+          { name: 'BÁO CÁO DỰ KIẾN KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast-forecast' },
+          { name: 'BÁO CÁO KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast-report' },
+          { name: 'BÁO CÁO HOÁ ĐƠN THANH TOÁN VỀ PHÒNG', route: '/fnb/report', tab: 'room-charge-invoice' },
+          { name: 'BÁO CÁO LOẠI HOÁ ĐƠN', route: '/fnb/report', tab: 'invoice-type' },
+          { name: 'BÁO CÁO DỰ ĐOÁN BÁN PHÒNG', route: '/fnb/report', tab: 'room-sales-forecast' }
+        ]
+      },
+      {
+        name: 'Khác',
+        route: '/fnb/other',
+        dropdown: [
+          { name: 'GHI LOG', tab: 'log' },
+          { name: 'KHO', tab: 'inventory' },
+          { name: 'IN VAT', tab: 'vat' },
+          { name: 'CÀI ĐẶT', tab: 'settings' }
+        ]
+      }
+    )
+    return fnbItems
   }
   // trang đặt phòng
   return [
@@ -488,7 +566,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.company'), icon: 'building', tab: 'company', active: currentTab === 'company' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
       { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
     ]
   }
@@ -505,7 +583,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.dayClose'), icon: 'calendar-range', action: 'dayClose', active: false },
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
     ]
   }
   
@@ -520,7 +598,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.lockRoom'), icon: 'lock', tab: 'lock-room', active: currentTab === 'lock-room' },
       { name: t('submenu.invoiceSearch'), icon: 'search', tab: 'invoice-search', active: currentTab === 'invoice-search' },
       { name: t('submenu.createMenu'), icon: 'settings', tab: 'create-menu', active: currentTab === 'create-menu' },
-      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
     ]
   }
@@ -532,7 +610,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.createReg'), icon: 'plus-circle', tab: 'create-res', active: currentTab === 'create-res' },
       { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
-      // { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
+      { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
     ]
   }
   
@@ -572,7 +650,6 @@ const formattedTimeVi = computed(() => {
   if (!dateStr) {
     dateStr = `${day}/${month}/${year}`
   }
-
   const period = currentLang.value === 'vi'
     ? (dayPeriod === 'PM' ? 'CH' : 'SA')
     : dayPeriod
@@ -658,6 +735,9 @@ async function handleSubMenuClick(item) {
 }
 
 function handleDropdownClick(sub) {
+  if (sub.route === '#') {
+    return
+  }
   if (sub.route) {
     router.push(sub.route)
   } else if (sub.tab) {
@@ -667,7 +747,11 @@ function handleDropdownClick(sub) {
 }
 
 function goHome() {
-  router.push('/pms')
+  if (route.path.startsWith('/fnb')) {
+    router.push('/fnb')
+  } else {
+    router.push('/pms')
+  }
 }
 
 function toggleSidebar() {
@@ -694,8 +778,8 @@ function toggleSidebar() {
     <!-- Top Header Bar (Light Theme) -->
     <header 
       class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
-      :class="route.path !== '/pms' && route.path !== '/' && route.path !== '/login' ? '' : 'bg-white'"
-      :style="{ background: (route.path !== '/pms' && route.path !== '/' && route.path !== '/login') ? headerBgColor : '' }"
+      :class="!['/pms', '/fnb', '/', '/login'].includes(route.path) ? '' : 'bg-white'"
+      :style="{ background: !['/pms', '/fnb', '/', '/login'].includes(route.path) ? headerBgColor : '' }"
     >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start">
@@ -714,7 +798,7 @@ function toggleSidebar() {
       </div>
 
       <!-- Main Navigation (Center) -->
-      <nav v-if="route.path !== '/pms'" class="flex items-center gap-1.5">
+      <nav v-if="!['/pms', '/fnb', '/', '/login'].includes(route.path)" class="flex items-center gap-1.5">
         <div
           v-for="item in menuItems"
           :key="item.route"
@@ -733,22 +817,41 @@ function toggleSidebar() {
           <!-- Dropdown Menu -->
           <div
             v-if="item.dropdown"
-            class="absolute left-1/2 -translate-x-1/2 mt-1.5 w-72 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
+            class="absolute left-1/2 -translate-x-1/2 mt-1 min-w-[150px] w-max max-w-[220px] bg-white border border-slate-200/90 rounded-lg shadow-xl p-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
           >
             <!-- Tip decoration arrow -->
             <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"></div>
             
-            <button
+            <div
               v-for="sub in item.dropdown"
               :key="sub.name"
-              @click="handleDropdownClick(sub)"
-              class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+              class="relative group/sub"
             >
-              <span>{{ sub.name }}</span>
-              <svg v-if="sub.hasChevron" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-              </svg>
-            </button>
+              <button
+                @click="!sub.children && handleDropdownClick(sub)"
+                class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+              >
+                <span>{{ sub.name }}</span>
+                <svg v-if="sub.hasChevron || sub.children" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              
+              <!-- Nested Menu -->
+              <div
+                v-if="sub.children"
+                class="absolute top-0 left-full mt-0 w-72 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5 z-[101] opacity-0 invisible group-hover/sub:opacity-100 group-hover/sub:visible transition-all duration-150 transform translate-x-1 group-hover/sub:translate-x-0 text-slate-800"
+              >
+                <button
+                  v-for="child in sub.children"
+                  :key="child.name"
+                  @click="handleDropdownClick(child)"
+                  class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+                >
+                  <span>{{ child.name }}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </nav>
@@ -781,6 +884,7 @@ function toggleSidebar() {
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M14 12a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
         </button>
+
 
         <!-- Color Palette Button (Topbar Custom Background Color Popover) -->
         <div class="relative shrink-0 flex items-center" ref="colorPickerRef">
@@ -960,7 +1064,6 @@ function toggleSidebar() {
             </div>
           </div>
         </div>
-
         <!-- Branch Dropdown -->
         <div class="relative shrink-0" ref="branchDropdownRef">
           <div 

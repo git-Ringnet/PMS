@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -11,12 +11,27 @@ const roomClassGroups = ref([])
 
 const classPage = ref(1)
 const classPageSize = ref(25)
+const classSearchQuery = ref('')
+
+watch(classSearchQuery, () => {
+  classPage.value = 1
+})
+
+const filteredRoomClasses = computed(() => {
+  if (!classSearchQuery.value) return roomClasses.value
+  const query = classSearchQuery.value.trim().toLowerCase()
+  return roomClasses.value.filter(rc =>
+    rc.name.toLowerCase().includes(query) ||
+    (rc.code || '').toLowerCase().includes(query) ||
+    (rc.group || '').toLowerCase().includes(query)
+  )
+})
 
 const paginatedRoomClasses = computed(() => {
   const start = (classPage.value - 1) * classPageSize.value
-  return roomClasses.value.slice(start, start + classPageSize.value)
+  return filteredRoomClasses.value.slice(start, start + classPageSize.value)
 })
-const totalClassPages = computed(() => Math.ceil(roomClasses.value.length / classPageSize.value) || 1)
+const totalClassPages = computed(() => Math.ceil(filteredRoomClasses.value.length / classPageSize.value) || 1)
 
 // Room Class Modal State
 const isRoomClassModalOpen = ref(false)
@@ -286,9 +301,24 @@ const toggleRoomClassActive = async (rc) => {
 
     <div class="flex justify-between items-center mb-4">
       <h3 class="text-sm font-black text-slate-600 uppercase">Danh sách Tên loại phòng</h3>
-      <button @click="openAddRoomClassModal"
-        class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded text-sm font-bold border-none cursor-pointer">+
-        Thêm loại</button>
+      <div class="flex items-center gap-3">
+        <!-- Search Input -->
+        <div class="relative flex items-center border border-slate-200 rounded-lg bg-white px-3 py-1.5 shadow-3xs focus-within:border-sky-400 focus-within:ring-1 focus-within:ring-sky-400 transition-colors w-[240px]">
+          <svg class="w-4 h-4 text-slate-400 mr-2 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input v-model="classSearchQuery" type="text" placeholder="Tìm tên, mã loại phòng..."
+            class="border-none outline-none text-xs font-semibold text-slate-700 placeholder-slate-400 w-full bg-transparent p-0" />
+          <button v-if="classSearchQuery" @click="classSearchQuery = ''"
+            class="text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer font-black text-xs shrink-0 ml-1.5">
+            ✕
+          </button>
+        </div>
+        <button @click="openAddRoomClassModal"
+          class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded text-sm font-bold border-none cursor-pointer">
+          + Thêm loại
+        </button>
+      </div>
     </div>
     <table class="w-full text-sm text-left border-collapse">
       <thead>

@@ -5,6 +5,7 @@ import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
 
 const props = defineProps({
+  // Mode 1: v-model:startDate & v-model:endDate (YMD format strings, e.g. "2026-06-24")
   startDate: {
     type: String,
     required: true
@@ -30,12 +31,26 @@ const isDark = ref(false)
 // Formatting helpers
 const parseYMD = (ymdStr) => {
   if (!ymdStr) return new Date()
-  const [y, m, d] = ymdStr.split('-').map(Number)
+  if (ymdStr instanceof Date) return ymdStr
+  const str = String(ymdStr)
+  if (!str.includes('-')) return new Date()
+  const [y, m, d] = str.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+const parseDMY = (dmyStr) => {
+  if (!dmyStr) return new Date()
+  if (dmyStr instanceof Date) return dmyStr
+  const str = String(dmyStr)
+  if (!str.includes('/')) return new Date()
+  const [d, m, y] = str.split('/').map(Number)
   return new Date(y, m - 1, d)
 }
 
 const formatDateYMD = (date) => {
   if (!date) return ''
+  if (typeof date === 'string') return date
+  if (!(date instanceof Date) || isNaN(date.getTime())) return ''
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
@@ -44,9 +59,19 @@ const formatDateYMD = (date) => {
 
 const formatDateDMY = (ymdStr) => {
   if (!ymdStr) return ''
-  const parts = ymdStr.split('-')
-  if (parts.length !== 3) return ymdStr
-  return `${parts[2]}/${parts[1]}/${parts[0]}`
+  if (ymdStr instanceof Date) {
+    if (isNaN(ymdStr.getTime())) return ''
+    const year = ymdStr.getFullYear()
+    const month = String(ymdStr.getMonth() + 1).padStart(2, '0')
+    const day = String(ymdStr.getDate()).padStart(2, '0')
+    return `${day}/${month}/${year}`
+  }
+  const str = String(ymdStr)
+  if (str.includes('-')) {
+    const parts = str.split('-')
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
+  }
+  return str
 }
 
 // Preset range calculations
@@ -120,22 +145,50 @@ const rangePresets = [
 
 // Initialize selectedRangeKey based on props
 const updatePresetSelection = () => {
+  let start, end
+  if (props.modelValue) {
+    start = parseDMY(props.modelValue.start)
+    end = parseDMY(props.modelValue.end)
+  } else {
+    start = parseYMD(props.startDate)
+    end = parseYMD(props.endDate)
+  }
+
+  localStartDate.value = start
+  localEndDate.value = end
+
   const ranges = getRanges()
+  const startStr = formatDateYMD(start)
+  const endStr = formatDateYMD(end)
+
   const found = Object.keys(ranges).find(
-    (key) => ranges[key][0] === props.startDate && ranges[key][1] === props.endDate
+    (key) => ranges[key][0] === startStr && ranges[key][1] === endStr
   )
   if (found) {
     selectedRangeKey.value = found
   } else {
     selectedRangeKey.value = 'custom'
   }
-  localStartDate.value = parseYMD(props.startDate)
-  localEndDate.value = parseYMD(props.endDate)
 }
 
-watch([() => props.startDate, () => props.endDate], () => {
-  updatePresetSelection()
-}, { immediate: true })
+watch(
+  () => props.modelValue,
+  () => {
+    if (props.modelValue) {
+      updatePresetSelection()
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  [() => props.startDate, () => props.endDate],
+  () => {
+    if (!props.modelValue) {
+      updatePresetSelection()
+    }
+  }
+)
 
 // Dark mode tracking
 let observer = null
@@ -161,12 +214,25 @@ onUnmounted(() => {
 const handlePresetChange = () => {
   if (selectedRangeKey.value !== 'custom') {
     const ranges = getRanges()
-    const [start, end] = ranges[selectedRangeKey.value]
-    localStartDate.value = parseYMD(start)
-    localEndDate.value = parseYMD(end)
-    emit('update:startDate', start)
-    emit('update:endDate', end)
-    emit('change', { start, end })
+    const [startYMD, endYMD] = ranges[selectedRangeKey.value]
+    
+    const start = parseYMD(startYMD)
+    const end = parseYMD(endYMD)
+    
+    localStartDate.value = start
+    localEndDate.value = end
+
+    const startDMY = formatDateDMY(start)
+    const endDMY = formatDateDMY(end)
+
+    if (props.modelValue) {
+      emit('update:modelValue', { start: startDMY, end: endDMY })
+      emit('change', { start: startDMY, end: endDMY })
+    } else {
+      emit('update:startDate', startYMD)
+      emit('update:endDate', endYMD)
+      emit('change', { start: startYMD, end: endYMD })
+    }
   }
 }
 
@@ -186,11 +252,20 @@ const onEndDateChange = (date) => {
 // Apply the custom date picker selection
 const applyRange = () => {
   if (localStartDate.value && localEndDate.value) {
-    const start = formatDateYMD(localStartDate.value)
-    const end = formatDateYMD(localEndDate.value)
-    emit('update:startDate', start)
-    emit('update:endDate', end)
-    emit('change', { start, end })
+    const startYMD = formatDateYMD(localStartDate.value)
+    const endYMD = formatDateYMD(localEndDate.value)
+    
+    const startDMY = formatDateDMY(localStartDate.value)
+    const endDMY = formatDateDMY(localEndDate.value)
+
+    if (props.modelValue) {
+      emit('update:modelValue', { start: startDMY, end: endDMY })
+      emit('change', { start: startDMY, end: endDMY })
+    } else {
+      emit('update:startDate', startYMD)
+      emit('update:endDate', endYMD)
+      emit('change', { start: startYMD, end: endYMD })
+    }
   }
 }
 </script>
@@ -225,7 +300,7 @@ const applyRange = () => {
       >
         <template #trigger>
           <div class="flex items-center justify-between w-full cursor-pointer text-xs font-semibold text-gray-900 dark:text-white select-none">
-            <span>{{ formatDateDMY(formatDateYMD(localStartDate)) }}</span>
+            <span>{{ formatDateDMY(localStartDate) }}</span>
             <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-500 shrink-0 ml-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
@@ -251,7 +326,7 @@ const applyRange = () => {
       >
         <template #trigger>
           <div class="flex items-center justify-between w-full cursor-pointer text-xs font-semibold text-gray-900 dark:text-white select-none">
-            <span>{{ formatDateDMY(formatDateYMD(localEndDate)) }}</span>
+            <span>{{ formatDateDMY(localEndDate) }}</span>
             <svg class="w-4 h-4 text-emerald-600 dark:text-emerald-500 shrink-0 ml-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
@@ -322,3 +397,4 @@ const applyRange = () => {
   border-radius: 6px !important;
 }
 </style>
+

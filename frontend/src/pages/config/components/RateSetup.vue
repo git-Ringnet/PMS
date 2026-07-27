@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -34,6 +34,28 @@ const rateTabs = ['Mã giá phòng', 'Gói dịch vụ']
 const rateCodes = ref([])
 const selectedRateCode = ref(null)
 
+const fetchRoomData = async () => {
+  try {
+    const [classesRes, formsRes] = await Promise.all([
+      http.get('/room-classes'),
+      http.get('/room-forms')
+    ])
+    if (classesRes.status === 200) {
+      roomTypes.value = classesRes.data.data
+        .filter(item => item.is_active !== false && item.is_active !== 0 && item.is_active !== '0')
+        .map(item => ({
+        code: item.code,
+        description: item.name
+      }))
+    }
+    if (formsRes.status === 200) {
+      occupancies.value = formsRes.data.data.map(item => item.name)
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 const fetchRateCodes = async (preventAutoSelect = false) => {
   try {
     const res = await http.get('/room-rate-codes')
@@ -48,7 +70,21 @@ const fetchRateCodes = async (preventAutoSelect = false) => {
   }
 }
 
+const systemDate = ref('')
+
+const fetchSystemDate = async () => {
+  try {
+    const res = await http.get('/system-date')
+    if (res.data?.data?.system_date) {
+      systemDate.value = res.data.data.system_date
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 onMounted(() => {
+  fetchSystemDate()
   fetchRateCodes()
 })
 
@@ -117,7 +153,7 @@ const batchDaysOfWeek = reactive({
 })
 const dailyMappingsList = ref([])
 
-const occupancies = ['Double', 'Twin', 'Triple', 'Family', 'King']
+const occupancies = ref([])
 
 const availableRatePlans = computed(() => {
   const currentRc = rateCodes.value.find(r => r.Ma === rateFormState.Ma) || selectedRateCode.value;
@@ -354,23 +390,36 @@ const formatDateVN = (dateStr) => {
 }
 
 const getTodayString = () => {
+  if (systemDate.value) {
+    return systemDate.value
+  }
   const d = new Date()
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
-  const parts = formatter.formatToParts(d)
-  const month = parts.find(p => p.type === 'month').value
-  const day = parts.find(p => p.type === 'day').value
-  const year = parts.find(p => p.type === 'year').value
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 const isEditing = computed(() => {
   return rateCodes.value.some(r => r.Ma === rateFormState.Ma);
 })
+
+const setDefaultBatchDates = () => {
+  const sysDate = getTodayString()
+  const begin = rateFormState.BeginDate
+  const end = rateFormState.EndDate
+
+  if (begin && end) {
+    batchFromDate.value = begin >= sysDate ? begin : sysDate
+    batchToDate.value = end
+  } else if (begin) {
+    batchFromDate.value = begin >= sysDate ? begin : sysDate
+    batchToDate.value = end || ''
+  } else {
+    batchFromDate.value = sysDate
+    batchToDate.value = ''
+  }
+}
 
 const applyBatchUpdate = async () => {
   if (availableRatePlans.value.length === 0) {
@@ -383,6 +432,12 @@ const applyBatchUpdate = async () => {
   }
   if (!batchFromDate.value || !batchToDate.value) {
     uiStore.showToast('Vui lòng chọn ngày cập nhật thông tin', 'warning');
+    return;
+  }
+
+  const sysDateStr = getTodayString();
+  if (batchFromDate.value < sysDateStr) {
+    uiStore.showToast(`Ngày áp dụng từ (${formatDateVN(batchFromDate.value)}) không được nhỏ hơn Ngày hệ thống (${formatDateVN(sysDateStr)})!`, 'warning');
     return;
   }
 
@@ -399,29 +454,37 @@ const applyBatchUpdate = async () => {
   let appliedCount = 0;
   let currentDate = new Date(from);
   while (currentDate <= to) {
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(currentDate.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
     const dayOfWeek = currentDate.getDay();
-    if (batchDaysOfWeek[dayOfWeek]) {
-      const dateStr = currentDate.toISOString().split('T')[0];
 
-      const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
+    const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
+
+    if (batchDaysOfWeek[dayOfWeek]) {
       if (existingIdx !== -1) {
         dailyMappingsList.value[existingIdx].Code = batchRateType.value;
       } else {
         dailyMappingsList.value.push({ Date: dateStr, Code: batchRateType.value });
       }
       appliedCount++;
+    } else {
+      // Nếu thứ trong tuần KHÔNG ĐƯỢC TICK (ví dụ T7, CN bỏ tick), gỡ/reset loại giá về '-'
+      if (existingIdx !== -1) {
+        dailyMappingsList.value.splice(existingIdx, 1);
+      }
     }
     currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  if (appliedCount === 0) {
-    uiStore.showToast('Không có ngày nào được chọn theo thứ trong tuần để áp dụng.', 'warning');
-    return;
   }
 
   dailyMappingsList.value.sort((a, b) => a.Date.localeCompare(b.Date));
   dailyMappingsList.value = dailyMappingsList.value.map(m => ({ ...m }));
   uiStore.showToast('Áp dụng loại giá thành công!', 'success');
+
+  if (batchFromDate.value) {
+    scrollToDailyDate(batchFromDate.value);
+  }
 }
 
 const displayedDailyMappings = computed(() => {
@@ -474,15 +537,67 @@ const totalDailyPages = computed(() => {
   return Math.ceil(displayedDailyMappings.value.length / dailyPagination.limit) || 1;
 });
 
-watch(() => rateFormState.IsDaily, () => {
-  dailyPagination.page = 1;
-});
+const focusedTargetDate = ref('')
+
+const scrollToDailyDate = async (targetDateStr) => {
+  if (!targetDateStr || !displayedDailyMappings.value.length) return
+
+  const index = displayedDailyMappings.value.findIndex(m => m.Date === targetDateStr)
+  if (index === -1) return
+
+  focusedTargetDate.value = targetDateStr
+  const targetPage = Math.floor(index / dailyPagination.limit) + 1
+  dailyPagination.page = targetPage
+
+  await nextTick()
+
+  const rowEl = document.getElementById(`daily-row-${targetDateStr}`)
+  if (rowEl) {
+    rowEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+}
+
+const focusDailyMappingDate = () => {
+  if (!rateFormState.IsDaily) return
+
+  const today = getTodayString()
+  const begin = rateFormState.BeginDate
+  const end = rateFormState.EndDate
+
+  if (begin && end) {
+    if (begin <= today && today <= end) {
+      // Trường hợp 1: Chứa ngày hiện tại của hệ thống -> trỏ chính xác vào ngày hiện tại
+      scrollToDailyDate(today)
+    } else if (begin > today) {
+      // Trường hợp 2: Set up rate code tương lai (BeginDate > Today) -> hiển thị từ giai đoạn bắt đầu
+      scrollToDailyDate(begin)
+    } else {
+      // Trường hợp quá khứ (EndDate < Today) -> trỏ vào ngày bắt đầu giai đoạn
+      scrollToDailyDate(begin)
+    }
+  } else if (begin) {
+    scrollToDailyDate(begin)
+  }
+}
+
+watch(() => rateFormState.IsDaily, (newVal) => {
+  if (newVal) {
+    setDefaultBatchDates()
+    nextTick(() => focusDailyMappingDate())
+  } else {
+    dailyPagination.page = 1
+  }
+})
 watch(() => rateFormState.BeginDate, () => {
-  dailyPagination.page = 1;
-});
+  dailyPagination.page = 1
+  setDefaultBatchDates()
+  nextTick(() => focusDailyMappingDate())
+})
 watch(() => rateFormState.EndDate, () => {
-  dailyPagination.page = 1;
-});
+  dailyPagination.page = 1
+  setDefaultBatchDates()
+  nextTick(() => focusDailyMappingDate())
+})
 
 const updateSingleMapping = (dateStr, newCode) => {
   const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
@@ -537,6 +652,7 @@ watch(selectedRateCode, (newVal) => {
     } else {
       batchRateType.value = '';
     }
+    setDefaultBatchDates();
   } else {
     // Reset
     Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', IsDaily: false })
@@ -544,6 +660,7 @@ watch(selectedRateCode, (newVal) => {
     dailyMappingsList.value = [];
   }
   initialRateStateString.value = JSON.stringify({ form: rateFormState, matrix: rateMatrix, daily: dailyMappingsList.value });
+  nextTick(() => focusDailyMappingDate());
 }, { immediate: true })
 
 const selectRateCode = async (rc) => {
@@ -611,6 +728,9 @@ const handleSave = async () => {
         selectedRateCode.value = newlySaved;
       }
 
+      await nextTick();
+      focusDailyMappingDate();
+
       return true;
     } else {
       uiStore.showToast('Lỗi lưu dữ liệu', 'error');
@@ -638,18 +758,7 @@ const handleDelete = async () => {
 }
 
 // Room Types Matrix list
-const roomTypes = ref([
-  { code: 'SUPD', description: 'Superior Double' },
-  { code: 'SUPT', description: 'Superior Twin' },
-  { code: 'SUPTR', description: 'Superior Triple' },
-  { code: 'DLXD', description: 'Deluxe Double City view' },
-  { code: 'DLXT', description: 'Deluxe Twin City View' },
-  { code: 'DLXDB', description: 'Deluxe Double with Balcony' },
-  { code: 'DLXTB', description: 'Deluxe Twin with Balcony' },
-  { code: 'FAM', description: 'Family City View' },
-  { code: 'JST', description: 'Suite' },
-  { code: 'DP', description: 'DỰ PHÒNG' }
-])
+const roomTypes = ref([])
 
 
 const getMatrixKey = (roomCode, occupancy) => {
@@ -866,10 +975,10 @@ const selectPackage = (pkg) => {
                 <div class="flex gap-4 items-end flex-wrap">
                   <div class="flex items-center gap-2">
                     <label class="text-xs font-bold text-gray-900 whitespace-nowrap">Ngày áp dụng</label>
-                    <input type="date" v-model="batchFromDate"
+                    <input type="date" v-model="batchFromDate" :min="getTodayString()"
                       class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 font-semibold text-gray-900" />
                     <span class="text-xs text-slate-400">~</span>
-                    <input type="date" v-model="batchToDate"
+                    <input type="date" v-model="batchToDate" :min="batchFromDate || getTodayString()"
                       class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 font-semibold text-gray-900" />
                   </div>
                 </div>
@@ -929,11 +1038,7 @@ const selectPackage = (pkg) => {
                   class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold uppercase sticky top-0 z-10 text-center">
                   <th class="p-2.5 text-left w-36 border border-slate-200 bg-slate-50">Loại phòng</th>
                   <th class="p-2.5 text-left w-48 border border-slate-200 bg-slate-50">Mô tả</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Double</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Twin</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Triple</th>
-                  <th class="p-2.5 border border-slate-200 w-32">Family</th>
-                  <th class="p-2.5 border border-slate-200 w-32">King</th>
+                  <th v-for="occ in occupancies" :key="occ" class="p-2.5 border border-slate-200 w-32">{{ occ }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -944,38 +1049,11 @@ const selectPackage = (pkg) => {
                   <td class="p-2.5 text-gray-900 font-semibold border border-slate-200">{{ rt.description }}</td>
 
                   <!-- Occupancies pricing inputs inside grid -->
-                  <td class="p-1 border border-slate-200">
-                    <input type="text"
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Double')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Double')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white text-gray-900 transition-colors" />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input type="text"
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Twin')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Twin')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white text-gray-900 transition-colors" />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input type="text"
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Triple')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Triple')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white text-gray-900 transition-colors" />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input type="text"
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'Family')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'Family')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
-                      placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white text-gray-900 transition-colors" />
-                  </td>
-                  <td class="p-1 border border-slate-200">
-                    <input type="text"
-                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, 'King')], rateFormState.Currency)"
-                      @input="e => rateMatrix[getMatrixKey(rt.code, 'King')] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
+                  <td v-for="occ in occupancies" :key="rt.code + '-' + occ" class="p-1 border border-slate-200">
+                    <input 
+                      type="text" 
+                      :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, occ)], rateFormState.Currency)"
+                      @input="e => rateMatrix[getMatrixKey(rt.code, occ)] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
                       placeholder="-"
                       class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white text-gray-900 transition-colors" />
                   </td>
@@ -1013,19 +1091,21 @@ const selectPackage = (pkg) => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="mapping in paginatedDailyMappings" :key="mapping.Date"
+                <tr v-for="mapping in paginatedDailyMappings" :key="mapping.Date + '-' + mapping.Code" :id="'daily-row-' + mapping.Date"
                   class="border-b border-slate-100 hover:bg-sky-100 transition-colors" :class="{
-                    'bg-emerald-50/60 font-bold': mapping.Date === getTodayString(),
-                    'bg-sky-50/30': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
-                    'text-rose-500': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
-                    'text-orange-500': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 6
+                    'bg-amber-100/90 font-bold border-y-2 border-amber-400 text-amber-950': mapping.Date === focusedTargetDate,
+                    'bg-emerald-50/60 font-bold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
+                    'bg-sky-50/30': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                    'text-rose-500': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                    'text-orange-500': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 6
                   }">
                   <td
                     class="p-2 border border-slate-100 font-semibold text-gray-900 text-center whitespace-nowrap sticky left-0 z-10"
                     :class="{
-                      'bg-emerald-100 text-emerald-900 font-bold': mapping.Date === getTodayString(),
-                      'bg-sky-50/30': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
-                      'bg-white': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) !== 0
+                      'bg-amber-300 text-amber-950 font-black shadow-sm': mapping.Date === focusedTargetDate,
+                      'bg-emerald-100 text-emerald-900 font-bold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
+                      'bg-sky-50/30': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                      'bg-white': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) !== 0
                     }">
                     {{ formatDateVN(mapping.Date) }}
                   </td>
@@ -1037,7 +1117,7 @@ const selectPackage = (pkg) => {
                     {{ getDayLabel(getDayOfWeekFromDate(mapping.Date)) }}
                   </td>
                   <td class="p-1.5 border border-slate-100 text-center">
-                    <select :value="mapping.Code" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
+                    <select :key="mapping.Date + '-' + mapping.Code" :value="mapping.Code" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
                       class="border px-1 py-0.5 rounded text-xs focus:outline-sky-400 bg-white"
                       :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-bold border-red-200' : 'text-gray-900 font-semibold border-slate-200']">
                       <option value="-">-</option>

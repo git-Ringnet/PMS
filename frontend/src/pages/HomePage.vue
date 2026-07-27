@@ -11,9 +11,6 @@ function navigateTo(route) {
   router.push(route);
 }
 
-function showFBToast() {
-  uiStore.showToast("Phân hệ PROVISTA F&B đang được phát triển!", "info");
-}
 
 onMounted(() => {
   setTimeout(() => {
@@ -68,7 +65,7 @@ onMounted(() => {
       >
         <!-- Icon Square -->
         <button 
-          @click="showFBToast"
+          @click="navigateTo('/fnb')"
           class="w-36 h-36 sm:w-40 sm:h-40 bg-white rounded-3xl shadow-xl hover:shadow-2xl flex flex-col items-center justify-between p-6 sm:p-7 cursor-pointer border border-white/20 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.03] active:scale-95 group-hover:shadow-sky-500/20"
         >
           <!-- Logo container -->

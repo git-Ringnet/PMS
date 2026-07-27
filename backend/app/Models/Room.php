@@ -8,7 +8,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Room extends Model
 {
-    use HasFactory;
+    protected static function booted(): void
+    {
+        static::creating(function ($room) {
+            if (empty($room->orders) || (int)$room->orders === 0) {
+                $maxOrder = static::max('orders');
+                $room->orders = $maxOrder ? ((int)$maxOrder + 1) : 1;
+            }
+        });
+    }
 
     protected $fillable = [
         'room_number',

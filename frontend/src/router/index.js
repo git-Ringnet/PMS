@@ -29,13 +29,13 @@ const routes = [
   {
     path: '/frontdesk',
     name: 'FrontDesk',
-    component: () => import('@/pages/reservation/RoomMapPage.vue'),
+    component: () => import('@/pages/frontdesk/FrontDeskPage.vue'),
     meta: { title: 'Lễ tân - PMS' },
   },
   {
     path: '/housekeeping',
     name: 'Housekeeping',
-    component: () => import('@/pages/reservation/RoomMapPage.vue'),
+    component: () => import('@/pages/housekeeping/HousekeepingPage.vue'),
     meta: { title: 'Buồng phòng - PMS' },
   },
   {
@@ -56,6 +56,42 @@ const routes = [
     component: () => import('@/pages/system/SystemPage.vue'),
     meta: { title: 'Cấu hình hệ thống - Provista', noLayout: true },
   },
+  {
+    path: '/fnb',
+    name: 'FnbPages',
+    component: () => import('@/pages/FnbPages.vue'),
+    meta: { title: 'Trang chủ - F&B' },
+  },
+  {
+    path: '/fnb/restaurant',
+    name: 'FnbRestaurant',
+    component: () => import('@/pages/fnb/RestaurantPage.vue'),
+    meta: { title: 'Nhà Hàng - F&B' }
+  },
+  {
+    path: '/fnb/party',
+    name: 'party',
+    component: () => import('@/pages/fnb/PartyPage.vue'),
+    meta: { title: 'PARTY - F&B' }
+  },
+  {
+    path: '/fnb/search',
+    name: 'search',
+    component: () => import('@/pages/fnb/SearchPage.vue'),
+    meta: { title: 'Tìm kiếm đơn hàng - F&B' }
+  },
+  {
+    path: '/fnb/other',
+    name: 'fnb-other',
+    component: () => import('@/pages/fnb/OtherPages.vue'),
+    meta: { title: 'Khác - F&B' }
+  },
+  {
+    path: '/fnb/report',
+    name: 'fnb-report',
+    component: () => import('@/pages/fnb/ReportPage.vue'),
+    meta: { title: 'Báo cáo - F&B' }
+  }
 ]
 
 const router = createRouter({
