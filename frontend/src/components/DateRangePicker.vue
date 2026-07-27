@@ -31,18 +31,26 @@ const isDark = ref(false)
 // Formatting helpers
 const parseYMD = (ymdStr) => {
   if (!ymdStr) return new Date()
-  const [y, m, d] = ymdStr.split('-').map(Number)
+  if (ymdStr instanceof Date) return ymdStr
+  const str = String(ymdStr)
+  if (!str.includes('-')) return new Date()
+  const [y, m, d] = str.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
 const parseDMY = (dmyStr) => {
   if (!dmyStr) return new Date()
-  const [d, m, y] = dmyStr.split('/').map(Number)
+  if (dmyStr instanceof Date) return dmyStr
+  const str = String(dmyStr)
+  if (!str.includes('/')) return new Date()
+  const [d, m, y] = str.split('/').map(Number)
   return new Date(y, m - 1, d)
 }
 
 const formatDateYMD = (date) => {
   if (!date) return ''
+  if (typeof date === 'string') return date
+  if (!(date instanceof Date) || isNaN(date.getTime())) return ''
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
@@ -51,9 +59,19 @@ const formatDateYMD = (date) => {
 
 const formatDateDMY = (ymdStr) => {
   if (!ymdStr) return ''
-  const parts = ymdStr.split('-')
-  if (parts.length !== 3) return ymdStr
-  return `${parts[2]}/${parts[1]}/${parts[0]}`
+  if (ymdStr instanceof Date) {
+    if (isNaN(ymdStr.getTime())) return ''
+    const year = ymdStr.getFullYear()
+    const month = String(ymdStr.getMonth() + 1).padStart(2, '0')
+    const day = String(ymdStr.getDate()).padStart(2, '0')
+    return `${day}/${month}/${year}`
+  }
+  const str = String(ymdStr)
+  if (str.includes('-')) {
+    const parts = str.split('-')
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
+  }
+  return str
 }
 
 // Preset range calculations

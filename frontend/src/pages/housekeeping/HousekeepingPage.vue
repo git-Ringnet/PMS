@@ -17,17 +17,26 @@ import CreateMenuTab from './components/CreateMenuTab.vue'
 import LostAndFound from './components/LostAndFound.vue'
 import OperationHistoryTab from './components/OperationHistoryTab.vue'
 
-// Cross-module pages (reused from reservation/reports via defineAsyncComponent to avoid circular loops)
+// Cross-module pages (reused via defineAsyncComponent to avoid circular import loops)
 const RoomMapPage = defineAsyncComponent(() => import('@/pages/reservation/RoomMapPage.vue'))
 const RoomPlanPage = defineAsyncComponent(() => import('@/pages/reservation/RoomPlanPage.vue'))
 const LockRoomPage = defineAsyncComponent(() => import('@/pages/reservation/LockRoomPage.vue'))
 const ReportsPage = defineAsyncComponent(() => import('@/pages/reports/ReportsPage.vue'))
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { t } from '@/utils/i18n'
 
 const route = useRoute()
 const router = useRouter()
 
-// --- Sidebar State ---
+const isTabLoading = ref(false)
+
+function switchTab(key, queryParams = {}) {
+  isTabLoading.value = true
+  router.push({ path: '/housekeeping', query: { tab: key, ...queryParams } })
+  setTimeout(() => {
+    isTabLoading.value = false
+  }, 300)
+}
 const sidebarCollapsed = ref(false)
 const showDashboard = ref(true)
 
@@ -54,9 +63,7 @@ const activeTab = computed(() => tabs.value.find(t => t.key === activeTabKey.val
 
 const activeComponent = computed(() => activeTab.value.component)
 
-function switchTab(key, queryParams = {}) {
-  router.push({ path: '/housekeeping', query: { tab: key, ...queryParams } })
-}
+
 
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -147,69 +154,15 @@ onUnmounted(() => document.removeEventListener('click', closeFab))
 
     <!-- ===== MAIN CONTENT ===== -->
     <div class="flex-1 flex flex-col overflow-hidden">
-      <!-- Breadcrumb: Always visible -->
-      <div class="shrink-0 bg-white border-b border-slate-100 px-5 py-2.5 flex items-center justify-between z-10">
-        <div class="flex items-center gap-1.5 text-[12px]">
-          <button
-            @click="switchTab('room-map')"
-            class="text-slate-500 hover:text-[var(--hk-primary-dark)] bg-transparent border-none cursor-pointer font-semibold transition-colors"
-          >
-            Buồng Phòng
-          </button>
-          <span class="text-slate-400">/</span>
-          <span class="text-slate-700 font-bold text-xs uppercase tracking-wider">{{ activeTab.label }}</span>
-        </div>
-      </div>
-
-
-
       <!-- Tab Content -->
-      <div class="flex-1 overflow-hidden">
+      <div class="flex-1 overflow-hidden relative">
+        <LoadingOverlay :show="isTabLoading" />
         <Transition name="hk-tab" mode="out-in">
           <component :is="activeComponent" :key="activeTabKey" />
         </Transition>
       </div>
     </div>
 
-    <!-- ===== FAB (Floating Action Button) ===== -->
-    <div class="hk-fab-wrapper fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
-      <!-- FAB Actions (shown when open) -->
-      <Transition name="hk-fab-menu">
-        <div v-if="fabOpen" class="flex flex-col items-end gap-2 mb-2">
-          <TransitionGroup name="hk-fab-item" appear>
-            <button
-              v-for="(action, idx) in fabActions"
-              :key="action.label"
-              @click="handleFabAction(action)"
-              class="flex items-center gap-2.5 bg-white border border-slate-200 rounded-full pl-4 pr-3 py-2.5 shadow-lg hover:shadow-xl hover:border-[var(--hk-primary)] transition-all duration-200 cursor-pointer group"
-              :style="{ transitionDelay: `${idx * 60}ms` }"
-            >
-              <span class="text-[13px] font-bold text-slate-700 whitespace-nowrap group-hover:text-[var(--hk-primary-dark)]">
-                {{ action.label }}
-              </span>
-              <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors"
-                   style="background-color: var(--hk-primary-bg);">
-                <component :is="action.icon" class="w-4 h-4" style="color: var(--hk-primary-dark);" stroke-width="2.5" />
-              </div>
-            </button>
-          </TransitionGroup>
-        </div>
-      </Transition>
-
-      <!-- Main FAB Button -->
-      <button
-        @click.stop="fabOpen = !fabOpen"
-        class="w-14 h-14 rounded-full flex items-center justify-center border-none cursor-pointer shadow-xl transition-all duration-300 hover:shadow-2xl hover:scale-105"
-        :class="fabOpen ? 'bg-slate-700' : ''"
-        :style="!fabOpen ? { background: 'var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))' } : {}"
-      >
-        <Plus
-          class="w-6 h-6 text-white transition-transform duration-300"
-          :class="fabOpen ? 'rotate-45' : ''"
-          stroke-width="2.5"
-        />
-      </button>
-    </div>
   </div>
 </template>
 
