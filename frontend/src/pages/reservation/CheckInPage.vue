@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemTime } from '@/services/booking-service'
+import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
+import { ROOM_STATUS_ICON_MAP } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { t } from '@/utils/i18n'
@@ -26,27 +27,33 @@ const props = defineProps({
 const bookings = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
-const searchDate = ref(props.initialDate || '2026-07-09')
+const searchDate = ref(props.initialDate || '')
 const dateInputRef = ref(null)
 
 watch(() => props.initialDate, (newVal) => {
   if (newVal) {
     searchDate.value = newVal
   }
-})
+}, { immediate: true })
 
 const selectedRooms = ref([]) // Holds ids of selected rooms
 const collapsedBookings = ref({}) // Booking ID -> collapsed status
 
-// Fetch system date on mount
+// Fetch system date on mount if initialDate not provided
 const fetchSysDate = async () => {
+  if (props.initialDate) {
+    searchDate.value = props.initialDate
+    return
+  }
   try {
-    const res = await fetchSystemTime()
-    if (res.data && res.data.time) {
-      searchDate.value = res.data.time.split('T')[0]
+    const res = await fetchSystemDate()
+    if (res.data?.data?.system_date) {
+      searchDate.value = res.data.data.system_date
+    } else if (res.data?.system_date) {
+      searchDate.value = res.data.system_date
     }
   } catch (err) {
-    console.error('fetchSystemTime error:', err)
+    console.error('fetchSystemDate error:', err)
   }
 }
 
@@ -310,8 +317,9 @@ const handleCheckIn = async () => {
     }
   }
 
-  // Reload room status & bookings
-  await roomStore.fetchRooms()
+  // Reload room status, stats & bookings
+  await roomStore.fetchRooms({ silent: true })
+  await roomStore.fetchStats(searchDate.value)
   await loadBookings()
   if (pmsBc) pmsBc.postMessage('rooms-updated')
 
@@ -365,8 +373,9 @@ const handleUndoCheckIn = async () => {
     }
   }
 
-  // Reload room status & bookings
-  await roomStore.fetchRooms()
+  // Reload room status, stats & bookings
+  await roomStore.fetchRooms({ silent: true })
+  await roomStore.fetchStats(searchDate.value)
   await loadBookings()
   if (pmsBc) pmsBc.postMessage('rooms-updated')
 
@@ -420,7 +429,8 @@ const handleCancelSelected = async () => {
     }
   }
 
-  await roomStore.fetchRooms()
+  await roomStore.fetchRooms({ silent: true })
+  await roomStore.fetchStats(searchDate.value)
   await loadBookings()
 
   if (successCount > 0) {
@@ -431,31 +441,53 @@ const handleCancelSelected = async () => {
   }
 }
 
-// Get guest names for display
+// Get room status icon name for assigned rooms
+function getRoomStatusIcon(room) {
+  if (!room || !room.room_number || room.room_number === '--') return null
+  const physRoom = roomStore.rooms.find(r => r.room_number === room.room_number) || room.room
+  if (!physRoom) return null
+  const code = physRoom.room_status_code
+  if (code && Object.prototype.hasOwnProperty.call(ROOM_STATUS_ICON_MAP, code)) {
+    return ROOM_STATUS_ICON_MAP[code]
+  }
+  if (physRoom.status === 'dirty' || code?.includes('dirty')) return 'dirty'
+  if (physRoom.status === 'checkout') return 'checkout'
+  if (physRoom.status === 'maintenance') return 'housekeeping-service'
+  if (physRoom.status === 'reserved') return 'priority'
+  if (physRoom.status === 'dnd') return 'dnd'
+  if (physRoom.status === 'clean' || code === 'vacant_clean') return 'clean'
+  return null
+}
+
+// Get single primary guest name for display
 function getRoomGuestName(room, booking) {
   if (room.guests && room.guests.length > 0) {
-    const validNames = room.guests
-      .map(g => {
-        const guestObj = g.guest || g
-        if (guestObj.full_name && guestObj.full_name.trim()) return guestObj.full_name.trim()
-        const fn = `${guestObj.first_name || ''} ${guestObj.last_name || ''}`.trim()
-        return fn !== '' ? fn : null
-      })
-      .filter(Boolean)
-    if (validNames.length > 0) return validNames.join(', ')
+    const primaryGuestObj = room.guests.find(g => 
+      g.is_primary === 1 || g.is_primary === true || 
+      g.pivot?.is_primary === 1 || g.pivot?.is_primary === true
+    )
+    const target = primaryGuestObj ? (primaryGuestObj.guest || primaryGuestObj) : (room.guests[0].guest || room.guests[0])
+    if (target.full_name && target.full_name.trim()) return target.full_name.trim()
+    const fn = `${target.first_name || ''} ${target.last_name || ''}`.trim()
+    if (fn) return fn
   }
-  if (room.guest_name && room.guest_name.trim()) return room.guest_name.trim()
   if (room.primary_guest_name && room.primary_guest_name.trim()) return room.primary_guest_name.trim()
+  if (room.guest_name && room.guest_name.trim()) return room.guest_name.trim()
   return '-'
 }
 
 // Lifecycle hooks
 onMounted(async () => {
   await fetchSysDate()
+  if (roomStore.rooms.length === 0) {
+    await roomStore.fetchRooms({ silent: true })
+  }
+  await roomStore.fetchStats(searchDate.value)
   await loadBookings()
 })
 
 watch(searchDate, async () => {
+  await roomStore.fetchStats(searchDate.value)
   await loadBookings()
 })
 </script>
@@ -641,8 +673,13 @@ watch(searchDate, async () => {
                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                     />
                   </td>
-                  <td class="p-2.5 pl-6 font-bold text-sky-600">
-                    {{ room.room_number || '--' }}
+                  <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
+                    <span>{{ room.room_number || '--' }}</span>
+                    <RoomIcon
+                      v-if="getRoomStatusIcon(room)"
+                      :name="getRoomStatusIcon(room)"
+                      class="w-4 h-4 shrink-0 inline-flex items-center"
+                    />
                   </td>
                   <td class="p-2.5"></td>
                   <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
@@ -769,8 +806,13 @@ watch(searchDate, async () => {
                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                     />
                   </td>
-                  <td class="p-2.5 pl-6 font-bold text-sky-600">
-                    {{ room.room_number || '--' }}
+                  <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
+                    <span>{{ room.room_number || '--' }}</span>
+                    <RoomIcon
+                      v-if="getRoomStatusIcon(room)"
+                      :name="getRoomStatusIcon(room)"
+                      class="w-4 h-4 shrink-0 inline-flex items-center"
+                    />
                   </td>
                   <td class="p-2.5"></td>
                   <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">

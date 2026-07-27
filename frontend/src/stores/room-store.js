@@ -30,9 +30,9 @@ export const useRoomStore = defineStore('room', () => {
     }
     if (filters.value.status) {
       if (filters.value.status === 'OOO') {
-        result = result.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS')
+        result = result.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping'))
       } else if (filters.value.status === 'OOS') {
-        result = result.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS')
+        result = result.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping'))
       } else if (filters.value.status === 'occupied') {
         result = result.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout')
       } else if (filters.value.status === 'reserved') {
@@ -81,7 +81,7 @@ export const useRoomStore = defineStore('room', () => {
     const occupied = rooms.value.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
     const reserved = rooms.value.filter(r => r.booking_status === 'reserved').length
     const checkout = rooms.value.filter(r => r.booking_status === 'checkout').length
-    const maintenance = rooms.value.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length
+    const maintenance = rooms.value.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'oos' || r.room_status_code === 'occupied_ooo' || (!!r.lock_type && r.room_status_code !== 'housekeeping')).length
     const dirty = rooms.value.filter(r => r.status === ROOM_STATUSES.DIRTY).length
     const available = rooms.value.filter(r => r.status === ROOM_STATUSES.AVAILABLE && !r.booking_status).length
 
@@ -176,9 +176,9 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
-  async function fetchStats() {
+  async function fetchStats(date = null) {
     try {
-      const response = await roomService.getRoomStats()
+      const response = await roomService.getRoomStats(date)
       stats.value = response.data
     } catch (err) {
       console.error('fetchStats error:', err)
