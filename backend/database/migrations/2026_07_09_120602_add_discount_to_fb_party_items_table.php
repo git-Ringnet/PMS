@@ -6,23 +6,21 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('fb_party_items', function (Blueprint $table) {
-            $table->decimal('discount', 15, 2)->default(0)->after('price');
+            if (!Schema::hasColumn('fb_party_items', 'discount')) {
+                $table->decimal('discount', 15, 2)->default(0)->after('price');
+            }
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('fb_party_items', function (Blueprint $table) {
-            $table->dropColumn('discount');
+            if (Schema::hasColumn('fb_party_items', 'discount')) {
+                $table->dropColumn('discount');
+            }
         });
     }
 };

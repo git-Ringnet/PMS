@@ -6,31 +6,34 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('fb_products', function (Blueprint $table) {
-            $table->string('entrance_ip')->nullable()->after('is_pre_printed');
-            $table->integer('entrance_gate_ticket_type')->default(0)->after('entrance_ip');
-            $table->integer('exchange_limit_hours')->default(0)->after('entrance_gate_ticket_type');
-            $table->boolean('is_fixed_price')->default(false)->after('exchange_limit_hours');
+            if (!Schema::hasColumn('fb_products', 'entrance_ip')) {
+                $table->string('entrance_ip')->nullable()->after('is_pre_printed');
+            }
+            if (!Schema::hasColumn('fb_products', 'entrance_gate_ticket_type')) {
+                $table->integer('entrance_gate_ticket_type')->default(0)->after('entrance_ip');
+            }
+            if (!Schema::hasColumn('fb_products', 'exchange_limit_hours')) {
+                $table->integer('exchange_limit_hours')->default(0)->after('entrance_gate_ticket_type');
+            }
+            if (!Schema::hasColumn('fb_products', 'is_fixed_price')) {
+                $table->boolean('is_fixed_price')->default(false)->after('exchange_limit_hours');
+            }
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('fb_products', function (Blueprint $table) {
-            $table->dropColumn([
-                'entrance_ip',
-                'entrance_gate_ticket_type',
-                'exchange_limit_hours',
-                'is_fixed_price',
-            ]);
+            $columnsToDrop = array_filter([
+                'entrance_ip', 'entrance_gate_ticket_type', 'exchange_limit_hours', 'is_fixed_price'
+            ], fn($col) => Schema::hasColumn('fb_products', $col));
+
+            if (!empty($columnsToDrop)) {
+                $table->dropColumn(array_values($columnsToDrop));
+            }
         });
     }
 };

@@ -8,7 +8,6 @@ import { t, currentLang } from '@/utils/i18n'
 import { fetchOutlets } from '@/services/outlet-service'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import { useUiStore } from '@/stores/ui-store'
-import { fetchOutlets } from '@/services/outlet-service'
 
 const route = useRoute()
 const router = useRouter()

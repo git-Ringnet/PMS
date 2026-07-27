@@ -6,23 +6,21 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('fb_party_payments', function (Blueprint $table) {
-            $table->string('status')->default('active')->after('note');
+            if (!Schema::hasColumn('fb_party_payments', 'status')) {
+                $table->string('status')->default('active')->after('note');
+            }
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('fb_party_payments', function (Blueprint $table) {
-            $table->dropColumn('status');
+            if (Schema::hasColumn('fb_party_payments', 'status')) {
+                $table->dropColumn('status');
+            }
         });
     }
 };

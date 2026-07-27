@@ -6,23 +6,21 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('fb_orders', function (Blueprint $table) {
-            $table->text('internal_note_discount')->nullable()->after('internal_note');
+            if (!Schema::hasColumn('fb_orders', 'internal_note_discount')) {
+                $table->text('internal_note_discount')->nullable()->after('internal_note');
+            }
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('fb_orders', function (Blueprint $table) {
-            $table->dropColumn('internal_note_discount');
+            if (Schema::hasColumn('fb_orders', 'internal_note_discount')) {
+                $table->dropColumn('internal_note_discount');
+            }
         });
     }
 };
