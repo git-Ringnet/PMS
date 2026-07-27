@@ -5,7 +5,7 @@ import CheckoutPage from './CheckoutPage.vue'
 import RoomMapPage from '@/pages/reservation/RoomMapPage.vue'
 
 const route = useRoute()
-const currentTab = computed(() => route.query.tab || 'checkout')
+const currentTab = computed(() => route.query.tab || 'room-map')
 </script>
 
 <template>

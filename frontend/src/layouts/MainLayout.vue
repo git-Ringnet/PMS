@@ -395,7 +395,14 @@ const menuItems = computed(() => {
     return [
       { name: t('menu.checkIn'), route: '/frontdesk' },
       { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
-      { name: t('menu.invoiceManage'), route: '/frontdesk?tab=invoices' },
+      {
+        name: t('menu.invoiceManage'),
+        route: '/frontdesk?tab=checkout',
+        dropdown: [
+          { name: t('menu.invoicePayment') || 'Thanh toán', tab: 'checkout' },
+          { name: t('menu.invoiceVat') || 'VAT', route: '#' }
+        ]
+      },
       {
         name: t('menu.customerInfo'),
         route: '/frontdesk?tab=customers',
@@ -728,6 +735,9 @@ async function handleSubMenuClick(item) {
 }
 
 function handleDropdownClick(sub) {
+  if (sub.route === '#') {
+    return
+  }
   if (sub.route) {
     router.push(sub.route)
   } else if (sub.tab) {
@@ -807,7 +817,7 @@ function toggleSidebar() {
           <!-- Dropdown Menu -->
           <div
             v-if="item.dropdown"
-            class="absolute left-1/2 -translate-x-1/2 mt-1.5 w-72 bg-white border border-slate-200 rounded-lg shadow-lg py-1.5 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
+            class="absolute left-1/2 -translate-x-1/2 mt-1 min-w-[150px] w-max max-w-[220px] bg-white border border-slate-200/90 rounded-lg shadow-xl p-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
           >
             <!-- Tip decoration arrow -->
             <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"></div>
