@@ -27,6 +27,7 @@ return new class extends Migration
             $table->string('remarks', 500)->nullable();
             $table->string('where_found', 200);
             $table->boolean('status')->default(0);
+
             $table->longText('image')->nullable();
             $table->timestamps();
         });

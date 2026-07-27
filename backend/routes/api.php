@@ -195,6 +195,35 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders']);
     Route::get('/fnb/orders/{orderId}/print-logs', [\App\Http\Controllers\FbPrintLogController::class, 'getByOrder']);
 
+
+    Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
+    Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
+    Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
+    Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
+    Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
+    Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow']);
+    Route::post('fb-tables/{from_id}/transfer/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferTable']);
+    Route::post('fb-tables/{from_id}/transfer-items/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferItems']);
+    Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class);
+
+    // Dedicated F&B Menu definitions routes
+    Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive']);
+    Route::post('/fb-products/bulk-update-status', [\App\Http\Controllers\Api\FbProductController::class, 'bulkUpdateStatus']);
+    Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class);
+    Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
+    Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class);
+    Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class);
+    Route::apiResource('fb-parties', \App\Http\Controllers\Api\FbPartyController::class);
+    Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel']);
+    Route::post('fb-parties/check-conflict', [\App\Http\Controllers\Api\FbPartyController::class, 'checkConflict']);
+    Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
+    
+    // F&B Orders (Bills)
+    Route::get('/fnb/orders', [\App\Http\Controllers\FbOrderController::class, 'search']);
+    Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
+    Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders']);
+    Route::get('/fnb/orders/{orderId}/print-logs', [\App\Http\Controllers\FbPrintLogController::class, 'getByOrder']);
+
     // Activity Log routes
     Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
     Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
