@@ -255,7 +255,7 @@ watch(isFuture, (newVal) => {
 watch(rawDate, async () => {
   await Promise.all([
     roomStore.fetchRooms({ silent: true }),
-    roomStore.fetchStats()
+    roomStore.fetchStats(rawDate.value)
   ])
 })
 
@@ -264,12 +264,15 @@ watch(currentTab, async (newTab) => {
   if (newTab === 'room-map') {
     await Promise.all([
       roomStore.fetchRooms({ silent: true }),
-      roomStore.fetchStats()
+      roomStore.fetchStats(rawDate.value)
     ])
   }
 })
 
 const checkinStats = computed(() => {
+  if (roomStore.stats && roomStore.stats.arrivals_total !== undefined) {
+    return `${roomStore.stats.arrivals_checked_in}/${roomStore.stats.arrivals_total}`
+  }
   const checkedIn = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
   const reserved = roomStore.rooms.filter(r => r.booking_status === 'reserved').length
   const total = checkedIn + reserved
@@ -282,6 +285,9 @@ const checkoutStats = computed(() => {
 })
 
 const occupiedStats = computed(() => {
+  if (roomStore.stats && roomStore.stats.occupied_current !== undefined) {
+    return `${roomStore.stats.occupied_current}/${roomStore.stats.occupied_projected}`
+  }
   const count = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
   return `${count}/${roomStore.rooms.length || 181}`
 })
@@ -1144,8 +1150,7 @@ const uniqueFloors = computed(() => {
               <div class="flex flex-col">
                 <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.status
-                  === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length }}</span>
+                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')).length }}</span>
               </div>
             </button>
 
@@ -1160,8 +1165,7 @@ const uniqueFloors = computed(() => {
               <div class="flex flex-col">
                 <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.status
-                  === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length }}</span>
+                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')).length }}</span>
               </div>
             </button>
 
@@ -2698,14 +2702,14 @@ const uniqueFloors = computed(() => {
                   <span class="font-semibold text-amber-700">OOO</span>
                   <span
                     class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type !== 'OOS').length
+                      roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')).length
                     }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-emerald-700">OOS</span>
                   <span
                     class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE && r.lock_type === 'OOS').length
+                      roomStore.rooms.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')).length
                     }}</span>
                 </div>
                 <div
@@ -2713,7 +2717,7 @@ const uniqueFloors = computed(() => {
                   <span>Tổng phòng có thể bán</span>
                   <span
                     class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.length - roomStore.rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length
+                      roomStore.rooms.length - roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'oos' || r.room_status_code === 'occupied_ooo' || (!!r.lock_type && r.room_status_code !== 'housekeeping')).length
                     }}</span>
                 </div>
               </div>

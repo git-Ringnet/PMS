@@ -198,7 +198,7 @@ export const roomService = {
   /**
    * Lấy thống kê phòng
    */
-  async getRoomStats() {
+  async getRoomStats(date = null) {
     if (USE_MOCK_ONLY) {
       const rooms = getMockRooms()
       const stats = {
@@ -214,7 +214,9 @@ export const roomService = {
     }
 
     try {
-      const response = await http.get('/rooms/stats')
+      const params = {}
+      if (date) params.date = date
+      const response = await http.get('/rooms/stats', { params })
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
