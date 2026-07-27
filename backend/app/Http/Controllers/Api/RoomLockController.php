@@ -350,8 +350,9 @@ class RoomLockController extends Controller
                     'lock_type' => $pItem['lock_type'],
                 ]);
 
-                // Update room status to maintenance
-                Room::where('room_number', $pItem['room_number'])->update(['status' => 'maintenance']);
+                // Update room status to ooo / oos
+                $lockCode = $pItem['lock_type'] === 'OOS' ? 'oos' : 'ooo';
+                Room::where('room_number', $pItem['room_number'])->update(['room_status_code' => $lockCode]);
 
                 $locksCreated[] = $lock;
             }

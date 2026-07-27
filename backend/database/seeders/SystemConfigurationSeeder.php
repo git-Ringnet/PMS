@@ -242,7 +242,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_column' => 0,
                 'orders' => 9991,
                 'is_internal' => true,
-                'status' => 'available',
+                'room_status_code' => 'vacant_ready',
                 'notes' => 'Phòng ảo 001',
             ]
         );
@@ -260,7 +260,7 @@ class SystemConfigurationSeeder extends Seeder
                 'grid_column' => 0,
                 'orders' => 9992,
                 'is_internal' => true,
-                'status' => 'available',
+                'room_status_code' => 'vacant_ready',
                 'notes' => 'Phòng ảo 002',
             ]
         );

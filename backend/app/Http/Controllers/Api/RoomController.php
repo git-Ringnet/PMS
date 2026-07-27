@@ -37,7 +37,7 @@ class RoomController extends Controller
             $query->where('floor', $request->floor);
         }
         if ($request->has('status') && !empty($request->status)) {
-            $query->where('status', $request->status);
+            $query->where('room_status_code', $request->status);
         }
         if ($request->has('room_type_id') && !empty($request->room_type_id)) {
             $query->where('room_class_id', $request->room_type_id);
@@ -298,19 +298,25 @@ class RoomController extends Controller
      */
     public function stats()
     {
-        $activeRoomQuery = Room::whereHas('roomClass', function($q) {
-            $q->where('is_active', true);
-        })->where('is_internal', false);
+        $roomsResponse = $this->index(new Request(['include_internal' => 0]))->getData(true);
+        $rooms = $roomsResponse['data'] ?? [];
 
         $stats = [
-            'total' => (clone $activeRoomQuery)->count(),
-            'available' => (clone $activeRoomQuery)->where('status', 'available')->count(),
-            'occupied' => (clone $activeRoomQuery)->where('status', 'occupied')->count(),
-            'dirty' => (clone $activeRoomQuery)->where('status', 'dirty')->count(),
-            'maintenance' => (clone $activeRoomQuery)->where('status', 'maintenance')->count(),
-            'reserved' => (clone $activeRoomQuery)->where('status', 'reserved')->count(),
-            'checkout' => (clone $activeRoomQuery)->where('status', 'checkout')->count(),
+            'total' => count($rooms),
+            'available' => 0,
+            'occupied' => 0,
+            'dirty' => 0,
+            'maintenance' => 0,
+            'reserved' => 0,
+            'checkout' => 0,
         ];
+
+        foreach ($rooms as $room) {
+            $st = $room['status'] ?? 'available';
+            if (array_key_exists($st, $stats)) {
+                $stats[$st]++;
+            }
+        }
 
         return response()->json([
             'success' => true,

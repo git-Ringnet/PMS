@@ -538,9 +538,8 @@ class BookingRoomController extends Controller
                     ], 422);
                 }
 
-                if ($physicalRoom->status === 'maintenance') {
-                    $physicalRoom->update(['status' => 'available']);
-                    $physicalRoom->status = 'available';
+                if ($physicalRoom->room_status_code === 'ooo' || $physicalRoom->room_status_code === 'oos') {
+                    $physicalRoom->update(['room_status_code' => 'vacant_ready']);
                 }
 
                 if ($physicalRoom->status !== 'available') {
@@ -593,7 +592,7 @@ class BookingRoomController extends Controller
 
             if ($bookingRoom->room_number) {
                 \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'status' => 'dirty'
+                    'room_status_code' => 'occupied_dirty'
                 ]);
             }
 

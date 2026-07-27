@@ -56,6 +56,7 @@
                     <div class="relative h-[30px]">
                         <select 
                           v-model="depositForm.paymentMethodId"
+                          @change="handlePaymentMethodChange"
                           class="w-full border border-blue-200 rounded-lg px-3 h-full text-xs font-medium bg-blue-50/70 text-black appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
                             <option :value="null" disabled class="text-slate-400 font-normal bg-slate-100">Phương thức đặt cọc</option>
@@ -597,9 +598,10 @@ const canOperateOldDay = computed(() => {
   if (user.username === 'admin' || user.is_admin) return true
   const userSettings = authStore.settings || {}
   if (userSettings.RuleUserCorrectOrPostBillPaymentOldDay !== undefined) {
-    return !!userSettings.RuleUserCorrectOrPostBillPaymentOldDay
+    const val = userSettings.RuleUserCorrectOrPostBillPaymentOldDay
+    return val === true || val === 1 || val === '1' || val === 'true'
   }
-  return true
+  return false
 })
 
 const minDepositDate = computed(() => {
@@ -624,10 +626,10 @@ const filteredPaymentMethods = computed(() => {
   })
 })
 
-// Hiển thị danh sách cọc: nếu showDeleted = true -> hiển thị cả 2 dòng (gốc dương & đối trừ âm)
+// Hiển thị danh sách cọc: nếu showDeleted = true -> hiển thị tất cả các dòng (cả cọc gốc dương & đối trừ âm)
 const visibleDeposits = computed(() => {
   if (showDeleted.value) {
-    return localDeposits.value.filter(dep => dep.edit_flag === 1 || dep.status === 3 || dep.reversal_ref !== null)
+    return localDeposits.value
   }
   return localDeposits.value.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
 })
@@ -643,14 +645,19 @@ const depositForm = ref({
   image: null
 })
 
-// Auto-fill note based on payment method selection
-watch(() => depositForm.value.paymentMethodId, (newPmId) => {
+function handlePaymentMethodChange() {
+  const newPmId = depositForm.value.paymentMethodId
   if (newPmId) {
-    const pm = props.paymentMethods?.find(x => x.id === newPmId)
+    const pm = (props.paymentMethods || []).find(x => x.code === newPmId || String(x.id) === String(newPmId))
     if (pm) {
       depositForm.value.note = `Deposit (${pm.name})`
     }
   }
+}
+
+// Auto-fill note based on payment method selection
+watch(() => depositForm.value.paymentMethodId, (newPmId) => {
+  handlePaymentMethodChange()
 })
 
 watch(() => props.show, async (newVal) => {
@@ -675,9 +682,10 @@ function resetForm() {
   selectedFile.value = null
   fileInputKey.value++
   
-  const defaultPmId = filteredPaymentMethods.value?.[0]?.id || null
-  const defaultPm = props.paymentMethods?.find(x => x.id === defaultPmId)
-  const defaultNote = defaultPm ? `Deposit (${defaultPm.name})` : ''
+  const firstPm = filteredPaymentMethods.value?.[0]
+  const defaultPmId = firstPm ? (firstPm.code || firstPm.id) : null
+  const defaultPm = firstPm ? (props.paymentMethods || []).find(x => x.code === defaultPmId || String(x.id) === String(defaultPmId)) : null
+  const defaultNote = defaultPm ? `Deposit (${defaultPm.name})` : (firstPm ? `Deposit (${firstPm.name})` : '')
 
   depositForm.value = {
     id: null,
