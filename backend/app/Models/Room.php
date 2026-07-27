@@ -8,7 +8,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Room extends Model
 {
-    use HasFactory;
+    protected static function booted(): void
+    {
+        static::creating(function ($room) {
+            if (empty($room->orders) || (int)$room->orders === 0) {
+                $maxOrder = static::max('orders');
+                $room->orders = $maxOrder ? ((int)$maxOrder + 1) : 1;
+            }
+        });
+    }
 
     protected $fillable = [
         'room_number',
@@ -23,10 +31,50 @@ class Room extends Model
         'owner_room',
         'linked_room',
         'is_internal',
+        'room_status_code',
         'status',
         'notes',
         'orders',
     ];
+
+    /**
+     * Accessor cho thuộc tính legacy $room->status (suy ra từ room_status_code)
+     */
+    public function getStatusAttribute(): string
+    {
+        return match($this->attributes['room_status_code'] ?? 'vacant_ready') {
+            'vacant_dirty', 'occupied_dirty' => 'dirty',
+            'turndown'                        => 'checkout',
+            'ooo', 'occupied_ooo'             => 'maintenance',
+            'oos'                             => 'maintenance',
+            'housekeeping'                    => 'maintenance',
+            'dnd'                             => 'dnd',
+            'vacant_priority'                 => 'reserved',
+            default                           => 'available',
+        };
+    }
+
+    /**
+     * Mutator cho thuộc tính legacy $room->status (ánh xá sang room_status_code)
+     */
+    public function setStatusAttribute($value): void
+    {
+        // Nếu status mới đã tương thích với getStatusAttribute() hiện tại (ví dụ: housekeeping, oos đã tương ứng 'maintenance') thì không ghi đè room_status_code
+        if (isset($this->attributes['room_status_code']) && $this->getStatusAttribute() === $value) {
+            return;
+        }
+
+        $code = match($value) {
+            'dirty'       => 'vacant_dirty',
+            'checkout'    => 'turndown',
+            'maintenance' => 'ooo',
+            'dnd'         => 'dnd',
+            'reserved'    => 'vacant_priority',
+            'occupied'    => 'occupied_ready',
+            default       => 'vacant_ready',
+        };
+        $this->attributes['room_status_code'] = $code;
+    }
 
     protected $casts = [
         'max_guests' => 'integer',
@@ -45,6 +93,11 @@ class Room extends Model
     public function roomClass(): BelongsTo
     {
         return $this->belongsTo(RoomClass::class);
+    }
+
+    public function roomStatus(): BelongsTo
+    {
+        return $this->belongsTo(RoomStatus::class, 'room_status_code', 'code');
     }
 
     public function locks(): \Illuminate\Database\Eloquent\Relations\HasMany

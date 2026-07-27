@@ -86,14 +86,6 @@ class RoomClassController extends Controller
                     'message' => 'Không thể tắt trạng thái hoạt động vì phải có ít nhất 1 loại phòng đang hoạt động!'
                 ], 422);
             }
-
-            $hasRates = $roomClass->standardRates()->exists();
-            $hasRooms = $roomClass->rooms()->exists();
-            if ($hasRates || $hasRooms) {
-                return response()->json([
-                    'message' => 'Không thể tắt trạng thái hoạt động của loại phòng này vì đang có giá phòng chuẩn hoặc phòng đang sử dụng loại phòng này!'
-                ], 422);
-            }
         }
 
         if ($request->hasFile('image')) {

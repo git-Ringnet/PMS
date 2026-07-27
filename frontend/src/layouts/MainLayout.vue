@@ -396,7 +396,13 @@ const menuItems = computed(() => {
       { name: t('menu.checkIn'), route: '/frontdesk' },
       { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
       { name: t('menu.invoiceManage'), route: '/frontdesk?tab=invoices' },
-      { name: t('menu.customerInfo'), route: '/frontdesk?tab=customers' },
+      {
+        name: t('menu.customerInfo'),
+        route: '/frontdesk?tab=customers',
+        dropdown: [
+          { name: t('menu.residenceDeclaration'), tab: 'residence-declaration' }
+        ]
+      },
       { name: t('menu.dayClose'), route: '/frontdesk?tab=day-close' },
       { name: t('menu.reports'), route: '/reports' },
       { name: t('menu.channelManager'), route: '/config' },
@@ -723,15 +729,10 @@ async function handleSubMenuClick(item) {
 
 function handleDropdownClick(sub) {
   if (sub.route) {
-    // If the item has an explicit route (e.g. report tabs), use that route with optional tab query
-    const query = sub.tab ? { tab: sub.tab } : {}
-    router.push({ path: sub.route, query })
+    router.push(sub.route)
   } else if (sub.tab) {
-    if (route.path.startsWith('/fnb')) {
-      router.push({ path: '/fnb/other', query: { tab: sub.tab } })
-    } else {
-      router.push({ path: '/reservation', query: { tab: sub.tab } })
-    }
+    const basePath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
+    router.push({ path: basePath, query: { tab: sub.tab } })
   }
 }
 

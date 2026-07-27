@@ -661,9 +661,9 @@ const submitBulkLock = async (force = false) => {
     // Check if it is a confirmation request for booking overlap
     if (err.response && err.response.data && err.response.data.require_confirm) {
       const confirmed = await uiStore.confirm({
-        title: 'Xác nhận đè lịch đặt phòng',
-        message: err.response.data.message,
-        confirmText: 'Đồng ý khóa',
+        title: 'Cảnh báo phòng âm',
+        message: err.response.data.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
+        confirmText: 'Tiếp tục',
         cancelText: 'Hủy'
       })
       if (confirmed) {

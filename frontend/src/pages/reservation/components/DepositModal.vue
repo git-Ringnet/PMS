@@ -56,6 +56,7 @@
                     <div class="relative h-[30px]">
                         <select 
                           v-model="depositForm.paymentMethodId"
+                          @change="handlePaymentMethodChange"
                           class="w-full border border-blue-200 rounded-lg px-3 h-full text-xs font-medium bg-blue-50/70 text-black appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
                             <option :value="null" disabled class="text-slate-400 font-normal bg-slate-100">Phương thức đặt cọc</option>
@@ -84,18 +85,20 @@
                 <div>
                     <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Ngày <span class="text-rose-500">*</span></label>
                     <div 
-                      class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative"
+                      class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative cursor-pointer"
                       :class="{ 'opacity-60 bg-slate-100 cursor-not-allowed': !!depositForm.id }"
+                      @click="openDatePicker"
                     >
                         <input 
+                          ref="dateInputRef"
                           type="date" 
                           v-model="depositForm.date" 
                           :disabled="!!depositForm.id"
                           :min="minDepositDate"
-                          class="date-span-input flex-1 text-left w-full border-none focus:outline-none bg-transparent"
+                          class="date-span-input flex-1 text-left w-full border-none focus:outline-none bg-transparent cursor-pointer"
                         />
-                        <i class="fa-regular fa-calendar-days text-blue-500 pointer-events-none"></i>
-                        <i @click="copyToClipboard(depositForm.date)" class="fa-regular fa-copy text-slate-400 hover:text-slate-600 cursor-pointer"></i>
+                        <i class="fa-regular fa-calendar-days text-blue-500 cursor-pointer" @click.stop="openDatePicker" title="Chọn ngày"></i>
+                        <i @click.stop="copyToClipboard(depositForm.date)" class="fa-regular fa-copy text-slate-400 hover:text-slate-600 cursor-pointer" title="Sao chép ngày"></i>
                     </div>
                 </div>
             </div>
@@ -291,6 +294,29 @@
                             />
                         </div>
                     </div>
+                    
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-600">Chế độ tách:</span>
+                        <div class="flex space-x-2">
+                            <button 
+                              type="button" 
+                              @click="setSplitMode(2)"
+                              :class="splitMode === 2 ? 'bg-blue-600 text-white font-bold border-blue-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300'"
+                              class="px-2.5 py-1 text-[11px] rounded border transition cursor-pointer"
+                            >
+                              Tách đôi (1/2)
+                            </button>
+                            <button 
+                              type="button" 
+                              @click="setSplitMode(3)"
+                              :class="splitMode === 3 ? 'bg-blue-600 text-white font-bold border-blue-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300'"
+                              class="px-2.5 py-1 text-[11px] rounded border transition cursor-pointer"
+                            >
+                              Tách ba (1/3)
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="flex items-center justify-between gap-4">
                         <span class="text-xs font-bold text-slate-700">Số tiền 1</span>
                         <div class="relative flex-1 max-w-[240px]">
@@ -311,6 +337,19 @@
                               type="text" 
                               :value="formatCurrencyInput(splitAmount2)"
                               @input="e => handleSplitAmount2Input(e.target.value)"
+                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                              class="w-full border border-slate-300 rounded-lg pl-3 pr-12 h-[32px] text-xs text-right font-bold bg-white text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                            />
+                            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">VND</span>
+                        </div>
+                    </div>
+                    <div v-if="splitMode === 3" class="flex items-center justify-between gap-4">
+                        <span class="text-xs font-bold text-slate-700">Số tiền 3</span>
+                        <div class="relative flex-1 max-w-[240px]">
+                            <input 
+                              type="text" 
+                              :value="formatCurrencyInput(splitAmount3)"
+                              @input="e => handleSplitAmount3Input(e.target.value)"
                               @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                               class="w-full border border-slate-300 rounded-lg pl-3 pr-12 h-[32px] text-xs text-right font-bold bg-white text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
                             />
@@ -512,15 +551,47 @@ const showDeleted = ref(false)
 const selectedFile = ref(null)
 const fileInputKey = ref(0)
 const previewImageUrl = ref(null)
+const dateInputRef = ref(null)
+
+function openDatePicker() {
+  if (depositForm.value?.id) return
+  if (dateInputRef.value) {
+    if (typeof dateInputRef.value.showPicker === 'function') {
+      try {
+        dateInputRef.value.showPicker()
+      } catch (e) {
+        dateInputRef.value.focus()
+      }
+    } else {
+      dateInputRef.value.focus()
+    }
+  }
+}
 
 // System date state
 const systemDate = ref(new Date().toISOString().split('T')[0])
 
 // Custom Split Modal States
 const isSplitOpen = ref(false)
+const splitMode = ref(2)
 const splitOriginalAmount = ref(0)
 const splitAmount1 = ref(0)
 const splitAmount2 = ref(0)
+const splitAmount3 = ref(0)
+
+function setSplitMode(mode) {
+  splitMode.value = mode
+  if (mode === 2) {
+    splitAmount1.value = Math.floor(splitOriginalAmount.value / 2)
+    splitAmount2.value = splitOriginalAmount.value - splitAmount1.value
+    splitAmount3.value = 0
+  } else if (mode === 3) {
+    const part = Math.floor(splitOriginalAmount.value / 3)
+    splitAmount1.value = part
+    splitAmount2.value = part
+    splitAmount3.value = splitOriginalAmount.value - part * 2
+  }
+}
 
 // Custom Transfer Modal States
 const isTransferOpen = ref(false)
@@ -597,9 +668,10 @@ const canOperateOldDay = computed(() => {
   if (user.username === 'admin' || user.is_admin) return true
   const userSettings = authStore.settings || {}
   if (userSettings.RuleUserCorrectOrPostBillPaymentOldDay !== undefined) {
-    return !!userSettings.RuleUserCorrectOrPostBillPaymentOldDay
+    const val = userSettings.RuleUserCorrectOrPostBillPaymentOldDay
+    return val === true || val === 1 || val === '1' || val === 'true'
   }
-  return true
+  return false
 })
 
 const minDepositDate = computed(() => {
@@ -624,10 +696,10 @@ const filteredPaymentMethods = computed(() => {
   })
 })
 
-// Hiển thị danh sách cọc: nếu showDeleted = true -> hiển thị cả 2 dòng (gốc dương & đối trừ âm)
+// Hiển thị danh sách cọc: nếu showDeleted = true -> hiển thị tất cả các dòng (cả cọc gốc dương & đối trừ âm)
 const visibleDeposits = computed(() => {
   if (showDeleted.value) {
-    return localDeposits.value.filter(dep => dep.edit_flag === 1 || dep.status === 3 || dep.reversal_ref !== null)
+    return localDeposits.value
   }
   return localDeposits.value.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
 })
@@ -643,14 +715,19 @@ const depositForm = ref({
   image: null
 })
 
-// Auto-fill note based on payment method selection
-watch(() => depositForm.value.paymentMethodId, (newPmId) => {
+function handlePaymentMethodChange() {
+  const newPmId = depositForm.value.paymentMethodId
   if (newPmId) {
-    const pm = props.paymentMethods?.find(x => x.id === newPmId)
+    const pm = (props.paymentMethods || []).find(x => x.code === newPmId || String(x.id) === String(newPmId))
     if (pm) {
       depositForm.value.note = `Deposit (${pm.name})`
     }
   }
+}
+
+// Auto-fill note based on payment method selection
+watch(() => depositForm.value.paymentMethodId, (newPmId) => {
+  handlePaymentMethodChange()
 })
 
 watch(() => props.show, async (newVal) => {
@@ -675,9 +752,10 @@ function resetForm() {
   selectedFile.value = null
   fileInputKey.value++
   
-  const defaultPmId = filteredPaymentMethods.value?.[0]?.id || null
-  const defaultPm = props.paymentMethods?.find(x => x.id === defaultPmId)
-  const defaultNote = defaultPm ? `Deposit (${defaultPm.name})` : ''
+  const firstPm = filteredPaymentMethods.value?.[0]
+  const defaultPmId = firstPm ? (firstPm.code || firstPm.id) : null
+  const defaultPm = firstPm ? (props.paymentMethods || []).find(x => x.code === defaultPmId || String(x.id) === String(defaultPmId)) : null
+  const defaultNote = defaultPm ? `Deposit (${defaultPm.name})` : (firstPm ? `Deposit (${firstPm.name})` : '')
 
   depositForm.value = {
     id: null,
@@ -780,6 +858,14 @@ async function addDeposit() {
     uiStore.showToast('Tài khoản không được phân quyền thêm cọc cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay)!', 'warning')
     return
   }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận thêm đặt cọc',
+    message: `Bạn có chắc chắn muốn thêm khoản đặt cọc ${Number(depositForm.value.amount).toLocaleString('en-US')} VND này?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   
   isSubmitting.value = true
   try {
@@ -866,13 +952,21 @@ function editDeposit() {
 async function saveDeposit() {
   if (isSubmitting.value) return
   if (!depositForm.value.id) {
-    close()
+    await addDeposit()
     return
   }
   if (!depositForm.value.note || !depositForm.value.note.trim()) {
     uiStore.showToast('Vui lòng nhập mô tả!', 'warning')
     return
   }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận cập nhật đặt cọc',
+    message: 'Bạn có chắc chắn muốn lưu các thay đổi cho khoản đặt cọc này?',
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   
   isSubmitting.value = true
   try {
@@ -971,13 +1065,35 @@ async function deleteDeposits() {
 function handleSplitAmount1Input(val) {
   const cleaned = cleanCurrencyValue(val)
   splitAmount1.value = Math.min(cleaned, splitOriginalAmount.value)
-  splitAmount2.value = Math.max(0, splitOriginalAmount.value - splitAmount1.value)
+  if (splitMode.value === 2) {
+    splitAmount2.value = Math.max(0, splitOriginalAmount.value - splitAmount1.value)
+    splitAmount3.value = 0
+  } else {
+    const remain = Math.max(0, splitOriginalAmount.value - splitAmount1.value)
+    splitAmount2.value = Math.floor(remain / 2)
+    splitAmount3.value = remain - splitAmount2.value
+  }
 }
 
 function handleSplitAmount2Input(val) {
   const cleaned = cleanCurrencyValue(val)
   splitAmount2.value = Math.min(cleaned, splitOriginalAmount.value)
-  splitAmount1.value = Math.max(0, splitOriginalAmount.value - splitAmount2.value)
+  if (splitMode.value === 2) {
+    splitAmount1.value = Math.max(0, splitOriginalAmount.value - splitAmount2.value)
+    splitAmount3.value = 0
+  } else {
+    const remain = Math.max(0, splitOriginalAmount.value - splitAmount2.value)
+    splitAmount1.value = Math.floor(remain / 2)
+    splitAmount3.value = remain - splitAmount1.value
+  }
+}
+
+function handleSplitAmount3Input(val) {
+  const cleaned = cleanCurrencyValue(val)
+  splitAmount3.value = Math.min(cleaned, splitOriginalAmount.value)
+  const remain = Math.max(0, splitOriginalAmount.value - splitAmount3.value)
+  splitAmount1.value = Math.floor(remain / 2)
+  splitAmount2.value = remain - splitAmount1.value
 }
 
 async function splitDeposit() {
@@ -1000,27 +1116,33 @@ async function splitDeposit() {
   }
 
   splitOriginalAmount.value = dep.amount
-  splitAmount1.value = Math.floor(dep.amount / 2)
-  splitAmount2.value = dep.amount - splitAmount1.value
+  setSplitMode(2)
   isSplitOpen.value = true
 }
 
 async function confirmSplit() {
-  const total = splitAmount1.value + splitAmount2.value
-  if (total !== splitOriginalAmount.value) {
-    uiStore.showToast('Tổng hai số tiền tách phải bằng số tiền gốc!', 'warning')
+  let amounts = []
+  if (splitMode.value === 2) {
+    amounts = [splitAmount1.value, splitAmount2.value]
+  } else {
+    amounts = [splitAmount1.value, splitAmount2.value, splitAmount3.value]
+  }
+
+  const total = amounts.reduce((sum, a) => sum + a, 0)
+  if (Math.abs(total - splitOriginalAmount.value) > 0.01) {
+    uiStore.showToast('Tổng các số tiền tách phải bằng số tiền gốc!', 'warning')
     return
   }
-  if (splitAmount1.value <= 0 || splitAmount2.value <= 0) {
-    uiStore.showToast('Số tiền tách phải lớn hơn 0!', 'warning')
+  if (amounts.some(a => a <= 0)) {
+    uiStore.showToast('Tất cả số tiền tách phải lớn hơn 0!', 'warning')
     return
   }
 
   const targetId = selectedDepositIds.value[0]
   try {
-    await splitPayment(targetId, { amounts: [splitAmount1.value, splitAmount2.value], department_id: props.departmentId || 'MR' })
+    await splitPayment(targetId, { amounts, department_id: props.departmentId || 'MR' })
     await syncDepositsFromBackend()
-    uiStore.showToast('Tách cọc thành công!', 'success')
+    uiStore.showToast(`Tách cọc thành công (${amounts.length} phần)!`, 'success')
     selectedDepositIds.value = []
     isSplitOpen.value = false
   } catch (err) {

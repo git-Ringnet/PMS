@@ -18,10 +18,13 @@ class RoomController extends Controller
             ->orderBy('orders', 'asc')
             ->orderBy('room_number', 'asc');
 
-        // Filter out rooms that belong to inactive room classes
-        $query->whereHas('roomClass', function($q) {
-            $q->where('is_active', true);
-        });
+        // Filter out rooms that belong to inactive room classes (unless include_inactive=1)
+        $includeInactive = $request->has('include_inactive') && $request->boolean('include_inactive');
+        if (!$includeInactive) {
+            $query->whereHas('roomClass', function($q) {
+                $q->where('is_active', true);
+            });
+        }
 
         // Filter internal/virtual rooms (exclude by default unless include_internal=1 or is_internal parameter is passed)
         if ($request->has('include_internal') && $request->boolean('include_internal')) {
@@ -37,7 +40,7 @@ class RoomController extends Controller
             $query->where('floor', $request->floor);
         }
         if ($request->has('status') && !empty($request->status)) {
-            $query->where('status', $request->status);
+            $query->where('room_status_code', $request->status);
         }
         if ($request->has('room_type_id') && !empty($request->room_type_id)) {
             $query->where('room_class_id', $request->room_type_id);
@@ -76,14 +79,13 @@ class RoomController extends Controller
                 return $sysDateStr >= $startStr && $sysDateStr <= $endStr;
             }) : null;
 
-            if ($currentLock) {
-                $room->status = 'maintenance';
+            if ($currentLock && in_array($room->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
+                // Phòng có lock OOO/OOS -> ghi đè room_status_code tương ứng
+                $lockCode = $currentLock->lock_type === 'OOS' ? 'oos' : 'ooo';
                 $room->lock_type = $currentLock->lock_type;
                 $room->setRelation('activeLock', $currentLock);
+                $room->room_status_code = $lockCode;
             } else {
-                if ($room->status === 'maintenance' || $room->status === 'ooo' || $room->status === 'oos') {
-                    $room->status = 'available';
-                }
                 $room->lock_type = null;
                 $room->setRelation('activeLock', null);
             }
@@ -134,10 +136,8 @@ class RoomController extends Controller
                 $room->booking_id = $br->booking_id ?? null;
             }
 
-            // Đảm bảo trạng thái vệ sinh hợp lệ từ database, nếu trống/null thì mặc định available
-            if (!in_array($room->status, ['dirty', 'maintenance', 'checkout'])) {
-                $room->status = 'available';
-            }
+
+            // Legacy $room->status được tự động tính qua getStatusAttribute() trên Room model
         }
 
         return response()->json([
@@ -146,8 +146,10 @@ class RoomController extends Controller
             'meta' => [
                 'total' => $rooms->count(),
                 'floors' => Room::select('floor')
-                    ->whereHas('roomClass', function($q) {
-                        $q->where('is_active', true);
+                    ->when(!$includeInactive, function($q) {
+                        $q->whereHas('roomClass', function($subQ) {
+                            $subQ->where('is_active', true);
+                        });
                     })
                     ->distinct()
                     ->orderBy('floor')
@@ -177,6 +179,7 @@ class RoomController extends Controller
             'is_internal' => 'nullable|boolean',
             'status' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
+            'orders' => 'nullable|integer|unique:rooms,orders',
         ]);
 
         $room = Room::create($validated);
@@ -228,6 +231,7 @@ class RoomController extends Controller
             'is_internal' => 'nullable|boolean',
             'status' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
+            'orders' => 'nullable|integer|unique:rooms,orders,' . $room->id,
         ]);
 
         $room->update($validated);
@@ -267,11 +271,31 @@ class RoomController extends Controller
             return response()->json(['message' => 'Room not found'], 404);
         }
 
+        $validCodes = [
+            'vacant_ready', 'vacant_dirty', 'vacant_clean',
+            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
+        ];
+
         $validated = $request->validate([
-            'status' => 'required|string|in:available,occupied,dirty,maintenance,reserved,checkout'
+            'room_status_code' => 'required|string|in:' . implode(',', $validCodes),
         ]);
 
-        $room->update(['status' => $validated['status']]);
+        $newCode = $validated['room_status_code'];
+        $room->update(['room_status_code' => $newCode]);
+
+        // Nếu chuyển sang trạng thái thường (không phải ooo/oos/occupied_ooo) -> Tự động giải phóng các active lock của phòng này
+        if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
+            $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
+            \App\Models\RoomLock::where('room_number', $room->room_number)
+                ->where('is_active', 1)
+                ->update([
+                    'is_active' => 2,
+                    'unlock_username' => $currentUser,
+                    'unlocked_at' => now(),
+                ]);
+        }
+
         $room->load(['roomForm', 'roomClass']);
 
         return response()->json([
@@ -283,21 +307,54 @@ class RoomController extends Controller
     /**
      * Get room occupancy statistics.
      */
-    public function stats()
+    public function stats(Request $request)
     {
-        $activeRoomQuery = Room::whereHas('roomClass', function($q) {
-            $q->where('is_active', true);
-        })->where('is_internal', false);
+        $roomsResponse = $this->index(new Request(['include_internal' => 0]))->getData(true);
+        $rooms = $roomsResponse['data'] ?? [];
 
         $stats = [
-            'total' => (clone $activeRoomQuery)->count(),
-            'available' => (clone $activeRoomQuery)->where('status', 'available')->count(),
-            'occupied' => (clone $activeRoomQuery)->where('status', 'occupied')->count(),
-            'dirty' => (clone $activeRoomQuery)->where('status', 'dirty')->count(),
-            'maintenance' => (clone $activeRoomQuery)->where('status', 'maintenance')->count(),
-            'reserved' => (clone $activeRoomQuery)->where('status', 'reserved')->count(),
-            'checkout' => (clone $activeRoomQuery)->where('status', 'checkout')->count(),
+            'total' => count($rooms),
+            'available' => 0,
+            'occupied' => 0,
+            'dirty' => 0,
+            'maintenance' => 0,
+            'reserved' => 0,
+            'checkout' => 0,
         ];
+
+        foreach ($rooms as $room) {
+            $st = $room['status'] ?? 'available';
+            if (array_key_exists($st, $stats)) {
+                $stats[$st]++;
+            }
+        }
+
+        // Bổ sung thống kê phòng đến (bao gồm cả phòng đã gán và chưa gán số phòng)
+        $avService = app(\App\Services\RoomAvailabilityService::class);
+        $sysDateStr = $request->date ? \Carbon\Carbon::parse($request->date)->toDateString() : $avService->getSystemDate()->toDateString();
+
+        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->where(function($q) use ($sysDateStr) {
+                $q->whereDate('arrival_date', '<=', $sysDateStr)
+                  ->whereDate('departure_date', '>=', $sysDateStr);
+            })
+            ->count();
+
+        $pendingArrivals = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_BOOKED)
+            ->whereDate('arrival_date', '<=', $sysDateStr)
+            ->count();
+
+        $pendingDepartures = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->whereDate('departure_date', '<=', $sysDateStr)
+            ->count();
+
+        $occupiedProjected = max(0, $occupiedCurrent + $pendingArrivals - $pendingDepartures);
+
+        $stats['arrivals_checked_in'] = $occupiedCurrent;
+        $stats['arrivals_pending']    = $pendingArrivals;
+        $stats['arrivals_total']      = $occupiedCurrent + $pendingArrivals;
+        $stats['occupied_current']    = $occupiedCurrent;
+        $stats['occupied_projected']  = $occupiedProjected;
 
         return response()->json([
             'success' => true,

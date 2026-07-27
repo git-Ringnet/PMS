@@ -29,7 +29,7 @@ const routes = [
   {
     path: '/frontdesk',
     name: 'FrontDesk',
-    component: () => import('@/pages/reservation/RoomMapPage.vue'),
+    component: () => import('@/pages/frontdesk/FrontDeskPage.vue'),
     meta: { title: 'Lễ tân - PMS' },
   },
   {
