@@ -317,17 +317,37 @@ const loadBookingRooms = async () => {
 
     list.forEach(b => {
       const code = b.booking_code || b.code || ''
-      const guestName = b.guest_name || b.booking_name || b.contact_name || 'Guest'
+      const mainGuestName = (
+        (b.guest_name && b.guest_name.trim()) ||
+        (b.booking_name && b.booking_name.trim()) ||
+        (b.contact_name && b.contact_name.trim()) ||
+        (b.customer?.full_name && b.customer.full_name.trim()) ||
+        (b.customer?.name && b.customer.name.trim()) ||
+        (b.booker?.full_name && b.booker.full_name.trim()) ||
+        (b.booker?.name && b.booker.name.trim()) ||
+        (b.company?.name && b.company.name.trim()) ||
+        'Khách lẻ'
+      )
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
         b.booking_rooms.forEach(r => {
-          const roomNo = r.room_number || r.room || ''
-          const rGuest = r.guest_name || (r.guests && r.guests[0] ? (r.guests[0].full_name || `${r.guests[0].first_name || ''} ${r.guests[0].last_name || ''}`) : guestName)
+          const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
+          
+          let roomGuest = ''
+          if (r.guest_name && r.guest_name.trim()) {
+            roomGuest = r.guest_name.trim()
+          } else if (r.guests && r.guests.length > 0) {
+            const g = r.guests[0]
+            roomGuest = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
+          }
+          if (!roomGuest) {
+            roomGuest = mainGuestName
+          }
           
           let labelParts = []
           if (code) labelParts.push(code)
           if (roomNo) labelParts.push(roomNo)
-          if (rGuest) labelParts.push(rGuest)
+          if (roomGuest) labelParts.push(roomGuest)
 
           options.push({
             id: r.id || b.id,
@@ -335,7 +355,7 @@ const loadBookingRooms = async () => {
             bookingId: b.id,
             code: code,
             roomNumber: roomNo,
-            guestName: rGuest,
+            guestName: roomGuest,
             name: labelParts.join(' - ')
           })
         })
@@ -343,14 +363,14 @@ const loadBookingRooms = async () => {
         let labelParts = []
         if (code) labelParts.push(code)
         if (b.room_number) labelParts.push(b.room_number)
-        if (guestName) labelParts.push(guestName)
+        if (mainGuestName) labelParts.push(mainGuestName)
 
         options.push({
           id: b.id,
           bookingId: b.id,
           code: code,
           roomNumber: b.room_number || '',
-          guestName: guestName,
+          guestName: mainGuestName,
           name: labelParts.join(' - ')
         })
       }
