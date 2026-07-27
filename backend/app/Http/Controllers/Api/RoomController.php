@@ -79,7 +79,7 @@ class RoomController extends Controller
                 return $sysDateStr >= $startStr && $sysDateStr <= $endStr;
             }) : null;
 
-            if ($currentLock) {
+            if ($currentLock && in_array($room->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
                 // Phòng có lock OOO/OOS -> ghi đè room_status_code tương ứng
                 $lockCode = $currentLock->lock_type === 'OOS' ? 'oos' : 'ooo';
                 $room->lock_type = $currentLock->lock_type;
@@ -137,17 +137,7 @@ class RoomController extends Controller
             }
 
 
-            // Sync legacy status từ room_status_code (để tương thích)
-            $room->status = match($room->room_status_code) {
-                'vacant_dirty', 'occupied_dirty' => 'dirty',
-                'turndown'                        => 'checkout',
-                'ooo', 'occupied_ooo'             => 'maintenance',
-                'oos'                             => 'maintenance',
-                'housekeeping'                    => 'maintenance',
-                'dnd'                             => 'dnd',
-                'vacant_priority'                 => 'reserved',
-                default                           => 'available',
-            };
+            // Legacy $room->status được tự động tính qua getStatusAttribute() trên Room model
         }
 
         return response()->json([
@@ -291,7 +281,21 @@ class RoomController extends Controller
             'room_status_code' => 'required|string|in:' . implode(',', $validCodes),
         ]);
 
-        $room->update(['room_status_code' => $validated['room_status_code']]);
+        $newCode = $validated['room_status_code'];
+        $room->update(['room_status_code' => $newCode]);
+
+        // Nếu chuyển sang trạng thái thường (không phải ooo/oos/occupied_ooo) -> Tự động giải phóng các active lock của phòng này
+        if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
+            $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
+            \App\Models\RoomLock::where('room_number', $room->room_number)
+                ->where('is_active', 1)
+                ->update([
+                    'is_active' => 2,
+                    'unlock_username' => $currentUser,
+                    'unlocked_at' => now(),
+                ]);
+        }
+
         $room->load(['roomForm', 'roomClass']);
 
         return response()->json([
@@ -303,7 +307,7 @@ class RoomController extends Controller
     /**
      * Get room occupancy statistics.
      */
-    public function stats()
+    public function stats(Request $request)
     {
         $roomsResponse = $this->index(new Request(['include_internal' => 0]))->getData(true);
         $rooms = $roomsResponse['data'] ?? [];
@@ -324,6 +328,33 @@ class RoomController extends Controller
                 $stats[$st]++;
             }
         }
+
+        // Bổ sung thống kê phòng đến (bao gồm cả phòng đã gán và chưa gán số phòng)
+        $avService = app(\App\Services\RoomAvailabilityService::class);
+        $sysDateStr = $request->date ? \Carbon\Carbon::parse($request->date)->toDateString() : $avService->getSystemDate()->toDateString();
+
+        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->where(function($q) use ($sysDateStr) {
+                $q->whereDate('arrival_date', '<=', $sysDateStr)
+                  ->whereDate('departure_date', '>=', $sysDateStr);
+            })
+            ->count();
+
+        $pendingArrivals = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_BOOKED)
+            ->whereDate('arrival_date', '<=', $sysDateStr)
+            ->count();
+
+        $pendingDepartures = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->whereDate('departure_date', '<=', $sysDateStr)
+            ->count();
+
+        $occupiedProjected = max(0, $occupiedCurrent + $pendingArrivals - $pendingDepartures);
+
+        $stats['arrivals_checked_in'] = $occupiedCurrent;
+        $stats['arrivals_pending']    = $pendingArrivals;
+        $stats['arrivals_total']      = $occupiedCurrent + $pendingArrivals;
+        $stats['occupied_current']    = $occupiedCurrent;
+        $stats['occupied_projected']  = $occupiedProjected;
 
         return response()->json([
             'success' => true,

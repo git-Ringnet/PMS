@@ -591,9 +591,11 @@ class BookingRoomController extends Controller
             ]);
 
             if ($bookingRoom->room_number) {
-                \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'room_status_code' => 'occupied_dirty'
-                ]);
+                $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
+                if ($physicalRoom) {
+                    $newStatusCode = ($physicalRoom->room_status_code === 'vacant_dirty') ? 'occupied_dirty' : 'occupied_ready';
+                    $physicalRoom->update(['room_status_code' => $newStatusCode]);
+                }
             }
 
             // Đồng bộ status cho khách sang CHECKED_IN

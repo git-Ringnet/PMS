@@ -59,6 +59,11 @@ class Room extends Model
      */
     public function setStatusAttribute($value): void
     {
+        // Nếu status mới đã tương thích với getStatusAttribute() hiện tại (ví dụ: housekeeping, oos đã tương ứng 'maintenance') thì không ghi đè room_status_code
+        if (isset($this->attributes['room_status_code']) && $this->getStatusAttribute() === $value) {
+            return;
+        }
+
         $code = match($value) {
             'dirty'       => 'vacant_dirty',
             'checkout'    => 'turndown',
