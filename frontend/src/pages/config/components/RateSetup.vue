@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -48,7 +48,21 @@ const fetchRateCodes = async (preventAutoSelect = false) => {
   }
 }
 
+const systemDate = ref('')
+
+const fetchSystemDate = async () => {
+  try {
+    const res = await http.get('/system-date')
+    if (res.data?.data?.system_date) {
+      systemDate.value = res.data.data.system_date
+    }
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 onMounted(() => {
+  fetchSystemDate()
   fetchRateCodes()
 })
 
@@ -354,23 +368,36 @@ const formatDateVN = (dateStr) => {
 }
 
 const getTodayString = () => {
+  if (systemDate.value) {
+    return systemDate.value
+  }
   const d = new Date()
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
-  const parts = formatter.formatToParts(d)
-  const month = parts.find(p => p.type === 'month').value
-  const day = parts.find(p => p.type === 'day').value
-  const year = parts.find(p => p.type === 'year').value
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 const isEditing = computed(() => {
   return rateCodes.value.some(r => r.Ma === rateFormState.Ma);
 })
+
+const setDefaultBatchDates = () => {
+  const sysDate = getTodayString()
+  const begin = rateFormState.BeginDate
+  const end = rateFormState.EndDate
+
+  if (begin && end) {
+    batchFromDate.value = begin >= sysDate ? begin : sysDate
+    batchToDate.value = end
+  } else if (begin) {
+    batchFromDate.value = begin >= sysDate ? begin : sysDate
+    batchToDate.value = end || ''
+  } else {
+    batchFromDate.value = sysDate
+    batchToDate.value = ''
+  }
+}
 
 const applyBatchUpdate = async () => {
   if (availableRatePlans.value.length === 0) {
@@ -383,6 +410,12 @@ const applyBatchUpdate = async () => {
   }
   if (!batchFromDate.value || !batchToDate.value) {
     uiStore.showToast('Vui lòng chọn ngày cập nhật thông tin', 'warning');
+    return;
+  }
+
+  const sysDateStr = getTodayString();
+  if (batchFromDate.value < sysDateStr) {
+    uiStore.showToast(`Ngày áp dụng từ (${formatDateVN(batchFromDate.value)}) không được nhỏ hơn Ngày hệ thống (${formatDateVN(sysDateStr)})!`, 'warning');
     return;
   }
 
@@ -399,29 +432,37 @@ const applyBatchUpdate = async () => {
   let appliedCount = 0;
   let currentDate = new Date(from);
   while (currentDate <= to) {
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(currentDate.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
     const dayOfWeek = currentDate.getDay();
-    if (batchDaysOfWeek[dayOfWeek]) {
-      const dateStr = currentDate.toISOString().split('T')[0];
 
-      const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
+    const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
+
+    if (batchDaysOfWeek[dayOfWeek]) {
       if (existingIdx !== -1) {
         dailyMappingsList.value[existingIdx].Code = batchRateType.value;
       } else {
         dailyMappingsList.value.push({ Date: dateStr, Code: batchRateType.value });
       }
       appliedCount++;
+    } else {
+      // Nếu thứ trong tuần KHÔNG ĐƯỢC TICK (ví dụ T7, CN bỏ tick), gỡ/reset loại giá về '-'
+      if (existingIdx !== -1) {
+        dailyMappingsList.value.splice(existingIdx, 1);
+      }
     }
     currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  if (appliedCount === 0) {
-    uiStore.showToast('Không có ngày nào được chọn theo thứ trong tuần để áp dụng.', 'warning');
-    return;
   }
 
   dailyMappingsList.value.sort((a, b) => a.Date.localeCompare(b.Date));
   dailyMappingsList.value = dailyMappingsList.value.map(m => ({ ...m }));
   uiStore.showToast('Áp dụng loại giá thành công!', 'success');
+
+  if (batchFromDate.value) {
+    scrollToDailyDate(batchFromDate.value);
+  }
 }
 
 const displayedDailyMappings = computed(() => {
@@ -474,15 +515,67 @@ const totalDailyPages = computed(() => {
   return Math.ceil(displayedDailyMappings.value.length / dailyPagination.limit) || 1;
 });
 
-watch(() => rateFormState.IsDaily, () => {
-  dailyPagination.page = 1;
-});
+const focusedTargetDate = ref('')
+
+const scrollToDailyDate = async (targetDateStr) => {
+  if (!targetDateStr || !displayedDailyMappings.value.length) return
+
+  const index = displayedDailyMappings.value.findIndex(m => m.Date === targetDateStr)
+  if (index === -1) return
+
+  focusedTargetDate.value = targetDateStr
+  const targetPage = Math.floor(index / dailyPagination.limit) + 1
+  dailyPagination.page = targetPage
+
+  await nextTick()
+
+  const rowEl = document.getElementById(`daily-row-${targetDateStr}`)
+  if (rowEl) {
+    rowEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+}
+
+const focusDailyMappingDate = () => {
+  if (!rateFormState.IsDaily) return
+
+  const today = getTodayString()
+  const begin = rateFormState.BeginDate
+  const end = rateFormState.EndDate
+
+  if (begin && end) {
+    if (begin <= today && today <= end) {
+      // Trường hợp 1: Chứa ngày hiện tại của hệ thống -> trỏ chính xác vào ngày hiện tại
+      scrollToDailyDate(today)
+    } else if (begin > today) {
+      // Trường hợp 2: Set up rate code tương lai (BeginDate > Today) -> hiển thị từ giai đoạn bắt đầu
+      scrollToDailyDate(begin)
+    } else {
+      // Trường hợp quá khứ (EndDate < Today) -> trỏ vào ngày bắt đầu giai đoạn
+      scrollToDailyDate(begin)
+    }
+  } else if (begin) {
+    scrollToDailyDate(begin)
+  }
+}
+
+watch(() => rateFormState.IsDaily, (newVal) => {
+  if (newVal) {
+    setDefaultBatchDates()
+    nextTick(() => focusDailyMappingDate())
+  } else {
+    dailyPagination.page = 1
+  }
+})
 watch(() => rateFormState.BeginDate, () => {
-  dailyPagination.page = 1;
-});
+  dailyPagination.page = 1
+  setDefaultBatchDates()
+  nextTick(() => focusDailyMappingDate())
+})
 watch(() => rateFormState.EndDate, () => {
-  dailyPagination.page = 1;
-});
+  dailyPagination.page = 1
+  setDefaultBatchDates()
+  nextTick(() => focusDailyMappingDate())
+})
 
 const updateSingleMapping = (dateStr, newCode) => {
   const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
@@ -537,6 +630,7 @@ watch(selectedRateCode, (newVal) => {
     } else {
       batchRateType.value = '';
     }
+    setDefaultBatchDates();
   } else {
     // Reset
     Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', IsDaily: false })
@@ -544,6 +638,7 @@ watch(selectedRateCode, (newVal) => {
     dailyMappingsList.value = [];
   }
   initialRateStateString.value = JSON.stringify({ form: rateFormState, matrix: rateMatrix, daily: dailyMappingsList.value });
+  nextTick(() => focusDailyMappingDate());
 }, { immediate: true })
 
 const selectRateCode = async (rc) => {
@@ -610,6 +705,9 @@ const handleSave = async () => {
       if (newlySaved) {
         selectedRateCode.value = newlySaved;
       }
+
+      await nextTick();
+      focusDailyMappingDate();
 
       return true;
     } else {
@@ -866,10 +964,10 @@ const selectPackage = (pkg) => {
                 <div class="flex gap-4 items-end flex-wrap">
                   <div class="flex items-center gap-2">
                     <label class="text-xs font-bold text-gray-900 whitespace-nowrap">Ngày áp dụng</label>
-                    <input type="date" v-model="batchFromDate"
+                    <input type="date" v-model="batchFromDate" :min="getTodayString()"
                       class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 font-semibold text-gray-900" />
                     <span class="text-xs text-slate-400">~</span>
-                    <input type="date" v-model="batchToDate"
+                    <input type="date" v-model="batchToDate" :min="batchFromDate || getTodayString()"
                       class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 font-semibold text-gray-900" />
                   </div>
                 </div>
@@ -1013,19 +1111,21 @@ const selectPackage = (pkg) => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="mapping in paginatedDailyMappings" :key="mapping.Date"
+                <tr v-for="mapping in paginatedDailyMappings" :key="mapping.Date + '-' + mapping.Code" :id="'daily-row-' + mapping.Date"
                   class="border-b border-slate-100 hover:bg-sky-100 transition-colors" :class="{
-                    'bg-emerald-50/60 font-bold': mapping.Date === getTodayString(),
-                    'bg-sky-50/30': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
-                    'text-rose-500': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
-                    'text-orange-500': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 6
+                    'bg-amber-100/90 font-bold border-y-2 border-amber-400 text-amber-950': mapping.Date === focusedTargetDate,
+                    'bg-emerald-50/60 font-bold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
+                    'bg-sky-50/30': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                    'text-rose-500': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                    'text-orange-500': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 6
                   }">
                   <td
                     class="p-2 border border-slate-100 font-semibold text-gray-900 text-center whitespace-nowrap sticky left-0 z-10"
                     :class="{
-                      'bg-emerald-100 text-emerald-900 font-bold': mapping.Date === getTodayString(),
-                      'bg-sky-50/30': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
-                      'bg-white': mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) !== 0
+                      'bg-amber-300 text-amber-950 font-black shadow-sm': mapping.Date === focusedTargetDate,
+                      'bg-emerald-100 text-emerald-900 font-bold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
+                      'bg-sky-50/30': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
+                      'bg-white': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) !== 0
                     }">
                     {{ formatDateVN(mapping.Date) }}
                   </td>
@@ -1037,7 +1137,7 @@ const selectPackage = (pkg) => {
                     {{ getDayLabel(getDayOfWeekFromDate(mapping.Date)) }}
                   </td>
                   <td class="p-1.5 border border-slate-100 text-center">
-                    <select :value="mapping.Code" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
+                    <select :key="mapping.Date + '-' + mapping.Code" :value="mapping.Code" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
                       class="border px-1 py-0.5 rounded text-xs focus:outline-sky-400 bg-white"
                       :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-bold border-red-200' : 'text-gray-900 font-semibold border-slate-200']">
                       <option value="-">-</option>

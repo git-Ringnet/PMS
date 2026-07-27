@@ -18,10 +18,13 @@ class RoomController extends Controller
             ->orderBy('orders', 'asc')
             ->orderBy('room_number', 'asc');
 
-        // Filter out rooms that belong to inactive room classes
-        $query->whereHas('roomClass', function($q) {
-            $q->where('is_active', true);
-        });
+        // Filter out rooms that belong to inactive room classes (unless include_inactive=1)
+        $includeInactive = $request->has('include_inactive') && $request->boolean('include_inactive');
+        if (!$includeInactive) {
+            $query->whereHas('roomClass', function($q) {
+                $q->where('is_active', true);
+            });
+        }
 
         // Filter internal/virtual rooms (exclude by default unless include_internal=1 or is_internal parameter is passed)
         if ($request->has('include_internal') && $request->boolean('include_internal')) {
@@ -153,8 +156,10 @@ class RoomController extends Controller
             'meta' => [
                 'total' => $rooms->count(),
                 'floors' => Room::select('floor')
-                    ->whereHas('roomClass', function($q) {
-                        $q->where('is_active', true);
+                    ->when(!$includeInactive, function($q) {
+                        $q->whereHas('roomClass', function($subQ) {
+                            $subQ->where('is_active', true);
+                        });
                     })
                     ->distinct()
                     ->orderBy('floor')
@@ -184,6 +189,7 @@ class RoomController extends Controller
             'is_internal' => 'nullable|boolean',
             'status' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
+            'orders' => 'nullable|integer|unique:rooms,orders',
         ]);
 
         $room = Room::create($validated);
@@ -235,6 +241,7 @@ class RoomController extends Controller
             'is_internal' => 'nullable|boolean',
             'status' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
+            'orders' => 'nullable|integer|unique:rooms,orders,' . $room->id,
         ]);
 
         $room->update($validated);

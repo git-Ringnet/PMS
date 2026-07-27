@@ -72,9 +72,9 @@ class RoomConstraintsTest extends TestCase
     }
 
     /**
-     * Test that we cannot deactivate a Room Class if it is used by a Room.
+     * Test that we CAN deactivate a Room Class even if it is used by a Room (to hide its rooms).
      */
-    public function test_cannot_deactivate_room_class_if_used_by_room()
+    public function test_can_deactivate_room_class_even_if_used_by_room()
     {
         $roomClass1 = RoomClass::create(['name' => 'Class 1', 'code' => 'C1', 'is_active' => true]);
         $roomClass2 = RoomClass::create(['name' => 'Class 2', 'code' => 'C2', 'is_active' => true]); // another active one
@@ -94,16 +94,14 @@ class RoomConstraintsTest extends TestCase
             'is_active' => false,
         ]);
 
-        $response->assertStatus(422);
-        $response->assertJsonFragment([
-            'message' => 'Không thể tắt trạng thái hoạt động của loại phòng này vì đang có giá phòng chuẩn hoặc phòng đang sử dụng loại phòng này!'
-        ]);
+        $response->assertStatus(200);
+        $this->assertFalse((bool) $roomClass1->fresh()->is_active);
     }
 
     /**
-     * Test that we cannot deactivate a Room Class if it is used by a StandardRate.
+     * Test that we CAN deactivate a Room Class even if it is used by a StandardRate.
      */
-    public function test_cannot_deactivate_room_class_if_used_by_standard_rate()
+    public function test_can_deactivate_room_class_even_if_used_by_standard_rate()
     {
         $roomClass1 = RoomClass::create(['name' => 'Class 1', 'code' => 'C1', 'is_active' => true]);
         $roomClass2 = RoomClass::create(['name' => 'Class 2', 'code' => 'C2', 'is_active' => true]); // another active one
@@ -123,10 +121,8 @@ class RoomConstraintsTest extends TestCase
             'is_active' => false,
         ]);
 
-        $response->assertStatus(422);
-        $response->assertJsonFragment([
-            'message' => 'Không thể tắt trạng thái hoạt động của loại phòng này vì đang có giá phòng chuẩn hoặc phòng đang sử dụng loại phòng này!'
-        ]);
+        $response->assertStatus(200);
+        $this->assertFalse((bool) $roomClass1->fresh()->is_active);
     }
 
     /**
