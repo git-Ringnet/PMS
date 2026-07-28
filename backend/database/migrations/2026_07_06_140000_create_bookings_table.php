@@ -55,6 +55,7 @@ return new class extends Migration
             $table->boolean('is_day_use')->default(false); // Thuê theo giờ/ngày (DayUse)
             $table->boolean('breakfast_included')->default(false); // Bao gồm ăn sáng (BreakfastIncluded)
             $table->boolean('has_vat')->default(false); // Xuất hóa đơn VAT
+            $table->boolean('is_master_room_rate')->default(true); // Tiền phòng gửi Master (mặc định bật)
 
             // =========================================
             // LIÊN KẾT ĐỐI TƯỢNG / THỊ TRƯỜNG
