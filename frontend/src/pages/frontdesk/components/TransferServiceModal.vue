@@ -7,15 +7,23 @@ const props = defineProps({
   fromGuest: {
     type: String,
     default: 'Mr. Guest 1 - 602'
+  },
+  selectedCount: {
+    type: Number,
+    default: 0
   }
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'transfer'])
 
-const selectedToGuest = ref('')
+const targetFolio = ref('1')
 
 const handleClose = () => {
   emit('close')
+}
+
+const handleTransfer = () => {
+  if (props.selectedCount > 0) emit('transfer', Number(targetFolio.value))
 }
 </script>
 
@@ -34,7 +42,7 @@ const handleClose = () => {
 
       <!-- Body Content -->
       <div class="p-4 space-y-3">
-        <!-- Controls: Từ khách | Đến khách -->
+        <!-- Controls: Từ khách | Đến Folio -->
         <div class="flex items-center justify-between gap-6">
           <!-- Từ khách -->
           <div class="flex-1">
@@ -47,14 +55,16 @@ const handleClose = () => {
             />
           </div>
 
-          <!-- Đến khách -->
+          <!-- Đến Folio -->
           <div class="flex-1">
-            <label class="block font-bold text-gray-700 mb-1">Đến khách</label>
+            <label class="block font-bold text-gray-700 mb-1">Đến Folio</label>
             <select 
-              v-model="selectedToGuest" 
+              v-model="targetFolio" 
               class="w-full px-2.5 py-1 bg-white border border-gray-300 rounded text-gray-500 focus:outline-none focus:border-sky-500"
             >
-              <option value="">Tên khách</option>
+              <option value="1">Folio 1</option>
+              <option value="2">Folio 2</option>
+              <option value="3">Folio 3</option>
             </select>
           </div>
         </div>
@@ -96,6 +106,13 @@ const handleClose = () => {
 
       <!-- Footer Actions -->
       <div class="border-t border-gray-300 p-3 flex justify-end bg-gray-50">
+        <button 
+          @click="handleTransfer"
+          :disabled="selectedCount === 0"
+          class="mr-2 bg-[#1a6b8a] hover:bg-[#155a76] disabled:opacity-40 text-white px-4 py-1.5 rounded font-bold shadow-xs transition-colors"
+        >
+          Chuyển {{ selectedCount }} dịch vụ
+        </button>
         <button 
           @click="handleClose" 
           class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"

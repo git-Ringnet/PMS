@@ -252,6 +252,7 @@ const emptyForm = () => ({
   externalBookingCode: '',
   salesPerson: '',
   isGit: true,
+  isMasterRoomRate: true,
   hasVat: false,
   marketId: null,
   customerSourceId: null,
@@ -1499,6 +1500,7 @@ function bookingToTab(b) {
     externalBookingCode: b.external_booking_code || '',
     salesPerson: b.sales_person || '',
     isGit: b.is_git || false,
+    isMasterRoomRate: b.is_master_room_rate !== undefined ? Boolean(b.is_master_room_rate) : true,
     hasVat: b.has_vat || false,
     note: b.note || '',
     specialRequests: b.special_requests || '',
@@ -1538,7 +1540,7 @@ function makeBlankTab() {
     marketId: null, market: '—', customerSourceId: null, customerSource: '—',
     bookerId: null, contactName: '', contactEmail: '', contactPhone: '',
     paymentMethodId: null, paymentValue: 0, externalBookingCode: '',
-    salesPerson: '', isGit: false, hasVat: false, note: '', specialRequests: '',
+    salesPerson: '', isGit: false, isMasterRoomRate: true, hasVat: false, note: '', specialRequests: '',
     rooms: [],
     createdBy: '',
     createdAt: '',
@@ -2003,6 +2005,7 @@ async function handleAddTabClick() {
     customerSourceId: null,
     color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
     isGit: true,
+    isMasterRoomRate: true,
     shuttleInfo: [
       { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: today, time: '00:00', price: 0, location: '', note: '' }
     ],
@@ -2036,6 +2039,7 @@ async function openEditModal() {
     externalBookingCode: tab.externalBookingCode || '',
     salesPerson: tab.salesPerson || '',
     isGit: true,
+    isMasterRoomRate: tab.isMasterRoomRate !== undefined ? Boolean(tab.isMasterRoomRate) : true,
     hasVat: tab.hasVat || false,
     marketId: tab.marketId,
     customerSourceId: tab.customerSourceId,
@@ -2834,6 +2838,7 @@ async function handleSaveNewBooking() {
       external_booking_code:  modalForm.value.externalBookingCode || null,
       sales_person:           modalForm.value.salesPerson || null,
       is_git:                 modalForm.value.isGit ? 1 : 0,
+      is_master_room_rate:    modalForm.value.isMasterRoomRate ? 1 : 0,
       has_vat:                modalForm.value.hasVat ? 1 : 0,
       note:                   modalForm.value.note || null,
       special_requests:       modalForm.value.specialRequests || null,
@@ -3065,6 +3070,7 @@ async function triggerAction(actionName) {
             external_booking_code:  tab.externalBookingCode || null,
             sales_person:           tab.salesPerson || null,
             is_git:                 tab.isGit ? 1 : 0,
+            is_master_room_rate:    tab.isMasterRoomRate ? 1 : 0,
             has_vat:                tab.hasVat ? 1 : 0,
             note:                   tab.note || null,
             special_requests:       tab.specialRequests || null,
@@ -5436,8 +5442,8 @@ defineExpose({
                 <div class="flex items-center space-x-1.5">
                     <span class="text-xs font-medium text-gray-300">Tiền phòng gửi Master</span>
                     <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
-                        <input type="checkbox" v-model="modalForm.isGit" id="git-toggle" class="sr-only peer"/>
-                        <label for="git-toggle" class="block overflow-hidden h-4 rounded-full bg-gray-400 peer-checked:bg-blue-500 cursor-pointer transition-colors duration-200"></label>
+                        <input type="checkbox" v-model="modalForm.isMasterRoomRate" id="master-room-rate-toggle" class="sr-only peer"/>
+                        <label for="master-room-rate-toggle" class="block overflow-hidden h-4 rounded-full bg-gray-400 peer-checked:bg-blue-500 cursor-pointer transition-colors duration-200"></label>
                         <span class="absolute block w-3 h-3 rounded-full bg-white top-0.5 left-0.5 peer-checked:translate-x-4 transition-transform duration-200 pointer-events-none"></span>
                     </div>
                 </div>

@@ -71,6 +71,7 @@ class BookingRoomServiceController extends Controller
             'quantity'      => 'nullable|numeric|min:0',
             'rate'          => 'nullable|numeric',
             'is_room'       => 'nullable|boolean',
+            'folio'         => 'nullable|integer|between:1,3',
         ]);
 
         // Kiểm tra service_code phải tồn tại trong hệ thống
@@ -123,6 +124,7 @@ class BookingRoomServiceController extends Controller
                 'quantity'     => $request->quantity ?? 1,
                 'rate'         => $request->rate ?? 0,
                 'is_room'      => $request->is_room ?? 1,
+                'folio'        => $request->folio ?? 1,
                 'is_posted'    => 0,
                 'deleted_at'   => null,
                 'created_by'   => Auth::user()?->username ?? 'system',
@@ -199,6 +201,40 @@ class BookingRoomServiceController extends Controller
     // GET: Lấy giá Extra Bed mặc định từ hotel_settings (Epic 14)
     // GET /booking-rooms/{roomId}/services/extra-bed-rate
     // =========================================
+    public function transferFolio(Request $request, $roomId)
+    {
+        BookingRoom::findOrFail($roomId);
+
+        $request->validate([
+            'service_ids'   => 'required|array|min:1',
+            'service_ids.*' => 'integer',
+            'folio'         => 'required|integer|between:1,3',
+        ]);
+
+        $services = BookingRoomService::where('booking_room_id', $roomId)
+            ->whereIn('id', $request->service_ids)
+            ->get();
+
+        if ($services->count() !== count(array_unique($request->service_ids))) {
+            return response()->json(['success' => false, 'message' => 'Có dịch vụ không thuộc phòng đã chọn.'], 422);
+        }
+
+        if ($services->contains(fn ($service) => $service->is_posted == 1)) {
+            return response()->json(['success' => false, 'message' => 'Không thể chuyển dịch vụ đã post.'], 422);
+        }
+
+        BookingRoomService::whereIn('id', $services->pluck('id'))
+            ->update([
+                'folio'      => $request->folio,
+                'updated_by' => Auth::user()?->username ?? 'system',
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã chuyển dịch vụ sang Folio ' . $request->folio . '.',
+        ]);
+    }
+
     public function defaultExtraBedRate()
     {
         $setting = HotelSetting::first();
@@ -219,6 +255,7 @@ class BookingRoomServiceController extends Controller
             'department'      => 'nullable|string|max:20',
             'service_date'    => 'nullable|date',
             'is_free'         => 'nullable|boolean',
+            'folio'           => 'nullable|integer|between:1,3',
             'note'            => 'nullable|string|max:255',
             'bills'           => 'required|array',
             'bills.*.group'   => 'required|string',
@@ -238,10 +275,11 @@ class BookingRoomServiceController extends Controller
 
         $department = $request->department ?: 'HK';
         $serviceDate = $request->service_date ?: now()->toDateString();
+        $folio = $request->folio ?? 1;
         $user = Auth::user()?->username ?? 'Admin';
         $createdRecords = [];
 
-        DB::transaction(function () use ($request, $room, $department, $serviceDate, $user, &$createdRecords) {
+        DB::transaction(function () use ($request, $room, $department, $serviceDate, $folio, $user, &$createdRecords) {
             $groupLabels = [
                 'minibar' => 'Dịch vụ Minibar',
                 'giatui'  => 'Dịch vụ Giặt ủi',
@@ -280,6 +318,7 @@ class BookingRoomServiceController extends Controller
                         'tax'             => $taxAmt,
                         'service_charge'  => $svcChargeAmt,
                         'unit'            => $item['unit'] ?? 'Cái',
+                        'folio'           => $folio,
                         'is_room'         => 1,
                         'is_posted'       => 0,
                         'created_by'      => $user,

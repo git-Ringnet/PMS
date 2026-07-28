@@ -45,6 +45,7 @@ return new class extends Migration
             $table->decimal('tax', 15, 2)->default(0);
             $table->decimal('service_charge', 15, 2)->default(0);
             $table->string('unit', 30)->nullable()->default('Cái');
+            $table->unsignedTinyInteger('folio')->default(1);
 
             // =========================================
             // FIT / GIT
@@ -77,6 +78,7 @@ return new class extends Migration
             $table->index('service_date');
             $table->index('service_code');
             $table->index('is_posted'); // Query batch job auto-post
+            $table->index(['booking_room_id', 'folio']);
             // Chống trùng: 1 dịch vụ chỉ 1 dòng / ngày / phòng (trừ RM)
             $table->unique(['booking_room_id', 'service_code', 'service_date'], 'unique_room_service_date');
         });

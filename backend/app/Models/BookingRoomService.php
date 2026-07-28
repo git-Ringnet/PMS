@@ -23,6 +23,7 @@ class BookingRoomService extends Model
         'tax',
         'service_charge',
         'unit',
+        'folio',
         'is_room',
         'is_posted',
         'posted_at',
@@ -47,6 +48,7 @@ class BookingRoomService extends Model
         'rate'          => 'decimal:2',
         'total_amount'  => 'decimal:2',
         'is_room'       => 'integer',
+        'folio'         => 'integer',
         'is_posted'     => 'integer',
         'posted_at'     => 'datetime',
     ];
