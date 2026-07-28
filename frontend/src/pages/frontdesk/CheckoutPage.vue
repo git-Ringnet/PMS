@@ -4,7 +4,6 @@ import {
   Plus,
   PlusSquare,
   Scissors,
-  ArrowRightLeft,
   Layers,
   Printer,
   FileText,
@@ -35,24 +34,8 @@ const toggleSidebar = () => {
 const searchQuery = ref('')
 const registerFilter = ref('current')
 const showAllGuestsInRoom = ref(false)
-const isMasterRoomRate = ref(true)
-
-const updateRoomServiceAmounts = () => {
-  if (!displayedBookingsList.value) return
-  displayedBookingsList.value.forEach(b => {
-    if (b.roomItems) {
-      b.roomItems.forEach(r => {
-        const masterSend = isMasterRoomRate.value
-        r.serviceAmount = masterSend ? r.extraServiceAmount : (r.extraServiceAmount + r.roomChargeAmount)
-      })
-    }
-    const total = b.roomItems ? b.roomItems.reduce((acc, r) => acc + r.extraServiceAmount + r.roomChargeAmount, 0) : 0
-    b.totalService = total
-  })
-}
 
 const isNoPost = ref(false)
-const isRegistered = ref(true)
 
 const selectedGuest = ref('Guest 1')
 const roomNumber = ref('')
@@ -65,20 +48,20 @@ const showInvoiceMenu = ref(false)
 // Modal states
 import AddServiceModal from './components/AddServiceModal.vue'
 import AddHousekeepingServiceModal from './components/AddHousekeepingServiceModal.vue'
-import TransferServiceModal from './components/TransferServiceModal.vue'
 import QuickTransferBillModal from './components/QuickTransferBillModal.vue'
 import PrepaymentModal from './components/PrepaymentModal.vue'
 import PaymentModal from './components/PaymentModal.vue'
 import FilterServiceModal from './components/FilterServiceModal.vue'
 const showAddServiceModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
-const showTransferServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
 const showPrepaymentModal = ref(false)
 const showPaymentModal = ref(false)
 const showFilterServiceModal = ref(false)
 
 const openAddHousekeepingService = () => {
+  // Dòng master chỉ đại diện booking; dịch vụ BP luôn hạch toán cho một phòng cụ thể.
+  if (!selectedRoomItem.value) return
   showHousekeepingServiceModal.value = true
 }
 
@@ -87,6 +70,8 @@ const allBookingsList = ref([])
 const displayedBookingsList = ref([])
 const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
+const selectedServiceGroup = ref(null)
+const selectedServiceIds = ref([])
 const isLoading = ref(true)
 const showSearchDropdown = ref(false)
 const searchContainerRef = ref(null)
@@ -99,6 +84,16 @@ function formatDate(dateStr) {
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const year = d.getFullYear()
   return `${day} / ${month} / ${year}`
+}
+
+function formatServiceDateTime(serviceDate, createdAt) {
+  const date = formatDate(serviceDate || createdAt)
+  if (!createdAt) return date
+  const created = new Date(createdAt)
+  if (isNaN(created.getTime())) return date
+  const hours = String(created.getHours()).padStart(2, '0')
+  const minutes = String(created.getMinutes()).padStart(2, '0')
+  return `${date} ${hours}:${minutes}`
 }
 
 function formatMoney(num) {
@@ -127,7 +122,7 @@ const loadCheckoutBookings = async () => {
       )
 
       const roomItems = []
-      let totalBookingService = 0
+      const masterSend = b.is_master_room_rate !== undefined ? Boolean(b.is_master_room_rate) : true
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
         b.booking_rooms.forEach(r => {
@@ -171,9 +166,7 @@ const loadCheckoutBookings = async () => {
             }
           }
 
-          const masterSend = b.is_master_room_rate !== undefined ? Boolean(b.is_master_room_rate) : isMasterRoomRate.value
           const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
-          totalBookingService += (extraSvc + roomChargeTotal)
 
           roomItems.push({
             id: `R${r.id || b.id}`,
@@ -197,7 +190,10 @@ const loadCheckoutBookings = async () => {
         bookingId: b.id,
         code: code,
         name: mainGuestName, // Tên nhóm / Tên booking
-        totalService: totalBookingService,
+        // Master chỉ đại diện booking; không cộng dồn dịch vụ của từng phòng.
+        totalService: masterSend
+          ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0)
+          : 0,
         paidAmount: Number(b.paid_amount) || 0,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
@@ -269,7 +265,9 @@ const servicesList = computed(() => {
 
     return {
       id: s.id || `S${idx}`,
-      dateTime: formatDate(s.created_at || s.service_date || new Date()),
+      serviceDate: s.service_date || s.created_at || null,
+      createdAt: s.created_at || null,
+      dateTime: formatServiceDateTime(s.service_date, s.created_at),
       serviceCode: codeVal,
       serviceName: s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng',
       description: descVal,
@@ -279,7 +277,7 @@ const servicesList = computed(() => {
       totalAmount: totalVal,
       unit: s.unit || (codeVal === 'RM' ? 'Đêm' : 'Cái'),
       paymentCode: s.payment_code || '',
-      folio: s.folio || 'A',
+      folio: Number(s.folio || 1),
       tax: Number(s.tax) || 0,
       serviceCharge: Number(s.service_charge) || 0,
       invoiceCode: s.invoice_code || '',
@@ -308,7 +306,7 @@ const servicesList = computed(() => {
           totalAmount: totalVal,
           unit: 'Đêm',
           paymentCode: '',
-          folio: 'A',
+          folio: 1,
           tax: 0,
           serviceCharge: 0,
           invoiceCode: '',
@@ -326,22 +324,34 @@ const servicesList = computed(() => {
     if (rawR.services && Array.isArray(rawR.services)) {
       rawR.services.forEach((s, idx) => {
         const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
-        if (!isMasterRoomRate.value || !isRM) {
+        const masterSend = selectedBooking.value.rawBooking?.is_master_room_rate !== undefined
+          ? Boolean(selectedBooking.value.rawBooking.is_master_room_rate)
+          : true
+        if (!masterSend || !isRM) {
           services.push(processServiceItem(s, idx, 'Phát sinh dịch vụ phòng', roomNo))
         }
       })
     }
-    if (!isMasterRoomRate.value) {
+    const masterSend = selectedBooking.value.rawBooking?.is_master_room_rate !== undefined
+      ? Boolean(selectedBooking.value.rawBooking.is_master_room_rate)
+      : true
+    if (!masterSend) {
       addRoomChargeIfMissing(rawR, services)
     }
   } else if (selectedBooking.value.roomItems) {
+    const masterSend = selectedBooking.value.rawBooking?.is_master_room_rate !== undefined
+      ? Boolean(selectedBooking.value.rawBooking.is_master_room_rate)
+      : true
+    if (!masterSend) return services
+
     selectedBooking.value.roomItems.forEach(rItem => {
       const rawR = rItem.rawRoom
       const roomNo = rItem.roomNumber
       if (rawR) {
         if (rawR.services && Array.isArray(rawR.services)) {
           rawR.services.forEach((s, idx) => {
-            services.push(processServiceItem(s, `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
+            const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
+            if (isRM) services.push(processServiceItem(s, `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
           })
         }
         addRoomChargeIfMissing(rawR, services)
@@ -352,8 +362,69 @@ const servicesList = computed(() => {
   return services
 })
 
+const serviceGroupMeta = {
+  RM: { code: 'RM', name: 'Tiền phòng' },
+  MINIBAR: { code: 'MB', name: 'Minibar/Phí Minibar' },
+  GIATUI: { code: 'LA', name: 'Laundry/Giặt ủi' },
+  DENGBU: { code: 'BR', name: 'Broken/Phí hư hỏng' },
+}
+
+const getServiceGroup = (service) => {
+  const serviceCode = String(service.serviceCode || '').toUpperCase()
+  const prefix = serviceCode.split('_')[0]
+  if (serviceCode === 'RM' || service.serviceName === 'Tiền phòng') return { key: 'RM', ...serviceGroupMeta.RM }
+  const matchedKey = Object.keys(serviceGroupMeta).find(key => prefix === key)
+  if (matchedKey) return { key: matchedKey, ...serviceGroupMeta[matchedKey] }
+  return { key: prefix || serviceCode || 'DV', code: prefix || serviceCode || 'DV', name: service.serviceName || 'Dịch vụ khác' }
+}
+
+const visibleServices = computed(() => {
+  if (activeFolioTab.value === 'A') return servicesList.value
+  return servicesList.value.filter(service => String(service.folio) === activeFolioTab.value)
+})
+
+const folioTotal = (folio) => {
+  const items = folio === 'A'
+    ? servicesList.value
+    : servicesList.value.filter(service => String(service.folio) === String(folio))
+  return items.reduce((total, service) => total + (Number(service.totalAmount) || 0), 0)
+}
+
+const serviceGroups = computed(() => {
+  const groups = new Map()
+  visibleServices.value.forEach(service => {
+    const meta = getServiceGroup(service)
+    // Mỗi lần post bill tạo một thẻ/dòng riêng; chỉ các sản phẩm được gửi cùng lúc
+    // (cùng created_at) mới nằm chung trong một hóa đơn.
+    const key = [meta.key, service.createdAt || service.id, service.folio || 'A', service.department || 'FO'].join('|')
+    if (!groups.has(key)) {
+      groups.set(key, { id: key, ...meta, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode, totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
+    }
+    const group = groups.get(key)
+    group.items.push(service)
+    group.totalAmount += Number(service.totalAmount) || 0
+    group.quantity += Number(service.quantity) || 0
+    group.tax += Number(service.tax) || 0
+    group.serviceCharge += Number(service.serviceCharge) || 0
+  })
+  return Array.from(groups.values())
+})
+
+const openServiceInvoice = (group) => { selectedServiceGroup.value = group }
+const closeServiceInvoice = () => { selectedServiceGroup.value = null }
+const formatInvoiceProductName = (name) => String(name || '').replace(/^\[[^\]]+\]\s*/, '')
+
+const isServiceGroupSelected = (group) => group.items.every(item => selectedServiceIds.value.includes(item.id))
+
+const toggleServiceGroupSelection = (group, checked) => {
+  const ids = group.items.map(item => Number(item.id)).filter(id => Number.isInteger(id) && id > 0)
+  selectedServiceIds.value = checked
+    ? [...new Set([...selectedServiceIds.value, ...ids])]
+    : selectedServiceIds.value.filter(id => !ids.includes(id))
+}
+
 const totalServiceAmount = computed(() => {
-  return servicesList.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
+  return visibleServices.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
 })
 
 const paymentsList = computed(() => {
@@ -408,6 +479,8 @@ const totalPaymentAmount = computed(() => {
 const selectBookingHeader = (b) => {
   selectedBooking.value = b
   selectedRoomItem.value = null
+  selectedServiceIds.value = []
+  activeFolioTab.value = 'A'
   noteText.value = b.note || ''
   roomNumber.value = ''
   selectedGuest.value = b.name
@@ -416,6 +489,8 @@ const selectBookingHeader = (b) => {
 const selectRoomItemRow = (b, r, specificGuest = null) => {
   selectedBooking.value = b
   selectedRoomItem.value = r
+  selectedServiceIds.value = []
+  activeFolioTab.value = 'A'
   noteText.value = b.note || ''
   roomNumber.value = r.roomNumber
   selectedGuest.value = specificGuest || r.guestName
@@ -516,16 +591,6 @@ onUnmounted(() => {
         >
           <Scissors class="w-3.5 h-3.5 text-gray-600 shrink-0" />
           <span v-if="!isSidebarCollapsed" class="truncate">Tách dịch vụ</span>
-        </button>
-
-        <!-- Chuyển dịch vụ -->
-        <button 
-          @click="showTransferServiceModal = true"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
-          :title="isSidebarCollapsed ? 'Chuyển dịch vụ' : ''"
-        >
-          <ArrowRightLeft class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Chuyển dịch vụ</span>
         </button>
 
         <!-- Tập hợp DV -->
@@ -726,18 +791,6 @@ onUnmounted(() => {
         </div>
 
         <div class="flex items-center gap-3">
-          <!-- Toggle Tiền phòng gửi Master (Khớp chính xác Ảnh 2) -->
-          <label class="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900 whitespace-nowrap text-xs select-none">
-            <input 
-              type="checkbox" 
-              v-model="isMasterRoomRate" 
-              @change="updateRoomServiceAmounts"
-              class="sr-only peer" 
-            />
-            <span class="font-medium text-gray-700">Tiền phòng gửi Master</span>
-            <div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-500 relative"></div>
-          </label>
-
           <!-- Checkbox Xem tất cả khách trong phòng -->
           <label class="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900 whitespace-nowrap text-xs">
             <input type="checkbox" v-model="showAllGuestsInRoom" class="rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
@@ -841,10 +894,6 @@ onUnmounted(() => {
             <div class="flex items-center justify-between gap-1 border-b border-gray-200 pb-1">
               <div class="flex items-center gap-2">
                 <label class="flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" v-model="isRegistered" class="rounded border-gray-300 text-sky-600" />
-                  <span class="font-medium text-gray-700">Đăng ký</span>
-                </label>
-                <label class="flex items-center gap-1 cursor-pointer">
                   <input type="checkbox" v-model="isNoPost" class="rounded border-gray-300 text-sky-600" />
                   <span class="text-gray-600">No post</span>
                 </label>
@@ -920,7 +969,7 @@ onUnmounted(() => {
                 ]"
               >
                 <span class="text-xs font-bold">A</span>
-                <span class="text-xs font-mono mt-0.5">0</span>
+                <span class="text-xs font-mono mt-0.5">{{ formatMoney(folioTotal('A')) }}</span>
               </button>
 
               <!-- Tab 1 -->
@@ -932,7 +981,7 @@ onUnmounted(() => {
                 ]"
               >
                 <span class="text-xs font-bold">1</span>
-                <span class="text-xs font-mono mt-0.5">0</span>
+                <span class="text-xs font-mono mt-0.5">{{ formatMoney(folioTotal(1)) }}</span>
               </button>
 
               <!-- Tab 2 -->
@@ -944,7 +993,7 @@ onUnmounted(() => {
                 ]"
               >
                 <span class="text-xs font-bold">2</span>
-                <span class="text-xs font-mono mt-0.5">0</span>
+                <span class="text-xs font-mono mt-0.5">{{ formatMoney(folioTotal(2)) }}</span>
               </button>
 
               <!-- Tab 3 -->
@@ -956,7 +1005,7 @@ onUnmounted(() => {
                 ]"
               >
                 <span class="text-xs font-bold">3</span>
-                <span class="text-xs font-mono mt-0.5">0</span>
+                <span class="text-xs font-mono mt-0.5">{{ formatMoney(folioTotal(3)) }}</span>
               </button>
             </div>
           </div>
@@ -996,35 +1045,41 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="s in servicesList" :key="s.id" class="border-b border-gray-200 hover:bg-gray-50 text-gray-800">
+                <tr v-for="group in serviceGroups" :key="group.id" @click="openServiceInvoice(group)" class="border-b border-gray-200 hover:bg-sky-50 text-gray-800 cursor-pointer transition-colors" title="Xem chi tiết hóa đơn">
                   <td class="px-2 py-1.5 text-center border-r border-gray-200">
-                    <input type="checkbox" class="rounded border-gray-300" />
+                    <input
+                      type="checkbox"
+                      :checked="isServiceGroupSelected(group)"
+                      @click.stop
+                      @change="toggleServiceGroupSelection(group, $event.target.checked)"
+                      class="rounded border-gray-300"
+                    />
                   </td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ s.dateTime }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-sky-600">{{ s.serviceCode || s.serviceName }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.description }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.department }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold">{{ formatMoney(s.amount) }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono">{{ s.quantity }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.unit }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono text-sky-600">{{ s.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ group.dateTime }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-sky-600">{{ group.code }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.name }} <span class="text-gray-400">({{ group.items.length }})</span></td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.department }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold">{{ formatMoney(group.totalAmount) }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono">{{ group.quantity }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200">VND</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono text-sky-600">{{ group.paymentCode }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold">
-                    <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block min-w-[20px]">{{ s.folio || '1' }}</span>
+                    <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block min-w-[20px]">{{ group.folio }}</span>
                   </td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ s.tax ? formatMoney(s.tax) : '' }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ s.serviceCharge ? formatMoney(s.serviceCharge) : '' }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.invoiceCode }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.vatNo }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.items[0]?.invoiceCode }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.items[0]?.vatNo }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">
-                    <input type="checkbox" :checked="s.accounting === 'Đã ghi' || s.isAccounting" disabled class="rounded border-gray-300 text-sky-600 cursor-not-allowed" />
+                    <input type="checkbox" disabled class="rounded border-gray-300 text-sky-600 cursor-not-allowed" />
                   </td>
-                  <td class="px-2.5 py-1.5">{{ s.userName }}</td>
+                  <td class="px-2.5 py-1.5">{{ group.items[0]?.userName }}</td>
                 </tr>
               </tbody>
             </table>
 
             <!-- Empty Data Placeholder -->
-            <div v-if="servicesList.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pt-6">
+            <div v-if="serviceGroups.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pt-6">
               <Inbox class="w-9 h-9 stroke-1 mb-1 text-gray-300" />
               <span class="text-xs text-gray-400">No data</span>
             </div>
@@ -1106,6 +1161,69 @@ onUnmounted(() => {
 
     </main>
 
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      leave-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="selectedServiceGroup" class="fixed inset-0 z-[60]">
+        <div class="absolute inset-0 bg-slate-900/25" @click="closeServiceInvoice"></div>
+        <Transition
+          enter-active-class="transition-transform duration-300 ease-out"
+          leave-active-class="transition-transform duration-200 ease-in"
+          enter-from-class="translate-x-full"
+          leave-to-class="translate-x-full"
+        >
+          <aside v-if="selectedServiceGroup" class="absolute right-0 top-0 h-full w-full max-w-[650px] bg-white shadow-2xl flex flex-col">
+            <header class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+              <div>
+                <h2 class="text-base font-semibold text-gray-900">Hóa đơn</h2>
+                <p class="mt-1 text-xs text-gray-500">{{ selectedServiceGroup.name }} · {{ selectedServiceGroup.dateTime }}</p>
+              </div>
+              <button @click="closeServiceInvoice" class="w-8 h-8 rounded hover:bg-gray-100 text-xl text-gray-500" aria-label="Đóng">×</button>
+            </header>
+
+            <section class="grid grid-cols-2 gap-x-8 gap-y-3 px-5 py-4 border-b border-gray-100 text-xs text-gray-700">
+              <div><span class="font-semibold">Mã:</span> {{ selectedBooking?.code || '--' }}</div>
+              <div><span class="font-semibold">Phòng:</span> {{ roomNumber || selectedRoomItem?.roomNumber || '--' }}</div>
+              <div><span class="font-semibold">Khu vực:</span> {{ selectedServiceGroup.code }}</div>
+              <div><span class="font-semibold">Folio:</span> {{ selectedServiceGroup.folio }}</div>
+            </section>
+
+            <div class="flex-1 overflow-auto p-5">
+              <table class="w-full border-collapse text-xs">
+                <thead class="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th class="border border-gray-200 px-3 py-2 text-center w-12">STT</th>
+                    <th class="border border-gray-200 px-3 py-2 text-left">Sản phẩm</th>
+                    <th class="border border-gray-200 px-3 py-2 text-center w-16">SL</th>
+                    <th class="border border-gray-200 px-3 py-2 text-right w-24">Giá</th>
+                    <th class="border border-gray-200 px-3 py-2 text-right w-28">Số tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(item, index) in selectedServiceGroup.items" :key="item.id" class="text-gray-800">
+                    <td class="border border-gray-200 px-3 py-2 text-center">{{ index + 1 }}</td>
+                    <td class="border border-gray-200 px-3 py-2">{{ formatInvoiceProductName(item.serviceName) }}</td>
+                    <td class="border border-gray-200 px-3 py-2 text-center">{{ item.quantity }}</td>
+                    <td class="border border-gray-200 px-3 py-2 text-right font-mono">{{ formatMoney(item.amount) }}</td>
+                    <td class="border border-gray-200 px-3 py-2 text-right font-mono font-semibold">{{ formatMoney(item.totalAmount) }}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="font-semibold text-gray-900">
+                    <td colspan="4" class="border border-gray-200 px-3 py-3 text-right">Tổng tiền</td>
+                    <td class="border border-gray-200 px-3 py-3 text-right font-mono">{{ formatMoney(selectedServiceGroup.totalAmount) }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </aside>
+        </Transition>
+      </div>
+    </Transition>
+
     <!-- Modals -->
     <AddServiceModal 
       :show="showAddServiceModal" 
@@ -1120,11 +1238,6 @@ onUnmounted(() => {
       :roomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
       @close="showHousekeepingServiceModal = false" 
       @submit="handleServiceAdded"
-    />
-
-    <TransferServiceModal 
-      :show="showTransferServiceModal" 
-      @close="showTransferServiceModal = false" 
     />
 
     <QuickTransferBillModal 
