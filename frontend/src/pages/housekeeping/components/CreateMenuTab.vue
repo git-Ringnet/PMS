@@ -1,5 +1,6 @@
 <template>
   <div class="flex flex-col h-full bg-slate-50 p-5 font-sans relative overflow-hidden">
+    <LoadingOverlay :show="isLoading" />
     
     <!-- Top Control Card -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 shrink-0 overflow-hidden">
@@ -466,6 +467,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { Trash2, Printer, FileSpreadsheet, Download, Upload, PlusCircle, ChevronUp, ChevronDown, ImageOff, Inbox, X, Check, Plus, Eye, EyeOff, Save, Power } from '@lucide/vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
 
@@ -546,7 +548,7 @@ const filterState = ref({
   sortBy: 'name_asc'
 })
 
-const isLoading = ref(false)
+const isLoading = ref(true)
 const groups = ref([])
 const units = ref([])
 const inventories = ref([])

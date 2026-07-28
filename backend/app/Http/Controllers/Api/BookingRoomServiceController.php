@@ -11,6 +11,7 @@ use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 /**
  * BookingRoomServiceController
@@ -204,5 +205,95 @@ class BookingRoomServiceController extends Controller
         $rate    = $setting?->extra_bed_rate ?? 0;
 
         return response()->json(['success' => true, 'extra_bed_rate' => $rate]);
+    }
+
+    // =========================================
+    // POST: Post bill dịch vụ buồng phòng (Minibar, Giặt ủi, Đền bù)
+    // Tách mỗi nhóm dịch vụ thành bill CSDL riêng biệt
+    // POST /api/booking-room-services/post-housekeeping-bill
+    // =========================================
+    public function postHousekeepingBill(Request $request)
+    {
+        $request->validate([
+            'booking_room_id' => 'required',
+            'department'      => 'nullable|string|max:20',
+            'service_date'    => 'nullable|date',
+            'is_free'         => 'nullable|boolean',
+            'note'            => 'nullable|string|max:255',
+            'bills'           => 'required|array',
+            'bills.*.group'   => 'required|string',
+            'bills.*.items'   => 'required|array',
+        ]);
+
+        $roomId = $request->booking_room_id;
+        $room = BookingRoom::find($roomId);
+
+        if (!$room) {
+            $room = BookingRoom::where('booking_id', $roomId)->first();
+        }
+
+        if (!$room) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng tương ứng.'], 404);
+        }
+
+        $department = $request->department ?: 'HK';
+        $serviceDate = $request->service_date ?: now()->toDateString();
+        $user = Auth::user()?->username ?? 'Admin';
+        $createdRecords = [];
+
+        DB::transaction(function () use ($request, $room, $department, $serviceDate, $user, &$createdRecords) {
+            $groupLabels = [
+                'minibar' => 'Dịch vụ Minibar',
+                'giatui'  => 'Dịch vụ Giặt ủi',
+                'dengbu'  => 'Hàng đền bù'
+            ];
+
+            foreach ($request->bills as $billGroup) {
+                $groupKey = strtolower($billGroup['group'] ?? 'minibar');
+                $items = $billGroup['items'] ?? [];
+                if (empty($items)) continue;
+
+                $groupTitle = $groupLabels[$groupKey] ?? ('Dịch vụ ' . ucfirst($groupKey));
+                $groupCode  = strtoupper($groupKey);
+
+                foreach ($items as $item) {
+                    $pName        = $item['name'] ?? ($item['product']['name'] ?? 'Sản phẩm buồng phòng');
+                    $qty          = floatval($item['qty'] ?? 1);
+                    $netPrice     = floatval($item['net_price'] ?? ($item['price'] ?? 0));
+                    $prodCode     = $item['code'] ?? ($item['id'] ?? 'P');
+                    $uniqueSuffix = substr(md5(uniqid(microtime(), true)), 0, 6);
+                    $serviceCode  = strtoupper(substr($groupCode . '_' . $prodCode . '_' . $uniqueSuffix, 0, 30));
+
+                    $taxAmt       = floatval($item['tax'] ?? 0);
+                    $svcChargeAmt = floatval($item['service_charge'] ?? 0);
+
+                    $created = BookingRoomService::create([
+                        'booking_room_id' => $room->id,
+                        'service_code'    => $serviceCode,
+                        'service_name'    => "[$groupTitle] $pName",
+                        'service_date'    => $serviceDate,
+                        'quantity'        => $qty,
+                        'rate'            => $netPrice,
+                        'total_amount'    => $qty * $netPrice,
+                        'department'      => $department,
+                        'note'            => $request->note ?: "Post bill $groupTitle",
+                        'tax'             => $taxAmt,
+                        'service_charge'  => $svcChargeAmt,
+                        'unit'            => $item['unit'] ?? 'Cái',
+                        'is_room'         => 1,
+                        'is_posted'       => 0,
+                        'created_by'      => $user,
+                    ]);
+
+                    $createdRecords[] = $created;
+                }
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã lưu hóa đơn dịch vụ thành công!',
+            'data'    => $createdRecords
+        ]);
     }
 }
