@@ -46,7 +46,7 @@ const handleSuccess = (data) => {
         <PostBillHousekeepingTab
           :initialRoomId="roomId"
           :isModal="true"
-          :department="'FO'"
+          :department="'HK'"
           @close="handleClose"
           @success="handleSuccess"
         />

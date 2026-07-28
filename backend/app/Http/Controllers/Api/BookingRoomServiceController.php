@@ -7,6 +7,10 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomService;
 use App\Models\HotelService;
 use App\Models\HotelSetting;
+use App\Models\Sp3000;
+use App\Models\Sp3001;
+use App\Models\Sp6000;
+use App\Models\Sp6001;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -262,45 +266,78 @@ class BookingRoomServiceController extends Controller
             'bills.*.items'   => 'required|array',
         ]);
 
-        $roomId = $request->booking_room_id;
-        $room = BookingRoom::find($roomId);
-
-        if (!$room) {
-            $room = BookingRoom::where('booking_id', $roomId)->first();
-        }
+        $room = BookingRoom::find($request->booking_room_id);
 
         if (!$room) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng tương ứng.'], 404);
         }
 
-        $department = $request->department ?: 'HK';
+        // Endpoint này chỉ dành cho post dịch vụ buồng phòng.
+        $department = 'HK';
         $serviceDate = $request->service_date ?: now()->toDateString();
+        $systemDate = $this->avService->getSystemDate();
+        $serviceDateCarbon = Carbon::parse($serviceDate);
+        if ($serviceDateCarbon->gt(Carbon::parse($systemDate))) {
+            return response()->json(['success' => false, 'message' => 'Không thể post dịch vụ cho ngày tương lai.'], 422);
+        }
+        if ($serviceDateCarbon->lt(Carbon::parse($systemDate)) && !$this->canOperateOldDay()) {
+            return response()->json(['success' => false, 'message' => 'Tài khoản không có quyền post dịch vụ cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).'], 403);
+        }
         $folio = $request->folio ?? 1;
         $user = Auth::user()?->username ?? 'Admin';
         $createdRecords = [];
 
-        DB::transaction(function () use ($request, $room, $department, $serviceDate, $folio, $user, &$createdRecords) {
-            $groupLabels = [
-                'minibar' => 'Dịch vụ Minibar',
-                'giatui'  => 'Dịch vụ Giặt ủi',
-                'dengbu'  => 'Hàng đền bù'
+        DB::transaction(function () use ($request, $room, $department, $serviceDate, $serviceDateCarbon, $folio, $user, &$createdRecords) {
+            $groupMeta = [
+                'minibar' => ['label' => 'Minibar', 'service' => 'MB', 'outlet' => 'MB'],
+                'giatui'  => ['label' => 'Giặt ủi', 'service' => 'LA', 'outlet' => 'LA'],
+                'dengbu'  => ['label' => 'Hàng đền bù', 'service' => 'BR', 'outlet' => 'BR'],
             ];
+            $booking = $room->booking;
+            $primaryGuest = $room->guests()->where('is_primary', 1)->with('guest')->first() ?: $room->guests()->with('guest')->first();
+            $guestId = $primaryGuest?->guest_id;
+            $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
 
             foreach ($request->bills as $billGroup) {
                 $groupKey = strtolower($billGroup['group'] ?? 'minibar');
                 $items = $billGroup['items'] ?? [];
                 if (empty($items)) continue;
 
-                $groupTitle = $groupLabels[$groupKey] ?? ('Dịch vụ ' . ucfirst($groupKey));
-                $groupCode  = strtoupper($groupKey);
+                if (!isset($groupMeta[$groupKey])) continue;
+                $meta = $groupMeta[$groupKey];
+                $groupTitle = $meta['label'];
+                $originalAmount = collect($items)->sum(fn ($item) => (float)($item['original_rate'] ?? $item['price'] ?? 0) * (float)($item['qty'] ?? 1));
+                $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
+                $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
 
-                foreach ($items as $item) {
+                $serviceBill = Sp3000::create([
+                    'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
+                    'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
+                    'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
+                    'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
+                    'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
+                    'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
+                    'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                    'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
+                    'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
+                ]);
+                $bill = Sp6000::create([
+                    'BookingId' => $booking?->id, 'BillOriginalAmount' => $originalAmount,
+                    'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
+                    'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                    'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                    'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
+                    'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
+                    'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
+                ]);
+
+                foreach ($items as $index => $item) {
                     $pName        = $item['name'] ?? ($item['product']['name'] ?? 'Sản phẩm buồng phòng');
                     $qty          = floatval($item['qty'] ?? 1);
                     $netPrice     = floatval($item['net_price'] ?? ($item['price'] ?? 0));
                     $prodCode     = $item['code'] ?? ($item['id'] ?? 'P');
                     $uniqueSuffix = substr(md5(uniqid(microtime(), true)), 0, 6);
-                    $serviceCode  = strtoupper(substr($groupCode . '_' . $prodCode . '_' . $uniqueSuffix, 0, 30));
+                    $serviceCode  = strtoupper(substr($meta['service'] . '_' . $prodCode . '_' . $uniqueSuffix, 0, 30));
 
                     $taxAmt       = floatval($item['tax'] ?? 0);
                     $svcChargeAmt = floatval($item['service_charge'] ?? 0);
@@ -308,7 +345,7 @@ class BookingRoomServiceController extends Controller
                     $created = BookingRoomService::create([
                         'booking_room_id' => $room->id,
                         'service_code'    => $serviceCode,
-                        'service_name'    => "[$groupTitle] $pName",
+                        'service_name'    => $pName,
                         'service_date'    => $serviceDate,
                         'quantity'        => $qty,
                         'rate'            => $netPrice,
@@ -320,11 +357,30 @@ class BookingRoomServiceController extends Controller
                         'unit'            => $item['unit'] ?? 'Cái',
                         'folio'           => $folio,
                         'is_room'         => 1,
-                        'is_posted'       => 0,
+                        'is_posted'       => 1,
+                        'posted_at'       => now(),
                         'created_by'      => $user,
                     ]);
 
                     $createdRecords[] = $created;
+
+                    Sp6001::create([
+                        'BillId' => $bill->Ma, 'DetailId' => $index + 1,
+                        'MaProduct' => is_numeric($item['id'] ?? null) ? $item['id'] : null,
+                        'ProductGroupId' => $item['product_group_id'] ?? null, 'Product' => $pName,
+                        'Rate' => $item['original_rate'] ?? $item['price'] ?? 0, 'Quantity' => $qty,
+                        'Discount' => $item['discount_pct'] ?? 0, 'DiscountAmount' => $item['discount_amount'] ?? 0,
+                        'Increase' => $item['increase_pct'] ?? 0, 'IncreaseAmount' => $item['increase_amount'] ?? 0,
+                        'TotalAmount' => $item['total_amount'] ?? $item['net_price'] ?? 0, 'Note' => $request->note,
+                    ]);
+                    Sp3001::create([
+                        'BillServiceId' => $serviceBill->Ma, 'Ma' => $index + 1,
+                        'DepartmentId' => $department, 'ServiceId' => $meta['service'],
+                        'DescriptionServive' => $pName, 'OriginalRate' => $item['original_rate'] ?? $item['price'] ?? 0,
+                        'Amount' => $item['total_amount'] ?? $item['net_price'] ?? 0, 'Currency' => 'VND', 'Exchange' => 1,
+                        'DetailBillOriginalAmount' => (float)($item['original_rate'] ?? $item['price'] ?? 0) * $qty,
+                        'DiscountAmount' => $item['discount_amount'] ?? 0, 'IncreaseAmount' => $item['increase_amount'] ?? 0,
+                    ]);
                 }
             }
         });
@@ -334,5 +390,14 @@ class BookingRoomServiceController extends Controller
             'message' => 'Đã lưu hóa đơn dịch vụ thành công!',
             'data'    => $createdRecords
         ]);
+    }
+
+    protected function canOperateOldDay(): bool
+    {
+        $user = Auth::user();
+        if (!$user || $user->username === 'admin' || !empty($user->is_admin)) return true;
+        $settings = $user->setting?->settings ?? [];
+        $value = $settings['RuleUserCorrectOrPostBillPaymentOldDay'] ?? false;
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
     }
 }

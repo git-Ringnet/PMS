@@ -8,7 +8,7 @@
         <div class="info-field flex flex-col gap-1">
           <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">&nbsp;</label>
           <div class="info-room flex items-center gap-2 bg-white border border-slate-300 rounded px-3 h-8 min-w-[240px] text-xs font-semibold shadow-xs">
-            <select v-model="form.roomId" class="border-none bg-transparent focus:outline-none w-full font-bold text-slate-800 cursor-pointer">
+            <select v-model="form.roomId" disabled class="border-none bg-transparent focus:outline-none w-full font-bold text-slate-800 cursor-not-allowed disabled:opacity-100">
               <option value="">-- Chọn phòng --</option>
               <option v-for="room in bookingRooms" :key="room.id" :value="room.id">
                 {{ room.name }}
@@ -486,6 +486,8 @@ const loadDbProducts = async () => {
           image: p.image ? `http://localhost:8000/storage/${p.image}` : null,
           icon: p.image ? null : '📦',
           product_code: p.product_code
+          ,product_category_id: p.product_category_id
+          ,product_group_id: p.product_group_id
         })
 
         productGroup[p.id] = tabKey
@@ -689,6 +691,13 @@ const sendToRoom = async () => {
         tax: itemTax,
         service_charge: itemSvcCharge,
         unit: prod.unit || prod.unit_name || prod.dvt || 'Cái'
+        ,original_rate: unitPrice
+        ,discount_pct: discountMode.value === 'gg' ? Math.min(100, Math.max(0, (Number(globalPct.value) || 0) + (Number(item.discPct) || 0))) : 0
+        ,discount_amount: discountMode.value === 'gg' ? rowCalc.discAmt : 0
+        ,increase_pct: discountMode.value === 'pt' ? Math.min(100, Math.max(0, (Number(globalPct.value) || 0) + (Number(item.discPct) || 0))) : 0
+        ,increase_amount: discountMode.value === 'pt' ? rowCalc.discAmt : 0
+        ,total_amount: rowCalc.net
+        ,product_group_id: prod.product_category_id || prod.product_group_id || null
       })
     })
 
