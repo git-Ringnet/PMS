@@ -26,47 +26,50 @@ onUnmounted(() => {
   <Teleport to="body">
     <div
       v-if="uiStore.confirmState.show"
-      class="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 animate-[fade_0.2s_ease-out]"
+      class="fixed inset-0 z-[9999999] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-[fade_0.2s_ease-out]"
       @click="uiStore.handleConfirm(false)"
     >
       <div
-        class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-[zoom_0.25s_cubic-bezier(0.34,1.56,0.64,1)] border border-slate-200"
+        class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-[380px] overflow-hidden animate-[zoom_0.25s_cubic-bezier(0.34,1.56,0.64,1)] border border-slate-200/90 dark:border-slate-800"
         @click.stop
       >
-        <!-- Content -->
+        <!-- Modal Content -->
         <div class="p-6 text-center">
-          <!-- Warning Alert Icon -->
-          <div class="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200">
-            <svg class="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
+          <!-- Icon Container -->
+          <div class="relative mx-auto w-14 h-14 flex items-center justify-center mb-3">
+            <div class="absolute inset-0 rounded-full bg-amber-400/20 animate-ping opacity-25"></div>
+            <div class="relative w-12 h-12 rounded-full bg-amber-50 border-2 border-amber-200/80 flex items-center justify-center shadow-xs">
+              <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xl"></i>
+            </div>
           </div>
 
           <!-- Title -->
-          <h3 class="text-base font-extrabold text-slate-800 mb-1.5 select-none">
-            {{ uiStore.confirmState.title }}
+          <h3 class="text-base font-bold text-slate-800 dark:text-slate-100 tracking-tight">
+            {{ uiStore.confirmState.title || 'Xác nhận' }}
           </h3>
 
           <!-- Message -->
-          <p class="text-xs text-slate-500 font-semibold leading-relaxed px-2 select-none">
+          <p class="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed mt-2 px-1">
             {{ uiStore.confirmState.message }}
           </p>
         </div>
 
         <!-- Action buttons -->
-        <div class="flex border-t border-slate-100 bg-slate-50/50">
+        <div class="px-6 pb-6 pt-1 flex items-center gap-3">
           <button
+            type="button"
             @click="uiStore.handleConfirm(false)"
-            class="flex-1 px-4 py-3 bg-transparent text-slate-600 hover:bg-slate-100/50 hover:text-slate-800 transition-colors cursor-pointer border-none border-r border-slate-100 text-xs font-bold"
+            class="flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition text-xs cursor-pointer border-none shadow-xs active:scale-98"
           >
-            {{ uiStore.confirmState.cancelText }}
+            {{ uiStore.confirmState.cancelText || 'Hủy bỏ' }}
           </button>
           
           <button
+            type="button"
             @click="uiStore.handleConfirm(true)"
-            class="flex-1 px-4 py-3 bg-transparent text-blue-600 hover:bg-slate-100/50 hover:text-blue-700 transition-colors cursor-pointer border-none text-xs font-extrabold focus:outline-none"
+            class="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-xl transition text-xs cursor-pointer border-none shadow-md shadow-blue-500/25 active:scale-98 flex items-center justify-center gap-1.5"
           >
-            {{ uiStore.confirmState.confirmText }}
+            <span>{{ uiStore.confirmState.confirmText || 'Đồng ý' }}</span>
           </button>
         </div>
       </div>
