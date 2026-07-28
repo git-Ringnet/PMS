@@ -35,6 +35,21 @@ const toggleSidebar = () => {
 const searchQuery = ref('')
 const registerFilter = ref('current')
 const showAllGuestsInRoom = ref(false)
+const isMasterRoomRate = ref(true)
+
+const updateRoomServiceAmounts = () => {
+  if (!displayedBookingsList.value) return
+  displayedBookingsList.value.forEach(b => {
+    if (b.roomItems) {
+      b.roomItems.forEach(r => {
+        const masterSend = isMasterRoomRate.value
+        r.serviceAmount = masterSend ? r.extraServiceAmount : (r.extraServiceAmount + r.roomChargeAmount)
+      })
+    }
+    const total = b.roomItems ? b.roomItems.reduce((acc, r) => acc + r.extraServiceAmount + r.roomChargeAmount, 0) : 0
+    b.totalService = total
+  })
+}
 
 const isNoPost = ref(false)
 const isRegistered = ref(true)
@@ -49,17 +64,23 @@ const showInvoiceMenu = ref(false)
 
 // Modal states
 import AddServiceModal from './components/AddServiceModal.vue'
+import AddHousekeepingServiceModal from './components/AddHousekeepingServiceModal.vue'
 import TransferServiceModal from './components/TransferServiceModal.vue'
 import QuickTransferBillModal from './components/QuickTransferBillModal.vue'
 import PrepaymentModal from './components/PrepaymentModal.vue'
 import PaymentModal from './components/PaymentModal.vue'
 import FilterServiceModal from './components/FilterServiceModal.vue'
 const showAddServiceModal = ref(false)
+const showHousekeepingServiceModal = ref(false)
 const showTransferServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
 const showPrepaymentModal = ref(false)
 const showPaymentModal = ref(false)
 const showFilterServiceModal = ref(false)
+
+const openAddHousekeepingService = () => {
+  showHousekeepingServiceModal.value = true
+}
 
 // State dữ liệu thực từ CSDL
 const allBookingsList = ref([])
@@ -128,11 +149,31 @@ const loadCheckoutBookings = async () => {
             roomGuests.push(mainGuestName)
           }
 
-          let totalSvc = 0
+          let extraSvc = 0
           if (r.services && r.services.length > 0) {
-            totalSvc = r.services.reduce((acc, s) => acc + (Number(s.amount) || Number(s.price) || 0), 0)
+            extraSvc = r.services
+              .filter(s => s.service_code !== 'RM' && !(s.service_name && s.service_name.includes('Tiền phòng')))
+              .reduce((acc, s) => {
+                const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * (Number(s.rate) || Number(s.price) || Number(s.amount) || 0))
+                return acc + itemTotal
+              }, 0)
           }
-          totalBookingService += totalSvc
+
+          let roomChargeTotal = 0
+          const roomChargeSvc = r.services && r.services.find(s => (s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))))
+          if (roomChargeSvc) {
+            roomChargeTotal = Number(roomChargeSvc.total_amount) || (Number(roomChargeSvc.quantity || 1) * Number(roomChargeSvc.rate || 0))
+          } else {
+            const roomRateVal = Number(r.room_rate) || Number(r.price) || Number(r.rate) || 0
+            if (roomRateVal > 0) {
+              const qtyDays = Number(r.ActutalNumOfDays) || 1
+              roomChargeTotal = Number(r.total_amount) || (roomRateVal * qtyDays)
+            }
+          }
+
+          const masterSend = b.is_master_room_rate !== undefined ? Boolean(b.is_master_room_rate) : isMasterRoomRate.value
+          const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
+          totalBookingService += (extraSvc + roomChargeTotal)
 
           roomItems.push({
             id: `R${r.id || b.id}`,
@@ -141,7 +182,9 @@ const loadCheckoutBookings = async () => {
             roomNumber: roomNo,
             guestName: roomGuests[0],
             allGuests: roomGuests,
-            serviceAmount: totalSvc,
+            serviceAmount: roomSvc,
+            extraServiceAmount: extraSvc,
+            roomChargeAmount: roomChargeTotal,
             paidAmount: 0,
             checked: false,
             rawRoom: r
@@ -167,18 +210,36 @@ const loadCheckoutBookings = async () => {
 
     // Lưu toàn bộ danh sách cho ô Tìm kiếm Popup
     allBookingsList.value = formatted
-
-    // Ban đầu TRỐNG HOÀN TOÀN (chưa chọn gì cả)
-    displayedBookingsList.value = []
-    selectedBooking.value = null
-    selectedRoomItem.value = null
-    roomNumber.value = ''
-    selectedGuest.value = ''
-    noteText.value = ''
   } catch (err) {
     console.error('Lỗi khi nạp danh sách booking cho Checkout:', err)
   } finally {
     isLoading.value = false
+  }
+}
+
+const handleServiceAdded = async (data) => {
+  showAddServiceModal.value = false
+  showHousekeepingServiceModal.value = false
+
+  const currentBookingId = selectedBooking.value ? selectedBooking.value.bookingId : null
+  const currentRoomId = selectedRoomItem.value ? selectedRoomItem.value.roomId : null
+
+  await loadCheckoutBookings()
+
+  if (currentBookingId) {
+    const freshB = allBookingsList.value.find(b => b.bookingId === currentBookingId)
+    if (freshB) {
+      displayedBookingsList.value = [freshB]
+      selectedBooking.value = freshB
+      if (currentRoomId) {
+        const freshR = freshB.roomItems.find(r => r.roomId === currentRoomId)
+        if (freshR) {
+          selectedRoomItem.value = freshR
+          roomNumber.value = freshR.roomNumber
+          selectedGuest.value = freshR.guestName
+        }
+      }
+    }
   }
 }
 
@@ -195,54 +256,95 @@ const servicesList = computed(() => {
 
   const services = []
 
+  const processServiceItem = (s, idx, defaultDesc, roomNo = '') => {
+    const rateVal = Number(s.rate) || Number(s.price) || Number(s.amount) || 0
+    const qtyVal = Number(s.quantity) || Number(s.qty) || 1
+    const totalVal = Number(s.total_amount) || (rateVal * qtyVal)
+    const codeVal = s.service_code || (s.hotel_service && s.hotel_service.code) || (s.service_name === 'Tiền phòng' ? 'RM' : 'DV')
+
+    let descVal = s.note || s.description || defaultDesc
+    if (codeVal === 'RM' || s.service_name === 'Tiền phòng') {
+      descVal = `Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim()
+    }
+
+    return {
+      id: s.id || `S${idx}`,
+      dateTime: formatDate(s.created_at || s.service_date || new Date()),
+      serviceCode: codeVal,
+      serviceName: s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng',
+      description: descVal,
+      department: s.department || 'FO',
+      amount: rateVal,
+      quantity: qtyVal,
+      totalAmount: totalVal,
+      unit: s.unit || (codeVal === 'RM' ? 'Đêm' : 'Cái'),
+      paymentCode: s.payment_code || '',
+      folio: s.folio || 'A',
+      tax: Number(s.tax) || 0,
+      serviceCharge: Number(s.service_charge) || 0,
+      invoiceCode: s.invoice_code || '',
+      vatNo: s.vat_no || '',
+      accounting: s.accounting || 'Đã ghi',
+      userName: s.created_by || s.user_name || 'Admin'
+    }
+  }
+
+  const addRoomChargeIfMissing = (rawR, targetArray) => {
+    const hasRoomCharge = rawR.services && rawR.services.some(s => (s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))))
+    if (!hasRoomCharge) {
+      const rateVal = Number(rawR.room_rate) || Number(rawR.price) || Number(rawR.rate) || 0
+      if (rateVal > 0) {
+        const qtyVal = Number(rawR.ActutalNumOfDays) || 1
+        const totalVal = Number(rawR.total_amount) || (rateVal * qtyVal)
+        targetArray.unshift({
+          id: `RM-${rawR.id}`,
+          dateTime: formatDate(rawR.arrival_date || selectedBooking.value?.arrivalDate || new Date()),
+          serviceCode: 'RM',
+          serviceName: 'Tiền phòng',
+          description: `Dịch vụ phòng nghỉ ${rawR.room_number || ''}`,
+          department: 'FO',
+          amount: rateVal,
+          quantity: qtyVal,
+          totalAmount: totalVal,
+          unit: 'Đêm',
+          paymentCode: '',
+          folio: 'A',
+          tax: 0,
+          serviceCharge: 0,
+          invoiceCode: '',
+          vatNo: '',
+          accounting: 'Đã ghi',
+          userName: 'System'
+        })
+      }
+    }
+  }
+
   if (selectedRoomItem.value && selectedRoomItem.value.rawRoom) {
     const rawR = selectedRoomItem.value.rawRoom
+    const roomNo = selectedRoomItem.value.roomNumber
     if (rawR.services && Array.isArray(rawR.services)) {
       rawR.services.forEach((s, idx) => {
-        services.push({
-          id: s.id || `S${idx}`,
-          dateTime: formatDate(s.created_at || s.service_date || new Date()),
-          serviceName: s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng',
-          description: s.note || s.description || 'Phát sinh dịch vụ phòng',
-          department: s.department || 'Buồng phòng',
-          amount: Number(s.amount) || Number(s.price) || 0,
-          quantity: Number(s.quantity) || Number(s.qty) || 1,
-          unit: s.unit || 'Lần',
-          paymentCode: s.payment_code || `TT${s.id || idx}`,
-          folio: s.folio || 'A',
-          tax: Number(s.tax) || 0,
-          serviceCharge: Number(s.service_charge) || 0,
-          invoiceCode: s.invoice_code || '',
-          vatNo: s.vat_no || '',
-          accounting: s.accounting || 'Đã ghi',
-          userName: s.user_name || 'Admin'
-        })
+        const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
+        if (!isMasterRoomRate.value || !isRM) {
+          services.push(processServiceItem(s, idx, 'Phát sinh dịch vụ phòng', roomNo))
+        }
       })
+    }
+    if (!isMasterRoomRate.value) {
+      addRoomChargeIfMissing(rawR, services)
     }
   } else if (selectedBooking.value.roomItems) {
     selectedBooking.value.roomItems.forEach(rItem => {
       const rawR = rItem.rawRoom
-      if (rawR && rawR.services && Array.isArray(rawR.services)) {
-        rawR.services.forEach((s, idx) => {
-          services.push({
-            id: s.id || `S${rItem.id}-${idx}`,
-            dateTime: formatDate(s.created_at || s.service_date || new Date()),
-            serviceName: s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng',
-            description: s.note || s.description || `Phòng ${rItem.roomNumber}`,
-            department: s.department || 'Buồng phòng',
-            amount: Number(s.amount) || Number(s.price) || 0,
-            quantity: Number(s.quantity) || Number(s.qty) || 1,
-            unit: s.unit || 'Lần',
-            paymentCode: s.payment_code || `TT${s.id || idx}`,
-            folio: s.folio || 'A',
-            tax: Number(s.tax) || 0,
-            serviceCharge: Number(s.service_charge) || 0,
-            invoiceCode: s.invoice_code || '',
-            vatNo: s.vat_no || '',
-            accounting: s.accounting || 'Đã ghi',
-            userName: s.user_name || 'Admin'
+      const roomNo = rItem.roomNumber
+      if (rawR) {
+        if (rawR.services && Array.isArray(rawR.services)) {
+          rawR.services.forEach((s, idx) => {
+            services.push(processServiceItem(s, `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
           })
-        })
+        }
+        addRoomChargeIfMissing(rawR, services)
       }
     })
   }
@@ -251,7 +353,7 @@ const servicesList = computed(() => {
 })
 
 const totalServiceAmount = computed(() => {
-  return servicesList.value.reduce((acc, s) => acc + (s.amount * s.quantity), 0)
+  return servicesList.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
 })
 
 const paymentsList = computed(() => {
@@ -305,16 +407,10 @@ const totalPaymentAmount = computed(() => {
 
 const selectBookingHeader = (b) => {
   selectedBooking.value = b
+  selectedRoomItem.value = null
   noteText.value = b.note || ''
-  if (b.roomItems && b.roomItems.length > 0) {
-    selectedRoomItem.value = b.roomItems[0]
-    roomNumber.value = b.roomItems[0].roomNumber
-    selectedGuest.value = b.roomItems[0].guestName
-  } else {
-    selectedRoomItem.value = null
-    roomNumber.value = ''
-    selectedGuest.value = b.name
-  }
+  roomNumber.value = ''
+  selectedGuest.value = b.name
 }
 
 const selectRoomItemRow = (b, r, specificGuest = null) => {
@@ -404,7 +500,9 @@ onUnmounted(() => {
         <!-- Thêm dịch vụ BP -->
         <button 
           @click="openAddHousekeepingService"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
+          :disabled="!selectedRoomItem"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
+          :class="[selectedRoomItem ? 'hover:bg-white text-gray-700 hover:border-gray-300 cursor-pointer' : 'opacity-40 pointer-events-none text-gray-400']"
           :title="isSidebarCollapsed ? 'Thêm dịch vụ BP' : ''"
         >
           <PlusSquare class="w-3.5 h-3.5 text-gray-600 shrink-0" />
@@ -627,11 +725,25 @@ onUnmounted(() => {
           </select>
         </div>
 
-        <!-- Checkbox Xem tất cả khách trong phòng (Căn phải) -->
-        <label class="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900 whitespace-nowrap text-xs">
-          <input type="checkbox" v-model="showAllGuestsInRoom" class="rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
-          <span>Xem tất cả khách trong phòng</span>
-        </label>
+        <div class="flex items-center gap-3">
+          <!-- Toggle Tiền phòng gửi Master (Khớp chính xác Ảnh 2) -->
+          <label class="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900 whitespace-nowrap text-xs select-none">
+            <input 
+              type="checkbox" 
+              v-model="isMasterRoomRate" 
+              @change="updateRoomServiceAmounts"
+              class="sr-only peer" 
+            />
+            <span class="font-medium text-gray-700">Tiền phòng gửi Master</span>
+            <div class="w-8 h-4 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-500 relative"></div>
+          </label>
+
+          <!-- Checkbox Xem tất cả khách trong phòng -->
+          <label class="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900 whitespace-nowrap text-xs">
+            <input type="checkbox" v-model="showAllGuestsInRoom" class="rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
+            <span>Xem tất cả khách trong phòng</span>
+          </label>
+        </div>
       </div>
 
       <!-- TOP SPLIT SECTION (Bảng Đăng ký + Panel Thông tin) -->
@@ -692,7 +804,7 @@ onUnmounted(() => {
                         <td class="p-1 border-r border-gray-300 text-center"></td>
                         <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ r.roomNumber }}</td>
                         <td class="p-1 border-r border-gray-300" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ gName }}</td>
-                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ formatMoney(r.serviceAmount) }}</td>
+                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ gIdx === 0 ? formatMoney(r.serviceAmount) : '0' }}</td>
                         <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ formatMoney(r.paidAmount) }}</td>
                       </tr>
                     </template>
@@ -772,7 +884,7 @@ onUnmounted(() => {
                     <template v-if="selectedBooking">
                       <template v-for="r in selectedBooking.roomItems" :key="r.id">
                         <option v-for="(gName, gIdx) in r.allGuests" :key="`${r.id}-${gIdx}`" :value="gName">
-                          {{ gName }} (Phòng {{ r.roomNumber }})
+                          {{ gName }}
                         </option>
                       </template>
                     </template>
@@ -889,19 +1001,23 @@ onUnmounted(() => {
                     <input type="checkbox" class="rounded border-gray-300" />
                   </td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ s.dateTime }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-sky-600">{{ s.serviceName }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-sky-600">{{ s.serviceCode || s.serviceName }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.description }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.department }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold">{{ formatMoney(s.amount) }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono">{{ s.quantity }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.unit }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono text-sky-600">{{ s.paymentCode }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold">{{ s.folio }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ formatMoney(s.tax) }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ formatMoney(s.serviceCharge) }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold">
+                    <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block min-w-[20px]">{{ s.folio || '1' }}</span>
+                  </td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ s.tax ? formatMoney(s.tax) : '' }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ s.serviceCharge ? formatMoney(s.serviceCharge) : '' }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.invoiceCode }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.vatNo }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ s.accounting }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">
+                    <input type="checkbox" :checked="s.accounting === 'Đã ghi' || s.isAccounting" disabled class="rounded border-gray-300 text-sky-600 cursor-not-allowed" />
+                  </td>
                   <td class="px-2.5 py-1.5">{{ s.userName }}</td>
                 </tr>
               </tbody>
@@ -993,7 +1109,17 @@ onUnmounted(() => {
     <!-- Modals -->
     <AddServiceModal 
       :show="showAddServiceModal" 
+      :bookingInfo="selectedBooking ? `${selectedBooking.code} - ${selectedBooking.name}` : ''"
       @close="showAddServiceModal = false" 
+      @submit="handleServiceAdded"
+    />
+
+    <AddHousekeepingServiceModal 
+      :show="showHousekeepingServiceModal" 
+      :bookingInfo="selectedBooking ? `${selectedBooking.code} - ${selectedBooking.name}` : ''"
+      :roomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
+      @close="showHousekeepingServiceModal = false" 
+      @submit="handleServiceAdded"
     />
 
     <TransferServiceModal 

@@ -284,12 +284,29 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import http from '@/services/http'
 // Import LoadingOverlay component của hệ thống
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+
+const props = defineProps({
+  initialRoomId: {
+    type: [String, Number],
+    default: ''
+  },
+  isModal: {
+    type: Boolean,
+    default: false
+  },
+  department: {
+    type: String,
+    default: 'HK'
+  }
+})
+
+const emit = defineEmits(['close', 'success'])
 
 const uiStore = useUiStore()
 
@@ -378,8 +395,13 @@ const loadBookingRooms = async () => {
 
     if (options.length > 0) {
       bookingRooms.value = options
-      if (!form.value.roomId || !options.some(o => o.id === form.value.roomId)) {
-        form.value.roomId = options[0].id
+      if (props.initialRoomId) {
+        const matched = options.find(o => String(o.id) === String(props.initialRoomId) || String(o.roomId) === String(props.initialRoomId) || String(o.bookingId) === String(props.initialRoomId))
+        if (matched) {
+          form.value.roomId = matched.id
+        }
+      } else if (form.value.roomId && !options.some(o => o.id === form.value.roomId)) {
+        form.value.roomId = ''
       }
     } else {
       bookingRooms.value = []
@@ -391,6 +413,15 @@ const loadBookingRooms = async () => {
     loadingRooms.value = false
   }
 }
+
+watch(() => props.initialRoomId, (newVal) => {
+  if (newVal && bookingRooms.value.length > 0) {
+    const matched = bookingRooms.value.find(o => String(o.id) === String(newVal) || String(o.roomId) === String(newVal) || String(o.bookingId) === String(newVal))
+    if (matched) {
+      form.value.roomId = matched.id
+    }
+  }
+})
 
 const dbProductsData = ref({
   minibar: {},
@@ -634,12 +665,68 @@ const sendToRoom = async () => {
   if (!confirmed) return
 
   isSending.value = true
-  setTimeout(() => {
+  try {
+    const groupedBillsMap = {}
+    cart.value.forEach(item => {
+      const prod = item.product || item
+      const groupKey = (productGroup[prod.id] || currentTab.value || 'minibar').toLowerCase()
+      if (!groupedBillsMap[groupKey]) {
+        groupedBillsMap[groupKey] = []
+      }
+      const unitPrice = Number(prod.price) || 0
+      const rowCalc = calcRow(item)
+      const qtyVal = Number(item.qty) || 1
+      const itemTax = Number(prod.tax) || Number(prod.tax_amount) || 0
+      const itemSvcCharge = Number(prod.service_charge) || Number(prod.service_charge_amount) || 0
+      groupedBillsMap[groupKey].push({
+        id: prod.id,
+        code: prod.product_code || prod.code || prod.id,
+        name: prod.name || 'Sản phẩm buồng phòng',
+        qty: qtyVal,
+        price: unitPrice,
+        discPct: item.discPct || 0,
+        net_price: qtyVal ? (rowCalc.net / qtyVal) : unitPrice,
+        tax: itemTax,
+        service_charge: itemSvcCharge,
+        unit: prod.unit || prod.unit_name || prod.dvt || 'Cái'
+      })
+    })
+
+    const billsPayload = Object.entries(groupedBillsMap).map(([grp, items]) => ({
+      group: grp,
+      items: items
+    }))
+
+    const res = await http.post('/booking-room-services/post-housekeeping-bill', {
+      booking_room_id: form.value.roomId,
+      department: props.department || 'HK',
+      service_date: form.value.date,
+      is_free: form.value.isFree,
+      note: form.value.note,
+      bills: billsPayload
+    })
+
+    if (res.data?.success) {
+      uiStore.showToast('Đã gửi hóa đơn dịch vụ về phòng thành công!', 'success')
+      emit('success', {
+        roomId: form.value.roomId,
+        totalAmount: grandTotal.value,
+        data: res.data.data
+      })
+      cart.value = []
+      form.value.note = ''
+      if (props.isModal) {
+        emit('close')
+      }
+    } else {
+      uiStore.showToast(res.data?.message || 'Có lỗi xảy ra khi lưu bill.', 'error')
+    }
+  } catch (err) {
+    console.error('Lỗi khi post bill:', err)
+    uiStore.showToast(err.response?.data?.message || 'Lỗi hệ thống khi gửi hóa đơn về phòng.', 'error')
+  } finally {
     isSending.value = false
-    uiStore.showToast('Đã gửi hóa đơn dịch vụ về phòng thành công!', 'success')
-    cart.value = []
-    form.value.note = ''
-  }, 600)
+  }
 }
 
 const formatCurrency = (n) => {

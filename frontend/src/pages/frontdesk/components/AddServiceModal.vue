@@ -35,6 +35,21 @@ const roomDescription = ref('Dịch vụ phòng nghỉ')
 const handleClose = () => {
   emit('close')
 }
+
+const handleSubmit = () => {
+  emit('submit', {
+    activeTab: activeTab.value,
+    serviceDate: serviceDate.value,
+    currency: currency.value,
+    folio: folio.value,
+    selectedService: selectedService.value,
+    quantity: quantity.value,
+    description: description.value,
+    unitPrice: unitPrice.value,
+    totalPrice: totalPrice.value
+  })
+  emit('close')
+}
 </script>
 
 <template>
@@ -285,8 +300,8 @@ const handleClose = () => {
       <!-- Footer Divider & Actions -->
       <div class="border-t border-gray-300 p-3 flex justify-end bg-gray-50">
         <button 
-          @click="handleClose" 
-          class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
+          @click="handleSubmit" 
+          class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors cursor-pointer"
         >
           <Plus class="w-4 h-4" />
           <span>Thêm</span>
