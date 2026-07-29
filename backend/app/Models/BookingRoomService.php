@@ -10,8 +10,16 @@ class BookingRoomService extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /** Keep an explicitly allocated amount when splitting by a requested amount. */
+    public bool $preserveTotalAmount = false;
+
     protected $fillable = [
         'booking_room_id',
+        'guest_id',
+        'service_bill_id',
+        'service_bill_detail_no',
+        'housekeeping_service_bill_id',
+        'housekeeping_service_bill_detail_no',
         'service_code',
         'service_name',
         'service_date',
@@ -38,13 +46,15 @@ class BookingRoomService extends Model
 
         // Tự động tính total_amount = quantity * rate khi tạo/cập nhật
         static::saving(function ($model) {
-            $model->total_amount = floatval($model->quantity) * floatval($model->rate);
+            if (!$model->preserveTotalAmount) {
+                $model->total_amount = floatval($model->quantity) * floatval($model->rate);
+            }
         });
     }
 
     protected $casts = [
         'service_date'  => 'date',
-        'quantity'      => 'decimal:2',
+        'quantity'      => 'decimal:6',
         'rate'          => 'decimal:2',
         'total_amount'  => 'decimal:2',
         'is_room'       => 'integer',
@@ -61,5 +71,10 @@ class BookingRoomService extends Model
     public function bookingRoom()
     {
         return $this->belongsTo(BookingRoom::class);
+    }
+
+    public function guest()
+    {
+        return $this->belongsTo(Guest::class);
     }
 }

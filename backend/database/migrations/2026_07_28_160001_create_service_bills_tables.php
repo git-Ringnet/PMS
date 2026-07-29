@@ -25,6 +25,8 @@ return new class extends Migration
             $table->float('Exchange')->default(1);
             $table->boolean('Edit')->default(false);
             $table->string('Folio', 1)->default('1');
+            $table->unsignedBigInteger('PaymentId')->nullable();
+            $table->unsignedBigInteger('VatId')->nullable();
             $table->unsignedBigInteger('RegisterId1')->nullable();
             $table->string('RentalRoomId1', 50)->nullable();
             $table->string('CustomerId1', 50)->nullable();
@@ -47,10 +49,13 @@ return new class extends Migration
             $table->string('CreatedUser', 50)->nullable();
             $table->dateTime('CreatedDate')->nullable();
             $table->string('CreatedHour', 5)->nullable();
+            $table->dateTime('UpdatedDate')->nullable();
             $table->unsignedBigInteger('AdjustmentBillId')->nullable();
             $table->string('MisaRefId', 50)->nullable();
             $table->timestamps();
             $table->index(['RentalRoomId2', 'CustomerId2']);
+            $table->index('PaymentId');
+            $table->index('VatId');
         });
 
         Schema::create('service_bill_details', function (Blueprint $table) {
@@ -80,6 +85,7 @@ return new class extends Migration
         Schema::create('housekeeping_service_bills', function (Blueprint $table) {
             $table->id('Ma');
             $table->unsignedBigInteger('BookingId')->nullable();
+            $table->string('GuestId', 50)->nullable();
             $table->decimal('BillOriginalAmount', 20, 6)->default(0);
             $table->decimal('BillDiscountAmount', 20, 6)->default(0);
             $table->decimal('BillAmount', 20, 6)->default(0);
@@ -100,6 +106,7 @@ return new class extends Migration
             $table->unsignedTinyInteger('BillEdit')->default(0);
             $table->timestamps();
             $table->index('BillServiceId');
+            $table->index('GuestId');
         });
 
         Schema::create('housekeeping_service_bill_details', function (Blueprint $table) {
@@ -109,7 +116,7 @@ return new class extends Migration
             $table->unsignedBigInteger('ProductGroupId')->nullable();
             $table->string('Product', 100);
             $table->decimal('Rate', 15, 2)->default(0);
-            $table->decimal('Quantity', 15, 2)->default(1);
+            $table->decimal('Quantity', 12, 6)->default(1);
             $table->float('Discount')->default(0);
             $table->decimal('DiscountAmount', 20, 6)->default(0);
             $table->float('Increase')->default(0);

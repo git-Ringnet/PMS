@@ -88,6 +88,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
@@ -465,6 +466,7 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);

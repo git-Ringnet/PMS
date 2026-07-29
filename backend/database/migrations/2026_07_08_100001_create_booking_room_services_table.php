@@ -25,6 +25,11 @@ return new class extends Migration
             // =========================================
             $table->string('booking_room_id', 50);
             $table->foreign('booking_room_id')->references('id')->on('booking_rooms')->cascadeOnDelete();
+            $table->string('guest_id', 50)->nullable();
+            $table->unsignedBigInteger('service_bill_id')->nullable();
+            $table->unsignedBigInteger('service_bill_detail_no')->nullable();
+            $table->unsignedBigInteger('housekeeping_service_bill_id')->nullable();
+            $table->unsignedBigInteger('housekeeping_service_bill_detail_no')->nullable();
 
             // Mã dịch vụ: 'RM' (tiền phòng), 'EB' (extra bed), 'BD' (phụ thu ăn sáng trẻ em)
             // hoặc mã dịch vụ bất kỳ từ bảng hotel_services
@@ -37,7 +42,7 @@ return new class extends Migration
             // CHI TIẾT SỬ DỤNG
             // =========================================
             $table->date('service_date');               // Ngày áp dụng dịch vụ
-            $table->decimal('quantity', 10, 2)->default(1);  // Số lượng
+            $table->decimal('quantity', 12, 6)->default(1);  // Số lượng
             $table->decimal('rate', 15, 2)->default(0);      // Đơn giá
             $table->decimal('total_amount', 15, 2)->default(0)->comment('Tổng tiền = quantity * rate');
             $table->string('department', 20)->default('HK');
@@ -75,12 +80,14 @@ return new class extends Migration
             // INDEXES
             // =========================================
             $table->index('booking_room_id');
+            $table->index('guest_id');
+            $table->index('service_bill_id');
+            $table->index('housekeeping_service_bill_id');
             $table->index('service_date');
             $table->index('service_code');
             $table->index('is_posted'); // Query batch job auto-post
             $table->index(['booking_room_id', 'folio']);
-            // Chống trùng: 1 dịch vụ chỉ 1 dòng / ngày / phòng (trừ RM)
-            $table->unique(['booking_room_id', 'service_code', 'service_date'], 'unique_room_service_date');
+            // Một dịch vụ có thể được tách thành nhiều dòng trong cùng Folio.
         });
     }
 

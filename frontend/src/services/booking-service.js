@@ -106,6 +106,9 @@ export const fetchBookingRoomServices = (roomId) => http.get(`/booking-rooms/${r
 export const createBookingRoomService = (roomId, data) => http.post(`/booking-rooms/${roomId}/services`, data)
 export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/booking-rooms/${roomId}/services/bulk`, { data })
 export const transferBookingRoomServicesFolio = (roomId, data) => http.patch(`/booking-rooms/${roomId}/services/folio`, data)
+export const splitBookingRoomServicesFolio = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/split-folio`, data)
+export const fetchQuickTransferCandidates = (roomId) => http.get(`/booking-rooms/${roomId}/services/quick-transfer-candidates`)
+export const quickTransferBookingRoomServices = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/quick-transfer`, data)
 export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
 
 // ==================== CHILD BREAKFAST ====================

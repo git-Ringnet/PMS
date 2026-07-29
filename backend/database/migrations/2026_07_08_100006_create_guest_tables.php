@@ -60,6 +60,10 @@ return new class extends Migration
             $table->index('full_name');
         });
 
+        Schema::table('booking_room_services', function (Blueprint $table) {
+            $table->foreign('guest_id')->references('id')->on('guests')->nullOnDelete();
+        });
+
 
         // =============================================
         // 2. booking_room_guests (SP2200 — PhongThueKhach)
@@ -180,6 +184,9 @@ return new class extends Migration
         Schema::dropIfExists('booking_child_breakfast_details');
         Schema::dropIfExists('booking_children');
         Schema::dropIfExists('booking_room_guests');
+        Schema::table('booking_room_services', function (Blueprint $table) {
+            $table->dropForeign(['guest_id']);
+        });
         Schema::dropIfExists('guests');
     }
 };
