@@ -83,11 +83,13 @@ class BookingController extends Controller
             'branch',
             'booker',
             'paymentMethod',
+            'serviceBills',
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.serviceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
