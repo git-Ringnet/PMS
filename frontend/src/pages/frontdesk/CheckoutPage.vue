@@ -21,7 +21,7 @@ import {
   RefreshCw,
   Inbox
 } from '@lucide/vue'
-import { fetchBookings } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 // Sidebar collapse state
@@ -72,6 +72,8 @@ const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
 const selectedServiceGroup = ref(null)
 const selectedServiceIds = ref([])
+const draggedServiceGroup = ref(null)
+const draggedOverFolio = ref(null)
 const isLoading = ref(true)
 const showSearchDropdown = ref(false)
 const searchContainerRef = ref(null)
@@ -423,6 +425,49 @@ const toggleServiceGroupSelection = (group, checked) => {
     : selectedServiceIds.value.filter(id => !ids.includes(id))
 }
 
+const canTransferServiceGroup = (group) => (
+  Boolean(selectedRoomItem.value) &&
+  group.items.every(item => Number.isInteger(Number(item.id)) && Number(item.id) > 0)
+)
+
+const handleServiceDragStart = (group, event) => {
+  if (!canTransferServiceGroup(group)) {
+    event.preventDefault()
+    return
+  }
+  draggedServiceGroup.value = group
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', group.id)
+}
+
+const handleServiceDragEnd = () => {
+  draggedServiceGroup.value = null
+  draggedOverFolio.value = null
+}
+
+const handleFolioDrop = async (folio) => {
+  const group = draggedServiceGroup.value
+  const targetFolio = Number(folio)
+  draggedOverFolio.value = null
+  if (!group || !canTransferServiceGroup(group) || Number(group.folio) === targetFolio) {
+    handleServiceDragEnd()
+    return
+  }
+
+  try {
+    await transferBookingRoomServicesFolio(selectedRoomItem.value.roomId, {
+      service_ids: group.items.map(item => Number(item.id)),
+      folio: targetFolio,
+    })
+    activeFolioTab.value = String(targetFolio)
+    await handleServiceAdded()
+  } catch (error) {
+    console.error('Không thể chuyển Folio dịch vụ:', error)
+  } finally {
+    handleServiceDragEnd()
+  }
+}
+
 const totalServiceAmount = computed(() => {
   return visibleServices.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
 })
@@ -759,7 +804,10 @@ onUnmounted(() => {
                     >
                       <span class="font-bold text-gray-800 shrink-0 min-w-[75px]">{{ r.roomNumber }}</span>
                       <span class="text-gray-400">|</span>
-                      <span class="font-bold text-gray-800 truncate">{{ gName }}</span>
+                      <span
+                        class="text-gray-800 truncate"
+                        :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
+                      >{{ gName }}</span>
                     </div>
                   </template>
                   <template v-else>
@@ -856,7 +904,10 @@ onUnmounted(() => {
                         </td>
                         <td class="p-1 border-r border-gray-300 text-center"></td>
                         <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ r.roomNumber }}</td>
-                        <td class="p-1 border-r border-gray-300" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ gName }}</td>
+                        <td
+                          class="p-1 border-r border-gray-300 text-slate-900"
+                          :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
+                        >{{ gName }}</td>
                         <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ gIdx === 0 ? formatMoney(r.serviceAmount) : '0' }}</td>
                         <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && selectedGuest === gName }">{{ formatMoney(r.paidAmount) }}</td>
                       </tr>
@@ -874,7 +925,7 @@ onUnmounted(() => {
                         </td>
                         <td class="p-1 border-r border-gray-300 text-center"></td>
                         <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ r.roomNumber }}</td>
-                        <td class="p-1 border-r border-gray-300" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ r.guestName }}</td>
+                        <td class="p-1 border-r border-gray-300 font-bold text-slate-900">{{ r.guestName }}</td>
                         <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatMoney(r.serviceAmount) }}</td>
                         <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatMoney(r.paidAmount) }}</td>
                       </tr>
@@ -975,8 +1026,12 @@ onUnmounted(() => {
               <!-- Tab 1 -->
               <button 
                 @click="activeFolioTab = '1'"
+                @dragover.prevent="draggedOverFolio = 1"
+                @dragleave="draggedOverFolio = null"
+                @drop.prevent="handleFolioDrop(1)"
                 :class="[
                   activeFolioTab === '1' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-[#e2e8f0] border-gray-300 text-gray-700 hover:bg-gray-300',
+                  draggedOverFolio === 1 ? 'ring-2 ring-sky-500 ring-offset-1' : '',
                   'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
                 ]"
               >
@@ -987,8 +1042,12 @@ onUnmounted(() => {
               <!-- Tab 2 -->
               <button 
                 @click="activeFolioTab = '2'"
+                @dragover.prevent="draggedOverFolio = 2"
+                @dragleave="draggedOverFolio = null"
+                @drop.prevent="handleFolioDrop(2)"
                 :class="[
                   activeFolioTab === '2' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-[#e2e8f0] border-gray-300 text-gray-700 hover:bg-gray-300',
+                  draggedOverFolio === 2 ? 'ring-2 ring-sky-500 ring-offset-1' : '',
                   'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
                 ]"
               >
@@ -999,8 +1058,12 @@ onUnmounted(() => {
               <!-- Tab 3 -->
               <button 
                 @click="activeFolioTab = '3'"
+                @dragover.prevent="draggedOverFolio = 3"
+                @dragleave="draggedOverFolio = null"
+                @drop.prevent="handleFolioDrop(3)"
                 :class="[
                   activeFolioTab === '3' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-[#e2e8f0] border-gray-300 text-gray-700 hover:bg-gray-300',
+                  draggedOverFolio === 3 ? 'ring-2 ring-sky-500 ring-offset-1' : '',
                   'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
                 ]"
               >
@@ -1045,7 +1108,19 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="group in serviceGroups" :key="group.id" @click="openServiceInvoice(group)" class="border-b border-gray-200 hover:bg-sky-50 text-gray-800 cursor-pointer transition-colors" title="Xem chi tiết hóa đơn">
+                <tr
+                  v-for="group in serviceGroups"
+                  :key="group.id"
+                  :draggable="canTransferServiceGroup(group)"
+                  @click="openServiceInvoice(group)"
+                  @dragstart="handleServiceDragStart(group, $event)"
+                  @dragend="handleServiceDragEnd"
+                  :class="[
+                    'border-b border-gray-200 hover:bg-sky-50 text-gray-800 cursor-pointer transition-colors',
+                    canTransferServiceGroup(group) ? 'cursor-grab active:cursor-grabbing' : ''
+                  ]"
+                  :title="canTransferServiceGroup(group) ? 'Kéo sang Folio khác' : 'Xem chi tiết hóa đơn'"
+                >
                   <td class="px-2 py-1.5 text-center border-r border-gray-200">
                     <input
                       type="checkbox"
