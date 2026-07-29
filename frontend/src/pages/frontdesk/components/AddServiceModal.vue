@@ -112,12 +112,13 @@ const customRoomRate  = ref(0)
 // Toggle 1: Tự nhập tiền phòng
 function toggleRoomUpdateMode() {
   roomUpdateMode.value = !roomUpdateMode.value
-  if (!roomUpdateMode.value) {
-    roomSurcharge.value = false
+  if (roomUpdateMode.value) {
+    roomSurcharge.value = true
   } else {
-    if (!customRoomRate.value || customRoomRate.value === 0) {
-      customRoomRate.value = Math.round(Number(props.roomRate || 0))
-    }
+    roomSurcharge.value = false
+  }
+  if (roomUpdateMode.value && (!customRoomRate.value || customRoomRate.value === 0)) {
+    customRoomRate.value = Math.round(Number(props.roomRate || 0))
   }
 }
 

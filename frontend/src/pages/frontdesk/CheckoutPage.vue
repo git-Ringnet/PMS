@@ -199,24 +199,38 @@ const loadCheckoutBookings = async () => {
           let extraSvc = 0
           if (r.services && r.services.length > 0) {
             extraSvc = r.services
-              .filter(s => s.service_code !== 'RM' && !(s.service_name && s.service_name.includes('Tiền phòng')))
+              .filter(s => s.service_code !== 'RM' && s.service_code !== 'RMS' && !(s.service_name && s.service_name.includes('Tiền phòng')))
               .reduce((acc, s) => {
                 const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * (Number(s.rate) || Number(s.price) || Number(s.amount) || 0))
                 return acc + itemTotal
               }, 0)
           }
 
-          let roomChargeTotal = 0
-          const roomChargeSvc = r.services && r.services.find(s => (s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))))
-          if (roomChargeSvc) {
-            roomChargeTotal = Number(roomChargeSvc.total_amount) || (Number(roomChargeSvc.quantity || 1) * Number(roomChargeSvc.rate || 0))
-          } else {
+          let postedRoomCharge = 0
+          let hasBaseRM = false
+
+          if (r.services && r.services.length > 0) {
+            r.services.forEach(s => {
+              const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
+              const isRMS = s.service_code === 'RMS'
+              if (isRM || isRMS) {
+                const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * Number(s.rate || 0))
+                postedRoomCharge += itemTotal
+                if (isRM) hasBaseRM = true
+              }
+            })
+          }
+
+          let baseRoomCharge = 0
+          if (!hasBaseRM) {
             const roomRateVal = Number(r.room_rate) || Number(r.price) || Number(r.rate) || 0
             if (roomRateVal > 0) {
               const qtyDays = Number(r.ActutalNumOfDays) || 1
-              roomChargeTotal = Number(r.total_amount) || (roomRateVal * qtyDays)
+              baseRoomCharge = Number(r.total_amount) || (roomRateVal * qtyDays)
             }
           }
+
+          const roomChargeTotal = postedRoomCharge + baseRoomCharge
 
           const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
 
@@ -239,7 +253,7 @@ const loadCheckoutBookings = async () => {
       }
 
       const masterBills = (b.master_service_bills && b.master_service_bills.length > 0)
-        ? b.master_service_bills
+        ? b.master_service_bills.filter(sb => !sb.RentalRoomId1)
         : (b.service_bills ? b.service_bills.filter(sb => !sb.RentalRoomId1) : [])
 
       const masterServiceTotal = masterBills
@@ -251,9 +265,9 @@ const loadCheckoutBookings = async () => {
         bookingId: b.id,
         code: code,
         name: mainGuestName, // Tên nhóm / Tên booking
-        // Master chỉ đại diện booking; không cộng dồn dịch vụ lẻ của từng phòng trừ khi bật masterSend
+        // Master chỉ đại diện booking; cộng dồn toàn bộ tiền phòng + dịch vụ lẻ của từng phòng + master direct bills
         totalService: masterSend
-          ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0) + masterServiceTotal
+          ? roomItems.reduce((total, room) => total + room.roomChargeAmount + room.extraServiceAmount, 0) + masterServiceTotal
           : masterServiceTotal,
         paidAmount: Number(b.paid_amount) || 0,
         arrivalDate: b.arrival_date || '',
@@ -448,9 +462,9 @@ const servicesList = computed(() => {
   } else if (selectedBooking.value) {
     const rawB = selectedBooking.value.rawBooking
 
-    // 1. Dịch vụ post trực tiếp cho Master Booking Header
+    // 1. Dịch vụ post trực tiếp cho Master Booking Header (chỉ lấy bill trực tiếp cho Master, không có RentalRoomId1)
     const masterBills = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
-      ? rawB.master_service_bills
+      ? rawB.master_service_bills.filter(sb => !sb.RentalRoomId1)
       : (rawB?.service_bills ? rawB.service_bills.filter(sb => !sb.RentalRoomId1) : [])
 
     masterBills.forEach((sb, idx) => {
@@ -470,7 +484,7 @@ const servicesList = computed(() => {
         if (rawR) {
           if (rawR.services && Array.isArray(rawR.services)) {
             rawR.services.forEach((s, idx) => {
-              const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
+              const isRM = s.service_code === 'RM' || s.service_code === 'RMS' || (s.service_name && s.service_name.includes('Tiền phòng'))
               if (isRM) {
                 services.push(processServiceItem(s, `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
               }

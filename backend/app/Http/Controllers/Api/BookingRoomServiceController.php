@@ -1074,40 +1074,98 @@ class BookingRoomServiceController extends Controller
                         $breakfastAmount = $breakfastRate * max(1, (int)$targetRoom->adults);
                     }
 
-                $bill = ServiceBill::create([
-                    'Date'               => $current->startOfDay()->toDateTimeString(),
-                    'OpenTime'           => now()->format('H:i'),
-                    'Guest'              => $guestName,
-                    'DepartmentId'       => 'FO',
-                    'ServiceId'          => 'RM',
-                    'DescriptionServive' => $description,
-                    'Quantity'           => 1,
-                    'Amount'             => $totalAmount,
-                    'ServiceCharge'      => 0,
-                    'SpecialTax'         => 0,
-                    'Tax'                => 0,
-                    'Currency'           => $currency,
-                    'Exchange'           => 1,
-                    'Edit'               => 0,
-                    'Folio'              => (string)$folio,
-                    'RegisterId1'        => $booking?->id,
-                    'RentalRoomId1'      => $targetRoom->id,
-                    'CustomerId1'        => $guestId,
-                    'CompanyId1'         => $booking?->company_id,
-                    'RegisterID2'        => $booking?->id,
-                    'RentalRoomId2'      => $targetRoom->id,
-                    'CustomerId2'        => $guestId,
-                    'CompanyId2'         => $booking?->company_id,
-                    'Username'           => $user,
-                    'Status'             => 1,
-                    'Outlet'             => 'FO',
-                    'Year'               => $current->year,
-                    'Month'              => $current->month,
-                    'Day'                => $current->day,
-                    'CreatedUser'        => $user,
-                    'CreatedDate'        => now(),
-                    'CreatedHour'        => now()->format('H:i'),
-                ]);
+                    $targetDesc = $description;
+                    if ($targetRoom && $targetRoom->room_number && !str_contains($targetDesc, (string)$targetRoom->room_number)) {
+                        $targetDesc = trim($targetDesc . ' ' . $targetRoom->room_number);
+                    }
+
+                    if ($mode === 'update' || $mode === 'auto') {
+                        $existingBill = ServiceBill::where('RegisterId1', $booking?->id)
+                            ->where('RentalRoomId1', $targetRoom->id)
+                            ->where('ServiceId', 'RM')
+                            ->whereDate('Date', $current->toDateString())
+                            ->where('Edit', 0)
+                            ->first();
+                        if ($existingBill) {
+                            $existingBill->update([
+                                'Amount'             => $totalAmount,
+                                'DescriptionServive' => $targetDesc,
+                                'Folio'              => (string)$folio,
+                                'Username'           => $user,
+                            ]);
+                            $bill = $existingBill;
+                        } else {
+                            $bill = ServiceBill::create([
+                                'Date'               => $current->startOfDay()->toDateTimeString(),
+                                'OpenTime'           => now()->format('H:i'),
+                                'Guest'              => $guestName,
+                                'DepartmentId'       => 'FO',
+                                'ServiceId'          => 'RM',
+                                'DescriptionServive' => $targetDesc,
+                                'Quantity'           => 1,
+                                'Amount'             => $totalAmount,
+                                'ServiceCharge'      => 0,
+                                'SpecialTax'         => 0,
+                                'Tax'                => 0,
+                                'Currency'           => $currency,
+                                'Exchange'           => 1,
+                                'Edit'               => 0,
+                                'Folio'              => (string)$folio,
+                                'RegisterId1'        => $booking?->id,
+                                'RentalRoomId1'      => $targetRoom->id,
+                                'CustomerId1'        => $guestId,
+                                'CompanyId1'         => $booking?->company_id,
+                                'RegisterID2'        => $booking?->id,
+                                'RentalRoomId2'      => $targetRoom->id,
+                                'CustomerId2'        => $guestId,
+                                'CompanyId2'         => $booking?->company_id,
+                                'Username'           => $user,
+                                'Status'             => 1,
+                                'Outlet'             => 'FO',
+                                'Year'               => $current->year,
+                                'Month'              => $current->month,
+                                'Day'                => $current->day,
+                                'CreatedUser'        => $user,
+                                'CreatedDate'        => now(),
+                                'CreatedHour'        => now()->format('H:i'),
+                            ]);
+                        }
+                    } else {
+                        $bill = ServiceBill::create([
+                            'Date'               => $current->startOfDay()->toDateTimeString(),
+                            'OpenTime'           => now()->format('H:i'),
+                            'Guest'              => $guestName,
+                            'DepartmentId'       => 'FO',
+                            'ServiceId'          => 'RM',
+                            'DescriptionServive' => $targetDesc,
+                            'Quantity'           => 1,
+                            'Amount'             => $totalAmount,
+                            'ServiceCharge'      => 0,
+                            'SpecialTax'         => 0,
+                            'Tax'                => 0,
+                            'Currency'           => $currency,
+                            'Exchange'           => 1,
+                            'Edit'               => 0,
+                            'Folio'              => (string)$folio,
+                            'RegisterId1'        => $booking?->id,
+                            'RentalRoomId1'      => $targetRoom->id,
+                            'CustomerId1'        => $guestId,
+                            'CompanyId1'         => $booking?->company_id,
+                            'RegisterID2'        => $booking?->id,
+                            'RentalRoomId2'      => $targetRoom->id,
+                            'CustomerId2'        => $guestId,
+                            'CompanyId2'         => $booking?->company_id,
+                            'Username'           => $user,
+                            'Status'             => 1,
+                            'Outlet'             => 'FO',
+                            'Year'               => $current->year,
+                            'Month'              => $current->month,
+                            'Day'                => $current->day,
+                            'CreatedUser'        => $user,
+                            'CreatedDate'        => now(),
+                            'CreatedHour'        => now()->format('H:i'),
+                        ]);
+                    }
 
                 // Insert Sp3001 (service_bill_details)
                 // Nghiệp vụ: Nếu mode == 'auto' và phòng có ăn sáng (breakfast=true) & breakfastAmount > 0:
@@ -1213,29 +1271,53 @@ class BookingRoomServiceController extends Controller
                 ]);
 
                 // Lưu vào booking_room_services
-                BookingRoomService::updateOrCreate(
-                    [
+                if ($mode === 'surcharge') {
+                    // Bổ sung tiền phòng: Tạo mới dịch vụ cộng thêm độc lập
+                    BookingRoomService::create([
                         'booking_room_id' => $targetRoom->id,
-                        'service_code'    => 'RM',
+                        'guest_id'        => $guestId,
+                        'service_bill_id' => $bill->Ma,
+                        'service_code'    => 'RMS',
+                        'service_name'    => 'Bổ sung tiền phòng',
                         'service_date'    => $current->toDateString(),
-                    ],
-                    [
-                        'service_name'   => 'Tiền phòng',
-                        'quantity'       => 1,
-                        'rate'           => $rate,
-                        'total_amount'   => $totalAmount,
-                        'department'     => 'FO',
-                        'note'           => $description,
-                        'tax'            => 0,
-                        'service_charge' => 0,
-                        'unit'           => 'Đêm',
-                        'folio'          => $folio,
-                        'is_room'        => 1,
-                        'is_posted'      => 1,
-                        'posted_at'      => now(),
-                        'created_by'     => $user,
-                    ]
-                );
+                        'quantity'        => 1,
+                        'rate'            => $rate,
+                        'total_amount'    => $totalAmount,
+                        'department'      => 'FO',
+                        'note'            => $targetDesc,
+                        'unit'            => 'Lần',
+                        'folio'           => $folio,
+                        'is_room'         => 0,
+                        'is_posted'       => 1,
+                        'posted_at'       => now(),
+                        'created_by'      => $user,
+                    ]);
+                } else {
+                    // Cập nhật / Tự động: Cập nhật tiền phòng chuẩn của ngày đó
+                    BookingRoomService::updateOrCreate(
+                        [
+                            'booking_room_id' => $targetRoom->id,
+                            'service_code'    => 'RM',
+                            'service_date'    => $current->toDateString(),
+                        ],
+                        [
+                            'service_name'   => 'Tiền phòng',
+                            'quantity'       => 1,
+                            'rate'           => $rate,
+                            'total_amount'   => $totalAmount,
+                            'department'     => 'FO',
+                            'note'           => $targetDesc,
+                            'tax'            => 0,
+                            'service_charge' => 0,
+                            'unit'           => 'Đêm',
+                            'folio'          => $folio,
+                            'is_room'        => 1,
+                            'is_posted'      => 1,
+                            'posted_at'      => now(),
+                            'created_by'     => $user,
+                        ]
+                    );
+                }
 
                 $createdBills[] = $bill->Ma;
                 $current->addDay();
