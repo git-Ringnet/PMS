@@ -11,6 +11,10 @@ const props = defineProps({
   roomId: {
     type: [String, Number],
     default: ''
+  },
+  guestId: {
+    type: [String, Number],
+    default: ''
   }
 })
 
@@ -45,6 +49,7 @@ const handleSuccess = (data) => {
       <div class="flex-1 overflow-hidden">
         <PostBillHousekeepingTab
           :initialRoomId="roomId"
+          :initialGuestId="guestId"
           :isModal="true"
           :department="'HK'"
           @close="handleClose"

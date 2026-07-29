@@ -153,6 +153,11 @@ class Booking extends Model
         return $this->hasMany(BookingRoom::class);
     }
 
+    public function masterServiceBills()
+    {
+        return $this->hasMany(ServiceBill::class, 'RegisterID2');
+    }
+
     public function children()
     {
         return $this->hasMany(BookingChild::class);

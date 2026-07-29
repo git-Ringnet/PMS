@@ -18,6 +18,14 @@
         </div>
 
         <div class="info-field flex flex-col gap-1">
+          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Khách</label>
+          <select v-model="form.guestId" :disabled="roomGuestsForPosting.length === 0 || Boolean(props.initialGuestId)" class="h-8 min-w-[180px] px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] disabled:bg-slate-100">
+            <option value="">-- Chọn khách --</option>
+            <option v-for="guest in roomGuestsForPosting" :key="guest.id" :value="guest.id">{{ guest.name }}</option>
+          </select>
+        </div>
+
+        <div class="info-field flex flex-col gap-1">
           <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Ngày</label>
           <input type="date" v-model="form.date" class="h-8 px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] w-[135px] cursor-pointer" />
         </div>
@@ -296,6 +304,10 @@ const props = defineProps({
     type: [String, Number],
     default: ''
   },
+  initialGuestId: {
+    type: [String, Number],
+    default: ''
+  },
   isModal: {
     type: Boolean,
     default: false
@@ -350,12 +362,14 @@ const loadBookingRooms = async () => {
         b.booking_rooms.forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
           
-          let roomGuest = ''
-          if (r.guest_name && r.guest_name.trim()) {
+          const roomGuests = (r.guests || []).map(g => ({
+            id: g.guest_id || g.guest?.id || g.id,
+            name: g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
+            isPrimary: Boolean(g.is_primary)
+          })).filter(g => g.id && g.name)
+          let roomGuest = roomGuests.find(g => g.isPrimary)?.name || roomGuests[0]?.name || ''
+          if (!roomGuest && r.guest_name && r.guest_name.trim()) {
             roomGuest = r.guest_name.trim()
-          } else if (r.guests && r.guests.length > 0) {
-            const g = r.guests[0]
-            roomGuest = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
           }
           if (!roomGuest) {
             roomGuest = mainGuestName
@@ -373,6 +387,7 @@ const loadBookingRooms = async () => {
             code: code,
             roomNumber: roomNo,
             guestName: roomGuest,
+            guests: roomGuests,
             name: labelParts.join(' - ')
           })
         })
@@ -399,6 +414,9 @@ const loadBookingRooms = async () => {
         const matched = options.find(o => String(o.id) === String(props.initialRoomId) || String(o.roomId) === String(props.initialRoomId) || String(o.bookingId) === String(props.initialRoomId))
         if (matched) {
           form.value.roomId = matched.id
+          if (props.initialGuestId && matched.guests.some(guest => String(guest.id) === String(props.initialGuestId))) {
+            form.value.guestId = props.initialGuestId
+          }
         }
       } else if (form.value.roomId && !options.some(o => o.id === form.value.roomId)) {
         form.value.roomId = ''
@@ -419,7 +437,16 @@ watch(() => props.initialRoomId, (newVal) => {
     const matched = bookingRooms.value.find(o => String(o.id) === String(newVal) || String(o.roomId) === String(newVal) || String(o.bookingId) === String(newVal))
     if (matched) {
       form.value.roomId = matched.id
+      if (props.initialGuestId && matched.guests.some(guest => String(guest.id) === String(props.initialGuestId))) {
+        form.value.guestId = props.initialGuestId
+      }
     }
+  }
+})
+
+watch(() => props.initialGuestId, (newVal) => {
+  if (newVal && roomGuestsForPosting.value.some(guest => String(guest.id) === String(newVal))) {
+    form.value.guestId = newVal
   }
 })
 
@@ -514,6 +541,7 @@ const GROUP_COLORS = { minibar: '#2563eb', giatui: '#16a34a', dengbu: '#d97706' 
 
 const form = ref({
   roomId: '',
+  guestId: '',
   date: new Date().toISOString().split('T')[0],
   surcharge: 0,
   discount: 0,
@@ -529,6 +557,15 @@ const cart = ref([])
 const isSending = ref(false)
 
 const productGroup = {}
+
+const selectedPostingRoom = computed(() => bookingRooms.value.find(room => String(room.id) === String(form.value.roomId)))
+const roomGuestsForPosting = computed(() => selectedPostingRoom.value?.guests || [])
+
+watch(roomGuestsForPosting, (guests) => {
+  if (!guests.some(guest => String(guest.id) === String(form.value.guestId))) {
+    form.value.guestId = guests.find(guest => guest.isPrimary)?.id || guests[0]?.id || ''
+  }
+}, { immediate: true })
 
 const switchTab = (tabKey) => {
   currentTab.value = tabKey
@@ -708,6 +745,7 @@ const sendToRoom = async () => {
 
     const res = await http.post('/booking-room-services/post-housekeeping-bill', {
       booking_room_id: form.value.roomId,
+      guest_id: form.value.guestId || null,
       department: props.department || 'HK',
       service_date: form.value.date,
       is_free: form.value.isFree,
