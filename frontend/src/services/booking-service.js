@@ -105,6 +105,7 @@ export const fetchFOServicesList = () => http.get('/booking-services/fo-list')
 export const fetchBookingRoomServices = (roomId) => http.get(`/booking-rooms/${roomId}/services`)
 export const createBookingRoomService = (roomId, data) => http.post(`/booking-rooms/${roomId}/services`, data)
 export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/booking-rooms/${roomId}/services/bulk`, { data })
+export const transferBookingRoomServicesFolio = (roomId, data) => http.patch(`/booking-rooms/${roomId}/services/folio`, data)
 export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
 
 // ==================== CHILD BREAKFAST ====================
