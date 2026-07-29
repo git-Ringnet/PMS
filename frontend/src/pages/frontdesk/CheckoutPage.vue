@@ -19,7 +19,8 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  Inbox
+  Inbox,
+  ArrowRightLeft
 } from '@lucide/vue'
 import { fetchBookings, transferBookingRoomServicesFolio } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -76,6 +77,7 @@ const draggedServiceGroup = ref(null)
 const draggedOverFolio = ref(null)
 const isLoading = ref(true)
 const showSearchDropdown = ref(false)
+const showPanelGuestDropdown = ref(false)
 const searchContainerRef = ref(null)
 
 function formatDate(dateStr) {
@@ -137,7 +139,9 @@ const loadCheckoutBookings = async () => {
           if (r.guests && Array.isArray(r.guests) && r.guests.length > 0) {
             r.guests.forEach(g => {
               const gName = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
-              if (gName && !roomGuests.includes(gName)) {
+              // Mỗi liên kết khách-phòng phải hiện thành một lựa chọn riêng.
+              // Không loại trùng theo tên vì hai khách có thể cùng tên.
+              if (gName) {
                 roomGuests.push(gName)
               }
             })
@@ -521,6 +525,23 @@ const totalPaymentAmount = computed(() => {
   return paymentsList.value.reduce((acc, p) => acc + p.amount, 0)
 })
 
+const selectedRoomGuests = computed(() => selectedRoomItem.value?.allGuests || [])
+
+const handlePanelGuestChange = () => {
+  if (!selectedBooking.value || !selectedRoomItem.value) return
+
+  const guestName = selectedRoomGuests.value.find(name => name === selectedGuest.value)
+  if (guestName) {
+    selectRoomItemRow(selectedBooking.value, selectedRoomItem.value, guestName)
+  }
+}
+
+const selectPanelGuest = (guestName) => {
+  selectedGuest.value = guestName
+  showPanelGuestDropdown.value = false
+  handlePanelGuestChange()
+}
+
 const selectBookingHeader = (b) => {
   selectedBooking.value = b
   selectedRoomItem.value = null
@@ -629,6 +650,8 @@ onUnmounted(() => {
           <span v-if="!isSidebarCollapsed" class="truncate">Thêm dịch vụ BP</span>
         </button>
 
+        <div class="border-t border-gray-300 my-1"></div>
+
         <!-- Tách dịch vụ -->
         <button 
           class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
@@ -636,6 +659,15 @@ onUnmounted(() => {
         >
           <Scissors class="w-3.5 h-3.5 text-gray-600 shrink-0" />
           <span v-if="!isSidebarCollapsed" class="truncate">Tách dịch vụ</span>
+        </button>
+
+        <!-- Chuyển dịch vụ -->
+        <button
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
+          :title="isSidebarCollapsed ? 'Chuyển dịch vụ' : ''"
+        >
+          <ArrowRightLeft class="w-3.5 h-3.5 text-gray-600 shrink-0" />
+          <span v-if="!isSidebarCollapsed" class="truncate">Chuyển dịch vụ</span>
         </button>
 
         <!-- Tập hợp DV -->
@@ -978,20 +1010,36 @@ onUnmounted(() => {
 
               <!-- Guest Select & Room Input -->
               <div class="grid grid-cols-12 gap-1.5">
-                <div class="col-span-8">
-                  <select v-model="selectedGuest" class="w-full px-2 py-0.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500">
-                    <option v-if="!selectedBooking" value="">Tên khách</option>
-                    <template v-if="selectedBooking">
-                      <template v-for="r in selectedBooking.roomItems" :key="r.id">
-                        <option v-for="(gName, gIdx) in r.allGuests" :key="`${r.id}-${gIdx}`" :value="gName">
-                          {{ gName }}
-                        </option>
-                      </template>
-                    </template>
-                  </select>
+                <div class="col-span-8 relative">
+                  <button
+                    type="button"
+                    :disabled="!selectedRoomItem"
+                    @click="showPanelGuestDropdown = !showPanelGuestDropdown"
+                    class="w-full px-2 py-0.5 bg-white border border-gray-300 rounded text-left text-xs focus:outline-none focus:border-sky-500 disabled:bg-gray-100 disabled:text-gray-500 flex items-center justify-between"
+                  >
+                    <span class="truncate">{{ selectedGuest || 'Tên khách' }}</span>
+                    <ChevronDown class="w-3.5 h-3.5 shrink-0 text-gray-500" />
+                  </button>
+                  <div
+                    v-if="showPanelGuestDropdown && selectedRoomItem"
+                    class="absolute z-30 top-full mt-1 w-full max-h-40 overflow-y-auto bg-white border border-gray-300 rounded shadow-lg"
+                  >
+                    <button
+                      v-for="(gName, gIdx) in selectedRoomGuests"
+                      :key="`${selectedRoomItem.id}-${gIdx}`"
+                      type="button"
+                      @click="selectPanelGuest(gName)"
+                      :class="[
+                        selectedGuest === gName ? 'bg-sky-100 text-sky-900' : 'text-gray-800 hover:bg-gray-100',
+                        'w-full px-2 py-1 text-left text-xs'
+                      ]"
+                    >
+                      {{ gName }}
+                    </button>
+                  </div>
                 </div>
                 <div class="col-span-4">
-                  <input v-model="roomNumber" type="text" placeholder="Phòng" class="w-full px-2 py-0.5 bg-white border border-gray-300 rounded text-xs font-bold text-center focus:outline-none focus:border-sky-500" />
+                  <input :value="roomNumber" type="text" placeholder="Phòng" readonly class="w-full px-2 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-bold text-center text-gray-700" />
                 </div>
               </div>
 
@@ -999,9 +1047,10 @@ onUnmounted(() => {
               <div>
                 <label class="block text-gray-600 font-medium mb-0.5 text-xs">Ghi chú</label>
                 <textarea 
-                  v-model="noteText" 
+                  :value="noteText"
+                  readonly
                   rows="2" 
-                  class="w-full p-1.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500 resize-none"
+                  class="w-full p-1.5 bg-gray-100 border border-gray-300 rounded text-xs text-gray-700 resize-none"
                 ></textarea>
               </div>
             </div>

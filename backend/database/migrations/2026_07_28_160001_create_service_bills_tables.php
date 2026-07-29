@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('sp3000', function (Blueprint $table) {
+        Schema::create('service_bills', function (Blueprint $table) {
             $table->id('Ma');
             $table->dateTime('Date');
             $table->string('OpenTime', 5);
@@ -53,7 +53,7 @@ return new class extends Migration
             $table->index(['RentalRoomId2', 'CustomerId2']);
         });
 
-        Schema::create('sp3001', function (Blueprint $table) {
+        Schema::create('service_bill_details', function (Blueprint $table) {
             $table->unsignedBigInteger('BillServiceId');
             $table->unsignedBigInteger('Ma');
             $table->string('DepartmentId', 2);
@@ -77,7 +77,7 @@ return new class extends Migration
             $table->primary(['BillServiceId', 'Ma']);
         });
 
-        Schema::create('sp6000', function (Blueprint $table) {
+        Schema::create('housekeeping_service_bills', function (Blueprint $table) {
             $table->id('Ma');
             $table->unsignedBigInteger('BookingId')->nullable();
             $table->decimal('BillOriginalAmount', 20, 6)->default(0);
@@ -102,7 +102,7 @@ return new class extends Migration
             $table->index('BillServiceId');
         });
 
-        Schema::create('sp6001', function (Blueprint $table) {
+        Schema::create('housekeeping_service_bill_details', function (Blueprint $table) {
             $table->unsignedBigInteger('BillId');
             $table->unsignedBigInteger('DetailId');
             $table->unsignedBigInteger('MaProduct')->nullable();
@@ -123,9 +123,9 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('sp6001');
-        Schema::dropIfExists('sp6000');
-        Schema::dropIfExists('sp3001');
-        Schema::dropIfExists('sp3000');
+        Schema::dropIfExists('housekeeping_service_bill_details');
+        Schema::dropIfExists('housekeeping_service_bills');
+        Schema::dropIfExists('service_bill_details');
+        Schema::dropIfExists('service_bills');
     }
 };

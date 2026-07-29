@@ -7,10 +7,10 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomService;
 use App\Models\HotelService;
 use App\Models\HotelSetting;
-use App\Models\Sp3000;
-use App\Models\Sp3001;
-use App\Models\Sp6000;
-use App\Models\Sp6001;
+use App\Models\HousekeepingServiceBill;
+use App\Models\HousekeepingServiceBillDetail;
+use App\Models\ServiceBill;
+use App\Models\ServiceBillDetail;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -310,7 +310,7 @@ class BookingRoomServiceController extends Controller
                 $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
                 $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
 
-                $serviceBill = Sp3000::create([
+                $serviceBill = ServiceBill::create([
                     'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
                     'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
                     'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
@@ -321,7 +321,7 @@ class BookingRoomServiceController extends Controller
                     'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
                     'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
                 ]);
-                $bill = Sp6000::create([
+                $bill = HousekeepingServiceBill::create([
                     'BookingId' => $booking?->id, 'BillOriginalAmount' => $originalAmount,
                     'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
                     'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
@@ -364,7 +364,7 @@ class BookingRoomServiceController extends Controller
 
                     $createdRecords[] = $created;
 
-                    Sp6001::create([
+                    HousekeepingServiceBillDetail::create([
                         'BillId' => $bill->Ma, 'DetailId' => $index + 1,
                         'MaProduct' => is_numeric($item['id'] ?? null) ? $item['id'] : null,
                         'ProductGroupId' => $item['product_group_id'] ?? null, 'Product' => $pName,
@@ -373,7 +373,7 @@ class BookingRoomServiceController extends Controller
                         'Increase' => $item['increase_pct'] ?? 0, 'IncreaseAmount' => $item['increase_amount'] ?? 0,
                         'TotalAmount' => $item['total_amount'] ?? $item['net_price'] ?? 0, 'Note' => $request->note,
                     ]);
-                    Sp3001::create([
+                    ServiceBillDetail::create([
                         'BillServiceId' => $serviceBill->Ma, 'Ma' => $index + 1,
                         'DepartmentId' => $department, 'ServiceId' => $meta['service'],
                         'DescriptionServive' => $pName, 'OriginalRate' => $item['original_rate'] ?? $item['price'] ?? 0,
