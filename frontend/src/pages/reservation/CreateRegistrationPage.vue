@@ -5190,6 +5190,7 @@ defineExpose({
                 <col v-for="col in columns.filter(c => c.visible)" :key="col.key" :style="{ width: getColWidthPx(col) }" />
                 <col style="width: 120px" />
               </colgroup>
+              <tfoot>
               <tr class="h-9">
                 <td class="p-2 border-r border-[#cbd5e1] text-center w-[35px]"></td>
                 <td class="p-2 border-r border-[#cbd5e1] text-center w-[50px]"></td>
@@ -5228,6 +5229,7 @@ defineExpose({
                   {{ formatCurrencyInput(roomsTotalSummary.total) }}
                 </td>
               </tr>
+              </tfoot>
             </table>
           </div>
         </div>
