@@ -6378,6 +6378,7 @@ defineExpose({
         :bookingCode="modalForm?.bookingCode" 
         :paymentMethods="paymentMethods" 
         :currenciesList="currenciesList" 
+        :rooms="modalForm?.rooms || activeTab?.rooms || []"
         v-model:deposits="modalForm.deposits" 
         @update:paymentValue="modalForm.paymentValue = $event; if (activeTab) { activeTab.deposit = $event; activeTab.paymentValue = $event; }" 
       />
