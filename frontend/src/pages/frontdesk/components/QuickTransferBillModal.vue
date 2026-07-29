@@ -1,12 +1,14 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { HelpCircle, X, Inbox, ArrowRightLeft, Minus } from '@lucide/vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const props = defineProps({
   show: Boolean,
   targetLabel: { type: String, default: '' },
   candidates: { type: Array, default: () => [] },
   loading: Boolean,
+  loadingText: { type: String, default: 'Đang xử lý...' },
 })
 const emit = defineEmits(['close', 'submit'])
 const selectedBillIds = ref([])
@@ -45,6 +47,7 @@ const submit = () => { if (selectedBillIds.value.length && !props.loading) emit(
             <template v-for="group in groupedCandidates" :key="group.key"><tr class="border-t border-gray-300 bg-white"><td class="border-r border-gray-200 p-2 text-center"><button type="button" @click="toggleCollapsed(group.key)"><Minus v-if="!collapsedGroups[group.key]" class="inline h-4 w-4 rounded bg-[#0788f5] p-0.5 text-white" /><span v-else class="inline-block h-4 w-4 rounded bg-[#0788f5] text-center leading-4 text-white">+</span></button></td><td class="border-r border-gray-200 p-2 text-center"><input type="checkbox" :checked="isGroupSelected(group)" :disabled="loading" @change="toggleGroup(group, $event.target.checked)" /></td><td colspan="4" class="p-2 font-medium">{{ group.label }}</td></tr><tr v-for="item in (collapsedGroups[group.key] ? [] : group.items)" :key="item.bill_id" class="border-t border-gray-200 bg-sky-50/50 hover:bg-sky-100"><td class="border-r border-gray-200"></td><td class="border-r border-gray-200 p-2 text-center"><input type="checkbox" :checked="isSelected(item.bill_id)" :disabled="loading" @change="toggle(item.bill_id, $event.target.checked)" /></td><td class="border-r border-gray-200 p-2">{{ item.booking_code }}</td><td class="border-r border-gray-200 p-2 whitespace-normal">{{ item.guest_name }}</td><td class="border-r border-gray-200 p-2">{{ item.room_number }}</td><td class="p-2 text-right font-mono">{{ money(item.amount) }}</td></tr></template>
           </tbody></table>
           <div v-if="!loading && !candidates.length" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400"><Inbox class="mb-1 h-10 w-10 text-gray-300" /><span>No data</span></div>
+          <LoadingOverlay :show="loading" />
         </div>
       </div>
       <footer class="flex justify-end gap-2 border-t border-gray-300 bg-gray-50 p-3"><button :disabled="loading" @click="emit('close')" class="rounded bg-[#38bdf8] px-4 py-1.5 font-bold text-white transition hover:bg-sky-500 active:scale-95 disabled:opacity-40"><X class="mr-1 inline h-4 w-4" />Đóng</button><button :disabled="loading || !selectedBillIds.length" @click="submit" class="rounded bg-[#38bdf8] px-4 py-1.5 font-bold text-white transition hover:bg-sky-500 active:scale-95 disabled:opacity-40"><ArrowRightLeft class="mr-1 inline h-4 w-4" />{{ loading ? 'Đang chuyển...' : 'Chuyển bill nhanh' }}</button></footer>

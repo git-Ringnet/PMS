@@ -63,6 +63,7 @@ const showAddServiceModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
 const quickTransferCandidates = ref([])
+const quickTransferLoadingText = ref('')
 const showPrepaymentModal = ref(false)
 const showPaymentModal = ref(false)
 const showFilterServiceModal = ref(false)
@@ -225,6 +226,10 @@ const loadCheckoutBookings = async () => {
         })
       }
 
+      const masterServiceTotal = (b.master_service_bills || [])
+        .filter(bill => Number(bill.Edit) !== 1 && Number(bill.Status) === 1)
+        .reduce((total, bill) => total + (Number(bill.Amount) || 0), 0)
+
       formatted.push({
         id: `B${b.id}`,
         bookingId: b.id,
@@ -232,8 +237,8 @@ const loadCheckoutBookings = async () => {
         name: mainGuestName, // Tên nhóm / Tên booking
         // Master chỉ đại diện booking; không cộng dồn dịch vụ của từng phòng.
         totalService: masterSend
-          ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0)
-          : 0,
+          ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0) + masterServiceTotal
+          : masterServiceTotal,
         paidAmount: Number(b.paid_amount) || 0,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
@@ -478,7 +483,7 @@ const serviceGroups = computed(() => {
     // (cùng created_at) mới nằm chung trong một hóa đơn.
     const transfers = [...String(service.description || '').matchAll(/\(([^()]+)=>[^()]+\)/g)]
     const sourceKey = transfers.length
-      ? transfers[transfers.length - 1][1].trim()
+      ? transfers[0][1].trim()
       : `bill-${service.serviceBillId || service.createdAt || service.id}`
     const key = [meta.key, sourceKey, service.folio || 'A', service.department || 'FO'].join('|')
     if (!groups.has(key)) {
@@ -674,6 +679,7 @@ const openQuickTransferBillModal = async () => {
     return
   }
   showQuickTransferBillModal.value = true
+  quickTransferLoadingText.value = 'Đang tải danh sách dịch vụ...'
   isServiceOperationLoading.value = true
   try {
     const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
@@ -684,12 +690,15 @@ const openQuickTransferBillModal = async () => {
     uiStore.showToast(error.response?.data?.message || 'Không thể tải danh sách dịch vụ.', 'error')
   } finally {
     isServiceOperationLoading.value = false
+    quickTransferLoadingText.value = ''
   }
 }
 
 const submitQuickTransferBills = async (billIds) => {
   if ((!selectedRoomItem.value && !selectedBooking.value) || !billIds.length) return
+  quickTransferLoadingText.value = 'Đang chuyển bill nhanh...'
   isServiceOperationLoading.value = true
+  uiStore.showToast('Đang chuyển bill nhanh...', 'info', 1500)
   try {
     const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
     const response = await quickTransferBookingRoomServices(targetId, { bill_ids: billIds })
@@ -700,6 +709,7 @@ const submitQuickTransferBills = async (billIds) => {
     uiStore.showToast(error.response?.data?.message || 'Không thể tập hợp dịch vụ.', 'error')
   } finally {
     isServiceOperationLoading.value = false
+    quickTransferLoadingText.value = ''
   }
 }
 
@@ -1697,6 +1707,7 @@ onUnmounted(() => {
       :target-label="selectedRoomItem ? `${selectedGuest || ''} - ${roomNumber || ''}` : `Master - ${selectedBooking?.code || ''}`"
       :candidates="quickTransferCandidates"
       :loading="isServiceOperationLoading"
+      :loading-text="quickTransferLoadingText"
       @close="showQuickTransferBillModal = false" 
       @submit="submitQuickTransferBills"
     />
