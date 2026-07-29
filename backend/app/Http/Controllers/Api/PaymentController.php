@@ -124,6 +124,7 @@ class PaymentController extends Controller
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
             'booking_room_id'   => 'nullable|exists:booking_rooms,id',
+            'folio_id'          => 'nullable|integer|between:1,3',
             'image'             => 'nullable|file|image|max:4096',
         ]);
 
@@ -178,6 +179,8 @@ class PaymentController extends Controller
                 'description'       => $description,
                 'amount'            => $request->amount,
                 'pack2'             => Payment::PACK2_DEPOSIT,
+                // Cọc chung của booking/Master mặc định Folio 1; cọc phòng có thể chỉ định Folio sau này.
+                'folio_id'          => $request->booking_room_id ? ($request->folio_id ?? 1) : 1,
                 'payment_method_id' => $pmCode,
                 'debit_account'     => $request->debit_account,
                 'department_id'     => $departmentId,
@@ -256,6 +259,31 @@ class PaymentController extends Controller
             'success' => true,
             'data'    => $payment->fresh()->load('paymentMethod'),
             'message' => 'Cập nhật cọc thành công!',
+        ]);
+    }
+
+    /** Chuyển Folio cho cọc chưa được dùng để thanh toán. */
+    public function transferFolio(Request $request, $id)
+    {
+        $validated = $request->validate(['folio_id' => 'required|integer|between:1,3']);
+        $payment = Payment::findOrFail($id);
+
+        if ($payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Chỉ được chuyển Folio cho cọc chưa dùng để thanh toán.',
+            ], 422);
+        }
+
+        $payment->update([
+            'folio_id' => $validated['folio_id'],
+            'updated_by' => Auth::user()?->username ?? 'system',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $payment->fresh(),
+            'message' => 'Đã chuyển cọc sang Folio mới.',
         ]);
     }
 
@@ -368,6 +396,7 @@ class PaymentController extends Controller
         $request->validate([
             'amounts'   => 'required|array|min:2',
             'amounts.*' => 'required|numeric|min:0.01',
+            'folio_id'  => 'nullable|integer|between:1,3',
         ]);
 
         $sumNew = array_sum($request->amounts);
@@ -378,9 +407,7 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        $departmentId = $this->getDepartmentId($request);
-
-        DB::transaction(function () use ($request, $payment, $departmentId) {
+        DB::transaction(function () use ($request, $payment) {
             $originalAmount = $payment->total_amount_before_split ?? $payment->amount;
 
             // 1. Cập nhật dòng gốc: đổi amount thành số tiền phần 1, lưu total_amount_before_split
@@ -409,9 +436,13 @@ class PaymentController extends Controller
                     'amount'                    => $amt,
                     'total_amount_before_split' => $originalAmount,
                     'pack2'                     => Payment::PACK2_DEPOSIT,
+                    // Checkout may place the new split line in another Folio.
+                    // Legacy callers without folio_id keep the source Folio.
+                    'folio_id'                  => $request->input('folio_id', $payment->folio_id),
                     'payment_method_id'         => $payment->payment_method_id,
                     'debit_account'             => $payment->debit_account,
-                    'department_id'             => $departmentId,
+                    // Tách cọc giữ nguyên bộ phận của dòng gốc; chỉ dấu vết cập nhật là thời điểm thao tác.
+                    'department_id'             => $payment->department_id,
                     'image_path'                => $payment->image_path,
                     'reversal_ref'              => $payment->id,
                     'status'                    => Payment::STATUS_PENDING,

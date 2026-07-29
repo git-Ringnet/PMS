@@ -22,7 +22,7 @@ import {
   Inbox,
   ArrowRightLeft
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -59,6 +59,8 @@ import PaymentModal from './components/PaymentModal.vue'
 import FilterServiceModal from './components/FilterServiceModal.vue'
 import TransferServiceModal from './components/TransferServiceModal.vue'
 import SplitServiceModal from './components/SplitServiceModal.vue'
+import CancelServiceModal from './components/CancelServiceModal.vue'
+import SplitDepositModal from './components/SplitDepositModal.vue'
 const showAddServiceModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
@@ -70,6 +72,8 @@ const showFilterServiceModal = ref(false)
 const showTransferServiceModal = ref(false)
 const transferServiceError = ref('')
 const showSplitServiceModal = ref(false)
+const showCancelServiceModal = ref(false)
+const showSplitDepositModal = ref(false)
 
 const openAddHousekeepingService = () => {
   // Dòng master chỉ đại diện booking; dịch vụ BP luôn hạch toán cho một phòng cụ thể.
@@ -84,7 +88,9 @@ const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
 const selectedServiceGroup = ref(null)
 const selectedServiceIds = ref([])
+const selectedPaymentIds = ref([])
 const draggedServiceGroup = ref(null)
+const draggedPayment = ref(null)
 const draggedOverFolio = ref(null)
 const isLoading = ref(true)
 const isServiceOperationLoading = ref(false)
@@ -229,6 +235,9 @@ const loadCheckoutBookings = async () => {
       const masterServiceTotal = (b.master_service_bills || [])
         .filter(bill => Number(bill.Edit) !== 1 && Number(bill.Status) === 1)
         .reduce((total, bill) => total + (Number(bill.Amount) || 0), 0)
+      const masterDepositTotal = (b.payments || [])
+        .filter(payment => payment.pack2 === 'DPR' && Number(payment.edit_flag) === 0 && !payment.deleted_at && !payment.booking_room_id)
+        .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
 
       formatted.push({
         id: `B${b.id}`,
@@ -239,7 +248,7 @@ const loadCheckoutBookings = async () => {
         totalService: masterSend
           ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0) + masterServiceTotal
           : masterServiceTotal,
-        paidAmount: Number(b.paid_amount) || 0,
+        paidAmount: masterDepositTotal,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
         note: b.note || '',
@@ -261,6 +270,7 @@ const loadCheckoutBookings = async () => {
 const handleServiceAdded = async (data) => {
   showAddServiceModal.value = false
   showHousekeepingServiceModal.value = false
+  selectedPaymentIds.value = []
 
   const currentBookingId = selectedBooking.value ? selectedBooking.value.bookingId : null
   const currentRoomId = selectedRoomItem.value ? selectedRoomItem.value.roomId : null
@@ -469,10 +479,11 @@ const visibleServices = computed(() => {
 })
 
 const folioTotal = (folio) => {
-  const items = folio === 'A'
-    ? servicesList.value
-    : servicesList.value.filter(service => String(service.folio) === String(folio))
-  return items.reduce((total, service) => total + (Number(service.totalAmount) || 0), 0)
+  if (folio === 'A') return [1, 2, 3].reduce((total, currentFolio) => total + folioTotal(currentFolio), 0)
+  const serviceTotal = servicesList.value
+    .filter(service => String(service.folio) === String(folio))
+    .reduce((total, service) => total + (Number(service.totalAmount) || 0), 0)
+  return serviceTotal - folioDepositTotal(folio)
 }
 
 const serviceGroups = computed(() => {
@@ -510,6 +521,7 @@ const toggleServiceGroupSelection = (group, checked) => {
   selectedServiceIds.value = checked
     ? [...new Set([...selectedServiceIds.value, ...ids])]
     : selectedServiceIds.value.filter(id => !ids.includes(id))
+  if (checked) selectedPaymentIds.value = []
 }
 
 const canTransferServiceGroup = (group) => (
@@ -524,6 +536,14 @@ const canSplitSelectedServices = computed(() => {
   const billIds = selectedServiceItems.value.map(service => service.serviceBillId).filter(Boolean)
   return billIds.length === selectedServiceItems.value.length && new Set(billIds).size === 1
 })
+const selectedPaymentItems = computed(() => paymentsList.value.filter(payment => selectedPaymentIds.value.includes(Number(payment.id))))
+const canSplitSelectedDeposit = computed(() => selectedPaymentItems.value.length === 1 && canTransferPayment(selectedPaymentItems.value[0]))
+const hasSelectedDeposit = computed(() => selectedPaymentItems.value.length > 0)
+const canCancelSelectedServices = computed(() => (
+  Boolean(selectedRoomItem.value)
+  && selectedServiceItems.value.length > 0
+  && selectedServiceItems.value.every(service => service.serviceCode !== 'RM' && service.serviceBillId)
+))
 const selectedServicesTotal = computed(() => selectedServiceItems.value.reduce((sum, service) => sum + (Number(service.totalAmount) || 0), 0))
 const toTransferPreviewService = (service) => {
   const rate = Number(service.rate ?? service.price ?? service.amount) || 0
@@ -666,6 +686,40 @@ const openSplitServiceModal = () => {
   if (canSplitSelectedServices.value) showSplitServiceModal.value = true
 }
 
+const openSplitAction = () => {
+  if (canSplitSelectedDeposit.value) {
+    showSplitDepositModal.value = true
+    return
+  }
+  openSplitServiceModal()
+}
+
+const isPaymentSelected = payment => selectedPaymentIds.value.includes(Number(payment.id))
+const togglePaymentSelection = (payment, checked) => {
+  selectedPaymentIds.value = checked ? [Number(payment.id)] : []
+  if (checked) selectedServiceIds.value = []
+}
+
+const openCancelServiceModal = () => {
+  if (canCancelSelectedServices.value) showCancelServiceModal.value = true
+}
+
+const cancelSelectedServices = async (reason) => {
+  if (!canCancelSelectedServices.value) return
+  isServiceOperationLoading.value = true
+  try {
+    const serviceIds = selectedServiceItems.value.map(service => Number(service.id))
+    const response = await cancelBookingRoomServices(selectedRoomItem.value.roomId, { service_ids: serviceIds, reason })
+    showCancelServiceModal.value = false
+    await refreshAfterServiceOperation()
+    uiStore.showToast(response.data?.message || 'Đã xóa dịch vụ thành công!', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể xóa dịch vụ.', 'error')
+  } finally {
+    isServiceOperationLoading.value = false
+  }
+}
+
 const openTransferServiceModal = () => {
   if (canTransferSelectedServices.value) {
     transferServiceError.value = ''
@@ -674,15 +728,15 @@ const openTransferServiceModal = () => {
 }
 
 const openQuickTransferBillModal = async () => {
-  if (!selectedRoomItem.value && !selectedBooking.value) {
-    uiStore.showToast('Vui lòng chọn phòng hoặc Master nhận dịch vụ.', 'warning')
+  if (!hasCurrentSelectedRoom.value) {
+    uiStore.showToast('Vui lòng chọn phòng nhận dịch vụ.', 'warning')
     return
   }
   showQuickTransferBillModal.value = true
   quickTransferLoadingText.value = 'Đang tải danh sách dịch vụ...'
   isServiceOperationLoading.value = true
   try {
-    const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const targetId = selectedRoomItem.value.roomId
     const response = await fetchQuickTransferCandidates(targetId)
     quickTransferCandidates.value = response.data?.data || []
   } catch (error) {
@@ -695,12 +749,12 @@ const openQuickTransferBillModal = async () => {
 }
 
 const submitQuickTransferBills = async (billIds) => {
-  if ((!selectedRoomItem.value && !selectedBooking.value) || !billIds.length) return
+  if (!selectedRoomItem.value || !billIds.length) return
   quickTransferLoadingText.value = 'Đang chuyển bill nhanh...'
   isServiceOperationLoading.value = true
   uiStore.showToast('Đang chuyển bill nhanh...', 'info', 1500)
   try {
-    const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const targetId = selectedRoomItem.value.roomId
     const response = await quickTransferBookingRoomServices(targetId, { bill_ids: billIds })
     showQuickTransferBillModal.value = false
     await refreshAfterServiceOperation(1)
@@ -733,6 +787,30 @@ const splitSelectedServices = async (payload) => {
   } catch (error) {
     console.error('Không thể tách dịch vụ:', error)
     uiStore.showToast(error.response?.data?.message || 'Không thể tách dịch vụ.', 'error')
+  } finally {
+    isServiceOperationLoading.value = false
+  }
+}
+
+const splitSelectedDeposit = async ({ amount, folio }) => {
+  if (!canSplitSelectedDeposit.value) return
+  const payment = selectedPaymentItems.value[0]
+  const targetAmount = Number(amount)
+  const sourceAmount = Number(((Number(payment.amount) || 0) - targetAmount).toFixed(2))
+  if (!(targetAmount > 0) || !(sourceAmount > 0)) return
+  isServiceOperationLoading.value = true
+  try {
+    const response = await splitPayment(payment.id, {
+      amounts: [sourceAmount, targetAmount],
+      folio_id: Number(folio)
+    })
+    showSplitDepositModal.value = false
+    selectedPaymentIds.value = []
+    activeFolioTab.value = String(folio)
+    await handleServiceAdded()
+    uiStore.showToast(response.data?.message || 'Đã tách cọc thành công!', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể tách cọc.', 'error')
   } finally {
     isServiceOperationLoading.value = false
   }
@@ -772,13 +850,46 @@ const handleServiceDragStart = (group, event) => {
 
 const handleServiceDragEnd = () => {
   draggedServiceGroup.value = null
+  draggedPayment.value = null
   draggedOverFolio.value = null
+}
+
+const canTransferPayment = (payment) => !payment.paymentId && payment.status === 1 && payment.editFlag === 0
+
+const handlePaymentDragStart = (payment, event) => {
+  if (!canTransferPayment(payment)) {
+    event.preventDefault()
+    return
+  }
+  draggedPayment.value = payment
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(payment.id))
 }
 
 const handleFolioDrop = async (folio) => {
   const group = draggedServiceGroup.value
+  const payment = draggedPayment.value
   const targetFolio = Number(folio)
   draggedOverFolio.value = null
+  if (payment) {
+    if (!canTransferPayment(payment) || Number(payment.folio) === targetFolio) {
+      handleServiceDragEnd()
+      return
+    }
+    isServiceOperationLoading.value = true
+    try {
+      const response = await transferPaymentFolio(payment.id, { folio_id: targetFolio })
+      activeFolioTab.value = String(targetFolio)
+      await handleServiceAdded()
+      uiStore.showToast(response.data?.message || 'Đã chuyển cọc sang Folio mới.', 'success')
+    } catch (error) {
+      uiStore.showToast(error.response?.data?.message || 'Không thể chuyển Folio cọc.', 'error')
+    } finally {
+      isServiceOperationLoading.value = false
+      handleServiceDragEnd()
+    }
+    return
+  }
   if (!group || !canTransferServiceGroup(group) || Number(group.folio) === targetFolio) {
     handleServiceDragEnd()
     return
@@ -810,23 +921,31 @@ const paymentsList = computed(() => {
 
   if (rawB && rawB.payments && Array.isArray(rawB.payments) && rawB.payments.length > 0) {
     rawB.payments.forEach((p, idx) => {
+      const isActiveDeposit = p.pack2 === 'DPR' && Number(p.edit_flag) === 0 && !p.deleted_at
+      const belongsToSelection = selectedRoomItem.value
+        ? String(p.booking_room_id) === String(selectedRoomItem.value.roomId)
+        : !p.booking_room_id
+      if (!isActiveDeposit || !belongsToSelection) return
       payments.push({
         id: p.id || `P${idx}`,
         dateTime: formatDate(p.created_at || p.payment_date || new Date()),
-        department: p.department || 'Lễ tân',
+        department: p.department_id || '',
         description: p.description || p.note || 'Thanh toán đặt cọc / Tiền phòng',
-        paymentMethod: p.payment_method?.name || p.payment_method || 'Tiền mặt',
+        paymentMethod: p.payment_method_id || '',
         amount: Number(p.amount) || 0,
         unit: p.currency || 'VND',
-        folio: p.folio || 'A',
-        paymentCode: p.code || p.payment_code || `PT${p.id || idx}`,
-        isDeleted: p.deleted_at ? 'Có' : 'Không',
+        folio: Number(p.folio_id) || 1,
+        paymentCode: p.payment_id || '',
+        paymentId: p.payment_id || null,
+        status: Number(p.status),
+        editFlag: Number(p.edit_flag),
+        isDeleted: p.deleted_at ? 'Có' : '',
         vatNo: p.vat_no || '',
         accounting: p.accounting || 'Đã thu',
         userName: p.user_name || 'Admin'
       })
     })
-  } else if (selectedBooking.value.paidAmount > 0) {
+  } else if (!selectedRoomItem.value && selectedBooking.value.paidAmount > 0) {
     payments.push({
       id: `P-fallback`,
       dateTime: formatDate(selectedBooking.value.arrivalDate),
@@ -835,9 +954,12 @@ const paymentsList = computed(() => {
       paymentMethod: 'Chuyển khoản',
       amount: selectedBooking.value.paidAmount,
       unit: 'VND',
-      folio: 'A',
-      paymentCode: `PT${selectedBooking.value.bookingId}`,
-      isDeleted: 'Không',
+      folio: 1,
+      paymentCode: '',
+      paymentId: null,
+      status: 1,
+      editFlag: 0,
+      isDeleted: '',
       vatNo: '',
       accounting: 'Đã thu',
       userName: 'Admin'
@@ -847,11 +969,28 @@ const paymentsList = computed(() => {
   return payments
 })
 
+const visiblePaymentsList = computed(() => activeFolioTab.value === 'A'
+  ? paymentsList.value
+  : paymentsList.value.filter(payment => String(payment.folio) === String(activeFolioTab.value))
+)
+
+const folioDepositTotal = (folio) => paymentsList.value
+  .filter(payment => String(payment.folio) === String(folio))
+  .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+
 const totalPaymentAmount = computed(() => {
-  return paymentsList.value.reduce((acc, p) => acc + p.amount, 0)
+  return visiblePaymentsList.value.reduce((acc, p) => acc + p.amount, 0)
 })
 
 const selectedRoomGuests = computed(() => selectedRoomItem.value?.allGuests || [])
+const hasCurrentSelectedRoom = computed(() => {
+  const roomId = selectedRoomItem.value?.roomId
+  const bookingId = selectedBooking.value?.bookingId
+  return Boolean(roomId && bookingId && displayedBookingsList.value.some(booking => (
+    booking.bookingId === bookingId
+    && booking.roomItems?.some(room => room.roomId === roomId)
+  )))
+})
 
 const handlePanelGuestChange = () => {
   if (!selectedBooking.value || !selectedRoomItem.value) return
@@ -873,6 +1012,7 @@ const selectBookingHeader = (b) => {
   selectedBooking.value = b
   selectedRoomItem.value = null
   selectedServiceIds.value = []
+  selectedPaymentIds.value = []
   activeFolioTab.value = 'A'
   noteText.value = b.note || ''
   roomNumber.value = ''
@@ -884,6 +1024,7 @@ const selectRoomItemRow = (b, r, specificGuest = null) => {
   selectedBooking.value = b
   selectedRoomItem.value = r
   selectedServiceIds.value = []
+  selectedPaymentIds.value = []
   activeFolioTab.value = 'A'
   noteText.value = b.note || ''
   roomNumber.value = r.roomNumber
@@ -984,14 +1125,14 @@ onUnmounted(() => {
 
         <!-- Tách dịch vụ -->
         <button 
-          @click="openSplitServiceModal"
-          :disabled="!canSplitSelectedServices"
+          @click="openSplitAction"
+          :disabled="!(canSplitSelectedServices || canSplitSelectedDeposit)"
           class="w-full flex items-center gap-1.5 px-2 py-1 rounded border border-transparent px-2 py-1 text-xs text-gray-700 transition-all hover:border-gray-300 hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-          :class="!canSplitSelectedServices ? 'opacity-40 pointer-events-none text-gray-400' : ''"
-          :title="isSidebarCollapsed ? 'Tách dịch vụ' : ''"
+          :class="!(canSplitSelectedServices || canSplitSelectedDeposit) ? 'opacity-40 pointer-events-none text-gray-400' : ''"
+          :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Tách cọc' : 'Tách dịch vụ') : ''"
         >
           <Scissors class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Tách dịch vụ</span>
+          <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Tách cọc' : 'Tách dịch vụ' }}</span>
         </button>
 
         <!-- Chuyển dịch vụ -->
@@ -1009,11 +1150,12 @@ onUnmounted(() => {
         <!-- Tập hợp DV -->
         <button 
           @click="openQuickTransferBillModal"
-          :disabled="(!selectedRoomItem && !selectedBooking) || isServiceOperationLoading"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
+          :disabled="!hasCurrentSelectedRoom || isServiceOperationLoading"
+          :class="hasCurrentSelectedRoom && !isServiceOperationLoading ? 'text-gray-700 hover:bg-white hover:border-gray-300 cursor-pointer' : 'text-gray-400 opacity-50 cursor-not-allowed'"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
           :title="isSidebarCollapsed ? 'Tập hợp DV' : ''"
         >
-          <Layers class="w-3.5 h-3.5 text-gray-600 shrink-0" />
+          <Layers :class="hasCurrentSelectedRoom ? 'text-gray-600' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
           <span v-if="!isSidebarCollapsed" class="truncate">Tập hợp DV</span>
         </button>
 
@@ -1066,11 +1208,14 @@ onUnmounted(() => {
 
         <!-- Xóa dịch vụ -->
         <button 
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-red-50 text-red-600 transition-colors border border-transparent text-xs"
+          @click="openCancelServiceModal"
+          :disabled="!canCancelSelectedServices || isServiceOperationLoading"
+          :class="canCancelSelectedServices && !isServiceOperationLoading ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-gray-400 cursor-not-allowed opacity-60'"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
           :title="isSidebarCollapsed ? 'Xóa dịch vụ' : ''"
         >
-          <Trash2 class="w-3.5 h-3.5 text-red-500 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate text-red-600">Xóa dịch vụ</span>
+          <Trash2 :class="canCancelSelectedServices ? 'text-red-500' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
+          <span v-if="!isSidebarCollapsed" class="truncate">Xóa dịch vụ</span>
         </button>
 
         <!-- Xóa thanh toán -->
@@ -1581,9 +1726,23 @@ onUnmounted(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="p in paymentsList" :key="p.id" class="border-b border-gray-200 hover:bg-gray-50 text-gray-800">
+                <tr
+                  v-for="p in visiblePaymentsList"
+                  :key="p.id"
+                  :draggable="canTransferPayment(p)"
+                  @dragstart="handlePaymentDragStart(p, $event)"
+                  @dragend="handleServiceDragEnd"
+                  :class="['border-b border-gray-200 hover:bg-gray-50 text-gray-800', canTransferPayment(p) ? 'cursor-grab active:cursor-grabbing' : '']"
+                  :title="canTransferPayment(p) ? 'Kéo sang Folio khác' : 'Cọc đã dùng để thanh toán không thể chuyển Folio'"
+                >
                   <td class="px-2 py-1.5 text-center border-r border-gray-200">
-                    <input type="checkbox" class="rounded border-gray-300" />
+                    <input
+                      type="checkbox"
+                      :checked="isPaymentSelected(p)"
+                      @click.stop
+                      @change="togglePaymentSelection(p, $event.target.checked)"
+                      class="rounded border-gray-300"
+                    />
                   </td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ p.dateTime }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.department }}</td>
@@ -1591,7 +1750,7 @@ onUnmounted(() => {
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">{{ formatMoney(p.amount) }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.unit }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold">{{ p.folio }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold"><span class="inline-block min-w-[20px] rounded bg-[#8fd1d9] px-2 py-0.5 text-xs text-gray-900">{{ p.folio }}</span></td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono text-sky-600">{{ p.paymentCode }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">{{ p.isDeleted }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.vatNo }}</td>
@@ -1602,7 +1761,7 @@ onUnmounted(() => {
             </table>
 
             <!-- Empty Data Placeholder -->
-            <div v-if="paymentsList.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pt-6">
+            <div v-if="visiblePaymentsList.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pt-6">
               <Inbox class="w-9 h-9 stroke-1 mb-1 text-gray-300" />
               <span class="text-xs text-gray-400">No data</span>
             </div>
@@ -1712,6 +1871,14 @@ onUnmounted(() => {
       @submit="submitQuickTransferBills"
     />
 
+    <CancelServiceModal
+      :show="showCancelServiceModal"
+      :loading="isServiceOperationLoading"
+      :count="selectedServiceItems.length"
+      @close="showCancelServiceModal = false"
+      @submit="cancelSelectedServices"
+    />
+
     <PrepaymentModal 
       :show="showPrepaymentModal" 
       @close="showPrepaymentModal = false" 
@@ -1744,6 +1911,15 @@ onUnmounted(() => {
       :loading="isServiceOperationLoading"
       @close="showSplitServiceModal = false"
       @split="splitSelectedServices"
+    />
+
+    <SplitDepositModal
+      :show="showSplitDepositModal"
+      :loading="isServiceOperationLoading"
+      :totalAmount="selectedPaymentItems[0]?.amount || 0"
+      :folio="selectedPaymentItems[0]?.folio || 1"
+      @close="showSplitDepositModal = false"
+      @split="splitSelectedDeposit"
     />
   </div>
 </template>
