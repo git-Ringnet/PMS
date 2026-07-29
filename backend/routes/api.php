@@ -275,6 +275,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
         Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete']);
         Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio']);
+        Route::get('/quick-transfer-candidates', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransferCandidates']);
+        Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer']);
+        Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio']);
     });
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
     // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
