@@ -490,7 +490,6 @@ class BookingRoomServiceController extends Controller
             $services = BookingRoomService::where('booking_room_id', $sourceRoom->id)
                 ->whereIn('id', $request->service_ids)->lockForUpdate()->get();
             if ($services->count() !== count(array_unique($request->service_ids))) abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
-            if ($services->contains(fn ($service) => $service->service_code === BookingRoomService::CODE_ROOM)) abort(422, 'Không được chuyển dịch vụ tiền phòng.');
             if ($services->contains(fn ($service) => !$service->service_bill_id)) abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện chuyển.');
 
             foreach ($services->groupBy('service_bill_id') as $serviceBillId => $billServices) {
