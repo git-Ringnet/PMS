@@ -34,6 +34,13 @@ const rateCodes = ref([])
 const standardRates = ref([])
 const roomClasses = ref([])
 
+// State thu gọn/mở rộng bảng bên phải (Phòng đang ở)
+const isRightPanelCollapsed = ref(true)
+
+function toggleRightPanel() {
+  isRightPanelCollapsed.value = !isRightPanelCollapsed.value
+}
+
 const activeRateCodes = computed(() => {
   return (rateCodes.value || []).filter(rc => !rc.Disable)
 })
@@ -42,48 +49,24 @@ const activeRateCodes = computed(() => {
 const selectedMoveType = ref('available') // 'available' (Phòng trống) | 'merge' (Phòng đang ở)
 const selectedTargetRoomNumber = ref('')
 
-// Active Filter Values
+// Active Filter & Popover Search Values
 const filterAvailClass = ref('')
 const filterAvailForm = ref('')
 const filterAvailSearch = ref('')
+const showAvailSearchPopover = ref(false)
+const tempAvailSearch = ref('')
 
 const filterOccClass = ref('')
 const filterOccForm = ref('')
 const filterOccSearch = ref('')
-
-// Popovers visibility & temp search state
-const showAvailSearchPopover = ref(false)
-const tempAvailSearch = ref('')
-const showAvailClassPopover = ref(false)
-const showAvailFormPopover = ref(false)
-
 const showOccSearchPopover = ref(false)
 const tempOccSearch = ref('')
-const showOccClassPopover = ref(false)
-const showOccFormPopover = ref(false)
-
-// Sub-modal Chọn khách (Guest selection)
-const showGuestSelectModal = ref(false)
-const guestSelectionList = ref([])
-
-// Bottom controls
-const isChangeRate = ref(false)
-const selectedRateCode = ref('')
-const newRate = ref(0)
-const extraBedQty = ref(0)
-const extraBedRate = ref(0)
-const reason = ref('')
 
 function closeAllPopovers() {
   showAvailSearchPopover.value = false
-  showAvailClassPopover.value = false
-  showAvailFormPopover.value = false
   showOccSearchPopover.value = false
-  showOccClassPopover.value = false
-  showOccFormPopover.value = false
 }
 
-// Left Table Popover Toggles & Actions
 function toggleAvailSearchPopover() {
   const next = !showAvailSearchPopover.value
   closeAllPopovers()
@@ -102,29 +85,6 @@ function resetAvailSearch() {
   showAvailSearchPopover.value = false
 }
 
-function toggleAvailClassPopover() {
-  const next = !showAvailClassPopover.value
-  closeAllPopovers()
-  showAvailClassPopover.value = next
-}
-
-function setAvailClass(val) {
-  filterAvailClass.value = val
-  showAvailClassPopover.value = false
-}
-
-function toggleAvailFormPopover() {
-  const next = !showAvailFormPopover.value
-  closeAllPopovers()
-  showAvailFormPopover.value = next
-}
-
-function setAvailForm(val) {
-  filterAvailForm.value = val
-  showAvailFormPopover.value = false
-}
-
-// Right Table Popover Toggles & Actions
 function toggleOccSearchPopover() {
   const next = !showOccSearchPopover.value
   closeAllPopovers()
@@ -143,41 +103,17 @@ function resetOccSearch() {
   showOccSearchPopover.value = false
 }
 
-function toggleOccClassPopover() {
-  const next = !showOccClassPopover.value
-  closeAllPopovers()
-  showOccClassPopover.value = next
-}
+// Sub-modal Chọn khách (Guest selection)
+const showGuestSelectModal = ref(false)
+const guestSelectionList = ref([])
 
-function setOccClass(val) {
-  filterOccClass.value = val
-  showOccClassPopover.value = false
-}
-
-function toggleOccFormPopover() {
-  const next = !showOccFormPopover.value
-  closeAllPopovers()
-  showOccFormPopover.value = next
-}
-
-function setOccForm(val) {
-  filterOccForm.value = val
-  showOccFormPopover.value = false
-}
-
-function isVirtualRoom(r) {
-  if (!r) return false
-  if (r.is_internal || r.is_virtual || r.isVirtual) return true
-
-  const floorStr = String(r.floor || '').trim()
-  const isFloorZero = ['0', 'Floor 0', 'Tầng 0', 'Floor virtual', 'Virtual'].includes(floorStr)
-  const isRowZero = (r.grid_row === undefined || r.grid_row === null) ? true : Number(r.grid_row) === 0
-  const isColZero = (r.grid_column === undefined || r.grid_column === null) ? true : Number(r.grid_column) === 0
-
-  if (isFloorZero && isRowZero && isColZero) return true
-
-  return false
-}
+// Bottom controls
+const isChangeRate = ref(false)
+const selectedRateCode = ref('')
+const newRate = ref(0)
+const extraBedQty = ref(0)
+const extraBedRate = ref(0)
+const reason = ref('')
 
 // Filtered Lists for Left & Right tables
 const filteredAvailableRooms = computed(() => {
@@ -186,7 +122,7 @@ const filteredAvailableRooms = computed(() => {
     if (filterAvailForm.value && r.room_form_name !== filterAvailForm.value) return false
     if (filterAvailSearch.value) {
       const q = filterAvailSearch.value.toLowerCase()
-      const matchNo = String(r.room_number).toLowerCase().includes(q)
+      const matchNo = String(r.room_number || '').toLowerCase().includes(q)
       const matchClass = String(r.room_class_name || '').toLowerCase().includes(q)
       if (!matchNo && !matchClass) return false
     }
@@ -200,45 +136,13 @@ const filteredOccupiedRooms = computed(() => {
     if (filterOccForm.value && r.room_form_name !== filterOccForm.value) return false
     if (filterOccSearch.value) {
       const q = filterOccSearch.value.toLowerCase()
-      const matchNo = String(r.room_number).toLowerCase().includes(q)
+      const matchNo = String(r.room_number || '').toLowerCase().includes(q)
       const matchClass = String(r.room_class_name || '').toLowerCase().includes(q)
       const matchGuest = String(r.primary_guest_name || '').toLowerCase().includes(q)
       if (!matchNo && !matchClass && !matchGuest) return false
     }
     return true
   })
-})
-
-const availableClassOptions = computed(() => {
-  const set = new Set()
-  availableRooms.value.forEach(r => {
-    if (r.room_class_name) set.add(r.room_class_name)
-  })
-  return Array.from(set)
-})
-
-const availableFormOptions = computed(() => {
-  const set = new Set()
-  availableRooms.value.forEach(r => {
-    if (r.room_form_name) set.add(r.room_form_name)
-  })
-  return Array.from(set)
-})
-
-const occupiedClassOptions = computed(() => {
-  const set = new Set()
-  occupiedRooms.value.forEach(r => {
-    if (r.room_class_name) set.add(r.room_class_name)
-  })
-  return Array.from(set)
-})
-
-const occupiedFormOptions = computed(() => {
-  const set = new Set()
-  occupiedRooms.value.forEach(r => {
-    if (r.room_form_name) set.add(r.room_form_name)
-  })
-  return Array.from(set)
 })
 
 const adultGuests = computed(() => guestSelectionList.value.filter(g => !g.is_child))
@@ -295,6 +199,7 @@ watch(() => props.show, async (newVal) => {
 }, { immediate: true })
 
 function resetForm() {
+  isRightPanelCollapsed.value = true
   selectedMoveType.value = 'available'
   selectedTargetRoomNumber.value = ''
   reason.value = ''
@@ -306,12 +211,15 @@ function resetForm() {
   filterAvailClass.value = ''
   filterAvailForm.value = ''
   filterAvailSearch.value = ''
+  tempAvailSearch.value = ''
+  showAvailSearchPopover.value = false
   filterOccClass.value = ''
   filterOccForm.value = ''
   filterOccSearch.value = ''
+  tempOccSearch.value = ''
+  showOccSearchPopover.value = false
   showGuestSelectModal.value = false
   guestSelectionList.value = []
-  closeAllPopovers()
   warningMsg.value = ''
 }
 
@@ -399,7 +307,6 @@ function getPriceFromRatePlans(matchedRc, roomClassId, roomClassCode, roomFormNa
     const rfName = (roomFormName || '').trim()
     const rfUpper = rfName.toUpperCase()
 
-    // 1. Direct matrix grid key lookups (highest priority)
     const matrixKeys = [
       `${planCode}_${rcCode}_${rfName}`,
       `${planCode}_${rcCode}_${rfUpper}`,
@@ -418,7 +325,6 @@ function getPriceFromRatePlans(matchedRc, roomClassId, roomClassCode, roomFormNa
       }
     }
 
-    // 2. Search all keys in periodObj for room class code + form name
     const keys = Object.keys(periodObj)
     if (rcCode && rfUpper) {
       const matchedKey = keys.find(k => {
@@ -439,7 +345,6 @@ function getPriceFromRatePlans(matchedRc, roomClassId, roomClassCode, roomFormNa
       }
     }
 
-    // 3. Fallback to legacy numeric ID keys (lowest priority)
     const legacyKeys = [
       `${planCode}_${roomClassId}_${rfName}`,
       `${planCode}_${roomClassId}_${rfUpper}`,
@@ -462,7 +367,6 @@ function getPriceFromRatePlans(matchedRc, roomClassId, roomClassCode, roomFormNa
 function applyRateCodePrice() {
   if (!isChangeRate.value) return
 
-  // Tự động điền giá thêm giường từ Giá phòng chuẩn bất kể có chọn mã giá phòng hay không
   populateStandardExtraBedRate()
 
   if (!selectedRateCode.value) return
@@ -472,12 +376,10 @@ function applyRateCodePrice() {
 
   const roomClassId = targetRoom.room_class_id
   const roomFormName = targetRoom.room_form_name || targetRoom.room_form || ''
-  
-  // Tra cứu mã hạng phòng (code/Ma) từ list roomClasses
+
   const matchedRoomClass = (roomClasses.value || []).find(rc => Number(rc.id) === Number(roomClassId))
   const roomClassCode = targetRoom.room_class_code || matchedRoomClass?.code || matchedRoomClass?.Ma || ''
 
-  // 1. Tra cứu giá từ mã giá phòng (ratePlans period hoặc Value)
   const matchedRc = (rateCodes.value || []).find(rc => (rc.Ma || rc.code) === selectedRateCode.value)
   let foundPrice = null
 
@@ -488,7 +390,6 @@ function applyRateCodePrice() {
     }
   }
 
-  // 2. Tra cứu giá chuẩn (standard_rates) cho hạng phòng
   if (foundPrice === null) {
     const matchedSr = (standardRates.value || []).find(sr => Number(sr.room_class_id) === Number(roomClassId))
     if (matchedSr && Number(matchedSr.room_price) > 0) {
@@ -568,7 +469,7 @@ function handleSubmit() {
   }
 
   if (!reason.value.trim()) {
-    uiStore.showToast('Vui lòng nhập lý do chuyển phòng!', 'warning')
+    uiStore.showToast('Vui lòng nhập lý do chuyển phòng!', 'error')
     return
   }
 
@@ -578,10 +479,8 @@ function handleSubmit() {
       uiStore.showToast('Vui lòng kiểm tra tình trạng phòng (Phòng chưa ở trạng thái Sẵn sàng)', 'error')
       return
     }
-    // Form A: Submit directly with all guests
     executeSubmit((currentRoom.value?.guests || []).map(g => g.guest_id))
   } else if (selectedMoveType.value === 'merge') {
-    // Form B: Open "Chọn khách" sub-modal
     const guests = currentRoom.value?.guests || []
     const children = currentRoom.value?.children || []
 
@@ -594,14 +493,14 @@ function handleSubmit() {
       guest_id: g.guest_id,
       full_name: g.full_name || 'Khách',
       is_child: false,
-      selected: true, // Default all checked
+      selected: true,
     }))
 
     const childList = children.map(c => ({
       guest_id: c.guest_id,
       full_name: c.full_name || (c.age_group === 'baby' ? 'Em bé' : 'Trẻ em'),
       is_child: true,
-      selected: true, // Default all checked
+      selected: true,
     }))
 
     guestSelectionList.value = [...adultList, ...childList]
@@ -666,180 +565,126 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
 </script>
 
 <template>
-  <div v-if="show" @click="closeAllPopovers" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-2 select-none">
-    <div @click.stop class="bg-white rounded-lg shadow-2xl w-full max-w-[1450px] overflow-hidden border border-slate-300 flex flex-col max-h-[95vh] text-xs">
-      
-      <!-- Top Window Header (Light Blue) -->
-      <div class="px-4 py-2.5 bg-[#87c1e3] text-white flex items-center justify-between shadow-xs">
-        <div class="flex items-center gap-2">
-          <svg class="w-4 h-4 text-white shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M8 3L4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4" />
+  <div v-if="show" @click="closeAllPopovers" class="modal-backdrop">
+    <div @click.stop class="modal-container">
+
+      <!-- Header -->
+      <div class="modal-header">
+        <div class="header-title">
+          <svg class="w-4 h-4 text-white shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9" />
           </svg>
-          <span class="font-bold text-sm text-white tracking-wide">Chuyển Phòng</span>
-          <span v-if="currentRoom" class="text-xs text-sky-100 font-normal">
-            (Phòng {{ currentRoom.room_number }} - Mã ĐK: {{ currentRoom.booking_code }})
+          <span>CHUYỂN PHÒNG</span>
+          <span v-if="currentRoom" class="text-xs text-blue-200 font-normal lowercase tracking-normal ml-1">
+            (phòng {{ currentRoom.room_number }} - mã đk: {{ currentRoom.booking_code }})
           </span>
         </div>
         <div class="flex items-center gap-3">
-          <button title="Trợ giúp" class="text-white/90 hover:text-white bg-transparent border-none text-sm cursor-pointer">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
+          <button v-if="isRightPanelCollapsed" @click="toggleRightPanel" class="toggle-btn-header" type="button">
+            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
             </svg>
+            <span>Chuyển sang phòng đang ở</span>
           </button>
-          <button @click="emit('close')" title="Đóng" class="text-white/90 hover:text-white bg-transparent border-none text-base font-bold cursor-pointer leading-none">
+          <button @click="emit('close')" class="close-btn" title="Đóng">
             ✕
           </button>
         </div>
       </div>
 
       <!-- Warning Alert Banner -->
-      <div v-if="warningMsg" class="px-4 py-1.5 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-semibold flex items-center gap-2">
-        <svg class="w-4 h-4 shrink-0 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
+      <div v-if="warningMsg"
+        class="px-5 py-2 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-2">
+        <svg class="w-4 h-4 shrink-0 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
         <span>{{ warningMsg }}</span>
       </div>
 
-      <!-- Main Dual Table Body -->
-      <div class="flex-1 overflow-hidden p-3 grid grid-cols-2 gap-3 bg-slate-100/60 min-h-[380px]">
-        
-        <!-- LEFT PANEL: Phòng trống -->
-        <div class="bg-white rounded border border-slate-300 flex flex-col overflow-hidden shadow-2xs">
-          <div class="px-3 py-1.5 bg-slate-100 border-b border-slate-300 font-bold text-slate-700 text-xs flex justify-between items-center">
-            <span>Phòng trống</span>
-            <span class="text-[11px] font-normal text-slate-500">({{ filteredAvailableRooms.length }} phòng)</span>
+      <!-- Body -->
+      <div class="modal-body">
+        <LoadingOverlay :show="loading" message="Đang tải danh sách phòng khả dụng..." />
+
+        <!-- BẢNG BÊN TRÁI: DANH SÁCH PHÒNG TRỐNG -->
+        <div class="table-section left-panel">
+          <div class="section-title">
+            <span>DANH SÁCH PHÒNG TRỐNG ({{ filteredAvailableRooms.length }})</span>
           </div>
 
-          <div class="flex-1 overflow-auto">
-            <table class="w-full text-left border-collapse text-[11px]">
-              <thead class="bg-slate-50 sticky top-0 border-b border-slate-300 text-slate-700 font-bold z-10">
-                <tr class="h-8 divide-x divide-slate-200">
-                  <th class="w-8 px-2 text-center"></th>
-                  
-                  <!-- Column: Loại phòng -->
-                  <th class="px-2 py-1 relative">
-                    <div class="flex items-center justify-between">
-                      <span>Loại phòng</span>
-                      <button @click.stop="toggleAvailClassPopover" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer border-none bg-transparent" :class="filterAvailClass ? 'text-sky-600 font-bold' : 'text-slate-400'">
-                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                    </div>
-                    <!-- Class Filter Popover -->
-                    <div v-if="showAvailClassPopover" @click.stop class="absolute top-full left-0 mt-1 z-50 bg-white rounded-md shadow-xl border border-slate-200 p-2 w-[180px] text-xs font-normal text-slate-800 max-h-48 overflow-auto">
-                      <div @click="setAvailClass('')" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="!filterAvailClass ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span>Tất cả loại phòng</span>
-                        <span v-if="!filterAvailClass">✓</span>
-                      </div>
-                      <div v-for="opt in availClassOptions" :key="opt.id" @click="setAvailClass(opt.id)" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="filterAvailClass === String(opt.id) ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span class="truncate">{{ opt.name }}</span>
-                        <span v-if="filterAvailClass === String(opt.id)">✓</span>
-                      </div>
-                    </div>
-                  </th>
+          <div class="table-wrapper">
+            <table class="tbl-left">
+              <thead>
+                <tr>
+                  <th class="col-check"></th>
 
-                  <!-- Column: Dạng phòng -->
-                  <th class="px-2 py-1 relative">
-                    <div class="flex items-center justify-between">
-                      <span>Dạng phòng</span>
-                      <button @click.stop="toggleAvailFormPopover" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer border-none bg-transparent" :class="filterAvailForm ? 'text-sky-600 font-bold' : 'text-slate-400'">
-                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                    </div>
-                    <!-- Form Filter Popover -->
-                    <div v-if="showAvailFormPopover" @click.stop class="absolute top-full left-0 mt-1 z-50 bg-white rounded-md shadow-xl border border-slate-200 p-2 w-[160px] text-xs font-normal text-slate-800 max-h-48 overflow-auto">
-                      <div @click="setAvailForm('')" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="!filterAvailForm ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span>Tất cả dạng phòng</span>
-                        <span v-if="!filterAvailForm">✓</span>
-                      </div>
-                      <div v-for="fName in availFormOptions" :key="fName" @click="setAvailForm(fName)" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="filterAvailForm === fName ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span class="truncate">{{ fName }}</span>
-                        <span v-if="filterAvailForm === fName">✓</span>
-                      </div>
-                    </div>
-                  </th>
+                  <!-- Cột Loại phòng -->
+                  <th class="col-loai">Loại phòng</th>
 
-                  <!-- Column: Phòng (With Search Icon Popover) -->
-                  <th class="px-2 py-1 relative">
+                  <!-- Cột Dạng phòng -->
+                  <th class="col-dang">Dạng phòng</th>
+
+                  <!-- Cột Phòng (Search Popover Card positioned inside header cell) -->
+                  <th class="col-phong relative">
                     <div class="flex items-center justify-between">
                       <span>Phòng</span>
-                      <button @click.stop="toggleAvailSearchPopover" class="p-0.5 hover:bg-slate-200 rounded cursor-pointer border-none bg-transparent" :class="filterAvailSearch ? 'text-sky-600 font-bold' : 'text-slate-400'">
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                      <button @click.stop="toggleAvailSearchPopover" type="button" title="Tìm số phòng"
+                        class="header-icon-btn" :class="{ 'active': filterAvailSearch || showAvailSearchPopover }">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
                       </button>
                     </div>
 
-                    <!-- Search Popover Box -->
-                    <div v-if="showAvailSearchPopover" @click.stop class="absolute top-full left-0 mt-1 z-50 bg-white rounded-md shadow-xl border border-slate-200 p-2.5 w-[210px] text-xs font-normal text-slate-800">
-                      <input
-                        v-model="tempAvailSearch"
-                        @keyup.enter="applyAvailSearch"
-                        type="text"
-                        placeholder="Search room"
-                        class="w-full px-2 py-1 text-xs border border-slate-300 rounded outline-none focus:border-sky-500 mb-2"
-                        autoFocus
-                      />
-                      <div class="flex items-center gap-1.5 justify-end">
-                        <button
-                          @click="applyAvailSearch"
-                          type="button"
-                          class="px-3 py-1 bg-[#7bc4ff] hover:bg-[#64b5f6] text-white font-semibold rounded text-xs shadow-2xs flex items-center gap-1 cursor-pointer border-none"
-                        >
-                          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <!-- Search Popover Floating Card (Directly under column Phòng) -->
+                    <div v-if="showAvailSearchPopover" @click.stop class="search-popover-box">
+                      <input v-model="tempAvailSearch" @keyup.enter="applyAvailSearch" type="text"
+                        placeholder="Search room" class="search-popover-input" autoFocus />
+                      <div class="search-popover-actions">
+                        <button @click="applyAvailSearch" type="button" class="btn-popover-search">
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
                           <span>Search</span>
                         </button>
-                        <button
-                          @click="resetAvailSearch"
-                          type="button"
-                          class="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded text-xs border border-slate-300 cursor-pointer"
-                        >
+                        <button @click="resetAvailSearch" type="button" class="btn-popover-reset">
                           <span>Reset</span>
                         </button>
                       </div>
                     </div>
                   </th>
 
-                  <th class="px-2 py-1 text-right">Giá phòng</th>
-                  <th class="px-2 py-1 text-right">Giá thêm giường</th>
-                  <th class="px-2 py-1">Trạng thái</th>
+                  <!-- Cột Trạng thái -->
+                  <th class="col-them">Trạng thái</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-200 text-slate-700 bg-white">
+              <tbody>
                 <tr v-if="filteredAvailableRooms.length === 0">
-                  <td colspan="7" class="py-8 text-center text-slate-400 italic">
+                  <td colspan="5" class="text-center py-8 text-slate-400 italic">
                     Không có phòng trống khả dụng
                   </td>
                 </tr>
-                <tr
-                  v-for="r in filteredAvailableRooms"
-                  :key="r.id"
-                  @click="selectAvailableRoom(r)"
-                  class="h-8 hover:bg-sky-50/70 cursor-pointer transition-colors divide-x divide-slate-100"
-                  :class="[
-                    selectedMoveType === 'available' && selectedTargetRoomNumber === r.room_number
-                      ? 'bg-sky-100/90 font-semibold'
-                      : '',
-                    !r.is_ready ? 'text-amber-900 bg-amber-50/30' : ''
-                  ]"
-                >
-                  <td class="text-center px-1">
-                    <input
-                      type="radio"
-                      name="targetRoomGroup"
+                <tr v-for="r in filteredAvailableRooms" :key="r.id" @click="selectAvailableRoom(r)"
+                  class="cursor-pointer transition-colors"
+                  :class="selectedMoveType === 'available' && selectedTargetRoomNumber === r.room_number ? 'bg-blue-50/80 font-semibold' : ''">
+                  <td class="col-check">
+                    <input type="radio" name="targetRoomGroup"
                       :checked="selectedMoveType === 'available' && selectedTargetRoomNumber === r.room_number"
-                      class="text-sky-600 focus:ring-sky-500 rounded-full w-3.5 h-3.5 cursor-pointer"
-                    />
+                      class="cursor-pointer" />
                   </td>
-                  <td class="px-2 truncate max-w-[220px]" :title="r.room_class_name">{{ r.room_class_name }}</td>
-                  <td class="px-2 truncate max-w-[110px]">{{ r.room_form_name }}</td>
-                  <td class="px-2 font-bold text-slate-900">{{ r.room_number }}</td>
-                  <td class="px-2 text-right tabular-nums">{{ formatCurrency(r.rate) }}</td>
-                  <td class="px-2 text-right tabular-nums">{{ formatCurrency(r.extra_bed_rate) }}</td>
-                  <td class="px-2 truncate">
-                    <span :class="r.is_ready ? 'text-slate-700' : 'text-amber-700 font-semibold'">
-                      {{ r.status_label }}
+                  <td class="col-loai" :title="r.room_class_name">{{ r.room_class_name }}</td>
+                  <td class="col-dang">{{ r.room_form_name }}</td>
+                  <td class="col-phong" style="font-weight: 600; color: #1e3a8a;">{{ r.room_number }}</td>
+                  <td class="col-them">
+                    <span :class="['status-badge', r.is_ready ? 'status-clean' : 'status-dirty']">
+                      {{ r.is_ready ? 'Vacant Clean' : (r.status_label || 'Vacant Dirty') }}
                     </span>
                   </td>
                 </tr>
@@ -848,134 +693,86 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
           </div>
         </div>
 
-        <!-- RIGHT PANEL: Phòng đang ở (Gộp phòng) -->
-        <div class="bg-blue-50/40 rounded border border-slate-300 flex flex-col overflow-hidden shadow-2xs">
-          <div class="px-3 py-1.5 bg-blue-100/70 border-b border-slate-300 font-bold text-slate-700 text-xs flex justify-between items-center">
-            <span>Phòng đang ở (Gộp phòng)</span>
-            <span class="text-[11px] font-normal text-slate-500">({{ filteredOccupiedRooms.length }} phòng)</span>
+        <!-- BẢNG BÊN PHẢI: DANH SÁCH PHÒNG ĐANG Ở -->
+        <div class="table-section right-panel" :class="{ 'collapsed': isRightPanelCollapsed }">
+          <div class="section-title">
+            <span>PHÒNG ĐANG Ở ({{ filteredOccupiedRooms.length }})</span>
+            <button class="toggle-btn" type="button" @click="toggleRightPanel">
+              Thu gọn <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h6v6M14 10l7-7M9 21H3v-6M10 14l-7 7" />
+              </svg>
+            </button>
           </div>
 
-          <div class="flex-1 overflow-auto">
-            <table class="w-full text-left border-collapse text-[11px]">
-              <thead class="bg-blue-100/50 sticky top-0 border-b border-slate-300 text-slate-700 font-bold z-10">
-                <tr class="h-8 divide-x divide-slate-200">
-                  <th class="w-8 px-2 text-center"></th>
-                  
-                  <!-- Column: Loại phòng -->
-                  <th class="px-2 py-1 relative">
-                    <div class="flex items-center justify-between">
-                      <span>Loại phòng</span>
-                      <button @click.stop="toggleOccClassPopover" class="p-0.5 hover:bg-blue-200 rounded cursor-pointer border-none bg-transparent" :class="filterOccClass ? 'text-sky-600 font-bold' : 'text-slate-400'">
-                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                    </div>
-                    <!-- Class Filter Popover -->
-                    <div v-if="showOccClassPopover" @click.stop class="absolute top-full left-0 mt-1 z-50 bg-white rounded-md shadow-xl border border-slate-200 p-2 w-[180px] text-xs font-normal text-slate-800 max-h-48 overflow-auto">
-                      <div @click="setOccClass('')" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="!filterOccClass ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span>Tất cả loại phòng</span>
-                        <span v-if="!filterOccClass">✓</span>
-                      </div>
-                      <div v-for="cName in occClassOptions" :key="cName" @click="setOccClass(cName)" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="filterOccClass === cName ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span class="truncate">{{ cName }}</span>
-                        <span v-if="filterOccClass === cName">✓</span>
-                      </div>
-                    </div>
-                  </th>
+          <div class="table-wrapper">
+            <table class="tbl-right">
+              <thead>
+                <tr>
+                  <th class="col-check"></th>
 
-                  <!-- Column: Dạng phòng -->
-                  <th class="px-2 py-1 relative">
-                    <div class="flex items-center justify-between">
-                      <span>Dạng phòng</span>
-                      <button @click.stop="toggleOccFormPopover" class="p-0.5 hover:bg-blue-200 rounded cursor-pointer border-none bg-transparent" :class="filterOccForm ? 'text-sky-600 font-bold' : 'text-slate-400'">
-                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                    </div>
-                    <!-- Form Filter Popover -->
-                    <div v-if="showOccFormPopover" @click.stop class="absolute top-full left-0 mt-1 z-50 bg-white rounded-md shadow-xl border border-slate-200 p-2 w-[160px] text-xs font-normal text-slate-800 max-h-48 overflow-auto">
-                      <div @click="setOccForm('')" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="!filterOccForm ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span>Tất cả dạng phòng</span>
-                        <span v-if="!filterOccForm">✓</span>
-                      </div>
-                      <div v-for="fName in occFormOptions" :key="fName" @click="setOccForm(fName)" class="px-2 py-1 hover:bg-sky-50 rounded cursor-pointer flex items-center justify-between" :class="filterOccForm === fName ? 'font-bold text-sky-700 bg-sky-50' : ''">
-                        <span class="truncate">{{ fName }}</span>
-                        <span v-if="filterOccForm === fName">✓</span>
-                      </div>
-                    </div>
-                  </th>
+                  <!-- Cột Loại phòng -->
+                  <th class="col-loai">Loại phòng</th>
 
-                  <!-- Column: Phòng (Search Popover) -->
-                  <th class="px-2 py-1 relative">
+                  <!-- Cột Dạng phòng -->
+                  <th class="col-dang">Dạng phòng</th>
+
+                  <!-- Cột Phòng (Search Popover Card positioned inside header cell) -->
+                  <th class="col-phong relative">
                     <div class="flex items-center justify-between">
                       <span>Phòng</span>
-                      <button @click.stop="toggleOccSearchPopover" class="p-0.5 hover:bg-blue-200 rounded cursor-pointer border-none bg-transparent" :class="filterOccSearch ? 'text-sky-600 font-bold' : 'text-slate-400'">
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                      <button @click.stop="toggleOccSearchPopover" type="button" title="Tìm số phòng"
+                        class="header-icon-btn" :class="{ 'active': filterOccSearch || showOccSearchPopover }">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
                       </button>
                     </div>
 
-                    <!-- Search Popover Box -->
-                    <div v-if="showOccSearchPopover" @click.stop class="absolute top-full left-0 mt-1 z-50 bg-white rounded-md shadow-xl border border-slate-200 p-2.5 w-[210px] text-xs font-normal text-slate-800">
-                      <input
-                        v-model="tempOccSearch"
-                        @keyup.enter="applyOccSearch"
-                        type="text"
-                        placeholder="Search room"
-                        class="w-full px-2 py-1 text-xs border border-slate-300 rounded outline-none focus:border-sky-500 mb-2"
-                        autoFocus
-                      />
-                      <div class="flex items-center gap-1.5 justify-end">
-                        <button
-                          @click="applyOccSearch"
-                          type="button"
-                          class="px-3 py-1 bg-[#7bc4ff] hover:bg-[#64b5f6] text-white font-semibold rounded text-xs shadow-2xs flex items-center gap-1 cursor-pointer border-none"
-                        >
-                          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <!-- Search Popover Floating Card (Directly under column Phòng) -->
+                    <div v-if="showOccSearchPopover" @click.stop class="search-popover-box">
+                      <input v-model="tempOccSearch" @keyup.enter="applyOccSearch" type="text" placeholder="Search room"
+                        class="search-popover-input" autoFocus />
+                      <div class="search-popover-actions">
+                        <button @click="applyOccSearch" type="button" class="btn-popover-search">
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
                           <span>Search</span>
                         </button>
-                        <button
-                          @click="resetOccSearch"
-                          type="button"
-                          class="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded text-xs border border-slate-300 cursor-pointer"
-                        >
+                        <button @click="resetOccSearch" type="button" class="btn-popover-reset">
                           <span>Reset</span>
                         </button>
                       </div>
                     </div>
                   </th>
 
-                  <th class="px-2 py-1 text-right">Giá phòng</th>
-                  <th class="px-2 py-1 text-right">Giá thêm giường</th>
-                  <th class="px-2 py-1">Trạng thái</th>
+                  <!-- Cột Giá phòng & Khách hàng -->
+                  <th class="col-gia">Giá phòng</th>
+                  <th class="col-them">Khách hàng</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-200 text-slate-700 bg-blue-50/20">
+              <tbody>
                 <tr v-if="filteredOccupiedRooms.length === 0">
-                  <td colspan="7" class="py-8 text-center text-slate-400 italic">
+                  <td colspan="6" class="text-center py-8 text-slate-400 italic">
                     Không có phòng in-house thỏa điều kiện gộp
                   </td>
                 </tr>
-                <tr
-                  v-for="r in filteredOccupiedRooms"
-                  :key="r.booking_room_id"
-                  @click="selectOccupiedRoom(r)"
-                  class="h-8 hover:bg-blue-100/60 cursor-pointer transition-colors divide-x divide-slate-100"
-                  :class="selectedMoveType === 'merge' && selectedTargetRoomNumber === r.room_number ? 'bg-blue-200/80 font-semibold' : ''"
-                >
-                  <td class="text-center px-1">
-                    <input
-                      type="radio"
-                      name="targetRoomGroup"
+                <tr v-for="r in filteredOccupiedRooms" :key="r.booking_room_id" @click="selectOccupiedRoom(r)"
+                  class="cursor-pointer transition-colors"
+                  :class="selectedMoveType === 'merge' && selectedTargetRoomNumber === r.room_number ? 'bg-blue-50/80 font-semibold' : ''">
+                  <td class="col-check">
+                    <input type="radio" name="targetRoomGroup"
                       :checked="selectedMoveType === 'merge' && selectedTargetRoomNumber === r.room_number"
-                      class="text-sky-600 focus:ring-sky-500 rounded-full w-3.5 h-3.5 cursor-pointer"
-                    />
+                      class="cursor-pointer" />
                   </td>
-                  <td class="px-2 truncate max-w-[220px]" :title="r.room_class_name">{{ r.room_class_name }}</td>
-                  <td class="px-2 truncate max-w-[110px]">{{ r.room_form_name }}</td>
-                  <td class="px-2 font-bold text-slate-900">{{ r.room_number }}</td>
-                  <td class="px-2 text-right tabular-nums">{{ formatCurrency(r.rate) }}</td>
-                  <td class="px-2 text-right tabular-nums">{{ formatCurrency(r.extra_bed_rate) }}</td>
-                  <td class="px-2 truncate text-slate-700" :title="r.status_label">
-                    {{ r.status_label }}
-                  </td>
+                  <td class="col-loai" :title="r.room_class_name">{{ r.room_class_name }}</td>
+                  <td class="col-dang">{{ r.room_form_name }}</td>
+                  <td class="col-phong" style="font-weight: 600; color: #1e3a8a;">{{ r.room_number }}</td>
+                  <td class="col-gia">{{ formatCurrency(r.rate) }}</td>
+                  <td class="col-them" :title="r.primary_guest_name">Inhouse: {{ r.primary_guest_name || 'Khách' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -984,28 +781,21 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
 
       </div>
 
-      <!-- Bottom Controls Bar -->
-      <div class="px-4 py-3 bg-white border-t border-slate-300 flex items-center justify-between gap-3 text-xs">
-        <div class="flex items-center gap-4 flex-1">
+      <!-- Footer -->
+      <div class="modal-footer">
+        <div class="inputs-row">
           <!-- Checkbox Thay đổi giá -->
-          <label class="flex items-center gap-1.5 font-medium text-slate-700 cursor-pointer shrink-0">
-            <input
-              type="checkbox"
-              v-model="isChangeRate"
-              class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-4 h-4"
-            />
-            <span>Thay đổi giá</span>
-          </label>
+          <div class="input-group checkbox-group">
+            <label
+              style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; color: #1e293b;">
+              <input type="checkbox" v-model="isChangeRate" /> Thay đổi giá
+            </label>
+          </div>
 
           <!-- Mã giá phòng -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-600 shrink-0">Mã giá phòng</span>
-            <select
-              v-model="selectedRateCode"
-              :disabled="!isChangeRate"
-              class="w-28 px-2 py-1 text-xs border border-slate-300 rounded bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 outline-none focus:border-sky-500 font-medium truncate"
-              :title="selectedRateCode"
-            >
+          <div class="input-group" :class="{ 'disabled': !isChangeRate }">
+            <label>Mã giá phòng</label>
+            <select v-model="selectedRateCode" :disabled="!isChangeRate">
               <option value="">Mã giá phòng</option>
               <option v-for="rc in activeRateCodes" :key="rc.Ma || rc.id || rc.code" :value="rc.Ma || rc.code">
                 {{ rc.Ma || rc.code }}
@@ -1014,122 +804,86 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
           </div>
 
           <!-- Giá phòng -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-600 shrink-0">Giá phòng</span>
-            <input
-              v-model="formattedNewRate"
-              :disabled="!isChangeRate"
-              type="text"
-              class="w-20 px-2 py-1 text-xs text-right border border-slate-300 rounded bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 outline-none focus:border-sky-500 font-medium"
-            />
+          <div class="input-group" :class="{ 'disabled': !isChangeRate }">
+            <label>Giá phòng</label>
+            <input v-model="formattedNewRate" :disabled="!isChangeRate" type="text" />
           </div>
 
           <!-- Thêm giường -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-600 shrink-0">Thêm giường</span>
-            <input
-              v-model.number="extraBedQty"
-              :disabled="!isChangeRate"
-              type="number"
-              min="0"
-              class="w-14 px-2 py-1 text-xs text-right border border-slate-300 rounded bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 outline-none focus:border-sky-500 font-medium"
-            />
+          <div class="input-group" :class="{ 'disabled': !isChangeRate }">
+            <label>Thêm giường</label>
+            <input v-model.number="extraBedQty" :disabled="!isChangeRate" type="number" min="0" />
           </div>
 
           <!-- Giá thêm giường -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-slate-600 shrink-0">Giá thêm giường</span>
-            <input
-              v-model="formattedExtraBedRate"
-              :disabled="!isChangeRate"
-              type="text"
-              class="w-20 px-2 py-1 text-xs text-right border border-slate-300 rounded bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400 outline-none focus:border-sky-500 font-medium"
-            />
+          <div class="input-group" :class="{ 'disabled': !isChangeRate }">
+            <label>Giá thêm giường</label>
+            <input v-model="formattedExtraBedRate" :disabled="!isChangeRate" type="text" />
           </div>
 
-          <!-- Lý do (Yellow Background as Screenshot) -->
-          <div class="flex items-center gap-1.5 flex-1 min-w-[200px]">
-            <span class="text-slate-600 shrink-0 font-medium">Lý do</span>
-            <input
-              v-model="reason"
-              type="text"
-              placeholder="Nhập lý do chuyển phòng..."
-              class="w-full px-2.5 py-1 text-xs border border-slate-300 rounded outline-none focus:border-sky-500 bg-[#ffffcc] text-slate-900 font-medium"
-            />
+          <!-- Trường lý do -->
+          <div class="input-group wide">
+            <label>Lý do</label>
+            <input v-model="reason" type="text" placeholder="Nhập lý do chuyển phòng..." />
           </div>
+        </div>
+
+        <!-- Các nút hành động chính -->
+        <div class="actions-row">
+          <button @click="emit('close')" class="btn btn-gray" type="button">
+            <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            <span>Quay lại</span>
+          </button>
+          <button @click="handleSubmit"
+            :disabled="submitting || !selectedTargetRoomNumber || (selectedMoveType === 'available' && selectedTargetRoomObj && !isTargetRoomReady)"
+            class="btn btn-blue" type="button">
+            <svg v-if="submitting" class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor">
+              <circle cx="12" cy="12" r="10" stroke-width="4" class="opacity-25" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <svg v-else class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+            <span>Lưu</span>
+          </button>
         </div>
       </div>
 
-      <!-- Footer Buttons -->
-      <div class="px-4 py-2.5 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2">
-        <button
-          @click="emit('close')"
-          type="button"
-          class="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-sky-200/70 hover:bg-sky-300 border border-sky-300 rounded shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <svg class="w-3.5 h-3.5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          <span>Đóng</span>
-        </button>
-
-        <button
-          @click="emit('close')"
-          type="button"
-          class="px-3.5 py-1.5 text-xs font-semibold text-sky-800 bg-sky-100 hover:bg-sky-200 border border-sky-300 rounded shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <svg class="w-3.5 h-3.5 text-sky-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>
-          <span>Quay lại</span>
-        </button>
-
-        <button
-          @click="handleSubmit"
-          :disabled="submitting || !selectedTargetRoomNumber || (selectedMoveType === 'available' && selectedTargetRoomObj && !isTargetRoomReady)"
-          type="button"
-          class="px-4 py-1.5 text-xs font-semibold text-white bg-[#5bb0db] hover:bg-[#4a9ec8] disabled:opacity-50 disabled:cursor-not-allowed border border-sky-600/30 rounded shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <svg v-if="submitting" class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="12" cy="12" r="10" stroke-width="4" class="opacity-25"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-          </svg>
-          <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          <span>Lưu</span>
-        </button>
-      </div>
-
-      <!-- Loading overlay -->
-      <LoadingOverlay :show="loading" message="Đang tải danh sách phòng khả dụng..." />
     </div>
 
-    <!-- Modal Chọn Khách (Sub-modal matching exact screenshot) -->
-    <div v-if="showGuestSelectModal" @click.stop class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 select-none">
-      <div class="bg-white rounded-xl shadow-2xl w-full max-w-[440px] overflow-hidden border border-slate-200 flex flex-col text-xs">
-        
-        <!-- Header (Light Blue matching screenshot) -->
-        <div class="px-4 py-2.5 bg-[#87c1e3] text-white flex items-center justify-between shadow-xs">
-          <span class="font-bold text-sm text-white tracking-wide">Chọn khách</span>
-          <button @click="showGuestSelectModal = false" title="Đóng" class="text-white/90 hover:text-white bg-transparent border-none text-base font-bold cursor-pointer leading-none">
+    <!-- Modal Chọn Khách (Sub-modal khi gộp phòng) -->
+    <div v-if="showGuestSelectModal" @click.stop
+      class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 select-none">
+      <div
+        class="bg-white rounded-xl shadow-2xl w-full max-w-[440px] overflow-hidden border border-slate-200 flex flex-col text-xs">
+
+        <div class="px-4 py-3 bg-[#1e3a8a] text-white flex items-center justify-between">
+          <span class="font-bold text-sm text-white tracking-wide">CHỌN KHÁCH</span>
+          <button @click="showGuestSelectModal = false" title="Đóng"
+            class="text-white/90 hover:text-white bg-transparent border-none text-base font-bold cursor-pointer leading-none">
             ✕
           </button>
         </div>
 
-        <!-- Body: Guest List -->
         <div class="p-4 space-y-4 max-h-[60vh] overflow-auto">
           <!-- Người lớn -->
           <div>
             <div class="font-semibold text-slate-700 mb-2">Người lớn</div>
             <div v-if="adultGuests.length === 0" class="text-slate-400 italic pl-1">Không có khách người lớn</div>
             <div class="space-y-2">
-              <label
-                v-for="g in adultGuests"
-                :key="g.guest_id"
+              <label v-for="g in adultGuests" :key="g.guest_id"
                 class="flex items-center justify-between border border-slate-300 rounded-full px-4 py-2 hover:bg-slate-50 cursor-pointer transition-colors"
-                :class="g.selected ? 'border-sky-400 bg-sky-50/50' : 'bg-white'"
-              >
+                :class="g.selected ? 'border-blue-400 bg-blue-50/50' : 'bg-white'">
                 <span class="font-semibold text-slate-800 tracking-wide uppercase">{{ g.full_name }}</span>
-                <input
-                  type="checkbox"
-                  v-model="g.selected"
-                  class="rounded text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
-                />
+                <input type="checkbox" v-model="g.selected"
+                  class="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
               </label>
             </div>
           </div>
@@ -1137,47 +891,26 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
           <!-- Trẻ em -->
           <div>
             <div class="font-semibold text-slate-700 mb-2">Trẻ em</div>
-            <div v-if="childGuests.length === 0" class="text-slate-400 italic text-[11px] pl-1">Không có khách trẻ em</div>
+            <div v-if="childGuests.length === 0" class="text-slate-400 italic text-[11px] pl-1">Không có khách trẻ em
+            </div>
             <div class="space-y-2">
-              <label
-                v-for="g in childGuests"
-                :key="g.guest_id"
+              <label v-for="g in childGuests" :key="g.guest_id"
                 class="flex items-center justify-between border border-slate-300 rounded-full px-4 py-2 hover:bg-slate-50 cursor-pointer transition-colors"
-                :class="g.selected ? 'border-sky-400 bg-sky-50/50' : 'bg-white'"
-              >
+                :class="g.selected ? 'border-blue-400 bg-blue-50/50' : 'bg-white'">
                 <span class="font-semibold text-slate-800 tracking-wide uppercase">{{ g.full_name }}</span>
-                <input
-                  type="checkbox"
-                  v-model="g.selected"
-                  class="rounded text-sky-600 focus:ring-sky-500 w-4 h-4 cursor-pointer"
-                />
+                <input type="checkbox" v-model="g.selected"
+                  class="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
               </label>
             </div>
           </div>
         </div>
 
-        <!-- Footer Buttons -->
         <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
-          <button
-            @click="showGuestSelectModal = false"
-            type="button"
-            class="px-4 py-1.5 text-xs font-semibold text-sky-800 bg-sky-100 hover:bg-sky-200 border border-sky-300 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <svg class="w-3.5 h-3.5 text-sky-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <button @click="showGuestSelectModal = false" type="button" class="btn btn-gray">
             <span>Đóng</span>
           </button>
 
-          <button
-            @click="confirmGuestSelection"
-            :disabled="submitting"
-            type="button"
-            class="px-4 py-1.5 text-xs font-semibold text-white bg-[#5bb0db] hover:bg-[#4a9ec8] disabled:opacity-50 border border-sky-600/30 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <svg v-if="submitting" class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <circle cx="12" cy="12" r="10" stroke-width="4" class="opacity-25"/>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-            </svg>
-            <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <button @click="confirmGuestSelection" :disabled="submitting" type="button" class="btn btn-blue">
             <span>Lưu</span>
           </button>
         </div>
@@ -1186,3 +919,520 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Nền mờ phía sau của Popup (Backdrop) */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(15, 23, 42, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  padding: 12px;
+}
+
+/* Khung Popup chính */
+.modal-container {
+  width: 95vw;
+  max-width: 1550px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Thanh tiêu đề màu xanh dương đậm */
+.modal-header {
+  background-color: #1e3a8a;
+  color: white;
+  padding: 14px 20px;
+  font-weight: 600;
+  font-size: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.5px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-transform: uppercase;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.close-btn:hover {
+  opacity: 1;
+}
+
+/* Header button "Chuyển sang phòng đang ở" */
+.toggle-btn-header {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+  border: none;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toggle-btn-header:hover {
+  background-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+
+/* Nội dung Popup */
+.modal-body {
+  display: flex;
+  padding: 20px;
+  gap: 20px;
+  align-items: flex-start;
+  transition: all 0.3s ease;
+  position: relative;
+  min-height: 310px;
+}
+
+/* Khung chứa các bảng dữ liệu */
+.table-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+  min-width: 0;
+}
+
+/* Hiệu ứng ẩn/hiện mượt mà của bảng bên phải */
+.table-section.right-panel {
+  position: relative;
+}
+
+.table-section.right-panel.collapsed {
+  flex: 0;
+  width: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Tiêu đề bảng */
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.5px;
+  height: 28px;
+}
+
+/* Nút ẩn trong bảng bên phải */
+.table-section .toggle-btn {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-section .toggle-btn:hover {
+  background-color: #dbeafe;
+}
+
+/* Định dạng bảng và thanh cuộn */
+.table-wrapper {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow-x: auto;
+  overflow-y: auto;
+  background-color: #ffffff;
+  height: 280px;
+  position: relative;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+  table-layout: fixed;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: inset 0 -1px 0 #e2e8f0;
+}
+
+th.col-phong {
+  overflow: visible !important;
+  position: relative !important;
+  z-index: 30 !important;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Radio button column styling - fixed 36px width, centered, no ellipsis dots */
+th.col-check,
+td.col-check {
+  width: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  padding: 8px 0 !important;
+  text-align: center !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+
+/* Header icon button - no border, transparent background */
+.header-icon-btn {
+  background: transparent !important;
+  color: #64748b;
+  border: none !important;
+  padding: 2px 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.header-icon-btn:hover,
+.header-icon-btn.active {
+  color: #1d4ed8;
+  background-color: rgba(226, 232, 240, 0.6) !important;
+  border-radius: 4px;
+}
+
+/* Search Popover Card (Directly under column Phòng header cell) */
+.search-popover-box {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 9999;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  padding: 10px;
+  width: 220px;
+  box-sizing: border-box;
+  font-weight: normal;
+  text-transform: none;
+  white-space: normal;
+}
+
+.search-popover-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid #7bc4ff;
+  border-radius: 4px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(123, 196, 255, 0.25);
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  color: #1e293b;
+  background-color: #ffffff;
+}
+
+.search-popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-popover-search {
+  background-color: #7bc4ff;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background-color 0.2s;
+}
+
+.btn-popover-search:hover {
+  background-color: #60a5fa;
+}
+
+.btn-popover-reset {
+  background-color: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-popover-reset:hover {
+  background-color: #f1f5f9;
+}
+
+/* Tỉ lệ cột cho bảng Trống (5 cột) */
+.tbl-left .col-check {
+  width: 36px;
+}
+
+.tbl-left .col-loai {
+  width: 34%;
+}
+
+.tbl-left .col-dang {
+  width: 18%;
+}
+
+.tbl-left .col-phong {
+  width: 16%;
+}
+
+.tbl-left .col-them {
+  width: 26%;
+}
+
+/* Tỉ lệ cột cho bảng Đang ở (6 cột) */
+.tbl-right .col-check {
+  width: 36px;
+}
+
+.tbl-right .col-loai {
+  width: 28%;
+}
+
+.tbl-right .col-dang {
+  width: 15%;
+}
+
+.tbl-right .col-phong {
+  width: 14%;
+}
+
+.tbl-right .col-gia {
+  width: 17%;
+}
+
+.tbl-right .col-them {
+  width: 20%;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+}
+
+/* Phần nhập liệu bên dưới */
+.modal-footer {
+  padding: 20px;
+  border-top: 1px solid #e2e8f0;
+  background-color: #ffffff;
+}
+
+.inputs-row {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 140px;
+  transition: opacity 0.2s ease;
+}
+
+.input-group.disabled {
+  opacity: 0.5;
+}
+
+.input-group.checkbox-group {
+  flex: 0 1 auto;
+  min-width: unset;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+.input-group.wide {
+  flex: 2;
+  min-width: 250px;
+}
+
+.input-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.input-group input,
+.input-group select {
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1e293b;
+  background-color: #ffffff;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.input-group input:disabled,
+.input-group select:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
+.input-group input:focus:not(:disabled),
+.input-group select:focus:not(:disabled) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Nút thao tác ở chân trang */
+.actions-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn {
+  padding: 9px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-blue {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+.btn-blue:hover:not(:disabled) {
+  background-color: #1d4ed8 !important;
+}
+
+.btn-blue:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-gray {
+  background-color: #f1f5f9 !important;
+  color: #94a3b8 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.btn-gray:hover {
+  background-color: #e2e8f0 !important;
+  color: #64748b !important;
+}
+
+/* Badge trạng thái */
+.status-badge {
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.status-dirty {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.status-clean {
+  background-color: #dcfce7;
+  color: #166534;
+}
+</style>

@@ -580,7 +580,7 @@ const subMenuItems = computed(() => {
       { name: t('submenu.checkout'), icon: 'dollar-sign', tab: 'checkout', active: currentTab === 'checkout' },
       { name: t('submenu.roomManage'), icon: 'settings', tab: 'manage-rooms', active: currentTab === 'manage-rooms' },
       { name: t('submenu.generalSearch'), icon: 'search', tab: 'search', active: currentTab === 'search' },
-      { name: t('submenu.dayClose'), icon: 'calendar-range', action: 'dayClose', active: false },
+      { name: t('submenu.dayClose'), icon: 'calendar-range', tab: 'day-close', active: currentTab === 'day-close' },
       { name: t('submenu.taskHistory'), icon: 'briefcase', tab: 'shift-work', active: currentTab === 'shift-work' },
       { name: t('submenu.reports'), icon: 'bar-chart', tab: 'reports', active: currentTab === 'reports' },
       { name: t('submenu.actionHistory'), icon: 'clock', tab: 'history', active: currentTab === 'history' },
@@ -717,10 +717,6 @@ async function triggerDayClose() {
 }
 
 async function navigateTo(menuRoute) {
-  if (menuRoute === '/frontdesk?tab=day-close') {
-    await triggerDayClose()
-    return
-  }
   router.push(menuRoute)
 }
 
