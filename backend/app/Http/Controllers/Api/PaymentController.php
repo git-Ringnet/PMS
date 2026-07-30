@@ -478,10 +478,62 @@ class PaymentController extends Controller
     }
 
     // =========================================
-    // POST: Chuyển cọc sang booking khác
+    // POST: Chuyển cọc sang Master/phòng của booking đích
     // POST /payments/{id}/transfer
-    // Body: target_booking_id (required)
+    // Body: target_booking_id (required), target_room_id/target_guest_id (optional)
     // =========================================
+    public function transferMany(Request $request)
+    {
+        $request->validate([
+            'payment_ids'        => 'required|array|min:1',
+            'payment_ids.*'      => 'integer|distinct|exists:payments,id',
+            'target_booking_id'  => 'required|exists:bookings,id',
+            'target_room_id'     => 'nullable|exists:booking_rooms,id',
+            'target_guest_id'    => 'nullable|exists:guests,id',
+        ]);
+
+        $targetBooking = Booking::findOrFail($request->target_booking_id);
+        if (!in_array((int) $targetBooking->status, [0, 1], true)) {
+            abort(422, 'Chỉ có thể chuyển cọc sang Booking ở trạng thái Đăng ký (0) hoặc Đang ở (1).');
+        }
+
+        $targetRoom = $request->target_room_id
+            ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($request->target_room_id)
+            : null;
+        if ($targetRoom && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {
+            abort(422, 'Phòng nhận cọc phải ở trạng thái Reservation hoặc Inhouse.');
+        }
+        if (!$targetRoom && $request->target_guest_id) {
+            abort(422, 'Chỉ được chọn khách khi nơi nhận là một phòng cụ thể.');
+        }
+
+        DB::transaction(function () use ($request, $targetBooking, $targetRoom) {
+            $payments = Payment::whereIn('id', $request->payment_ids)->lockForUpdate()->get();
+            if ($payments->count() !== count($request->payment_ids)) abort(422, 'Không tìm thấy đủ các dòng cọc cần chuyển.');
+
+            foreach ($payments as $payment) {
+                if ($payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
+                    abort(422, 'Chỉ có thể chuyển các dòng cọc chưa được thanh toán.');
+                }
+                $isSameLocation = (int) $payment->booking_id === (int) $targetBooking->id
+                    && (string) ($payment->booking_room_id ?? '') === (string) ($targetRoom?->id ?? '');
+                if ($isSameLocation) abort(422, 'Nơi nhận phải khác vị trí cọc hiện tại.');
+            }
+
+            foreach ($payments as $payment) {
+                $response = $this->transfer($request, $payment->id);
+                if ($response->getStatusCode() >= 400) {
+                    abort($response->getStatusCode(), $response->getData(true)['message'] ?? 'Không thể chuyển cọc.');
+                }
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chuyển ' . count($request->payment_ids) . ' dòng cọc thành công!',
+        ]);
+    }
+
     public function transfer(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
@@ -503,14 +555,9 @@ class PaymentController extends Controller
 
         $request->validate([
             'target_booking_id' => 'required|exists:bookings,id',
+            'target_room_id'    => 'nullable|exists:booking_rooms,id',
+            'target_guest_id'   => 'nullable|exists:guests,id',
         ]);
-
-        if ($request->target_booking_id == $payment->booking_id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Booking đích phải khác booking nguồn.',
-            ], 422);
-        }
 
         $targetBooking = Booking::findOrFail($request->target_booking_id);
 
@@ -521,21 +568,61 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        $targetRoom = $request->target_room_id
+            ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($request->target_room_id)
+            : null;
+        if ($targetRoom && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng nhận cọc phải ở trạng thái Reservation hoặc Inhouse.',
+            ], 422);
+        }
+
+        $targetGuest = null;
+        if ($targetRoom) {
+            $targetGuest = $request->target_guest_id
+                ? $targetRoom->guests()->with('guest')->where('guest_id', $request->target_guest_id)->firstOrFail()
+                : $targetRoom->guests()->with('guest')->where('is_primary', 1)->first();
+        } elseif ($request->target_guest_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Chỉ được chọn khách khi nơi nhận là một phòng cụ thể.',
+            ], 422);
+        }
+
+        $isSameLocation = (int) $payment->booking_id === (int) $targetBooking->id
+            && (string) ($payment->booking_room_id ?? '') === (string) ($targetRoom?->id ?? '');
+        if ($isSameLocation) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nơi nhận phải khác vị trí cọc hiện tại.',
+            ], 422);
+        }
+
         $systemDate = $this->getSystemDate();
         $departmentId = $this->getDepartmentId($request);
 
-        DB::transaction(function () use ($request, $payment, $targetBooking, $systemDate, $departmentId) {
+        DB::transaction(function () use ($request, $payment, $targetBooking, $targetRoom, $targetGuest, $systemDate, $departmentId) {
             $sourceBookingId = $payment->booking_id;
+            $sourceBooking = Booking::findOrFail($sourceBookingId);
+            $sourceLocation = $payment->booking_room_id ? 'R_' . ($payment->bookingRoom?->room_number ?: $payment->booking_room_id) : 'BK_' . $sourceBookingId;
+            $targetLocation = $targetRoom ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id) : 'BK_' . $targetBooking->id;
 
             // 1. Tạo dòng âm trên booking nguồn (ngày hệ thống, user thao tác, edit_flag=1) - SP3002 Spec
             $reversal = Payment::create([
                 'booking_id'        => $sourceBookingId,
+                'booking_room_id'   => $payment->booking_room_id,
+                'guest_id'          => $payment->guest_id,
+                'company_id'        => $payment->company_id,
                 'date'              => $systemDate,
                 'open_time'         => now()->format('H:i:s'),
                 'guest_display'     => $payment->guest_display,
-                'description'       => '[TRANSFER OUT → ' . $targetBooking->booking_code . '] ' . $payment->description,
+                'description'       => '[TRANSFER OUT ' . $sourceLocation . '=>' . $targetLocation . '] ' . $payment->description,
                 'amount'            => -abs($payment->amount),
+                'total_amount_before_split' => $payment->total_amount_before_split,
                 'pack2'             => Payment::PACK2_DEPOSIT,
+                'pack4'             => $payment->pack4,
+                'folio_id'          => $payment->folio_id,
                 'payment_method_id' => $payment->payment_method_id,
                 'debit_account'     => $payment->debit_account,
                 'department_id'     => $departmentId,
@@ -558,13 +645,20 @@ class PaymentController extends Controller
             // SP3002 Spec: Date và CreateUser/created_at GIỐNG VỚI DÒNG GỐC BAN ĐẦU
             $newPayment = Payment::create([
                 'booking_id'        => $request->target_booking_id,
+                'booking_room_id'   => $targetRoom?->id,
+                'guest_id'          => $targetGuest?->guest_id,
                 'company_id'        => $targetBooking->company_id,
                 'date'              => $payment->date, // Ngày dòng gốc ban đầu
                 'open_time'         => $payment->open_time ?? now()->format('H:i:s'),
-                'guest_display'     => $targetBooking->booking_code . ' - ' . $targetBooking->booking_name,
-                'description'       => '[TRANSFER IN ← ' . Booking::find($sourceBookingId)?->booking_code . '] ' . $payment->description,
+                'guest_display'     => $targetRoom
+                    ? $targetBooking->booking_code . ' - ' . ($targetGuest?->guest?->full_name ?: $targetRoom->room_number)
+                    : $targetBooking->booking_code . ' - ' . $targetBooking->booking_name,
+                'description'       => '[TRANSFER IN ' . $sourceLocation . '=>' . $targetLocation . '] ' . $payment->description,
                 'amount'            => abs($payment->amount),
+                'total_amount_before_split' => $payment->total_amount_before_split,
                 'pack2'             => Payment::PACK2_DEPOSIT,
+                'pack4'             => $payment->pack4,
+                'folio_id'          => 1,
                 'payment_method_id' => $payment->payment_method_id,
                 'debit_account'     => $payment->debit_account,
                 'department_id'     => $departmentId,
@@ -590,7 +684,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Chuyển cọc sang booking ' . $targetBooking->booking_code . ' thành công!',
+            'message' => 'Chuyển cọc thành công!',
         ]);
     }
 }

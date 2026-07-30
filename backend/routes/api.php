@@ -333,6 +333,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio']);
     Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
     Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split']);
+    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany']);
     Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
 
     // Availability

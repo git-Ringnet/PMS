@@ -13,6 +13,7 @@ const props = defineProps({
   bookingInfo:   { type: String, default: '' },
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
   roomRate:      { type: Number, default: 0 },
+  roomAdjustment: { type: Object, default: null },
 })
 
 const emit = defineEmits(['close', 'success'])
@@ -172,6 +173,20 @@ watch(() => props.show, (v) => {
     roomUpdateMode.value  = false
     roomSurcharge.value   = false
     customRoomRate.value  = 0
+    if (props.roomAdjustment) {
+      const adjustment = props.roomAdjustment
+      const date = String(adjustment.serviceDate || todayYmd()).slice(0, 10)
+      activeTab.value = 'room'
+      roomFrom.value = date
+      roomTo.value = date
+      roomFolio.value = Number(adjustment.folio) || 1
+      roomUpdateMode.value = true
+      roomSurcharge.value = false
+      customRoomRate.value = Number(adjustment.amount) || 0
+      queueMicrotask(() => {
+        roomDescription.value = adjustment.description || roomDescription.value
+      })
+    }
     roomDescription.value = 'Dịch vụ phòng nghỉ'
     if (foServices.value.length === 0) {
       loadFoServices()

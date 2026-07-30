@@ -279,6 +279,18 @@ class BookingRoomServiceController extends Controller
                 $bill->UpdatedDate = now();
                 $bill->save();
 
+                // Giữ bill buồng phòng để audit; bill/chi tiết đã hủy không được hiển thị tại Checkout.
+                $housekeepingBills = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)
+                    ->lockForUpdate()
+                    ->get();
+                foreach ($housekeepingBills as $housekeepingBill) {
+                    $housekeepingBill->Status = 3;
+                    $housekeepingBill->BillEdit = 1;
+                    $housekeepingBill->save();
+                    HousekeepingServiceBillDetail::where('BillId', $housekeepingBill->Ma)
+                        ->update(['Deleted' => 1]);
+                }
+
                 ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
                 $allBillServices->each->delete();
             }
