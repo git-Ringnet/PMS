@@ -388,14 +388,13 @@ function handleClose() {
                 Ngày <span class="text-red-500">*</span>
               </label>
               <div class="flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
-                <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0">
+                <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0 w-full">
                   <input v-model="roomFrom" type="date" @click="openDatePicker"
-                    class="w-[110px] text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
-                  <span class="text-gray-400">~</span>
+                    class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                  <span class="text-gray-400 px-1 font-bold">~</span>
                   <input v-model="roomTo" type="date" @click="openDatePicker"
-                    class="w-[110px] text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                    class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
                 </div>
-                <Calendar class="w-4 h-4 text-indigo-400 flex-shrink-0 ml-1" />
               </div>
             </div>
             <div>
@@ -491,7 +490,7 @@ function handleClose() {
         <button @click="handleSubmit" :disabled="isSubmitting || (activeTab === 'service' && !selectedService)"
           class="px-6 py-2 text-sm font-semibold text-white bg-[#2563eb] rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
           <Plus class="w-4 h-4" />
-          <span>{{ isSubmitting ? 'Đang xử lý...' : '+ Thêm' }}</span>
+          <span>{{ isSubmitting ? 'Đang xử lý...' : 'Thêm' }}</span>
         </button>
       </div>
 
