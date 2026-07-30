@@ -271,6 +271,41 @@ const loadCheckoutBookings = async () => {
             .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at && String(p.booking_room_id) === String(r.id))
             .reduce((sum, p) => sum + Number(p.amount || 0), 0)
 
+          const primaryGuestId = roomGuests.find(guest => guest.isPrimary)?.id || roomGuests[0].id
+          roomGuests.forEach(guest => {
+            let guestSvcTotal = 0
+            if (r.services && r.services.length > 0) {
+              r.services.forEach(s => {
+                const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
+                const isRMS = s.service_code === 'RMS'
+                const isRoomCharge = isRM || isRMS
+                
+                // Tiền phòng gom lên Master nếu masterSend = true
+                if (masterSend && isRoomCharge) return
+                
+                const sGuestId = s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1 || null
+                const belongsToThisGuest = sGuestId ? (String(sGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
+                
+                if (belongsToThisGuest) {
+                  const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * (Number(s.rate) || Number(s.price) || Number(s.amount) || 0))
+                  guestSvcTotal += itemTotal
+                }
+              })
+            }
+            guest.serviceAmount = guestSvcTotal
+
+            const guestPaidTotal = (b.payments || [])
+              .filter(p => {
+                if (p.edit_flag && Number(p.edit_flag) !== 0) return false
+                if (p.deleted_at) return false
+                if (String(p.booking_room_id) !== String(r.id)) return false
+                const pGuestId = p.guest_id || p.guestId || null
+                return pGuestId ? (String(pGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
+              })
+              .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+            guest.paidAmount = guestPaidTotal
+          })
+
           roomItems.push({
             id: `R${r.id || b.id}`,
             roomId: r.id,
@@ -278,7 +313,7 @@ const loadCheckoutBookings = async () => {
             roomNumber: roomNo,
             guestName: roomGuests[0].name,
             allGuests: roomGuests,
-            primaryGuestId: roomGuests.find(guest => guest.isPrimary)?.id || roomGuests[0].id,
+            primaryGuestId: primaryGuestId,
             serviceAmount: roomSvc,
             extraServiceAmount: extraSvc,
             roomChargeAmount: roomChargeTotal,
@@ -421,7 +456,8 @@ const servicesList = computed(() => {
       invoiceCode: s.invoice_code || '',
       vatNo: s.vat_no || '',
       accounting: s.accounting || 'Đã ghi',
-      userName: s.created_by || s.user_name || 'Admin'
+      userName: s.created_by || s.user_name || 'Admin',
+      guestId: (s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1) ? String(s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1) : null,
     }
   }
 
@@ -463,7 +499,7 @@ const servicesList = computed(() => {
     const guestId = selectedGuestId.value || room.primaryGuestId
     ;(room.rawRoom?.services || []).forEach((service, idx) => {
       const roomCharge = isRoomCharge(service)
-      const belongsToGuest = roomCharge || !service.guest_id || String(service.guest_id) === String(guestId)
+      const belongsToGuest = String(service.guest_id || room.primaryGuestId) === String(guestId)
       if ((!masterSend || !roomCharge) && belongsToGuest) {
         services.push(processServiceItem(withServiceBillTime(room.rawRoom, service), `${room.id}-${idx}`, `Phòng ${room.roomNumber}`, room.roomNumber))
       }
@@ -1600,8 +1636,8 @@ onUnmounted(() => {
                           class="p-1 border-r border-gray-300 text-slate-900"
                           :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
                         >{{ guest.name }}</td>
-                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ gIdx === 0 ? formatSummaryMoney(r.serviceAmount) : '0' }}</td>
-                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ gIdx === 0 ? formatMoney(r.paidAmount) : '0' }}</td>
+                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatSummaryMoney(guest.serviceAmount || 0) }}</td>
+                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatMoney(guest.paidAmount || 0) }}</td>
                       </tr>
                     </template>
                     <template v-else>
