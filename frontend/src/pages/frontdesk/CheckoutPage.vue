@@ -251,7 +251,6 @@ const loadCheckoutBookings = async () => {
           }
 
           const roomChargeTotal = postedRoomCharge + baseRoomCharge
-
           const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
           const roomDepositTotal = (b.payments || [])
             .filter(payment => (
@@ -261,6 +260,11 @@ const loadCheckoutBookings = async () => {
               && String(payment.booking_room_id) === String(r.id)
             ))
             .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+
+          // Tính tổng cọc/thanh toán riêng cho từng phòng
+          const roomPaidAmount = (b.payments || [])
+            .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at && String(p.booking_room_id) === String(r.id))
+            .reduce((sum, p) => sum + Number(p.amount || 0), 0)
 
           roomItems.push({
             id: `R${r.id || b.id}`,
@@ -273,7 +277,7 @@ const loadCheckoutBookings = async () => {
             serviceAmount: roomSvc,
             extraServiceAmount: extraSvc,
             roomChargeAmount: roomChargeTotal,
-            paidAmount: roomDepositTotal,
+            paidAmount: roomPaidAmount,
             checked: false,
             rawRoom: r
           })
@@ -291,6 +295,11 @@ const loadCheckoutBookings = async () => {
         .filter(payment => payment.pack2 === 'DPR' && Number(payment.edit_flag) === 0 && !payment.deleted_at && !payment.booking_room_id)
         .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
 
+      // Master Header: Tổng toàn bộ tiền cọc/thanh toán của cả đoàn (cả cọc chung lẫn cọc riêng từng phòng)
+      const masterPaidAmount = (b.payments || [])
+        .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at)
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
       formatted.push({
         id: `B${b.id}`,
         bookingId: b.id,
@@ -300,7 +309,7 @@ const loadCheckoutBookings = async () => {
         totalService: masterSend
           ? roomItems.reduce((total, room) => total + room.roomChargeAmount + room.extraServiceAmount, 0) + masterServiceTotal
           : masterServiceTotal,
-        paidAmount: masterDepositTotal,
+        paidAmount: masterPaidAmount,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
         note: b.note || '',
@@ -472,35 +481,16 @@ const servicesList = computed(() => {
     }
   }
 
-  if (selectedRoomItem.value && selectedRoomItem.value.rawRoom) {
-    const rawR = selectedRoomItem.value.rawRoom
-    const roomNo = selectedRoomItem.value.roomNumber
-    if (rawR.services && Array.isArray(rawR.services)) {
-      rawR.services.forEach((s, idx) => {
-        const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
-        const masterSend = selectedBooking.value.rawBooking?.is_master_room_rate !== undefined
-          ? Boolean(selectedBooking.value.rawBooking.is_master_room_rate)
-          : true
-        const belongsToSelectedGuest = isRM || (
-          s.guest_id
-            ? String(s.guest_id) === String(selectedGuestId.value)
-            : String(selectedRoomItem.value?.primaryGuestId) === String(selectedGuestId.value)
-        )
-        if ((!masterSend || !isRM) && belongsToSelectedGuest) {
-          services.push(processServiceItem(withServiceBillTime(rawR, s), idx, 'Phát sinh dịch vụ phòng', roomNo))
-        }
-      })
-    }
-    const masterSend = selectedBooking.value.rawBooking?.is_master_room_rate !== undefined
-      ? Boolean(selectedBooking.value.rawBooking.is_master_room_rate)
-      : true
-    if (!masterSend) {
-      addRoomChargeIfMissing(rawR, services)
-    }
-  } else if (selectedBooking.value) {
+  // Nếu chọn phòng lẻ -> Ẩn danh sách dịch vụ góc dưới bên trái (trả về rỗng theo yêu cầu)
+  if (selectedRoomItem.value) {
+    return []
+  }
+
+  // Khi chọn Phiếu Tổng (GAL1 / Master Booking): Tập hợp TOÀN BỘ dịch vụ + tiền phòng của tất cả các phòng
+  if (selectedBooking.value) {
     const rawB = selectedBooking.value.rawBooking
 
-    // 1. Dịch vụ post trực tiếp cho Master Booking Header (chỉ lấy bill trực tiếp cho Master, không có RentalRoomId1)
+    // 1. Dịch vụ post trực tiếp cho Master Booking Header
     const masterBills = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
       ? rawB.master_service_bills.filter(sb => !sb.RentalRoomId1)
       : (rawB?.service_bills ? rawB.service_bills.filter(sb => !sb.RentalRoomId1) : [])
@@ -510,22 +500,15 @@ const servicesList = computed(() => {
       services.push(processServiceBillRecord(sb, `master-${idx}`))
     })
 
-    // 2. Chỉ hiển thị Tiền phòng (RM) từ các phòng thuộc đoàn nếu bật gộp tiền phòng (is_master_room_rate)
-    const masterSend = rawB?.is_master_room_rate !== undefined
-      ? Boolean(rawB.is_master_room_rate)
-      : true
-
-    if (masterSend && selectedBooking.value.roomItems) {
+    // 2. Tập hợp tất cả dịch vụ + tiền phòng từ từng phòng thuộc đoàn vào Phiếu Tổng
+    if (selectedBooking.value.roomItems) {
       selectedBooking.value.roomItems.forEach(rItem => {
         const rawR = rItem.rawRoom
         const roomNo = rItem.roomNumber
         if (rawR) {
           if (rawR.services && Array.isArray(rawR.services)) {
             rawR.services.forEach((s, idx) => {
-              const isRM = s.service_code === 'RM' || s.service_code === 'RMS' || (s.service_name && s.service_name.includes('Tiền phòng'))
-              if (isRM) {
-                services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
-              }
+              services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
             })
           }
           addRoomChargeIfMissing(rawR, services)
@@ -1100,19 +1083,32 @@ const totalServiceAmount = computed(() => {
   return visibleServices.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
 })
 
+const isSubGuestSelected = computed(() => {
+  if (!showAllGuestsInRoom.value || !selectedRoomItem.value || !selectedRoomItem.value.allGuests || selectedRoomItem.value.allGuests.length <= 1) {
+    return false
+  }
+  const firstGuestId = selectedRoomItem.value.allGuests[0]?.id
+  return String(selectedGuestId.value) !== String(firstGuestId)
+})
+
 const paymentsList = computed(() => {
-  if (!selectedBooking.value) return []
+  if (!selectedBooking.value || isSubGuestSelected.value) return []
 
   const payments = []
   const rawB = selectedBooking.value.rawBooking
+  const currentRoomId = selectedRoomItem.value?.roomId || selectedRoomItem.value?.rawRoom?.id || null
 
   if (rawB && rawB.payments && Array.isArray(rawB.payments) && rawB.payments.length > 0) {
-    rawB.payments.forEach((p, idx) => {
-      const isActiveDeposit = p.pack2 === 'DPR' && Number(p.edit_flag) === 0 && !p.deleted_at
-      const belongsToSelection = selectedRoomItem.value
-        ? String(p.booking_room_id) === String(selectedRoomItem.value.roomId)
-        : !p.booking_room_id
-      if (!isActiveDeposit || !belongsToSelection) return
+    const filteredPayments = rawB.payments.filter(p => {
+      if (!p || p.deleted_at || (p.edit_flag !== undefined && Number(p.edit_flag) !== 0)) return false
+      // Nếu chọn dòng Phiếu Tổng (không chọn phòng lẻ): hiển thị tất cả cọc của booking
+      if (!currentRoomId) return true
+      // Nếu chọn phòng lẻ: hiển thị cọc chung (không có booking_room_id) VÀ cọc riêng của đúng phòng này
+      if (!p.booking_room_id) return true
+      return String(p.booking_room_id) === String(currentRoomId)
+    })
+
+    filteredPayments.forEach((p, idx) => {
       payments.push({
         id: p.id || `P${idx}`,
         dateTime: formatServiceDateTime(p.date || p.payment_date || p.created_at || new Date(), p.created_at, p.open_time || p.openTime),
@@ -1610,7 +1606,7 @@ onUnmounted(() => {
                           :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
                         >{{ guest.name }}</td>
                         <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ gIdx === 0 ? formatSummaryMoney(r.serviceAmount) : '0' }}</td>
-                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatMoney(r.paidAmount) }}</td>
+                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ gIdx === 0 ? formatMoney(r.paidAmount) : '0' }}</td>
                       </tr>
                     </template>
                     <template v-else>
