@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   Plus,
   PlusSquare,
@@ -27,6 +28,8 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
+const route = useRoute()
+const router = useRouter()
 
 // Sidebar collapse state
 const isSidebarCollapsed = ref(false)
@@ -208,6 +211,7 @@ const loadCheckoutBookings = async () => {
       if (b.booking_rooms && b.booking_rooms.length > 0) {
         b.booking_rooms.forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
+          if (!roomNo || ![0, 1].includes(Number(r.status))) return
           
           const roomGuests = []
           if (r.guest_name && r.guest_name.trim()) {
@@ -239,7 +243,6 @@ const loadCheckoutBookings = async () => {
           }
 
           let postedRoomCharge = 0
-          let hasBaseRM = false
 
           if (r.services && r.services.length > 0) {
             r.services.forEach(s => {
@@ -248,21 +251,11 @@ const loadCheckoutBookings = async () => {
               if (isRM || isRMS) {
                 const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * Number(s.rate || 0))
                 postedRoomCharge += itemTotal
-                if (isRM) hasBaseRM = true
               }
             })
           }
 
-          let baseRoomCharge = 0
-          if (!hasBaseRM) {
-            const roomRateVal = Number(r.room_rate) || Number(r.price) || Number(r.rate) || 0
-            if (roomRateVal > 0) {
-              const qtyDays = Number(r.ActutalNumOfDays) || 1
-              baseRoomCharge = Number(r.total_amount) || (roomRateVal * qtyDays)
-            }
-          }
-
-          const roomChargeTotal = postedRoomCharge + baseRoomCharge
+          const roomChargeTotal = postedRoomCharge
           const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
           const roomDepositTotal = (b.payments || [])
             .filter(payment => (
@@ -428,37 +421,6 @@ const servicesList = computed(() => {
       vatNo: s.vat_no || '',
       accounting: s.accounting || 'Đã ghi',
       userName: s.created_by || s.user_name || 'Admin'
-    }
-  }
-
-  const addRoomChargeIfMissing = (rawR, targetArray) => {
-    const hasRoomCharge = rawR.services && rawR.services.some(s => (s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))))
-    if (!hasRoomCharge) {
-      const rateVal = Number(rawR.room_rate) || Number(rawR.price) || Number(rawR.rate) || 0
-      if (rateVal > 0) {
-        const qtyVal = Number(rawR.ActutalNumOfDays) || 1
-        const totalVal = Number(rawR.total_amount) || (rateVal * qtyVal)
-        targetArray.unshift({
-          id: `RM-${rawR.id}`,
-          dateTime: formatServiceDateTime(rawR.arrival_date || selectedBooking.value?.arrivalDate || new Date(), rawR.created_at, rawR.open_time),
-          serviceCode: 'RM',
-          serviceName: 'Tiền phòng',
-          description: `Dịch vụ phòng nghỉ ${rawR.room_number || ''}`,
-          department: 'FO',
-          amount: rateVal,
-          quantity: qtyVal,
-          totalAmount: totalVal,
-          unit: 'Đêm',
-          paymentCode: '',
-          folio: 1,
-          tax: 0,
-          serviceCharge: 0,
-          invoiceCode: '',
-          vatNo: '',
-          accounting: 'Đã ghi',
-          userName: 'System'
-        })
-      }
     }
   }
 
@@ -1285,16 +1247,39 @@ const selectBookingFromSearch = (b, r = null, specificGuest = null) => {
   showSearchDropdown.value = false
 }
 
+const openRegistrationFromCheckout = () => {
+  if (!selectedBooking.value?.code) {
+    uiStore.showToast('Vui lòng chọn đăng ký trước.', 'warning')
+    return
+  }
+  router.push({ path: '/frontdesk', query: { tab: 'create-res', bookingCode: selectedBooking.value.code } })
+}
+
+const selectCheckoutBookingFromRoute = () => {
+  const bookingCode = String(route.query.bookingCode || '').trim()
+  if (!bookingCode) return
+  const booking = allBookingsList.value.find(item => (
+    String(item.code) === bookingCode || String(item.bookingId) === bookingCode
+  ))
+  if (booking) selectBookingFromSearch(booking)
+}
+
 const handleClickOutside = (e) => {
   if (searchContainerRef.value && !searchContainerRef.value.contains(e.target)) {
     showSearchDropdown.value = false
   }
 }
 
-onMounted(() => {
-  loadSystemDate()
-  loadCheckoutBookings()
+onMounted(async () => {
+  await loadSystemDate()
+  await loadCheckoutBookings()
+  selectCheckoutBookingFromRoute()
   document.addEventListener('click', handleClickOutside)
+})
+
+watch(() => route.query.bookingCode, async () => {
+  await loadCheckoutBookings()
+  selectCheckoutBookingFromRoute()
 })
 
 onUnmounted(() => {
@@ -1694,7 +1679,7 @@ onUnmounted(() => {
                 <button class="bg-[#38bdf8] hover:bg-sky-500 text-white px-2 py-0.5 rounded flex items-center gap-1 text-xs font-medium shadow-xs transition-colors">
                   <span>HĐ chữ ký điện tử</span>
                 </button>
-                <button class="p-0.5 hover:bg-gray-100 rounded text-gray-500 border border-gray-300">
+                <button @click="openRegistrationFromCheckout" :disabled="!selectedBooking" class="p-0.5 hover:bg-gray-100 rounded text-gray-500 border border-gray-300 disabled:cursor-not-allowed disabled:opacity-40">
                   <RefreshCw class="w-3.5 h-3.5" />
                 </button>
               </div>

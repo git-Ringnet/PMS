@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -61,6 +61,7 @@ import {
 } from '@/services/booking-service'
 
 const route = useRoute()
+const router = useRouter()
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -3095,7 +3096,12 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Thông tin khách hàng') {
     openGuestInfoModal()
   } else if (actionName === 'Hóa đơn' || actionName === 'Hoá đơn') {
-    uiStore.showToast('Đang tiến hành tạo hóa đơn...', 'success')
+    const tab = activeTab.value
+    if (!tab?.dbId) {
+      uiStore.showToast('Vui lòng lưu đăng ký trước khi mở hóa đơn.', 'warning')
+      return
+    }
+    router.push({ path: '/frontdesk', query: { tab: 'checkout', bookingCode: tab.id } })
   } else if (actionName === 'Nhân bản') {
     openCopyModal()
   } else if (actionName === 'GIAO PHÒNG') {
