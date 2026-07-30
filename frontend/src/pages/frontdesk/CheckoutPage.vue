@@ -23,7 +23,7 @@ import {
   Inbox,
   ArrowRightLeft
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -94,6 +94,7 @@ const allBookingsList = ref([])
 const displayedBookingsList = ref([])
 const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
+const systemDate = ref('')
 
 const addServiceBookingInfo = computed(() => {
   if (selectedRoomItem.value) {
@@ -171,6 +172,17 @@ function formatInvoiceQuantity(num) {
   return new Intl.NumberFormat('vi-VN', {
     maximumFractionDigits: 6
   }).format(value)
+}
+
+const loadSystemDate = async () => {
+  try {
+    const res = await fetchSystemDate()
+    if (res.data?.data?.system_date) {
+      systemDate.value = res.data.data.system_date
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải ngày hệ thống:', err)
+  }
 }
 
 const loadCheckoutBookings = async () => {
@@ -288,9 +300,9 @@ const loadCheckoutBookings = async () => {
         .filter(payment => payment.pack2 === 'DPR' && Number(payment.edit_flag) === 0 && !payment.deleted_at && !payment.booking_room_id)
         .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
 
-      // Master Header: Tổng toàn bộ tiền cọc/thanh toán của cả đoàn (cả cọc chung lẫn cọc riêng từng phòng)
+      // Master Header: Chỉ tính cọc chung (không có booking_room_id)
       const masterPaidAmount = (b.payments || [])
-        .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at)
+        .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at && !p.booking_room_id)
         .reduce((sum, p) => sum + Number(p.amount || 0), 0)
 
       formatted.push({
@@ -300,7 +312,7 @@ const loadCheckoutBookings = async () => {
         name: mainGuestName, // Tên nhóm / Tên booking
         // Master chỉ đại diện booking; cộng dồn toàn bộ tiền phòng + dịch vụ lẻ của từng phòng + master direct bills
         totalService: masterSend
-          ? roomItems.reduce((total, room) => total + room.roomChargeAmount + room.extraServiceAmount, 0) + masterServiceTotal
+          ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0) + masterServiceTotal
           : masterServiceTotal,
         paidAmount: masterPaidAmount,
         arrivalDate: b.arrival_date || '',
@@ -443,14 +455,36 @@ const servicesList = computed(() => {
     }
   }
 
-  // Nếu chọn phòng lẻ -> Ẩn danh sách dịch vụ góc dưới bên trái (trả về rỗng theo yêu cầu)
+  // Nếu chọn phòng lẻ: chỉ hiển thị dịch vụ của đúng phòng lẻ đó
   if (selectedRoomItem.value) {
-    return []
+    const rItem = selectedRoomItem.value
+    const rawR = rItem.rawRoom
+    const roomNo = rItem.roomNumber
+    const rawB = selectedBooking.value?.rawBooking
+    const masterSend = rawB?.is_master_room_rate !== undefined ? Boolean(rawB.is_master_room_rate) : true
+
+    if (rawR) {
+      if (rawR.services && Array.isArray(rawR.services)) {
+        rawR.services.forEach((s, idx) => {
+          const processed = processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo)
+          // Nếu masterSend = true, ẩn tiền phòng (RM) ở phòng lẻ vì đã gom lên Phiếu tổng
+          if (masterSend && (processed.serviceCode === 'RM' || processed.serviceCode === 'RMS')) {
+            return
+          }
+          services.push(processed)
+        })
+      }
+      if (!masterSend) {
+        addRoomChargeIfMissing(rawR, services)
+      }
+    }
+    return services
   }
 
-  // Khi chọn Phiếu Tổng (GAL1 / Master Booking): Tập hợp TOÀN BỘ dịch vụ + tiền phòng của tất cả các phòng
+  // Khi chọn Phiếu Tổng (GAL1 / Master Booking): chỉ gom các dịch vụ/tiền phòng được thiết lập chuyển lên phiếu tổng
   if (selectedBooking.value) {
     const rawB = selectedBooking.value.rawBooking
+    const masterSend = rawB?.is_master_room_rate !== undefined ? Boolean(rawB.is_master_room_rate) : true
 
     // 1. Dịch vụ post trực tiếp cho Master Booking Header
     const masterBills = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
@@ -462,7 +496,8 @@ const servicesList = computed(() => {
       services.push(processServiceBillRecord(sb, `master-${idx}`))
     })
 
-    // 2. Tập hợp tất cả dịch vụ + tiền phòng từ từng phòng thuộc đoàn vào Phiếu Tổng
+    // 2. Nếu masterSend = true, chỉ gom tiền phòng (RM) từ từng phòng vào Phiếu Tổng.
+    // Dịch vụ khác (ngoài RM/RMS) vẫn giữ ở phòng lẻ, không hiển thị ở phiếu tổng.
     if (selectedBooking.value.roomItems) {
       selectedBooking.value.roomItems.forEach(rItem => {
         const rawR = rItem.rawRoom
@@ -470,8 +505,15 @@ const servicesList = computed(() => {
         if (rawR) {
           if (rawR.services && Array.isArray(rawR.services)) {
             rawR.services.forEach((s, idx) => {
-              services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
+              const processed = processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo)
+              // Chỉ gom tiền phòng (RM/RMS) lên Phiếu Tổng nếu masterSend = true
+              if (masterSend && (processed.serviceCode === 'RM' || processed.serviceCode === 'RMS')) {
+                services.push(processed)
+              }
             })
+          }
+          if (masterSend) {
+            addRoomChargeIfMissing(rawR, services)
           }
         }
       })
@@ -1062,8 +1104,8 @@ const paymentsList = computed(() => {
   if (rawB && rawB.payments && Array.isArray(rawB.payments) && rawB.payments.length > 0) {
     const filteredPayments = rawB.payments.filter(p => {
       if (!p || p.deleted_at || (p.edit_flag !== undefined && Number(p.edit_flag) !== 0)) return false
-      // Nếu chọn dòng Phiếu Tổng (không chọn phòng lẻ): hiển thị tất cả cọc của booking
-      if (!currentRoomId) return true
+      // Nếu chọn dòng Phiếu Tổng (không chọn phòng lẻ): chỉ hiển thị cọc chung (không có booking_room_id)
+      if (!currentRoomId) return !p.booking_room_id
       // Nếu chọn phòng lẻ: hiển thị cọc chung (không có booking_room_id) VÀ cọc riêng của đúng phòng này
       if (!p.booking_room_id) return true
       return String(p.booking_room_id) === String(currentRoomId)
@@ -1229,6 +1271,7 @@ const handleClickOutside = (e) => {
 }
 
 onMounted(async () => {
+  await loadSystemDate()
   await loadCheckoutBookings()
   selectCheckoutBookingFromRoute()
   document.addEventListener('click', handleClickOutside)
@@ -2043,6 +2086,7 @@ onUnmounted(() => {
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
       :roomAdjustment="roomAdjustment"
+      :systemDate="systemDate"
       @close="showAddServiceModal = false; roomAdjustment = null" 
       @success="handleServiceAdded"
     />
