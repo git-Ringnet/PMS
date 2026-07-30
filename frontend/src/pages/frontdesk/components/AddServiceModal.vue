@@ -14,6 +14,7 @@ const props = defineProps({
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
   roomRate:      { type: Number, default: 0 },
   roomAdjustment: { type: Object, default: null },
+  systemDate:    { type: String, default: '' },
 })
 
 const emit = defineEmits(['close', 'success'])
@@ -46,8 +47,8 @@ function openDatePicker(e) {
 // ─────────────────────────────────────────────
 // TAB 1 — DỊCH VỤ
 // ─────────────────────────────────────────────
-const serviceFrom     = ref(todayYmd())
-const serviceTo       = ref(todayYmd())
+const serviceFrom     = ref(props.systemDate || todayYmd())
+const serviceTo       = ref(props.systemDate || todayYmd())
 const folio           = ref(1)
 const currency        = ref('VND')
 const selectedService = ref(null)
@@ -101,8 +102,8 @@ const totalPrice = computed(() => {
 // ─────────────────────────────────────────────
 // TAB 2 — TIỀN PHÒNG
 // ─────────────────────────────────────────────
-const roomFrom        = ref(todayYmd())
-const roomTo          = ref(todayYmd())
+const roomFrom        = ref(props.systemDate || todayYmd())
+const roomTo          = ref(props.systemDate || todayYmd())
 const roomFolio       = ref(1)
 const roomCurrency    = ref('VND')
 const roomDescription = ref('Dịch vụ phòng nghỉ')
@@ -159,23 +160,24 @@ onMounted(() => {
 
 watch(() => props.show, (v) => {
   if (v) {
+    const initialDate = props.systemDate || todayYmd()
     errorMsg.value = ''
     activeTab.value = 'service'
-    serviceFrom.value = todayYmd()
-    serviceTo.value   = todayYmd()
+    serviceFrom.value = initialDate
+    serviceTo.value   = initialDate
     folio.value       = 1
     selectedService.value = null
     quantity.value    = 1
     unitPrice.value   = 0
     description.value = ''
-    roomFrom.value    = todayYmd()
-    roomTo.value      = todayYmd()
+    roomFrom.value    = initialDate
+    roomTo.value      = initialDate
     roomUpdateMode.value  = false
     roomSurcharge.value   = false
     customRoomRate.value  = 0
     if (props.roomAdjustment) {
       const adjustment = props.roomAdjustment
-      const date = String(adjustment.serviceDate || todayYmd()).slice(0, 10)
+      const date = String(adjustment.serviceDate || initialDate).slice(0, 10)
       activeTab.value = 'room'
       roomFrom.value = date
       roomTo.value = date
