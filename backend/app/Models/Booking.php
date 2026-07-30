@@ -172,4 +172,9 @@ class Booking extends Model
     {
         return $this->hasMany(Payment::class);
     }
+
+    public function serviceBills()
+    {
+        return $this->hasMany(ServiceBill::class, 'RegisterId1', 'id');
+    }
 }

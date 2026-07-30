@@ -21,13 +21,33 @@
         <!-- SCROLLABLE CONTENT -->
         <div class="overflow-y-auto p-4 bg-white flex flex-col space-y-3 shrink-0">
             
-            <div class="w-1/2 pr-2">
-                <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Tên đăng ký</label>
-                <div class="relative">
-                    <select disabled class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-medium bg-slate-50 text-slate-800 appearance-none focus:outline-none shadow-sm cursor-not-allowed">
-                        <option>{{ bookingName || 'Chưa có tên' }}</option>
-                    </select>
-                    <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Tên đăng ký</label>
+                    <div class="relative">
+                        <select disabled class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-medium bg-slate-50 text-slate-800 appearance-none focus:outline-none shadow-sm cursor-not-allowed">
+                            <option>{{ bookingName || 'Chưa có tên' }}</option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Phòng (Đặt cọc riêng cho phòng)</label>
+                    <div class="relative">
+                        <select 
+                          v-model="depositForm.bookingRoomId"
+                          @change="handleRoomChange"
+                          :disabled="!!depositForm.id"
+                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': !!depositForm.id }"
+                          class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-medium bg-blue-50/70 text-slate-800 appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
+                        >
+                            <option :value="null">-- Đặt cọc cho toàn bộ phiếu đăng ký --</option>
+                            <option v-for="r in availableRooms" :key="getBookingRoomId(r)" :value="getBookingRoomId(r)">
+                                Phòng {{ r.room_number || r.roomNumber || r.room?.room_number || r.id }}
+                            </option>
+                        </select>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+                    </div>
                 </div>
             </div>
 
@@ -139,7 +159,7 @@
             
             <div class="flex justify-between items-end mb-1.5 shrink-0">
                 <h3 class="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center">
-                    Danh sách đặt cọc <span class="text-rose-500 ml-1">*</span>
+                    Danh sách đặt cọc <span v-if="selectedRoomNumber" class="text-blue-600 font-bold ml-1.5 normal-case">(Phòng {{ selectedRoomNumber }})</span> <span class="text-rose-500 ml-1">*</span>
                 </h3>
                 
                 <div class="flex items-center space-x-3">
@@ -203,7 +223,12 @@
                             <td class="p-2 font-medium text-slate-800 align-middle">{{ dep.date }}</td>
                             <td class="p-2 text-slate-600 align-middle">{{ dep.time }}</td>
                             <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.id === dep.paymentMethodId)?.name || 'BT' }}</td>
-                            <td class="p-2 text-slate-600 align-middle">{{ dep.note }}</td>
+                            <td class="p-2 text-slate-600 align-middle">
+                                <span v-if="dep.roomNumber" class="inline-block bg-blue-50 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-200 mr-1.5">
+                                    Phòng {{ dep.roomNumber }}
+                                </span>
+                                <span>{{ dep.note }}</span>
+                            </td>
                             <td class="p-2 text-right font-mono font-semibold align-middle" :class="dep.amount < 0 ? 'text-rose-600' : 'text-slate-900'">{{ dep.amount.toLocaleString('en-US') }}</td>
                             <td class="p-2 text-center text-slate-500 align-middle">{{ dep.currency }}</td>
                             <td class="p-2 text-slate-700 font-medium align-middle">{{ dep.recipient }}</td>
@@ -532,7 +557,8 @@ const props = defineProps({
   departmentId: { type: String, default: 'MR' },
   paymentMethods: Array,
   currenciesList: Array,
-  deposits: Array
+  deposits: Array,
+  rooms: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['update:show', 'update:deposits', 'update:paymentValue'])
@@ -696,16 +722,52 @@ const filteredPaymentMethods = computed(() => {
   })
 })
 
-// Hiển thị danh sách cọc: nếu showDeleted = true -> hiển thị tất cả các dòng (cả cọc gốc dương & đối trừ âm)
-const visibleDeposits = computed(() => {
-  if (showDeleted.value) {
-    return localDeposits.value
+function getBookingRoomId(r) {
+  if (!r) return null
+  if (r.booking_room_id) return r.booking_room_id
+  if (r.bookingRoomId) return r.bookingRoomId
+  if (r.dbId) return r.dbId
+  if (r.roomId) return r.roomId
+  if (r.rawRoom && r.rawRoom.id) return r.rawRoom.id
+  if (r.rawRoom && r.rawRoom.booking_room_id) return r.rawRoom.booking_room_id
+  if (r.id !== undefined && r.id !== null) {
+    const sId = String(r.id)
+    if (sId.startsWith('R') && sId.length > 1) {
+      return sId.substring(1)
+    }
+    return r.id
   }
-  return localDeposits.value.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
+  return null
+}
+
+// Danh sách các phòng khả dụng để chọn cọc riêng
+const availableRooms = computed(() => {
+  if (!props.rooms || !Array.isArray(props.rooms)) return []
+  return props.rooms
+})
+
+// Lấy số phòng đang chọn (nếu có)
+const selectedRoomNumber = computed(() => {
+  if (!depositForm.value.bookingRoomId) return null
+  const targetRoom = availableRooms.value.find(r => String(getBookingRoomId(r)) === String(depositForm.value.bookingRoomId))
+  return targetRoom ? (targetRoom.room_number || targetRoom.roomNumber || targetRoom.room?.room_number || targetRoom.id) : null
+})
+
+// Hiển thị danh sách cọc: lọc theo phòng được chọn (nếu chọn phòng cụ thể) và trạng thái hiển thị xóa
+const visibleDeposits = computed(() => {
+  let list = localDeposits.value
+  if (!showDeleted.value) {
+    list = list.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
+  }
+  if (depositForm.value.bookingRoomId) {
+    list = list.filter(dep => String(dep.bookingRoomId) === String(depositForm.value.bookingRoomId))
+  }
+  return list
 })
 
 const depositForm = ref({
   id: null,
+  bookingRoomId: null,
   amount: 0,
   paymentMethodId: null,
   bankAccountId: 'Tài khoản ngân hàng',
@@ -715,14 +777,29 @@ const depositForm = ref({
   image: null
 })
 
-function handlePaymentMethodChange() {
-  const newPmId = depositForm.value.paymentMethodId
-  if (newPmId) {
-    const pm = (props.paymentMethods || []).find(x => x.code === newPmId || String(x.id) === String(newPmId))
-    if (pm) {
-      depositForm.value.note = `Deposit (${pm.name})`
+function updateAutoNote() {
+  if (depositForm.value.id) return
+  const pmId = depositForm.value.paymentMethodId
+  const pm = (props.paymentMethods || []).find(x => x.code === pmId || String(x.id) === String(pmId))
+  const pmName = pm ? pm.name : ''
+  
+  let roomTag = ''
+  if (depositForm.value.bookingRoomId) {
+    const targetRoom = availableRooms.value.find(r => String(getBookingRoomId(r)) === String(depositForm.value.bookingRoomId))
+    if (targetRoom) {
+      const rNo = targetRoom.room_number || targetRoom.roomNumber || targetRoom.room?.room_number
+      if (rNo) roomTag = ` - Phòng ${rNo}`
     }
   }
+  depositForm.value.note = `Deposit (${pmName || 'Tiền mặt'})${roomTag}`
+}
+
+function handlePaymentMethodChange() {
+  updateAutoNote()
+}
+
+function handleRoomChange() {
+  updateAutoNote()
 }
 
 // Auto-fill note based on payment method selection
@@ -759,6 +836,7 @@ function resetForm() {
 
   depositForm.value = {
     id: null,
+    bookingRoomId: null,
     amount: 0,
     paymentMethodId: defaultPmId,
     bankAccountId: 'Tài khoản ngân hàng',
@@ -795,6 +873,8 @@ async function syncDepositsFromBackend() {
       date: p.date ? parseApiDate(p.date).split('-').reverse().join('/') : '',
       time: p.open_time ? p.open_time.substring(0, 5) : '',
       paymentMethodId: p.payment_method_id,
+      bookingRoomId: p.booking_room_id || null,
+      roomNumber: p.booking_room?.room_number || p.booking_room?.room?.room_number || null,
       note: p.description || '',
       amount: Number(p.amount) || 0,
       currency: activeCurrency.value.code || 'VND',
@@ -874,6 +954,9 @@ async function addDeposit() {
       formData.append('date', depositForm.value.date)
       formData.append('amount', Number(depositForm.value.amount))
       formData.append('payment_method_id', depositForm.value.paymentMethodId)
+      if (depositForm.value.bookingRoomId) {
+        formData.append('booking_room_id', depositForm.value.bookingRoomId)
+      }
       formData.append('description', depositForm.value.note)
       formData.append('debit_account', depositForm.value.bankAccountId || 'Tài khoản ngân hàng')
       formData.append('department_id', props.departmentId || 'MR')
@@ -888,11 +971,21 @@ async function addDeposit() {
       const now = new Date()
       const timeStr = now.toTimeString().split(' ')[0].substring(0, 5)
       
+      let rNo = null
+      if (depositForm.value.bookingRoomId) {
+        const targetRoom = availableRooms.value.find(r => String(getBookingRoomId(r)) === String(depositForm.value.bookingRoomId))
+        if (targetRoom) {
+          rNo = targetRoom.room_number || targetRoom.roomNumber || targetRoom.room?.room_number
+        }
+      }
+
       const newDep = {
         id: Date.now(),
         date: depositForm.value.date.split('-').reverse().join('/'),
         time: timeStr,
         paymentMethodId: depositForm.value.paymentMethodId,
+        bookingRoomId: depositForm.value.bookingRoomId || null,
+        roomNumber: rNo,
         note: depositForm.value.note,
         amount: Number(depositForm.value.amount),
         currency: activeCurrency.value.code || 'VND',
@@ -938,6 +1031,7 @@ function editDeposit() {
     }
     depositForm.value = {
       id: dep.id,
+      bookingRoomId: dep.bookingRoomId || null,
       amount: dep.amount,
       paymentMethodId: dep.paymentMethodId,
       bankAccountId: dep.bankAccountId || 'Tài khoản ngân hàng',
@@ -974,6 +1068,11 @@ async function saveDeposit() {
       const formData = new FormData()
       formData.append('_method', 'PUT')
       formData.append('payment_method_id', depositForm.value.paymentMethodId)
+      if (depositForm.value.bookingRoomId) {
+        formData.append('booking_room_id', depositForm.value.bookingRoomId)
+      } else {
+        formData.append('booking_room_id', '')
+      }
       formData.append('description', depositForm.value.note)
       formData.append('debit_account', depositForm.value.bankAccountId)
       formData.append('department_id', props.departmentId || 'MR')

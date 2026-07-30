@@ -78,7 +78,7 @@ class PaymentController extends Controller
 
         $payments = Payment::withTrashed()
             ->where('booking_id', $bookingId)
-            ->with('paymentMethod')
+            ->with(['paymentMethod', 'bookingRoom.room'])
             ->orderBy('date')
             ->orderBy('id')
             ->get();
@@ -226,6 +226,7 @@ class PaymentController extends Controller
 
         $request->validate([
             'payment_method_id' => 'sometimes',
+            'booking_room_id'   => 'nullable',
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
             'image'             => 'nullable|file|image|max:4096',
@@ -233,7 +234,7 @@ class PaymentController extends Controller
 
         DB::transaction(function () use ($request, $payment) {
             // Không cho sửa date và amount
-            $data = $request->only(['description', 'debit_account']);
+            $data = $request->only(['description', 'debit_account', 'booking_room_id']);
             if ($request->has('payment_method_id')) {
                 $data['payment_method_id'] = $this->resolvePaymentMethodCode($request->payment_method_id);
             }
