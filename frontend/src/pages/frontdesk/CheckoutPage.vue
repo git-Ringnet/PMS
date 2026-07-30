@@ -607,9 +607,9 @@ const canTransferServiceGroup = (group) => (
 
 const selectedServiceItems = computed(() => servicesList.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
 const selectedServiceGroups = computed(() => serviceGroups.value.filter(group => isServiceGroupSelected(group)))
-const canTransferSelectedServices = computed(() => Boolean(selectedRoomItem.value) && selectedServiceItems.value.length > 0 && selectedServiceItems.value.every(service => service.serviceCode !== 'RM'))
+const canTransferSelectedServices = computed(() => Boolean(selectedRoomItem.value) && selectedServiceItems.value.length > 0)
 const canSplitSelectedServices = computed(() => {
-  if (!canTransferSelectedServices.value) return false
+  if (!canTransferSelectedServices.value || selectedServiceItems.value.some(service => service.serviceCode === 'RM')) return false
   const billIds = selectedServiceItems.value.map(service => service.serviceBillId).filter(Boolean)
   return billIds.length === selectedServiceItems.value.length && new Set(billIds).size === 1
 })

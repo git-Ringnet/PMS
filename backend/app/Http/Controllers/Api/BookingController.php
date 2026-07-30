@@ -334,8 +334,6 @@ class BookingController extends Controller
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
                             ]);
-                            $this->upsertBookingRoomServices($bRoom, $detail);
-
                             // Thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
                             if (empty($roomGuestName)) {
