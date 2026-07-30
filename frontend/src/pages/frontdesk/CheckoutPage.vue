@@ -474,9 +474,6 @@ const servicesList = computed(() => {
           services.push(processed)
         })
       }
-      if (!masterSend) {
-        addRoomChargeIfMissing(rawR, services)
-      }
     }
     return services
   }
@@ -511,9 +508,6 @@ const servicesList = computed(() => {
                 services.push(processed)
               }
             })
-          }
-          if (masterSend) {
-            addRoomChargeIfMissing(rawR, services)
           }
         }
       })
