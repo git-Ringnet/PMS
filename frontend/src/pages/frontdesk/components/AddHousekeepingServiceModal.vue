@@ -15,6 +15,10 @@ const props = defineProps({
   guestId: {
     type: [String, Number],
     default: ''
+  },
+  initialAdjustment: {
+    type: Object,
+    default: null
   }
 })
 
@@ -50,6 +54,7 @@ const handleSuccess = (data) => {
         <PostBillHousekeepingTab
           :initialRoomId="roomId"
           :initialGuestId="guestId"
+          :initialAdjustment="initialAdjustment"
           :isModal="true"
           :department="'HK'"
           @close="handleClose"

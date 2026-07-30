@@ -315,6 +315,10 @@ const props = defineProps({
   department: {
     type: String,
     default: 'HK'
+  },
+  initialAdjustment: {
+    type: Object,
+    default: null
   }
 })
 
@@ -543,6 +547,7 @@ const form = ref({
   roomId: '',
   guestId: '',
   date: new Date().toISOString().split('T')[0],
+  folio: 1,
   surcharge: 0,
   discount: 0,
   isFree: false,
@@ -557,6 +562,37 @@ const cart = ref([])
 const isSending = ref(false)
 
 const productGroup = {}
+
+const adjustmentGroup = (serviceCode) => {
+  const prefix = String(serviceCode || '').toUpperCase().split('_')[0]
+  if (prefix === 'LA' || prefix === 'GIATUI') return 'giatui'
+  if (prefix === 'BR' || prefix === 'DENGBU') return 'dengbu'
+  return 'minibar'
+}
+
+const loadInitialAdjustment = () => {
+  const adjustment = props.initialAdjustment
+  if (!adjustment?.items?.length) return
+
+  form.value.date = String(adjustment.serviceDate || form.value.date).slice(0, 10)
+  form.value.folio = Number(adjustment.folio) || 1
+  form.value.note = adjustment.note || form.value.note
+  cart.value = adjustment.items.map((item, index) => {
+    const productId = `adjustment-${item.id || index}`
+    const product = {
+      id: productId,
+      name: item.serviceName || item.description || 'Dịch vụ buồng phòng',
+      price: Number(item.amount) || (Number(item.totalAmount) / (Number(item.quantity) || 1)) || 0,
+      unit: item.unit || 'Cái',
+      product_code: item.serviceCode || ''
+    }
+    productGroup[productId] = adjustmentGroup(item.serviceCode)
+    return { product, qty: Number(item.quantity) || 1, discPct: 0 }
+  })
+  currentTab.value = adjustmentGroup(adjustment.items[0]?.serviceCode)
+}
+
+watch(() => props.initialAdjustment, loadInitialAdjustment, { immediate: true, deep: true })
 
 const selectedPostingRoom = computed(() => bookingRooms.value.find(room => String(room.id) === String(form.value.roomId)))
 const roomGuestsForPosting = computed(() => selectedPostingRoom.value?.guests || [])
@@ -748,6 +784,7 @@ const sendToRoom = async () => {
       guest_id: form.value.guestId || null,
       department: props.department || 'HK',
       service_date: form.value.date,
+      folio: form.value.folio,
       is_free: form.value.isFree,
       note: form.value.note,
       bills: billsPayload

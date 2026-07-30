@@ -274,6 +274,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
         Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete']);
+        Route::post('/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancel']);
         Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio']);
         Route::get('/quick-transfer-candidates', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransferCandidates']);
         Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer']);
@@ -329,8 +330,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
     Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store']);
     Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update']);
+    Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio']);
     Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
     Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split']);
+    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany']);
     Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
 
     // Availability
