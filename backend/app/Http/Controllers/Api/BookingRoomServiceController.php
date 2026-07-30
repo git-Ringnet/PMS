@@ -215,6 +215,90 @@ class BookingRoomServiceController extends Controller
         ]);
     }
 
+    /**
+     * Hủy bill dịch vụ đã post: giữ audit bằng bill âm, không xóa vật lý bill.
+     */
+    public function cancel(Request $request, $roomId)
+    {
+        $validated = $request->validate([
+            'service_ids' => 'required|array|min:1',
+            'service_ids.*' => 'integer',
+            'reason' => 'required|string|max:255',
+        ]);
+        $room = BookingRoom::findOrFail($roomId);
+
+        DB::transaction(function () use ($validated, $room) {
+            $services = BookingRoomService::where('booking_room_id', $room->id)
+                ->whereIn('id', $validated['service_ids'])
+                ->lockForUpdate()
+                ->get();
+            if ($services->count() !== count(array_unique($validated['service_ids']))) {
+                abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
+            }
+            if ($services->contains(fn (BookingRoomService $service) => $service->service_code === BookingRoomService::CODE_ROOM)) {
+                abort(422, 'Không được xóa dịch vụ tiền phòng.');
+            }
+            if ($services->contains(fn (BookingRoomService $service) => !$service->service_bill_id)) {
+                abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện xóa.');
+            }
+
+            $systemDate = Carbon::parse($this->avService->getSystemDate())->startOfDay();
+            foreach ($services->groupBy('service_bill_id') as $billId => $billServices) {
+                $bill = ServiceBill::whereKey($billId)->lockForUpdate()->firstOrFail();
+                if ($bill->PaymentId !== null || $bill->VatId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) {
+                    abort(422, 'Chỉ được xóa dịch vụ chưa thanh toán và chưa xuất hóa đơn VAT.');
+                }
+
+                $allBillServices = BookingRoomService::where('booking_room_id', $room->id)
+                    ->where('service_bill_id', $bill->Ma)
+                    ->lockForUpdate()
+                    ->get();
+                if ($allBillServices->count() !== $billServices->count()) {
+                    abort(422, 'Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để xóa.');
+                }
+
+                $serviceDate = Carbon::parse($bill->Date ?: $billServices->first()->service_date)->startOfDay();
+                if ($serviceDate->lt($systemDate) && !$this->canOperateOldDay()) {
+                    abort(403, 'Tài khoản không có quyền xóa dịch vụ ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).');
+                }
+
+                $description = trim(($bill->DescriptionServive ?: $bill->ServiceId) . ' (Correct : ' . trim($validated['reason']) . ')');
+                $negative = $bill->replicate();
+                $negative->Amount = -abs((float) $bill->Amount);
+                $negative->DescriptionServive = $description;
+                $negative->Edit = 1;
+                $negative->Status = 3;
+                $negative->Pack1 = (string) $bill->Ma;
+                $negative->UpdatedDate = now();
+                $negative->save();
+
+                $bill->DescriptionServive = $description;
+                $bill->Edit = 1;
+                $bill->Status = 3;
+                $bill->Pack1 = (string) $negative->Ma;
+                $bill->UpdatedDate = now();
+                $bill->save();
+
+                // Giữ bill buồng phòng để audit; bill/chi tiết đã hủy không được hiển thị tại Checkout.
+                $housekeepingBills = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)
+                    ->lockForUpdate()
+                    ->get();
+                foreach ($housekeepingBills as $housekeepingBill) {
+                    $housekeepingBill->Status = 3;
+                    $housekeepingBill->BillEdit = 1;
+                    $housekeepingBill->save();
+                    HousekeepingServiceBillDetail::where('BillId', $housekeepingBill->Ma)
+                        ->update(['Deleted' => 1]);
+                }
+
+                ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
+                $allBillServices->each->delete();
+            }
+        });
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa dịch vụ và tạo dòng đối trừ.']);
+    }
+
     // =========================================
     // GET: Lấy giá Extra Bed mặc định từ hotel_settings (Epic 14)
     // GET /booking-rooms/{roomId}/services/extra-bed-rate
@@ -406,7 +490,6 @@ class BookingRoomServiceController extends Controller
             $services = BookingRoomService::where('booking_room_id', $sourceRoom->id)
                 ->whereIn('id', $request->service_ids)->lockForUpdate()->get();
             if ($services->count() !== count(array_unique($request->service_ids))) abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
-            if ($services->contains(fn ($service) => $service->service_code === BookingRoomService::CODE_ROOM)) abort(422, 'Không được chuyển dịch vụ tiền phòng.');
             if ($services->contains(fn ($service) => !$service->service_bill_id)) abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện chuyển.');
 
             foreach ($services->groupBy('service_bill_id') as $serviceBillId => $billServices) {

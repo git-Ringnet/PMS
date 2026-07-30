@@ -334,8 +334,6 @@ class BookingController extends Controller
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
                             ]);
-                            $this->upsertBookingRoomServices($bRoom, $detail);
-
                             // Thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
                             if (empty($roomGuestName)) {
@@ -430,6 +428,8 @@ class BookingController extends Controller
                             'description'       => $dep['note'] ?? 'Đặt cọc',
                             'amount'            => $dep['amount'],
                             'pack2'             => \App\Models\Payment::PACK2_DEPOSIT,
+                            // Cọc tạo cùng đăng ký luôn là cọc chung của Master tại Folio 1.
+                            'folio_id'          => 1,
                             'payment_method_id' => $dep['paymentMethodId'] ?? $booking->payment_method_id,
                             'status'            => \App\Models\Payment::STATUS_PENDING,
                             'edit_flag'         => 0,
