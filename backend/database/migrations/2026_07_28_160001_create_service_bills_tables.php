@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('Guest', 100);
             $table->string('DepartmentId', 2);
             $table->string('ServiceId', 2);
-            $table->string('DescriptionServive', 400);
+            $table->text('DescriptionServive')->nullable();
             $table->decimal('Quantity', 15, 2)->default(1);
             $table->decimal('Amount', 20, 6)->default(0);
             $table->float('ServiceCharge')->default(0);

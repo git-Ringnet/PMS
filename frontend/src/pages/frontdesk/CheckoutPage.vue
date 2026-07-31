@@ -235,7 +235,7 @@ const loadCheckoutBookings = async () => {
           let extraSvc = 0
           if (r.services && r.services.length > 0) {
             extraSvc = r.services
-              .filter(s => s.service_code !== 'RM' && s.service_code !== 'RMS' && !(s.service_name && s.service_name.includes('Tiền phòng')))
+              .filter(s => !isRoomCharge(s))
               .reduce((acc, s) => {
                 const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * (Number(s.rate) || Number(s.price) || Number(s.amount) || 0))
                 return acc + itemTotal
@@ -243,17 +243,31 @@ const loadCheckoutBookings = async () => {
           }
 
           let postedRoomCharge = 0
+          const processedBillIdsInRoom = new Set()
 
           if (r.services && r.services.length > 0) {
             r.services.forEach(s => {
-              const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
-              const isRMS = s.service_code === 'RMS'
-              if (isRM || isRMS) {
+              if (isRoomCharge(s)) {
+                if (s.service_bill_id) processedBillIdsInRoom.add(String(s.service_bill_id))
                 const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * Number(s.rate || 0))
                 postedRoomCharge += itemTotal
               }
             })
           }
+
+          // Lấy thêm từ master_service_bills / service_bills của booking nếu bill đó gắn với phòng này
+          const allBookingBills = b.master_service_bills || b.service_bills || []
+          allBookingBills.forEach(sb => {
+            if (Number(sb.Edit) === 1 || (sb.Status !== undefined && Number(sb.Status) !== 1)) return
+            if (!isRoomCharge(sb)) return
+            if (sb.Ma && processedBillIdsInRoom.has(String(sb.Ma))) return
+
+            const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(r.id)
+            const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(r.id)
+            if (isCurrentRoomOwner || isOriginalRoomOwner) {
+              postedRoomCharge += Number(sb.Amount) || 0
+            }
+          })
 
           const roomChargeTotal = postedRoomCharge
           const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
@@ -271,6 +285,41 @@ const loadCheckoutBookings = async () => {
             .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at && String(p.booking_room_id) === String(r.id))
             .reduce((sum, p) => sum + Number(p.amount || 0), 0)
 
+          const primaryGuestId = roomGuests.find(guest => guest.isPrimary)?.id || roomGuests[0].id
+          roomGuests.forEach(guest => {
+            let guestSvcTotal = 0
+            if (r.services && r.services.length > 0) {
+              r.services.forEach(s => {
+                const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
+                const isRMS = s.service_code === 'RMS'
+                const isRoomCharge = isRM || isRMS
+                
+                // Tiền phòng gom lên Master nếu masterSend = true
+                if (masterSend && isRoomCharge) return
+                
+                const sGuestId = s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1 || null
+                const belongsToThisGuest = sGuestId ? (String(sGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
+                
+                if (belongsToThisGuest) {
+                  const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * (Number(s.rate) || Number(s.price) || Number(s.amount) || 0))
+                  guestSvcTotal += itemTotal
+                }
+              })
+            }
+            guest.serviceAmount = guestSvcTotal
+
+            const guestPaidTotal = (b.payments || [])
+              .filter(p => {
+                if (p.edit_flag && Number(p.edit_flag) !== 0) return false
+                if (p.deleted_at) return false
+                if (String(p.booking_room_id) !== String(r.id)) return false
+                const pGuestId = p.guest_id || p.guestId || null
+                return pGuestId ? (String(pGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
+              })
+              .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+            guest.paidAmount = guestPaidTotal
+          })
+
           roomItems.push({
             id: `R${r.id || b.id}`,
             roomId: r.id,
@@ -278,7 +327,7 @@ const loadCheckoutBookings = async () => {
             roomNumber: roomNo,
             guestName: roomGuests[0].name,
             allGuests: roomGuests,
-            primaryGuestId: roomGuests.find(guest => guest.isPrimary)?.id || roomGuests[0].id,
+            primaryGuestId: primaryGuestId,
             serviceAmount: roomSvc,
             extraServiceAmount: extraSvc,
             roomChargeAmount: roomChargeTotal,
@@ -290,8 +339,8 @@ const loadCheckoutBookings = async () => {
       }
 
       const masterBills = (b.master_service_bills && b.master_service_bills.length > 0)
-        ? b.master_service_bills.filter(sb => !sb.RentalRoomId1)
-        : (b.service_bills ? b.service_bills.filter(sb => !sb.RentalRoomId1) : [])
+        ? b.master_service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
+        : (b.service_bills ? b.service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') : [])
 
       const masterServiceTotal = masterBills
         .filter(bill => Number(bill.Edit) !== 1 && (bill.Status === undefined || Number(bill.Status) === 1))
@@ -310,10 +359,8 @@ const loadCheckoutBookings = async () => {
         bookingId: b.id,
         code: code,
         name: mainGuestName, // Tên nhóm / Tên booking
-        // Master chỉ đại diện booking; cộng dồn toàn bộ tiền phòng + dịch vụ lẻ của từng phòng + master direct bills
-        totalService: masterSend
-          ? roomItems.reduce((total, room) => total + room.roomChargeAmount, 0) + masterServiceTotal
-          : masterServiceTotal,
+        // Master Header đại diện cho Folio Master: Tổng dịch vụ = masterServiceTotal
+        totalService: masterServiceTotal,
         paidAmount: masterPaidAmount,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
@@ -421,7 +468,8 @@ const servicesList = computed(() => {
       invoiceCode: s.invoice_code || '',
       vatNo: s.vat_no || '',
       accounting: s.accounting || 'Đã ghi',
-      userName: s.created_by || s.user_name || 'Admin'
+      userName: s.created_by || s.user_name || 'Admin',
+      guestId: (s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1) ? String(s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1) : null,
     }
   }
 
@@ -434,6 +482,7 @@ const servicesList = computed(() => {
 
     return {
       id: `SB-${sb.Ma || idx}`,
+      serviceBillId: sb.Ma || null,
       serviceDate: sb.Date || sb.CreatedDate || null,
       createdAt: sb.CreatedDate || sb.created_at || null,
       dateTime: formatServiceDateTime(sb.Date || sb.CreatedDate, sb.CreatedDate, sb.OpenTime || sb.CreatedHour),
@@ -459,15 +508,43 @@ const servicesList = computed(() => {
   // Nếu chọn phòng lẻ: chỉ hiển thị dịch vụ của đúng phòng lẻ đó
   if (selectedRoomItem.value) {
     const room = selectedRoomItem.value
+    const rawB = selectedBooking.value?.rawBooking
     const masterSend = isMasterRoomRateEnabled(selectedBooking.value)
     const guestId = selectedGuestId.value || room.primaryGuestId
+    const processedBillIds = new Set()
+
+    const isPrimary = String(guestId) === String(room.primaryGuestId)
+
     ;(room.rawRoom?.services || []).forEach((service, idx) => {
       const roomCharge = isRoomCharge(service)
-      const belongsToGuest = roomCharge || !service.guest_id || String(service.guest_id) === String(guestId)
+      const belongsToGuest = String(service.guest_id || room.primaryGuestId) === String(guestId)
       if ((!masterSend || !roomCharge) && belongsToGuest) {
+        if (service.service_bill_id) processedBillIds.add(String(service.service_bill_id))
         services.push(processServiceItem(withServiceBillTime(room.rawRoom, service), `${room.id}-${idx}`, `Phòng ${room.roomNumber}`, room.roomNumber))
       }
     })
+
+    // Khi không gửi tiền phòng về master (masterSend = false), lấy thêm các bill tiền phòng ServiceBill thuộc về phòng này
+    if (!masterSend && rawB) {
+      const allBills = rawB.master_service_bills || rawB.service_bills || []
+      allBills.forEach((sb, idx) => {
+        if (Number(sb.Edit) === 1 || (sb.Status !== undefined && Number(sb.Status) !== 1)) return
+        if (sb.ServiceId !== 'RM' && sb.ServiceId !== 'RMS') return
+        if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
+
+        const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(room.roomId)
+        const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(room.roomId)
+        const billGuestId = sb.CustomerId2 || sb.CustomerId1
+        const belongsToSelectedGuest = billGuestId
+          ? String(billGuestId) === String(guestId)
+          : isPrimary
+
+        if ((isCurrentRoomOwner || isOriginalRoomOwner) && belongsToSelectedGuest) {
+          services.push(processServiceBillRecord(sb, `room-sb-${idx}`))
+        }
+      })
+    }
+
     return services
   }
 
@@ -476,10 +553,12 @@ const servicesList = computed(() => {
     const rawB = selectedBooking.value.rawBooking
     const masterSend = rawB?.is_master_room_rate !== undefined ? Boolean(rawB.is_master_room_rate) : true
 
-    // 1. Dịch vụ post trực tiếp cho Master Booking Header
+    // 1. Dịch vụ post trực tiếp hoặc gửi về Master Booking Header (RentalRoomId2 = null)
     const masterBills = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
-      ? rawB.master_service_bills.filter(sb => !sb.RentalRoomId1)
-      : (rawB?.service_bills ? rawB.service_bills.filter(sb => !sb.RentalRoomId1) : [])
+      ? rawB.master_service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
+      : (rawB?.service_bills ? rawB.service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') : [])
+
+    const masterBillIds = new Set(masterBills.map(sb => String(sb.Ma)))
 
     masterBills.forEach((sb, idx) => {
       if (Number(sb.Edit) === 1 || (sb.Status !== undefined && Number(sb.Status) !== 1)) return
@@ -490,13 +569,12 @@ const servicesList = computed(() => {
       selectedBooking.value.roomItems.forEach(rItem => {
         const rawR = rItem.rawRoom
         const roomNo = rItem.roomNumber
-        if (rawR) {
-          if (rawR.services && Array.isArray(rawR.services)) {
-            rawR.services.forEach((s, idx) => {
-              if (!isRoomCharge(s)) return
-              services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
-            })
-          }
+        if (rawR && rawR.services && Array.isArray(rawR.services)) {
+          rawR.services.forEach((s, idx) => {
+            if (!isRoomCharge(s)) return
+            if (s.service_bill_id && masterBillIds.has(String(s.service_bill_id))) return
+            services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
+          })
         }
       })
     }
@@ -538,12 +616,9 @@ const serviceGroups = computed(() => {
   const groups = new Map()
   visibleServices.value.forEach(service => {
     const meta = getServiceGroup(service)
-    // Mỗi lần post bill tạo một thẻ/dòng riêng; chỉ các sản phẩm được gửi cùng lúc
-    // (cùng created_at) mới nằm chung trong một hóa đơn.
-    const transfers = [...String(service.description || '').matchAll(/\(([^()]+)=>[^()]+\)/g)]
-    const sourceKey = transfers.length
-      ? transfers[0][1].trim()
-      : `bill-${service.serviceBillId || service.createdAt || service.id}`
+    // Mỗi bill ServiceBill hoặc dịch vụ lẻ có định danh duy nhất (serviceBillId / id)
+    // để mỗi bill đêm phòng đứng riêng 1 dòng độc lập và hiển thị chuẩn xác ngày/giờ tương ứng.
+    const sourceKey = service.serviceBillId ? `sb-${service.serviceBillId}` : `svc-${service.id || service.createdAt}`
     const key = [meta.key, sourceKey, service.folio || 'A', service.department || 'FO'].join('|')
     if (!groups.has(key)) {
       groups.set(key, { id: key, ...meta, name: service.description || meta.name, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode, totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
@@ -632,9 +707,11 @@ const isMasterRoomRateEnabled = (booking) => {
   return value === undefined || value === true || value === 1 || value === '1'
 }
 
-const isRoomCharge = (service) => (
-  service.service_code === 'RM' || String(service.service_name || '').includes('Tiền phòng')
-)
+const isRoomCharge = (service) => {
+  const code = String(service.service_code || service.serviceCode || service.ServiceId || '').toUpperCase()
+  const name = String(service.service_name || service.serviceName || service.DescriptionServive || '')
+  return code === 'RM' || code === 'RMS' || name.includes('Tiền phòng')
+}
 
 const groupTransferPreviewServices = (services) => {
   const groups = new Map()
@@ -673,14 +750,78 @@ const groupTransferPreviewServices = (services) => {
   }))
 }
 
-const roomTransferPreviewServices = (booking, room) => {
+const roomTransferPreviewServices = (booking, room, targetGuestId = null) => {
   const masterSend = isMasterRoomRateEnabled(booking)
+  const guestId = targetGuestId || room.primaryGuestId
+  const isPrimary = String(guestId) === String(room.primaryGuestId)
+
   const roomServices = (room.rawRoom?.services || []).filter(service => {
     const roomCharge = isRoomCharge(service)
-    const belongsToPrimaryGuest = roomCharge || !service.guest_id || String(service.guest_id) === String(room.primaryGuestId)
-    return (!masterSend || !roomCharge) && belongsToPrimaryGuest
+    const belongsToGuest = service.guest_id
+      ? String(service.guest_id) === String(guestId)
+      : isPrimary
+    return (!masterSend || !roomCharge) && belongsToGuest
   })
   return groupTransferPreviewServices(roomServices)
+}
+
+const guestRoomServiceAmount = (booking, room, guestId) => {
+  const sendRoomRateToMaster = isMasterRoomRateEnabled(booking)
+  const targetGuestId = guestId || room.primaryGuestId
+  const isPrimary = String(targetGuestId) === String(room.primaryGuestId)
+  return (room.rawRoom?.services || [])
+    .filter(service => {
+      const roomCharge = isRoomCharge(service)
+      const belongsToGuest = service.guest_id
+        ? String(service.guest_id) === String(targetGuestId)
+        : isPrimary
+      return (!sendRoomRateToMaster || !roomCharge) && belongsToGuest
+    })
+    .reduce((total, service) => (
+      total + (Number(service.total_amount) || (Number(service.quantity || 1) * Number(service.rate || service.price || service.amount || 0)))
+    ), 0)
+}
+
+const guestRoomPaidAmount = (booking, room, guestId) => {
+  const targetGuestId = guestId || room.primaryGuestId
+  const isPrimary = String(targetGuestId) === String(room.primaryGuestId)
+  return (booking.rawBooking?.payments || [])
+    .filter(payment => (
+      (!payment.edit_flag || Number(payment.edit_flag) === 0)
+      && !payment.deleted_at
+      && String(payment.booking_room_id) === String(room.roomId)
+      && (payment.guest_id || payment.customer_id
+        ? (String(payment.guest_id) === String(targetGuestId) || String(payment.customer_id) === String(targetGuestId))
+        : isPrimary)
+    ))
+    .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+}
+
+const getGuestsToDisplay = (b, r) => {
+  if (!r || !r.allGuests || r.allGuests.length === 0) return []
+  if (showAllGuestsInRoom.value) return r.allGuests
+
+  const primaryGuest = r.allGuests[0]
+  const list = [primaryGuest]
+
+  const rawR = r.rawRoom
+  const rawB = b.rawBooking
+
+  r.allGuests.slice(1).forEach(g => {
+    if (!g.id) return
+    const hasService = (rawR?.services || []).some(s => String(s.guest_id) === String(g.id))
+    const hasPayment = (rawB?.payments || []).some(p => (
+      (!p.edit_flag || Number(p.edit_flag) === 0)
+      && !p.deleted_at
+      && String(p.booking_room_id) === String(r.roomId)
+      && (String(p.guest_id) === String(g.id) || String(p.customer_id) === String(g.id))
+    ))
+    if (hasService || hasPayment) {
+      list.push(g)
+    }
+  })
+
+  return list
 }
 
 const masterTransferPreviewServices = (booking) => {
@@ -690,46 +831,64 @@ const masterTransferPreviewServices = (booking) => {
   )))
 }
 
-const transferPreviewPayments = (booking, room = null) => (booking.rawBooking?.payments || [])
-  .filter(payment => (
-    payment.pack2 === 'DPR'
-    && Number(payment.edit_flag) === 0
-    && !payment.deleted_at
-    && (room
-      ? String(payment.booking_room_id) === String(room.roomId)
-      : !payment.booking_room_id)
-  ))
-  .map((payment, index) => ({
-    id: payment.id || `payment-${index}`,
-    dateTime: formatServiceDateTime(payment.date || payment.created_at, payment.created_at, payment.open_time || payment.openTime),
-    department: payment.department_id || '',
-    description: payment.description || 'Thanh toán đặt cọc / Tiền phòng',
-    paymentMethod: payment.payment_method_id || '',
-    amount: Number(payment.amount) || 0,
-    unit: payment.currency || 'VND',
-    folio: Number(payment.folio_id) || 1,
-    paymentCode: payment.payment_id || '',
-    userName: payment.user_name || payment.created_by || 'Admin'
-  }))
+const transferPreviewPayments = (booking, room = null, targetGuestId = null) => {
+  const targetId = targetGuestId || room?.primaryGuestId
+  const isPrimary = String(targetId) === String(room?.primaryGuestId)
+
+  return (booking.rawBooking?.payments || [])
+    .filter(payment => {
+      if (payment.pack2 !== 'DPR' || Number(payment.edit_flag) !== 0 || payment.deleted_at) return false
+
+      if (room) {
+        if (String(payment.booking_room_id) !== String(room.roomId)) return false
+        return payment.guest_id || payment.customer_id
+          ? (String(payment.guest_id) === String(targetId) || String(payment.customer_id) === String(targetId))
+          : isPrimary
+      }
+
+      return !payment.booking_room_id
+    })
+    .map((payment, index) => ({
+      id: payment.id || `payment-${index}`,
+      dateTime: formatServiceDateTime(payment.date || payment.created_at, payment.created_at, payment.open_time || payment.openTime),
+      department: payment.department_id || '',
+      description: payment.description || 'Thanh toán đặt cọc / Tiền phòng',
+      paymentMethod: payment.payment_method_id || '',
+      amount: Number(payment.amount) || 0,
+      unit: payment.currency || 'VND',
+      folio: Number(payment.folio_id) || 1,
+      paymentCode: payment.payment_id || '',
+      userName: payment.user_name || payment.created_by || 'Admin'
+    }))
+}
 
 const isTransferEligibleRoom = (room) => [0, 1].includes(Number(room.rawRoom?.status))
 const isTransferEligibleBooking = (booking) => [0, 1].includes(Number(booking.rawBooking?.status))
 
 const transferDestinations = computed(() => allBookingsList.value.filter(isTransferEligibleBooking).flatMap(booking => {
-  const roomDestinations = booking.roomItems.filter(isTransferEligibleRoom).map(room => ({
-    key: `room-${room.roomId}`,
-    bookingId: booking.bookingId,
-    roomId: room.roomId,
-    guestId: room.primaryGuestId || null,
-    kind: 'room',
-    bookingCode: booking.code,
-    bookingName: booking.name,
-    roomNumber: room.roomNumber,
-    guestName: room.guestName,
-    label: `Phòng ${room.roomNumber} - ${room.guestName} (${booking.code})`,
-    services: roomTransferPreviewServices(booking, room),
-    payments: transferPreviewPayments(booking, room)
-  }))
+  const roomDestinations = booking.roomItems.filter(isTransferEligibleRoom).flatMap(room => {
+    const guests = room.allGuests && room.allGuests.length > 0
+      ? room.allGuests
+      : [{ id: room.primaryGuestId || null, name: room.guestName }]
+
+    return guests.map(g => {
+      const gId = g.id || room.primaryGuestId || null
+      return {
+        key: `room-${room.roomId}-guest-${gId || 'primary'}`,
+        bookingId: booking.bookingId,
+        roomId: room.roomId,
+        guestId: gId,
+        kind: 'room',
+        bookingCode: booking.code,
+        bookingName: booking.name,
+        roomNumber: room.roomNumber,
+        guestName: g.name,
+        label: `Phòng ${room.roomNumber} - ${g.name} (${booking.code})`,
+        services: roomTransferPreviewServices(booking, room, gId),
+        payments: transferPreviewPayments(booking, room, gId)
+      }
+    })
+  })
   return [
     {
       key: `booking-${booking.bookingId}`,
@@ -745,7 +904,7 @@ const transferDestinations = computed(() => allBookingsList.value.filter(isTrans
     },
     ...roomDestinations
   ]
-}) )
+}))
 
 const openSplitServiceModal = () => {
   if (canSplitSelectedServices.value) showSplitServiceModal.value = true
@@ -1048,29 +1207,29 @@ const totalServiceAmount = computed(() => {
   return visibleServices.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
 })
 
-const isSubGuestSelected = computed(() => {
-  if (!showAllGuestsInRoom.value || !selectedRoomItem.value || !selectedRoomItem.value.allGuests || selectedRoomItem.value.allGuests.length <= 1) {
-    return false
-  }
-  const firstGuestId = selectedRoomItem.value.allGuests[0]?.id
-  return String(selectedGuestId.value) !== String(firstGuestId)
-})
-
 const paymentsList = computed(() => {
-  if (!selectedBooking.value || isSubGuestSelected.value) return []
+  if (!selectedBooking.value) return []
 
   const payments = []
   const rawB = selectedBooking.value.rawBooking
   const currentRoomId = selectedRoomItem.value?.roomId || selectedRoomItem.value?.rawRoom?.id || null
 
   if (rawB && rawB.payments && Array.isArray(rawB.payments) && rawB.payments.length > 0) {
+    const room = selectedRoomItem.value
+    const currentGuestId = selectedGuestId.value || room?.primaryGuestId
+    const isPrimaryGuest = room ? (String(currentGuestId) === String(room.primaryGuestId)) : false
+
     const filteredPayments = rawB.payments.filter(p => {
       if (!p || p.deleted_at || (p.edit_flag !== undefined && Number(p.edit_flag) !== 0)) return false
-      // Nếu chọn dòng Phiếu Tổng (không chọn phòng lẻ): chỉ hiển thị cọc chung (không có booking_room_id)
+      // Nếu chọn dòng Phiếu Tổng (Master Header): chỉ hiển thị cọc của Master (không có booking_room_id)
       if (!currentRoomId) return !p.booking_room_id
-      // Nếu chọn phòng lẻ: hiển thị cọc chung (không có booking_room_id) VÀ cọc riêng của đúng phòng này
-      if (!p.booking_room_id) return true
-      return String(p.booking_room_id) === String(currentRoomId)
+      // Nếu chọn phòng lẻ: chỉ hiển thị cọc riêng thuộc đúng phòng đó VÀ thuộc về khách được chọn
+      if (!p.booking_room_id || String(p.booking_room_id) !== String(currentRoomId)) return false
+
+      if (p.guest_id || p.customer_id) {
+        return String(p.guest_id) === String(currentGuestId) || String(p.customer_id) === String(currentGuestId)
+      }
+      return isPrimaryGuest
     })
 
     filteredPayments.forEach((p, idx) => {
@@ -1579,12 +1738,12 @@ onUnmounted(() => {
                     <td class="p-1 text-center font-mono" :class="selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'text-white' : 'text-gray-800'">{{ formatMoney(b.paidAmount) }}</td>
                   </tr>
 
-                  <!-- Sub-rows: Room Items (Checkbox không tự động tick) -->
+                  <!-- Sub-rows: Room Items (Sub-guests appear automatically directly underneath primary guest when they have bills/deposits) -->
                   <template v-for="r in b.roomItems" :key="r.id">
-                    <template v-if="showAllGuestsInRoom && r.allGuests.length > 1">
+                    <template v-if="getGuestsToDisplay(b, r).length > 1">
                       <tr 
-                        v-for="(guest, gIdx) in r.allGuests"
-                        :key="guest.id || gIdx"
+                        v-for="(guest, gIdx) in getGuestsToDisplay(b, r)"
+                        :key="`${r.id}-${guest.id || gIdx}`"
                         @click="selectRoomItemRow(b, r, guest)"
                         :class="[
                           selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#7dd3fc] text-white font-medium' : 'hover:bg-gray-50 text-gray-800',
@@ -1598,10 +1757,10 @@ onUnmounted(() => {
                         <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ r.roomNumber }}</td>
                         <td
                           class="p-1 border-r border-gray-300 text-slate-900"
-                          :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
+                          :class="gIdx === 0 ? 'font-bold' : 'font-normal pl-4 italic text-slate-700'"
                         >{{ guest.name }}</td>
-                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ gIdx === 0 ? formatSummaryMoney(r.serviceAmount) : '0' }}</td>
-                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ gIdx === 0 ? formatMoney(r.paidAmount) : '0' }}</td>
+                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
                       </tr>
                     </template>
                     <template v-else>
@@ -1618,8 +1777,8 @@ onUnmounted(() => {
                         <td class="p-1 border-r border-gray-300 text-center"></td>
                         <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ r.roomNumber }}</td>
                         <td class="p-1 border-r border-gray-300 font-bold text-slate-900">{{ r.guestName }}</td>
-                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatSummaryMoney(r.serviceAmount) }}</td>
-                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatMoney(r.paidAmount) }}</td>
+                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
                       </tr>
                     </template>
                   </template>
@@ -2052,6 +2211,8 @@ onUnmounted(() => {
       :bookingInfo="addServiceBookingInfo"
       :bookingRoomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
+      :arrivalDate="selectedBooking?.arrivalDate || selectedRoomItem?.rawRoom?.arrival_date || ''"
+      :departureDate="selectedBooking?.departureDate || selectedRoomItem?.rawRoom?.departure_date || ''"
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
       :roomAdjustment="roomAdjustment"
       :systemDate="systemDate"

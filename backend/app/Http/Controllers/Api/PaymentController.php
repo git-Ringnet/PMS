@@ -503,11 +503,14 @@ class PaymentController extends Controller
         if ($targetRoom && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {
             abort(422, 'Phòng nhận cọc phải ở trạng thái Reservation hoặc Inhouse.');
         }
-        if (!$targetRoom && $request->target_guest_id) {
-            abort(422, 'Chỉ được chọn khách khi nơi nhận là một phòng cụ thể.');
+        $targetGuest = null;
+        if ($targetRoom) {
+            $targetGuest = $request->target_guest_id
+                ? $targetRoom->guests()->with('guest')->where('guest_id', $request->target_guest_id)->firstOrFail()
+                : $targetRoom->guests()->with('guest')->where('is_primary', 1)->first();
         }
 
-        DB::transaction(function () use ($request, $targetBooking, $targetRoom) {
+        DB::transaction(function () use ($request, $targetBooking, $targetRoom, $targetGuest) {
             $payments = Payment::whereIn('id', $request->payment_ids)->lockForUpdate()->get();
             if ($payments->count() !== count($request->payment_ids)) abort(422, 'Không tìm thấy đủ các dòng cọc cần chuyển.');
 
@@ -515,8 +518,18 @@ class PaymentController extends Controller
                 if ($payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
                     abort(422, 'Chỉ có thể chuyển các dòng cọc chưa được thanh toán.');
                 }
+
+                $sourceGuestId = $payment->guest_id;
+                if (!$sourceGuestId && $payment->booking_room_id) {
+                    $sourceRoom = $payment->bookingRoom;
+                    $sourcePrimaryGuest = $sourceRoom?->guests()->where('is_primary', 1)->first();
+                    $sourceGuestId = $sourcePrimaryGuest?->guest_id;
+                }
+                $targetGuestId = $targetGuest?->guest_id;
+
                 $isSameLocation = (int) $payment->booking_id === (int) $targetBooking->id
-                    && (string) ($payment->booking_room_id ?? '') === (string) ($targetRoom?->id ?? '');
+                    && (string) ($payment->booking_room_id ?? '') === (string) ($targetRoom?->id ?? '')
+                    && (string) ($sourceGuestId ?? '') === (string) ($targetGuestId ?? '');
                 if ($isSameLocation) abort(422, 'Nơi nhận phải khác vị trí cọc hiện tại.');
             }
 
@@ -590,8 +603,17 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        $sourceGuestId = $payment->guest_id;
+        if (!$sourceGuestId && $payment->booking_room_id) {
+            $sourceRoom = $payment->bookingRoom;
+            $sourcePrimaryGuest = $sourceRoom?->guests()->where('is_primary', 1)->first();
+            $sourceGuestId = $sourcePrimaryGuest?->guest_id;
+        }
+        $targetGuestId = $targetGuest?->guest_id;
+
         $isSameLocation = (int) $payment->booking_id === (int) $targetBooking->id
-            && (string) ($payment->booking_room_id ?? '') === (string) ($targetRoom?->id ?? '');
+            && (string) ($payment->booking_room_id ?? '') === (string) ($targetRoom?->id ?? '')
+            && (string) ($sourceGuestId ?? '') === (string) ($targetGuestId ?? '');
         if ($isSameLocation) {
             return response()->json([
                 'success' => false,
