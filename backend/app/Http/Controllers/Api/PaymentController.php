@@ -42,14 +42,13 @@ class PaymentController extends Controller
     {
         $user = Auth::user();
         if (!$user) return true;
-        if ($user->username === 'admin' || !empty($user->is_admin)) return true;
+        $username = strtolower((string)($user->username ?? ''));
+        if (in_array($username, ['admin', 'system'], true) || !empty($user->is_admin)) return true;
 
         $settings = $user->setting?->settings ?? [];
-        if (isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) {
-            $val = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
-            return $val === true || $val === 1 || $val === '1' || $val === 'true';
-        }
-        return false;
+        if (!isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) return true;
+        $val = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
+        return $val === true || $val === 1 || $val === '1' || $val === 'true' || $val === 'default';
     }
 
     private function resolvePaymentMethodCode($input)
@@ -117,14 +116,38 @@ class PaymentController extends Controller
             $request->merge(['date' => $systemDate]);
         }
 
+        $bookingRoomId = $request->booking_room_id;
+        if ($bookingRoomId !== null && $bookingRoomId !== '' && $bookingRoomId !== 'null' && $bookingRoomId !== 'undefined') {
+            $bookingRoomId = (string)$bookingRoomId;
+            $exists = BookingRoom::where('booking_id', $bookingId)
+                ->where(function($q) use ($bookingRoomId) {
+                    $q->where('id', $bookingRoomId)
+                      ->orWhere('room_number', $bookingRoomId);
+                })
+                ->first();
+            if ($exists) {
+                $bookingRoomId = $exists->id;
+            } else {
+                $bookingRoomId = null;
+            }
+        } else {
+            $bookingRoomId = null;
+        }
+        $request->merge(['booking_room_id' => $bookingRoomId]);
+
         $request->validate([
             'date'              => 'required|date',
             'amount'            => 'required|numeric|min:0.01',
             'payment_method_id' => 'required',
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
-            'booking_room_id'   => 'nullable|exists:booking_rooms,id',
+            'booking_room_id'   => 'nullable',
+            'guest_id'          => 'nullable|string|max:50',
             'folio_id'          => 'nullable|integer|between:1,3',
+            'pack4'             => 'nullable|string|max:20',
+            'open_time'         => 'nullable|string|max:20',
+            'currency'          => 'nullable|string|max:10',
+            'shift_id'          => 'nullable|string|max:20',
             'image'             => 'nullable|file|image|max:4096',
         ]);
 
@@ -157,13 +180,13 @@ class PaymentController extends Controller
         if (in_array($method->payment_group, [4, 5])) {
             return response()->json([
                 'success' => false,
-                'message' => 'Hình thức "' . $method->name . '" không được dùng cho đặt cọc. Chỉ chấp nhận Tiền mặt, Thẻ/CK hoặc Voucher.',
+                'message' => 'Hình thức "' . $method->name . '" không được dùng cho đặt cọc / thanh toán trước. Chỉ chấp nhận Tiền mặt, Thẻ/CK hoặc Voucher.',
             ], 422);
         }
 
         // Tạo mô tả mặc định nếu chưa có
         $description = $request->description
-            ?? ('Đặt cọc - ' . $method->name . ' - ' . $booking->booking_code);
+            ?? ($request->pack4 === 'AP' ? 'Advance Payment - ' . $method->name : 'Đặt cọc - ' . $method->name . ' - ' . $booking->booking_code);
 
         // Tạo hiển thị guest: mã booking + tên
         $guestDisplay = $booking->booking_code . ' - ' . $booking->booking_name;
@@ -172,27 +195,33 @@ class PaymentController extends Controller
             $payment = Payment::create([
                 'booking_id'        => $bookingId,
                 'booking_room_id'   => $request->booking_room_id,
+                'guest_id'          => $request->guest_id,
+                'customer_id'       => $request->guest_id,
                 'company_id'        => $booking->company_id,
                 'date'              => $request->date,
-                'open_time'         => now()->format('H:i:s'),
+                'open_time'         => $request->open_time ?: now()->format('H:i:s'),
                 'guest_display'     => $guestDisplay,
                 'description'       => $description,
                 'amount'            => $request->amount,
-                'pack2'             => Payment::PACK2_DEPOSIT,
-                // Cọc chung của booking/Master mặc định Folio 1; cọc phòng có thể chỉ định Folio sau này.
+                'currency'          => $request->currency ?: 'VND',
+                'pack2'             => $request->pack4 === 'AP' ? null : Payment::PACK2_DEPOSIT,
+                'pack4'             => $request->pack4 ?: 'AP',
                 'folio_id'          => $request->booking_room_id ? ($request->folio_id ?? 1) : 1,
                 'payment_method_id' => $pmCode,
                 'debit_account'     => $request->debit_account,
                 'department_id'     => $departmentId,
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
+                'shift'             => $request->shift_id ?: ($request->shift ?: '1'),
                 'created_by'        => Auth::user()?->username ?? 'system',
                 'image_path'        => $imagePath,
             ]);
 
-            // Cập nhật payment_value trên booking header = tổng cọc
+            // Cập nhật payment_value trên booking header = tổng cọc & tạm ứng
             $totalDeposit = Payment::where('booking_id', $bookingId)
-                ->where('pack2', Payment::PACK2_DEPOSIT)
+                ->where(function($q) {
+                    $q->where('pack2', Payment::PACK2_DEPOSIT)->orWhere('pack4', Payment::PACK4_ADVANCE);
+                })
                 ->where('edit_flag', 0)
                 ->whereNull('deleted_at')
                 ->sum('amount');

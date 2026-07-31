@@ -235,9 +235,6 @@ class BookingRoomServiceController extends Controller
             if ($services->count() !== count(array_unique($validated['service_ids']))) {
                 abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
             }
-            if ($services->contains(fn (BookingRoomService $service) => $service->service_code === BookingRoomService::CODE_ROOM)) {
-                abort(422, 'Không được xóa dịch vụ tiền phòng.');
-            }
             if ($services->contains(fn (BookingRoomService $service) => !$service->service_bill_id)) {
                 abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện xóa.');
             }
@@ -843,26 +840,73 @@ class BookingRoomServiceController extends Controller
                 $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
                 $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
 
-                $serviceBill = ServiceBill::create([
-                    'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
-                    'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
-                    'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
-                    'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
-                    'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
-                    'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
-                    'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
-                    'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
-                    'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
-                ]);
-                $bill = HousekeepingServiceBill::create([
-                    'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
-                    'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
-                    'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
-                    'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
-                    'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
-                    'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
-                    'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
-                ]);
+                $targetServiceBillId = $request->filled('service_bill_id') ? (int) $request->service_bill_id : null;
+                $existingServiceBill = $targetServiceBillId ? ServiceBill::whereKey($targetServiceBillId)->lockForUpdate()->first() : null;
+
+                if ($existingServiceBill) {
+                    $serviceBill = $existingServiceBill;
+                    $serviceBill->update([
+                        'Date' => $serviceDateCarbon->startOfDay(),
+                        'Guest' => $guestName,
+                        'DescriptionServive' => $groupTitle,
+                        'Quantity' => 1,
+                        'Amount' => $billAmount,
+                        'Folio' => (string)$folio,
+                        'UpdatedDate' => now(),
+                        'UpdatedHour' => now()->format('H:i'),
+                        'updated_at' => now(),
+                    ]);
+
+                    $bill = HousekeepingServiceBill::where('BillServiceId', $serviceBill->Ma)->lockForUpdate()->first();
+                    if ($bill) {
+                        $bill->update([
+                            'BillOriginalAmount' => $originalAmount,
+                            'BillDiscountAmount' => $discountAmount,
+                            'BillAmount' => $billAmount,
+                            'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                            'BillNote' => $request->note,
+                            'Date' => $serviceDateCarbon->startOfDay(),
+                            'RoomNo' => $room->room_number,
+                            'UpdatedDate' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    } else {
+                        $bill = HousekeepingServiceBill::create([
+                            'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
+                            'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
+                            'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                            'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                            'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
+                            'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
+                            'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
+                        ]);
+                    }
+
+                    BookingRoomService::where('service_bill_id', $serviceBill->Ma)->delete();
+                    HousekeepingServiceBillDetail::where('BillId', $bill->Ma)->delete();
+                    ServiceBillDetail::where('BillServiceId', $serviceBill->Ma)->delete();
+                } else {
+                    $serviceBill = ServiceBill::create([
+                        'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
+                        'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
+                        'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
+                        'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
+                        'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
+                        'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
+                        'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
+                        'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
+                    ]);
+                    $bill = HousekeepingServiceBill::create([
+                        'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
+                        'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
+                        'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                        'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
+                        'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
+                        'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
+                    ]);
+                }
 
                 foreach ($items as $index => $item) {
                     $pName        = $item['name'] ?? ($item['product']['name'] ?? 'Sản phẩm buồng phòng');
@@ -1524,9 +1568,12 @@ class BookingRoomServiceController extends Controller
     protected function canOperateOldDay(): bool
     {
         $user = Auth::user();
-        if (!$user || $user->username === 'admin' || !empty($user->is_admin)) return true;
+        if (!$user) return true;
+        $username = strtolower((string)($user->username ?? ''));
+        if (in_array($username, ['admin', 'system'], true) || !empty($user->is_admin)) return true;
         $settings = $user->setting?->settings ?? [];
-        $value = $settings['RuleUserCorrectOrPostBillPaymentOldDay'] ?? false;
-        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+        if (!isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) return true;
+        $value = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
+        return $value === true || $value === 1 || $value === '1' || $value === 'true' || $value === 'default';
     }
 }

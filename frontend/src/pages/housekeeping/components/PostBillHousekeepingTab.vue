@@ -780,6 +780,7 @@ const sendToRoom = async () => {
     }))
 
     const res = await http.post('/booking-room-services/post-housekeeping-bill', {
+      service_bill_id: props.initialAdjustment?.serviceBillId || null,
       booking_room_id: form.value.roomId,
       guest_id: form.value.guestId || null,
       department: props.department || 'HK',

@@ -313,8 +313,9 @@ const loadCheckoutBookings = async () => {
                 if (p.edit_flag && Number(p.edit_flag) !== 0) return false
                 if (p.deleted_at) return false
                 if (String(p.booking_room_id) !== String(r.id)) return false
-                const pGuestId = p.guest_id || p.guestId || null
-                return pGuestId ? (String(pGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
+                const pGuestId = p.guest_id || p.guestId || p.customer_id || null
+                if (!pGuestId) return true
+                return String(pGuestId) === String(guest.id) || !guest.id
               })
               .reduce((sum, p) => sum + Number(p.amount || 0), 0)
             guest.paidAmount = guestPaidTotal
@@ -413,6 +414,11 @@ const handleServiceAdded = async (data) => {
   }
 
   uiStore.showToast('Đã thêm dịch vụ thành công!', 'success')
+}
+
+const handlePrepaymentSuccess = async () => {
+  showPrepaymentModal.value = false
+  await handleServiceAdded()
 }
 
 const toggleBookingCheck = (b) => {
@@ -533,13 +539,12 @@ const servicesList = computed(() => {
         if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
 
         const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(room.roomId)
-        const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(room.roomId)
         const billGuestId = sb.CustomerId2 || sb.CustomerId1
         const belongsToSelectedGuest = billGuestId
           ? String(billGuestId) === String(guestId)
           : isPrimary
 
-        if ((isCurrentRoomOwner || isOriginalRoomOwner) && belongsToSelectedGuest) {
+        if (isCurrentRoomOwner && belongsToSelectedGuest) {
           services.push(processServiceBillRecord(sb, `room-sb-${idx}`))
         }
       })
@@ -680,7 +685,7 @@ const hasSelectedDeposit = computed(() => selectedPaymentItems.value.length > 0)
 const canCancelSelectedServices = computed(() => (
   Boolean(selectedRoomItem.value)
   && selectedServiceItems.value.length > 0
-  && selectedServiceItems.value.every(service => service.serviceCode !== 'RM' && service.serviceBillId)
+  && selectedServiceItems.value.every(service => service.serviceBillId)
 ))
 const selectedServicesTotal = computed(() => selectedServiceItems.value.reduce((sum, service) => sum + (Number(service.totalAmount) || 0), 0))
 const toTransferPreviewService = (service) => {
@@ -946,9 +951,11 @@ const openServiceAdjustment = () => {
   const group = selectedServiceGroups.value[0]
   const item = group.items[0]
   showCancelServiceModal.value = false
+  const targetBillId = item?.serviceBillId || group?.serviceBillId || (group?.id && String(group.id).startsWith('sb-') ? Number(String(group.id).replace('sb-', '')) : null)
 
   if (group.code === 'RM') {
     roomAdjustment.value = {
+      serviceBillId: targetBillId,
       serviceDate: item.serviceDate,
       folio: item.folio || group.folio || 1,
       amount: item.totalAmount || group.totalAmount,
@@ -959,6 +966,7 @@ const openServiceAdjustment = () => {
   }
 
   housekeepingAdjustment.value = {
+    serviceBillId: targetBillId,
     serviceDate: item.serviceDate,
     folio: item.folio || group.folio || 1,
     note: item.description || group.name,
@@ -1223,13 +1231,19 @@ const paymentsList = computed(() => {
       if (!p || p.deleted_at || (p.edit_flag !== undefined && Number(p.edit_flag) !== 0)) return false
       // Nếu chọn dòng Phiếu Tổng (Master Header): chỉ hiển thị cọc của Master (không có booking_room_id)
       if (!currentRoomId) return !p.booking_room_id
-      // Nếu chọn phòng lẻ: chỉ hiển thị cọc riêng thuộc đúng phòng đó VÀ thuộc về khách được chọn
+
+      // Chọn phòng lẻ: chỉ hiển thị cọc thuộc đúng phòng đó
       if (!p.booking_room_id || String(p.booking_room_id) !== String(currentRoomId)) return false
 
-      if (p.guest_id || p.customer_id) {
-        return String(p.guest_id) === String(currentGuestId) || String(p.customer_id) === String(currentGuestId)
-      }
-      return isPrimaryGuest
+      const pGuestId = p.guest_id || p.customer_id || p.guestId || null
+      // Cọc chung thuộc phòng lẻ đó -> luôn hiển thị cho phòng lẻ đó
+      if (!pGuestId) return true
+
+      // Cọc có chỉ định guest_id -> hiển thị khi trùng guest_id hoặc khi ở khách đại diện/chưa chọn guest_id
+      if (currentGuestId && String(pGuestId) === String(currentGuestId)) return true
+      if (!currentGuestId || isPrimaryGuest) return true
+
+      return false
     })
 
     filteredPayments.forEach((p, idx) => {
@@ -2253,7 +2267,16 @@ onUnmounted(() => {
 
     <PrepaymentModal 
       :show="showPrepaymentModal" 
+      :bookingId="selectedBooking?.bookingId"
+      :bookingCode="selectedBooking?.code"
+      :bookingName="selectedBooking?.name"
+      :selectedRoomId="selectedRoomItem?.roomId || null"
+      :selectedRoomNumber="selectedRoomItem?.roomNumber || ''"
+      :selectedGuestId="selectedGuestId"
+      :systemDate="systemDate"
+      :roomOptions="selectedBooking?.roomItems || []"
       @close="showPrepaymentModal = false" 
+      @success="handlePrepaymentSuccess"
     />
 
     <PaymentModal 
