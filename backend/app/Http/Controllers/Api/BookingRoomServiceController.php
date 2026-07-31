@@ -357,16 +357,31 @@ class BookingRoomServiceController extends Controller
 
     public function quickTransfer(Request $request, $roomId)
     {
-        $request->validate(['bill_ids' => 'required|array|min:1', 'bill_ids.*' => 'integer']);
+        $request->validate([
+            'bill_ids' => 'required|array|min:1',
+            'bill_ids.*' => 'integer',
+            'target_guest_id' => 'nullable|integer',
+        ]);
         $isMaster = str_starts_with((string) $roomId, 'master-');
         $targetRoom = $isMaster ? null : BookingRoom::with('guests.guest', 'booking')->findOrFail($roomId);
         $targetBooking = $isMaster ? Booking::findOrFail((int) substr((string) $roomId, 7)) : $targetRoom->booking;
         if (!$isMaster && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) abort(422, 'Phòng nhận phải ở trạng thái Reservation hoặc Inhouse.');
-        $targetGuest = $targetRoom?->guests->firstWhere('is_primary', 1);
+        $targetGuest = null;
+        if ($targetRoom) {
+            $targetGuest = $request->filled('target_guest_id')
+                ? $targetRoom->guests->firstWhere('guest_id', (int) $request->target_guest_id)
+                : $targetRoom->guests->firstWhere('is_primary', 1);
+
+            if ($request->filled('target_guest_id') && !$targetGuest) {
+                abort(422, 'Khách nhận không thuộc phòng đã chọn.');
+            }
+        }
 
         DB::transaction(function () use ($request, $targetRoom, $targetBooking, $targetGuest) {
+            $containsRoomCharge = false;
             foreach (array_unique($request->bill_ids) as $billId) {
                 $bill = ServiceBill::lockForUpdate()->findOrFail($billId);
+                $containsRoomCharge = $containsRoomCharge || strtoupper((string) $bill->ServiceId) === BookingRoomService::CODE_ROOM;
                 if ($bill->PaymentId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) abort(422, 'Chỉ được chuyển bill chưa thanh toán.');
                 $isMasterSource = (int) $bill->RegisterID2 === (int) $targetBooking->id && empty($bill->RentalRoomId2);
                 $sourceRoom = $isMasterSource ? null : BookingRoom::where('id', $bill->RentalRoomId2)->where('booking_id', $targetBooking->id)->lockForUpdate()->first();
@@ -411,6 +426,11 @@ class BookingRoomServiceController extends Controller
                         $roomService->save();
                     }
                 }
+            }
+
+            if ($containsRoomCharge && $targetRoom && $targetBooking->is_master_room_rate) {
+                $targetBooking->is_master_room_rate = false;
+                $targetBooking->save();
             }
         });
         return response()->json(['success' => true, 'message' => 'Đã tập hợp dịch vụ về phòng đã chọn.']);
@@ -1025,18 +1045,26 @@ class BookingRoomServiceController extends Controller
                     $existingBrs = BookingRoomService::where('booking_room_id', $room->id)
                         ->where('service_code', $foService->code)
                         ->where('service_date', $current->toDateString())
+                        ->whereNull('service_bill_id')
                         ->first();
 
                     if ($existingBrs) {
-                        $newQty = (float)$existingBrs->quantity + $qty;
                         $existingBrs->update([
-                            'quantity'     => $newQty,
-                            'total_amount' => $newQty * $rate,
+                            'service_bill_id'        => $bill->Ma,
+                            'service_bill_detail_no' => $detailSeq,
+                            'quantity'               => $qty,
+                            'rate'                   => $rate,
+                            'total_amount'           => $totalAmount,
+                            'folio'                  => $folio,
+                            'is_posted'              => 1,
+                            'posted_at'              => now(),
                             'note'         => $description,
                         ]);
                     } else {
                         BookingRoomService::create([
                             'booking_room_id' => $room->id,
+                            'service_bill_id' => $bill->Ma,
+                            'service_bill_detail_no' => $detailSeq,
                             'service_code'    => $foService->code,
                             'service_name'    => $foService->name,
                             'service_date'    => $current->toDateString(),
@@ -1360,6 +1388,7 @@ class BookingRoomServiceController extends Controller
                         'booking_room_id' => $targetRoom->id,
                         'guest_id'        => $guestId,
                         'service_bill_id' => $bill->Ma,
+                        'service_bill_detail_no' => 1,
                         'service_code'    => 'RMS',
                         'service_name'    => 'Bổ sung tiền phòng',
                         'service_date'    => $current->toDateString(),
@@ -1385,6 +1414,8 @@ class BookingRoomServiceController extends Controller
                         ],
                         [
                             'service_name'   => 'Tiền phòng',
+                            'service_bill_id' => $bill->Ma,
+                            'service_bill_detail_no' => 1,
                             'quantity'       => 1,
                             'rate'           => $rate,
                             'total_amount'   => $totalAmount,
