@@ -396,7 +396,8 @@ const servicesList = computed(() => {
     let descVal = s.note || s.description || defaultDesc
     descVal = String(descVal).replace(/^Post bill\s+/i, '')
     if (codeVal === 'RM' || s.service_name === 'Tiền phòng') {
-      descVal = `Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim()
+      const transferTrail = descVal.match(/\([^()]+=>[^()]+\)\s*$/)?.[0] || ''
+      descVal = [`Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim(), transferTrail].filter(Boolean).join(' ')
     }
 
     return {
@@ -457,24 +458,16 @@ const servicesList = computed(() => {
 
   // Nếu chọn phòng lẻ: chỉ hiển thị dịch vụ của đúng phòng lẻ đó
   if (selectedRoomItem.value) {
-    const rItem = selectedRoomItem.value
-    const rawR = rItem.rawRoom
-    const roomNo = rItem.roomNumber
-    const rawB = selectedBooking.value?.rawBooking
-    const masterSend = rawB?.is_master_room_rate !== undefined ? Boolean(rawB.is_master_room_rate) : true
-
-    if (rawR) {
-      if (rawR.services && Array.isArray(rawR.services)) {
-        rawR.services.forEach((s, idx) => {
-          const processed = processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo)
-          // Nếu masterSend = true, ẩn tiền phòng (RM) ở phòng lẻ vì đã gom lên Phiếu tổng
-          if (masterSend && (processed.serviceCode === 'RM' || processed.serviceCode === 'RMS')) {
-            return
-          }
-          services.push(processed)
-        })
+    const room = selectedRoomItem.value
+    const masterSend = isMasterRoomRateEnabled(selectedBooking.value)
+    const guestId = selectedGuestId.value || room.primaryGuestId
+    ;(room.rawRoom?.services || []).forEach((service, idx) => {
+      const roomCharge = isRoomCharge(service)
+      const belongsToGuest = roomCharge || !service.guest_id || String(service.guest_id) === String(guestId)
+      if ((!masterSend || !roomCharge) && belongsToGuest) {
+        services.push(processServiceItem(withServiceBillTime(room.rawRoom, service), `${room.id}-${idx}`, `Phòng ${room.roomNumber}`, room.roomNumber))
       }
-    }
+    })
     return services
   }
 
@@ -493,20 +486,15 @@ const servicesList = computed(() => {
       services.push(processServiceBillRecord(sb, `master-${idx}`))
     })
 
-    // 2. Nếu masterSend = true, chỉ gom tiền phòng (RM) từ từng phòng vào Phiếu Tổng.
-    // Dịch vụ khác (ngoài RM/RMS) vẫn giữ ở phòng lẻ, không hiển thị ở phiếu tổng.
-    if (selectedBooking.value.roomItems) {
+    if (isMasterRoomRateEnabled(selectedBooking.value) && selectedBooking.value.roomItems) {
       selectedBooking.value.roomItems.forEach(rItem => {
         const rawR = rItem.rawRoom
         const roomNo = rItem.roomNumber
         if (rawR) {
           if (rawR.services && Array.isArray(rawR.services)) {
             rawR.services.forEach((s, idx) => {
-              const processed = processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo)
-              // Chỉ gom tiền phòng (RM/RMS) lên Phiếu Tổng nếu masterSend = true
-              if (masterSend && (processed.serviceCode === 'RM' || processed.serviceCode === 'RMS')) {
-                services.push(processed)
-              }
+              if (!isRoomCharge(s)) return
+              services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
             })
           }
         }
@@ -648,27 +636,6 @@ const isRoomCharge = (service) => (
   service.service_code === 'RM' || String(service.service_name || '').includes('Tiền phòng')
 )
 
-const missingRoomChargePreview = (room) => {
-  const rawRoom = room.rawRoom || {}
-  const hasRoomCharge = (rawRoom.services || []).some(isRoomCharge)
-  const rate = Number(rawRoom.room_rate) || Number(rawRoom.price) || Number(rawRoom.rate) || 0
-  if (hasRoomCharge || rate <= 0) return []
-  const quantity = Number(rawRoom.ActutalNumOfDays) || 1
-  return [{
-    id: `RM-preview-${rawRoom.id || room.roomId}`,
-    service_code: 'RM',
-    service_name: 'Tiền phòng',
-    service_date: rawRoom.arrival_date,
-    department: 'FO',
-    rate,
-    quantity,
-    total_amount: Number(rawRoom.total_amount) || (rate * quantity),
-    unit: 'Đêm',
-    folio: 1,
-    created_by: 'System'
-  }]
-}
-
 const groupTransferPreviewServices = (services) => {
   const groups = new Map()
   services.forEach((service, index) => {
@@ -713,14 +680,13 @@ const roomTransferPreviewServices = (booking, room) => {
     const belongsToPrimaryGuest = roomCharge || !service.guest_id || String(service.guest_id) === String(room.primaryGuestId)
     return (!masterSend || !roomCharge) && belongsToPrimaryGuest
   })
-  if (!masterSend) roomServices.push(...missingRoomChargePreview(room))
   return groupTransferPreviewServices(roomServices)
 }
 
 const masterTransferPreviewServices = (booking) => {
   if (!isMasterRoomRateEnabled(booking)) return []
   return groupTransferPreviewServices(booking.roomItems.flatMap(room => (
-    (room.rawRoom?.services || []).filter(isRoomCharge).concat(missingRoomChargePreview(room))
+    (room.rawRoom?.services || []).filter(isRoomCharge)
   )))
 }
 
@@ -873,7 +839,7 @@ const openTransferPaymentModal = () => {
 }
 
 const openQuickTransferBillModal = async () => {
-  if (!hasCurrentSelectedRoom.value) {
+  if (!hasQuickTransferTarget.value) {
     uiStore.showToast('Vui lòng chọn phòng nhận dịch vụ.', 'warning')
     return
   }
@@ -881,7 +847,7 @@ const openQuickTransferBillModal = async () => {
   quickTransferLoadingText.value = 'Đang tải danh sách dịch vụ...'
   isServiceOperationLoading.value = true
   try {
-    const targetId = selectedRoomItem.value.roomId
+    const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
     const response = await fetchQuickTransferCandidates(targetId)
     quickTransferCandidates.value = response.data?.data || []
   } catch (error) {
@@ -894,13 +860,15 @@ const openQuickTransferBillModal = async () => {
 }
 
 const submitQuickTransferBills = async (billIds) => {
-  if (!selectedRoomItem.value || !billIds.length) return
+  if (!hasQuickTransferTarget.value || !billIds.length) return
   quickTransferLoadingText.value = 'Đang chuyển bill nhanh...'
   isServiceOperationLoading.value = true
   uiStore.showToast('Đang chuyển bill nhanh...', 'info', 1500)
   try {
-    const targetId = selectedRoomItem.value.roomId
-    const response = await quickTransferBookingRoomServices(targetId, { bill_ids: billIds })
+    const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const payload = { bill_ids: billIds }
+    if (selectedRoomItem.value && selectedGuestId.value) payload.target_guest_id = selectedGuestId.value
+    const response = await quickTransferBookingRoomServices(targetId, payload)
     showQuickTransferBillModal.value = false
     await refreshAfterServiceOperation(1)
     uiStore.showToast(response.data?.message || 'Đã tập hợp dịch vụ thành công!', 'success')
@@ -1172,6 +1140,12 @@ const hasCurrentSelectedRoom = computed(() => {
   )))
 })
 
+const hasQuickTransferTarget = computed(() => {
+  if (hasCurrentSelectedRoom.value) return true
+  const bookingId = selectedBooking.value?.bookingId
+  return Boolean(bookingId && !selectedRoomItem.value && displayedBookingsList.value.some(booking => booking.bookingId === bookingId))
+})
+
 const handlePanelGuestChange = () => {
   if (!selectedBooking.value || !selectedRoomItem.value) return
 
@@ -1354,12 +1328,12 @@ onUnmounted(() => {
         <!-- Tập hợp DV -->
         <button 
           @click="openQuickTransferBillModal"
-          :disabled="!hasCurrentSelectedRoom || isServiceOperationLoading"
-          :class="hasCurrentSelectedRoom && !isServiceOperationLoading ? 'text-gray-700 hover:bg-white hover:border-gray-300 cursor-pointer' : 'text-gray-400 opacity-50 cursor-not-allowed'"
+          :disabled="!hasQuickTransferTarget || isServiceOperationLoading"
+          :class="hasQuickTransferTarget && !isServiceOperationLoading ? 'text-gray-700 hover:bg-white hover:border-gray-300 cursor-pointer' : 'text-gray-400 opacity-50 cursor-not-allowed'"
           class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
           :title="isSidebarCollapsed ? 'Tập hợp DV' : ''"
         >
-          <Layers :class="hasCurrentSelectedRoom ? 'text-gray-600' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
+          <Layers :class="hasQuickTransferTarget ? 'text-gray-600' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
           <span v-if="!isSidebarCollapsed" class="truncate">Tập hợp DV</span>
         </button>
 
