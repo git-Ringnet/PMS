@@ -148,3 +148,8 @@ export const fetchCancelReasons = () => http.get('/cancel-reasons')
 // ==================== POST BILLS (THÊM DỊCH VỤ LỄ TÂN) ====================
 export const postFoServiceBill = (data) => http.post('/booking-room-services/post-fo-service-bill', data)
 export const postRoomCharge    = (data) => http.post('/booking-room-services/post-room-charge', data)
+
+// ==================== PAYMENTS & SETTLEMENT (THANH TOÁN & HỦY THANH TOÁN) ====================
+export const settleBookingPayment = (bookingId, data) => http.post(`/bookings/${bookingId}/settle-payment`, data)
+export const deleteBookingPayment = (paymentId) => http.delete(`/payments/${paymentId}`)
+

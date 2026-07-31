@@ -453,31 +453,30 @@ class BookingRoomServiceController extends Controller
                 'service_ids.*' => 'integer',
                 'folio'         => 'required|integer|between:1,3',
             ]);
-            $room = BookingRoom::findOrFail($roomId);
+            $room = BookingRoom::find($roomId) ?? BookingRoom::where('booking_id', $roomId)->first();
+            if (!$room) {
+                abort(404, 'Không tìm thấy phòng.');
+            }
 
             DB::transaction(function () use ($validated, $room) {
-                $services = BookingRoomService::where('booking_room_id', $room->id)
-                    ->whereIn('id', $validated['service_ids'])
+                $serviceIds = array_map('intval', $validated['service_ids']);
+
+                // 1. Cập nhật booking_room_services nếu có
+                $services = BookingRoomService::whereIn('id', $serviceIds)
                     ->lockForUpdate()
                     ->get();
-                if ($services->count() !== count(array_unique($validated['service_ids']))) {
-                    abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
-                }
 
                 $services->each(function (BookingRoomService $service) use ($validated) {
                     $service->folio = $validated['folio'];
                     $service->save();
                 });
 
-                foreach ($services->groupBy('service_bill_id') as $billId => $billServices) {
-                    if (!$billId) continue;
-                    $allBillServices = BookingRoomService::where('booking_room_id', $room->id)
-                        ->where('service_bill_id', $billId)
-                        ->lockForUpdate()
-                        ->get();
-                    if ($allBillServices->count() === $billServices->count()) {
-                        ServiceBill::whereKey($billId)->update(['Folio' => (string) $validated['folio']]);
-                    }
+                // 2. Cập nhật ServiceBill (cho cả bill RM và bill lẻ)
+                $billIdsFromServices = $services->pluck('service_bill_id')->filter()->toArray();
+                $allBillIds = array_unique(array_merge($serviceIds, $billIdsFromServices));
+
+                if (!empty($allBillIds)) {
+                    ServiceBill::whereIn('Ma', $allBillIds)->update(['Folio' => (string) $validated['folio']]);
                 }
             });
 
@@ -1312,8 +1311,8 @@ class BookingRoomServiceController extends Controller
                                 'Folio'              => (string)$folio,
                                 'Guest'              => $currentGuestName,
                                 'RegisterID2'        => $booking?->id,
-                                'RentalRoomId2'      => $sendRoomRateToMaster ? null : $targetRoom->id,
-                                'CustomerId2'        => $sendRoomRateToMaster ? null : $guestId,
+                                'RentalRoomId2'      => $targetRoom->id,
+                                'CustomerId2'        => $guestId,
                                 'CompanyId2'         => $booking?->company_id,
                                 'Username'           => $user,
                             ]);
@@ -1340,8 +1339,8 @@ class BookingRoomServiceController extends Controller
                                 'CustomerId1'        => $guestId,
                                 'CompanyId1'         => $booking?->company_id,
                                 'RegisterID2'        => $booking?->id,
-                                'RentalRoomId2'      => $sendRoomRateToMaster ? null : $targetRoom->id,
-                                'CustomerId2'        => $sendRoomRateToMaster ? null : $guestId,
+                                'RentalRoomId2'      => $targetRoom->id,
+                                'CustomerId2'        => $guestId,
                                 'CompanyId2'         => $booking?->company_id,
                                 'Username'           => $user,
                                 'Status'             => 1,
@@ -1376,8 +1375,8 @@ class BookingRoomServiceController extends Controller
                             'CustomerId1'        => $guestId,
                             'CompanyId1'         => $booking?->company_id,
                             'RegisterID2'        => $booking?->id,
-                            'RentalRoomId2'      => $sendRoomRateToMaster ? null : $targetRoom->id,
-                            'CustomerId2'        => $sendRoomRateToMaster ? null : $guestId,
+                            'RentalRoomId2'      => $targetRoom->id,
+                            'CustomerId2'        => $guestId,
                             'CompanyId2'         => $booking?->company_id,
                             'Username'           => $user,
                             'Status'             => 1,

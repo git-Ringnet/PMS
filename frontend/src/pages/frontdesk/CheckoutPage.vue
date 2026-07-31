@@ -23,7 +23,7 @@ import {
   Inbox,
   ArrowRightLeft
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -243,34 +243,47 @@ const loadCheckoutBookings = async () => {
           }
 
           let postedRoomCharge = 0
+          let unpaidRoomCharge = 0
           const processedBillIdsInRoom = new Set()
 
-          if (r.services && r.services.length > 0) {
-            r.services.forEach(s => {
-              if (isRoomCharge(s)) {
-                if (s.service_bill_id) processedBillIdsInRoom.add(String(s.service_bill_id))
-                const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * Number(s.rate || 0))
-                postedRoomCharge += itemTotal
-              }
-            })
-          }
-
-          // Lấy thêm từ master_service_bills / service_bills của booking nếu bill đó gắn với phòng này
+          // 1. Lấy từ master_service_bills / service_bills của booking nếu bill đó gắn với phòng này
           const allBookingBills = b.master_service_bills || b.service_bills || []
           allBookingBills.forEach(sb => {
-            if (Number(sb.Edit) === 1 || (sb.Status !== undefined && Number(sb.Status) !== 1)) return
+            if (Number(sb.Edit) === 1) return
             if (!isRoomCharge(sb)) return
-            if (sb.Ma && processedBillIdsInRoom.has(String(sb.Ma))) return
 
             const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(r.id)
             const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(r.id)
             if (isCurrentRoomOwner || isOriginalRoomOwner) {
-              postedRoomCharge += Number(sb.Amount) || 0
+              if (sb.Ma) processedBillIdsInRoom.add(String(sb.Ma))
+              const amt = Number(sb.Amount) || 0
+              postedRoomCharge += amt
+              const isPaid = Number(sb.Status) === 2 || Boolean(sb.PaymentID || sb.PaymentId)
+              if (!isPaid) {
+                unpaidRoomCharge += amt
+              }
             }
           })
 
+          // 2. Lấy thêm dịch vụ phòng từ r.services nếu chưa có trong service_bills
+          if (r.services && r.services.length > 0) {
+            r.services.forEach(s => {
+              if (isRoomCharge(s)) {
+                if (s.service_bill_id && processedBillIdsInRoom.has(String(s.service_bill_id))) return
+                if (!s.service_bill_id && processedBillIdsInRoom.size > 0) return
+                const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * Number(s.rate || 0))
+                postedRoomCharge += itemTotal
+                const isPaid = Number(s.status) === 2 || Boolean(s.payment_id || s.payment_code)
+                if (!isPaid) {
+                  unpaidRoomCharge += itemTotal
+                }
+              }
+            })
+          }
+
           const roomChargeTotal = postedRoomCharge
-          const roomSvc = masterSend ? extraSvc : (extraSvc + roomChargeTotal)
+          const unpaidRoomChargeTotal = unpaidRoomCharge
+          const roomSvc = extraSvc + roomChargeTotal
           const roomDepositTotal = (b.payments || [])
             .filter(payment => (
               payment.pack2 === 'DPR'
@@ -288,24 +301,35 @@ const loadCheckoutBookings = async () => {
           const primaryGuestId = roomGuests.find(guest => guest.isPrimary)?.id || roomGuests[0].id
           roomGuests.forEach(guest => {
             let guestSvcTotal = 0
+            const processedBillIds = new Set()
+
             if (r.services && r.services.length > 0) {
               r.services.forEach(s => {
-                const isRM = s.service_code === 'RM' || (s.service_name && s.service_name.includes('Tiền phòng'))
-                const isRMS = s.service_code === 'RMS'
-                const isRoomCharge = isRM || isRMS
-                
-                // Tiền phòng gom lên Master nếu masterSend = true
-                if (masterSend && isRoomCharge) return
-                
                 const sGuestId = s.guest_id || s.guestId || s.CustomerId1 || s.customerId1 || s.customer_id_1 || null
                 const belongsToThisGuest = sGuestId ? (String(sGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
                 
                 if (belongsToThisGuest) {
+                  if (s.service_bill_id) processedBillIds.add(String(s.service_bill_id))
                   const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * (Number(s.rate) || Number(s.price) || Number(s.amount) || 0))
                   guestSvcTotal += itemTotal
                 }
               })
             }
+
+            allBookingBills.forEach(sb => {
+              if (Number(sb.Edit) === 1) return
+              if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
+              const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(r.id)
+              const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(r.id)
+              if (isCurrentRoomOwner || isOriginalRoomOwner) {
+                const billGuestId = sb.CustomerId2 || sb.CustomerId1
+                const belongsToThisGuest = billGuestId ? (String(billGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
+                if (belongsToThisGuest) {
+                  guestSvcTotal += Number(sb.Amount) || 0
+                }
+              }
+            })
+
             guest.serviceAmount = guestSvcTotal
 
             const guestPaidTotal = (b.payments || [])
@@ -332,6 +356,7 @@ const loadCheckoutBookings = async () => {
             serviceAmount: roomSvc,
             extraServiceAmount: extraSvc,
             roomChargeAmount: roomChargeTotal,
+            unpaidRoomChargeAmount: unpaidRoomChargeTotal,
             paidAmount: roomPaidAmount,
             checked: false,
             rawRoom: r
@@ -343,9 +368,13 @@ const loadCheckoutBookings = async () => {
         ? b.master_service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
         : (b.service_bills ? b.service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') : [])
 
-      const masterServiceTotal = masterBills
-        .filter(bill => Number(bill.Edit) !== 1 && (bill.Status === undefined || Number(bill.Status) === 1))
+      const masterOnlyServices = masterBills
+        .filter(bill => Number(bill.Edit) !== 1 && Number(bill.Status) !== 2 && !bill.PaymentID && !bill.PaymentId)
         .reduce((total, bill) => total + (Number(bill.Amount) || 0), 0)
+
+      const sumUnpaidRoomCharges = roomItems.reduce((acc, rItem) => acc + (Number(rItem.unpaidRoomChargeAmount) || 0), 0)
+      const masterServiceTotal = masterSend ? (masterOnlyServices + sumUnpaidRoomCharges) : masterOnlyServices
+
       const masterDepositTotal = (b.payments || [])
         .filter(payment => payment.pack2 === 'DPR' && Number(payment.edit_flag) === 0 && !payment.deleted_at && !payment.booking_room_id)
         .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
@@ -440,6 +469,52 @@ const servicesList = computed(() => {
     return bill ? { ...service, openTime: service.open_time || service.openTime || bill.OpenTime || bill.CreatedHour } : service
   }
 
+  const findLinkedBill = (s, roomNo = '', roomId = '') => {
+    if (!selectedBooking.value?.rawBooking) return null
+    const rawB = selectedBooking.value.rawBooking
+    const roomBills = selectedRoomItem.value?.rawRoom?.service_bills || selectedRoomItem.value?.rawRoom?.serviceBills || []
+    const allBills = [
+      ...(rawB.master_service_bills || []),
+      ...(rawB.service_bills || []),
+      ...roomBills
+    ]
+
+    if (s.service_bill_id || s.serviceBillId) {
+      const targetId = String(s.service_bill_id || s.serviceBillId)
+      const found = allBills.find(sb => String(sb.Ma) === targetId)
+      if (found) return found
+    }
+
+    const codeVal = String(s.service_code || s.serviceCode || '').toUpperCase()
+    const folioVal = String(s.folio || 1)
+    const roomStr = String(roomNo || s.room_number || '').trim()
+
+    let found = allBills.find(sb => {
+      const sbFolio = String(sb.Folio || 1)
+      const sbCode = String(sb.ServiceId || '').toUpperCase()
+      const codeMatches = (codeVal === 'RM' && (sbCode === 'RM' || sbCode === 'RMS')) ||
+                          (codeVal === sbCode) ||
+                          (s.department && sb.DepartmentId && String(s.department).toUpperCase() === String(sb.DepartmentId).toUpperCase())
+      const folioMatches = sbFolio === folioVal || String(sb.Folio) === '3' || String(sb.Folio) === String(s.folio)
+      const sbRoom = String(sb.RentalRoomId2 || sb.RentalRoomId1 || '')
+      const roomMatches = (roomId && sbRoom === String(roomId)) ||
+                          (roomStr && (String(sb.DescriptionServive || '').includes(roomStr) || sbRoom === roomStr))
+      return codeMatches && folioMatches && roomMatches
+    })
+
+    if (found) return found
+
+    return allBills.find(sb => {
+      const sbFolio = String(sb.Folio || 1)
+      const sbCode = String(sb.ServiceId || '').toUpperCase()
+      const codeMatches = (codeVal === 'RM' && (sbCode === 'RM' || sbCode === 'RMS')) ||
+                          (codeVal === sbCode) ||
+                          (s.department && sb.DepartmentId && String(s.department).toUpperCase() === String(sb.DepartmentId).toUpperCase())
+      const folioMatches = sbFolio === folioVal || String(sb.Folio) === '3' || String(sb.Folio) === String(s.folio)
+      return codeMatches && folioMatches
+    })
+  }
+
   const processServiceItem = (s, idx, defaultDesc, roomNo = '') => {
     const rateVal = Number(s.rate) || Number(s.price) || Number(s.amount) || 0
     const qtyVal = Number(s.quantity) || Number(s.qty) || 1
@@ -453,13 +528,21 @@ const servicesList = computed(() => {
       descVal = [`Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim(), transferTrail].filter(Boolean).join(' ')
     }
 
+    const linkedBill = findLinkedBill(s, roomNo, s.booking_room_id || s.roomId)
+    const rawPayCode = s.payment_id || s.payment_code || s.PaymentID || s.PaymentId || s.service_bill?.PaymentID || s.service_bill?.PaymentId || s.serviceBill?.PaymentID || s.serviceBill?.PaymentId || linkedBill?.PaymentID || linkedBill?.PaymentId || linkedBill?.payment_id || ''
+    const isItemPaid = Number(s.status || linkedBill?.Status || 1) === 2 || Boolean(rawPayCode)
+    const statusVal = isItemPaid ? 2 : Number(s.status || linkedBill?.Status || 1)
+    const payCode = isItemPaid ? rawPayCode : ''
+    const invCode = s.invoice_code || s.service_bill?.InvoiceId || s.serviceBill?.InvoiceId || s.service_bill?.InvoiceID || s.serviceBill?.InvoiceID || linkedBill?.InvoiceId || linkedBill?.invoice_id || linkedBill?.InvoiceID || ''
+    const effectiveFolio = linkedBill?.Folio ? Number(linkedBill.Folio) : Number(s.folio || 1)
+
     return {
       id: s.id || `S${idx}`,
       serviceDate: s.service_date || s.created_at || null,
       createdAt: s.created_at || null,
-      dateTime: formatServiceDateTime(s.service_date, s.created_at, s.open_time || s.openTime || s.service_bill?.OpenTime || s.serviceBill?.OpenTime),
+      dateTime: formatServiceDateTime(s.service_date, s.created_at, s.open_time || s.openTime || s.service_bill?.OpenTime || s.serviceBill?.OpenTime || linkedBill?.OpenTime),
       serviceCode: codeVal,
-      serviceBillId: s.service_bill_id || null,
+      serviceBillId: s.service_bill_id || linkedBill?.Ma || null,
       serviceName: s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng',
       description: descVal,
       department: s.department || 'FO',
@@ -467,11 +550,13 @@ const servicesList = computed(() => {
       quantity: qtyVal,
       totalAmount: totalVal,
       unit: s.unit || (codeVal === 'RM' ? 'Đêm' : 'Cái'),
-      paymentCode: s.payment_code || '',
-      folio: Number(s.folio || 1),
+      status: statusVal,
+      isPaid: isItemPaid,
+      paymentCode: payCode ? String(payCode) : '',
+      folio: effectiveFolio,
       tax: Number(s.tax) || 0,
       serviceCharge: Number(s.service_charge) || 0,
-      invoiceCode: s.invoice_code || '',
+      invoiceCode: invCode ? String(invCode) : '',
       vatNo: s.vat_no || '',
       accounting: s.accounting || 'Đã ghi',
       userName: s.created_by || s.user_name || 'Admin',
@@ -485,6 +570,10 @@ const servicesList = computed(() => {
     const rateVal = qtyVal > 0 ? totalVal / qtyVal : totalVal
     const codeVal = sb.ServiceId || 'DV'
     const descVal = sb.DescriptionServive || sb.ServiceId || 'Dịch vụ FO'
+    const rawPayCode = sb.PaymentID || sb.PaymentId || sb.payment_id || sb.payment_code || ''
+    const isBillPaid = Number(sb.Status) === 2 || Boolean(rawPayCode)
+    const payCode = isBillPaid ? rawPayCode : ''
+    const invCode = sb.InvoiceId || sb.invoice_id || sb.InvoiceID || ''
 
     return {
       id: `SB-${sb.Ma || idx}`,
@@ -500,11 +589,13 @@ const servicesList = computed(() => {
       quantity: qtyVal,
       totalAmount: totalVal,
       unit: 'Lần',
-      paymentCode: '',
+      status: isBillPaid ? 2 : Number(sb.Status || 1),
+      isPaid: isBillPaid,
+      paymentCode: payCode ? String(payCode) : '',
       folio: Number(sb.Folio || 1),
       tax: Number(sb.Tax) || 0,
       serviceCharge: Number(sb.ServiceCharge) || 0,
-      invoiceCode: '',
+      invoiceCode: invCode ? String(invCode) : '',
       vatNo: '',
       accounting: 'Đã ghi',
       userName: sb.CreatedUser || sb.Username || 'Admin'
@@ -523,20 +614,27 @@ const servicesList = computed(() => {
 
     ;(room.rawRoom?.services || []).forEach((service, idx) => {
       const roomCharge = isRoomCharge(service)
+      const linkedBill = findLinkedBill(service, room.roomNumber, room.roomId)
+      const isPaid = Number(service.status || linkedBill?.Status || 1) === 2 || Boolean(service.payment_id || service.payment_code || linkedBill?.PaymentID || linkedBill?.PaymentId)
       const belongsToGuest = String(service.guest_id || room.primaryGuestId) === String(guestId)
-      if ((!masterSend || !roomCharge) && belongsToGuest) {
+      const shouldSendToMaster = masterSend && roomCharge && !isPaid
+
+      if (!shouldSendToMaster && belongsToGuest) {
         if (service.service_bill_id) processedBillIds.add(String(service.service_bill_id))
         services.push(processServiceItem(withServiceBillTime(room.rawRoom, service), `${room.id}-${idx}`, `Phòng ${room.roomNumber}`, room.roomNumber))
       }
     })
 
-    // Khi không gửi tiền phòng về master (masterSend = false), lấy thêm các bill tiền phòng ServiceBill thuộc về phòng này
-    if (!masterSend && rawB) {
+    // Lấy thêm các bill ServiceBill thuộc về phòng này
+    if (rawB) {
       const allBills = rawB.master_service_bills || rawB.service_bills || []
       allBills.forEach((sb, idx) => {
-        if (Number(sb.Edit) === 1 || (sb.Status !== undefined && Number(sb.Status) !== 1)) return
+        if (Number(sb.Edit) === 1) return
         if (sb.ServiceId !== 'RM' && sb.ServiceId !== 'RMS') return
         if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
+
+        const isPaid = Number(sb.Status) === 2 || Boolean(sb.PaymentID || sb.PaymentId)
+        const shouldSendToMaster = masterSend && !isPaid
 
         const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(room.roomId)
         const billGuestId = sb.CustomerId2 || sb.CustomerId1
@@ -544,7 +642,7 @@ const servicesList = computed(() => {
           ? String(billGuestId) === String(guestId)
           : isPrimary
 
-        if (isCurrentRoomOwner && belongsToSelectedGuest) {
+        if (!shouldSendToMaster && isCurrentRoomOwner && belongsToSelectedGuest) {
           services.push(processServiceBillRecord(sb, `room-sb-${idx}`))
         }
       })
@@ -553,20 +651,27 @@ const servicesList = computed(() => {
     return services
   }
 
-  // Khi chọn Phiếu Tổng (GAL1 / Master Booking): chỉ gom các dịch vụ/tiền phòng được thiết lập chuyển lên phiếu tổng
+  // Khi chọn Phiếu Tổng (GAL1 / Master Booking): chỉ gom các dịch vụ/tiền phòng chưa thanh toán chuyển lên phiếu tổng
   if (selectedBooking.value) {
     const rawB = selectedBooking.value.rawBooking
     const masterSend = rawB?.is_master_room_rate !== undefined ? Boolean(rawB.is_master_room_rate) : true
 
-    // 1. Dịch vụ post trực tiếp hoặc gửi về Master Booking Header (RentalRoomId2 = null)
-    const masterBills = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
-      ? rawB.master_service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
-      : (rawB?.service_bills ? rawB.service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') : [])
+    // 1. Dịch vụ post trực tiếp hoặc tiền phòng CHƯA THANH TOÁN gửi về Master Booking Header
+    const allBillsSource = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
+      ? rawB.master_service_bills
+      : (rawB?.service_bills || [])
+
+    const masterBills = allBillsSource.filter(sb => {
+      if (Number(sb.Edit) === 1) return false
+      if (!sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') return true
+      const isPaid = Number(sb.Status) === 2 || Boolean(sb.PaymentID || sb.PaymentId)
+      if (masterSend && (sb.ServiceId === 'RM' || sb.ServiceId === 'RMS') && !isPaid) return true
+      return false
+    })
 
     const masterBillIds = new Set(masterBills.map(sb => String(sb.Ma)))
 
     masterBills.forEach((sb, idx) => {
-      if (Number(sb.Edit) === 1 || (sb.Status !== undefined && Number(sb.Status) !== 1)) return
       services.push(processServiceBillRecord(sb, `master-${idx}`))
     })
 
@@ -577,6 +682,9 @@ const servicesList = computed(() => {
         if (rawR && rawR.services && Array.isArray(rawR.services)) {
           rawR.services.forEach((s, idx) => {
             if (!isRoomCharge(s)) return
+            const linkedBill = findLinkedBill(s, roomNo, rItem.roomId)
+            const isPaid = Number(s.status || linkedBill?.Status || 1) === 2 || Boolean(s.payment_id || s.payment_code || linkedBill?.PaymentID || linkedBill?.PaymentId)
+            if (isPaid) return
             if (s.service_bill_id && masterBillIds.has(String(s.service_bill_id))) return
             services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
           })
@@ -609,12 +717,25 @@ const visibleServices = computed(() => {
   return servicesList.value.filter(service => String(service.folio) === activeFolioTab.value)
 })
 
+const folioPaidTotal = (folio) => {
+  const validPayments = paymentsList.value.filter(payment => (
+    Number(payment.editFlag) === 0 && !payment.isDeleted
+  ))
+  if (String(folio) === 'A') {
+    return validPayments.reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+  }
+  return validPayments
+    .filter(payment => String(payment.folio) === String(folio))
+    .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+}
+
 const folioTotal = (folio) => {
-  if (folio === 'A') return [1, 2, 3].reduce((total, currentFolio) => total + folioTotal(currentFolio), 0)
+  if (String(folio) === 'A') return [1, 2, 3].reduce((total, currentFolio) => total + folioTotal(currentFolio), 0)
   const serviceTotal = servicesList.value
     .filter(service => String(service.folio) === String(folio))
     .reduce((total, service) => total + (Number(service.totalAmount) || 0), 0)
-  return serviceTotal - folioDepositTotal(folio)
+  const paidTotal = folioPaidTotal(folio)
+  return serviceTotal - paidTotal
 }
 
 const serviceGroups = computed(() => {
@@ -626,10 +747,16 @@ const serviceGroups = computed(() => {
     const sourceKey = service.serviceBillId ? `sb-${service.serviceBillId}` : `svc-${service.id || service.createdAt}`
     const key = [meta.key, sourceKey, service.folio || 'A', service.department || 'FO'].join('|')
     if (!groups.has(key)) {
-      groups.set(key, { id: key, ...meta, name: service.description || meta.name, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode, totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
+      groups.set(key, { id: key, ...meta, name: service.description || meta.name, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode || '', invoiceCode: service.invoiceCode || '', totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
     }
     const group = groups.get(key)
     group.items.push(service)
+    if (!group.paymentCode && service.paymentCode) {
+      group.paymentCode = service.paymentCode
+    }
+    if (!group.invoiceCode && service.invoiceCode) {
+      group.invoiceCode = service.invoiceCode
+    }
     group.totalAmount += Number(service.totalAmount) || 0
     group.quantity += Number(service.quantity) || 0
     group.tax += Number(service.tax) || 0
@@ -665,10 +792,10 @@ const toggleAllServiceSelection = (checked) => {
   if (checked) selectedPaymentIds.value = []
 }
 
-const canTransferServiceGroup = (group) => (
-  Boolean(selectedRoomItem.value) &&
-  group.items.every(item => Number.isInteger(Number(item.id)) && Number(item.id) > 0)
-)
+const canTransferServiceGroup = (group) => {
+  if (!group || !group.items || group.items.length === 0) return false
+  return group.items.every(item => !item.isPaid && Number(item.status) !== 2)
+}
 
 const selectedServiceItems = computed(() => servicesList.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
 const selectedServiceGroups = computed(() => serviceGroups.value.filter(group => isServiceGroupSelected(group)))
@@ -774,17 +901,40 @@ const guestRoomServiceAmount = (booking, room, guestId) => {
   const sendRoomRateToMaster = isMasterRoomRateEnabled(booking)
   const targetGuestId = guestId || room.primaryGuestId
   const isPrimary = String(targetGuestId) === String(room.primaryGuestId)
-  return (room.rawRoom?.services || [])
-    .filter(service => {
-      const roomCharge = isRoomCharge(service)
-      const belongsToGuest = service.guest_id
-        ? String(service.guest_id) === String(targetGuestId)
-        : isPrimary
-      return (!sendRoomRateToMaster || !roomCharge) && belongsToGuest
-    })
-    .reduce((total, service) => (
-      total + (Number(service.total_amount) || (Number(service.quantity || 1) * Number(service.rate || service.price || service.amount || 0)))
-    ), 0)
+
+  let total = 0
+  const processedBillIds = new Set()
+
+  ;(room.rawRoom?.services || []).forEach(service => {
+    const roomCharge = isRoomCharge(service)
+    const belongsToGuest = service.guest_id
+      ? String(service.guest_id) === String(targetGuestId)
+      : isPrimary
+    if ((!sendRoomRateToMaster || !roomCharge) && belongsToGuest) {
+      if (service.service_bill_id) processedBillIds.add(String(service.service_bill_id))
+      total += Number(service.total_amount) || (Number(service.quantity || 1) * Number(service.rate || service.price || service.amount || 0))
+    }
+  })
+
+  const allBookingBills = booking.rawBooking?.master_service_bills || booking.rawBooking?.service_bills || []
+  allBookingBills.forEach(sb => {
+    if (Number(sb.Edit) === 1) return
+    const roomCharge = isRoomCharge(sb)
+    if (sendRoomRateToMaster && roomCharge) return
+    if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
+
+    const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(room.roomId)
+    const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(room.roomId)
+    if (isCurrentRoomOwner || isOriginalRoomOwner) {
+      const billGuestId = sb.CustomerId2 || sb.CustomerId1
+      const belongsToGuest = billGuestId ? String(billGuestId) === String(targetGuestId) : isPrimary
+      if (belongsToGuest) {
+        total += Number(sb.Amount) || 0
+      }
+    }
+  })
+
+  return total
 }
 
 const guestRoomPaidAmount = (booking, room, guestId) => {
@@ -1140,6 +1290,7 @@ const transferSelectedPayment = async (destination) => {
   }
 }
 
+
 const handleServiceDragStart = (group, event) => {
   if (!canTransferServiceGroup(group)) {
     event.preventDefault()
@@ -1192,21 +1343,55 @@ const handleFolioDrop = async (folio) => {
     }
     return
   }
+
   if (!group || !canTransferServiceGroup(group) || Number(group.folio) === targetFolio) {
     handleServiceDragEnd()
     return
   }
 
+  // Thu thập ID các bill chưa thanh toán được tick chọn + nhóm kéo thả
+  const extractIds = (items) => {
+    const ids = []
+    items.forEach(item => {
+      if (item.isPaid || Number(item.status) === 2) return
+      if (item.id && Number.isInteger(Number(item.id)) && Number(item.id) > 0) {
+        ids.push(Number(item.id))
+      }
+      if (item.serviceBillId && Number.isInteger(Number(item.serviceBillId)) && Number(item.serviceBillId) > 0) {
+        ids.push(Number(item.serviceBillId))
+      }
+    })
+    return ids
+  }
+
+  const selectedUnpaidIds = extractIds(selectedServiceItems.value)
+  const draggedGroupIds = extractIds(group.items)
+
+  const serviceIdsToTransfer = selectedUnpaidIds.length > 0
+    ? [...new Set([...selectedUnpaidIds, ...draggedGroupIds])]
+    : [...new Set(draggedGroupIds)]
+
+  if (serviceIdsToTransfer.length === 0) {
+    handleServiceDragEnd()
+    return
+  }
+
+  isServiceOperationLoading.value = true
   try {
-    await transferBookingRoomServicesFolio(selectedRoomItem.value.roomId, {
-      service_ids: group.items.map(item => Number(item.id)),
+    const targetRoomId = selectedRoomItem.value?.roomId || selectedBooking.value?.bookingId
+    await transferBookingRoomServicesFolio(targetRoomId, {
+      service_ids: serviceIdsToTransfer,
       folio: targetFolio,
     })
+    selectedServiceIds.value = []
     activeFolioTab.value = String(targetFolio)
     await handleServiceAdded()
+    uiStore.showToast(`Đã chuyển ${serviceIdsToTransfer.length} dịch vụ sang Folio ${targetFolio}!`, 'success')
   } catch (error) {
     console.error('Không thể chuyển Folio dịch vụ:', error)
+    uiStore.showToast(error.response?.data?.message || 'Không thể chuyển Folio dịch vụ.', 'error')
   } finally {
+    isServiceOperationLoading.value = false
     handleServiceDragEnd()
   }
 }
@@ -1295,13 +1480,74 @@ const visiblePaymentsList = computed(() => activeFolioTab.value === 'A'
   : paymentsList.value.filter(payment => String(payment.folio) === String(activeFolioTab.value))
 )
 
-const folioDepositTotal = (folio) => paymentsList.value
-  .filter(payment => String(payment.folio) === String(folio))
-  .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+const folioDepositTotal = (folio) => {
+  const unusedPayments = paymentsList.value.filter(payment => (
+    !payment.paymentCode && Number(payment.status) !== 2 && Number(payment.editFlag) === 0 && !payment.isDeleted
+  ))
+  if (String(folio) === 'A') {
+    return unusedPayments.reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+  }
+  return unusedPayments
+    .filter(payment => String(payment.folio) === String(folio))
+    .reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+}
 
 const totalPaymentAmount = computed(() => {
   return visiblePaymentsList.value.reduce((acc, p) => acc + p.amount, 0)
 })
+
+const currentFolioUnpaidServices = computed(() => {
+  return visibleServices.value.filter(s => !s.paymentCode && String(s.status) !== '2')
+})
+
+const currentFolioUnpaidServiceTotal = computed(() => {
+  return currentFolioUnpaidServices.value.reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0)
+})
+
+const currentFolioDepositTotal = computed(() => {
+  return folioDepositTotal(activeFolioTab.value)
+})
+
+const openPaymentModal = () => {
+  if (!selectedBooking.value) {
+    uiStore.showToast('Vui lòng chọn Booking hoặc phòng cần thanh toán.', 'warning')
+    return
+  }
+
+  showPaymentModal.value = true
+}
+
+const handlePaymentSuccess = async () => {
+  showPaymentModal.value = false
+  await handleServiceAdded()
+}
+
+const openDeletePaymentModal = async () => {
+  if (selectedPaymentItems.value.length === 0) {
+    uiStore.showToast('Vui lòng chọn bản ghi thanh toán/cọc cần xóa.', 'warning')
+    return
+  }
+
+  const payment = selectedPaymentItems.value[0]
+  if (!payment || !payment.id || String(payment.id).startsWith('P-fallback')) {
+    uiStore.showToast('Bản ghi thanh toán không hợp lệ.', 'warning')
+    return
+  }
+
+  if (confirm(`Bạn có chắc chắn muốn xóa bản ghi thanh toán "${payment.description || payment.id}"? (Hệ thống sẽ tạo dòng âm đối trừ)`)) {
+    isServiceOperationLoading.value = true
+    try {
+      const res = await deleteBookingPayment(payment.id)
+      selectedPaymentIds.value = []
+      await handleServiceAdded()
+      uiStore.showToast(res.data?.message || 'Đã xóa thanh toán thành công (tạo dòng đối trừ).', 'success')
+    } catch (err) {
+      uiStore.showToast(err.response?.data?.message || 'Không thể xóa thanh toán.', 'error')
+    } finally {
+      isServiceOperationLoading.value = false
+    }
+  }
+}
 
 const selectedRoomGuests = computed(() => selectedRoomItem.value?.allGuests || [])
 const hasCurrentSelectedRoom = computed(() => {
@@ -1571,11 +1817,14 @@ onUnmounted(() => {
 
         <!-- Xóa thanh toán -->
         <button 
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-red-50 text-red-600 transition-colors border border-transparent text-xs"
+          @click="openDeletePaymentModal"
+          :disabled="selectedPaymentItems.length === 0 || isServiceOperationLoading"
+          :class="selectedPaymentItems.length > 0 && !isServiceOperationLoading ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-gray-400 cursor-not-allowed opacity-60'"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
           :title="isSidebarCollapsed ? 'Xóa thanh toán' : ''"
         >
-          <RotateCcw class="w-3.5 h-3.5 text-red-500 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate text-red-600">Xóa thanh toán</span>
+          <RotateCcw :class="selectedPaymentItems.length > 0 ? 'text-red-500' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
+          <span v-if="!isSidebarCollapsed" class="truncate">Xóa thanh toán</span>
         </button>
 
         <div class="border-t border-gray-300 my-1"></div>
@@ -1583,7 +1832,7 @@ onUnmounted(() => {
         <!-- Thanh toán trước -->
         <button 
           @click="showPrepaymentModal = true"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs cursor-pointer"
           :title="isSidebarCollapsed ? 'Thanh toán trước' : ''"
         >
           <CreditCard class="w-3.5 h-3.5 text-gray-600 shrink-0" />
@@ -1592,8 +1841,8 @@ onUnmounted(() => {
 
         <!-- Thanh toán -->
         <button 
-          @click="showPaymentModal = true"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
+          @click="openPaymentModal"
+          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs cursor-pointer"
           :title="isSidebarCollapsed ? 'Thanh toán' : ''"
         >
           <CreditCard class="w-3.5 h-3.5 text-gray-600 shrink-0" />
@@ -2004,7 +2253,8 @@ onUnmounted(() => {
                   @dragstart="handleServiceDragStart(group, $event)"
                   @dragend="handleServiceDragEnd"
                   :class="[
-                    'border-b border-gray-200 hover:bg-sky-50 text-gray-800 cursor-pointer transition-colors',
+                    'border-b border-gray-200 transition-colors',
+                    group.paymentCode ? 'bg-[#fde8e8] text-rose-950 font-medium hover:bg-rose-100' : 'hover:bg-sky-50 text-gray-800 cursor-pointer',
                     canTransferServiceGroup(group) ? 'cursor-grab active:cursor-grabbing' : ''
                   ]"
                   :title="canTransferServiceGroup(group) ? 'Kéo sang Folio khác' : 'Xem chi tiết hóa đơn'"
@@ -2025,13 +2275,13 @@ onUnmounted(() => {
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono">{{ group.quantity }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">VND</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono text-sky-600">{{ group.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono font-bold text-red-600">{{ group.paymentCode }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold">
                     <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block min-w-[20px]">{{ group.folio }}</span>
                   </td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.items[0]?.invoiceCode }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono font-bold text-red-600">{{ group.items[0]?.invoiceCode }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.items[0]?.vatNo }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">
                     <input type="checkbox" disabled class="rounded border-gray-300 text-sky-600 cursor-not-allowed" />
@@ -2101,7 +2351,11 @@ onUnmounted(() => {
                   :draggable="canTransferPayment(p)"
                   @dragstart="handlePaymentDragStart(p, $event)"
                   @dragend="handleServiceDragEnd"
-                  :class="['border-b border-gray-200 hover:bg-gray-50 text-gray-800', canTransferPayment(p) ? 'cursor-grab active:cursor-grabbing' : '']"
+                  :class="[
+                    'border-b border-gray-200 transition-colors',
+                    p.paymentCode ? 'bg-[#fde8e8] text-rose-950 font-medium hover:bg-rose-100' : 'hover:bg-gray-50 text-gray-800',
+                    canTransferPayment(p) ? 'cursor-grab active:cursor-grabbing' : ''
+                  ]"
                   :title="canTransferPayment(p) ? 'Kéo sang Folio khác' : 'Cọc đã dùng để thanh toán không thể chuyển Folio'"
                 >
                   <td class="px-2 py-1.5 text-center border-r border-gray-200">
@@ -2115,12 +2369,12 @@ onUnmounted(() => {
                   </td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ p.dateTime }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.department }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.description }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'">{{ p.description }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">{{ formatMoney(p.amount) }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold" :class="p.paymentCode ? 'text-red-600' : 'text-emerald-700'">{{ formatMoney(p.amount) }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.unit }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold"><span class="inline-block min-w-[20px] rounded bg-[#8fd1d9] px-2 py-0.5 text-xs text-gray-900">{{ p.folio }}</span></td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono text-sky-600">{{ p.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono font-bold text-red-600">{{ p.paymentCode }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">{{ p.isDeleted }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.vatNo }}</td>
                   <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.accounting }}</td>
@@ -2240,6 +2494,7 @@ onUnmounted(() => {
       :roomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
       :guestId="selectedGuestId"
       :initialAdjustment="housekeepingAdjustment"
+      :folioId="activeFolioTab === 'A' ? 1 : (Number(activeFolioTab) || 1)"
       @close="showHousekeepingServiceModal = false; housekeepingAdjustment = null" 
       @submit="handleServiceAdded"
     />
@@ -2281,7 +2536,17 @@ onUnmounted(() => {
 
     <PaymentModal 
       :show="showPaymentModal" 
+      :bookingId="selectedBooking?.bookingId"
+      :bookingCode="selectedBooking?.code"
+      :bookingName="selectedBooking?.name"
+      :selectedRoomId="selectedRoomItem?.roomId || null"
+      :selectedGuestId="selectedGuestId"
+      :folioId="activeFolioTab"
+      :totalServiceAmount="currentFolioUnpaidServiceTotal"
+      :totalDepositAmount="currentFolioDepositTotal"
+      :systemDate="systemDate"
       @close="showPaymentModal = false" 
+      @success="handlePaymentSuccess"
     />
 
     <FilterServiceModal 

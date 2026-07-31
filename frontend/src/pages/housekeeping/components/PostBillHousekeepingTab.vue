@@ -319,6 +319,10 @@ const props = defineProps({
   initialAdjustment: {
     type: Object,
     default: null
+  },
+  initialFolioId: {
+    type: [String, Number],
+    default: 1
   }
 })
 
@@ -328,6 +332,17 @@ const uiStore = useUiStore()
 
 const bookingRooms = ref([])
 const loadingRooms = ref(true)
+
+const form = ref({
+  roomId: '',
+  guestId: '',
+  date: new Date().toISOString().split('T')[0],
+  folio: Number(props.initialFolioId) || 1,
+  surcharge: 0,
+  discount: 0,
+  isFree: false,
+  note: ''
+})
 
 const loadSystemDate = async () => {
   try {
@@ -542,17 +557,6 @@ onMounted(() => {
 const tabLabels = { minibar: 'Minibar', giatui: 'Giặt ủi', dengbu: 'Hàng đền bù' }
 const GROUP_LABELS = { minibar: 'Minibar', giatui: 'Giặt ủi', dengbu: 'Hàng đền bù' }
 const GROUP_COLORS = { minibar: '#2563eb', giatui: '#16a34a', dengbu: '#d97706' }
-
-const form = ref({
-  roomId: '',
-  guestId: '',
-  date: new Date().toISOString().split('T')[0],
-  folio: 1,
-  surcharge: 0,
-  discount: 0,
-  isFree: false,
-  note: ''
-})
 
 const currentTab = ref('minibar')
 const productSearchQuery = ref('')
