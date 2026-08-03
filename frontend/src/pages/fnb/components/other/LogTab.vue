@@ -16,7 +16,7 @@ const yyyy = today.getFullYear()
 const todayStr = `${dd}/${mm}/${yyyy}`
 
 // Phase 1 FIX: replace 2 separate date inputs with DateRangePicker component
-const dateRange = ref({ start: todayStr, end: todayStr })
+const dateRange = ref({ start: `${yyyy}-${mm}-${dd}`, end: `${yyyy}-${mm}-${dd}` })
 
 const columns = [
   'ID', 'Outlet', 'Mã đơn', 'In về bếp', 'Giờ', 'Ngày',
@@ -35,6 +35,7 @@ const viewDetails = (item) => {
 
 const formatDateForApi = (dateStr) => {
   if (!dateStr) return ''
+  if (dateStr.includes('-')) return dateStr
   const [d, m, y] = dateStr.split('/')
   return `${y}-${m}-${d}`
 }
@@ -108,7 +109,7 @@ const handleExport = () => {
       <div class="flex flex-wrap items-center gap-3 px-6 py-3">
 
         <!-- Phase 1: dùng DateRangePicker thay 2 input riêng -->
-        <DateRangePicker v-model="dateRange" />
+        <DateRangePicker v-model:start-date="dateRange.start" v-model:end-date="dateRange.end" />
 
         <button @click="loadData" class="bg-sky-500 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-sky-600 active:scale-[0.98] transition-all shadow-sm shadow-sky-100 hover:shadow-md">
           Xem

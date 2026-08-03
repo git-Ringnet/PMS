@@ -45,7 +45,7 @@ const props = defineProps({
 })
 
 // State variables for filters
-const dateRange = ref({ start: '24/06/2026', end: '24/06/2026' })
+const dateRange = ref({ start: '2026-06-24', end: '2026-06-24' })
 const singleDate = ref('Hôm nay')
 const selectedZone = ref(props.dateType === 'single' ? 'Chọn giá trị' : 'Tất cả')
 const selectedCounter = ref('Tất cả')
@@ -132,7 +132,7 @@ const handleDownload = () => uiStore.showToast('Đang tải file PDF...', 'info'
         <!-- Ngày -->
         <div class="flex flex-col gap-1.5">
           <label class="text-xs font-medium text-slate-700">Ngày</label>
-          <DateRangePicker v-if="dateType === 'range'" v-model="dateRange" class="w-full" />
+          <DateRangePicker v-if="dateType === 'range'" v-model:start-date="dateRange.start" v-model:end-date="dateRange.end" class="w-full" />
           <div v-else class="relative">
             <input type="text" v-model="singleDate" class="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-slate-700 transition font-medium" />
             <svg class="w-4 h-4 text-emerald-500 absolute right-2 top-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>

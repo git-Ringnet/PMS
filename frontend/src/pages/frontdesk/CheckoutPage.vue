@@ -217,6 +217,9 @@ const loadCheckoutBookings = async () => {
         b.booking_rooms.forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
           if (!roomNo || ![0, 1].includes(Number(r.status))) return
+          const roomArrivalDate = String(r.arrival_date || b.arrival_date || '').slice(0, 10)
+          const checkoutSystemDate = String(systemDate.value || new Date().toISOString().slice(0, 10)).slice(0, 10)
+          if (roomArrivalDate && roomArrivalDate > checkoutSystemDate) return
           
           const roomGuests = []
           if (r.guest_name && r.guest_name.trim()) {
@@ -368,6 +371,8 @@ const loadCheckoutBookings = async () => {
           })
         })
       }
+
+      if (roomItems.length === 0) return
 
       const masterBills = (b.master_service_bills && b.master_service_bills.length > 0)
         ? b.master_service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
