@@ -329,6 +329,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // =====================================================================
     Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
     Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store']);
+    Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment']);
     Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update']);
     Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio']);
     Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);

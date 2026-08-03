@@ -11,6 +11,8 @@ const props = defineProps({
   bookingRoomId: { type: String, default: null },
   bookingId:     { type: [String, Number], default: '' },
   bookingInfo:   { type: String, default: '' },
+  arrivalDate:   { type: String, default: '' },
+  departureDate: { type: String, default: '' },
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
   roomRate:      { type: Number, default: 0 },
   roomAdjustment: { type: Object, default: null },
@@ -43,6 +45,17 @@ function openDatePicker(e) {
     } catch {}
   }
 }
+
+// Giới hạn ngày từ booking (min = arrival_date, max = departure_date)
+const bookingMinDate = computed(() => {
+  if (props.arrivalDate) return String(props.arrivalDate).slice(0, 10)
+  return undefined
+})
+
+const bookingMaxDate = computed(() => {
+  if (props.departureDate) return String(props.departureDate).slice(0, 10)
+  return undefined
+})
 
 // ─────────────────────────────────────────────
 // TAB 1 — DỊCH VỤ
@@ -160,7 +173,12 @@ onMounted(() => {
 
 watch(() => props.show, (v) => {
   if (v) {
-    const initialDate = props.systemDate || todayYmd()
+    let initialDate = props.systemDate || todayYmd()
+    if (bookingMinDate.value && initialDate < bookingMinDate.value) {
+      initialDate = bookingMinDate.value
+    } else if (bookingMaxDate.value && initialDate > bookingMaxDate.value) {
+      initialDate = bookingMaxDate.value
+    }
     errorMsg.value = ''
     activeTab.value = 'service'
     serviceFrom.value = initialDate
@@ -312,12 +330,12 @@ function handleClose() {
             <div class="grid grid-cols-2 gap-2">
               <div class="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                 <span class="text-gray-400 text-xs font-medium mr-2 flex-shrink-0">Từ</span>
-                <input v-model="serviceFrom" type="date" @click="openDatePicker"
+                <input v-model="serviceFrom" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
                   class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
               </div>
               <div class="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                 <span class="text-gray-400 text-xs font-medium mr-2 flex-shrink-0">Đến</span>
-                <input v-model="serviceTo" type="date" @click="openDatePicker"
+                <input v-model="serviceTo" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
                   class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
               </div>
             </div>
@@ -406,10 +424,10 @@ function handleClose() {
               </label>
               <div class="flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                 <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0 w-full">
-                  <input v-model="roomFrom" type="date" @click="openDatePicker"
+                  <input v-model="roomFrom" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
                     class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
                   <span class="text-gray-400 px-1 font-bold">~</span>
-                  <input v-model="roomTo" type="date" @click="openDatePicker"
+                  <input v-model="roomTo" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
                     class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
                 </div>
               </div>

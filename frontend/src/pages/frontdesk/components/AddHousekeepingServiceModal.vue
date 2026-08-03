@@ -19,6 +19,10 @@ const props = defineProps({
   initialAdjustment: {
     type: Object,
     default: null
+  },
+  folioId: {
+    type: [String, Number],
+    default: 1
   }
 })
 
@@ -55,6 +59,7 @@ const handleSuccess = (data) => {
           :initialRoomId="roomId"
           :initialGuestId="guestId"
           :initialAdjustment="initialAdjustment"
+          :initialFolioId="folioId"
           :isModal="true"
           :department="'HK'"
           @close="handleClose"

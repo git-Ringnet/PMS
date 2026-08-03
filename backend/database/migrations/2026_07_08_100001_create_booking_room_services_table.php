@@ -36,7 +36,7 @@ return new class extends Migration
             $table->string('service_code', 30);
 
             // Tên dịch vụ (lưu lại để không phụ thuộc FK khi dịch vụ bị xóa)
-            $table->string('service_name', 100)->nullable();
+            $table->text('service_name')->nullable();
 
             // =========================================
             // CHI TIẾT SỬ DỤNG
@@ -46,7 +46,7 @@ return new class extends Migration
             $table->decimal('rate', 15, 2)->default(0);      // Đơn giá
             $table->decimal('total_amount', 15, 2)->default(0)->comment('Tổng tiền = quantity * rate');
             $table->string('department', 20)->default('HK');
-            $table->string('note', 255)->nullable();
+            $table->text('note')->nullable();
             $table->decimal('tax', 15, 2)->default(0);
             $table->decimal('service_charge', 15, 2)->default(0);
             $table->string('unit', 30)->nullable()->default('Cái');

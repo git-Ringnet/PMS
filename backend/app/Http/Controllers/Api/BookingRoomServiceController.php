@@ -235,9 +235,6 @@ class BookingRoomServiceController extends Controller
             if ($services->count() !== count(array_unique($validated['service_ids']))) {
                 abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
             }
-            if ($services->contains(fn (BookingRoomService $service) => $service->service_code === BookingRoomService::CODE_ROOM)) {
-                abort(422, 'Không được xóa dịch vụ tiền phòng.');
-            }
             if ($services->contains(fn (BookingRoomService $service) => !$service->service_bill_id)) {
                 abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện xóa.');
             }
@@ -357,16 +354,31 @@ class BookingRoomServiceController extends Controller
 
     public function quickTransfer(Request $request, $roomId)
     {
-        $request->validate(['bill_ids' => 'required|array|min:1', 'bill_ids.*' => 'integer']);
+        $request->validate([
+            'bill_ids' => 'required|array|min:1',
+            'bill_ids.*' => 'integer',
+            'target_guest_id' => 'nullable|string|exists:guests,id',
+        ]);
         $isMaster = str_starts_with((string) $roomId, 'master-');
         $targetRoom = $isMaster ? null : BookingRoom::with('guests.guest', 'booking')->findOrFail($roomId);
         $targetBooking = $isMaster ? Booking::findOrFail((int) substr((string) $roomId, 7)) : $targetRoom->booking;
         if (!$isMaster && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) abort(422, 'Phòng nhận phải ở trạng thái Reservation hoặc Inhouse.');
-        $targetGuest = $targetRoom?->guests->firstWhere('is_primary', 1);
+        $targetGuest = null;
+        if ($targetRoom) {
+            $targetGuest = $request->filled('target_guest_id')
+                ? $targetRoom->guests->firstWhere('guest_id', (string) $request->target_guest_id)
+                : $targetRoom->guests->firstWhere('is_primary', 1);
+
+            if ($request->filled('target_guest_id') && !$targetGuest) {
+                abort(422, 'Khách nhận không thuộc phòng đã chọn.');
+            }
+        }
 
         DB::transaction(function () use ($request, $targetRoom, $targetBooking, $targetGuest) {
+            $containsRoomCharge = false;
             foreach (array_unique($request->bill_ids) as $billId) {
                 $bill = ServiceBill::lockForUpdate()->findOrFail($billId);
+                $containsRoomCharge = $containsRoomCharge || strtoupper((string) $bill->ServiceId) === BookingRoomService::CODE_ROOM;
                 if ($bill->PaymentId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) abort(422, 'Chỉ được chuyển bill chưa thanh toán.');
                 $isMasterSource = (int) $bill->RegisterID2 === (int) $targetBooking->id && empty($bill->RentalRoomId2);
                 $sourceRoom = $isMasterSource ? null : BookingRoom::where('id', $bill->RentalRoomId2)->where('booking_id', $targetBooking->id)->lockForUpdate()->first();
@@ -383,34 +395,51 @@ class BookingRoomServiceController extends Controller
                 $positive->CompanyId2 = $targetBooking->company_id; $positive->Guest = $targetGuest?->guest?->full_name ?: $targetBooking->booking_name;
                 $sourceLocation = $sourceRoom ? 'R_' . ($sourceRoom->room_number ?: $sourceRoom->id) : 'BK_' . $targetBooking->id;
                 $targetLocation = $targetRoom ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id) : 'BK_' . $targetBooking->id;
-                $positive->Folio = '1'; $positive->DescriptionServive = trim(($bill->DescriptionServive ?: $bill->ServiceId) . ' (' . $sourceLocation . '=>' . $targetLocation . ')');
+                $rawDesc = trim(($bill->DescriptionServive ?: $bill->ServiceId) . ' (' . $sourceLocation . '=>' . $targetLocation . ')');
+                if (mb_strlen($rawDesc) > 950) {
+                    $rawDesc = mb_substr($rawDesc, 0, 950);
+                }
+                $positive->Folio = '1'; $positive->DescriptionServive = $rawDesc;
                 $positive->Edit = 0; $positive->Status = 1; $positive->Pack1 = null; $positive->UpdatedDate = now(); $positive->save();
                 $negative = $bill->replicate(); $negative->Amount = -abs((float) $bill->Amount); $negative->Edit = 1; $negative->Status = 4; $negative->Pack1 = (string) $positive->Ma; $negative->UpdatedDate = now(); $negative->save();
                 $bill->Edit = 1; $bill->Status = 4; $bill->UpdatedDate = now(); $bill->save();
                 $details = ServiceBillDetail::where('BillServiceId', $bill->Ma)->get();
                 foreach ($details as $detail) { $p = $detail->replicate(); $p->BillServiceId = $positive->Ma; $p->save(); $n = $detail->replicate(); $n->BillServiceId = $negative->Ma; $n->Amount = -abs((float) $detail->Amount); $n->save(); }
-                $services->each(function (BookingRoomService $service) use ($targetRoom, $targetGuest, $positive) { $copy = $service->replicate(); $service->delete(); if (!$targetRoom) return; $copy->booking_room_id = $targetRoom->id; $copy->guest_id = $targetGuest?->guest_id; $copy->service_bill_id = $positive->Ma; $copy->folio = 1; $copy->note = $positive->DescriptionServive; $copy->posted_at = $service->posted_at; $copy->created_at = $service->created_at; $copy->deleted_at = null; $copy->save(); });
+                $services->each(function (BookingRoomService $service) use ($targetRoom, $targetGuest, $positive) { $copy = $service->replicate(); $service->delete(); if (!$targetRoom) return; $copy->booking_room_id = $targetRoom->id; $copy->guest_id = $targetGuest?->guest_id; $copy->service_bill_id = $positive->Ma; $copy->folio = 1; $copy->note = mb_substr((string)$positive->DescriptionServive, 0, 950); $copy->service_name = mb_substr((string)($service->service_name ?: $positive->DescriptionServive), 0, 950); $copy->posted_at = $service->posted_at; $copy->created_at = $service->created_at; $copy->deleted_at = null; $copy->save(); });
                 if ($isMasterSource && $targetRoom) {
-                    foreach ($details as $detail) {
-                        $roomService = new BookingRoomService([
-                            'booking_room_id' => $targetRoom->id, 'guest_id' => $targetGuest?->guest_id,
-                            'service_bill_id' => $positive->Ma, 'service_bill_detail_no' => $detail->Ma,
-                            'service_code' => $positive->Outlet ?: ($detail->ServiceId ?: 'DV'),
-                            'service_name' => $detail->DescriptionServive ?: $positive->DescriptionServive,
-                            'service_date' => $positive->Date, 'quantity' => 1,
-                            'rate' => abs((float) $detail->Amount), 'total_amount' => abs((float) $detail->Amount),
-                            'department' => $positive->DepartmentId, 'note' => $positive->DescriptionServive,
-                            'tax' => $detail->Tax, 'service_charge' => $detail->ServiceCharge,
-                            'unit' => $positive->Currency ?: 'VND', 'folio' => 1,
-                            'is_room' => 0, 'is_posted' => 1, 'posted_at' => now(),
-                            'created_by' => auth()->user()?->username ?: 'system', 'updated_by' => auth()->user()?->username ?: 'system',
-                        ]);
-                        $roomService->preserveTotalAmount = true;
-                        $roomService->created_at = $originCreatedAt;
-                        $roomService->posted_at = $originCreatedAt;
-                        $roomService->save();
-                    }
+                    $quantity = max((float) ($positive->Quantity ?: 1), 1);
+                    $roomService = new BookingRoomService([
+                        'booking_room_id' => $targetRoom->id,
+                        'guest_id' => $targetGuest?->guest_id,
+                        'service_bill_id' => $positive->Ma,
+                        'service_bill_detail_no' => null,
+                        'service_code' => $positive->ServiceId ?: ($positive->Outlet ?: 'DV'),
+                        'service_name' => mb_substr((string)($positive->DescriptionServive ?: $positive->ServiceId), 0, 950),
+                        'service_date' => $positive->Date,
+                        'quantity' => $quantity,
+                        'rate' => (float) $positive->Amount / $quantity,
+                        'total_amount' => (float) $positive->Amount,
+                        'department' => $positive->DepartmentId,
+                        'note' => mb_substr((string)$positive->DescriptionServive, 0, 950),
+                        'tax' => $positive->Tax,
+                        'service_charge' => $positive->ServiceCharge,
+                        'unit' => $positive->Currency ?: 'VND',
+                        'folio' => 1,
+                        'is_room' => strtoupper((string) $positive->ServiceId) === BookingRoomService::CODE_ROOM ? 1 : 0,
+                        'is_posted' => 1,
+                        'posted_at' => $originCreatedAt,
+                        'created_by' => auth()->user()?->username ?: 'system',
+                        'updated_by' => auth()->user()?->username ?: 'system',
+                    ]);
+                    $roomService->preserveTotalAmount = true;
+                    $roomService->created_at = $originCreatedAt;
+                    $roomService->save();
                 }
+            }
+
+            if ($containsRoomCharge && $targetRoom && $targetBooking->is_master_room_rate) {
+                $targetBooking->is_master_room_rate = false;
+                $targetBooking->save();
             }
         });
         return response()->json(['success' => true, 'message' => 'Đã tập hợp dịch vụ về phòng đã chọn.']);
@@ -424,31 +453,30 @@ class BookingRoomServiceController extends Controller
                 'service_ids.*' => 'integer',
                 'folio'         => 'required|integer|between:1,3',
             ]);
-            $room = BookingRoom::findOrFail($roomId);
+            $room = BookingRoom::find($roomId) ?? BookingRoom::where('booking_id', $roomId)->first();
+            if (!$room) {
+                abort(404, 'Không tìm thấy phòng.');
+            }
 
             DB::transaction(function () use ($validated, $room) {
-                $services = BookingRoomService::where('booking_room_id', $room->id)
-                    ->whereIn('id', $validated['service_ids'])
+                $serviceIds = array_map('intval', $validated['service_ids']);
+
+                // 1. Cập nhật booking_room_services nếu có
+                $services = BookingRoomService::whereIn('id', $serviceIds)
                     ->lockForUpdate()
                     ->get();
-                if ($services->count() !== count(array_unique($validated['service_ids']))) {
-                    abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
-                }
 
                 $services->each(function (BookingRoomService $service) use ($validated) {
                     $service->folio = $validated['folio'];
                     $service->save();
                 });
 
-                foreach ($services->groupBy('service_bill_id') as $billId => $billServices) {
-                    if (!$billId) continue;
-                    $allBillServices = BookingRoomService::where('booking_room_id', $room->id)
-                        ->where('service_bill_id', $billId)
-                        ->lockForUpdate()
-                        ->get();
-                    if ($allBillServices->count() === $billServices->count()) {
-                        ServiceBill::whereKey($billId)->update(['Folio' => (string) $validated['folio']]);
-                    }
+                // 2. Cập nhật ServiceBill (cho cả bill RM và bill lẻ)
+                $billIdsFromServices = $services->pluck('service_bill_id')->filter()->toArray();
+                $allBillIds = array_unique(array_merge($serviceIds, $billIdsFromServices));
+
+                if (!empty($allBillIds)) {
+                    ServiceBill::whereIn('Ma', $allBillIds)->update(['Folio' => (string) $validated['folio']]);
                 }
             });
 
@@ -505,7 +533,11 @@ class BookingRoomServiceController extends Controller
                 $positive->CustomerId2 = $targetGuest?->guest_id;
                 $positive->CompanyId2 = $targetBooking->company_id;
                 $positive->Guest = $targetGuest?->guest?->full_name ?: $targetBooking->booking_name;
-                $positive->DescriptionServive = trim(($bill->DescriptionServive ?: $bill->ServiceId) . " ({$sourceLocation}=>{$targetLocation})");
+                $rawDesc = trim(($bill->DescriptionServive ?: $bill->ServiceId) . " ({$sourceLocation}=>{$targetLocation})");
+                if (mb_strlen($rawDesc) > 950) {
+                    $rawDesc = mb_substr($rawDesc, 0, 950);
+                }
+                $positive->DescriptionServive = $rawDesc;
                 if ($targetRoom) $positive->Folio = '1';
                 $positive->Edit = 0;
                 $positive->Status = 1;
@@ -543,7 +575,8 @@ class BookingRoomServiceController extends Controller
                     $targetService->booking_room_id = $targetRoom->id;
                     $targetService->guest_id = $targetGuest?->guest_id;
                     $targetService->service_bill_id = $positive->Ma;
-                    $targetService->note = $positive->DescriptionServive;
+                    $targetService->note = mb_substr((string)$positive->DescriptionServive, 0, 950);
+                    $targetService->service_name = mb_substr((string)($service->service_name ?: $positive->DescriptionServive), 0, 950);
                     $targetService->folio = 1;
                     $targetService->posted_at = $service->posted_at;
                     $targetService->created_at = $service->created_at;
@@ -806,26 +839,73 @@ class BookingRoomServiceController extends Controller
                 $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
                 $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
 
-                $serviceBill = ServiceBill::create([
-                    'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
-                    'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
-                    'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
-                    'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
-                    'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
-                    'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
-                    'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
-                    'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
-                    'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
-                ]);
-                $bill = HousekeepingServiceBill::create([
-                    'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
-                    'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
-                    'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
-                    'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
-                    'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
-                    'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
-                    'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
-                ]);
+                $targetServiceBillId = $request->filled('service_bill_id') ? (int) $request->service_bill_id : null;
+                $existingServiceBill = $targetServiceBillId ? ServiceBill::whereKey($targetServiceBillId)->lockForUpdate()->first() : null;
+
+                if ($existingServiceBill) {
+                    $serviceBill = $existingServiceBill;
+                    $serviceBill->update([
+                        'Date' => $serviceDateCarbon->startOfDay(),
+                        'Guest' => $guestName,
+                        'DescriptionServive' => $groupTitle,
+                        'Quantity' => 1,
+                        'Amount' => $billAmount,
+                        'Folio' => (string)$folio,
+                        'UpdatedDate' => now(),
+                        'UpdatedHour' => now()->format('H:i'),
+                        'updated_at' => now(),
+                    ]);
+
+                    $bill = HousekeepingServiceBill::where('BillServiceId', $serviceBill->Ma)->lockForUpdate()->first();
+                    if ($bill) {
+                        $bill->update([
+                            'BillOriginalAmount' => $originalAmount,
+                            'BillDiscountAmount' => $discountAmount,
+                            'BillAmount' => $billAmount,
+                            'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                            'BillNote' => $request->note,
+                            'Date' => $serviceDateCarbon->startOfDay(),
+                            'RoomNo' => $room->room_number,
+                            'UpdatedDate' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    } else {
+                        $bill = HousekeepingServiceBill::create([
+                            'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
+                            'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
+                            'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                            'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                            'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
+                            'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
+                            'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
+                        ]);
+                    }
+
+                    BookingRoomService::where('service_bill_id', $serviceBill->Ma)->delete();
+                    HousekeepingServiceBillDetail::where('BillId', $bill->Ma)->delete();
+                    ServiceBillDetail::where('BillServiceId', $serviceBill->Ma)->delete();
+                } else {
+                    $serviceBill = ServiceBill::create([
+                        'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
+                        'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
+                        'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
+                        'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
+                        'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
+                        'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
+                        'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
+                        'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
+                    ]);
+                    $bill = HousekeepingServiceBill::create([
+                        'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
+                        'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
+                        'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
+                        'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
+                        'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
+                        'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
+                    ]);
+                }
 
                 foreach ($items as $index => $item) {
                     $pName        = $item['name'] ?? ($item['product']['name'] ?? 'Sản phẩm buồng phòng');
@@ -1025,18 +1105,26 @@ class BookingRoomServiceController extends Controller
                     $existingBrs = BookingRoomService::where('booking_room_id', $room->id)
                         ->where('service_code', $foService->code)
                         ->where('service_date', $current->toDateString())
+                        ->whereNull('service_bill_id')
                         ->first();
 
                     if ($existingBrs) {
-                        $newQty = (float)$existingBrs->quantity + $qty;
                         $existingBrs->update([
-                            'quantity'     => $newQty,
-                            'total_amount' => $newQty * $rate,
+                            'service_bill_id'        => $bill->Ma,
+                            'service_bill_detail_no' => $detailSeq,
+                            'quantity'               => $qty,
+                            'rate'                   => $rate,
+                            'total_amount'           => $totalAmount,
+                            'folio'                  => $folio,
+                            'is_posted'              => 1,
+                            'posted_at'              => now(),
                             'note'         => $description,
                         ]);
                     } else {
                         BookingRoomService::create([
                             'booking_room_id' => $room->id,
+                            'service_bill_id' => $bill->Ma,
+                            'service_bill_detail_no' => $detailSeq,
                             'service_code'    => $foService->code,
                             'service_name'    => $foService->name,
                             'service_date'    => $current->toDateString(),
@@ -1131,6 +1219,10 @@ class BookingRoomServiceController extends Controller
                                 ?: $targetRoom->guests()->with('guest')->first();
                 $guestId   = $primaryGuest?->guest_id;
                 $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
+                $sendRoomRateToMaster = (bool) ($booking?->is_master_room_rate);
+                $currentGuestName = $sendRoomRateToMaster
+                    ? ($booking?->booking_name ?: 'Khách lẻ')
+                    : $guestName;
 
                 $current = $dateFrom->copy();
 
@@ -1142,7 +1234,36 @@ class BookingRoomServiceController extends Controller
                             ->where('service_code', BookingRoomService::CODE_ROOM)
                             ->where('service_date', $current->toDateString())
                             ->first();
-                        $rate = $rmService ? (float)$rmService->rate : (float)$targetRoom->rate;
+
+                        $rate = 0;
+                        if ($rmService && (float)$rmService->rate > 0) {
+                            $rate = (float)$rmService->rate;
+                        } elseif ((float)$targetRoom->rate > 0) {
+                            $rate = (float)$targetRoom->rate;
+                        } elseif ((float)$targetRoom->base_price > 0) {
+                            $rate = (float)$targetRoom->base_price;
+                        }
+
+                        // Tra cứu theo mã giá phòng (rate_code) và loại phòng (room_class_id) nếu giá bằng 0
+                        if ($rate <= 0 && !empty($targetRoom->rate_code)) {
+                            $plan = \App\Models\RoomRatePlan::where('RateCode', $targetRoom->rate_code)->first();
+                            if ($plan && is_array($plan->Period)) {
+                                foreach ($plan->Period as $row) {
+                                    if (isset($row['roomClassId']) && (string)$row['roomClassId'] === (string)$targetRoom->room_class_id) {
+                                        $rate = (float)($row['price'] ?? 0);
+                                        if ($rate > 0) break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Tra cứu theo giá chuẩn (StandardRate) của loại phòng nếu vẫn bằng 0
+                        if ($rate <= 0 && !empty($targetRoom->room_class_id)) {
+                            $stdRate = \App\Models\StandardRate::where('room_class_id', $targetRoom->room_class_id)->value('room_price');
+                            if ($stdRate && (float)$stdRate > 0) {
+                                $rate = (float)$stdRate;
+                            }
+                        }
                     } else { // update hoặc surcharge
                         $rate = (float)$request->rate;
                     }
@@ -1162,7 +1283,21 @@ class BookingRoomServiceController extends Controller
                         $targetDesc = trim($targetDesc . ' ' . $targetRoom->room_number);
                     }
 
-                    if ($mode === 'update' || $mode === 'auto') {
+                    if ($mode === 'auto') {
+                        $existingBill = ServiceBill::where('RegisterId1', $booking?->id)
+                            ->where('RentalRoomId1', $targetRoom->id)
+                            ->where('ServiceId', 'RM')
+                            ->whereDate('Date', $current->toDateString())
+                            ->where('Edit', 0)
+                            ->first();
+                        if ($existingBill) {
+                            // Phòng đã có tiền phòng cho ngày này -> Bỏ qua không thêm lại
+                            $current->addDay();
+                            continue;
+                        }
+                    }
+
+                    if ($mode === 'update') {
                         $existingBill = ServiceBill::where('RegisterId1', $booking?->id)
                             ->where('RentalRoomId1', $targetRoom->id)
                             ->where('ServiceId', 'RM')
@@ -1174,6 +1309,11 @@ class BookingRoomServiceController extends Controller
                                 'Amount'             => $totalAmount,
                                 'DescriptionServive' => $targetDesc,
                                 'Folio'              => (string)$folio,
+                                'Guest'              => $currentGuestName,
+                                'RegisterID2'        => $booking?->id,
+                                'RentalRoomId2'      => $targetRoom->id,
+                                'CustomerId2'        => $guestId,
+                                'CompanyId2'         => $booking?->company_id,
                                 'Username'           => $user,
                             ]);
                             $bill = $existingBill;
@@ -1181,7 +1321,7 @@ class BookingRoomServiceController extends Controller
                             $bill = ServiceBill::create([
                                 'Date'               => $current->startOfDay()->toDateTimeString(),
                                 'OpenTime'           => now()->format('H:i'),
-                                'Guest'              => $guestName,
+                                'Guest'              => $currentGuestName,
                                 'DepartmentId'       => 'FO',
                                 'ServiceId'          => 'RM',
                                 'DescriptionServive' => $targetDesc,
@@ -1217,7 +1357,7 @@ class BookingRoomServiceController extends Controller
                         $bill = ServiceBill::create([
                             'Date'               => $current->startOfDay()->toDateTimeString(),
                             'OpenTime'           => now()->format('H:i'),
-                            'Guest'              => $guestName,
+                            'Guest'              => $currentGuestName,
                             'DepartmentId'       => 'FO',
                             'ServiceId'          => 'RM',
                             'DescriptionServive' => $targetDesc,
@@ -1354,12 +1494,19 @@ class BookingRoomServiceController extends Controller
                 ]);
 
                 // Lưu vào booking_room_services
-                if ($mode === 'surcharge') {
+                // Bills sent to Master render from service_bills. Keeping a room row
+                // would make Checkout count the same room charge twice.
+                if ($sendRoomRateToMaster) {
+                    BookingRoomService::where('booking_room_id', $targetRoom->id)
+                        ->where('service_bill_id', $bill->Ma)
+                        ->delete();
+                } elseif ($mode === 'surcharge') {
                     // Bổ sung tiền phòng: Tạo mới dịch vụ cộng thêm độc lập
                     BookingRoomService::create([
                         'booking_room_id' => $targetRoom->id,
                         'guest_id'        => $guestId,
                         'service_bill_id' => $bill->Ma,
+                        'service_bill_detail_no' => 1,
                         'service_code'    => 'RMS',
                         'service_name'    => 'Bổ sung tiền phòng',
                         'service_date'    => $current->toDateString(),
@@ -1385,6 +1532,8 @@ class BookingRoomServiceController extends Controller
                         ],
                         [
                             'service_name'   => 'Tiền phòng',
+                            'service_bill_id' => $bill->Ma,
+                            'service_bill_detail_no' => 1,
                             'quantity'       => 1,
                             'rate'           => $rate,
                             'total_amount'   => $totalAmount,
@@ -1418,9 +1567,12 @@ class BookingRoomServiceController extends Controller
     protected function canOperateOldDay(): bool
     {
         $user = Auth::user();
-        if (!$user || $user->username === 'admin' || !empty($user->is_admin)) return true;
+        if (!$user) return true;
+        $username = strtolower((string)($user->username ?? ''));
+        if (in_array($username, ['admin', 'system'], true) || !empty($user->is_admin)) return true;
         $settings = $user->setting?->settings ?? [];
-        $value = $settings['RuleUserCorrectOrPostBillPaymentOldDay'] ?? false;
-        return $value === true || $value === 1 || $value === '1' || $value === 'true';
+        if (!isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) return true;
+        $value = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
+        return $value === true || $value === 1 || $value === '1' || $value === 'true' || $value === 'default';
     }
 }

@@ -9,6 +9,7 @@ import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/c
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
+import echo from '@/services/echo'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -1399,6 +1400,19 @@ onMounted(async () => {
       }
     }
   }
+
+  // Lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', () => {
+        roomStore.fetchRooms()
+        loadBookings()
+      })
+      .listen('.reservation.updated', () => {
+        roomStore.fetchRooms()
+        loadBookings()
+      })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1409,6 +1423,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', handleWindowClick)
   if (bc) {
     bc.close()
+  }
+
+  // Hủy lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated')
+    echo.channel('pms-channel').stopListening('.reservation.updated')
   }
 })
 

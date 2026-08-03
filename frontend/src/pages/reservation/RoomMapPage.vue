@@ -22,6 +22,7 @@ import CheckInPage from './CheckInPage.vue'
 import ResidenceDeclarationPage from './ResidenceDeclarationPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import echo from '@/services/echo'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -1007,12 +1008,31 @@ onMounted(async () => {
 
   calculateScale()
   window.addEventListener('resize', calculateScale)
+
+  // Lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', () => {
+        roomStore.fetchRooms({ silent: true })
+        roomStore.fetchStats(rawDate.value)
+      })
+      .listen('.reservation.updated', () => {
+        roomStore.fetchRooms({ silent: true })
+        roomStore.fetchStats(rawDate.value)
+      })
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
+
+  // Hủy lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated')
+    echo.channel('pms-channel').stopListening('.reservation.updated')
+  }
 })
 
 watch(() => contextMenu.value.show, (newVal) => {
