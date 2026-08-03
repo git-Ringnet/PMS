@@ -27,6 +27,8 @@ export const createBooking = (data) => http.post('/bookings', data)
  * @param {Object} data - Dữ liệu cập nhật
  */
 export const updateBooking = (id, data) => http.put(`/bookings/${id}`, data)
+export const updateBookingNoPost = (bookingId, noPost) => http.patch(`/bookings/${bookingId}/no-post`, { no_post: noPost })
+export const updateBookingRoomNoPost = (roomId, noPost) => http.patch(`/booking-rooms/${roomId}/no-post`, { no_post: noPost })
 
 /**
  * Xóa booking
@@ -94,8 +96,10 @@ export const updatePayment = (id, data) => {
   return http.put(`/payments/${id}`, data)
 }
 export const deletePayment = (id) => http.delete(`/payments/${id}`)
+export const transferPaymentFolio = (id, data) => http.patch(`/payments/${id}/folio`, data)
 export const splitPayment = (id, data) => http.post(`/payments/${id}/split`, data)
 export const transferPayment = (id, data) => http.post(`/payments/${id}/transfer`, data)
+export const transferPayments = (data) => http.post('/payments/transfer', data)
 export const fetchCurrencies = (params = {}) => http.get('/currencies', { params })
 export const fetchAvailability = (params = {}) => http.get('/availability', { params })
 export const checkAvailability = (params = {}) => http.get('/availability/check', { params })
@@ -105,6 +109,7 @@ export const fetchFOServicesList = () => http.get('/booking-services/fo-list')
 export const fetchBookingRoomServices = (roomId) => http.get(`/booking-rooms/${roomId}/services`)
 export const createBookingRoomService = (roomId, data) => http.post(`/booking-rooms/${roomId}/services`, data)
 export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/booking-rooms/${roomId}/services/bulk`, { data })
+export const cancelBookingRoomServices = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/cancel`, data)
 export const transferBookingRoomServicesFolio = (roomId, data) => http.patch(`/booking-rooms/${roomId}/services/folio`, data)
 export const splitBookingRoomServicesFolio = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/split-folio`, data)
 export const fetchQuickTransferCandidates = (roomId) => http.get(`/booking-rooms/${roomId}/services/quick-transfer-candidates`)
@@ -145,3 +150,8 @@ export const fetchCancelReasons = () => http.get('/cancel-reasons')
 // ==================== POST BILLS (THÊM DỊCH VỤ LỄ TÂN) ====================
 export const postFoServiceBill = (data) => http.post('/booking-room-services/post-fo-service-bill', data)
 export const postRoomCharge    = (data) => http.post('/booking-room-services/post-room-charge', data)
+
+// ==================== PAYMENTS & SETTLEMENT (THANH TOÁN & HỦY THANH TOÁN) ====================
+export const settleBookingPayment = (bookingId, data) => http.post(`/bookings/${bookingId}/settle-payment`, data)
+export const deleteBookingPayment = (paymentId, data = {}) => http.delete(`/payments/${paymentId}`, { data })
+

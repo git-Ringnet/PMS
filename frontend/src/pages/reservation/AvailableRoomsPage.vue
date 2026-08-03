@@ -4,6 +4,7 @@ import { useUiStore } from '@/stores/ui-store'
 import { fetchAvailabilityGrid, fetchRegistrationStatuses } from '@/services/availability-service'
 import { fetchSystemDate } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import echo from '@/services/echo'
 import DateRangePicker from '@/components/DateRangePicker.vue'
 
 const uiStore = useUiStore()
@@ -302,10 +303,27 @@ onMounted(async () => {
   } else {
     await loadAvailability(systemDate.value || null)
   }
+
+  // Lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', () => {
+        loadAvailability(startDateYMD.value, endDateYMD.value)
+      })
+      .listen('.reservation.updated', () => {
+        loadAvailability(startDateYMD.value, endDateYMD.value)
+      })
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('click', handleClickOutside)
+
+  // Hủy lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated')
+    echo.channel('pms-channel').stopListening('.reservation.updated')
+  }
 })
 
 function showExportToast() {

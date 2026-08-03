@@ -11,8 +11,12 @@ const props = defineProps({
   bookingRoomId: { type: String, default: null },
   bookingId:     { type: [String, Number], default: '' },
   bookingInfo:   { type: String, default: '' },
+  arrivalDate:   { type: String, default: '' },
+  departureDate: { type: String, default: '' },
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
   roomRate:      { type: Number, default: 0 },
+  roomAdjustment: { type: Object, default: null },
+  systemDate:    { type: String, default: '' },
 })
 
 const emit = defineEmits(['close', 'success'])
@@ -42,11 +46,22 @@ function openDatePicker(e) {
   }
 }
 
+// Giới hạn ngày từ booking (min = arrival_date, max = departure_date)
+const bookingMinDate = computed(() => {
+  if (props.arrivalDate) return String(props.arrivalDate).slice(0, 10)
+  return undefined
+})
+
+const bookingMaxDate = computed(() => {
+  if (props.departureDate) return String(props.departureDate).slice(0, 10)
+  return undefined
+})
+
 // ─────────────────────────────────────────────
 // TAB 1 — DỊCH VỤ
 // ─────────────────────────────────────────────
-const serviceFrom     = ref(todayYmd())
-const serviceTo       = ref(todayYmd())
+const serviceFrom     = ref(props.systemDate || todayYmd())
+const serviceTo       = ref(props.systemDate || todayYmd())
 const folio           = ref(1)
 const currency        = ref('VND')
 const selectedService = ref(null)
@@ -100,8 +115,8 @@ const totalPrice = computed(() => {
 // ─────────────────────────────────────────────
 // TAB 2 — TIỀN PHÒNG
 // ─────────────────────────────────────────────
-const roomFrom        = ref(todayYmd())
-const roomTo          = ref(todayYmd())
+const roomFrom        = ref(props.systemDate || todayYmd())
+const roomTo          = ref(props.systemDate || todayYmd())
 const roomFolio       = ref(1)
 const roomCurrency    = ref('VND')
 const roomDescription = ref('Dịch vụ phòng nghỉ')
@@ -158,20 +173,40 @@ onMounted(() => {
 
 watch(() => props.show, (v) => {
   if (v) {
+    let initialDate = props.systemDate || todayYmd()
+    if (bookingMinDate.value && initialDate < bookingMinDate.value) {
+      initialDate = bookingMinDate.value
+    } else if (bookingMaxDate.value && initialDate > bookingMaxDate.value) {
+      initialDate = bookingMaxDate.value
+    }
     errorMsg.value = ''
     activeTab.value = 'service'
-    serviceFrom.value = todayYmd()
-    serviceTo.value   = todayYmd()
+    serviceFrom.value = initialDate
+    serviceTo.value   = initialDate
     folio.value       = 1
     selectedService.value = null
     quantity.value    = 1
     unitPrice.value   = 0
     description.value = ''
-    roomFrom.value    = todayYmd()
-    roomTo.value      = todayYmd()
+    roomFrom.value    = initialDate
+    roomTo.value      = initialDate
     roomUpdateMode.value  = false
     roomSurcharge.value   = false
     customRoomRate.value  = 0
+    if (props.roomAdjustment) {
+      const adjustment = props.roomAdjustment
+      const date = String(adjustment.serviceDate || initialDate).slice(0, 10)
+      activeTab.value = 'room'
+      roomFrom.value = date
+      roomTo.value = date
+      roomFolio.value = Number(adjustment.folio) || 1
+      roomUpdateMode.value = true
+      roomSurcharge.value = false
+      customRoomRate.value = Number(adjustment.amount) || 0
+      queueMicrotask(() => {
+        roomDescription.value = adjustment.description || roomDescription.value
+      })
+    }
     roomDescription.value = 'Dịch vụ phòng nghỉ'
     if (foServices.value.length === 0) {
       loadFoServices()
@@ -295,12 +330,12 @@ function handleClose() {
             <div class="grid grid-cols-2 gap-2">
               <div class="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                 <span class="text-gray-400 text-xs font-medium mr-2 flex-shrink-0">Từ</span>
-                <input v-model="serviceFrom" type="date" @click="openDatePicker"
+                <input v-model="serviceFrom" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
                   class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
               </div>
               <div class="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                 <span class="text-gray-400 text-xs font-medium mr-2 flex-shrink-0">Đến</span>
-                <input v-model="serviceTo" type="date" @click="openDatePicker"
+                <input v-model="serviceTo" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
                   class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
               </div>
             </div>
@@ -388,14 +423,13 @@ function handleClose() {
                 Ngày <span class="text-red-500">*</span>
               </label>
               <div class="flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
-                <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0">
-                  <input v-model="roomFrom" type="date" @click="openDatePicker"
-                    class="w-[110px] text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
-                  <span class="text-gray-400">~</span>
-                  <input v-model="roomTo" type="date" @click="openDatePicker"
-                    class="w-[110px] text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0 w-full">
+                  <input v-model="roomFrom" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
+                    class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                  <span class="text-gray-400 px-1 font-bold">~</span>
+                  <input v-model="roomTo" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
+                    class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
                 </div>
-                <Calendar class="w-4 h-4 text-indigo-400 flex-shrink-0 ml-1" />
               </div>
             </div>
             <div>
@@ -491,7 +525,7 @@ function handleClose() {
         <button @click="handleSubmit" :disabled="isSubmitting || (activeTab === 'service' && !selectedService)"
           class="px-6 py-2 text-sm font-semibold text-white bg-[#2563eb] rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
           <Plus class="w-4 h-4" />
-          <span>{{ isSubmitting ? 'Đang xử lý...' : '+ Thêm' }}</span>
+          <span>{{ isSubmitting ? 'Đang xử lý...' : 'Thêm' }}</span>
         </button>
       </div>
 

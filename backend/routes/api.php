@@ -236,6 +236,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('bookings/init-dropdowns', [\App\Http\Controllers\Api\BookingController::class, 'initDropdowns']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
     Route::apiResource('bookings', \App\Http\Controllers\Api\BookingController::class);
+    Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking']);
 
     // #19 — Nhân bản booking
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy']);
@@ -274,11 +275,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
         Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete']);
+        Route::post('/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancel']);
         Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio']);
         Route::get('/quick-transfer-candidates', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransferCandidates']);
         Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer']);
         Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio']);
     });
+    Route::patch('booking-rooms/{roomId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateRoom']);
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
     // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
     Route::get('/booking-services/fo-list', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'foServiceList']);
@@ -328,9 +331,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // =====================================================================
     Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
     Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store']);
+    Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment']);
     Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update']);
+    Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio']);
     Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
     Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split']);
+    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany']);
     Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
 
     // Availability
