@@ -250,7 +250,7 @@ class GuestController extends Controller
             return response()->json(['success' => false, 'message' => 'Khách đã bị hủy.'], 422);
         }
 
-        $avService = app(\App\Services\AvailabilityService::class);
+        $avService = app(\App\Services\RoomAvailabilityService::class);
         $systemDate = $avService->getSystemDate();
 
         $pivot->update([
@@ -265,6 +265,66 @@ class GuestController extends Controller
             'data'    => $pivot->fresh()->load('guest'),
             'message' => 'Checkout khách thành công.',
         ]);
+    }
+
+    // Checkout tạm cho tab Hóa đơn: chọn khách trong phòng hoặc toàn bộ Master.
+    public function checkoutRoom(Request $request, $roomId)
+    {
+        $data = $request->validate(['guest_ids' => 'required|array|min:1', 'guest_ids.*' => 'string|max:50']);
+        return $this->checkoutScope(BookingRoom::with('booking')->findOrFail($roomId), collect($data['guest_ids']));
+    }
+
+    public function checkoutBooking(Request $request, $bookingId)
+    {
+        $booking = \App\Models\Booking::with('bookingRooms.guests')->findOrFail($bookingId);
+        $roomIds = $booking->bookingRooms->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])->pluck('id');
+        if ($roomIds->isEmpty()) return response()->json(['success' => false, 'message' => 'Booking không còn phòng đang lưu trú.'], 422);
+
+        return DB::transaction(function () use ($booking, $roomIds) {
+            foreach ($roomIds as $roomId) {
+                $room = BookingRoom::with('booking')->findOrFail($roomId);
+                $guestIds = $room->guests->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->pluck('guest_id');
+                if ($guestIds->isNotEmpty()) {
+                    $result = $this->checkoutScope($room, $guestIds, false);
+                    if ($result instanceof \Illuminate\Http\JsonResponse && !$result->getData()->success) {
+                        throw new \RuntimeException($result->getData()->message ?? 'Không thể checkout phòng.');
+                    }
+                }
+            }
+            $booking->refresh();
+            $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
+            return response()->json(['success' => true, 'message' => 'Đã checkout toàn bộ Master.']);
+        });
+    }
+
+    private function checkoutScope(BookingRoom $room, $guestIds, bool $wrap = true)
+    {
+        $work = function () use ($room, $guestIds) {
+            if ($room->status === BookingRoom::STATUS_CANCELLED) throw new \RuntimeException('Phòng đã hủy.');
+            $allRequestedPivots = $room->guests()->whereIn('guest_id', $guestIds)->get();
+            if ($allRequestedPivots->count() !== $guestIds->unique()->count()) throw new \RuntimeException('Có khách không thuộc phòng được chọn.');
+            $pivots = $allRequestedPivots->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED]);
+            if ($pivots->isEmpty() && $allRequestedPivots->isNotEmpty() && $allRequestedPivots->every(fn ($pivot) => $pivot->status === BookingRoomGuest::STATUS_CHECKED_OUT)) {
+                return ['room_id' => $room->id, 'checked_out_guest_ids' => $allRequestedPivots->pluck('guest_id')->values(), 'room_checked_out' => true, 'already_checked_out' => true];
+            }
+            if ($pivots->isEmpty()) throw new \RuntimeException('Phải chọn ít nhất một khách đang lưu trú trong phòng.');
+            $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate();
+            foreach ($pivots as $pivot) $pivot->update(['status' => BookingRoomGuest::STATUS_CHECKED_OUT, 'actual_checkout_date' => $systemDate->toDateString(), 'actual_checkout_time' => now()->format('H:i:s'), 'checkout_by' => Auth::user()?->username ?? 'system']);
+            $remaining = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->count();
+            if ($remaining === 0) {
+                $room->update(['status' => BookingRoom::STATUS_CHECKED_OUT, 'departure_date' => $systemDate->toDateString(), 'check_out_user' => Auth::user()?->username ?? 'system']);
+                if ($room->room) $room->room->update(['status' => 'checkout']);
+            } else {
+                $hasPrimary = $room->guests()->where('is_primary', true)->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->exists();
+                if (!$hasPrimary) {
+                    $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->update(['is_primary' => false]);
+                    $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->orderBy('id')->limit(1)->update(['is_primary' => true]);
+                }
+            }
+            return ['room_id' => $room->id, 'checked_out_guest_ids' => $pivots->pluck('guest_id')->values(), 'room_checked_out' => $remaining === 0];
+        };
+        try { $result = $wrap ? DB::transaction($work) : $work(); return response()->json(['success' => true, 'data' => $result, 'message' => 'Checkout thành công.']); }
+        catch (\Throwable $e) { return response()->json(['success' => false, 'message' => $e->getMessage()], 422); }
     }
 
     // GET /booking-rooms/{roomId}/guests/on-date?date=YYYY-MM-DD — Khách đang ở trong phòng ngày X

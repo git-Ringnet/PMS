@@ -1209,6 +1209,9 @@ class BookingRoomServiceController extends Controller
         if ($isBookingPost) {
             // Khi post từ Master, bỏ qua các phòng chưa đến trong toàn bộ khoảng ngày.
             $roomsToPost = $roomsToPost->filter(function ($targetRoom) use ($dateTo) {
+                if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
+                    return false;
+                }
                 return Carbon::parse($targetRoom->arrival_date)->startOfDay()->lte($dateTo->copy()->startOfDay());
             })->values();
             if ($roomsToPost->isEmpty()) {
@@ -1218,6 +1221,9 @@ class BookingRoomServiceController extends Controller
 
         foreach ($roomsToPost as $targetRoom) {
             $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
+            if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
+                return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout, không thể post tiền phòng.'], 422);
+            }
             if (!$isBookingPost && $dateFrom->copy()->startOfDay()->lt($roomArrival)) {
                 return response()->json([
                     'success' => false,

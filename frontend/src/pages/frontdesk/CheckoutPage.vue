@@ -88,6 +88,7 @@ const showSplitDepositModal = ref(false)
 const roomAdjustment = ref(null)
 const housekeepingAdjustment = ref(null)
 
+
 const openAddHousekeepingService = () => {
   // Dòng master chỉ đại diện booking; dịch vụ BP luôn hạch toán cho một phòng cụ thể.
   if (!selectedRoomItem.value) return
@@ -227,6 +228,7 @@ const loadCheckoutBookings = async () => {
           }
           if (r.guests && Array.isArray(r.guests) && r.guests.length > 0) {
             r.guests.forEach(g => {
+              if ([2, 3].includes(Number(g.status))) return
               const gName = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
               // Mỗi liên kết khách-phòng phải hiện thành một lựa chọn riêng.
               // Không loại trùng theo tên vì hai khách có thể cùng tên.
@@ -236,7 +238,7 @@ const loadCheckoutBookings = async () => {
               }
             })
           }
-          if (roomGuests.length === 0) {
+          if (roomGuests.length === 0 && !(Array.isArray(r.guests) && r.guests.length > 0)) {
             roomGuests.push({ id: null, name: mainGuestName, isPrimary: true })
           }
 
