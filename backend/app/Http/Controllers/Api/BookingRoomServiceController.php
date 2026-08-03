@@ -779,6 +779,7 @@ class BookingRoomServiceController extends Controller
             'booking_room_id' => 'required',
             'guest_id'         => 'nullable|string|max:50',
             'department'      => 'nullable|string|max:20',
+            'posting_source'  => 'nullable|string|in:FO,HK,FB',
             'service_date'    => 'nullable|date',
             'is_free'         => 'nullable|boolean',
             'folio'           => 'nullable|integer|between:1,3',
@@ -792,6 +793,14 @@ class BookingRoomServiceController extends Controller
 
         if (!$room) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng tương ứng.'], 404);
+        }
+
+        $postingSource = strtoupper($request->input('posting_source', 'HK'));
+        if (in_array($postingSource, ['HK', 'FB'], true) && $room->no_post) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang bật No Post, không thể post bill từ bộ phận này.',
+            ], 422);
         }
 
         $guestPivot = $request->filled('guest_id')

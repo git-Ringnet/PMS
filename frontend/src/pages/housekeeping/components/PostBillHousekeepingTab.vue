@@ -316,6 +316,10 @@ const props = defineProps({
     type: String,
     default: 'HK'
   },
+  postingSource: {
+    type: String,
+    default: 'HK'
+  },
   initialAdjustment: {
     type: Object,
     default: null
@@ -788,6 +792,7 @@ const sendToRoom = async () => {
       booking_room_id: form.value.roomId,
       guest_id: form.value.guestId || null,
       department: props.department || 'HK',
+      posting_source: props.postingSource || 'HK',
       service_date: form.value.date,
       folio: form.value.folio,
       is_free: form.value.isFree,

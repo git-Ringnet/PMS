@@ -27,6 +27,8 @@ export const createBooking = (data) => http.post('/bookings', data)
  * @param {Object} data - Dữ liệu cập nhật
  */
 export const updateBooking = (id, data) => http.put(`/bookings/${id}`, data)
+export const updateBookingNoPost = (bookingId, noPost) => http.patch(`/bookings/${bookingId}/no-post`, { no_post: noPost })
+export const updateBookingRoomNoPost = (roomId, noPost) => http.patch(`/booking-rooms/${roomId}/no-post`, { no_post: noPost })
 
 /**
  * Xóa booking

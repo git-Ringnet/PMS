@@ -62,6 +62,7 @@ const handleSuccess = (data) => {
           :initialFolioId="folioId"
           :isModal="true"
           :department="'HK'"
+          :postingSource="'FO'"
           @close="handleClose"
           @success="handleSuccess"
         />

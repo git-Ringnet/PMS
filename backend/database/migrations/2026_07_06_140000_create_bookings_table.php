@@ -56,6 +56,7 @@ return new class extends Migration
             $table->boolean('breakfast_included')->default(false); // Bao gồm ăn sáng (BreakfastIncluded)
             $table->boolean('has_vat')->default(false); // Xuất hóa đơn VAT
             $table->boolean('is_master_room_rate')->default(true); // Tiền phòng gửi Master (mặc định bật)
+            $table->boolean('no_post')->default(false); // No Post tại Master
 
             // =========================================
             // LIÊN KẾT ĐỐI TƯỢNG / THỊ TRƯỜNG
