@@ -153,5 +153,5 @@ export const postRoomCharge    = (data) => http.post('/booking-room-services/pos
 
 // ==================== PAYMENTS & SETTLEMENT (THANH TOÁN & HỦY THANH TOÁN) ====================
 export const settleBookingPayment = (bookingId, data) => http.post(`/bookings/${bookingId}/settle-payment`, data)
-export const deleteBookingPayment = (paymentId) => http.delete(`/payments/${paymentId}`)
+export const deleteBookingPayment = (paymentId, data = {}) => http.delete(`/payments/${paymentId}`, { data })
 

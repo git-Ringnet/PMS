@@ -67,6 +67,7 @@ import TransferPaymentModal from './components/TransferPaymentModal.vue'
 import SplitServiceModal from './components/SplitServiceModal.vue'
 import CancelServiceModal from './components/CancelServiceModal.vue'
 import SplitDepositModal from './components/SplitDepositModal.vue'
+import DeletePaymentModal from './components/DeletePaymentModal.vue'
 const showAddServiceModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
@@ -78,6 +79,7 @@ const showFilterServiceModal = ref(false)
 const showTransferServiceModal = ref(false)
 const transferServiceError = ref('')
 const showTransferPaymentModal = ref(false)
+const showDeletePaymentModal = ref(false)
 const transferPaymentError = ref('')
 const showSplitServiceModal = ref(false)
 const showCancelServiceModal = ref(false)
@@ -1551,18 +1553,23 @@ const openDeletePaymentModal = async () => {
     return
   }
 
-  if (confirm(`Bạn có chắc chắn muốn xóa bản ghi thanh toán "${payment.description || payment.id}"? (Hệ thống sẽ tạo dòng âm đối trừ)`)) {
-    isServiceOperationLoading.value = true
-    try {
-      const res = await deleteBookingPayment(payment.id)
-      selectedPaymentIds.value = []
-      await handleServiceAdded()
-      uiStore.showToast(res.data?.message || 'Đã xóa thanh toán thành công (tạo dòng đối trừ).', 'success')
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Không thể xóa thanh toán.', 'error')
-    } finally {
-      isServiceOperationLoading.value = false
-    }
+  showDeletePaymentModal.value = true
+}
+
+const deleteSelectedPayment = async (reason) => {
+  const payment = selectedPaymentItems.value[0]
+  if (!payment?.id) return
+  isServiceOperationLoading.value = true
+  try {
+    const res = await deleteBookingPayment(payment.id, { reason })
+    showDeletePaymentModal.value = false
+    selectedPaymentIds.value = []
+    await handleServiceAdded()
+    uiStore.showToast(res.data?.message || 'Đã xóa thanh toán thành công.', 'success')
+  } catch (err) {
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa thanh toán.', 'error')
+  } finally {
+    isServiceOperationLoading.value = false
   }
 }
 
@@ -2658,6 +2665,14 @@ onUnmounted(() => {
       :folio="selectedPaymentItems[0]?.folio || 1"
       @close="showSplitDepositModal = false"
       @split="splitSelectedDeposit"
+    />
+
+    <DeletePaymentModal
+      :show="showDeletePaymentModal"
+      :loading="isServiceOperationLoading"
+      :payment="selectedPaymentItems[0] || null"
+      @close="showDeletePaymentModal = false"
+      @submit="deleteSelectedPayment"
     />
   </div>
 </template>
