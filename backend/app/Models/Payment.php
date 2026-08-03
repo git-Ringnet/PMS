@@ -37,6 +37,7 @@ class Payment extends Model
         'open_time',
         'guest_display',
         'description',
+        'reason',
         'amount',
         'total_amount_before_split',
         'pack2',

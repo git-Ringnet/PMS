@@ -76,6 +76,7 @@ return new class extends Migration
 
             // Do Not Move — khóa không cho chuyển số phòng (1 = đang khóa)
             $table->unsignedTinyInteger('is_do_not_move')->default(0);
+            $table->boolean('no_post')->default(false); // No Post theo từng phòng
             $table->string('move_room', 20)->nullable();            // Mã phòng mới lúc chuyển phòng
 
             // =========================================

@@ -23,7 +23,7 @@ import {
   Inbox,
   ArrowRightLeft
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
@@ -44,6 +44,7 @@ const registerFilter = ref('current')
 const showAllGuestsInRoom = ref(false)
 
 const isNoPost = ref(false)
+const noPostSaving = ref(false)
 
 const selectedGuest = ref('Guest 1')
 const selectedGuestId = ref(null)
@@ -66,6 +67,7 @@ import TransferPaymentModal from './components/TransferPaymentModal.vue'
 import SplitServiceModal from './components/SplitServiceModal.vue'
 import CancelServiceModal from './components/CancelServiceModal.vue'
 import SplitDepositModal from './components/SplitDepositModal.vue'
+import DeletePaymentModal from './components/DeletePaymentModal.vue'
 const showAddServiceModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
@@ -77,6 +79,7 @@ const showFilterServiceModal = ref(false)
 const showTransferServiceModal = ref(false)
 const transferServiceError = ref('')
 const showTransferPaymentModal = ref(false)
+const showDeletePaymentModal = ref(false)
 const transferPaymentError = ref('')
 const showSplitServiceModal = ref(false)
 const showCancelServiceModal = ref(false)
@@ -921,7 +924,11 @@ const guestRoomServiceAmount = (booking, room, guestId) => {
     const belongsToGuest = service.guest_id
       ? String(service.guest_id) === String(targetGuestId)
       : isPrimary
-    if ((!sendRoomRateToMaster || !roomCharge) && belongsToGuest) {
+    const isPaid = Number(service.status) === 2 || Boolean(service.payment_id || service.payment_code)
+    // Chỉ chuyển tiền phòng chưa thanh toán lên Master; tiền phòng đã thanh toán
+    // vẫn thuộc tổng dịch vụ của phòng/khách.
+    const shouldSendToMaster = sendRoomRateToMaster && roomCharge && !isPaid
+    if (!shouldSendToMaster && belongsToGuest) {
       if (service.service_bill_id) processedBillIds.add(String(service.service_bill_id))
       total += Number(service.total_amount) || (Number(service.quantity || 1) * Number(service.rate || service.price || service.amount || 0))
     }
@@ -931,7 +938,8 @@ const guestRoomServiceAmount = (booking, room, guestId) => {
   allBookingBills.forEach(sb => {
     if (Number(sb.Edit) === 1) return
     const roomCharge = isRoomCharge(sb)
-    if (sendRoomRateToMaster && roomCharge) return
+    const isPaid = Number(sb.Status) === 2 || Boolean(sb.PaymentID || sb.PaymentId || sb.payment_id || sb.payment_code)
+    if (sendRoomRateToMaster && roomCharge && !isPaid) return
     if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
 
     const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(room.roomId)
@@ -1545,18 +1553,23 @@ const openDeletePaymentModal = async () => {
     return
   }
 
-  if (confirm(`Bạn có chắc chắn muốn xóa bản ghi thanh toán "${payment.description || payment.id}"? (Hệ thống sẽ tạo dòng âm đối trừ)`)) {
-    isServiceOperationLoading.value = true
-    try {
-      const res = await deleteBookingPayment(payment.id)
-      selectedPaymentIds.value = []
-      await handleServiceAdded()
-      uiStore.showToast(res.data?.message || 'Đã xóa thanh toán thành công (tạo dòng đối trừ).', 'success')
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Không thể xóa thanh toán.', 'error')
-    } finally {
-      isServiceOperationLoading.value = false
-    }
+  showDeletePaymentModal.value = true
+}
+
+const deleteSelectedPayment = async (reason) => {
+  const payment = selectedPaymentItems.value[0]
+  if (!payment?.id) return
+  isServiceOperationLoading.value = true
+  try {
+    const res = await deleteBookingPayment(payment.id, { reason })
+    showDeletePaymentModal.value = false
+    selectedPaymentIds.value = []
+    await handleServiceAdded()
+    uiStore.showToast(res.data?.message || 'Đã xóa thanh toán thành công.', 'success')
+  } catch (err) {
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa thanh toán.', 'error')
+  } finally {
+    isServiceOperationLoading.value = false
   }
 }
 
@@ -1602,6 +1615,7 @@ const selectBookingHeader = (b) => {
   roomNumber.value = ''
   selectedGuest.value = b.name
   selectedGuestId.value = null
+  isNoPost.value = Boolean(b.rawBooking?.no_post)
 }
 
 const selectRoomItemRow = (b, r, specificGuest = null) => {
@@ -1615,6 +1629,40 @@ const selectRoomItemRow = (b, r, specificGuest = null) => {
   const guest = specificGuest || r.allGuests[0]
   selectedGuest.value = guest?.name || r.guestName
   selectedGuestId.value = guest?.id || r.primaryGuestId || null
+  isNoPost.value = Boolean(r.rawRoom?.no_post)
+}
+
+const handleNoPostChange = async (event) => {
+  if (!selectedBooking.value || noPostSaving.value) return
+
+  const noPost = event.target.checked
+  noPostSaving.value = true
+
+  try {
+    if (selectedRoomItem.value) {
+      await updateBookingRoomNoPost(selectedRoomItem.value.roomId, noPost)
+      selectedRoomItem.value.rawRoom.no_post = noPost
+      selectedRoomItem.value.no_post = noPost
+    } else {
+      await updateBookingNoPost(selectedBooking.value.bookingId, noPost)
+      selectedBooking.value.rawBooking.no_post = noPost
+      selectedBooking.value.roomItems.forEach(room => {
+        room.rawRoom.no_post = noPost
+        room.no_post = noPost
+      })
+    }
+
+    isNoPost.value = noPost
+    uiStore.showToast(noPost ? 'Đã bật No Post.' : 'Đã tắt No Post.', 'success')
+  } catch (error) {
+    const currentNoPost = selectedRoomItem.value
+      ? Boolean(selectedRoomItem.value.rawRoom?.no_post)
+      : Boolean(selectedBooking.value.rawBooking?.no_post)
+    isNoPost.value = currentNoPost
+    uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật No Post.', 'error')
+  } finally {
+    noPostSaving.value = false
+  }
 }
 
 const filteredSearchBookings = computed(() => {
@@ -2085,7 +2133,7 @@ onUnmounted(() => {
             <div class="flex items-center justify-between gap-1 border-b border-gray-200 pb-1">
               <div class="flex items-center gap-2">
                 <label class="flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" v-model="isNoPost" class="rounded border-gray-300 text-sky-600" />
+                  <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed" />
                   <span class="text-gray-600">No post</span>
                 </label>
               </div>
@@ -2617,6 +2665,14 @@ onUnmounted(() => {
       :folio="selectedPaymentItems[0]?.folio || 1"
       @close="showSplitDepositModal = false"
       @split="splitSelectedDeposit"
+    />
+
+    <DeletePaymentModal
+      :show="showDeletePaymentModal"
+      :loading="isServiceOperationLoading"
+      :payment="selectedPaymentItems[0] || null"
+      @close="showDeletePaymentModal = false"
+      @submit="deleteSelectedPayment"
     />
   </div>
 </template>
