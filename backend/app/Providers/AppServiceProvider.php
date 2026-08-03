@@ -11,7 +11,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->register(\Laravel\Reverb\ApplicationManagerServiceProvider::class);
+        $this->app->register(\Laravel\Reverb\ReverbServiceProvider::class);
     }
 
     public function boot(): void
@@ -22,10 +23,6 @@ class AppServiceProvider extends ServiceProvider
 
         // Đăng ký Event Listener toàn cục để tự động bắt các thay đổi dữ liệu của Eloquent
         \Illuminate\Support\Facades\Event::listen('eloquent.*', function ($eventName, array $data) {
-            if (app()->runningInConsole()) {
-                return;
-            }
-
             if (!str_contains($eventName, 'eloquent.created:') && 
                 !str_contains($eventName, 'eloquent.updated:') && 
                 !str_contains($eventName, 'eloquent.deleted:')) {
@@ -42,11 +39,6 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            $request = request();
-            if (!$request) {
-                return;
-            }
-
             $action = '';
             if (str_contains($eventName, '.created:')) {
                 $action = 'created';
@@ -58,6 +50,66 @@ class AppServiceProvider extends ServiceProvider
 
             $targetId = $model->getKey();
             $targetType = class_basename($model);
+
+            // Phát Broadcast Event Realtime cho các model quan trọng
+            try {
+                if (in_array($targetType, ['Room', 'RoomLock', 'BookingRoom', 'Booking', 'BookingRoomService', 'Payment', 'BookingRoomGuest', 'Guest'])) {
+                    if ($targetType === 'Room') {
+                        event(new \App\Events\RoomStatusUpdated($targetId, $model->status ?? null, "Room {$targetId} updated"));
+                    } elseif ($targetType === 'RoomLock') {
+                        $room = \App\Models\Room::where('room_number', $model->room_number)->first();
+                        $roomId = $room ? $room->id : null;
+                        if ($roomId) {
+                            event(new \App\Events\RoomStatusUpdated($roomId, null, "Room {$model->room_number} lock changed"));
+                        }
+                    } elseif ($targetType === 'BookingRoom') {
+                        $room = \App\Models\Room::where('room_number', $model->room_number)->first();
+                        $roomId = $room ? $room->id : null;
+                        if ($roomId) {
+                            event(new \App\Events\RoomStatusUpdated($roomId, null, "Booking room changed"));
+                        }
+                        if ($model->booking_id) {
+                            event(new \App\Events\ReservationUpdated($model->booking_id, $action, "Booking room {$action}"));
+                        }
+                    } elseif ($targetType === 'Booking') {
+                        event(new \App\Events\ReservationUpdated($targetId, $action, "Booking {$action}"));
+                    } elseif ($targetType === 'BookingRoomService') {
+                        $bookingRoom = $model->bookingRoom;
+                        if ($bookingRoom) {
+                            event(new \App\Events\ReservationUpdated($bookingRoom->booking_id, 'updated', "Service {$action}"));
+                        }
+                    } elseif ($targetType === 'Payment') {
+                        if ($model->booking_id) {
+                            event(new \App\Events\ReservationUpdated($model->booking_id, $action, "Payment {$action}"));
+                        }
+                    } elseif ($targetType === 'BookingRoomGuest') {
+                        if ($model->booking_room_id) {
+                            $bookingRoom = \App\Models\BookingRoom::find($model->booking_room_id);
+                            if ($bookingRoom && $bookingRoom->booking_id) {
+                                event(new \App\Events\ReservationUpdated($bookingRoom->booking_id, $action, "Guest pivot {$action}"));
+                            }
+                        }
+                    } elseif ($targetType === 'Guest') {
+                        $bookingRoomIds = \App\Models\BookingRoomGuest::where('guest_id', $model->id)->pluck('booking_room_id');
+                        $bookingIds = \App\Models\BookingRoom::whereIn('id', $bookingRoomIds)->pluck('booking_id')->unique();
+                        foreach ($bookingIds as $bId) {
+                            event(new \App\Events\ReservationUpdated($bId, $action, "Guest info {$action}"));
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error("Realtime broadcast error: " . $e->getMessage());
+            }
+
+            // Kiểm tra chạy trong console cho Activity Log (CLI không cần ghi Activity Log)
+            if (app()->runningInConsole()) {
+                return;
+            }
+
+            $request = request();
+            if (!$request) {
+                return;
+            }
             
             // Tìm nhãn đại diện cho Model
             $targetLabel = null;

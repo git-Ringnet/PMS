@@ -25,6 +25,7 @@ import {
 } from '@lucide/vue'
 import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
@@ -411,11 +412,7 @@ const loadCheckoutBookings = async () => {
   }
 }
 
-const handleServiceAdded = async (data) => {
-  showAddServiceModal.value = false
-  showHousekeepingServiceModal.value = false
-  selectedPaymentIds.value = []
-
+const refreshCheckoutData = async () => {
   const currentBookingId = selectedBooking.value ? selectedBooking.value.bookingId : null
   const currentRoomId = selectedRoomItem.value ? selectedRoomItem.value.roomId : null
   const currentGuestId = selectedGuestId.value
@@ -426,7 +423,13 @@ const handleServiceAdded = async (data) => {
   if (currentBookingId) {
     const freshB = allBookingsList.value.find(b => b.bookingId === currentBookingId)
     if (freshB) {
-      displayedBookingsList.value = [freshB]
+      // Cập nhật lại trong displayedBookingsList nếu nó đang chứa booking này
+      const displayedIdx = displayedBookingsList.value.findIndex(b => b.bookingId === currentBookingId)
+      if (displayedIdx !== -1) {
+        displayedBookingsList.value[displayedIdx] = freshB
+      } else {
+        displayedBookingsList.value = [freshB]
+      }
       selectedBooking.value = freshB
       if (currentRoomId) {
         const freshR = freshB.roomItems.find(r => r.roomId === currentRoomId)
@@ -442,6 +445,14 @@ const handleServiceAdded = async (data) => {
       }
     }
   }
+}
+
+const handleServiceAdded = async (data) => {
+  showAddServiceModal.value = false
+  showHousekeepingServiceModal.value = false
+  selectedPaymentIds.value = []
+
+  await refreshCheckoutData()
 
   uiStore.showToast('Đã thêm dịch vụ thành công!', 'success')
 }
@@ -1703,6 +1714,16 @@ onMounted(async () => {
   await loadCheckoutBookings()
   selectCheckoutBookingFromRoute()
   document.addEventListener('click', handleClickOutside)
+  // Lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', () => {
+        refreshCheckoutData()
+      })
+      .listen('.reservation.updated', () => {
+        refreshCheckoutData()
+      })
+  }
 })
 
 watch(() => route.query.bookingCode, async () => {
@@ -1712,6 +1733,11 @@ watch(() => route.query.bookingCode, async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+    // Hủy lắng nghe sự kiện realtime qua Laravel Echo
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated')
+    echo.channel('pms-channel').stopListening('.reservation.updated')
+  }
 })
 </script>
 
