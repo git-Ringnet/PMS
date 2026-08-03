@@ -5,7 +5,7 @@ import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
 
-const dateRange = ref({ start: '24/06/2026', end: '24/06/2026' })
+const dateRange = ref({ start: '2026-06-24', end: '2026-06-24' })
 // Phase 1 FIX: replace CSS-hack toggle with proper button toggle (same pattern as BreakfastTab)
 const notPrinted = ref(true)
 const currentPage = ref(1)
@@ -44,7 +44,7 @@ const records = ref([])
       <div class="flex flex-wrap items-center gap-3 px-6 py-3 relative z-20">
 
         <!-- Date Range Picker -->
-        <DateRangePicker v-model="dateRange" />
+        <DateRangePicker v-model:start-date="dateRange.start" v-model:end-date="dateRange.end" />
 
         <div class="w-px h-6 bg-slate-200 mx-0.5 hidden sm:block"></div>
 

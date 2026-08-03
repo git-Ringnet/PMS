@@ -314,6 +314,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
+    Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom']);
+    Route::post('/bookings/{bookingId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutBooking']);
     Route::get('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
     Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
     Route::put('/booking-children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);

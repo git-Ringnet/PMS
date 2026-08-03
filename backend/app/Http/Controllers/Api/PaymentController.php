@@ -827,6 +827,8 @@ class PaymentController extends Controller
             // 2. Cập nhật mã thanh toán payment_id trên các bản ghi cọc/tạm ứng hiện có thuộc Folio này
             $reqRoomId = $request->input('booking_room_id') ?? $request->input('bookingRoomId') ?? $request->input('room_id') ?? $request->input('roomId');
             $targetRoomIds = $reqRoomId ? [(string)$reqRoomId] : $booking->bookingRooms->pluck('id')->map(fn($id) => (string)$id)->toArray();
+            // Một số dữ liệu legacy dùng mã phòng dạng Gxxxx, không thể so sánh
+            // trực tiếp với các cột RentalRoomId kiểu số trong ServiceBill.
 
             $paymentQuery = Payment::where('booking_id', $bookingId)
                 ->where('edit_flag', 0)
@@ -836,6 +838,10 @@ class PaymentController extends Controller
                 });
             if ($reqRoomId) {
                 $paymentQuery->where('booking_room_id', $reqRoomId);
+            } else {
+                // Thanh toán Master chỉ gán cho khoản cọc/thanh toán của Master.
+                // Không được kéo các khoản đã gắn booking_room_id của phòng khác.
+                $paymentQuery->whereNull('booking_room_id');
             }
             if (!$isFolioA) {
                 $paymentQuery->where('folio_id', $folioId);
@@ -850,18 +856,31 @@ class PaymentController extends Controller
             $paymentQuery->update($updatePaymentData);
 
             // 3. Cập nhật dịch vụ ServiceBill thuộc Folio này thành Đã thanh toán (status = 2) và gán PaymentId & InvoiceId
-            $serviceBillQuery = \App\Models\ServiceBill::where(function ($q) use ($bookingId, $targetRoomIds, $reqRoomId) {
+            $serviceBillQuery = \App\Models\ServiceBill::where(function ($q) use ($booking, $bookingId, $targetRoomIds, $reqRoomId) {
                 if ($reqRoomId) {
-                    $q->where(function ($q2) use ($targetRoomIds) {
-                        $q2->whereIn('RentalRoomId1', $targetRoomIds)
-                           ->orWhereIn('RentalRoomId2', $targetRoomIds);
+                    $q->where(function ($q2) use ($reqRoomId) {
+                        $q2->whereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $reqRoomId])
+                           ->orWhereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $reqRoomId]);
                     });
                 } else {
-                    $q->where('RegisterId1', $bookingId)
-                      ->orWhere('RegisterID2', $bookingId);
-                    if (!empty($targetRoomIds)) {
-                        $q->orWhereIn('RentalRoomId1', $targetRoomIds)
-                          ->orWhereIn('RentalRoomId2', $targetRoomIds);
+                    $q->where(function ($q2) use ($bookingId) {
+                        $q2->where(function ($q3) use ($bookingId) {
+                            $q3->whereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $bookingId])
+                               ->orWhereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId]);
+                        })->where(function ($q3) {
+                            $q3->whereNull('RentalRoomId2');
+                        });
+                    });
+                    if ((bool) $booking->is_master_room_rate) {
+                        // RM/RMS của booking thuộc Master; dùng Register ID để
+                        // tránh so sánh mã phòng Gxxxx với cột RentalRoomId kiểu số.
+                        $q->orWhere(function ($q2) use ($bookingId) {
+                            $q2->whereIn('ServiceId', ['RM', 'RMS'])
+                               ->where(function ($q3) use ($bookingId) {
+                                   $q3->whereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $bookingId])
+                                      ->orWhereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId]);
+                               });
+                        });
                     }
                 }
             });
@@ -905,18 +924,13 @@ class PaymentController extends Controller
                     $housekeepingQuery->where('BookingId', $bookingId);
                 }
             } else {
-                $roomNos = $booking->bookingRooms->pluck('room_number')->filter()->toArray();
-                $housekeepingQuery->where(function ($q) use ($bookingId, $roomNos) {
-                    $q->where('BookingId', $bookingId);
-                    if (!empty($roomNos)) {
-                        $q->orWhereIn('RoomNo', $roomNos);
-                    }
-                });
+                // Master settlement không thanh toán bill housekeeping thuộc từng phòng.
+                $housekeepingQuery->whereRaw('1 = 0');
             }
             $housekeepingQuery->where('BillEdit', 0)->update(['Status' => 2]);
 
             // 4. Cập nhật dịch vụ BookingRoomService thuộc Folio này thành Đã thanh toán và chuyển về Folio 3 nếu là Folio A
-            if (!empty($targetRoomIds)) {
+            if ($reqRoomId && !empty($targetRoomIds)) {
                 $roomServiceQuery = \App\Models\BookingRoomService::whereIn('booking_room_id', $targetRoomIds);
                 if ($reqRoomId && (bool) $booking->is_master_room_rate) {
                     $roomServiceQuery->whereNotIn('service_code', ['RM', 'RMS']);
