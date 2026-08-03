@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\RoomRateCodeController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\NightAuditController;
 
 // Public Authentication routes
 Route::post('/login', [AuthController::class, 'login']);
@@ -62,6 +63,14 @@ Route::middleware('auth:sanctum')->group(function () {
                 'shift' => $newRoll->shift
             ]
         ]);
+    });
+
+    // API Day Close / Night Audit
+    Route::prefix('night-audit')->group(function () {
+        Route::get('/check-status', [NightAuditController::class, 'checkStatus']);
+        Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn']);
+        Route::post('/no-show', [NightAuditController::class, 'noShowRoom']);
+        Route::post('/run', [NightAuditController::class, 'runNightAudit']);
     });
 
 

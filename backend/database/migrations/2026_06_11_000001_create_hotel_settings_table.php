@@ -59,6 +59,7 @@ return new class extends Migration
             $table->text('booking_hidden_bk_info')->nullable(); // Các trường cần ẩn
             $table->string('booking_bf_child_set_service_id')->nullable(); // Mã dịch vụ ăn sáng TE
             $table->boolean('booking_auto_extra_charge_bf_child')->default(false); // Tự động tính phụ phí
+            $table->boolean('is_night_audit_running')->default(false);
             $table->boolean('check_module_before_delete')->default(false); // Kiểm tra module khi xóa
             
             $table->timestamps();
