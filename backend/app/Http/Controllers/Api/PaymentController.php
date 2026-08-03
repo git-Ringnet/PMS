@@ -323,6 +323,9 @@ class PaymentController extends Controller
     // =========================================
     public function destroy(Request $request, $id)
     {
+        $validated = $request->validate([
+            'reason' => 'required|string|min:1|max:1000',
+        ]);
         $payment = Payment::findOrFail($id);
 
         if ($payment->edit_flag !== 0) {
@@ -343,7 +346,7 @@ class PaymentController extends Controller
 
         $departmentId = $this->getDepartmentId($request);
 
-        DB::transaction(function () use ($payment, $systemDate, $departmentId) {
+        DB::transaction(function () use ($payment, $systemDate, $departmentId, $validated) {
             // Tạo dòng âm đối trừ với ngày hệ thống hiện tại
             $reversal = Payment::create([
                 'booking_id'        => $payment->booking_id,
@@ -353,7 +356,9 @@ class PaymentController extends Controller
                 'open_time'         => now()->format('H:i:s'),
                 'guest_display'     => $payment->guest_display,
                 'description'       => '[REVERSAL] ' . $payment->description,
+                'reason'            => $validated['reason'],
                 'amount'            => -abs($payment->amount), // Số âm
+                'guest_id'          => $payment->guest_id,
                 'pack2'             => $payment->pack2,
                 'pack4'             => $payment->pack4,
                 'payment_method_id' => $payment->payment_method_id,
@@ -367,10 +372,20 @@ class PaymentController extends Controller
 
             // Nếu đây là bản ghi thanh toán (có payment_id), nhả payment_id trên các bill liên quan
             if (!empty($payment->payment_id)) {
+                $serviceBillIds = \App\Models\ServiceBill::where('PaymentID', $payment->payment_id)->pluck('Ma');
                 \App\Models\ServiceBill::where('PaymentID', $payment->payment_id)
-                    ->update(['PaymentID' => null, 'Status' => 1]);
-                \App\Models\BookingRoomService::where('payment_id', $payment->payment_id)
-                    ->update(['payment_id' => null, 'status' => 1]);
+                    ->update(['PaymentID' => null, 'Status' => 1, 'InvoiceId' => null]);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'payment_id')) {
+                    \App\Models\BookingRoomService::where('payment_id', $payment->payment_id)
+                        ->update(['payment_id' => null, 'status' => 1]);
+                } elseif (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'status')) {
+                    $roomServiceQuery = \App\Models\BookingRoomService::whereIn('service_bill_id', $serviceBillIds);
+                    $roomServiceQuery->update(['status' => 1]);
+                }
+                if ($serviceBillIds->isNotEmpty()) {
+                    \App\Models\HousekeepingServiceBill::whereIn('BillServiceId', $serviceBillIds)
+                        ->update(['Status' => 1, 'BillEdit' => 0]);
+                }
             }
 
             // Đánh dấu dòng gốc đã hủy, lưu ref sang dòng âm
@@ -379,10 +394,25 @@ class PaymentController extends Controller
                 'reversal_ref' => $reversal->id,
                 'updated_by'   => Auth::user()?->username ?? 'system',
             ]);
+
+            // Hoàn nguyên các phiếu cọc đã được settlement này sử dụng.
+            // Nếu không reset, phiếu cọc vẫn giữ mã thanh toán và hiển thị Đã thanh toán.
+            if (!empty($payment->payment_id)) {
+                Payment::where('payment_id', $payment->payment_id)
+                    ->where('edit_flag', 0)
+                    ->whereNull('deleted_at')
+                    ->update([
+                        'payment_id' => null,
+                        'status' => Payment::STATUS_PENDING,
+                        'updated_by' => Auth::user()?->username ?? 'system',
+                    ]);
+            }
+
             $payment->delete(); // Soft delete để cập nhật deleted_at
 
             // Sync payment_value
             $totalDeposit = Payment::where('booking_id', $payment->booking_id)
+                ->where('pack2', Payment::PACK2_DEPOSIT)
                 ->where('edit_flag', 0)
                 ->whereNull('deleted_at')
                 ->sum('amount');
@@ -849,6 +879,12 @@ class PaymentController extends Controller
             })
             ->where('Edit', 0);
 
+            // Khi thu riêng một phòng, tiền phòng RM/RMS chưa thanh toán
+            // vẫn thuộc Master nếu booking đang bật tập hợp tiền phòng.
+            if ($reqRoomId && (bool) $booking->is_master_room_rate) {
+                $serviceBillQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+            }
+
             $updateServiceBillData = [
                 'PaymentId' => $settlementCode,
                 'InvoiceId' => $invoiceCode,
@@ -882,6 +918,9 @@ class PaymentController extends Controller
             // 4. Cập nhật dịch vụ BookingRoomService thuộc Folio này thành Đã thanh toán và chuyển về Folio 3 nếu là Folio A
             if (!empty($targetRoomIds)) {
                 $roomServiceQuery = \App\Models\BookingRoomService::whereIn('booking_room_id', $targetRoomIds);
+                if ($reqRoomId && (bool) $booking->is_master_room_rate) {
+                    $roomServiceQuery->whereNotIn('service_code', ['RM', 'RMS']);
+                }
                 if (!$isFolioA) {
                     $roomServiceQuery->where('folio', $folioId);
                 }

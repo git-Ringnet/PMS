@@ -32,6 +32,7 @@ return new class extends Migration
             $table->time('open_time')->nullable();             // Giờ tạo
             $table->string('guest_display')->nullable();       // Hiển thị: mã booking + công ty + tên booker
             $table->string('description')->nullable();         // Mô tả: "Deposit + (hình thức TT)"
+            $table->text('reason')->nullable();                // Lý do xoá/đối trừ
             $table->decimal('amount', 15, 2)->default(0);     // Số tiền
             $table->decimal('total_amount_before_split', 15, 2)->nullable(); // Số tiền gốc trước khi tách
 
