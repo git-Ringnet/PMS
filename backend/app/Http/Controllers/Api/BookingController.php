@@ -102,9 +102,16 @@ class BookingController extends Controller
 
         // Filter theo khoảng ngày
         if ($request->from_date && $request->to_date) {
-            $query->where(function ($q) use ($request) {
-                $q->whereBetween('arrival_date', [$request->from_date, $request->to_date])
-                  ->orWhereBetween('departure_date', [$request->from_date, $request->to_date]);
+            $dateType = $request->date_type;
+            $query->where(function ($q) use ($request, $dateType) {
+                if ($dateType === 'arrival') {
+                    $q->whereBetween('arrival_date', [$request->from_date, $request->to_date]);
+                } elseif ($dateType === 'departure') {
+                    $q->whereBetween('departure_date', [$request->from_date, $request->to_date]);
+                } else {
+                    $q->whereBetween('arrival_date', [$request->from_date, $request->to_date])
+                      ->orWhereBetween('departure_date', [$request->from_date, $request->to_date]);
+                }
             });
         }
 

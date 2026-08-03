@@ -21,9 +21,10 @@ import {
   ChevronRight,
   RefreshCw,
   Inbox,
-  ArrowRightLeft
+  ArrowRightLeft,
+  X
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutBooking } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
@@ -40,9 +41,138 @@ const toggleSidebar = () => {
 
 // UI State
 const searchQuery = ref('')
-const registerFilter = ref('current')
+const registerFilter = ref('old')
+const showRegisterFilterDropdown = ref(false)
+const filterDateScope = ref('today')
+const filterDepartureChecked = ref(true)
+const filterDateFrom = ref('')
+const filterDateTo = ref('')
 const showAllGuestsInRoom = ref(false)
 const serviceFilter = ref(null)
+const filterHasBeenApplied = ref(false)
+const appliedCheckoutFilters = ref({
+  registerFilter: 'old',
+  dateScope: 'today',
+  departureChecked: true,
+  dateFrom: '',
+  dateTo: ''
+})
+
+function localDateInput(value = new Date()) {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function shiftDate(dateInput, days) {
+  const date = new Date(`${dateInput}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return dateInput
+  date.setDate(date.getDate() + days)
+  return localDateInput(date)
+}
+
+function setFilterDatesForScope(scope = filterDateScope.value) {
+  const base = localDateInput(systemDate.value || new Date())
+  if (scope === 'today') {
+    filterDateFrom.value = base
+    filterDateTo.value = base
+  } else if (scope === 'yesterday') {
+    const yesterday = shiftDate(base, -1)
+    filterDateFrom.value = yesterday
+    filterDateTo.value = yesterday
+  } else if (scope === 'this_week') {
+    const d = new Date(`${base}T00:00:00`)
+    const mondayOffset = (d.getDay() + 6) % 7
+    filterDateFrom.value = shiftDate(base, -mondayOffset)
+    filterDateTo.value = shiftDate(filterDateFrom.value, 6)
+  } else if (scope === 'this_month') {
+    const d = new Date(`${base}T00:00:00`)
+    const first = new Date(d.getFullYear(), d.getMonth(), 1)
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+    filterDateFrom.value = localDateInput(first)
+    filterDateTo.value = localDateInput(last)
+  }
+}
+
+function dateOnly(value) {
+  if (!value) return ''
+  const text = String(value)
+  const iso = text.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (iso) return iso[1]
+  const vn = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return vn ? `${vn[3]}-${vn[2]}-${vn[1]}` : localDateInput(value)
+}
+
+function isDateInRange(value, from, to) {
+  const date = dateOnly(value)
+  if (!date || !from || !to) return true
+  return date >= from && date <= to
+}
+
+function isVirtualBooking(booking) {
+  return Boolean(
+    booking.rawBooking?.is_virtual ||
+    booking.roomItems?.some(room => room.isVirtual)
+  )
+}
+
+function matchesCheckoutFilter(booking, filters) {
+  const rawStatus = Number(booking.rawBooking?.status)
+  if (filters.registerFilter === 'current' && rawStatus !== 1) return false
+  if (filters.registerFilter === 'old' && rawStatus !== 0) return false
+  if (filters.registerFilter === 'virtual' && !isVirtualBooking(booking)) return false
+
+  const dateValue = filters.departureChecked ? booking.departureDate : booking.arrivalDate
+  return isDateInRange(dateValue, filters.dateFrom, filters.dateTo)
+}
+
+async function applyCheckoutFilters(closeDropdown = true) {
+  appliedCheckoutFilters.value = {
+    registerFilter: registerFilter.value,
+    dateScope: filterDateScope.value,
+    departureChecked: filterDepartureChecked.value,
+    dateFrom: dateOnly(filterDateFrom.value),
+    dateTo: dateOnly(filterDateTo.value)
+  }
+  filterHasBeenApplied.value = true
+  await loadCheckoutBookings()
+  if (closeDropdown) showRegisterFilterDropdown.value = false
+}
+
+function resetCheckoutFilterDraft() {
+  const current = appliedCheckoutFilters.value
+  registerFilter.value = current.registerFilter
+  filterDateScope.value = current.dateScope
+  filterDepartureChecked.value = current.departureChecked
+  filterDateFrom.value = current.dateFrom
+  filterDateTo.value = current.dateTo
+  showRegisterFilterDropdown.value = false
+}
+
+function copyFilterDate(source) {
+  if (source === 'from' && filterDateFrom.value) {
+    filterDateTo.value = filterDateFrom.value
+  } else if (source === 'to' && filterDateTo.value) {
+    filterDateFrom.value = filterDateTo.value
+  }
+  filterDateScope.value = 'custom'
+}
+function openDatePicker(event) {
+  const input = event.currentTarget?.querySelector('input')
+  if (!input) return
+  try {
+    if (typeof input.showPicker === 'function') input.showPicker()
+    else input.focus()
+  } catch (_) {
+    input.focus()
+  }
+}
+function handleFilterScopeChange() {
+  if (filterDateScope.value !== 'custom') setFilterDatesForScope(filterDateScope.value)
+}
 
 const isNoPost = ref(false)
 const noPostSaving = ref(false)
@@ -55,6 +185,9 @@ const activeFolioTab = ref('A')
 
 // Dropdown In hóa đơn state
 const showInvoiceMenu = ref(false)
+const showCheckoutModal = ref(false)
+const checkoutGuestIds = ref([])
+const checkoutError = ref('')
 
 // Modal states
 import AddServiceModal from './components/AddServiceModal.vue'
@@ -87,6 +220,29 @@ const showCancelServiceModal = ref(false)
 const showSplitDepositModal = ref(false)
 const roomAdjustment = ref(null)
 const housekeepingAdjustment = ref(null)
+
+const checkoutGuests = computed(() => selectedRoomItem.value?.allGuests?.filter(g => g?.id) || [])
+const openCheckoutModal = () => {
+  if (!selectedBooking.value) return
+  checkoutError.value = ''
+  checkoutGuestIds.value = selectedRoomItem.value ? checkoutGuests.value.map(g => g.id) : []
+  showCheckoutModal.value = true
+}
+const submitCheckout = async () => {
+  checkoutError.value = ''
+  if (selectedRoomItem.value && checkoutGuestIds.value.length === 0) { checkoutError.value = 'Phải chọn tối thiểu một khách.'; return }
+  isServiceOperationLoading.value = true
+  try {
+    if (selectedRoomItem.value) await checkoutRoom(selectedRoomItem.value.roomId || selectedRoomItem.value.id, checkoutGuestIds.value)
+    else await checkoutBooking(selectedBooking.value.bookingId)
+    showCheckoutModal.value = false
+    await refreshCheckoutData()
+    uiStore.showToast('Checkout thành công.', 'success')
+  } catch (err) {
+    console.error('Checkout API error:', err?.response?.data || err)
+    checkoutError.value = err?.response?.data?.message || 'Không thể checkout.'
+  } finally { isServiceOperationLoading.value = false }
+}
 
 
 const openAddHousekeepingService = () => {
@@ -124,6 +280,7 @@ const isServiceOperationLoading = ref(false)
 const showSearchDropdown = ref(false)
 const showPanelGuestDropdown = ref(false)
 const searchContainerRef = ref(null)
+const filterContainerRef = ref(null)
 
 function formatDate(dateStr) {
   if (!dateStr) return '-- / -- / ----'
@@ -185,6 +342,7 @@ const loadSystemDate = async () => {
     const res = await fetchSystemDate()
     if (res.data?.data?.system_date) {
       systemDate.value = res.data.data.system_date
+      if (filterDateScope.value !== 'custom') setFilterDatesForScope(filterDateScope.value)
     }
   } catch (err) {
     console.error('Lỗi khi tải ngày hệ thống:', err)
@@ -194,7 +352,26 @@ const loadSystemDate = async () => {
 const loadCheckoutBookings = async () => {
   isLoading.value = true
   try {
-    const res = await fetchBookings({ status: '0,1' })
+    const params = {}
+    if (filterHasBeenApplied.value) {
+      if (appliedCheckoutFilters.value.registerFilter === 'current') {
+        params.status = '1'
+      } else if (appliedCheckoutFilters.value.registerFilter === 'old') {
+        params.status = '0'
+      } else {
+        params.status = '0,1'
+      }
+
+      if (appliedCheckoutFilters.value.dateFrom && appliedCheckoutFilters.value.dateTo) {
+        params.from_date = appliedCheckoutFilters.value.dateFrom
+        params.to_date = appliedCheckoutFilters.value.dateTo
+        params.date_type = appliedCheckoutFilters.value.departureChecked ? 'departure' : 'arrival'
+      }
+    } else {
+      params.status = '0,1'
+    }
+
+    const res = await fetchBookings(params)
     const list = res.data?.data || res.data || []
 
     const formatted = []
@@ -217,7 +394,9 @@ const loadCheckoutBookings = async () => {
       if (b.booking_rooms && b.booking_rooms.length > 0) {
         b.booking_rooms.forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
-          if (!roomNo || ![0, 1].includes(Number(r.status))) return
+          const isVirtualRoom = Boolean(r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || !roomNo)
+          if ((!roomNo && !isVirtualRoom) || ![0, 1].includes(Number(r.status))) return
+          const displayRoomNo = roomNo || 'PM'
           const roomArrivalDate = String(r.arrival_date || b.arrival_date || '').slice(0, 10)
           const checkoutSystemDate = String(systemDate.value || new Date().toISOString().slice(0, 10)).slice(0, 10)
           if (roomArrivalDate && roomArrivalDate > checkoutSystemDate) return
@@ -359,7 +538,8 @@ const loadCheckoutBookings = async () => {
             id: `R${r.id || b.id}`,
             roomId: r.id,
             code: code,
-            roomNumber: roomNo,
+            roomNumber: displayRoomNo,
+            isVirtual: isVirtualRoom,
             guestName: roomGuests[0].name,
             allGuests: roomGuests,
             primaryGuestId: primaryGuestId,
@@ -406,6 +586,7 @@ const loadCheckoutBookings = async () => {
         paidAmount: masterPaidAmount,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
+        isVirtual: Boolean(b.is_virtual || roomItems.some(room => room.isVirtual)),
         note: b.note || '',
         checked: false,
         roomItems: roomItems,
@@ -415,6 +596,9 @@ const loadCheckoutBookings = async () => {
 
     // Lưu toàn bộ danh sách cho ô Tìm kiếm Popup
     allBookingsList.value = formatted
+    displayedBookingsList.value = filterHasBeenApplied.value
+      ? formatted.filter(booking => matchesCheckoutFilter(booking, appliedCheckoutFilters.value))
+      : formatted
   } catch (err) {
     console.error('Lỗi khi nạp danh sách booking cho Checkout:', err)
   } finally {
@@ -1719,9 +1903,10 @@ const handleNoPostChange = async (event) => {
 }
 
 const filteredSearchBookings = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return allBookingsList.value
-  return allBookingsList.value.filter(b => {
+  const q = String(searchQuery.value || '').trim().toLowerCase()
+  const source = allBookingsList.value
+  if (!q) return source
+  return source.filter(b => {
     const matchCode = b.code && b.code.toLowerCase().includes(q)
     const matchName = b.name && b.name.toLowerCase().includes(q)
     const matchRoom = b.roomItems.some(r => {
@@ -1767,6 +1952,9 @@ const handleClickOutside = (e) => {
   if (searchContainerRef.value && !searchContainerRef.value.contains(e.target)) {
     showSearchDropdown.value = false
   }
+  if (filterContainerRef.value && !filterContainerRef.value.contains(e.target)) {
+    showRegisterFilterDropdown.value = false
+  }
 }
 
 onMounted(async () => {
@@ -1791,6 +1979,21 @@ watch(() => route.query.bookingCode, async () => {
   selectCheckoutBookingFromRoute()
 })
 
+watch(searchQuery, (newVal) => {
+  const q = String(newVal || '').trim()
+  if (!q) {
+    displayedBookingsList.value = allBookingsList.value
+    if (route.query.bookingCode) {
+      router.replace({ query: { ...route.query, bookingCode: undefined } })
+    }
+  }
+})
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  showSearchDropdown.value = false
+}
+
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
     // Hủy lắng nghe sự kiện realtime qua Laravel Echo
@@ -1802,195 +2005,209 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100vh-48px)] bg-[#ecefe6] text-xs text-gray-700 select-none overflow-hidden font-sans relative">
+  <div class="checkout-shell flex h-[calc(100vh-48px)] bg-[#f1f5f9] text-xs text-slate-700 select-none overflow-hidden font-sans relative">
     <LoadingOverlay :show="isLoading || isServiceOperationLoading" />
 
     <!-- LEFTSIDE TOOLBAR (Cột nút chức năng dọc bên trái - Hỗ trợ Thu gọn/Mở rộng) -->
     <aside 
       :class="[
-        isSidebarCollapsed ? 'w-12' : 'w-44',
-        'bg-[#f4f5f0] border-r border-gray-300 flex flex-col justify-between p-1 transition-all duration-200 shrink-0 shadow-sm relative'
+        isSidebarCollapsed ? 'w-12' : 'w-[170px]',
+        'checkout-actions order-last bg-[#1e293b] border-l border-[#475569] flex flex-col justify-between py-2 px-2 transition-all duration-200 shrink-0 shadow-sm relative text-slate-100 overflow-x-hidden overflow-y-auto'
       ]"
     >
       <!-- Collapse / Expand Toggle Button -->
       <button 
         @click="toggleSidebar"
-        class="absolute -right-3 top-2 bg-white border border-gray-300 rounded-full p-0.5 shadow hover:bg-gray-100 z-30 text-gray-600"
+        class="absolute -left-3 top-2 bg-[#1e293b] border border-[#475569] rounded-full p-0.5 shadow hover:bg-slate-700 z-30 text-slate-200"
         :title="isSidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'"
       >
         <ChevronRight v-if="isSidebarCollapsed" class="w-3.5 h-3.5" />
         <ChevronLeft v-else class="w-3.5 h-3.5" />
       </button>
 
-      <div class="space-y-0.5 overflow-y-auto overflow-x-hidden pt-4 text-xs">
-        <!-- Thêm dịch vụ -->
-        <button 
-          @click="showAddServiceModal = true"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
-          :title="isSidebarCollapsed ? 'Thêm dịch vụ' : ''"
-        >
-          <Plus class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Thêm dịch vụ</span>
-        </button>
+      <div class="flex-1 overflow-y-auto overflow-x-hidden pt-3 checkout-action-menu flex flex-col gap-0">
 
-        <!-- Thêm dịch vụ BP -->
-        <button 
-          @click="openAddHousekeepingService"
-          :disabled="!selectedRoomItem"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
-          :class="[selectedRoomItem ? 'hover:bg-white text-gray-700 hover:border-gray-300 cursor-pointer' : 'opacity-40 pointer-events-none text-gray-400']"
-          :title="isSidebarCollapsed ? 'Thêm dịch vụ BP' : ''"
-        >
-          <PlusSquare class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Thêm dịch vụ BP</span>
-        </button>
+        <!-- NHÓM: Dịch Vụ & Phí -->
+        <div class="pb-2 mb-1 border-b border-[#334155]">
+          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">Dịch Vụ & Phí</div>
 
-        <div class="border-t border-gray-300 my-1"></div>
-
-        <!-- Tách dịch vụ -->
-        <button 
-          @click="openSplitAction"
-          :disabled="!(canSplitSelectedServices || canSplitSelectedDeposit)"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded border border-transparent px-2 py-1 text-xs text-gray-700 transition-all hover:border-gray-300 hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-          :class="!(canSplitSelectedServices || canSplitSelectedDeposit) ? 'opacity-40 pointer-events-none text-gray-400' : ''"
-          :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Tách cọc' : 'Tách dịch vụ') : ''"
-        >
-          <Scissors class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Tách cọc' : 'Tách dịch vụ' }}</span>
-        </button>
-
-        <!-- Chuyển dịch vụ / cọc -->
-        <button
-          @click="hasSelectedDeposit ? openTransferPaymentModal() : openTransferServiceModal()"
-          :disabled="hasSelectedDeposit ? !canTransferSelectedDeposit : !canTransferSelectedServices"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded border border-transparent px-2 py-1 text-xs text-gray-700 transition-all hover:border-gray-300 hover:bg-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-          :class="(hasSelectedDeposit ? !canTransferSelectedDeposit : !canTransferSelectedServices) ? 'opacity-40 pointer-events-none text-gray-400' : ''"
-          :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Chuyển cọc' : 'Chuyển dịch vụ') : ''"
-        >
-          <ArrowRightLeft class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Chuyển cọc' : 'Chuyển dịch vụ' }}</span>
-        </button>
-
-        <!-- Tập hợp DV -->
-        <button 
-          @click="openQuickTransferBillModal"
-          :disabled="!hasQuickTransferTarget || isServiceOperationLoading"
-          :class="hasQuickTransferTarget && !isServiceOperationLoading ? 'text-gray-700 hover:bg-white hover:border-gray-300 cursor-pointer' : 'text-gray-400 opacity-50 cursor-not-allowed'"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
-          :title="isSidebarCollapsed ? 'Tập hợp DV' : ''"
-        >
-          <Layers :class="hasQuickTransferTarget ? 'text-gray-600' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Tập hợp DV</span>
-        </button>
-
-        <div class="border-t border-gray-300 my-1"></div>
-
-        <!-- In hóa đơn với Dropdown Submenu -->
-        <div class="relative">
+          <!-- Thêm dịch vụ -->
           <button 
-            @click="showInvoiceMenu = !showInvoiceMenu"
-            class="w-full flex items-center justify-between px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
-            :title="isSidebarCollapsed ? 'In hóa đơn' : ''"
+            @click="showAddServiceModal = true"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'Thêm dịch vụ' : ''"
           >
-            <div class="flex items-center gap-1.5 truncate">
-              <Printer class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-              <span v-if="!isSidebarCollapsed" class="truncate">In hóa đơn</span>
-            </div>
-            <ChevronRight v-if="!isSidebarCollapsed" class="w-3 h-3 text-gray-400 shrink-0" />
+            <Plus class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Thêm Dịch Vụ</span>
           </button>
 
-          <!-- Dropdown Sub-menu Floating -->
-          <div 
-            v-if="showInvoiceMenu" 
-            class="absolute left-full top-0 ml-1 w-32 bg-white border border-gray-300 rounded shadow-lg z-50 py-1 text-xs"
+          <!-- Thêm dịch vụ BP -->
+          <button 
+            @click="openAddHousekeepingService"
+            :disabled="!selectedRoomItem"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded transition-colors text-xs"
+            :class="[selectedRoomItem ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'opacity-40 cursor-not-allowed text-[#64748b]']"
+            :title="isSidebarCollapsed ? 'Thêm dịch vụ BP' : ''"
           >
-            <button class="w-full text-left px-2.5 py-1 hover:bg-sky-50 text-gray-700">Hiện giá</button>
-            <button class="w-full text-left px-2.5 py-1 hover:bg-sky-50 text-gray-700">Không hiện giá</button>
-            <button class="w-full text-left px-2.5 py-1 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
-          </div>
+            <PlusSquare class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Thêm DV Buồng Phòng</span>
+          </button>
+
+          <!-- Tách dịch vụ -->
+          <button 
+            @click="openSplitAction"
+            :disabled="!(canSplitSelectedServices || canSplitSelectedDeposit)"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
+            :class="(canSplitSelectedServices || canSplitSelectedDeposit) ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'opacity-40 cursor-not-allowed text-[#64748b]'"
+            :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Tách cọc' : 'Tách dịch vụ') : ''"
+          >
+            <Scissors class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Tách Dịch Vụ' : 'Tách Dịch Vụ' }}</span>
+          </button>
+
+          <!-- Chuyển dịch vụ / cọc -->
+          <button
+            @click="hasSelectedDeposit ? openTransferPaymentModal() : openTransferServiceModal()"
+            :disabled="hasSelectedDeposit ? !canTransferSelectedDeposit : !canTransferSelectedServices"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
+            :class="(hasSelectedDeposit ? canTransferSelectedDeposit : canTransferSelectedServices) ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'opacity-40 cursor-not-allowed text-[#64748b]'"
+            :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Chuyển cọc' : 'Chuyển dịch vụ') : ''"
+          >
+            <ArrowRightLeft class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Chuyển Dịch Vụ' : 'Chuyển Dịch Vụ' }}</span>
+          </button>
+
+          <!-- Tập hợp DV -->
+          <button 
+            @click="openQuickTransferBillModal"
+            :disabled="!hasQuickTransferTarget || isServiceOperationLoading"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
+            :class="hasQuickTransferTarget && !isServiceOperationLoading ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'text-[#64748b] opacity-50 cursor-not-allowed'"
+            :title="isSidebarCollapsed ? 'Tập hợp DV' : ''"
+          >
+            <Layers class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Tập Hợp Dịch Vụ</span>
+          </button>
+
+          <!-- Xóa dịch vụ -->
+          <button 
+            @click="openCancelServiceModal"
+            :disabled="!canOpenCancelServiceModal || isServiceOperationLoading"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
+            :class="canOpenCancelServiceModal && !isServiceOperationLoading ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'text-[#64748b] cursor-not-allowed opacity-60'"
+            :title="isSidebarCollapsed ? 'Xóa dịch vụ' : ''"
+          >
+            <Trash2 class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Xóa Dịch Vụ</span>
+          </button>
         </div>
 
-        <!-- In VAT -->
-        <button 
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
-          :title="isSidebarCollapsed ? 'In VAT' : ''"
-        >
-          <FileText class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">In VAT</span>
-        </button>
+        <!-- NHÓM: Thanh Toán & Cọc -->
+        <div class="pb-2 mb-1 border-b border-[#334155]">
+          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">Thanh Toán & Cọc</div>
 
-        <!-- Hủy VAT -->
-        <button 
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-red-50 text-red-600 transition-colors border border-transparent text-xs"
-          :title="isSidebarCollapsed ? 'Hủy VAT' : ''"
-        >
-          <FileX class="w-3.5 h-3.5 text-red-500 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate text-red-600">Hủy VAT</span>
-        </button>
+          <!-- Thanh toán trước -->
+          <button 
+            @click="showPrepaymentModal = true"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
+            :title="isSidebarCollapsed ? 'Thanh toán trước' : ''"
+          >
+            <CreditCard class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Thanh Toán Trước</span>
+          </button>
 
-        <div class="border-t border-gray-300 my-1"></div>
+          <!-- Thanh toán -->
+          <button 
+            @click="openPaymentModal"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
+            :title="isSidebarCollapsed ? 'Thanh toán' : ''"
+          >
+            <CreditCard class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Thanh Toán</span>
+          </button>
 
-        <!-- Xóa dịch vụ -->
-        <button 
-          @click="openCancelServiceModal"
-          :disabled="!canOpenCancelServiceModal || isServiceOperationLoading"
-          :class="canOpenCancelServiceModal && !isServiceOperationLoading ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-gray-400 cursor-not-allowed opacity-60'"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
-          :title="isSidebarCollapsed ? 'Xóa dịch vụ' : ''"
-        >
-          <Trash2 :class="canOpenCancelServiceModal ? 'text-red-500' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Xóa dịch vụ</span>
-        </button>
+          <!-- Xóa thanh toán -->
+          <button 
+            @click="openDeletePaymentModal"
+            :disabled="selectedPaymentItems.length === 0 || isServiceOperationLoading"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
+            :class="selectedPaymentItems.length > 0 && !isServiceOperationLoading ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'text-[#64748b] cursor-not-allowed opacity-60'"
+            :title="isSidebarCollapsed ? 'Xóa thanh toán' : ''"
+          >
+            <RotateCcw class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Xóa Thanh Toán</span>
+          </button>
+        </div>
 
-        <!-- Xóa thanh toán -->
-        <button 
-          @click="openDeletePaymentModal"
-          :disabled="selectedPaymentItems.length === 0 || isServiceOperationLoading"
-          :class="selectedPaymentItems.length > 0 && !isServiceOperationLoading ? 'hover:bg-red-50 text-red-600 cursor-pointer' : 'text-gray-400 cursor-not-allowed opacity-60'"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors border border-transparent text-xs"
-          :title="isSidebarCollapsed ? 'Xóa thanh toán' : ''"
-        >
-          <RotateCcw :class="selectedPaymentItems.length > 0 ? 'text-red-500' : 'text-gray-400'" class="w-3.5 h-3.5 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Xóa thanh toán</span>
-        </button>
+        <!-- NHÓM: In & Hóa Đơn VAT -->
+        <div class="pb-2 mb-1 border-b border-[#334155]">
+          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">In & Hóa Đơn VAT</div>
 
-        <div class="border-t border-gray-300 my-1"></div>
+          <!-- In hóa đơn với Dropdown Submenu -->
+          <div class="relative">
+            <button 
+              @click="showInvoiceMenu = !showInvoiceMenu"
+              class="w-full flex items-center justify-between px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+              :title="isSidebarCollapsed ? 'In hóa đơn' : ''"
+            >
+              <div class="flex items-center gap-1.5 truncate">
+                <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+                <span v-if="!isSidebarCollapsed" class="truncate">In Hóa Đơn Folio</span>
+              </div>
+              <ChevronRight v-if="!isSidebarCollapsed" class="w-3 h-3 text-[#94a3b8] shrink-0" />
+            </button>
 
-        <!-- Thanh toán trước -->
-        <button 
-          @click="showPrepaymentModal = true"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs cursor-pointer"
-          :title="isSidebarCollapsed ? 'Thanh toán trước' : ''"
-        >
-          <CreditCard class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Thanh toán trước</span>
-        </button>
+            <!-- Dropdown Sub-menu Floating -->
+            <div 
+              v-if="showInvoiceMenu" 
+              class="absolute left-full top-0 ml-1 w-36 bg-white border border-gray-300 rounded shadow-lg z-50 py-1 text-xs"
+            >
+              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Hiện giá</button>
+              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Không hiện giá</button>
+              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
+            </div>
+          </div>
 
-        <!-- Thanh toán -->
-        <button 
-          @click="openPaymentModal"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs cursor-pointer"
-          :title="isSidebarCollapsed ? 'Thanh toán' : ''"
-        >
-          <CreditCard class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Thanh toán</span>
-        </button>
+          <!-- In VAT -->
+          <button 
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In VAT' : ''"
+          >
+            <FileText class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In VAT</span>
+          </button>
 
-        <!-- Lọc -->
-        <button 
-          @click="showFilterServiceModal = true"
-          class="w-full flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white text-gray-700 transition-colors border border-transparent hover:border-gray-300 text-xs"
-          :title="isSidebarCollapsed ? 'Lọc' : ''"
-        >
-          <Filter class="w-3.5 h-3.5 text-gray-600 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Lọc</span>
-        </button>
+          <!-- Hủy VAT -->
+          <button 
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#f87171] hover:bg-[#334155] transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'Hủy VAT' : ''"
+          >
+            <FileX class="w-3.5 h-3.5 text-[#f87171] shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Hủy VAT</span>
+          </button>
+        </div>
+
+        <!-- NHÓM: Tiện ích -->
+        <div class="pb-1">
+          <!-- Lọc -->
+          <button 
+            @click="showFilterServiceModal = true"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'Lọc' : ''"
+          >
+            <Filter class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Lọc</span>
+          </button>
+        </div>
+
       </div>
 
       <!-- Bottom Button: Trả phòng -->
-      <div class="pt-1.5 border-t border-gray-300">
+      <div class="pt-2 border-t border-[#475569] shrink-0">
         <button 
-          class="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium shadow-sm transition-colors text-xs"
+          @click="openCheckoutModal"
+          :disabled="!selectedBooking || isServiceOperationLoading"
+          class="w-full flex items-center justify-center gap-1.5 px-2 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-semibold shadow-sm transition-colors text-xs"
           :title="isSidebarCollapsed ? 'Trả phòng' : ''"
         >
           <LogOut class="w-3.5 h-3.5 rotate-180 shrink-0" />
@@ -2000,10 +2217,10 @@ onUnmounted(() => {
     </aside>
 
     <!-- RIGHT MAIN SECTION -->
-    <main class="flex-1 flex flex-col min-w-0 bg-[#e8ebe0] p-1.5 gap-1.5 overflow-hidden">
+    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(360px,380px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
 
       <!-- TOP CONTROL BAR (Nằm trên cùng toàn chiều rộng, không thuộc panel nào) -->
-      <div class="flex items-center justify-between gap-2 px-2 py-1 bg-[#f4f5f0] border border-gray-300 rounded shadow-xs text-xs">
+      <div class="checkout-header col-span-2 flex items-center justify-between gap-2 px-4 py-1.5 bg-white border-b border-slate-300 text-xs">
         <div class="flex items-center gap-2 flex-1 max-w-xl">
           <!-- Search Input with Popup Dropdown (Khớp 100% Ảnh 1 & 2) -->
           <div ref="searchContainerRef" class="relative flex-1">
@@ -2013,9 +2230,18 @@ onUnmounted(() => {
               @focus="showSearchDropdown = true"
               @input="showSearchDropdown = true"
               type="text" 
-              placeholder="Search" 
-              class="w-full pl-7 pr-2 py-0.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500" 
+              placeholder="Nh&#7853;p s&#7889; ph&#242;ng, t&#234;n kh&#225;ch, m&#227; Booking..." 
+              class="w-full pl-7 pr-7 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-500" 
             />
+            <button 
+              v-if="searchQuery" 
+              @click="clearSearch"
+              type="button"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
+              title="Xóa tìm kiếm"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
 
             <!-- Floating Search Dropdown Popup List (Khớp chính xác Ảnh 1) -->
             <div 
@@ -2067,16 +2293,41 @@ onUnmounted(() => {
                 Không tìm thấy dữ liệu đăng ký nào
               </div>
             </div>
+          </div>                    <div ref="filterContainerRef" class="checkout-register-filter relative">
+            <button type="button" @click.stop="showRegisterFilterDropdown = !showRegisterFilterDropdown" class="checkout-filter-button flex items-center gap-1 px-2 py-1 text-xs font-semibold text-white bg-blue-600 border border-blue-600 rounded">
+              <Filter class="w-3.5 h-3.5" />
+              <span>{{ registerFilter === 'current' ? 'Đăng ký hiện tại' : registerFilter === 'virtual' ? 'Phòng ảo' : 'Đăng ký cũ' }}</span>
+              <ChevronDown class="w-3 h-3" />
+            </button>
+            <div v-if="showRegisterFilterDropdown" class="checkout-filter-dropdown" @click.stop>
+              <div class="checkout-filter-tabs">
+                <button type="button" @click="registerFilter = 'current'" :class="['checkout-filter-tab', registerFilter === 'current' ? 'active' : '']">Đăng ký hiện tại</button>
+                <button type="button" @click="registerFilter = 'old'" :class="['checkout-filter-tab', registerFilter === 'old' ? 'active' : '']">Đăng ký cũ</button>
+                <button type="button" @click="registerFilter = 'virtual'" :class="['checkout-filter-tab', registerFilter === 'virtual' ? 'active' : '']">Phòng ảo</button>
+              </div>
+              <div class="checkout-filter-box">
+                <div class="checkout-filter-box-title">Phạm vi ngày</div>
+                                <select v-model="filterDateScope" @change="handleFilterScopeChange" class="checkout-filter-scope">
+                  <option value="today">Hôm nay</option>
+                  <option value="yesterday">Hôm qua</option>
+                  <option value="this_week">Tuần này</option>
+                  <option value="this_month">Tháng này</option>
+                  <option value="custom">Tùy chọn</option>
+                </select>
+                <div class="checkout-filter-date-row">
+                  <label class="checkout-filter-date-label"><input type="checkbox" v-model="filterDepartureChecked" class="rounded border-gray-300 text-blue-600" /> Ngày đi ĐK</label>
+                  <div class="checkout-filter-date-inputs">
+                    <div class="checkout-filter-date-wrap" @click="openDatePicker"><input type="date" v-model="filterDateFrom" @change="filterDateScope = 'custom'" /><i class="fa-regular fa-calendar-days"></i><i class="fa-regular fa-copy" @click.stop="copyFilterDate('from')" title="Chép ngày sang ô bên phải"></i></div>
+                    <div class="checkout-filter-date-wrap" @click="openDatePicker"><input type="date" v-model="filterDateTo" @change="filterDateScope = 'custom'" /><i class="fa-regular fa-calendar-days"></i><i class="fa-regular fa-copy" @click.stop="copyFilterDate('to')" title="Chép ngày sang ô bên trái"></i></div>
+                  </div>
+                </div>
+              </div>
+              <div class="checkout-filter-actions">
+                <button type="button" @click="resetCheckoutFilterDraft"><i class="fa-solid fa-circle-xmark"></i> Đóng</button>
+                <button type="button" @click="applyCheckoutFilters()"><i class="fa-solid fa-circle-check"></i> Áp dụng</button>
+              </div>
+            </div>
           </div>
-
-          <!-- Filter Dropdown -->
-          <select 
-            v-model="registerFilter"
-            class="px-2 py-0.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500"
-          >
-            <option value="current">Đăng ký hiện tại</option>
-            <option value="all">Tất cả đăng ký</option>
-          </select>
         </div>
 
         <div class="flex items-center gap-3">
@@ -2084,91 +2335,88 @@ onUnmounted(() => {
           <label class="flex items-center gap-1.5 cursor-pointer text-gray-700 hover:text-gray-900 whitespace-nowrap text-xs">
             <input type="checkbox" v-model="showAllGuestsInRoom" class="rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
             <span>Xem tất cả khách trong phòng</span>
-          </label>
+          </label>          <button @click="openRegistrationFromCheckout" :disabled="!selectedBooking" class="checkout-registration-button inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 bg-white border border-blue-500 rounded hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-address-card text-[11px]"></i>
+            <span>Xem đăng ký</span>
+          </button>
         </div>
       </div>
 
       <!-- TOP SPLIT SECTION (Bảng Đăng ký + Panel Thông tin) -->
-      <div class="grid grid-cols-12 gap-1.5 h-[40%] min-h-0">
+      <div class="checkout-left-pane col-start-1 row-start-2 flex min-h-0 flex-col gap-0 border-r border-slate-300">
 
         <!-- TOP LEFT: Bảng Danh sách Đăng ký (7 cols) -->
-        <div class="col-span-7 bg-white rounded border border-gray-300 flex flex-col min-h-0 shadow-xs">
+        <div class="checkout-bookings-panel flex-[1.65] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none">
           <!-- Table Danh sách Phòng / Khách (Khớp chính xác Ảnh 2) -->
           <div class="flex-1 overflow-auto">
             <table class="w-full border-collapse text-left text-xs">
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
-                  <th class="p-1 w-7 text-center border-r border-gray-300">
-                    <input type="checkbox" class="rounded border-gray-300" />
-                  </th>
-                  <th class="p-1 border-r border-gray-300 min-w-[80px] text-center">Mã ĐK</th>
-                  <th class="p-1 border-r border-gray-300 min-w-[60px] text-center">Phòng</th>
-                  <th class="p-1 border-r border-gray-300 min-w-[140px] text-center">Tên nhóm/khách</th>
-                  <th class="p-1 border-r border-gray-300 text-center min-w-[80px]">Tổng dịch vụ</th>
-                  <th class="p-1 text-center min-w-[80px]">Đã thanh toán</th>
+                  <th class="p-1 w-[25px] text-center"></th>
+                  <th class="p-1 text-center">ĐK/Phòng</th>
+                  <th class="p-1 text-center">Tên khách</th>
+                  <th class="p-1 text-right">Tổng DV</th>
+                  <th class="p-1 text-right">Đã TT</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-200">
+                            <tbody class="divide-y divide-gray-200">
                 <template v-for="b in displayedBookingsList" :key="b.id">
-                  <!-- Row 1: Header Booking (Hiển thị Mã ĐK & Tên nhóm - Khớp màu xanh nhạt Ảnh 2) -->
-                  <tr 
+                  <tr
                     @click="selectBookingHeader(b)"
                     :class="[
-                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#7dd3fc] text-white font-medium' : 'hover:bg-gray-50 text-gray-800',
+                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : 'bg-[#f0f4ff] border-l-[3px] border-indigo-500',
                       'cursor-pointer transition-colors'
                     ]"
                   >
-                    <td class="p-1 text-center border-r border-gray-300">
+                    <td class="p-1 w-[25px] text-center">
                       <input type="checkbox" v-model="b.checked" @change="toggleBookingCheck(b)" @click.stop class="rounded border-gray-300 text-sky-600" />
                     </td>
-                    <td class="p-1 border-r border-gray-300 font-bold" :class="selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'text-white' : 'text-sky-600'">{{ b.code }}</td>
-                    <td class="p-1 border-r border-gray-300 text-center font-bold"></td>
-                    <td class="p-1 border-r border-gray-300 font-bold" :class="selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'text-white' : 'text-gray-800'">{{ b.name }}</td>
-                    <td class="p-1 border-r border-gray-300 text-center font-mono" :class="selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'text-white' : 'text-gray-800'">{{ formatSummaryMoney(b.totalService) }}</td>
-                    <td class="p-1 text-center font-mono" :class="selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'text-white' : 'text-gray-800'">{{ formatMoney(b.paidAmount) }}</td>
+                    <td colspan="2" class="p-1 font-bold text-slate-900">
+                      <div class="flex items-center gap-1 whitespace-nowrap">
+                        <i class="fa-solid fa-layer-group text-[10px] text-indigo-500"></i>
+                        <span class="rounded bg-slate-200 px-1 text-[9px] font-bold">{{ b.code }}</span>
+                        <span class="truncate">{{ b.name }}</span>
+                      </div>
+                    </td>
+                    <td class="p-1 text-right font-mono text-slate-900">{{ formatSummaryMoney(b.totalService) }}</td>
+                    <td class="p-1 text-right font-mono text-slate-900">{{ formatMoney(b.paidAmount) }}</td>
                   </tr>
 
-                  <!-- Sub-rows: Room Items (Sub-guests appear automatically directly underneath primary guest when they have bills/deposits) -->
                   <template v-for="r in b.roomItems" :key="r.id">
                     <template v-if="getGuestsToDisplay(b, r).length > 1">
-                      <tr 
+                      <tr
                         v-for="(guest, gIdx) in getGuestsToDisplay(b, r)"
                         :key="`${r.id}-${guest.id || gIdx}`"
                         @click="selectRoomItemRow(b, r, guest)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#7dd3fc] text-white font-medium' : 'hover:bg-gray-50 text-gray-800',
-                          'cursor-pointer transition-colors'
+                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : 'hover:bg-slate-50',
+                          'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
-                        <td class="p-1 text-center border-r border-gray-300 pl-4">
+                        <td class="p-1 w-[25px] text-center">
                           <input type="checkbox" v-model="r.checked" @click.stop class="rounded border-gray-300 text-sky-600" />
                         </td>
-                        <td class="p-1 border-r border-gray-300 text-center"></td>
-                        <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ r.roomNumber }}</td>
-                        <td
-                          class="p-1 border-r border-gray-300 text-slate-900"
-                          :class="gIdx === 0 ? 'font-bold' : 'font-normal pl-4 italic text-slate-700'"
-                        >{{ guest.name }}</td>
-                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
-                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) }">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 font-bold text-slate-900">{{ r.roomNumber }}</td>
+                        <td class="p-1" :class="gIdx === 0 ? 'font-bold' : 'pl-4 italic text-slate-700'">{{ guest.name }}</td>
+                        <td class="p-1 text-right font-mono">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 text-right font-mono">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
                       </tr>
                     </template>
                     <template v-else>
-                      <tr 
+                      <tr
                         @click="selectRoomItemRow(b, r)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id ? 'bg-[#7dd3fc] text-white font-medium' : 'hover:bg-gray-50 text-gray-800',
-                          'cursor-pointer transition-colors'
+                          selectedRoomItem && selectedRoomItem.id === r.id ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : 'hover:bg-slate-50',
+                          'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
-                        <td class="p-1 text-center border-r border-gray-300 pl-4">
+                        <td class="p-1 w-[25px] text-center">
                           <input type="checkbox" v-model="r.checked" @click.stop class="rounded border-gray-300 text-sky-600" />
                         </td>
-                        <td class="p-1 border-r border-gray-300 text-center"></td>
-                        <td class="p-1 border-r border-gray-300 text-center font-bold" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ r.roomNumber }}</td>
-                        <td class="p-1 border-r border-gray-300 font-bold text-slate-900">{{ r.guestName }}</td>
-                        <td class="p-1 border-r border-gray-300 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
-                        <td class="p-1 text-center font-mono" :class="{ 'text-white': selectedRoomItem && selectedRoomItem.id === r.id }">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 font-bold">{{ r.roomNumber }}</td>
+                        <td class="p-1 font-bold">{{ r.guestName }}</td>
+                        <td class="p-1 text-right font-mono">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 text-right font-mono">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
                       </tr>
                     </template>
                   </template>
@@ -2178,174 +2426,50 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- TOP RIGHT: Information Panel & Folio Tabs (5 cols) -->
-        <div class="col-span-5 bg-white rounded border border-gray-300 flex flex-col p-2 min-h-0 justify-between shadow-xs">
-          
-          <div class="space-y-1.5 text-xs">
-            <!-- Header Controls & Title -->
-            <div class="flex items-center justify-between gap-1 border-b border-gray-200 pb-1">
-              <div class="flex items-center gap-2">
-                <label class="flex items-center gap-1 cursor-pointer">
-                  <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed" />
-                  <span class="text-gray-600">No post</span>
-                </label>
-              </div>
-
-              <!-- Button Electronic Signature -->
-              <div class="flex items-center gap-1">
-                <button class="bg-[#38bdf8] hover:bg-sky-500 text-white px-2 py-0.5 rounded flex items-center gap-1 text-xs font-medium shadow-xs transition-colors">
-                  <span>HĐ chữ ký điện tử</span>
-                </button>
-                <button @click="openRegistrationFromCheckout" :disabled="!selectedBooking" class="p-0.5 hover:bg-gray-100 rounded text-gray-500 border border-gray-300 disabled:cursor-not-allowed disabled:opacity-40">
-                  <RefreshCw class="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <!-- Booking Sub-Header Code (Khớp chính xác Ảnh 2) -->
-            <div class="bg-[#f0f2ea] border border-gray-200 rounded px-2 py-1 font-semibold text-gray-800 text-xs truncate">
-              {{ selectedBooking ? `BK ${selectedBooking.code} - KHÁCH LẺ - ${selectedBooking.name}` : 'BK -- - KHÁCH LẺ - --' }}
-            </div>
-
-            <!-- Dates Range & Guest & Room Input (Khớp chính xác Ảnh 2) -->
-            <div class="space-y-1.5">
-              <!-- Date Range picker -->
-              <div class="flex items-center gap-2 border border-gray-300 rounded px-2 py-0.5 bg-white text-xs">
-                <span class="font-mono text-gray-700">{{ selectedBooking ? formatDate(selectedBooking.arrivalDate) : '-- / -- / ----' }}</span>
-                <span class="text-gray-400">~</span>
-                <span class="font-mono text-gray-700">{{ selectedBooking ? formatDate(selectedBooking.departureDate) : '-- / -- / ----' }}</span>
-                <Calendar class="w-3.5 h-3.5 text-gray-400 ml-auto" />
-              </div>
-
-              <!-- Guest Select & Room Input -->
-              <div class="grid grid-cols-12 gap-1.5">
-                <div class="col-span-8 relative">
-                  <button
-                    type="button"
-                    :disabled="!selectedRoomItem"
-                    @click="showPanelGuestDropdown = !showPanelGuestDropdown"
-                    class="w-full px-2 py-0.5 bg-white border border-gray-300 rounded text-left text-xs focus:outline-none focus:border-sky-500 disabled:bg-gray-100 disabled:text-gray-500 flex items-center justify-between"
-                  >
-                    <span class="truncate">{{ selectedGuest || 'Tên khách' }}</span>
-                    <ChevronDown class="w-3.5 h-3.5 shrink-0 text-gray-500" />
-                  </button>
-                  <div
-                    v-if="showPanelGuestDropdown && selectedRoomItem"
-                    class="absolute z-30 top-full mt-1 w-full max-h-40 overflow-y-auto bg-white border border-gray-300 rounded shadow-lg"
-                  >
-                    <button
-                      v-for="(guest, gIdx) in selectedRoomGuests"
-                      :key="`${selectedRoomItem.id}-${guest.id || gIdx}`"
-                      type="button"
-                      @click="selectPanelGuest(guest)"
-                      :class="[
-                        String(selectedGuestId) === String(guest.id) ? 'bg-sky-100 text-sky-900' : 'text-gray-800 hover:bg-gray-100',
-                        'w-full px-2 py-1 text-left text-xs'
-                      ]"
-                    >
-                      {{ guest.name }}
-                    </button>
-                  </div>
-                </div>
-                <div class="col-span-4">
-                  <input :value="roomNumber" type="text" placeholder="Phòng" readonly class="w-full px-2 py-0.5 bg-gray-100 border border-gray-300 rounded text-xs font-bold text-center text-gray-700" />
-                </div>
-              </div>
-
-              <!-- Ghi chú Textarea -->
-              <div>
-                <label class="block text-gray-600 font-medium mb-0.5 text-xs">Ghi chú</label>
-                <textarea 
-                  :value="noteText"
-                  readonly
-                  rows="2" 
-                  class="w-full p-1.5 bg-gray-100 border border-gray-300 rounded text-xs text-gray-700 resize-none"
-                ></textarea>
-              </div>
+        <!-- BOOKING INFORMATION + FOLIO (reference layout) -->
+        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none">
+          <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
+            <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
+            <label class="flex items-center gap-1 text-[10px] font-bold text-red-600">
+              <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600" />
+              No post
+            </label>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 px-2 py-1 text-[10px] leading-tight">
+            <div class="col-span-2"><label class="block text-slate-400">Tên đăng ký</label><span class="font-semibold text-slate-700 truncate block">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
+            <div><label class="block text-slate-400">Tên khách</label><span class="font-semibold text-slate-700 truncate block">{{ selectedGuest || '--' }}</span></div>
+            <div><label class="block text-slate-400">Ngày đến ~ Ngày đi</label><span class="font-semibold text-slate-700">{{ selectedBooking ? `${formatDate(selectedBooking.arrivalDate)} - ${formatDate(selectedBooking.departureDate)}` : '--' }}</span></div>
+            <div><label class="block text-slate-400">Phòng / Hạng</label><span class="font-semibold text-slate-700">{{ roomNumber || '--' }} - {{ selectedRoomItem?.roomType || selectedRoomItem?.roomName || 'SUPT' }}</span></div>
+            <div><label class="block text-slate-400">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
+            <div class="col-span-2"><label class="block text-slate-400"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" readonly class="w-full h-7 px-1 py-0.5 bg-white border border-slate-300 rounded text-[10px] resize-none"></textarea></div>
+          </div>
+          <div class="checkout-folio-section border-t border-slate-300 mb-auto px-2 py-1">
+            <div class="checkout-folio-title"><i class="fa-solid fa-wallet"></i> Folio</div>
+            <div class="grid grid-cols-2 gap-1">
+              <button @click="activeFolioTab = 'A'" :class="[activeFolioTab === 'A' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
+              <button @click="activeFolioTab = '1'" @dragover.prevent="draggedOverFolio = 1" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(1)" :class="[activeFolioTab === '1' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 1</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(1)) }}</div></button>
+              <button @click="activeFolioTab = '2'" @dragover.prevent="draggedOverFolio = 2" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(2)" :class="[activeFolioTab === '2' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 2</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(2)) }}</div></button>
+              <button @click="activeFolioTab = '3'" @dragover.prevent="draggedOverFolio = 3" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(3)" :class="[activeFolioTab === '3' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 3</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(3)) }}</div></button>
             </div>
           </div>
-
-          <!-- Folio Tabs Selector (Bottom of Top-Right Panel) -->
-          <div class="pt-1">
-            <div class="text-xs font-semibold text-gray-500 mb-0.5">Folio</div>
-            <div class="grid grid-cols-4 gap-1">
-              <!-- Tab A (Active) -->
-              <button 
-                @click="activeFolioTab = 'A'"
-                :class="[
-                  activeFolioTab === 'A' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200',
-                  'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
-                ]"
-              >
-                <span class="text-xs font-bold">A</span>
-                <span class="text-xs font-mono mt-0.5">{{ formatSummaryMoney(folioTotal('A')) }}</span>
-              </button>
-
-              <!-- Tab 1 -->
-              <button 
-                @click="activeFolioTab = '1'"
-                @dragover.prevent="draggedOverFolio = 1"
-                @dragleave="draggedOverFolio = null"
-                @drop.prevent="handleFolioDrop(1)"
-                :class="[
-                  activeFolioTab === '1' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-[#e2e8f0] border-gray-300 text-gray-700 hover:bg-gray-300',
-                  draggedOverFolio === 1 ? 'ring-2 ring-sky-500 ring-offset-1' : '',
-                  'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
-                ]"
-              >
-                <span class="text-xs font-bold">1</span>
-                <span class="text-xs font-mono mt-0.5">{{ formatSummaryMoney(folioTotal(1)) }}</span>
-              </button>
-
-              <!-- Tab 2 -->
-              <button 
-                @click="activeFolioTab = '2'"
-                @dragover.prevent="draggedOverFolio = 2"
-                @dragleave="draggedOverFolio = null"
-                @drop.prevent="handleFolioDrop(2)"
-                :class="[
-                  activeFolioTab === '2' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-[#e2e8f0] border-gray-300 text-gray-700 hover:bg-gray-300',
-                  draggedOverFolio === 2 ? 'ring-2 ring-sky-500 ring-offset-1' : '',
-                  'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
-                ]"
-              >
-                <span class="text-xs font-bold">2</span>
-                <span class="text-xs font-mono mt-0.5">{{ formatSummaryMoney(folioTotal(2)) }}</span>
-              </button>
-
-              <!-- Tab 3 -->
-              <button 
-                @click="activeFolioTab = '3'"
-                @dragover.prevent="draggedOverFolio = 3"
-                @dragleave="draggedOverFolio = null"
-                @drop.prevent="handleFolioDrop(3)"
-                :class="[
-                  activeFolioTab === '3' ? 'bg-[#7dd3fc] border-sky-400 text-sky-950 font-bold' : 'bg-[#e2e8f0] border-gray-300 text-gray-700 hover:bg-gray-300',
-                  draggedOverFolio === 3 ? 'ring-2 ring-sky-500 ring-offset-1' : '',
-                  'border rounded py-1 px-1.5 text-center transition-colors flex flex-col items-center justify-center'
-                ]"
-              >
-                <span class="text-xs font-bold">3</span>
-                <span class="text-xs font-mono mt-0.5">{{ formatSummaryMoney(folioTotal(3)) }}</span>
-              </button>
-            </div>
-          </div>
-
         </div>
-
       </div>
 
       <!-- BOTTOM SPLIT SECTION (2 Bảng dữ liệu song song) -->
-      <div class="grid grid-cols-12 gap-1.5 flex-1 min-h-0">
+      <div class="checkout-billing-pane col-start-2 row-start-2 flex min-h-0 flex-col gap-0">
 
         <!-- BOTTOM LEFT: Bảng Chi tiết Dịch vụ / Phát sinh (6 cols) -->
-        <div class="col-span-6 bg-white rounded border border-gray-300 flex flex-col min-h-0 shadow-xs">
+        <div class="checkout-services-panel flex-[1.7] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none overflow-hidden">
+          <div class="checkout-service-title flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
+            <i class="fa-solid fa-list-check text-slate-900 text-[12px]"></i>
+            <span class="text-slate-900">Dịch vụ</span>
+          </div>
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
             <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
-                  <th class="px-2 py-1.5 w-8 text-center border-r border-gray-300">
+                  <th class="px-2 py-1.5 w-8 text-center">
                     <input
                       type="checkbox"
                       :checked="areAllServicesSelected"
@@ -2354,21 +2478,18 @@ onUnmounted(() => {
                       class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[120px]">Ngày/giờ</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[110px]">Dịch vụ</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[140px]">Mô tả</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[100px]">Bộ phận</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[100px]">Số tiền</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[55px]">SL</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[75px]">Đơn vị</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[85px]">Mã TT</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[70px]">Folio</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[80px]">Tax</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[100px]">Phí phục vụ</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[85px]">Mã HĐ</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[95px]">Số VAT</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[95px]">Kế toán</th>
-                  <th class="px-2.5 py-1.5 min-w-[105px]">Người dùng</th>
+                  <th class="px-2.5 py-1.5">Ngày/giờ</th>
+                  <th class="px-2.5 py-1.5">Dịch vụ</th>
+                  <th class="px-2.5 py-1.5">Mô tả</th>
+                  <th class="px-2.5 py-1.5">Bộ phận</th>
+                  <th class="px-2.5 py-1.5 text-right">Số tiền</th>
+                  <th class="px-2.5 py-1.5 text-center">SL</th>
+                  <th class="px-2.5 py-1.5">Mã TT</th>
+                  <th class="px-2.5 py-1.5">Folio</th>
+                  <th class="px-2.5 py-1.5 text-right">Tax</th>
+                  <th class="px-2.5 py-1.5 text-right">Phí phục vụ</th>
+                  <th class="px-2.5 py-1.5">Số VAT</th>
+                  <th class="px-2.5 py-1.5">Người dùng</th>
                 </tr>
               </thead>
               <tbody>
@@ -2386,7 +2507,7 @@ onUnmounted(() => {
                   ]"
                   :title="canTransferServiceGroup(group) ? 'Kéo sang Folio khác' : 'Xem chi tiết hóa đơn'"
                 >
-                  <td class="px-2 py-1.5 text-center border-r border-gray-200">
+                  <td class="px-2 py-1.5 text-center">
                     <input
                       type="checkbox"
                       :checked="isServiceGroupSelected(group)"
@@ -2395,24 +2516,19 @@ onUnmounted(() => {
                       class="rounded border-gray-300"
                     />
                   </td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ group.dateTime }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-sky-600">{{ group.code }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.name }} <span class="text-gray-400">({{ group.items.length }})</span></td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.department }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-mono">{{ group.quantity }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">VND</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono font-bold text-red-600">{{ group.paymentCode }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold">
-                    <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block min-w-[20px]">{{ group.folio }}</span>
+                  <td class="px-2.5 py-1.5 font-mono">{{ group.dateTime }}</td>
+                  <td class="px-2.5 py-1.5 font-bold text-sky-600">{{ group.code }}</td>
+                  <td class="px-2.5 py-1.5">{{ group.name }} <span class="text-gray-400">({{ group.items.length }})</span></td>
+                  <td class="px-2.5 py-1.5">{{ group.department }}</td>
+                  <td class="px-2.5 py-1.5 text-right font-mono font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
+                  <td class="px-2.5 py-1.5 text-center font-mono">{{ group.quantity }}</td>
+                  <td class="px-2.5 py-1.5 font-mono font-bold text-red-600">{{ group.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 text-center font-bold">
+                    <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block">{{ group.folio }}</span>
                   </td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono font-bold text-red-600">{{ group.items[0]?.invoiceCode }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ group.items[0]?.vatNo }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">
-                    <input type="checkbox" disabled class="rounded border-gray-300 text-sky-600 cursor-not-allowed" />
-                  </td>
+                  <td class="px-2.5 py-1.5 text-right font-mono">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
+                  <td class="px-2.5 py-1.5 text-right font-mono">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
+                  <td class="px-2.5 py-1.5">{{ group.items[0]?.vatNo }}</td>
                   <td class="px-2.5 py-1.5">{{ group.items[0]?.userName }}</td>
                 </tr>
               </tbody>
@@ -2426,7 +2542,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Table Footer Total -->
-          <div class="p-1.5 bg-[#f4f5f0] border-t border-gray-300 flex items-center justify-between font-bold text-gray-800 text-xs">
+          <div class="px-3 py-1.5 bg-[#f4f5f0] border-t border-gray-300 flex items-center justify-between font-bold text-gray-800 text-xs">
             <div class="flex items-center gap-1.5">
               <input
                 type="checkbox"
@@ -2435,40 +2551,34 @@ onUnmounted(() => {
                 @change="toggleAllServiceSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span>Tổng cộng</span>
+              <span class="uppercase text-[10px] text-slate-500 tracking-wide">Tổng dịch vụ:</span>
             </div>
-            <span class="font-mono text-xs pr-2">{{ formatSummaryMoney(totalServiceAmount) }}</span>
+            <span class="font-mono text-xs pr-2 text-blue-600 font-bold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
           </div>
         </div>
 
         <!-- BOTTOM RIGHT: Bảng Chi tiết Thanh toán (6 cols) -->
-        <div class="col-span-6 bg-white rounded border border-gray-300 flex flex-col min-h-0 shadow-xs">
+        <div class="checkout-payments-panel flex-1 bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none overflow-hidden">
+          <div class="checkout-payment-title flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
+            <i class="fa-solid fa-money-bill-transfer text-slate-900 text-[12px]"></i>
+            <span class="text-slate-900">Thanh Toán</span>
+          </div>
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
-            <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
+            <table class="checkout-payment-table w-full border-collapse text-left whitespace-nowrap text-xs">
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
-                  <th class="px-2 py-1.5 w-8 text-center border-r border-gray-300">
-                    <input
-                      type="checkbox"
-                      :checked="areAllPaymentsSelected"
-                      :disabled="paymentSelectionIds.length === 0"
-                      @change="toggleAllPaymentSelection($event.target.checked)"
-                      class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                  </th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[120px]">Ngày/giờ</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[100px]">Bộ phận</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[140px]">Mô tả</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[100px]">HTTT</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[100px]">Số tiền</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[75px]">Đơn vị</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[70px]">Folio</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[85px]">Mã TT</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[65px]">Xóa</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[95px]">Số VAT</th>
-                  <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[95px]">Kế toán</th>
-                  <th class="px-2.5 py-1.5 min-w-[105px]">Người dùng</th>
+                  <th class="px-2 py-1.5 w-8 text-center"><input type="checkbox" :checked="areAllPaymentsSelected" :disabled="paymentSelectionIds.length === 0" @change="toggleAllPaymentSelection($event.target.checked)" class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50" /></th>
+                  <th class="px-2.5 py-1.5">Ngày/giờ</th>
+                  <th class="px-2.5 py-1.5">Bộ phận</th>
+                  <th class="px-2.5 py-1.5">Mô tả</th>
+                  <th class="px-2.5 py-1.5">HTTT</th>
+                  <th class="px-2.5 py-1.5 text-right">Số tiền</th>
+                  <th class="px-2.5 py-1.5">Folio</th>
+                  <th class="px-2.5 py-1.5">Mã thanh toán</th>
+                  <th class="px-2.5 py-1.5">Số VAT</th>
+                  <th class="px-2.5 py-1.5">Giải trừ CN</th>
+                  <th class="px-2.5 py-1.5">Người dùng</th>
                 </tr>
               </thead>
               <tbody>
@@ -2485,7 +2595,7 @@ onUnmounted(() => {
                   ]"
                   :title="canTransferPayment(p) ? 'Kéo sang Folio khác' : 'Cọc đã dùng để thanh toán không thể chuyển Folio'"
                 >
-                  <td class="px-2 py-1.5 text-center border-r border-gray-200">
+                  <td class="px-2 py-1.5 text-center">
                     <input
                       type="checkbox"
                       :checked="isPaymentSelected(p)"
@@ -2494,17 +2604,15 @@ onUnmounted(() => {
                       class="rounded border-gray-300"
                     />
                   </td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono">{{ p.dateTime }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.department }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'">{{ p.description }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold" :class="p.paymentCode ? 'text-red-600' : 'text-emerald-700'">{{ formatMoney(p.amount) }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.unit }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold"><span class="inline-block min-w-[20px] rounded bg-[#8fd1d9] px-2 py-0.5 text-xs text-gray-900">{{ p.folio }}</span></td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 font-mono font-bold text-red-600">{{ p.paymentCode }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200 text-center">{{ p.isDeleted }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.vatNo }}</td>
-                  <td class="px-2.5 py-1.5 border-r border-gray-200">{{ p.accounting }}</td>
+                  <td class="px-2.5 py-1.5 font-mono">{{ p.dateTime }}</td>
+                  <td class="px-2.5 py-1.5">{{ p.department }}</td>
+                  <td class="px-2.5 py-1.5" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'">{{ p.description }}</td>
+                  <td class="px-2.5 py-1.5 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
+                  <td class="px-2.5 py-1.5 text-right font-mono font-bold" :class="p.paymentCode ? 'text-red-600' : 'text-emerald-700'">{{ formatMoney(p.amount) }}</td>
+                  <td class="px-2.5 py-1.5 text-center font-bold"><span class="inline-block rounded bg-[#8fd1d9] px-2 py-0.5 text-xs text-gray-900">{{ p.folio }}</span></td>
+                  <td class="px-2.5 py-1.5 font-mono font-bold text-red-600">{{ p.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5">{{ p.vatNo }}</td>
+                  <td class="px-2.5 py-1.5">{{ p.accounting }}</td>
                   <td class="px-2.5 py-1.5">{{ p.userName }}</td>
                 </tr>
               </tbody>
@@ -2518,7 +2626,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Table Footer Total -->
-          <div class="p-1.5 bg-[#f4f5f0] border-t border-gray-300 flex items-center justify-between font-bold text-gray-800 text-xs">
+          <div class="checkout-payment-footer px-3 py-1.5 bg-[#f8fafc] border-t border-slate-300 flex items-center justify-between font-bold text-gray-800 text-xs">
             <div class="flex items-center gap-1.5">
               <input
                 type="checkbox"
@@ -2527,9 +2635,9 @@ onUnmounted(() => {
                 @change="toggleAllPaymentSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span>Tổng cộng</span>
+              <span class="uppercase text-[10px] text-slate-500 tracking-wide">Tổng thanh toán:</span>
             </div>
-            <span class="font-mono text-xs pr-2">{{ formatMoney(totalPaymentAmount) }}</span>
+            <span class="font-mono text-xs pr-2 text-emerald-600 font-bold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
           </div>
         </div>
 
@@ -2599,6 +2707,22 @@ onUnmounted(() => {
         </Transition>
       </div>
     </Transition>
+
+    <!-- Tạm nối API trả phòng cho frontend mới -->
+    <div v-if="showCheckoutModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-sm rounded-xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between rounded-t-xl bg-sky-300 px-4 py-3 text-white"><span class="font-semibold">Xác nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
+        <div class="space-y-2 p-5">
+          <template v-if="selectedRoomItem">
+            <label v-for="guest in checkoutGuests" :key="guest.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><span>{{ guest.name }}</span><input v-model="checkoutGuestIds" :value="guest.id" type="checkbox" class="h-4 w-4 accent-sky-500" /></label>
+            <p v-if="checkoutGuests.length === 0" class="text-sm text-rose-600">Phòng chưa có khách hợp lệ để checkout.</p>
+          </template>
+          <p v-else class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn trả phòng toàn bộ Master không?</p>
+          <p v-if="checkoutError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ checkoutError }}</p>
+        </div>
+        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Checkout</button></div>
+      </div>
+    </div>
 
     <!-- Modals -->
     <AddServiceModal 
@@ -2734,3 +2858,223 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.checkout-action-menu :deep(button) {
+  color: #e2e8f0;
+  border-color: transparent;
+  padding-top: 0.38rem;
+  padding-bottom: 0.38rem;
+}
+
+.checkout-action-menu :deep(button:hover) {
+  color: #ffffff;
+  background: #334155;
+  border-color: #475569;
+}
+
+.checkout-action-menu :deep(svg) {
+  color: #cbd5e1;
+}
+
+.checkout-action-menu :deep(.border-t) {
+  border-color: #334155;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Invoice layout aligned with the customer-provided reference screen. */
+.checkout-shell {
+  --checkout-header-height: 45px;
+  --checkout-bottom-height: 285px;
+  min-width: 1024px;
+}
+.checkout-main { min-width: 0; }
+.checkout-header { min-height: var(--checkout-header-height); }
+.checkout-header select { height: 28px; border-color: #cbd5e1; background: #fff; }
+.checkout-left-pane, .checkout-billing-pane { min-height: 0; }
+.checkout-bookings-panel { min-height: 180px; }
+.checkout-billing-pane { padding: 8px 8px 8px 8px; background: #f1f5f9; }
+.checkout-services-panel { min-height: 0; }
+.checkout-payments-panel { flex: 0 0 var(--checkout-bottom-height); }
+.checkout-actions { width: 170px; min-width: 170px; }
+.checkout-actions button { font-size: 11px; }
+.checkout-actions .checkout-action-menu { padding-top: 0.5rem; }
+.checkout-actions .checkout-action-menu > div { border-color: #334155; }
+.checkout-actions .checkout-action-menu > div:last-child { margin-top: 0; }
+.checkout-bookings-panel table thead th,
+.checkout-services-panel table thead th,
+.checkout-payments-panel table thead th { background: #f8fafc; color: #64748b; }
+@media (max-height: 768px) {
+  .checkout-shell { --checkout-bottom-height: 275px; }
+}
+.checkout-bookings-heading { height: 24px; flex: 0 0 24px; }
+.checkout-info-panel { font-size: 10px; }
+.checkout-info-heading { height: 24px; flex: 0 0 24px; }
+.checkout-folio-section { flex: 0 0 88px; }
+.checkout-folio-card { height: 36px; }
+.checkout-header > div:first-child { max-width: 430px; }
+.checkout-header select { background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 700; min-width: 108px; }
+.checkout-header select option { background: #fff; color: #0f172a; }
+.checkout-left-pane { width: 100%; }
+.checkout-bookings-panel { flex: 1 1 auto; min-height: 0; }
+.checkout-info-panel { flex: 0 0 285px; }
+.checkout-billing-pane { flex: 1 1 auto; }
+.checkout-services-panel { flex: 1 1 auto; }
+.checkout-payments-panel { flex: 0 0 285px; }
+/* Match the reference invoice cards and payment footer exactly. */
+.checkout-billing-pane { gap: 8px; padding: 8px; background: #f1f5f9; }
+.checkout-services-panel,
+.checkout-payments-panel { border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 1px 3px rgba(15, 23, 42, .06); }
+.checkout-services-panel > div:first-child,
+.checkout-payments-panel > div:first-child { background: #f8fafc; padding: 6px 10px; min-height: 29px; }
+.checkout-services-panel table th,
+.checkout-payments-panel table th { padding: 5px 8px; font-size: 11px; font-weight: 600; color: #64748b; background: #f8fafc; }
+.checkout-services-panel table td,
+.checkout-payments-panel table td { padding: 5px 8px; font-size: 11px; }
+.checkout-services-panel > div:last-child,
+.checkout-payments-panel > div:last-child { justify-content: flex-end; padding: 5px 12px; background: #f8fafc; }
+.checkout-services-panel > div:last-child input,
+.checkout-payments-panel > div:last-child input { display: none; }
+.checkout-payments-panel > div:first-child svg { color: #0f172a; }
+.checkout-payments-panel > div:last-child span:last-child { color: #2563eb; }
+/* The reference HTML uses intrinsic table widths (no per-column min-widths). */
+.checkout-payment-table { table-layout: auto; width: 100%; }
+.checkout-payment-table th,
+.checkout-payment-table td { min-width: 0 !important; white-space: nowrap; }
+.checkout-payment-table th:first-child,
+.checkout-payment-table td:first-child { width: 25px; }
+.checkout-payment-title { padding: 6px 10px !important; min-height: 29px; }
+.checkout-payment-title svg { color: #0f172a !important; }
+.checkout-payment-footer { padding: 5px 12px !important; min-height: 29px; }
+.checkout-payment-footer > div { gap: 0; }
+.checkout-payment-footer > div > span:first-of-type { margin-right: 12px; color: #64748b; font-size: 10px; text-transform: uppercase; }
+.checkout-payment-footer > span:last-child { color: #2563eb !important; font-size: 12px; }
+/* Fallback selectors for the existing payment markup. */
+.checkout-payments-panel > div:nth-child(2) > table { table-layout: auto; width: 100%; }
+.checkout-payments-panel > div:nth-child(2) > table th,
+.checkout-payments-panel > div:nth-child(2) > table td { min-width: 0 !important; white-space: nowrap; padding: 5px 8px; font-size: 11px; }
+.checkout-payments-panel > div:nth-child(2) > table th:first-child,
+.checkout-payments-panel > div:nth-child(2) > table td:first-child { width: 25px; }
+.checkout-payments-panel > div:first-child { padding: 6px 10px; min-height: 29px; background: #f8fafc; }
+.checkout-payments-panel > div:first-child svg { color: #0f172a !important; }
+.checkout-payments-panel > div:last-child { justify-content: flex-end; padding: 5px 12px; min-height: 29px; background: #f8fafc; }
+.checkout-payments-panel > div:last-child input { display: none; }
+.checkout-payments-panel > div:last-child > span:last-child { color: #2563eb !important; font-size: 12px; }
+/* Service table: exact 13-column structure from MÀN HÌNH HÓA ĐƠN.html. */
+.checkout-services-panel table { table-layout: auto; width: 100%; }
+.checkout-services-panel table th,
+.checkout-services-panel table td { min-width: 0 !important; white-space: nowrap; padding: 5px 8px; font-size: 11px; }
+.checkout-services-panel table th:first-child,
+.checkout-services-panel table td:first-child { width: 25px !important; }
+.checkout-service-title { padding: 6px 10px !important; min-height: 29px; }
+.checkout-service-title svg,
+.checkout-service-title i { color: #0f172a; }
+/* Booking list: exact 5-column layout from the reference HTML. */
+.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.checkout-bookings-panel table { table-layout: auto; width: 100%; border-collapse: collapse; }
+.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.checkout-bookings-panel table td { padding: 6px 6px; font-size: 11px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; }
+.checkout-bookings-panel table th:first-child,
+.checkout-bookings-panel table td:first-child { width: 25px !important; }
+.checkout-bookings-panel table tr:hover { background: #f1f5f9; }
+/* Header: same 380px search/filter cluster and right actions as the reference. */
+.checkout-header { height: 45px; padding: 8px 16px !important; }
+.checkout-header > div:first-child { flex: 0 0 390px; width: 390px; max-width: 390px; }
+.checkout-header > div:first-child > div:first-child { flex: 0 0 282px; width: 282px; }
+.checkout-register-filter select { width: 108px; height: 28px; }
+.checkout-header > div:last-child { gap: 12px; }
+.checkout-header > div:last-child label { font-size: 11px; font-weight: 600; }
+.checkout-registration-button { height: 28px; min-width: 107px; font-weight: 600; }
+/* Reference layout: header is a separate full-width row; action sidebar starts below it. */
+.checkout-shell { display: block !important; position: relative; }
+.checkout-main { width: calc(100% - 170px); height: 100%; margin-right: 170px; }
+.checkout-header { width: calc(100% + 170px); position: relative; z-index: 20; }
+.checkout-actions { position: absolute !important; top: 45px; right: 0; bottom: 0; width: 170px !important; min-width: 170px; height: auto; z-index: 30; border-radius: 0 !important; }
+.checkout-actions > button:first-child { display: none; }
+/* Final header/sidebar dimensions copied from the reference HTML tokens. */
+.checkout-header { height: 45px !important; min-height: 45px !important; padding: 8px 16px !important; background: #ffffff; border-bottom: 1px solid #cbd5e1; }
+.checkout-header input[type="text"] { height: 28px; padding: 5px 10px 5px 30px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; }
+.checkout-filter-select { height: 28px !important; padding-top: 5px !important; padding-bottom: 5px !important; border-radius: 4px !important; }
+.checkout-registration-button { height: 28px !important; padding: 5px 10px !important; border-radius: 4px !important; font-size: 11px; }
+.checkout-actions { top: 48px !important; right: 2px !important; bottom: 0 !important; width: 170px !important; min-width: 170px !important; padding: 8px !important; background: #1e293b !important; border: 1px solid #475569 !important; border-radius: 6px !important; box-shadow: -2px 0 8px rgba(0,0,0,.15); overflow-x: hidden; overflow-y: auto; }
+.checkout-actions .checkout-action-menu { padding-top: 0 !important; gap: 8px !important; }
+.checkout-actions .checkout-action-menu > div { padding: 2px 0; border-bottom: 1px solid #334155; }
+.checkout-actions .checkout-action-menu > div:last-child { border-bottom: 0; }
+.checkout-actions .menu-title { font-size: 9px; color: #94a3b8; padding: 4px 8px 2px; }
+.checkout-actions button { border-radius: 4px; }
+/* Correct 3-column grid: header spans all columns, sidebar occupies column 3 below it. */
+.checkout-shell { display: grid !important; grid-template-columns: minmax(360px, 380px) minmax(0, 1fr) 170px; grid-template-rows: 45px minmax(0, 1fr); width: 100%; height: calc(100vh - 48px); min-width: 1024px; }
+.checkout-main { display: contents !important; width: auto !important; height: auto !important; margin: 0 !important; }
+.checkout-header { grid-column: 1 / 4; grid-row: 1; width: auto !important; height: 45px !important; min-width: 0; }
+.checkout-left-pane { grid-column: 1; grid-row: 2; min-width: 0; }
+.checkout-billing-pane { grid-column: 2; grid-row: 2; min-width: 0; }
+.checkout-actions { position: static !important; grid-column: 3; grid-row: 2; align-self: stretch; width: auto !important; min-width: 0 !important; height: calc(100% - 3px); margin: 3px 2px 0 0; }
+/* Registration/Folio panels copied from the reference sidebar-detail sections. */
+.checkout-info-panel { background: #f8fafc !important; font-size: 10px; }
+.checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #64748b; }
+.checkout-info-title,
+.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.checkout-info-title i,
+.checkout-folio-title i { color: #64748b; }
+.checkout-info-panel > div:nth-child(2) { padding: 4px 8px !important; gap: 2px 4px; }
+.checkout-info-panel > div:nth-child(2) label { font-size: 9px; color: #64748b; display: block; }
+.checkout-info-panel > div:nth-child(2) span { font-size: 11px; font-weight: 600; color: #0f172a; }
+.checkout-info-panel > div:nth-child(2) textarea { height: 28px; padding: 2px 6px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-info-panel > div:nth-child(2) label i { margin-right: 3px; }
+.checkout-folio-section { padding: 4px 8px !important; background: #f8fafc; border-top: 1px solid #cbd5e1; }
+.checkout-folio-title { margin-bottom: 2px; }
+.checkout-folio-section > div:last-child { gap: 4px; }
+.checkout-folio-card { height: 38px !important; padding: 3px 6px !important; background: #ffffff !important; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-folio-card div:first-child { font-size: 10px; font-weight: 700; color: #0f172a; }
+.checkout-folio-card div:last-child { font-size: 15px; font-weight: 700; line-height: 1; text-align: right; color: #2563eb; }
+.checkout-folio-card:first-child div:last-child { color: #ef4444; }
+/* Filter popup matching .filter-dropdown in MÀN HÌNH HÓA ĐƠN.html. */
+.checkout-register-filter { position: relative !important; }
+.checkout-filter-dropdown { position: absolute; top: 40px; left: 0; width: 380px; padding: 10px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,.15); z-index: 1000; }
+.checkout-filter-tabs { display: flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; margin-bottom: 10px; background: #f8fafc; }
+.checkout-filter-tab { flex: 1; padding: 5px 0; border: 0; border-right: 1px solid #cbd5e1; background: transparent; color: #0f172a; font-size: 10px; font-weight: 600; }
+.checkout-filter-tab:last-child { border-right: 0; }
+.checkout-filter-tab.active { background: #2563eb; color: #fff; }
+.checkout-filter-box { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 10px; }
+.checkout-filter-box-title { margin-bottom: 4px; color: #0f172a; font-size: 10px; font-weight: 700; }
+.checkout-filter-scope { width: 100%; height: 29px; margin-bottom: 8px; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; font-size: 11px; }
+.checkout-filter-date-row { display: flex; flex-direction: column; gap: 6px; }
+.checkout-filter-date-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.checkout-filter-date-inputs { display: flex; gap: 4px; }
+.checkout-filter-date-wrap { display: flex; align-items: center; flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; }
+.checkout-filter-date-wrap input { width: 100%; min-width: 0; height: 22px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; font-size: 10px !important; }
+.checkout-filter-date-wrap i { margin-left: 2px; color: #10b981; font-size: 11px; }
+.checkout-filter-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
+.checkout-filter-actions button { padding: 4px 10px; border: 0; border-radius: 4px; background: #2563eb; color: #fff; font-size: 10px; font-weight: 600; }
+/* Match the sample: filter popup is anchored to the whole search-bar, not the button. */
+.checkout-header > div:first-child { position: relative; }
+.checkout-register-filter { position: static !important; }
+.checkout-filter-dropdown { top: 40px; left: 0; width: 380px; }
+.checkout-filter-button { height: 28px; min-width: 108px; justify-content: center; }
+.checkout-filter-tabs { height: 34px; }
+.checkout-filter-tab { height: 32px; }
+/* Final pixel alignment with the supplied MÀN HÌNH HÓA ĐƠN.html search-bar. */
+.checkout-header > div:first-child { flex: 0 0 380px !important; width: 380px !important; max-width: 380px !important; position: relative !important; }
+.checkout-header > div:first-child > div:first-child { flex: 1 1 auto !important; width: auto !important; min-width: 0 !important; }
+.checkout-header > div:first-child > div:first-child > input { height: 28px !important; padding: 5px 10px 5px 30px !important; font-size: 12px !important; }
+.checkout-filter-button { flex: 0 0 auto !important; height: 28px !important; padding: 5px 10px !important; border-radius: 4px !important; font-size: 11px !important; }
+.checkout-filter-dropdown { top: 40px !important; left: 0 !important; width: 380px !important; padding: 10px !important; border-radius: 8px !important; }
+.checkout-filter-tabs { height: auto !important; margin-bottom: 10px !important; }
+.checkout-filter-tab { height: auto !important; min-height: 32px !important; padding: 5px 0 !important; font-size: 10px !important; }
+.checkout-filter-box { padding: 8px 10px !important; margin-bottom: 10px !important; }
+.checkout-filter-scope { height: auto !important; padding: 4px 8px !important; margin-bottom: 8px !important; }
+.checkout-filter-date-wrap input { height: auto !important; padding: 0 !important; font-size: 10px !important; }
+.checkout-filter-date-wrap i:last-child { color: #64748b !important; font-size: 10px !important; }
+.checkout-filter-actions button { padding: 4px 10px !important; font-size: 10px !important; }
+/* Native date controls and the compact blue scope selector from the reference popup. */
+.checkout-filter-scope { width: 136px !important; background: #2563eb !important; color: #fff !important; border-color: #2563eb !important; font-weight: 700; cursor: pointer; }
+.checkout-filter-scope option { background: #fff; color: #0f172a; font-weight: 400; }
+.checkout-filter-date-wrap { cursor: pointer; }
+.checkout-filter-date-wrap input { cursor: pointer; color: #0f172a; }
+/* Keep the reference green calendar/copy icons and hide the duplicate native date icon. */
+.checkout-filter-date-wrap input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0 !important; width: 0 !important; margin: 0 !important; padding: 0 !important; }
+.checkout-filter-date-wrap input[type="date"] { appearance: none; -webkit-appearance: none; }
+.checkout-filter-date-wrap i.fa-copy { cursor: pointer; }
+.checkout-filter-date-wrap i.fa-copy:hover { color: #2563eb !important; }
+</style>
