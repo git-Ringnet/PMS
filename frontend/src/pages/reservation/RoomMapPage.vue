@@ -783,7 +783,6 @@ function handleRoomMoveClick(room) {
 
 async function handleRoomMoveSuccess() {
   showRoomMoveModal.value = false
-  uiStore.showToast('Chuyển phòng thành công!', 'success')
   await roomStore.fetchRooms({ silent: true })
 }
 
