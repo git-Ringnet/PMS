@@ -3,7 +3,10 @@ import { ref } from 'vue'
 import { X, Calendar, RotateCcw, Filter } from '@lucide/vue'
 
 const props = defineProps({
-  show: Boolean
+  show: Boolean,
+  serviceOptions: { type: Array, default: () => [] },
+  departmentOptions: { type: Array, default: () => [] },
+  folioOptions: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['close', 'filter'])
@@ -13,11 +16,37 @@ const endDate = ref('')
 const displayFilter = ref('unpaid') // 'unpaid' | 'vat' | 'unprinted_vat' | 'paid' | 'deleted'
 
 const serviceCodeChecked = ref(false)
+const serviceCode = ref('')
 const serviceFolio = ref('')
 
 const deptChecked = ref(false)
+const department = ref('')
 
 const handleClose = () => {
+  emit('close')
+}
+
+const reset = () => {
+  startDate.value = ''
+  endDate.value = ''
+  displayFilter.value = 'unpaid'
+  serviceCodeChecked.value = false
+  serviceCode.value = ''
+  serviceFolio.value = ''
+  deptChecked.value = false
+  department.value = ''
+  emit('reset')
+}
+
+const applyFilter = () => {
+  emit('filter', {
+    startDate: startDate.value,
+    endDate: endDate.value,
+    displayFilter: displayFilter.value,
+    serviceCode: serviceCodeChecked.value ? serviceCode.value : '',
+    folio: serviceFolio.value,
+    department: deptChecked.value ? department.value : ''
+  })
   emit('close')
 }
 </script>
@@ -40,7 +69,7 @@ const handleClose = () => {
           <div>
             <label class="block font-bold text-gray-700 mb-1">Ngày bắt đầu</label>
             <div class="relative">
-              <input type="text" v-model="startDate" placeholder="/  /" class="w-full px-2.5 py-1 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500" />
+              <input type="date" v-model="startDate" class="w-full px-2.5 py-1 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500" />
               <Calendar class="w-3.5 h-3.5 text-emerald-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
@@ -48,7 +77,7 @@ const handleClose = () => {
           <div>
             <label class="block font-bold text-gray-700 mb-1">Ngày kết thúc</label>
             <div class="relative">
-              <input type="text" v-model="endDate" placeholder="/  /" class="w-full px-2.5 py-1 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500" />
+              <input type="date" v-model="endDate" class="w-full px-2.5 py-1 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:border-sky-500" />
               <Calendar class="w-3.5 h-3.5 text-emerald-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
@@ -109,11 +138,17 @@ const handleClose = () => {
                   <td class="p-1.5 text-center border-r border-gray-300">
                     <input type="checkbox" v-model="serviceCodeChecked" class="rounded border-gray-300" />
                   </td>
-                  <td class="p-1.5 font-semibold border-r border-gray-300">MB</td>
+                  <td class="p-1.5 font-semibold border-r border-gray-300">
+                    <select v-model="serviceCode" class="w-full bg-transparent focus:outline-none" :disabled="!serviceCodeChecked">
+                      <option value="">Tất cả</option>
+                      <option v-for="code in serviceOptions" :key="code" :value="code">{{ code }}</option>
+                    </select>
+                  </td>
                   <td class="p-1.5 border-r border-gray-300">Minibar/Phí Minibar</td>
                   <td class="p-1">
                     <select v-model="serviceFolio" class="w-full p-1 bg-white border border-gray-300 rounded text-gray-500 focus:outline-none">
-                      <option value="">Select Value</option>
+                      <option value="">Tất cả Folio</option>
+                      <option v-for="folio in folioOptions" :key="folio" :value="String(folio)">Folio {{ folio }}</option>
                     </select>
                   </td>
                 </tr>
@@ -144,7 +179,12 @@ const handleClose = () => {
                   <td class="p-1.5 text-center border-r border-gray-300">
                     <input type="checkbox" v-model="deptChecked" class="rounded border-gray-300" />
                   </td>
-                  <td class="p-1.5 font-semibold border-r border-gray-300">FO</td>
+                  <td class="p-1.5 font-semibold border-r border-gray-300">
+                    <select v-model="department" class="w-full bg-transparent focus:outline-none" :disabled="!deptChecked">
+                      <option value="">Tất cả</option>
+                      <option v-for="dept in departmentOptions" :key="dept" :value="dept">{{ dept }}</option>
+                    </select>
+                  </td>
                   <td class="p-1.5">Reception/ Lễ Tân</td>
                 </tr>
               </tbody>
@@ -158,7 +198,7 @@ const handleClose = () => {
       <!-- Footer Actions -->
       <div class="border-t border-gray-300 p-3 flex justify-end items-center gap-2 bg-gray-50">
         <button 
-          @click="handleClose" 
+          @click="handleClose"
           class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
         >
           <X class="w-4 h-4" />
@@ -166,6 +206,7 @@ const handleClose = () => {
         </button>
 
         <button 
+          @click="reset"
           class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
         >
           <RotateCcw class="w-4 h-4" />
@@ -173,6 +214,7 @@ const handleClose = () => {
         </button>
 
         <button 
+          @click="applyFilter"
           class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
         >
           <Filter class="w-4 h-4" />

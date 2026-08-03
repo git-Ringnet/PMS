@@ -42,6 +42,7 @@ const toggleSidebar = () => {
 const searchQuery = ref('')
 const registerFilter = ref('current')
 const showAllGuestsInRoom = ref(false)
+const serviceFilter = ref(null)
 
 const isNoPost = ref(false)
 const noPostSaving = ref(false)
@@ -726,9 +727,52 @@ const getServiceGroup = (service) => {
   return { key: prefix || serviceCode || 'DV', code: prefix || serviceCode || 'DV', name: service.serviceName || 'Dịch vụ khác' }
 }
 
+const serviceFilterOptions = computed(() => [...new Set(servicesList.value.map(service => service.serviceCode).filter(Boolean))].sort())
+const serviceDepartmentOptions = computed(() => [...new Set(servicesList.value.map(service => service.department).filter(Boolean))].sort())
+const serviceFolioOptions = computed(() => [...new Set(servicesList.value.map(service => Number(service.folio)).filter(Number.isFinite))].sort((a, b) => a - b))
+
+const normalizeServiceDate = value => {
+  if (!value) return ''
+  const match = String(value).match(/^\d{4}-\d{2}-\d{2}/)
+  return match ? match[0] : String(value).slice(0, 10)
+}
+
+const applyServiceFilter = (filter) => {
+  serviceFilter.value = filter
+  selectedServiceIds.value = []
+}
+
+const resetServiceFilter = () => {
+  serviceFilter.value = null
+  selectedServiceIds.value = []
+}
+
+const filteredServiceItems = computed(() => {
+  const filter = serviceFilter.value
+  if (!filter) return servicesList.value
+  return servicesList.value.filter(service => {
+    const date = normalizeServiceDate(service.serviceDate || service.createdAt)
+    if (filter.startDate && (!date || date < filter.startDate)) return false
+    if (filter.endDate && (!date || date > filter.endDate)) return false
+    if (filter.serviceCode && String(service.serviceCode).toUpperCase() !== String(filter.serviceCode).toUpperCase()) return false
+    if (filter.department && String(service.department).toUpperCase() !== String(filter.department).toUpperCase()) return false
+    if (filter.folio && String(service.folio) !== String(filter.folio)) return false
+
+    const paid = Boolean(service.isPaid || service.paymentCode || Number(service.status) === 2)
+    const hasVat = Boolean(service.invoiceCode || service.vatNo)
+    if (filter.displayFilter === 'unpaid' && paid) return false
+    if (filter.displayFilter === 'paid' && !paid) return false
+    if (filter.displayFilter === 'vat' && !hasVat) return false
+    if (filter.displayFilter === 'unprinted_vat' && (!service.vatNo || service.invoiceCode)) return false
+    if (filter.displayFilter === 'deleted' && Number(service.status) !== 3) return false
+    return true
+  })
+})
+
 const visibleServices = computed(() => {
-  if (activeFolioTab.value === 'A') return servicesList.value
-  return servicesList.value.filter(service => String(service.folio) === activeFolioTab.value)
+  const services = filteredServiceItems.value
+  if (activeFolioTab.value === 'A') return services
+  return services.filter(service => String(service.folio) === activeFolioTab.value)
 })
 
 const folioPaidTotal = (folio) => {
@@ -745,7 +789,7 @@ const folioPaidTotal = (folio) => {
 
 const folioTotal = (folio) => {
   if (String(folio) === 'A') return [1, 2, 3].reduce((total, currentFolio) => total + folioTotal(currentFolio), 0)
-  const serviceTotal = servicesList.value
+  const serviceTotal = filteredServiceItems.value
     .filter(service => String(service.folio) === String(folio))
     .reduce((total, service) => total + (Number(service.totalAmount) || 0), 0)
   const paidTotal = folioPaidTotal(folio)
@@ -811,7 +855,7 @@ const canTransferServiceGroup = (group) => {
   return group.items.every(item => !item.isPaid && Number(item.status) !== 2)
 }
 
-const selectedServiceItems = computed(() => servicesList.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
+const selectedServiceItems = computed(() => visibleServices.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
 const selectedServiceGroups = computed(() => serviceGroups.value.filter(group => isServiceGroupSelected(group)))
 const canTransferSelectedServices = computed(() => Boolean(selectedRoomItem.value) && selectedServiceItems.value.length > 0)
 const canSplitSelectedServices = computed(() => {
@@ -1608,6 +1652,7 @@ const selectPanelGuest = (guest) => {
 const selectBookingHeader = (b) => {
   selectedBooking.value = b
   selectedRoomItem.value = null
+  serviceFilter.value = null
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
   activeFolioTab.value = 'A'
@@ -1621,6 +1666,7 @@ const selectBookingHeader = (b) => {
 const selectRoomItemRow = (b, r, specificGuest = null) => {
   selectedBooking.value = b
   selectedRoomItem.value = r
+  serviceFilter.value = null
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
   activeFolioTab.value = 'A'
@@ -2625,7 +2671,12 @@ onUnmounted(() => {
 
     <FilterServiceModal 
       :show="showFilterServiceModal" 
+      :serviceOptions="serviceFilterOptions"
+      :departmentOptions="serviceDepartmentOptions"
+      :folioOptions="serviceFolioOptions"
       @close="showFilterServiceModal = false" 
+      @filter="applyServiceFilter"
+      @reset="resetServiceFilter"
     />
 
     <TransferServiceModal
