@@ -63,9 +63,7 @@ const showExtendStayModal = ref(false)
 const extendNightsInput = ref(1)
 
 const canRollDay = computed(() => {
-  const depDone = departureCount.value === 0 || departuresProcessed.value
-  const arrDone = arrivalCount.value === 0 || arrivalsProcessed.value
-  return depDone && arrDone
+  return arrivalCount.value === 0 && departureCount.value === 0
 })
 
 // Filter tabs
@@ -418,7 +416,10 @@ async function handleRollDay() {
   try {
     isRolling.value = true
     uiStore.showToast('Đang thực hiện sang ngày hệ thống...', 'info')
-    const res = await http.post('/system-date/roll')
+    const res = await http.post('/night-audit/run', {
+      occupied_to_dirty: occupiedToDirty.value,
+      empty_to_inspect: emptyToInspect.value
+    })
     if (res.data && res.data.success) {
       uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
       setTimeout(() => {
@@ -439,8 +440,35 @@ function handleRevenueReport() {
   uiStore.showToast('Đang tải báo cáo dự kiến doanh thu tiền phòng...', 'info')
 }
 
-function handlePostRoomCharge() {
-  uiStore.showToast('Đã ghi nhận tiền phòng thành công.', 'success')
+async function handlePostRoomCharge() {
+  const selected = getSelectedDepartureItems()
+  if (selected.length === 0) {
+    uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng để post tiền phòng.', 'warning')
+    return
+  }
+
+  try {
+    isLoading.value = true
+    const sysDateStr = getNormalizedDate(systemDate.value)
+    
+    for (const item of selected) {
+      const parts = item.id.split('-')
+      const bookingRoomId = parts[parts.length - 1]
+      await http.post('/booking-room-services/post-room-charge', {
+        booking_room_id: bookingRoomId,
+        date_from: sysDateStr,
+        date_to: sysDateStr,
+        mode: 'auto'
+      })
+    }
+    uiStore.showToast('Đã post tiền phòng thành công cho các phòng đã chọn.', 'success')
+    await fetchRealData()
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi post tiền phòng.', 'error')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 function getSelectedDepartureItems() {
@@ -486,28 +514,82 @@ function handleProcessDepartures() {
 }
 
 function handleUpdateArrivalDate() {
+  const selected = getSelectedDepartureItems()
+  if (selected.length === 0) {
+    uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để cập nhật.', 'warning')
+    return
+  }
   showArrivalModal.value = true
 }
 
-function confirmArrivalUpdate() {
-  arrivalsProcessed.value = true
-  showArrivalModal.value = false
-
-  let optionName = 'Tất cả tính phí'
-  if (arrivalFeeOption.value === 'no_charge') {
-    optionName = 'Không tính phí'
-    groupData.value.forEach(g => {
-      g.items.forEach(i => { i.price = 0 })
-    })
-  } else if (arrivalFeeOption.value === 'has_charge') {
-    optionName = 'Có tính phí'
+async function confirmArrivalUpdate() {
+  const selected = getSelectedDepartureItems()
+  if (selected.length === 0) {
+    uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để dời ngày.', 'warning')
+    showArrivalModal.value = false
+    return
   }
 
-  uiStore.showToast(`Đã cập nhật phòng đến thành công với tùy chọn: ${optionName}`, 'success')
+  try {
+    isLoading.value = true
+    showArrivalModal.value = false
+
+    const mappedOption = arrivalFeeOption.value === 'has_charge' ? 'room_only' : arrivalFeeOption.value
+
+    for (const item of selected) {
+      const parts = item.id.split('-')
+      const bookingRoomId = parts[parts.length - 1]
+      await http.post('/night-audit/late-check-in', {
+        booking_room_id: bookingRoomId,
+        charge_option: mappedOption,
+        reason: 'Late Check-in'
+      })
+    }
+    uiStore.showToast(`Đã dời ngày đến thành công cho ${selected.length} phòng.`, 'success')
+    await fetchRealData()
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi dời ngày đến.', 'error')
+  } finally {
+    isLoading.value = false
+  }
 }
 
-function handleNoShow() {
-  uiStore.showToast('Đã ghi nhận khách không đến (No Show).', 'info')
+async function handleNoShow() {
+  const selected = getSelectedDepartureItems()
+  if (selected.length === 0) {
+    uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để noshow.', 'warning')
+    return
+  }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận Noshow',
+    message: `Bạn có chắc chắn muốn ghi nhận Noshow cho ${selected.length} phòng đã chọn?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy'
+  })
+
+  if (!confirmed) return
+
+  try {
+    isLoading.value = true
+    for (const item of selected) {
+      const parts = item.id.split('-')
+      const bookingRoomId = parts[parts.length - 1]
+      await http.post('/night-audit/no-show', {
+        booking_room_id: bookingRoomId,
+        charge_option: 'no_charge',
+        reason: 'Khách không đến (Noshow)'
+      })
+    }
+    uiStore.showToast('Đã ghi nhận Noshow thành công cho các phòng đã chọn.', 'success')
+    await fetchRealData()
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi thực hiện noshow.', 'error')
+  } finally {
+    isLoading.value = false
+  }
 }
 </script>
 

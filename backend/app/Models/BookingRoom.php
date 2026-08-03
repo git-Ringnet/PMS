@@ -154,10 +154,10 @@ class BookingRoom extends Model
         'move_room',
         'note',
         'reason',
-        'created_by',
         'updated_by',
         'check_in_user',
         'check_out_user',
+        'no_show_day',
     ];
 
     protected $casts = [
@@ -169,6 +169,7 @@ class BookingRoom extends Model
         'rate'                   => 'decimal:2',
         'extra_bed_rate'         => 'decimal:2',
         'status'                 => 'integer',
+        'no_show_day'            => 'integer',
         'adults'                 => 'integer',
         'babies'                 => 'integer',
         'children_qty'           => 'integer',
