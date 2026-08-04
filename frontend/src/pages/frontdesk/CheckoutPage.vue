@@ -26,6 +26,7 @@ import {
 } from '@lucide/vue'
 import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -240,6 +241,7 @@ import CancelServiceModal from './components/CancelServiceModal.vue'
 import SplitDepositModal from './components/SplitDepositModal.vue'
 import DeletePaymentModal from './components/DeletePaymentModal.vue'
 const showAddServiceModal = ref(false)
+const showAdjustRoomRateModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
 const showQuickTransferBillModal = ref(false)
 const quickTransferCandidates = ref([])
@@ -532,6 +534,11 @@ const loadSystemDate = async () => {
   }
 }
 
+const openAdjustRoomRateModal = async () => {
+  await loadSystemDate()
+  showAdjustRoomRateModal.value = true
+}
+
 const loadCheckoutBookings = async () => {
   isLoading.value = true
   try {
@@ -750,8 +757,6 @@ const loadCheckoutBookings = async () => {
           })
         })
       }
-
-      if (roomItems.length === 0) return
 
       const allBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
 
@@ -2416,6 +2421,14 @@ onUnmounted(() => {
 
         <!-- NHÓM: Tiện ích -->
         <div class="pb-1">
+          <button v-if="!selectedRoomItem" @click="openAdjustRoomRateModal" :disabled="!selectedBooking"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
+            :class="selectedBooking ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white' : 'opacity-40 cursor-not-allowed text-[#64748b]'"
+            :title="isSidebarCollapsed ? 'Điều chỉnh tiền phòng' : ''">
+            <RefreshCw class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Điều Chỉnh Tiền Phòng</span>
+          </button>
+
           <!-- Lọc -->
           <button 
             @click="showFilterServiceModal = true"
@@ -3011,6 +3024,9 @@ onUnmounted(() => {
       @close="showHousekeepingServiceModal = false; housekeepingAdjustment = null" 
       @submit="handleServiceAdded"
     />
+
+    <AdjustRoomRateModal :show="showAdjustRoomRateModal" :booking="selectedBooking" :systemDate="systemDate"
+      @close="showAdjustRoomRateModal = false" @success="showAdjustRoomRateModal = false; handleServiceAdded()" />
 
     <QuickTransferBillModal 
       :show="showQuickTransferBillModal" 

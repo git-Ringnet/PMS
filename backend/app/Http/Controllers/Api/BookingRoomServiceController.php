@@ -14,6 +14,7 @@ use App\Models\HousekeepingServiceBillDetail;
 use App\Models\RoomNightBill;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
+use App\Models\SystemDateRoll;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -1172,6 +1173,60 @@ class BookingRoomServiceController extends Controller
     // POST /booking-room-services/post-room-charge
     // mode: 'auto' | 'update' | 'surcharge'
     // =========================================
+    /** Điều chỉnh tiền phòng tại Master theo nghiệp vụ Hóa đơn dòng 66. */
+    public function adjustRoomRate(Request $request, $bookingId)
+    {
+        $data = $request->validate(['booking_room_id' => 'required|string|max:50', 'service_date' => 'required|date', 'rate' => 'required|numeric|min:0', 'description' => 'nullable|string|max:400', 'reason' => 'required|string|max:400', 'update_room_rate' => 'nullable|boolean', 'update_room_rate_scope' => 'nullable|in:room,booking']);
+        $booking = Booking::findOrFail($bookingId);
+        $room = $booking->bookingRooms()->with('guests.guest')->findOrFail($data['booking_room_id']);
+        if (!in_array((int) $room->status, [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT], true)) return response()->json(['success' => false, 'message' => 'Chỉ điều chỉnh tiền phòng của phòng đang ở hoặc đã checkout.'], 422);
+        $date = Carbon::parse($data['service_date'])->startOfDay();
+        $systemDate = SystemDateRoll::latest('id')->value('system_date');
+        $systemDate = $systemDate ? Carbon::parse($systemDate)->startOfDay() : now('Asia/Ho_Chi_Minh')->startOfDay();
+        $arrivalDate = Carbon::parse($booking->arrival_date)->startOfDay();
+        $departureDate = Carbon::parse($booking->departure_date)->startOfDay();
+        if ($date->lt($arrivalDate) || $date->gte($departureDate) || $date->gte($systemDate)) {
+            return response()->json(['success' => false, 'message' => 'Ngày điều chỉnh phải trong thời gian ở và trước ngày hệ thống.', 'data' => ['arrival_date' => $arrivalDate->toDateString(), 'departure_date' => $departureDate->toDateString(), 'system_date' => $systemDate->toDateString()]], 422);
+        }
+        $original = ServiceBill::where('RegisterId1', $booking->id)->where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->whereDate('Date', $date)->where('Edit', 0)->latest('Ma')->first();
+        if ($original && ($original->PaymentId !== null || $original->VatId !== null)) return response()->json(['success' => false, 'message' => 'Chỉ điều chỉnh bill tiền phòng chưa thanh toán và chưa xuất VAT.'], 422);
+
+        $result = DB::transaction(function () use ($booking, $room, $date, $original, $data) {
+            $user = Auth::user()?->username ?? 'system'; $rate = round((float) $data['rate'], 2); $reason = trim($data['reason']);
+            $guest = $room->guests->firstWhere('is_primary', true) ?: $room->guests->first();
+            $atMaster = (bool) $booking->is_master_room_rate; $negative = null; $oldAmount = (float) ($original?->Amount ?? 0);
+            if ($original) {
+                $original->update(['Edit' => 1, 'Status' => 3, 'IsAdjustment' => true, 'UpdatedDate' => now(), 'DescriptionServive' => trim(($original->DescriptionServive ?: 'Dịch vụ phòng nghỉ') . ' (Điều chỉnh: ' . $reason . ')')]);
+                $negative = $original->replicate();
+                $negative->Amount = -$oldAmount; $negative->Edit = 1; $negative->Status = 3; $negative->PaymentId = null; $negative->VatId = null;
+                $negative->Pack1 = (string) $original->Ma; $negative->AdjustmentBillId = $original->Ma; $negative->IsAdjustment = true;
+                $negative->DescriptionServive = 'Dòng âm điều chỉnh tiền phòng: ' . $reason; $negative->CreatedUser = $user; $negative->CreatedDate = now(); $negative->CreatedHour = now()->format('H:i'); $negative->save();
+                ServiceBillDetail::where('BillServiceId', $original->Ma)->delete(); BookingRoomService::where('service_bill_id', $original->Ma)->delete(); RoomNightBill::where('bill_id', $original->Ma)->delete();
+            }
+            $baseDescription = trim((string) ($data['description'] ?? 'Dịch vụ phòng nghỉ')) ?: 'Dịch vụ phòng nghỉ';
+            $bill = ServiceBill::create(['Date' => $date->toDateTimeString(), 'OpenTime' => now()->format('H:i'), 'Guest' => $atMaster ? $booking->booking_name : ($guest?->guest?->full_name ?: $booking->booking_name), 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $baseDescription . ' phòng ' . ($room->room_number ?: $room->id), 'Quantity' => 1, 'Amount' => $rate, 'ServiceCharge' => 0, 'SpecialTax' => 0, 'Tax' => 0, 'Currency' => $original?->Currency ?: 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => $original?->Folio ?: '1', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'CustomerId1' => $guest?->guest_id, 'CompanyId1' => $booking->company_id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => $atMaster ? null : $room->id, 'CustomerId2' => $atMaster ? null : $guest?->guest_id, 'CompanyId2' => $booking->company_id, 'Username' => $user, 'Status' => 1, 'Outlet' => 'FO', 'Year' => $date->year, 'Month' => $date->month, 'Day' => $date->day, 'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'), 'AdjustmentBillId' => $original?->Ma, 'IsAdjustment' => true]);
+            $adults = max(1, (int) $room->adults);
+            $breakfastRate = (float) (HotelSetting::first()?->breakfast_adult_rate ?? 0);
+            $breakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
+            ServiceBillDetail::insert([
+                ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $bill->DescriptionServive, 'OriginalRate' => $rate, 'Amount' => $rate, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rate],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => 'Ăn sáng phòng ' . ($room->room_number ?: $room->id), 'OriginalRate' => $breakfastAmount, 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $breakfastAmount],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ăn sáng phòng ' . ($room->room_number ?: $room->id), 'OriginalRate' => -$breakfastAmount, 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => -$breakfastAmount],
+            ]);
+            RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => 1, 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $room->breakfast ? $adults : 0, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
+            if (!$atMaster) BookingRoomService::updateOrCreate(['booking_room_id' => $room->id, 'service_code' => 'RM', 'service_date' => $date->toDateString()], ['guest_id' => $guest?->guest_id, 'service_bill_id' => $bill->Ma, 'service_bill_detail_no' => 1, 'service_name' => 'Tiền phòng', 'quantity' => 1, 'rate' => $rate, 'total_amount' => $rate, 'department' => 'FO', 'note' => $bill->DescriptionServive, 'unit' => 'Đêm', 'folio' => $bill->Folio, 'is_room' => 1, 'is_posted' => 1, 'posted_at' => now(), 'created_by' => $user]);
+            if ((bool) ($data['update_room_rate'] ?? false)) {
+                if (($data['update_room_rate_scope'] ?? 'room') === 'booking') {
+                    $booking->bookingRooms()->update(['rate' => $rate]);
+                } else {
+                    $room->update(['rate' => $rate]);
+                }
+            }
+            return ['original_bill_id' => $original?->Ma, 'negative_bill_id' => $negative?->Ma, 'new_bill_id' => $bill->Ma];
+        });
+        return response()->json(['success' => true, 'message' => 'Đã điều chỉnh tiền phòng.', 'data' => $result]);
+    }
+
     public function postRoomCharge(Request $request)
     {
         $request->validate([
