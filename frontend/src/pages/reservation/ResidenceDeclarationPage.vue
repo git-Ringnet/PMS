@@ -1,30 +1,50 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
+import { fetchBookings, fetchSystemDate, fetchNationalities } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
 
-const nationalityMap = {
-  VN: 'Vietnam ( Việt Nam )',
-  US: 'United States ( Mỹ )',
-  CN: 'China ( Trung Quốc )',
-  KR: 'Korea ( Hàn Quốc )',
-  JP: 'Japan ( Nhật Bản )',
-  FR: 'France ( Pháp )',
-  DE: 'Germany ( Đức )',
-  GB: 'United Kingdom ( Anh )',
-  AU: 'Australia ( Úc )',
-  SG: 'Singapore',
-  TH: 'Thailand ( Thái Lan )',
-  MY: 'Malaysia',
-  RU: 'Russia ( Nga )',
+const nationalityMap = ref({})
+const foreignNationalityMap = ref({})
+
+async function loadNationalities() {
+  try {
+    const res = await fetchNationalities()
+    if (res.data?.success) {
+      const list = res.data.data || []
+      const natMap = {}
+      const forMap = {}
+      
+      list.forEach(item => {
+        const c2 = item.asm_code ? String(item.asm_code).trim().toUpperCase() : null
+        const c3 = item.nationality_id ? String(item.nationality_id).trim().toUpperCase() : null
+        const nameVi = item.asm_name || item.nationality_name || ''
+        const nameEn = item.asm_description || item.nationality_name_en || ''
+        const code3 = item.nationality_id || item.asm_code || '—'
+        const labelFor = `${code3} - ${nameEn}`
+        
+        if (c2) {
+          natMap[c2] = `${nameVi} ( ${nameVi} )`
+          forMap[c2] = labelFor
+        }
+        if (c3) {
+          natMap[c3] = `${nameVi} ( ${nameVi} )`
+          forMap[c3] = labelFor
+        }
+      })
+      nationalityMap.value = natMap
+      foreignNationalityMap.value = forMap
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh mục quốc tịch:', err)
+  }
 }
 
 function getNationalityName(code) {
-  if (!code) return 'Vietnam ( Việt Nam )'
+  if (!code) return 'Việt Nam ( Việt Nam )'
   const cleanCode = String(code).trim().toUpperCase()
-  return nationalityMap[cleanCode] || code
+  return nationalityMap.value[cleanCode] || code
 }
 
 // State
@@ -475,40 +495,11 @@ function exportToXml(rows) {
   URL.revokeObjectURL(url)
 }
 
-const foreignNationalityMap = {
-  VN: 'VNM - Viet Nam',
-  VNM: 'VNM - Viet Nam',
-  US: 'USA - United States',
-  USA: 'USA - United States',
-  CN: 'CHN - China',
-  CHN: 'CHN - China',
-  KR: 'KOR - Korea',
-  KOR: 'KOR - Korea',
-  JP: 'JPN - Japan',
-  JPN: 'JPN - Japan',
-  FR: 'FRA - France',
-  FRA: 'FRA - France',
-  DE: 'DEU - Germany',
-  DEU: 'DEU - Germany',
-  GB: 'GBR - United Kingdom',
-  GBR: 'GBR - United Kingdom',
-  AU: 'AUS - Australia',
-  AUS: 'AUS - Australia',
-  SG: 'SGP - Singapore',
-  SGP: 'SGP - Singapore',
-  TH: 'THA - Thailand',
-  THA: 'THA - Thailand',
-  MY: 'MYS - Malaysia',
-  MYS: 'MYS - Malaysia',
-  RU: 'RUS - Russia',
-  RUS: 'RUS - Russia',
-}
-
 function getForeignNationalityCodeLabel(input) {
   if (!input) return 'VNM - Viet Nam'
   const str = String(input).trim()
-  if (foreignNationalityMap[str.toUpperCase()]) {
-    return foreignNationalityMap[str.toUpperCase()]
+  if (foreignNationalityMap.value[str.toUpperCase()]) {
+    return foreignNationalityMap.value[str.toUpperCase()]
   }
   if (str.toLowerCase().includes('vietnam') || str.toLowerCase().includes('việt nam')) {
     return 'VNM - Viet Nam'
@@ -942,6 +933,7 @@ watch(isoDate, () => {
 
 onMounted(() => {
   document.addEventListener('click', closeDropdowns)
+  loadNationalities()
   initSystemDate()
   loadBookingData()
 })

@@ -475,8 +475,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
-import { fetchBookingGuests, initBookingGuests, bulkUpdateBookingGuests } from '@/services/booking-service'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { fetchBookingGuests, initBookingGuests, bulkUpdateBookingGuests, fetchNationalities } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import GuestDetailModal from './GuestDetailModal.vue'
 
@@ -538,41 +538,41 @@ const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 const titlesList = ['Mr.', 'Mrs.', 'Ms.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
 
 // ==================== NATIONALITIES ====================
-const nationalitiesList = [
-  { code: 'VN', label: 'VNM - Vietnam ( Việt Nam )' },
-  { code: 'US', label: 'USA - United States ( Mỹ )' },
-  { code: 'CN', label: 'CHN - China ( Trung Quốc )' },
-  { code: 'KR', label: 'KOR - Korea ( Hàn Quốc )' },
-  { code: 'JP', label: 'JPN - Japan ( Nhật Bản )' },
-  { code: 'FR', label: 'FRA - France ( Pháp )' },
-  { code: 'DE', label: 'DEU - Germany ( Đức )' },
-  { code: 'GB', label: 'GBR - United Kingdom ( Anh )' },
-  { code: 'AU', label: 'AUS - Australia ( Úc )' },
-  { code: 'SG', label: 'SGP - Singapore' },
-  { code: 'TH', label: 'THA - Thailand ( Thái Lan )' },
-  { code: 'MY', label: 'MYS - Malaysia' },
-  { code: 'RU', label: 'RUS - Russia ( Nga )' },
-]
+const nationalitiesList = ref([])
+const nationalityMap = ref({})
 
-const nationalityMap = {
-  VN: 'Vietnam ( Việt Nam )',
-  US: 'United States ( Mỹ )',
-  CN: 'China ( Trung Quốc )',
-  KR: 'Korea ( Hàn Quốc )',
-  JP: 'Japan ( Nhật Bản )',
-  FR: 'France ( Pháp )',
-  DE: 'Germany ( Đức )',
-  GB: 'United Kingdom ( Anh )',
-  AU: 'Australia ( Úc )',
-  SG: 'Singapore',
-  TH: 'Thailand ( Thái Lan )',
-  MY: 'Malaysia',
-  RU: 'Russia ( Nga )',
+async function loadNationalities() {
+  if (nationalitiesList.value.length > 0) return
+  try {
+    const res = await fetchNationalities()
+    if (res.data?.success) {
+      const list = res.data.data || []
+      nationalitiesList.value = list.map(item => ({
+        code: item.asm_code || item.nationality_id || '',
+        label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
+      })).filter(item => item.code !== '')
+
+      const map = {}
+      list.forEach(item => {
+        const c = item.asm_code || item.nationality_id
+        if (c) {
+          map[c] = item.asm_name || item.nationality_name
+        }
+      })
+      nationalityMap.value = map
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh sách quốc tịch:', err)
+  }
 }
+
+onMounted(() => {
+  loadNationalities()
+})
 
 function getNationalityLabel(code) {
   if (!code) return '—'
-  return nationalityMap[code] || code
+  return nationalityMap.value[code] || code
 }
 
 function formatDate(d) {
@@ -644,6 +644,7 @@ watch(() => props.show, (v) => {
   if (v) {
     modalPos.value = { x: 0, y: 0 }
     if (props.bookingId) loadGuests()
+    loadNationalities()
   }
 })
 

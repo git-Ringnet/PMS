@@ -14,6 +14,7 @@ import {
   fetchRoomRateCodes,
   fetchSystemDate,
   uploadGuestAvatar,
+  fetchNationalities,
 } from '@/services/booking-service'
 
 import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequestsModal.vue'
@@ -33,21 +34,23 @@ const uiStore = useUiStore()
 // ── Dropdowns Catalog ──────────────────────────────
 const titlesList = ['Mr.', 'Ms.', 'Mrs.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
 
-const nationalitiesList = [
-  { code: 'VN', label: 'VNM - Vietnam ( Việt Nam )' },
-  { code: 'US', label: 'USA - United States ( Mỹ )' },
-  { code: 'CN', label: 'CHN - China ( Trung Quốc )' },
-  { code: 'KR', label: 'KOR - Korea ( Hàn Quốc )' },
-  { code: 'JP', label: 'JPN - Japan ( Nhật Bản )' },
-  { code: 'FR', label: 'FRA - France ( Pháp )' },
-  { code: 'DE', label: 'DEU - Germany ( Đức )' },
-  { code: 'GB', label: 'GBR - United Kingdom ( Anh )' },
-  { code: 'AU', label: 'AUS - Australia ( Úc )' },
-  { code: 'SG', label: 'SGP - Singapore' },
-  { code: 'TH', label: 'THA - Thailand ( Thái Lan )' },
-  { code: 'MY', label: 'MYS - Malaysia' },
-  { code: 'RU', label: 'RUS - Russia ( Nga )' },
-]
+const nationalitiesList = ref([])
+
+async function loadNationalities() {
+  if (nationalitiesList.value.length > 0) return
+  try {
+    const res = await fetchNationalities()
+    if (res.data?.success) {
+      const list = res.data.data || []
+      nationalitiesList.value = list.map(item => ({
+        code: item.asm_code || item.nationality_id || '',
+        label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
+      })).filter(item => item.code !== '')
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh sách quốc tịch:', err)
+  }
+}
 
 // ── Data ──────────────────────────────────────────
 const adults   = ref([])
@@ -365,6 +368,7 @@ watch(() => props.room, (newRoom) => {
     }
   }
   loadGuests()
+  loadNationalities()
 }, { immediate: true })
 
 const UNIT_EXTRA_BED_PRICE = 300000
