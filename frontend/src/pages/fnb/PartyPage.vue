@@ -18,7 +18,7 @@
       <!-- Toolbar / Filters -->
       <div class="flex items-center justify-between gap-4 py-3 px-6 shrink-0 flex-wrap bg-white border-b border-slate-200 shadow-xs">
         <div class="flex items-center gap-2.5 flex-wrap">
-          <DateRangePicker v-model="dateRange" />
+          <DateRangePicker v-model:start-date="dateRange.start" v-model:end-date="dateRange.end" />
           
           <select 
             v-model="statusFilter"
@@ -1117,7 +1117,7 @@ watch(() => route.query, (newQuery) => {
   }
 }, { deep: true })
 const today = new Date()
-const todayStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
+const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 const dateRange = ref({ start: todayStr, end: todayStr })
 const isAddPartyModalOpen = ref(false)
 const addPartyModalRef = ref(null)

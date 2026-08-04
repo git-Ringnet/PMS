@@ -154,4 +154,10 @@ export const postRoomCharge    = (data) => http.post('/booking-room-services/pos
 // ==================== PAYMENTS & SETTLEMENT (THANH TOÁN & HỦY THANH TOÁN) ====================
 export const settleBookingPayment = (bookingId, data) => http.post(`/bookings/${bookingId}/settle-payment`, data)
 export const deleteBookingPayment = (paymentId, data = {}) => http.delete(`/payments/${paymentId}`, { data })
+export const checkoutRoom = (roomId, guestIds, options = {}) => http.post(`/booking-rooms/${roomId}/checkout`, { guest_ids: guestIds, ...options })
+export const previewCheckoutRooms = (bookingId, roomIds) => http.post(`/bookings/${bookingId}/checkout-preview`, { room_ids: roomIds })
+export const checkoutBooking = (bookingId) => http.post(`/bookings/${bookingId}/checkout`)
+export const checkoutChild = (roomId, childId) => http.post(`/booking-rooms/${roomId}/children/${childId}/checkout`)
+export const restoreRoomCheckout = (roomId) => http.post(`/booking-rooms/${roomId}/restore-checkout`)
+export const restoreBookingCheckout = (bookingId) => http.post(`/bookings/${bookingId}/restore-checkout`)
 

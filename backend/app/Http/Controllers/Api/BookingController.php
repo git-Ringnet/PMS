@@ -75,7 +75,7 @@ class BookingController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Booking::with([
+        $relations = [
             'registrationStatus',
             'company',
             'market',
@@ -83,17 +83,22 @@ class BookingController extends Controller
             'branch',
             'booker',
             'paymentMethod',
-            'serviceBills',
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
-            'bookingRooms.serviceBills',
-            'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
-            'payments.paymentMethod',
-        ]);
+        ];
+
+        if ($request->boolean('with_billing') || $request->input('with_billing') === 'true') {
+            $relations[] = 'serviceBills';
+            $relations[] = 'bookingRooms.serviceBills';
+            $relations[] = 'masterServiceBills';
+            $relations[] = 'payments.paymentMethod';
+        }
+
+        $query = Booking::with($relations);
 
         // Filter theo ngày đến
         if ($request->arrival_date) {
@@ -604,8 +609,11 @@ class BookingController extends Controller
             ? Carbon::parse($systemDate->system_date)->toDateString()
             : now()->toDateString();
 
-        // Chặn nếu ngày đến mới nhỏ hơn ngày hệ thống
-        if (isset($validated['arrival_date']) && $validated['arrival_date'] < $sysDateStr) {
+        // Chặn nếu ngày đến mới thay đổi và nhỏ hơn ngày hệ thống
+        if (isset($validated['arrival_date']) 
+            && $validated['arrival_date'] !== Carbon::parse($booking->arrival_date)->toDateString()
+            && $validated['arrival_date'] < $sysDateStr
+        ) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ngày đến không được nhỏ hơn ngày hệ thống (' . $sysDateStr . ').',

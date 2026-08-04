@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import DateRangePicker from '@/components/DateRangePicker.vue'
 
-const dateRange = ref({ start: '24/06/2026', end: '24/06/2026' })
+const dateRange = ref({ start: '2026-06-24', end: '2026-06-24' })
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -18,7 +18,7 @@ const stats = {
   <div class="flex flex-col h-full bg-slate-50 overflow-hidden">
     <!-- Toolbar -->
     <div class="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-white shadow-sm relative z-20">
-      <DateRangePicker v-model="dateRange" />
+      <DateRangePicker v-model:start-date="dateRange.start" v-model:end-date="dateRange.end" />
       <button class="bg-sky-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold hover:bg-sky-600 active:scale-95 transition-all shadow-sm">
         Xem
       </button>

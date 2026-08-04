@@ -1181,6 +1181,7 @@ class BookingRoomServiceController extends Controller
             'date_to'         => 'required|date|after_or_equal:date_from',
             'mode'            => 'required|in:auto,update,surcharge',
             'rate'            => 'nullable|numeric|min:0',
+            'charge_percent'  => 'nullable|numeric|min:0|max:100',
             'folio'           => 'nullable|integer|between:1,3',
             'description'     => 'nullable|string|max:400',
             'currency'        => 'nullable|string|max:3',
@@ -1196,6 +1197,7 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
         }
 
+        $isBookingPost = !$room && (bool) $booking;
         $roomsToPost = $room ? collect([$room]) : ($booking ? $booking->bookingRooms : collect());
         if ($roomsToPost->isEmpty()) {
             return response()->json(['success' => false, 'message' => 'Không có phòng nào để post tiền phòng.'], 422);
@@ -1205,6 +1207,32 @@ class BookingRoomServiceController extends Controller
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
 
+        if ($isBookingPost) {
+            // Khi post từ Master, bỏ qua các phòng chưa đến trong toàn bộ khoảng ngày.
+            $roomsToPost = $roomsToPost->filter(function ($targetRoom) use ($dateTo) {
+                if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
+                    return false;
+                }
+                return Carbon::parse($targetRoom->arrival_date)->startOfDay()->lte($dateTo->copy()->startOfDay());
+            })->values();
+            if ($roomsToPost->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'Không có phòng nào đã đến trong khoảng ngày được chọn để post tiền phòng.'], 422);
+            }
+        }
+
+        foreach ($roomsToPost as $targetRoom) {
+            $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
+            if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
+                return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout, không thể post tiền phòng.'], 422);
+            }
+            if (!$isBookingPost && $dateFrom->copy()->startOfDay()->lt($roomArrival)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không thể post tiền phòng trước ngày đến của phòng ' . ($targetRoom->room_number ?: $targetRoom->id) . '.',
+                ], 422);
+            }
+        }
+
         if ($dateFrom->lt(Carbon::parse($systemDate)) && !$this->canOperateOldDay()) {
             return response()->json(['success' => false, 'message' => 'Không có quyền post bill cho ngày cũ.'], 403);
         }
@@ -1212,6 +1240,7 @@ class BookingRoomServiceController extends Controller
         $folio    = $request->folio ?? 1;
         $currency = $request->currency ?? 'VND';
         $mode     = $request->mode; // 'auto' | 'update' | 'surcharge'
+        $chargePercent = (float) ($request->charge_percent ?? 100);
         $user     = Auth::user()?->username ?? 'system';
         $description = $request->description ?: 'Dịch vụ phòng nghỉ';
 
@@ -1219,9 +1248,9 @@ class BookingRoomServiceController extends Controller
         $createdBills = [];
 
         DB::transaction(function () use (
-            $roomsToPost, $booking, $setting,
+            $roomsToPost, $booking, $setting, $isBookingPost,
             $dateFrom, $dateTo, $folio, $currency, $mode,
-            $request, $user, $description, &$createdBills
+            $request, $user, $description, $chargePercent, &$createdBills
         ) {
             foreach ($roomsToPost as $targetRoom) {
                 $primaryGuest = $targetRoom->guests()->where('is_primary', 1)->with('guest')->first()
@@ -1233,7 +1262,11 @@ class BookingRoomServiceController extends Controller
                     ? ($booking?->booking_name ?: 'Khách lẻ')
                     : $guestName;
 
-                $current = $dateFrom->copy();
+                $current = $dateFrom->copy()->startOfDay();
+                $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
+                if ($isBookingPost && $current->lt($roomArrival)) {
+                    $current = $roomArrival->copy();
+                }
 
                 while ($current->lte($dateTo)) {
                     // Xác định giá phòng theo mode
@@ -1277,6 +1310,8 @@ class BookingRoomServiceController extends Controller
                         $rate = (float)$request->rate;
                     }
 
+                    if ($mode === 'auto') $rate = round($rate * $chargePercent / 100, 2);
+
                     $isRoomNight = ($mode === 'surcharge') ? 0 : 1;
                     $totalAmount = $rate;
 
@@ -1284,7 +1319,7 @@ class BookingRoomServiceController extends Controller
                     $breakfastAmount = 0;
                     if ($mode === 'auto' && $targetRoom->breakfast) {
                         $breakfastRate   = (float)($setting?->breakfast_adult_rate ?? 0);
-                        $breakfastAmount = $breakfastRate * max(1, (int)$targetRoom->adults);
+                        $breakfastAmount = round($breakfastRate * max(1, (int)$targetRoom->adults) * $chargePercent / 100, 2);
                     }
 
                     $targetDesc = $description;
