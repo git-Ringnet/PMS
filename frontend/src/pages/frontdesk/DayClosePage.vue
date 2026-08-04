@@ -62,6 +62,10 @@ const arrivalFeeOption = ref('all_charged') // 'all_charged' | 'no_charge' | 'ha
 const showExtendStayModal = ref(false)
 const extendNightsInput = ref(1)
 
+// [Bug A] Noshow modal
+const showNoshowModal = ref(false)
+const noshowFeeOption = ref('no_charge') // 'all_charged' | 'room_only' | 'no_charge'
+
 const canRollDay = computed(() => {
   return arrivalCount.value === 0 && departureCount.value === 0
 })
@@ -422,9 +426,17 @@ async function handleRollDay() {
     })
     if (res.data && res.data.success) {
       uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
+      // [Bug F] Cảnh báo nếu có phòng khóa bị skip vì có khách
+      const skipped = res.data.skipped_locks
+      if (skipped && skipped.length > 0) {
+        const roomList = skipped.map(s => s.room_number).join(', ')
+        setTimeout(() => {
+          uiStore.showToast(`Cảnh báo: ${skipped.length} phòng chưa được khóa tự động do có khách đang ở (${roomList}). Vui lòng kiểm tra lại.`, 'warning')
+        }, 800)
+      }
       setTimeout(() => {
         window.location.reload()
-      }, 800)
+      }, skipped?.length > 0 ? 2500 : 800)
     } else {
       uiStore.showToast('Không thể chuyển ngày hệ thống.', 'error')
     }
@@ -491,7 +503,7 @@ function handleExtendStay() {
   showExtendStayModal.value = true
 }
 
-function confirmExtendStay() {
+async function confirmExtendStay() {
   const selected = getSelectedDepartureItems()
   if (selected.length === 0) {
     showExtendStayModal.value = false
@@ -499,13 +511,27 @@ function confirmExtendStay() {
   }
 
   const nightsToAdd = Math.max(1, parseInt(extendNightsInput.value) || 1)
-  selected.forEach(item => {
-    item.nights += nightsToAdd
-    item.departureDate = `+${nightsToAdd} đêm`
-  })
 
-  showExtendStayModal.value = false
-  uiStore.showToast(`Đã gia hạn thành công ${nightsToAdd} đêm cho ${selected.length} phòng!`, 'success')
+  try {
+    isLoading.value = true
+    showExtendStayModal.value = false
+
+    for (const item of selected) {
+      const parts = item.id.split('-')
+      const bookingRoomId = parts[parts.length - 1]
+      await http.post('/night-audit/extend-stay', {
+        booking_room_id: bookingRoomId,
+        nights: nightsToAdd
+      })
+    }
+    uiStore.showToast(`Đã gia hạn thành công ${nightsToAdd} đêm cho ${selected.length} phòng!`, 'success')
+    await fetchRealData()
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi gia hạn phòng.', 'error')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 function handleProcessDepartures() {
@@ -555,34 +581,47 @@ async function confirmArrivalUpdate() {
   }
 }
 
-async function handleNoShow() {
+// [Bug A] handleNoShow mở modal thay vì hardcode no_charge
+function handleNoShow() {
   const selected = getSelectedDepartureItems()
   if (selected.length === 0) {
     uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để noshow.', 'warning')
     return
   }
+  noshowFeeOption.value = 'no_charge'
+  showNoshowModal.value = true
+}
 
-  const confirmed = await uiStore.confirm({
-    title: 'Xác nhận Noshow',
-    message: `Bạn có chắc chắn muốn ghi nhận Noshow cho ${selected.length} phòng đã chọn?`,
-    confirmText: 'Đồng ý',
-    cancelText: 'Hủy'
-  })
-
-  if (!confirmed) return
+async function confirmNoshow() {
+  const selected = getSelectedDepartureItems()
+  if (selected.length === 0) {
+    showNoshowModal.value = false
+    return
+  }
 
   try {
     isLoading.value = true
+    showNoshowModal.value = false
+
+    let warningMsg = null
     for (const item of selected) {
       const parts = item.id.split('-')
       const bookingRoomId = parts[parts.length - 1]
-      await http.post('/night-audit/no-show', {
+      const res = await http.post('/night-audit/no-show', {
         booking_room_id: bookingRoomId,
-        charge_option: 'no_charge',
+        charge_option: noshowFeeOption.value,
         reason: 'Khách không đến (Noshow)'
       })
+      // [Bug D] Hiển thị warning nếu booking còn phòng chưa xử lý
+      if (res.data?.warning) {
+        warningMsg = res.data.warning
+      }
     }
+
     uiStore.showToast('Đã ghi nhận Noshow thành công cho các phòng đã chọn.', 'success')
+    if (warningMsg) {
+      setTimeout(() => uiStore.showToast(warningMsg, 'warning'), 600)
+    }
     await fetchRealData()
   } catch (err) {
     console.error(err)
@@ -847,7 +886,62 @@ async function handleNoShow() {
       </div>
     </footer>
 
-    <!-- MODAL GIA HẠN ĐÊM PHÒNG -->
+    <!-- MODAL NOSHOW - TUY CHON TINH PHI [Bug A] -->
+    <div v-if="showNoshowModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+        <div class="bg-red-600 text-white px-4 py-3 font-semibold flex justify-between items-center text-sm">
+          <div class="flex items-center gap-2">
+            <UserX class="w-4 h-4" />
+            <span>Noshow - Tuỳ chọn tính phí</span>
+          </div>
+          <button @click="showNoshowModal = false" class="hover:opacity-80 text-white font-bold text-base">&times;</button>
+        </div>
+        <div class="p-5 space-y-4 text-xs">
+          <p class="text-gray-700 font-medium">Vui lòng chọn hình thức tính phí khi ghi nhận Noshow:</p>
+          <div class="space-y-2.5">
+            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="noshowFeeOption" value="all_charged" class="mt-0.5 text-red-600 focus:ring-red-500" />
+              <div>
+                <div class="font-bold text-gray-800">Tất cả tính phí</div>
+                <div class="text-gray-500 text-[11px]">Tính tiền phòng + dịch vụ bổ sung của đêm đầu tiên (ngày đến).</div>
+              </div>
+            </label>
+
+            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="noshowFeeOption" value="room_only" class="mt-0.5 text-red-600 focus:ring-red-500" />
+              <div>
+                <div class="font-bold text-gray-800">Chỉ tính tiền phòng</div>
+                <div class="text-gray-500 text-[11px]">Tính 1 đêm tiền phòng đầu tiên (ngày đến), không tính các dịch vụ kèm theo.</div>
+              </div>
+            </label>
+
+            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="noshowFeeOption" value="no_charge" class="mt-0.5 text-red-600 focus:ring-red-500" />
+              <div>
+                <div class="font-bold text-gray-800">Không tính phí</div>
+                <div class="text-gray-500 text-[11px]">Miễn phí toàn bộ, không ghi nhận bất kỳ khoản tiền nào.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="bg-gray-50 px-4 py-3 flex justify-end space-x-2 border-t border-gray-200">
+          <button
+            @click="showNoshowModal = false"
+            class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-medium text-xs transition-colors"
+          >
+            Hủy
+          </button>
+          <button
+            @click="confirmNoshow"
+            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-semibold text-xs transition-colors"
+          >
+            Xác nhận Noshow
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL GIA HAN DEM PHONG -->
     <div v-if="showExtendStayModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
         <div class="bg-blue-600 text-white px-4 py-3 font-semibold flex justify-between items-center text-sm">
@@ -867,7 +961,7 @@ async function handleNoShow() {
               type="number"
               v-model.number="extendNightsInput"
               min="1"
-              max="90"
+              max="30"
               class="w-full border border-gray-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-medium"
               placeholder="Nhập số ngày (ví dụ: 1)"
             />
@@ -890,7 +984,7 @@ async function handleNoShow() {
       </div>
     </div>
 
-    <!-- MODAL CẬP NHẬT PHÒNG ĐẾN (OPTIONS TÍNH PHÍ) -->
+    <!-- MODAL CAP NHAT PHONG DEN (OPTIONS TINH PHI) -->
     <div v-if="showArrivalModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
         <div class="bg-blue-600 text-white px-4 py-3 font-semibold flex justify-between items-center text-sm">

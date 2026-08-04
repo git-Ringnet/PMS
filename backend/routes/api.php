@@ -6,8 +6,10 @@ use App\Http\Controllers\Api\RoomRateCodeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\NightAuditController;
 
-// Public Authentication routes
+// Public routes (không cần đăng nhập)
 Route::post('/login', [AuthController::class, 'login']);
+// GET hotel-settings public để App.vue đọc is_night_audit_running trước khi login
+Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
 
 // Protected routes (Sanctum)
 Route::middleware('auth:sanctum')->group(function () {
@@ -70,6 +72,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/check-status', [NightAuditController::class, 'checkStatus']);
         Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn']);
         Route::post('/no-show', [NightAuditController::class, 'noShowRoom']);
+        Route::post('/extend-stay', [NightAuditController::class, 'extendStay']); // Bug B
+
         Route::post('/run', [NightAuditController::class, 'runNightAudit']);
     });
 
@@ -85,8 +89,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan']);
     Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
 
-    // Hotel settings
-    Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
+    // Hotel settings (write only - GET moved to public routes)
+    // Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
     Route::put('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'update']);
     Route::post('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadLogo']);
     Route::delete('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteLogo']);
@@ -197,7 +201,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel']);
     Route::post('fb-parties/check-conflict', [\App\Http\Controllers\Api\FbPartyController::class, 'checkConflict']);
     Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
-    
+
     // F&B Orders (Bills)
     Route::get('/fnb/orders', [\App\Http\Controllers\FbOrderController::class, 'search']);
     Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
@@ -226,7 +230,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel']);
     Route::post('fb-parties/check-conflict', [\App\Http\Controllers\Api\FbPartyController::class, 'checkConflict']);
     Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
-    
+
     // F&B Orders (Bills)
     Route::get('/fnb/orders', [\App\Http\Controllers\FbOrderController::class, 'search']);
     Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
@@ -295,8 +299,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
     Route::get('/booking-services/fo-list', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'foServiceList']);
     Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill']);
-    Route::post('/booking-room-services/post-fo-service-bill',   [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill']);
-    Route::post('/booking-room-services/post-room-charge',       [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge']);
+    Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill']);
+    Route::post('/booking-room-services/post-room-charge', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge']);
 
     // --- Special Requests (SP2107, SP1325) — Epic 15 ---
     Route::get('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'catalog']);
@@ -359,4 +363,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 });
 
-Route::post('/test-log', function(Illuminate\Http\Request $request) { \Log::info('TEST PAYLOAD', $request->all()); return 'ok'; });
+Route::post('/test-log', function (Illuminate\Http\Request $request) {
+    \Log::info('TEST PAYLOAD', $request->all());
+    return 'ok';
+});

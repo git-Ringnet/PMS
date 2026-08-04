@@ -72,6 +72,21 @@ function shiftDate(dateInput, days) {
   return localDateInput(date)
 }
 
+function isMasterBillRecord(sb, bookingRooms, masterSend) {
+  if (Number(sb.Edit) === 1) return false
+  if (!sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') return true
+
+  const room = bookingRooms?.find(r => String(r.id) === String(sb.RentalRoomId2))
+  const isRoomActive = room ? [0, 1].includes(Number(room.status)) : false
+
+  // Nếu phòng đã inactive (như Noshow/Check-out/Huỷ), mọi hóa đơn gắn với phòng đó vẫn gom về Master Folio
+  if (!isRoomActive) return true
+
+  // Nếu phòng active, chỉ gom tiền phòng về Master khi bật tùy chọn masterSend
+  if (masterSend && (sb.ServiceId === 'RM' || sb.ServiceId === 'RMS')) return true
+  return false
+}
+
 function setFilterDatesForScope(scope = filterDateScope.value) {
   const base = localDateInput(systemDate.value || new Date())
   if (scope === 'today') {
@@ -736,16 +751,42 @@ const loadCheckoutBookings = async () => {
         })
       }
 
-      const masterBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
-        .filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
+      if (roomItems.length === 0) return
 
-      const masterOnlyServices = masterBills
-        .filter(bill => Number(bill.Edit) !== 1)
-        .reduce((total, bill) => total + (Number(bill.Amount) || 0), 0)
+      const allBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
 
-      // Bill RM đã chuyển/current owner ở Master đã có trong masterOnlyServices.
-      // Không cộng lại từ roomItems để tránh nhân đôi tiền phòng sau checkout/transfer.
-      const masterServiceTotal = masterOnlyServices
+      const masterBillsForSum = allBills.filter(sb => isMasterBillRecord(sb, b.booking_rooms, masterSend))
+
+      let unpostedActiveRoomCharges = 0
+      if (masterSend && b.booking_rooms) {
+        b.booking_rooms.forEach(r => {
+          const isRoomActive = [0, 1].includes(Number(r.status))
+          if (isRoomActive && r.services) {
+            const processedBillIdsInRoom = new Set()
+            allBills.forEach(sb => {
+              if (Number(sb.Edit) === 1) return
+              if (sb.ServiceId !== 'RM' && sb.ServiceId !== 'RMS') return
+              const isCurrentRoomOwner = String(sb.RentalRoomId2) === String(r.id)
+              const isOriginalRoomOwner = !sb.RentalRoomId2 && String(sb.RentalRoomId1) === String(r.id)
+              if (isCurrentRoomOwner || isOriginalRoomOwner) {
+                if (sb.Ma) processedBillIdsInRoom.add(String(sb.Ma))
+              }
+            })
+
+            r.services.forEach(s => {
+              const codeVal = String(s.service_code || s.serviceCode || '').toUpperCase()
+              if (codeVal === 'RM' || s.service_name === 'Tiền phòng') {
+                if (s.service_bill_id && processedBillIdsInRoom.has(String(s.service_bill_id))) return
+                if (!s.service_bill_id && processedBillIdsInRoom.size > 0) return
+                const itemTotal = Number(s.total_amount) || (Number(s.quantity || 1) * Number(s.rate || 0))
+                unpostedActiveRoomCharges += itemTotal
+              }
+            })
+          }
+        })
+      }
+
+      const masterServiceTotal = masterBillsForSum.reduce((sum, sb) => sum + (Number(sb.Amount) || 0), 0) + unpostedActiveRoomCharges
 
       const masterDepositTotal = (b.payments || [])
         .filter(payment => payment.pack2 === 'DPR' && Number(payment.edit_flag) === 0 && !payment.deleted_at && !payment.booking_room_id)
@@ -1055,12 +1096,7 @@ const servicesList = computed(() => {
     // trên bảng dịch vụ; tổng tiền phải thanh toán vẫn chỉ tính bill chưa trả.
     const allBillsSource = mergeServiceBills(rawB?.master_service_bills || [], rawB?.service_bills || [])
 
-    const masterBills = allBillsSource.filter(sb => {
-      if (Number(sb.Edit) === 1) return false
-      if (!sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') return true
-      if (masterSend && (sb.ServiceId === 'RM' || sb.ServiceId === 'RMS')) return true
-      return false
-    })
+    const masterBills = allBillsSource.filter(sb => isMasterBillRecord(sb, rawB?.booking_rooms, masterSend))
 
     const masterBillIds = new Set(masterBills.map(sb => String(sb.Ma)))
 

@@ -604,8 +604,11 @@ class BookingController extends Controller
             ? Carbon::parse($systemDate->system_date)->toDateString()
             : now()->toDateString();
 
-        // Chặn nếu ngày đến mới nhỏ hơn ngày hệ thống
-        if (isset($validated['arrival_date']) && $validated['arrival_date'] < $sysDateStr) {
+        // Chặn nếu ngày đến mới thay đổi và nhỏ hơn ngày hệ thống
+        if (isset($validated['arrival_date']) 
+            && $validated['arrival_date'] !== Carbon::parse($booking->arrival_date)->toDateString()
+            && $validated['arrival_date'] < $sysDateStr
+        ) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ngày đến không được nhỏ hơn ngày hệ thống (' . $sysDateStr . ').',
