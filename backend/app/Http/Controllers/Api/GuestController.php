@@ -286,8 +286,12 @@ class GuestController extends Controller
             $hasActiveRooms = $booking->bookingRooms()
                 ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
                 ->exists();
-            if (!$hasActiveRooms && !$this->hasUnpaidMasterBills($booking)) {
-                $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
+            if (!$hasActiveRooms) {
+                if ($this->hasUnpaidMasterBills($booking)) {
+                    $booking->update(['status' => \App\Models\Booking::STATUS_CHECKIN]);
+                } else {
+                    $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
+                }
             }
         }
         return $response;
@@ -462,7 +466,6 @@ class GuestController extends Controller
             $remaining = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->count();
             if ($remaining === 0) {
                 if ($room->children()->exists() && !$fullRoom) throw new \RuntimeException('Không thể checkout hết người lớn để chỉ còn trẻ em trong phòng.');
-                $this->moveUnpaidRoomBillsToMaster($room);
                 $room->children()->where('child_status', 0)->update(['child_status' => 2]);
                 $room->update([
                     'status' => BookingRoom::STATUS_CHECKED_OUT,
@@ -516,11 +519,15 @@ class GuestController extends Controller
             }
         }
 
-        // Full room checkout transfers unpaid bills to Master, so they do not block room checkout.
-        $unpaid = false && \App\Models\ServiceBill::query()->where('Edit', 0)->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })->where('Status', '!=', 2)->where(function ($q) use ($room) {
-            $q->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id])
-              ->orWhereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $room->id]);
-        })->exists();
+        $unpaidQuery = \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id]);
+        if ((bool) $room->booking?->is_master_room_rate) {
+            $unpaidQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+        }
+        $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
         $unusedDepositQuery = \App\Models\Payment::where('booking_id', $room->booking_id)
             ->where('edit_flag', 0)
@@ -567,6 +574,12 @@ class GuestController extends Controller
 
     private function hasUnpaidMasterBills(Booking $booking): bool
     {
+        $checkedOutRoomIds = $booking->bookingRooms()
+            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
         return \App\Models\ServiceBill::query()
             ->where('Edit', 0)
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
@@ -575,36 +588,12 @@ class GuestController extends Controller
                 $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
                     ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
             })
-            ->where(function ($q) { $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0'); })
-            ->exists();
-    }
-
-    /** Unpaid room bills become Master-owned when their room is checked out; paid history stays with the room. */
-    private function moveUnpaidRoomBillsToMaster(BookingRoom $room): void
-    {
-        $billIds = \App\Models\ServiceBill::query()
-            ->where('Edit', 0)
-            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
-            ->where('Status', '!=', 2)
-            ->where(function ($q) use ($room) {
-                $q->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id])
-                    ->orWhereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $room->id]);
+            ->where(function ($q) use ($booking, $checkedOutRoomIds) {
+                $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
+                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'RMS']);
             })
-            ->pluck('Ma');
-
-        if ($billIds->isEmpty()) return;
-
-        \App\Models\ServiceBill::whereIn('Ma', $billIds)->update([
-            'RegisterID2' => $room->booking_id,
-            'RentalRoomId2' => null,
-            'CustomerId2' => null,
-            'CompanyId2' => $room->booking?->company_id,
-            'Guest' => $room->booking?->booking_name,
-            'Folio' => '1',
-        ]);
-        \App\Models\BookingRoomService::where('booking_room_id', $room->id)
-            ->whereIn('service_bill_id', $billIds)
-            ->update(['guest_id' => null, 'folio' => 1, 'is_room' => 0]);
+            ->exists();
     }
 
     private function hasRemainingRoomCharges(BookingRoom $room, Carbon $from, Carbon $to): bool

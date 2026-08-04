@@ -988,6 +988,12 @@ class PaymentController extends Controller
             ->exists();
         if ($hasActiveRooms) return;
 
+        $checkedOutRoomIds = $booking->bookingRooms()
+            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
         $hasUnpaidMasterBills = \App\Models\ServiceBill::query()
             ->where('Edit', 0)
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
@@ -996,7 +1002,11 @@ class PaymentController extends Controller
                 $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
                     ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
             })
-            ->where(function ($q) { $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0'); })
+            ->where(function ($q) use ($booking, $checkedOutRoomIds) {
+                $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
+                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'RMS']);
+            })
             ->exists();
         if ($hasUnpaidMasterBills) return;
 
