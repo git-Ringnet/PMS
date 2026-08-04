@@ -47,6 +47,7 @@ class HotelSetting extends Model
         'pos_invoice_symbol',
         'logo_url',
         'qr_code_url',
+        'is_night_audit_running',
     ];
 
     protected $casts = [
@@ -56,5 +57,6 @@ class HotelSetting extends Model
         'extra_bed_rate' => 'decimal:2',
         'room_number' => 'integer',
         'pos_invoice_number_length' => 'integer',
+        'is_night_audit_running' => 'boolean',
     ];
 }
