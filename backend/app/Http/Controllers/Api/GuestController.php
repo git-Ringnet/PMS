@@ -10,6 +10,7 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\CancelReason;
 use App\Models\Guest;
+use App\Models\RoomLock;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -270,13 +271,13 @@ class GuestController extends Controller
     // Checkout tạm cho tab Hóa đơn: chọn khách trong phòng hoặc toàn bộ Master.
     public function checkoutRoom(Request $request, $roomId)
     {
-        $data = $request->validate(['guest_ids' => 'required|array|min:1', 'guest_ids.*' => 'string|max:50']);
+        $data = $request->validate(['guest_ids' => 'required|array|min:1', 'guest_ids.*' => 'string|max:50', 'skip_remaining_room_charge' => 'nullable|boolean']);
         $room = BookingRoom::with('booking')->findOrFail($roomId);
         $guestIds = collect($data['guest_ids']);
         $activeGuestIds = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->pluck('guest_id');
         $isFullRoomCheckout = $activeGuestIds->diff($guestIds)->isEmpty();
         if ($isFullRoomCheckout) {
-            $eligibility = $this->validateFullCheckout($room);
+            $eligibility = $this->validateFullCheckout($room, false, (bool) ($data['skip_remaining_room_charge'] ?? false));
             if ($eligibility) return response()->json(['success' => false, 'code' => $eligibility['code'], 'message' => $eligibility['message'], 'data' => $eligibility['data'] ?? null], 422);
         }
         $response = $this->checkoutScope($room, $guestIds, true, $isFullRoomCheckout);
@@ -285,39 +286,65 @@ class GuestController extends Controller
             $hasActiveRooms = $booking->bookingRooms()
                 ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
                 ->exists();
-            if (!$hasActiveRooms) {
+            if (!$hasActiveRooms && !$this->hasUnpaidMasterBills($booking)) {
                 $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
             }
         }
         return $response;
     }
 
+    /** Xem trước điều kiện checkout nhiều phòng trước khi thực hiện. */
+    public function previewCheckoutRooms(Request $request, $bookingId)
+    {
+        $data = $request->validate(['room_ids' => 'required|array|min:1', 'room_ids.*' => 'string|max:50']);
+        $booking = Booking::with('bookingRooms')->findOrFail($bookingId);
+        $rooms = $booking->bookingRooms->whereIn('id', $data['room_ids']);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'master_unpaid' => $this->hasUnpaidMasterBills($booking),
+                'rooms' => $rooms->map(function (BookingRoom $room) {
+                    $eligibility = $this->validateFullCheckout($room);
+                    return [
+                        'room_id' => $room->id,
+                        'room_number' => $room->room_number,
+                        'eligible' => !$eligibility,
+                        'code' => $eligibility['code'] ?? null,
+                        'message' => $eligibility['message'] ?? null,
+                    ];
+                })->values(),
+            ],
+        ]);
+    }
+
+    /** Checkout riêng một trẻ em; vẫn phải còn ít nhất một người lớn trong phòng. */
+    public function checkoutChild($roomId, $childId)
+    {
+        $room = BookingRoom::findOrFail($roomId);
+        $child = BookingChild::where('booking_room_id', $room->id)->findOrFail($childId);
+        if ((int) $child->child_status === BookingRoomGuest::STATUS_CHECKED_OUT) {
+            return response()->json(['success' => false, 'message' => 'Trẻ em đã checkout.'], 422);
+        }
+        $activeAdults = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->count();
+        if ($activeAdults === 0) {
+            return response()->json(['success' => false, 'message' => 'Phải còn ít nhất một người lớn trong phòng để checkout trẻ em.'], 422);
+        }
+        $child->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+        return response()->json(['success' => true, 'message' => 'Checkout trẻ em thành công.']);
+    }
+
     public function checkoutBooking(Request $request, $bookingId)
     {
         $booking = \App\Models\Booking::with('bookingRooms.guests')->findOrFail($bookingId);
-        $roomIds = $booking->bookingRooms->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])->pluck('id');
-        if ($roomIds->isEmpty()) return response()->json(['success' => false, 'message' => 'Booking không còn phòng đang lưu trú.'], 422);
+        $rooms = $booking->bookingRooms->where('status', BookingRoom::STATUS_CHECKED_IN);
 
-        $earlyRooms = [];
-        foreach ($booking->bookingRooms->whereIn('id', $roomIds) as $room) {
-            $eligibility = $this->validateFullCheckout($room);
-            if ($eligibility && $eligibility['code'] === 'early_checkout') {
-                $earlyRooms[] = $eligibility['data'];
-                continue;
-            }
-            if ($eligibility) return response()->json(['success' => false, 'code' => $eligibility['code'], 'message' => $eligibility['message'], 'data' => $eligibility['data'] ?? null], 422);
-        }
-        if (!empty($earlyRooms)) {
-            return response()->json([
-                'success' => false,
-                'code' => 'early_checkout_master',
-                'message' => 'Master còn phòng checkout sớm; cần charge tiền phòng các đêm còn lại trước.',
-                'data' => ['rooms' => $earlyRooms],
-            ], 422);
-        }
+        // Checkout Master chỉ xét công nợ/cọc của toàn Booking, không xét ngày đi từng phòng.
+        $eligibility = $this->validateMasterCheckout($booking, $rooms);
+        if ($eligibility) return response()->json(['success' => false, 'code' => $eligibility['code'], 'message' => $eligibility['message']], 422);
 
-        return DB::transaction(function () use ($booking, $roomIds) {
-            foreach ($roomIds as $roomId) {
+        return DB::transaction(function () use ($booking, $rooms) {
+            foreach ($rooms->pluck('id') as $roomId) {
                 $room = BookingRoom::with('booking')->findOrFail($roomId);
                 $guestIds = $room->guests->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->pluck('guest_id');
                 if ($guestIds->isNotEmpty()) {
@@ -331,6 +358,92 @@ class GuestController extends Controller
             $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
             return response()->json(['success' => true, 'message' => 'Đã checkout toàn bộ Master.']);
         });
+    }
+
+    /**
+     * Hoàn tác checkout của một phòng trong đúng ngày hệ thống.
+     * Chỉ khôi phục nhóm khách được checkout sau cùng; khách checkout sớm giữ nguyên lịch sử.
+     */
+    public function restoreRoomCheckout($roomId)
+    {
+        return DB::transaction(function () use ($roomId) {
+            $room = BookingRoom::with(['booking', 'guests', 'children', 'room'])->lockForUpdate()->findOrFail($roomId);
+            $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
+
+            if ($room->status !== BookingRoom::STATUS_CHECKED_OUT) {
+                return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục phòng đã checkout.'], 422);
+            }
+
+            if (!$room->CheckoutDate || Carbon::parse($room->CheckoutDate)->startOfDay()->ne($systemDate)) {
+                return response()->json(['success' => false, 'message' => 'Chỉ được khôi phục checkout của phòng trong ngày hệ thống.'], 422);
+            }
+
+            if ($room->room_number) {
+                $hasInhouseBooking = BookingRoom::where('room_number', $room->room_number)
+                    ->where('id', '!=', $room->id)
+                    ->where('status', BookingRoom::STATUS_CHECKED_IN)
+                    ->exists();
+                if ($hasInhouseBooking) {
+                    return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác check-in, không thể khôi phục checkout.'], 422);
+                }
+
+                $hasActiveLock = RoomLock::where('room_number', $room->room_number)
+                    ->where('is_active', RoomLock::STATUS_ACTIVE)
+                    ->where('start_date', '<=', $systemDate->copy()->endOfDay())
+                    ->where('end_date', '>=', $systemDate->copy()->startOfDay())
+                    ->exists();
+                if ($hasActiveLock) {
+                    return response()->json(['success' => false, 'message' => 'Phòng đang bị khóa, không thể khôi phục checkout.'], 422);
+                }
+            }
+
+            $checkedOutGuests = $room->guests->where('status', BookingRoomGuest::STATUS_CHECKED_OUT);
+            if ($checkedOutGuests->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'Không tìm thấy khách checkout để khôi phục.'], 422);
+            }
+
+            $lastCheckout = $checkedOutGuests->sortByDesc(fn ($guest) => sprintf('%s %s', $guest->actual_checkout_date?->toDateString() ?? '', $guest->actual_checkout_time ?? ''))->first();
+            $lastCheckoutDate = $lastCheckout->actual_checkout_date?->toDateString();
+            $lastCheckoutTime = $lastCheckout->actual_checkout_time;
+            $restoredGuests = $checkedOutGuests->filter(fn ($guest) =>
+                $guest->actual_checkout_date?->toDateString() === $lastCheckoutDate
+                && $guest->actual_checkout_time === $lastCheckoutTime
+            );
+
+            BookingRoomGuest::whereIn('id', $restoredGuests->pluck('id'))->update([
+                'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                'actual_checkout_date' => null,
+                'actual_checkout_time' => null,
+                'checkout_by' => null,
+            ]);
+            $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+            $room->update([
+                'status' => BookingRoom::STATUS_CHECKED_IN,
+                'CheckoutDate' => null,
+                'CheckoutTime' => null,
+                'check_out_user' => null,
+            ]);
+            if ($room->room) $room->room->update(['status' => 'occupied']);
+            if ($room->booking->status === Booking::STATUS_CHECKOUT) $room->booking->update(['status' => Booking::STATUS_CHECKIN]);
+
+            return response()->json([
+                'success' => true,
+                'data' => ['room_id' => $room->id, 'restored_guest_ids' => $restoredGuests->pluck('guest_id')->values()],
+                'message' => 'Khôi phục checkout phòng thành công.',
+            ]);
+        });
+    }
+
+    /** Khôi phục checkout Master: chỉ mở lại trạng thái booking, không khôi phục phòng con. */
+    public function restoreBookingCheckout($bookingId)
+    {
+        $booking = Booking::findOrFail($bookingId);
+        if ($booking->status !== Booking::STATUS_CHECKOUT) {
+            return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
+        }
+
+        $booking->update(['status' => Booking::STATUS_CHECKIN]);
+        return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
     }
 
     private function checkoutScope(BookingRoom $room, $guestIds, bool $wrap = true, bool $fullRoom = false)
@@ -349,8 +462,14 @@ class GuestController extends Controller
             $remaining = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->count();
             if ($remaining === 0) {
                 if ($room->children()->exists() && !$fullRoom) throw new \RuntimeException('Không thể checkout hết người lớn để chỉ còn trẻ em trong phòng.');
+                $this->moveUnpaidRoomBillsToMaster($room);
                 $room->children()->where('child_status', 0)->update(['child_status' => 2]);
-                $room->update(['status' => BookingRoom::STATUS_CHECKED_OUT, 'departure_date' => $systemDate->toDateString(), 'check_out_user' => Auth::user()?->username ?? 'system']);
+                $room->update([
+                    'status' => BookingRoom::STATUS_CHECKED_OUT,
+                    'CheckoutDate' => $systemDate->toDateString(),
+                    'CheckoutTime' => now()->format('H:i:s'),
+                    'check_out_user' => Auth::user()?->username ?? 'system',
+                ]);
                 if ($room->room) $room->room->update(['status' => 'checkout']);
             } else {
                 $targetGuestId = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->orderByDesc('is_primary')->orderBy('id')->value('guest_id');
@@ -374,7 +493,7 @@ class GuestController extends Controller
         catch (\Throwable $e) { return response()->json(['success' => false, 'message' => $e->getMessage()], 422); }
     }
 
-    private function validateFullCheckout(BookingRoom $room, bool $masterScope = false): ?array
+    private function validateFullCheckout(BookingRoom $room, bool $masterScope = false, bool $skipRemainingRoomCharge = false): ?array
     {
         if ($room->status === BookingRoom::STATUS_CANCELLED) return ['code' => 'room_cancelled', 'message' => 'Phòng đã hủy.'];
         $activeAdults = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->count();
@@ -387,11 +506,18 @@ class GuestController extends Controller
             ['1', 'true', 'yes'],
             true
         );
-        if (!$masterScope && $departure->gt($systemDate) && !$allowEarlyCheckout) {
-            return ['code' => 'early_checkout', 'message' => 'Phòng ' . ($room->room_number ?: $room->id) . ' checkout sớm; cần charge tiền phòng các đêm còn lại trước.', 'data' => ['room_id' => $room->id, 'remaining_from' => $systemDate->toDateString(), 'remaining_to' => $departure->copy()->subDay()->toDateString()]];
+        if (!$masterScope && $departure->gt($systemDate)) {
+            if (!$allowEarlyCheckout) {
+                return ['code' => 'early_checkout_disabled', 'message' => 'Hệ thống không cho phép trả phòng sớm (AllowEarlyCheckout=0).'];
+            }
+            $unchargedDates = $this->remainingRoomChargeDates($room, $systemDate, $departure->copy()->subDay());
+            if (!$skipRemainingRoomCharge && $unchargedDates->isNotEmpty()) {
+                return ['code' => 'early_checkout', 'message' => 'Phòng ' . ($room->room_number ?: $room->id) . ' checkout sớm; cần charge tiền phòng các đêm còn lại trước.', 'data' => ['room_id' => $room->id, 'remaining_from' => $systemDate->toDateString(), 'remaining_to' => $departure->copy()->subDay()->toDateString(), 'remaining_dates' => $unchargedDates->values()]];
+            }
         }
 
-        $unpaid = \App\Models\ServiceBill::query()->where('Edit', 0)->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })->where('Status', '!=', 2)->where(function ($q) use ($room) {
+        // Full room checkout transfers unpaid bills to Master, so they do not block room checkout.
+        $unpaid = false && \App\Models\ServiceBill::query()->where('Edit', 0)->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })->where('Status', '!=', 2)->where(function ($q) use ($room) {
             $q->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id])
               ->orWhereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $room->id]);
         })->exists();
@@ -408,6 +534,99 @@ class GuestController extends Controller
             if ($bookingUnpaid) return ['code' => 'unpaid_master', 'message' => 'Master còn hóa đơn chưa thanh toán.'];
         }
         return null;
+    }
+
+    /** Master checkout ignores departure dates but requires every current bill/deposit to be settled. */
+    private function validateMasterCheckout(Booking $booking, $rooms): ?array
+    {
+        $roomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $unpaid = \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->where(function ($q) use ($booking, $roomIds) {
+                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
+                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
+                if ($roomIds) {
+                    $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $roomIds)
+                        ->orWhereIn(DB::raw('CAST(RentalRoomId1 AS CHAR)'), $roomIds);
+                }
+            })
+            ->exists();
+        if ($unpaid) return ['code' => 'unpaid_master', 'message' => 'Master còn hóa đơn chưa thanh toán.'];
+
+        $unusedDeposit = \App\Models\Payment::where('booking_id', $booking->id)
+            ->where('edit_flag', 0)
+            ->whereNull('payment_id')
+            ->where(function ($q) { $q->where('pack2', 'DPR')->orWhere('pack4', 'AP'); })
+            ->exists();
+        if ($unusedDeposit) return ['code' => 'unused_deposit', 'message' => 'Master còn tiền cọc chưa dùng để thanh toán hóa đơn.'];
+
+        return null;
+    }
+
+    private function hasUnpaidMasterBills(Booking $booking): bool
+    {
+        return \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->where(function ($q) use ($booking) {
+                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
+                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
+            })
+            ->where(function ($q) { $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0'); })
+            ->exists();
+    }
+
+    /** Unpaid room bills become Master-owned when their room is checked out; paid history stays with the room. */
+    private function moveUnpaidRoomBillsToMaster(BookingRoom $room): void
+    {
+        $billIds = \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->where(function ($q) use ($room) {
+                $q->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id])
+                    ->orWhereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $room->id]);
+            })
+            ->pluck('Ma');
+
+        if ($billIds->isEmpty()) return;
+
+        \App\Models\ServiceBill::whereIn('Ma', $billIds)->update([
+            'RegisterID2' => $room->booking_id,
+            'RentalRoomId2' => null,
+            'CustomerId2' => null,
+            'CompanyId2' => $room->booking?->company_id,
+            'Guest' => $room->booking?->booking_name,
+            'Folio' => '1',
+        ]);
+        \App\Models\BookingRoomService::where('booking_room_id', $room->id)
+            ->whereIn('service_bill_id', $billIds)
+            ->update(['guest_id' => null, 'folio' => 1, 'is_room' => 0]);
+    }
+
+    private function hasRemainingRoomCharges(BookingRoom $room, Carbon $from, Carbon $to): bool
+    {
+        return $this->remainingRoomChargeDates($room, $from, $to)->isEmpty();
+    }
+
+    private function remainingRoomChargeDates(BookingRoom $room, Carbon $from, Carbon $to)
+    {
+        $requiredDates = collect();
+        for ($date = $from->copy(); $date->lte($to); $date->addDay()) $requiredDates->push($date->toDateString());
+
+        $chargedDates = \App\Models\ServiceBill::where('RegisterId1', $room->booking_id)
+            ->where('RentalRoomId1', $room->id)
+            ->where('ServiceId', 'RM')
+            ->where('Edit', 0)
+            ->whereIn(DB::raw('DATE(Date)'), $requiredDates->all())
+            ->pluck('Date')
+            ->map(fn ($date) => Carbon::parse($date)->toDateString())
+            ->unique();
+
+        return $requiredDates->diff($chargedDates)->values();
     }
 
     // GET /booking-rooms/{roomId}/guests/on-date?date=YYYY-MM-DD — Khách đang ở trong phòng ngày X

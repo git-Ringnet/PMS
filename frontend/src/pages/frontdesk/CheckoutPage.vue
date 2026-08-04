@@ -24,7 +24,7 @@ import {
   ArrowRightLeft,
   X
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutBooking, postRoomCharge } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
@@ -47,6 +47,12 @@ const filterDateScope = ref('today')
 const filterDepartureChecked = ref(false)
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
+const appliedCheckoutFilter = ref({
+  register: 'current',
+  departureEnabled: false,
+  dateFrom: '',
+  dateTo: '',
+})
 const showAllGuestsInRoom = ref(false)
 const serviceFilter = ref(null)
 
@@ -111,13 +117,32 @@ function isVirtualBooking(booking) {
   )
 }
 
-function applyCheckoutFilters() {
-  // Popup hiện chỉ giữ giao diện; chưa áp dụng lọc vào danh sách/API.
+function isCheckedOutRecord(record) {
+  const status = String(record?.status ?? '').trim().toLowerCase()
+  return ['2', 'checkout', 'checked_out', 'checkedout'].includes(status)
+    || Boolean(record?.CheckoutDate || record?.checkout_date)
+}
+
+async function applyCheckoutFilters() {
+  appliedCheckoutFilter.value = {
+    register: registerFilter.value,
+    departureEnabled: filterDepartureChecked.value,
+    dateFrom: filterDepartureChecked.value ? filterDateFrom.value : '',
+    dateTo: filterDepartureChecked.value ? filterDateTo.value : '',
+  }
   showRegisterFilterDropdown.value = false
+  selectedBooking.value = null
+  selectedRoomItem.value = null
+  selectedGuestId.value = null
+  displayedBookingsList.value = []
+  await loadCheckoutBookings()
 }
 
 function resetCheckoutFilterDraft() {
-  // Nút Đóng chỉ đóng popup, không khôi phục hay thay đổi dữ liệu danh sách.
+  registerFilter.value = appliedCheckoutFilter.value.register
+  filterDepartureChecked.value = appliedCheckoutFilter.value.departureEnabled
+  filterDateFrom.value = appliedCheckoutFilter.value.dateFrom
+  filterDateTo.value = appliedCheckoutFilter.value.dateTo
   showRegisterFilterDropdown.value = false
 }
 
@@ -168,6 +193,23 @@ const showCheckoutModal = ref(false)
 const checkoutGuestIds = ref([])
 const checkoutError = ref('')
 const earlyCheckoutData = ref(null)
+const checkoutPreview = ref(null)
+const masterDebtConfirmed = ref(false)
+const showEarlyChargeModal = ref(false)
+const earlyChargeDateOptions = ref([])
+const earlyChargeDates = ref([])
+const earlyChargePercent = ref(100)
+
+const mergeServiceBills = (...groups) => {
+  const seen = new Set()
+  return groups.flat().filter(bill => {
+    const key = bill?.Ma ?? bill?.id
+    if (key === undefined || key === null) return true
+    if (seen.has(String(key))) return false
+    seen.add(String(key))
+    return true
+  })
+}
 
 // Modal states
 import AddServiceModal from './components/AddServiceModal.vue'
@@ -202,6 +244,10 @@ const roomAdjustment = ref(null)
 const housekeepingAdjustment = ref(null)
 
 const checkoutGuests = computed(() => selectedRoomItem.value?.allGuests?.filter(g => g?.id) || [])
+const isRestoreCheckout = computed(() => {
+  if (selectedRoomItem.value) return Number(selectedRoomItem.value.rawRoom?.status ?? selectedRoomItem.value.status) === 2
+  return Number(selectedBooking.value?.rawBooking?.status ?? selectedBooking.value?.status) === 2
+})
 const openCheckoutModal = () => {
   const checkedRooms = selectedCheckoutRooms.value
   if (!selectedBooking.value && checkedRooms.length === 0) return
@@ -211,30 +257,79 @@ const openCheckoutModal = () => {
   }
   checkoutError.value = ''
   earlyCheckoutData.value = null
+  checkoutPreview.value = null
+  masterDebtConfirmed.value = false
+  if (isRestoreCheckout.value) {
+    showCheckoutModal.value = true
+    return
+  }
+  // Nghiệp vụ Master checkout không yêu cầu màn hình xác nhận danh sách phòng.
+  if (checkedRooms.length === 0 && !selectedRoomItem.value) {
+    submitCheckout()
+    return
+  }
   checkoutGuestSelections.value = Object.fromEntries(
     checkedRooms.map(({ room }) => [room.id, activeCheckoutGuests(room).map(guest => guest.id)])
   )
   checkoutGuestIds.value = checkedRooms.length === 1
-    ? checkedRooms[0].room.allGuests.filter(g => g?.id).map(g => g.id)
-    : (selectedRoomItem.value ? checkoutGuests.value.map(g => g.id) : [])
+    ? checkoutGuestOptions(checkedRooms[0].room).map(guest => guest.id)
+    : (selectedRoomItem.value ? checkoutGuestOptions(selectedRoomItem.value).map(guest => guest.id) : [])
   showCheckoutModal.value = true
 }
 const submitCheckout = async () => {
   checkoutError.value = ''
-  if (selectedRoomItem.value && checkoutGuestIds.value.length === 0) { checkoutError.value = 'Phải chọn tối thiểu một khách.'; return }
+  if (!isRestoreCheckout.value && selectedRoomItem.value && checkoutGuestIds.value.length === 0) { checkoutError.value = 'Phải chọn tối thiểu một khách.'; return }
   isServiceOperationLoading.value = true
   try {
+    if (isRestoreCheckout.value) {
+      if (selectedRoomItem.value) await restoreRoomCheckout(selectedRoomItem.value.roomId || selectedRoomItem.value.id)
+      else await restoreBookingCheckout(selectedBooking.value.bookingId)
+      showCheckoutModal.value = false
+      await refreshCheckoutData()
+      uiStore.showToast(selectedRoomItem.value ? 'Khôi phục checkout phòng thành công.' : 'Khôi phục checkout Master thành công.', 'success')
+      return
+    }
     const checkedRooms = selectedCheckoutRooms.value
     if (checkedRooms.length > 1) {
-      for (const { room } of checkedRooms) {
-        const guestIds = (checkoutGuestSelections.value[room.id] || []).filter(guestId => activeCheckoutGuests(room).some(guest => String(guest.id) === String(guestId)))
-        if (guestIds.length === 0) throw new Error(`Phòng ${room.roomNumber || room.roomId} chưa có khách hợp lệ.`)
-        await checkoutRoom(room.roomId || room.id, guestIds)
+      if (!checkoutPreview.value) {
+        const response = await previewCheckoutRooms(selectedBooking.value.bookingId, checkedRooms.map(({ room }) => room.roomId || room.id))
+        checkoutPreview.value = response.data?.data || null
+        const failed = (checkoutPreview.value?.rooms || []).filter(room => !room.eligible)
+        const messages = failed.map(room => `${room.room_number || room.room_id}: ${room.message}`).join('; ')
+        checkoutError.value = `${checkoutPreview.value?.master_unpaid ? 'Master còn công nợ nhóm. Xác nhận để tiếp tục. ' : ''}${messages || 'Đã kiểm tra điều kiện. Bấm Trả phòng để thực hiện các phòng hợp lệ.'}`
+        return
       }
-    } else if (checkedRooms.length === 1) {
-      await checkoutRoom(checkedRooms[0].room.roomId || checkedRooms[0].room.id, checkoutGuestIds.value)
-    } else if (selectedRoomItem.value) await checkoutRoom(selectedRoomItem.value.roomId || selectedRoomItem.value.id, checkoutGuestIds.value)
-    else await checkoutBooking(selectedBooking.value.bookingId)
+      if (checkoutPreview.value.master_unpaid && !masterDebtConfirmed.value) {
+        checkoutError.value = 'Cần xác nhận tiếp tục khi Master còn công nợ nhóm.'
+        return
+      }
+      const successfulRooms = []
+      const failedRooms = []
+      const eligibleRoomIds = new Set((checkoutPreview.value.rooms || []).filter(room => room.eligible).map(room => String(room.room_id)))
+      for (const { room } of checkedRooms.filter(({ room }) => eligibleRoomIds.has(String(room.roomId || room.id)))) {
+        try {
+          const guestIds = (checkoutGuestSelections.value[room.id] || []).filter(guestId => activeCheckoutGuests(room).some(guest => String(guest.id) === String(guestId)))
+          if (guestIds.length === 0) throw new Error(`Phòng ${room.roomNumber || room.roomId} chưa có khách hợp lệ.`)
+          await checkoutRoom(room.roomId || room.id, guestIds)
+          successfulRooms.push(room.roomNumber || room.roomId)
+        } catch (err) {
+          failedRooms.push(`${room.roomNumber || room.roomId}: ${err?.response?.data?.message || err.message || 'Không đủ điều kiện checkout'}`)
+        }
+      }
+      if (failedRooms.length > 0) {
+        await refreshCheckoutData()
+        checkoutError.value = `${successfulRooms.length ? `Đã checkout: ${successfulRooms.join(', ')}. ` : ''}Không checkout: ${failedRooms.join('; ')}`
+        uiStore.showToast('Một số phòng chưa đủ điều kiện checkout.', 'warning')
+        return
+      }
+    } else if (checkedRooms.length === 1 || selectedRoomItem.value) {
+      const room = checkedRooms.length === 1 ? checkedRooms[0].room : selectedRoomItem.value
+      const childIds = checkoutGuestIds.value.filter(id => (room.rawRoom?.children || []).some(child => String(child.id) === String(id)))
+      const adultIds = checkoutGuestIds.value.filter(id => !childIds.some(childId => String(childId) === String(id)))
+      for (const childId of childIds) await checkoutChild(room.roomId || room.id, childId)
+      if (adultIds.length > 0) await checkoutRoom(room.roomId || room.id, adultIds)
+      else if (childIds.length === 0) throw new Error('Phải chọn tối thiểu một khách.')
+    } else await checkoutBooking(selectedBooking.value.bookingId)
     showCheckoutModal.value = false
     await refreshCheckoutData()
     uiStore.showToast('Checkout thành công.', 'success')
@@ -243,22 +338,51 @@ const submitCheckout = async () => {
     earlyCheckoutData.value = ['early_checkout', 'early_checkout_master'].includes(err?.response?.data?.code)
       ? err.response.data.data
       : null
-    checkoutError.value = err?.response?.data?.message || 'Không thể checkout.'
+    checkoutError.value = err?.response?.data?.message || (isRestoreCheckout.value ? 'Không thể khôi phục checkout.' : 'Không thể checkout.')
   } finally { isServiceOperationLoading.value = false }
 }
 const chargeEarlyCheckout = async () => {
-  if (!earlyCheckoutData.value) return
+  if (!earlyCheckoutData.value || earlyChargeDates.value.length === 0) { checkoutError.value = 'Chọn ít nhất một ngày để charge tiền phòng.'; return }
   isServiceOperationLoading.value = true
   try {
-    const rooms = Array.isArray(earlyCheckoutData.value.rooms)
-      ? earlyCheckoutData.value.rooms
-      : [earlyCheckoutData.value]
-    for (const room of rooms) {
-      await postRoomCharge({ booking_room_id: room.room_id, date_from: room.remaining_from, date_to: room.remaining_to, mode: 'auto', folio: 1, description: 'Tiền phòng các đêm còn lại khi checkout sớm', currency: 'VND' })
+    for (const date of earlyChargeDates.value) {
+      await postRoomCharge({ booking_room_id: earlyCheckoutData.value.room_id, date_from: date, date_to: date, mode: 'auto', folio: 1, charge_percent: earlyChargePercent.value, description: 'Tiền phòng các đêm còn lại khi checkout sớm', currency: 'VND' })
     }
+    await refreshCheckoutData()
+    showEarlyChargeModal.value = false
     earlyCheckoutData.value = null
     checkoutError.value = 'Đã charge tiền phòng các đêm còn lại. Vui lòng bấm Checkout lại.'
   } catch (err) { checkoutError.value = err?.response?.data?.message || 'Không thể charge tiền phòng.' }
+  finally { isServiceOperationLoading.value = false }
+}
+
+const openEarlyChargeModal = () => {
+  if (!earlyCheckoutData.value) return
+  const dates = Array.isArray(earlyCheckoutData.value.remaining_dates)
+    ? earlyCheckoutData.value.remaining_dates
+    : (() => {
+        const range = []
+        for (let date = new Date(`${earlyCheckoutData.value.remaining_from}T00:00:00`); date <= new Date(`${earlyCheckoutData.value.remaining_to}T00:00:00`); date.setDate(date.getDate() + 1)) range.push(localDateInput(date))
+        return range
+      })()
+  earlyChargeDateOptions.value = dates
+  earlyChargeDates.value = [...dates]
+  earlyChargePercent.value = 100
+  showEarlyChargeModal.value = true
+}
+
+const checkoutEarlyWithoutCharge = async () => {
+  if (!selectedRoomItem.value) return
+  isServiceOperationLoading.value = true
+  try {
+    const childIds = checkoutGuestIds.value.filter(id => (selectedRoomItem.value.rawRoom?.children || []).some(child => String(child.id) === String(id)))
+    const adultIds = checkoutGuestIds.value.filter(id => !childIds.some(childId => String(childId) === String(id)))
+    for (const childId of childIds) await checkoutChild(selectedRoomItem.value.roomId || selectedRoomItem.value.id, childId)
+    if (adultIds.length > 0) await checkoutRoom(selectedRoomItem.value.roomId || selectedRoomItem.value.id, adultIds, { skip_remaining_room_charge: true })
+    showCheckoutModal.value = false
+    await refreshCheckoutData()
+    uiStore.showToast('Checkout sớm thành công.', 'success')
+  } catch (err) { checkoutError.value = err?.response?.data?.message || 'Không thể checkout sớm.' }
   finally { isServiceOperationLoading.value = false }
 }
 
@@ -275,7 +399,7 @@ const displayedBookingsList = ref([])
 
 const selectedCheckoutRooms = computed(() => allBookingsList.value.flatMap(booking => (
   (booking.roomItems || [])
-    .filter(room => room.checked && [0, 1].includes(Number(room.rawRoom?.status ?? room.status)))
+    .filter(room => room.checked && Number(room.rawRoom?.status ?? room.status) === 1)
     .map(room => ({ booking, room }))
 )))
 const checkoutGuestSelections = ref({})
@@ -396,13 +520,18 @@ const loadSystemDate = async () => {
 const loadCheckoutBookings = async () => {
   isLoading.value = true
   try {
+    const activeFilter = appliedCheckoutFilter.value
     const params = {}
-    if (false) {
-      // Lấy cả các trạng thái booking để lọc chính xác theo trạng thái từng phòng.
+    if (activeFilter.register === 'old') {
+      // Đăng ký cũ gồm Master checkout và Booking còn hiệu lực có phòng checkout.
       params.status = '0,1,2'
-
     } else {
       params.status = '0,1'
+    }
+    if (activeFilter.departureEnabled && activeFilter.dateFrom && activeFilter.dateTo) {
+      params.from_date = activeFilter.dateFrom
+      params.to_date = activeFilter.dateTo
+      params.date_type = 'departure'
     }
 
     const res = await fetchBookings(params)
@@ -424,21 +553,28 @@ const loadCheckoutBookings = async () => {
 
       const roomItems = []
       const masterSend = b.is_master_room_rate !== undefined ? Boolean(b.is_master_room_rate) : true
+      const bookingIsCheckedOut = isCheckedOutRecord(b)
+      const bookingIsVirtual = Boolean(b.is_virtual || b.is_internal || (b.booking_rooms || []).some(room => (
+        room.is_virtual || room.is_internal || room.room?.is_virtual || room.room?.is_internal
+      )))
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
         b.booking_rooms.forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
           const isVirtualRoom = Boolean(r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || !roomNo)
-          if ((!roomNo && !isVirtualRoom) || ![0, 1].includes(Number(r.status))) return
+          const roomIsCheckedOut = isCheckedOutRecord(r)
+          const includeRoom = activeFilter.register === 'old'
+            ? roomIsCheckedOut
+            : activeFilter.register === 'virtual'
+              ? isVirtualRoom && Number(r.status) === 1 && !roomIsCheckedOut
+              : Number(r.status) === 1 && !roomIsCheckedOut
+          if ((!roomNo && !isVirtualRoom) || !includeRoom) return
           const displayRoomNo = roomNo || 'PM'
-          const roomArrivalDate = String(r.arrival_date || b.arrival_date || '').slice(0, 10)
-          const checkoutSystemDate = String(systemDate.value || new Date().toISOString().slice(0, 10)).slice(0, 10)
-          if (roomArrivalDate && roomArrivalDate > checkoutSystemDate) return
           
           const roomGuests = []
           if (r.guests && Array.isArray(r.guests) && r.guests.length > 0) {
             r.guests.forEach(g => {
-              if ([2, 3].includes(Number(g.status))) return
+              if (Number(g.status) === 3 || (Number(g.status) === 2 && activeFilter.register !== 'old')) return
               const gName = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
               // Mỗi liên kết khách-phòng phải hiện thành một lựa chọn riêng.
               // Không loại trùng theo tên vì hai khách có thể cùng tên.
@@ -472,7 +608,7 @@ const loadCheckoutBookings = async () => {
           const processedBillIdsInRoom = new Set()
 
           // 1. Lấy từ master_service_bills / service_bills của booking nếu bill đó gắn với phòng này
-          const allBookingBills = b.master_service_bills || b.service_bills || []
+          const allBookingBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
           allBookingBills.forEach(sb => {
             if (Number(sb.Edit) === 1) return
             if (!isRoomCharge(sb)) return
@@ -583,6 +719,7 @@ const loadCheckoutBookings = async () => {
             code: code,
             roomNumber: displayRoomNo,
             isVirtual: isVirtualRoom,
+            isCheckedOut: roomIsCheckedOut,
             guestName: roomGuests[0].name,
             allGuests: roomGuests,
             primaryGuestId: primaryGuestId,
@@ -599,18 +736,16 @@ const loadCheckoutBookings = async () => {
         })
       }
 
-      if (roomItems.length === 0) return
-
-      const masterBills = (b.master_service_bills && b.master_service_bills.length > 0)
-        ? b.master_service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
-        : (b.service_bills ? b.service_bills.filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0') : [])
+      const masterBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
+        .filter(sb => !sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
 
       const masterOnlyServices = masterBills
         .filter(bill => Number(bill.Edit) !== 1)
         .reduce((total, bill) => total + (Number(bill.Amount) || 0), 0)
 
-      const sumMasterRoomCharges = roomItems.reduce((acc, rItem) => acc + (Number(rItem.masterRoomChargeAmount) || 0), 0)
-      const masterServiceTotal = masterSend ? (masterOnlyServices + sumMasterRoomCharges) : masterOnlyServices
+      // Bill RM đã chuyển/current owner ở Master đã có trong masterOnlyServices.
+      // Không cộng lại từ roomItems để tránh nhân đôi tiền phòng sau checkout/transfer.
+      const masterServiceTotal = masterOnlyServices
 
       const masterDepositTotal = (b.payments || [])
         .filter(payment => payment.pack2 === 'DPR' && Number(payment.edit_flag) === 0 && !payment.deleted_at && !payment.booking_room_id)
@@ -620,6 +755,13 @@ const loadCheckoutBookings = async () => {
       const masterPaidAmount = (b.payments || [])
         .filter(p => (!p.edit_flag || Number(p.edit_flag) === 0) && !p.deleted_at && !p.booking_room_id)
         .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+      const includeBooking = activeFilter.register === 'old'
+        ? bookingIsCheckedOut || roomItems.length > 0
+        : activeFilter.register === 'virtual'
+          ? bookingIsVirtual
+          : true
+      if (!includeBooking) return
 
       formatted.push({
         id: `B${b.id}`,
@@ -631,7 +773,8 @@ const loadCheckoutBookings = async () => {
         paidAmount: masterPaidAmount,
         arrivalDate: b.arrival_date || '',
         departureDate: b.departure_date || '',
-        isVirtual: Boolean(b.is_virtual || roomItems.some(room => room.isVirtual)),
+        isVirtual: bookingIsVirtual,
+        isCheckedOut: bookingIsCheckedOut,
         note: b.note || '',
         checked: false,
         roomItems: roomItems,
@@ -879,7 +1022,7 @@ const servicesList = computed(() => {
 
     // Lấy thêm các bill ServiceBill thuộc về phòng này
     if (rawB) {
-      const allBills = rawB.master_service_bills || rawB.service_bills || []
+      const allBills = mergeServiceBills(rawB.master_service_bills || [], rawB.service_bills || [])
       allBills.forEach((sb, idx) => {
         if (Number(sb.Edit) === 1) return
         if (sb.ServiceId !== 'RM' && sb.ServiceId !== 'RMS') return
@@ -910,9 +1053,7 @@ const servicesList = computed(() => {
 
     // 1. Dịch vụ thuộc Master, bao gồm cả bill đã thanh toán để giữ lịch sử
     // trên bảng dịch vụ; tổng tiền phải thanh toán vẫn chỉ tính bill chưa trả.
-    const allBillsSource = (rawB?.master_service_bills && rawB.master_service_bills.length > 0)
-      ? rawB.master_service_bills
-      : (rawB?.service_bills || [])
+    const allBillsSource = mergeServiceBills(rawB?.master_service_bills || [], rawB?.service_bills || [])
 
     const masterBills = allBillsSource.filter(sb => {
       if (Number(sb.Edit) === 1) return false
@@ -1220,7 +1361,7 @@ const guestRoomServiceAmount = (booking, room, guestId) => {
     }
   })
 
-  const allBookingBills = booking.rawBooking?.master_service_bills || booking.rawBooking?.service_bills || []
+  const allBookingBills = mergeServiceBills(booking.rawBooking?.master_service_bills || [], booking.rawBooking?.service_bills || [])
   allBookingBills.forEach(sb => {
     if (Number(sb.Edit) === 1) return
     const roomCharge = isRoomCharge(sb)
@@ -2258,10 +2399,10 @@ onUnmounted(() => {
           @click="openCheckoutModal"
           :disabled="!selectedBooking || isServiceOperationLoading"
           class="w-full flex items-center justify-center gap-1.5 px-2 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-semibold shadow-sm transition-colors text-xs"
-          :title="isSidebarCollapsed ? 'Trả phòng' : ''"
+          :title="isSidebarCollapsed ? (isRestoreCheckout ? 'Khôi phục checkout' : 'Trả phòng') : ''"
         >
           <LogOut class="w-3.5 h-3.5 rotate-180 shrink-0" />
-          <span v-if="!isSidebarCollapsed" class="truncate">Trả phòng</span>
+          <span v-if="!isSidebarCollapsed" class="truncate">{{ isRestoreCheckout ? 'Khôi phục checkout' : 'Trả phòng' }}</span>
         </button>
       </div>
     </aside>
@@ -2346,7 +2487,7 @@ onUnmounted(() => {
           </div>                    <div ref="filterContainerRef" class="checkout-register-filter relative">
             <button type="button" @click.stop="showRegisterFilterDropdown = !showRegisterFilterDropdown" class="checkout-filter-button flex items-center gap-1 px-2 py-1 text-xs font-semibold text-white bg-blue-600 border border-blue-600 rounded">
               <Filter class="w-3.5 h-3.5" />
-              <span>{{ registerFilter === 'current' ? 'Đăng ký hiện tại' : registerFilter === 'virtual' ? 'Phòng ảo' : 'Đăng ký cũ' }}</span>
+              <span>{{ appliedCheckoutFilter.register === 'current' ? 'Đăng ký hiện tại' : appliedCheckoutFilter.register === 'virtual' ? 'Phòng ảo' : 'Đăng ký cũ' }}</span>
               <ChevronDown class="w-3 h-3" />
             </button>
             <div v-if="showRegisterFilterDropdown" class="checkout-filter-dropdown" @click.stop>
@@ -2414,7 +2555,7 @@ onUnmounted(() => {
                   <tr
                     @click="selectBookingHeader(b)"
                     :class="[
-                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : 'bg-[#f0f4ff] border-l-[3px] border-indigo-500',
+                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-[#f0f4ff] border-l-[3px] border-indigo-500',
                       'cursor-pointer transition-colors'
                     ]"
                   >
@@ -2439,7 +2580,7 @@ onUnmounted(() => {
                         :key="`${r.id}-${guest.id || gIdx}`"
                         @click="selectRoomItemRow(b, r, guest)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
@@ -2456,7 +2597,7 @@ onUnmounted(() => {
                       <tr
                         @click="selectRoomItemRow(b, r)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
@@ -2763,7 +2904,14 @@ onUnmounted(() => {
       <div class="w-full max-w-md rounded-xl bg-white shadow-2xl">
         <div class="flex items-center justify-between rounded-t-xl bg-sky-300 px-4 py-3 text-white"><span class="font-semibold">Xác nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
         <div class="space-y-2 p-5">
-          <template v-if="selectedCheckoutRooms.length > 1">
+          <template v-if="isRestoreCheckout">
+            <p class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn khôi phục checkout {{ selectedRoomItem ? `phòng ${selectedRoomItem.roomNumber || ''}` : 'Master' }} không?</p>
+          </template>
+          <template v-else-if="selectedCheckoutRooms.length > 1">
+            <div v-if="checkoutPreview" class="space-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
+              <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}<span v-if="room.message">: {{ room.message }}</span></p>
+              <label v-if="checkoutPreview.master_unpaid" class="mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800"><input v-model="masterDebtConfirmed" type="checkbox" class="accent-amber-500" /> Master còn công nợ nhóm, vẫn tiếp tục checkout phòng hợp lệ.</label>
+            </div>
             <p class="py-2 text-center text-sm text-slate-700">Đã chọn {{ selectedCheckoutRooms.length }} phòng để checkout.</p>
             <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
               <div v-for="selection in selectedCheckoutRooms" :key="selection.room.id" class="rounded border px-3 py-2 text-xs text-slate-700">
@@ -2776,14 +2924,29 @@ onUnmounted(() => {
             </div>
           </template>
           <template v-else-if="selectedRoomItem">
-            <label v-for="guest in checkoutGuests" :key="guest.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><span>{{ guest.name }}</span><input v-model="checkoutGuestIds" :value="guest.id" type="checkbox" class="h-4 w-4 accent-sky-500" /></label>
-            <p v-if="checkoutGuests.length === 0" class="text-sm text-rose-600">Phòng chưa có khách hợp lệ để checkout.</p>
+            <label v-for="guest in checkoutGuestOptions(selectedRoomItem)" :key="guest.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><span>{{ guest.name }}</span><input v-model="checkoutGuestIds" :value="guest.id" type="checkbox" class="h-4 w-4 accent-sky-500" /></label>
+            <p v-if="checkoutGuestOptions(selectedRoomItem).length === 0" class="text-sm text-rose-600">Phòng chưa có khách hợp lệ để checkout.</p>
           </template>
           <p v-else class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn trả phòng toàn bộ Master không?</p>
           <p v-if="checkoutError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ checkoutError }}</p>
-          <button v-if="earlyCheckoutData" @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading" class="w-full rounded bg-amber-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Charge tiền phòng còn lại</button>
+          <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
+            <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="rounded bg-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Đóng</button>
+            <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Trả phòng</button>
+            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tiền phòng</button>
+          </div>
         </div>
-        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Checkout</button></div>
+        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : 'Checkout') }}</button></div>
+      </div>
+    </div>
+
+    <div v-if="showEarlyChargeModal" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-sm overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between bg-sky-300 px-4 py-3 text-sm font-semibold text-white"><span>Xác nhận</span><button @click="showEarlyChargeModal = false" class="text-2xl leading-none">×</button></div>
+        <div class="space-y-4 p-5 text-xs text-slate-700">
+          <div><p class="mb-2 font-semibold">Chọn ngày</p><label v-for="date in earlyChargeDateOptions" :key="date" class="mb-1 flex items-center gap-2"><input v-model="earlyChargeDates" :value="date" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ date.split('-').reverse().join('-') }}</label></div>
+          <label class="flex items-center gap-4"><span>% Charge</span><input v-model.number="earlyChargePercent" type="number" min="0" max="100" step="1" class="w-32 rounded border border-slate-300 px-2 py-1.5 text-right" /></label>
+        </div>
+        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="rounded bg-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Tiền phòng</button></div>
       </div>
     </div>
 
