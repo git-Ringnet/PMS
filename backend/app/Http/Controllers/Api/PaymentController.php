@@ -970,11 +970,43 @@ class PaymentController extends Controller
                 ->whereNull('deleted_at')
                 ->sum('amount');
             Booking::where('id', $bookingId)->update(['payment_value' => $totalDeposit]);
+
+            $this->completeBookingAfterMasterSettlement($booking);
         });
 
         return response()->json([
             'success' => true,
             'message' => 'Thanh toán Folio ' . $folioId . ' thành công!',
         ]);
+    }
+
+    /** Complete a fully settled Master after all rooms have checked out. */
+    private function completeBookingAfterMasterSettlement(Booking $booking): void
+    {
+        $hasActiveRooms = $booking->bookingRooms()
+            ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
+            ->exists();
+        if ($hasActiveRooms) return;
+
+        $hasUnpaidMasterBills = \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->where(function ($q) use ($booking) {
+                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
+                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
+            })
+            ->where(function ($q) { $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0'); })
+            ->exists();
+        if ($hasUnpaidMasterBills) return;
+
+        $hasUnusedDeposit = Payment::where('booking_id', $booking->id)
+            ->where('edit_flag', 0)
+            ->whereNull('payment_id')
+            ->where(function ($q) { $q->where('pack2', Payment::PACK2_DEPOSIT)->orWhere('pack4', 'AP'); })
+            ->exists();
+        if ($hasUnusedDeposit) return;
+
+        $booking->update(['status' => Booking::STATUS_CHECKOUT]);
     }
 }

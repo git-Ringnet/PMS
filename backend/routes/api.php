@@ -324,7 +324,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
     Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom']);
+    Route::post('/bookings/{bookingId}/checkout-preview', [\App\Http\Controllers\Api\GuestController::class, 'previewCheckoutRooms']);
     Route::post('/bookings/{bookingId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutBooking']);
+    Route::post('/booking-rooms/{roomId}/children/{childId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutChild']);
+    Route::post('/booking-rooms/{roomId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreRoomCheckout']);
+    Route::post('/bookings/{bookingId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreBookingCheckout']);
     Route::get('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
     Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
     Route::put('/booking-children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);

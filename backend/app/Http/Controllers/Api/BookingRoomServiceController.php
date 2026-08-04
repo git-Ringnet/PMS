@@ -1181,6 +1181,7 @@ class BookingRoomServiceController extends Controller
             'date_to'         => 'required|date|after_or_equal:date_from',
             'mode'            => 'required|in:auto,update,surcharge',
             'rate'            => 'nullable|numeric|min:0',
+            'charge_percent'  => 'nullable|numeric|min:0|max:100',
             'folio'           => 'nullable|integer|between:1,3',
             'description'     => 'nullable|string|max:400',
             'currency'        => 'nullable|string|max:3',
@@ -1239,6 +1240,7 @@ class BookingRoomServiceController extends Controller
         $folio    = $request->folio ?? 1;
         $currency = $request->currency ?? 'VND';
         $mode     = $request->mode; // 'auto' | 'update' | 'surcharge'
+        $chargePercent = (float) ($request->charge_percent ?? 100);
         $user     = Auth::user()?->username ?? 'system';
         $description = $request->description ?: 'Dịch vụ phòng nghỉ';
 
@@ -1248,7 +1250,7 @@ class BookingRoomServiceController extends Controller
         DB::transaction(function () use (
             $roomsToPost, $booking, $setting, $isBookingPost,
             $dateFrom, $dateTo, $folio, $currency, $mode,
-            $request, $user, $description, &$createdBills
+            $request, $user, $description, $chargePercent, &$createdBills
         ) {
             foreach ($roomsToPost as $targetRoom) {
                 $primaryGuest = $targetRoom->guests()->where('is_primary', 1)->with('guest')->first()
@@ -1308,6 +1310,8 @@ class BookingRoomServiceController extends Controller
                         $rate = (float)$request->rate;
                     }
 
+                    if ($mode === 'auto') $rate = round($rate * $chargePercent / 100, 2);
+
                     $isRoomNight = ($mode === 'surcharge') ? 0 : 1;
                     $totalAmount = $rate;
 
@@ -1315,7 +1319,7 @@ class BookingRoomServiceController extends Controller
                     $breakfastAmount = 0;
                     if ($mode === 'auto' && $targetRoom->breakfast) {
                         $breakfastRate   = (float)($setting?->breakfast_adult_rate ?? 0);
-                        $breakfastAmount = $breakfastRate * max(1, (int)$targetRoom->adults);
+                        $breakfastAmount = round($breakfastRate * max(1, (int)$targetRoom->adults) * $chargePercent / 100, 2);
                     }
 
                     $targetDesc = $description;
