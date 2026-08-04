@@ -2795,7 +2795,8 @@ async function handleSaveNewBooking() {
   if (!modalForm.value.customerSourceId) { uiStore.showToast('Vui lòng chọn Nguồn khách!', 'warning'); return }
 
   const sysDateStr = systemDate.value || parseApiDate(new Date())
-  if (modalForm.value.checkIn < sysDateStr) {
+  const isCheckInChanged = isEditModal.value && activeTab.value && modalForm.value.checkIn !== activeTab.value.checkIn
+  if ((!isEditModal.value || isCheckInChanged) && modalForm.value.checkIn < sysDateStr) {
     uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'warning')
     return
   }

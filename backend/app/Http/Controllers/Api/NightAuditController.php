@@ -189,9 +189,14 @@ class NightAuditController extends Controller
         $username   = Auth::user()?->username ?? 'admin';
         $shift      = $this->getSystemShift();
 
-        DB::transaction(function () use ($room, $systemDate, $chargeOption, $userReason, $username, $shift) {
-            // 1. Cập nhật trạng thái phòng thuê = 4 (Noshow)
-            $room->update(['status' => 4]);
+        $warning = null;
+
+        DB::transaction(function () use ($room, $systemDate, $chargeOption, $userReason, $username, $shift, &$warning) {
+            // 1. Cập nhật trạng thái phòng thuê = 4 (Noshow) + tăng no_show_day [Fix C]
+            $room->update([
+                'status'      => 4,
+                'no_show_day' => $room->no_show_day + 1,
+            ]);
 
             // Cập nhật khách và trẻ em gán vào phòng
             BookingRoomGuest::where('booking_room_id', $room->id)->update(['status' => 4]);
@@ -208,9 +213,15 @@ class NightAuditController extends Controller
 
             // 3. Nếu toàn bộ phòng trong booking noshow -> update booking status = 4
             $booking = $room->booking;
-            $allNoShow = $booking->bookingRooms()->where('status', '!=', 4)->count() === 0;
+            $remainingBooked = $booking->bookingRooms()->where('status', BookingRoom::STATUS_BOOKED)->count();
+
+            // [Fix D] Cảnh báo nếu còn phòng khác trong booking chưa xử lý
+            if ($remainingBooked > 0) {
+                $warning = "Booking {$booking->code} còn {$remainingBooked} phòng chưa xử lý (vẫn ở trạng thái Đặt trước).";
+            }
 
             // Nếu noshow có charge: giữ booking status = 1 (Reservation) để kế toán thanh toán
+            $allNoShow = $booking->bookingRooms()->where('status', '!=', 4)->count() === 0;
             if ($allNoShow && $chargeOption === 'no_charge') {
                 $booking->update(['status' => 4]);
             }
@@ -231,13 +242,22 @@ class NightAuditController extends Controller
                 'shift'           => $shift,
             ]);
 
-            // 5. Post phí noshow (tính cho toàn bộ đêm đã đặt)
+            // 5. Post phí noshow (chỉ tính cho đêm đầu tiên - ngày đến)
             if ($chargeOption !== 'no_charge') {
-                $current = Carbon::parse($room->arrival_date);
-                $depDate = Carbon::parse($room->departure_date);
-                while ($current->lt($depDate)) {
-                    $this->postSingleNightCharge($room, $current, $chargeOption, $username, $reasonText);
-                    $current->addDay();
+                $arrivalDate = Carbon::parse($room->arrival_date);
+                $this->postSingleNightCharge($room, $arrivalDate, $chargeOption, $username, $reasonText);
+
+                // [Fix E] Post dịch vụ bổ sung từ booking_room_services khi all_charged (chỉ tính ngày đến)
+                if ($chargeOption === 'all_charged') {
+                    $extraServices = BookingRoomService::where('booking_room_id', $room->id)
+                        ->where('service_date', $arrivalDate->toDateString())
+                        ->where('service_code', '!=', 'RM')
+                        ->where('is_posted', 0)
+                        ->get();
+
+                    foreach ($extraServices as $service) {
+                        $this->postSetupServiceBill($room, $service, $username);
+                    }
                 }
             }
         });
@@ -245,6 +265,7 @@ class NightAuditController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Đã ghi nhận khách không đến và giải phóng phòng thành công.',
+            'warning' => $warning,  // [Fix D] trả về warning nếu booking còn phòng chưa xử lý
         ]);
     }
 
@@ -374,6 +395,8 @@ class NightAuditController extends Controller
                     ->where('status', 'New')
                     ->get();
 
+                $skippedLocks = []; // [Fix F] Thu thập danh sách phòng lock bị skip
+
                 foreach ($startingLocks as $lock) {
                     // Kiểm tra xem phòng có khách đang ở không
                     $hasInhouse = BookingRoom::where('room_number', $lock->room_number)
@@ -381,7 +404,12 @@ class NightAuditController extends Controller
                         ->exists();
 
                     if ($hasInhouse) {
-                        // Nếu có khách, giữ status là New (planned) và cảnh báo, không OOO vật lý
+                        // [Fix F] Ghi lại thay vì silent continue
+                        $skippedLocks[] = [
+                            'room_number' => $lock->room_number,
+                            'lock_type'   => $lock->lock_type,
+                            'reason'      => 'Phòng đang có khách, không thể khóa tự động',
+                        ];
                         continue;
                     }
 
@@ -401,8 +429,9 @@ class NightAuditController extends Controller
             event(new NightAuditUpdated('completed', 'Chuyển ngày hệ thống thành công sang: ' . $nextDate->toDateString()));
 
             return response()->json([
-                'success' => true,
-                'message' => 'Chuyển ngày hệ thống thành công sang ' . $nextDate->toDateString(),
+                'success'       => true,
+                'message'       => 'Chuyển ngày hệ thống thành công sang ' . $nextDate->toDateString(),
+                'skipped_locks' => $skippedLocks ?? [], // [Fix F]
             ]);
 
         } catch (\Throwable $e) {
@@ -417,6 +446,54 @@ class NightAuditController extends Controller
                 'message' => 'Lỗi khi thực hiện sang ngày: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * POST: Gia hạn đêm ở (Extend Stay) cho phòng đang đi [Bug B]
+     * POST /api/night-audit/extend-stay
+     */
+    public function extendStay(Request $request)
+    {
+        $request->validate([
+            'booking_room_id' => 'required|string|exists:booking_rooms,id',
+            'nights'          => 'required|integer|min:1|max:30',
+        ]);
+
+        $room   = BookingRoom::with('booking')->findOrFail($request->booking_room_id);
+        $nights = (int) $request->nights;
+
+        if ($room->status !== BookingRoom::STATUS_CHECKED_IN) {
+            return response()->json(['success' => false, 'message' => 'Chỉ gia hạn được phòng đang ở (In-house).'], 422);
+        }
+
+        $oldDeparture = Carbon::parse($room->departure_date);
+        $newDeparture = $oldDeparture->copy()->addDays($nights);
+
+        DB::transaction(function () use ($room, $newDeparture, $nights) {
+            // Cập nhật departure_date của phòng thuê
+            $room->update([
+                'departure_date'        => $newDeparture->toDateString(),
+                'actual_departure_date' => $newDeparture->toDateString(),
+                'num_of_days'           => $room->num_of_days + $nights,
+            ]);
+
+            // Cập nhật booking.departure_date nếu đây là phòng có ngày đi muộn nhất
+            $booking = $room->booking;
+            if ($booking) {
+                $maxDep = $booking->bookingRooms()
+                    ->where('status', '!=', 4)
+                    ->max('departure_date');
+                if ($maxDep && Carbon::parse($maxDep)->gt(Carbon::parse($booking->departure_date))) {
+                    $booking->update(['departure_date' => $maxDep]);
+                }
+            }
+        });
+
+        return response()->json([
+            'success'        => true,
+            'message'        => "Gia hạn thành công {$nights} đêm. Ngày đi mới: " . $newDeparture->toDateString(),
+            'departure_date' => $newDeparture->toDateString(),
+        ]);
     }
 
     /**
