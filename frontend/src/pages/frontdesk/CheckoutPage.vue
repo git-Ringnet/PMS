@@ -556,6 +556,8 @@ const loadCheckoutBookings = async () => {
       params.date_type = 'departure'
     }
 
+    params.with_billing = true
+
     const res = await fetchBookings(params)
     const list = res.data?.data || res.data || []
 

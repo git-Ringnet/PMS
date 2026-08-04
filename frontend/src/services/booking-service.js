@@ -146,6 +146,7 @@ export const uploadGuestAvatar = (guestId, formData) => http.post(`/guests/${gue
   }
 })
 export const fetchCancelReasons = () => http.get('/cancel-reasons')
+export const fetchNationalities = (params = {}) => http.get('/nationalities', { params })
 
 // ==================== POST BILLS (THÊM DỊCH VỤ LỄ TÂN) ====================
 export const postFoServiceBill = (data) => http.post('/booking-room-services/post-fo-service-bill', data)

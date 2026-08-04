@@ -155,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
 
     // System configuration routes
+    Route::get('nationalities', [\App\Http\Controllers\Api\NationalityController::class, 'index']);
     Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
     Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);

@@ -20,9 +20,12 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production') || true) {
             URL::forceScheme('https');
         }
-
         // Đăng ký Event Listener toàn cục để tự động bắt các thay đổi dữ liệu của Eloquent
         \Illuminate\Support\Facades\Event::listen('eloquent.*', function ($eventName, array $data) {
+            static $dispatchedReservations = [];
+            static $dispatchedRooms = [];
+            static $roomNumberToIdMap = [];
+
             if (!str_contains($eventName, 'eloquent.created:') && 
                 !str_contains($eventName, 'eloquent.updated:') && 
                 !str_contains($eventName, 'eloquent.deleted:')) {
@@ -55,45 +58,91 @@ class AppServiceProvider extends ServiceProvider
             try {
                 if (in_array($targetType, ['Room', 'RoomLock', 'BookingRoom', 'Booking', 'BookingRoomService', 'Payment', 'BookingRoomGuest', 'Guest'])) {
                     if ($targetType === 'Room') {
-                        event(new \App\Events\RoomStatusUpdated($targetId, $model->status ?? null, "Room {$targetId} updated"));
+                        if (!in_array($targetId, $dispatchedRooms)) {
+                            $dispatchedRooms[] = $targetId;
+                            event(new \App\Events\RoomStatusUpdated($targetId, $model->status ?? null, "Room {$targetId} updated"));
+                        }
                     } elseif ($targetType === 'RoomLock') {
-                        $room = \App\Models\Room::where('room_number', $model->room_number)->first();
-                        $roomId = $room ? $room->id : null;
-                        if ($roomId) {
+                        $roomNumber = $model->room_number;
+                        $roomId = null;
+                        if ($roomNumber) {
+                            if (isset($roomNumberToIdMap[$roomNumber])) {
+                                $roomId = $roomNumberToIdMap[$roomNumber];
+                            } else {
+                                $room = \App\Models\Room::where('room_number', $roomNumber)->first();
+                                $roomId = $room ? $room->id : null;
+                                if ($roomId) {
+                                    $roomNumberToIdMap[$roomNumber] = $roomId;
+                                }
+                            }
+                        }
+                        if ($roomId && !in_array($roomId, $dispatchedRooms)) {
+                            $dispatchedRooms[] = $roomId;
                             event(new \App\Events\RoomStatusUpdated($roomId, null, "Room {$model->room_number} lock changed"));
                         }
                     } elseif ($targetType === 'BookingRoom') {
-                        $room = \App\Models\Room::where('room_number', $model->room_number)->first();
-                        $roomId = $room ? $room->id : null;
-                        if ($roomId) {
+                        $roomNumber = $model->room_number;
+                        $roomId = null;
+                        if ($roomNumber) {
+                            if (isset($roomNumberToIdMap[$roomNumber])) {
+                                $roomId = $roomNumberToIdMap[$roomNumber];
+                            } else {
+                                $room = \App\Models\Room::where('room_number', $roomNumber)->first();
+                                $roomId = $room ? $room->id : null;
+                                if ($roomId) {
+                                    $roomNumberToIdMap[$roomNumber] = $roomId;
+                                }
+                            }
+                        }
+                        if ($roomId && !in_array($roomId, $dispatchedRooms)) {
+                            $dispatchedRooms[] = $roomId;
                             event(new \App\Events\RoomStatusUpdated($roomId, null, "Booking room changed"));
                         }
-                        if ($model->booking_id) {
-                            event(new \App\Events\ReservationUpdated($model->booking_id, $action, "Booking room {$action}"));
+                        
+                        $bookingId = $model->booking_id;
+                        if ($bookingId && !in_array($bookingId, $dispatchedReservations)) {
+                            $dispatchedReservations[] = $bookingId;
+                            event(new \App\Events\ReservationUpdated($bookingId, $action, "Booking room {$action}"));
                         }
                     } elseif ($targetType === 'Booking') {
-                        event(new \App\Events\ReservationUpdated($targetId, $action, "Booking {$action}"));
+                        if (!in_array($targetId, $dispatchedReservations)) {
+                            $dispatchedReservations[] = $targetId;
+                            event(new \App\Events\ReservationUpdated($targetId, $action, "Booking {$action}"));
+                        }
                     } elseif ($targetType === 'BookingRoomService') {
                         $bookingRoom = $model->bookingRoom;
-                        if ($bookingRoom) {
-                            event(new \App\Events\ReservationUpdated($bookingRoom->booking_id, 'updated', "Service {$action}"));
+                        if ($bookingRoom && $bookingRoom->booking_id) {
+                            $bookingId = $bookingRoom->booking_id;
+                            if (!in_array($bookingId, $dispatchedReservations)) {
+                                $dispatchedReservations[] = $bookingId;
+                                event(new \App\Events\ReservationUpdated($bookingId, 'updated', "Service {$action}"));
+                            }
                         }
                     } elseif ($targetType === 'Payment') {
-                        if ($model->booking_id) {
-                            event(new \App\Events\ReservationUpdated($model->booking_id, $action, "Payment {$action}"));
+                        $bookingId = $model->booking_id;
+                        if ($bookingId && !in_array($bookingId, $dispatchedReservations)) {
+                            $dispatchedReservations[] = $bookingId;
+                            event(new \App\Events\ReservationUpdated($bookingId, $action, "Payment {$action}"));
                         }
                     } elseif ($targetType === 'BookingRoomGuest') {
                         if ($model->booking_room_id) {
                             $bookingRoom = \App\Models\BookingRoom::find($model->booking_room_id);
                             if ($bookingRoom && $bookingRoom->booking_id) {
-                                event(new \App\Events\ReservationUpdated($bookingRoom->booking_id, $action, "Guest pivot {$action}"));
+                                $bookingId = $bookingRoom->booking_id;
+                                if (!in_array($bookingId, $dispatchedReservations)) {
+                                    $dispatchedReservations[] = $bookingId;
+                                    event(new \App\Events\ReservationUpdated($bookingId, $action, "Guest pivot {$action}"));
+                                }
                             }
                         }
                     } elseif ($targetType === 'Guest') {
                         $bookingRoomIds = \App\Models\BookingRoomGuest::where('guest_id', $model->id)->pluck('booking_room_id');
                         $bookingIds = \App\Models\BookingRoom::whereIn('id', $bookingRoomIds)->pluck('booking_id')->unique();
                         foreach ($bookingIds as $bId) {
-                            event(new \App\Events\ReservationUpdated($bId, $action, "Guest info {$action}"));
+                            if (!in_array($bId, $dispatchedReservations)) {
+                                $dispatchedReservations[] = $bId;
+                                event(new \App\Events\ReservationUpdated($bId, $action, "Guest info {$action}"));
+                            }
                         }
                     }
                 }
