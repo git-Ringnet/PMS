@@ -170,7 +170,7 @@ const fetchBankAccounts = async () => {
 
 function inGroupExcluded(m) {
   const grp = Number(m.payment_group)
-  return grp === 4 || grp === 5 || m.is_free === 1 || m.is_free === true
+  return grp === 5 || m.is_free === 1 || m.is_free === true
 }
 
 const workShiftsList = ref([])

@@ -240,6 +240,7 @@ import SplitServiceModal from './components/SplitServiceModal.vue'
 import CancelServiceModal from './components/CancelServiceModal.vue'
 import SplitDepositModal from './components/SplitDepositModal.vue'
 import DeletePaymentModal from './components/DeletePaymentModal.vue'
+import DebtSettlementModal from './components/DebtSettlementModal.vue'
 const showAddServiceModal = ref(false)
 const showAdjustRoomRateModal = ref(false)
 const showHousekeepingServiceModal = ref(false)
@@ -253,6 +254,7 @@ const showTransferServiceModal = ref(false)
 const transferServiceError = ref('')
 const showTransferPaymentModal = ref(false)
 const showDeletePaymentModal = ref(false)
+const showDebtSettlementModal = ref(false)
 const transferPaymentError = ref('')
 const showSplitServiceModal = ref(false)
 const showCancelServiceModal = ref(false)
@@ -1294,6 +1296,16 @@ const selectedPaymentItems = computed(() => paymentsList.value.filter(payment =>
 const canSplitSelectedDeposit = computed(() => selectedPaymentItems.value.length === 1 && canTransferPayment(selectedPaymentItems.value[0]))
 const canTransferSelectedDeposit = computed(() => selectedPaymentItems.value.length > 0 && selectedPaymentItems.value.every(canTransferPayment))
 const hasSelectedDeposit = computed(() => selectedPaymentItems.value.length > 0)
+const isDebtPayment = (payment) => {
+  if (!payment) return false
+  const code = String(payment.paymentMethodCode || payment.paymentMethod || payment.rawPayment?.payment_method_id || '').toUpperCase()
+  const name = String(payment.paymentMethod || payment.rawPayment?.payment_method?.name || '').toLowerCase()
+  return code === 'AC' || code.includes('AC') || name.includes('công nợ') || name.includes('cong no')
+}
+const canOpenDebtSettlement = computed(() => {
+  if (selectedPaymentItems.value.length !== 1) return false
+  return isDebtPayment(selectedPaymentItems.value[0])
+})
 const canCancelSelectedServices = computed(() => (
   Boolean(selectedRoomItem.value)
   && selectedServiceItems.value.length > 0
@@ -1643,6 +1655,17 @@ const openTransferPaymentModal = () => {
   }
 }
 
+const openDebtSettlementModal = () => {
+  if (canOpenDebtSettlement.value) {
+    showDebtSettlementModal.value = true
+  }
+}
+
+const handleDebtSettlementSuccess = async () => {
+  showDebtSettlementModal.value = false
+  await handleServiceAdded()
+}
+
 const openQuickTransferBillModal = async () => {
   if (!hasQuickTransferTarget.value) {
     uiStore.showToast('Vui lòng chọn phòng nhận dịch vụ.', 'warning')
@@ -1920,12 +1943,15 @@ const paymentsList = computed(() => {
     })
 
     filteredPayments.forEach((p, idx) => {
+      const pmCode = String(p.payment_method_id || p.payment_method?.code || p.paymentMethod || '').toUpperCase()
+      const pmName = p.payment_method?.name || p.payment_method_name || (pmCode === 'AC' ? 'Công nợ' : p.payment_method_id) || ''
       payments.push({
         id: p.id || `P${idx}`,
         dateTime: formatServiceDateTime(p.date || p.payment_date || p.created_at || new Date(), p.created_at, p.open_time || p.openTime),
         department: p.department_id || '',
         description: p.description || p.note || 'Thanh toán đặt cọc / Tiền phòng',
-        paymentMethod: p.payment_method_id || '',
+        paymentMethod: pmName,
+        paymentMethodCode: pmCode,
         amount: Number(p.amount) || 0,
         unit: p.currency || 'VND',
         folio: Number(p.folio_id) || 1,
@@ -1936,7 +1962,8 @@ const paymentsList = computed(() => {
         isDeleted: p.deleted_at ? 'Có' : '',
         vatNo: p.vat_no || '',
         accounting: p.accounting || 'Đã thu',
-        userName: p.user_name || 'Admin'
+        userName: p.user_name || 'Admin',
+        rawPayment: p
       })
     })
   } else if (!selectedRoomItem.value && selectedBooking.value.paidAmount > 0) {
@@ -2439,6 +2466,17 @@ onUnmounted(() => {
           >
             <Filter class="w-3.5 h-3.5 text-white shrink-0" />
             <span v-if="!isSidebarCollapsed" class="truncate">Lọc</span>
+          </button>
+
+          <!-- Thanh toán công nợ -->
+          <button
+            v-if="canOpenDebtSettlement"
+            @click="openDebtSettlementModal"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'Thanh toán công nợ' : ''"
+          >
+            <CreditCard class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">Thanh toán công nợ</span>
           </button>
         </div>
 
@@ -3135,6 +3173,14 @@ onUnmounted(() => {
       :payment="selectedPaymentItems[0] || null"
       @close="showDeletePaymentModal = false"
       @submit="deleteSelectedPayment"
+    />
+
+    <DebtSettlementModal
+      :show="showDebtSettlementModal"
+      :payment="selectedPaymentItems[0] || null"
+      :systemDate="systemDate"
+      @close="showDebtSettlementModal = false"
+      @success="handleDebtSettlementSuccess"
     />
   </div>
 </template>
