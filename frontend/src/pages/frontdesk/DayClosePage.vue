@@ -154,6 +154,8 @@ function calculateNights(arrivalStr, departureStr) {
   return diffDays > 0 ? diffDays : 1
 }
 
+const alreadyRolledToday = ref(false)
+
 const fetchRealData = async () => {
   try {
     isLoading.value = true
@@ -163,6 +165,16 @@ const fetchRealData = async () => {
       systemDate.value = dateRes.data.data.system_date
     } else {
       systemDate.value = new Date().toISOString().split('T')[0]
+    }
+
+    // Kiểm tra trạng thái sang ngày để lấy cảnh báo trùng ngày thực tế
+    try {
+      const statusRes = await http.get('/night-audit/check-status')
+      if (statusRes.data && statusRes.data.success && statusRes.data.data) {
+        alreadyRolledToday.value = !!statusRes.data.data.already_rolled_today
+      }
+    } catch (err) {
+      console.error('Không thể kiểm tra trạng thái sang ngày:', err)
     }
 
     // 2. Lấy danh sách booking từ backend API
@@ -408,6 +420,16 @@ function handleSubNavClick(item) {
 
 // Trigger Day Close action
 async function handleRollDay() {
+  if (alreadyRolledToday.value) {
+    const doubleConfirmed = await uiStore.confirm({
+      title: 'Hệ thống đã thực hiện sang ngày hôm nay',
+      message: 'Hệ thống đã thực hiện sang ngày một lần trong ngày hôm nay. Bạn có chắc chắn muốn tiếp tục sang ngày nữa không?',
+      confirmText: 'Đồng ý',
+      cancelText: 'Hủy'
+    })
+    if (!doubleConfirmed) return
+  }
+
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận sang ngày',
     message: 'Bạn có chắc chắn muốn thực hiện chuyển ngày hệ thống?',
@@ -666,7 +688,7 @@ async function confirmNoshow() {
 <template>
   <div class="day-close-page relative flex flex-col min-h-screen bg-white text-slate-800 text-xs font-sans">
     <!-- Standard system LoadingOverlay -->
-    <LoadingOverlay :show="isLoading" />
+    <LoadingOverlay :show="isLoading || isRolling" />
 
     <!-- 1. TOP FILTER BAR WITH COUNTERS -->
     <section class="bg-white border-b border-gray-200 px-4 py-1.5 flex items-center justify-between shadow-xs sticky top-0 z-20">
@@ -885,15 +907,9 @@ async function confirmNoshow() {
           </button>
         </template>
 
-        <!-- Tab Departures Footer Button -->
+        <!-- Tab Departures Footer Button (Đã ẩn nút Gia hạn đêm phòng theo nghiệp vụ mới) -->
         <template v-else-if="activeFilterTab === 'departures'">
-          <button
-            @click="handleExtendStay"
-            class="bg-[#6184c7] hover:bg-[#4b6cb7] active:bg-[#395697] text-white px-3.5 py-1.5 rounded font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer text-xs"
-          >
-            <CalendarPlus class="w-3.5 h-3.5" />
-            <span>Gia hạn đêm phòng</span>
-          </button>
+          <!-- Người dùng tự thao tác điều chỉnh ngày đi ở các màn hình khác -->
         </template>
 
         <!-- Tab In-House / Hourly / Default Footer Buttons -->

@@ -56,6 +56,10 @@ class NightAuditController extends Controller
     {
         $systemDate = $this->getSystemDate()->toDateString();
 
+        $todayStart = Carbon::today();
+        $todayEnd = Carbon::today()->endOfDay();
+        $alreadyRolledToday = SystemDateRoll::whereBetween('actual_date', [$todayStart, $todayEnd])->exists();
+
         // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0)
         $pendingCheckIns = BookingRoom::with(['booking', 'roomClass'])
             ->whereDate('arrival_date', '<=', $systemDate)
@@ -72,6 +76,7 @@ class NightAuditController extends Controller
             'success' => true,
             'data' => [
                 'system_date' => $systemDate,
+                'already_rolled_today' => $alreadyRolledToday,
                 'pending_checkins_count' => $pendingCheckIns->count(),
                 'pending_checkouts_count' => $pendingCheckOuts->count(),
                 'pending_checkins' => $pendingCheckIns->map(fn($r) => [
@@ -154,7 +159,20 @@ class NightAuditController extends Controller
 
             // 3. Post tiền phạt đêm noshow nếu có yêu cầu
             if ($chargeOption !== 'no_charge') {
-                $this->postSingleNightCharge($room, $systemDate, $chargeOption, $username, $reasonText);
+                $this->postSingleNightCharge($room, $systemDate, $chargeOption, $username, $reasonText, true);
+
+                // Post dịch vụ bổ sung từ booking_room_services khi all_charged (chỉ tính ngày đến)
+                if ($chargeOption === 'all_charged') {
+                    $extraServices = BookingRoomService::where('booking_room_id', $room->id)
+                        ->where('service_date', $systemDate->toDateString())
+                        ->where('service_code', '!=', 'RM')
+                        ->where('is_posted', 0)
+                        ->get();
+
+                    foreach ($extraServices as $service) {
+                        $this->postSetupServiceBill($room, $service, $username);
+                    }
+                }
             }
         });
 
@@ -256,22 +274,30 @@ class NightAuditController extends Controller
                 'shift'           => $shift,
             ]);
 
-            // 5. Post phí noshow (chỉ tính cho đêm đầu tiên - ngày đến)
+            // 5. Post phí noshow cho TẤT CẢ các đêm trong khoảng lưu trú
+            // (Khác với Late Check-in chỉ tính 1 đêm — Full Noshow giải phóng phòng nên tính hết)
             if ($chargeOption !== 'no_charge') {
-                $arrivalDate = Carbon::parse($room->arrival_date);
-                $this->postSingleNightCharge($room, $arrivalDate, $chargeOption, $username, $reasonText);
+                $arrivalDate   = Carbon::parse($room->arrival_date)->startOfDay();
+                $departureDate = Carbon::parse($room->departure_date)->startOfDay();
+                $nightDate     = $arrivalDate->copy();
 
-                // [Fix E] Post dịch vụ bổ sung từ booking_room_services khi all_charged (chỉ tính ngày đến)
-                if ($chargeOption === 'all_charged') {
-                    $extraServices = BookingRoomService::where('booking_room_id', $room->id)
-                        ->where('service_date', $arrivalDate->toDateString())
-                        ->where('service_code', '!=', 'RM')
-                        ->where('is_posted', 0)
-                        ->get();
+                while ($nightDate->lt($departureDate)) {
+                    $this->postSingleNightCharge($room, $nightDate->copy(), $chargeOption, $username, $reasonText, true);
 
-                    foreach ($extraServices as $service) {
-                        $this->postSetupServiceBill($room, $service, $username);
+                    // Post dịch vụ bổ sung (extra bed, phụ thu...) cho từng đêm khi all_charged
+                    if ($chargeOption === 'all_charged') {
+                        $extraServices = BookingRoomService::where('booking_room_id', $room->id)
+                            ->where('service_date', $nightDate->toDateString())
+                            ->where('service_code', '!=', 'RM')
+                            ->where('is_posted', 0)
+                            ->get();
+
+                        foreach ($extraServices as $service) {
+                            $this->postSetupServiceBill($room, $service, $username);
+                        }
                     }
+
+                    $nightDate->addDay();
                 }
             }
         });
@@ -327,15 +353,22 @@ class NightAuditController extends Controller
                 // 3. Tự động post tiền phòng + các dịch vụ tự động cho phòng đang ở
                 $inhouseRooms = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)->get();
                 foreach ($inhouseRooms as $targetRoom) {
-                    // Check xem ngày hôm nay đã post tiền phòng chưa (để tránh double post)
-                    $existingRM = ServiceBill::where('RegisterId1', $targetRoom->booking_id)
+                    // Check xem ngày hôm nay đã post tiền phòng chuẩn chưa (is_room_night = 1)
+                    $hasStandardRM = false;
+                    $existingRMBills = ServiceBill::where('RegisterId1', $targetRoom->booking_id)
                         ->where('RentalRoomId1', $targetRoom->id)
                         ->where('ServiceId', 'RM')
                         ->whereDate('Date', $systemDate->toDateString())
                         ->where('Edit', 0)
-                        ->first();
+                        ->pluck('Ma');
 
-                    if (!$existingRM) {
+                    if ($existingRMBills->isNotEmpty()) {
+                        $hasStandardRM = RoomNightBill::whereIn('bill_id', $existingRMBills)
+                            ->where('is_room_night', 1)
+                            ->exists();
+                    }
+
+                    if (!$hasStandardRM) {
                         // Post RM cho đêm hiện tại
                         $this->postSingleNightCharge($targetRoom, $systemDate, 'room_only', $username, 'Tự động post tiền phòng - Sang ngày');
                     }
@@ -513,7 +546,7 @@ class NightAuditController extends Controller
     /**
      * Helper: Post tiền phòng cho 1 đêm
      */
-    private function postSingleNightCharge($room, $date, $chargeOption, $user, $reason)
+    private function postSingleNightCharge($room, $date, $chargeOption, $user, $reason, $isNoshow = false)
     {
         $booking = $room->booking;
         $primaryGuest = $room->guests()->where('is_primary', 1)->with('guest')->first()
@@ -561,10 +594,10 @@ class NightAuditController extends Controller
 
         $totalAmount = $rate;
 
-        // 2. Ăn sáng (chỉ tính nếu all_charged hoặc phòng có bao gồm ăn sáng)
+        // 2. Ăn sáng (chỉ tính nếu không phải noshow và (all_charged hoặc phòng có bao gồm ăn sáng))
         $breakfastAmount = 0;
         $setting = HotelSetting::first();
-        if ($room->breakfast) {
+        if (!$isNoshow && $room->breakfast) {
             $breakfastRate   = (float)($setting?->breakfast_adult_rate ?? 0);
             $breakfastAmount = $breakfastRate * max(1, (int)$room->adults);
         }
