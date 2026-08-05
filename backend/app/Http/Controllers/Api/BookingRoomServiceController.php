@@ -1327,13 +1327,17 @@ class BookingRoomServiceController extends Controller
 
         $setting = HotelSetting::first();
         $createdBills = [];
+        $postedRooms = [];
+        $skippedRooms = [];
 
         DB::transaction(function () use (
             $roomsToPost, $booking, $setting, $isBookingPost,
             $dateFrom, $dateTo, $folio, $currency, $mode,
-            $request, $user, $description, $chargePercent, &$createdBills
+            $request, $user, $description, $chargePercent, &$createdBills,
+            &$postedRooms, &$skippedRooms
         ) {
             foreach ($roomsToPost as $targetRoom) {
+                $roomLabel = $targetRoom->room_number ?: 'Phòng ' . $targetRoom->id;
                 $primaryGuest = $targetRoom->guests()->where('is_primary', 1)->with('guest')->first()
                                 ?: $targetRoom->guests()->with('guest')->first();
                 $guestId   = $primaryGuest?->guest_id;
@@ -1417,6 +1421,9 @@ class BookingRoomServiceController extends Controller
                             ->first();
                         if ($existingBill) {
                             // Phòng đã có tiền phòng cho ngày này -> Bỏ qua không thêm lại
+                            if (!in_array($roomLabel, $skippedRooms)) {
+                                $skippedRooms[] = $roomLabel;
+                            }
                             $current->addDay();
                             continue;
                         }
@@ -1677,15 +1684,30 @@ class BookingRoomServiceController extends Controller
                 }
 
                 $createdBills[] = $bill->Ma;
+                if (!in_array($roomLabel, $postedRooms)) {
+                    $postedRooms[] = $roomLabel;
+                }
                 $current->addDay();
             }
             }
         });
 
+        // Xây dựng thông báo chi tiết
+        $msgParts = [];
+        if (count($postedRooms) > 0) {
+            $msgParts[] = 'đã post tiền phòng thành công cho các phòng: ' . implode(', ', $postedRooms);
+        }
+        if (count($skippedRooms) > 0) {
+            $msgParts[] = 'bỏ qua các phòng đã được post trước đó: ' . implode(', ', $skippedRooms);
+        }
+        $finalMessage = ucfirst(implode('; ', $msgParts) ?: 'Không có phòng nào được xử lý.');
+
         return response()->json([
-            'success'  => true,
-            'message'  => 'Đã post ' . count($createdBills) . ' tiền phòng thành công.',
-            'bill_ids' => $createdBills,
+            'success'       => true,
+            'message'       => $finalMessage,
+            'posted_rooms'  => $postedRooms,
+            'skipped_rooms' => $skippedRooms,
+            'bill_ids'      => $createdBills,
         ]);
     }
 

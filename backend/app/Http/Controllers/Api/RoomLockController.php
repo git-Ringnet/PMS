@@ -135,17 +135,28 @@ class RoomLockController extends Controller
         if (!isset($validated['username'])) {
             $validated['username'] = $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
         }
-        if (!isset($validated['status'])) {
-            $validated['status'] = 'New';
-        }
+
+        // Determine correct status based on system date
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
+        $startDateStr = \Carbon\Carbon::parse($validated['start_date'])->toDateString();
+        $determinedStatus = ($startDateStr <= $sysDateStr) ? 'Active' : 'New';
+        $validated['status'] = $determinedStatus;
 
         // Remove non-schema field
         unset($validated['force']);
 
         $lock = RoomLock::create($validated);
 
-        // Update room status to maintenance (ooo)
-        Room::where('room_number', $room->room_number)->update(['room_status_code' => 'ooo']);
+        // Update room status to maintenance ONLY if it is active starting today
+        if ($determinedStatus === 'Active') {
+            $lockCode = $lock->lock_type === 'OOS' ? 'oos' : 'ooo';
+            Room::where('room_number', $room->room_number)->update(['room_status_code' => $lockCode]);
+            event(new \App\Events\RoomStatusUpdated($room->id, $lockCode, 'Phòng khóa bảo trì'));
+        }
 
         $lock->load(['room.roomForm', 'room.roomClass']);
 
@@ -336,23 +347,37 @@ class RoomLockController extends Controller
         $username = $request->input('username') ?? $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
         $locksCreated = [];
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($preparedLocks, $username, &$locksCreated) {
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($preparedLocks, $username, $sysDateStr, &$locksCreated) {
             foreach ($preparedLocks as $pItem) {
+                $startDateStr = \Carbon\Carbon::parse($pItem['start_date'])->toDateString();
+                $determinedStatus = ($startDateStr <= $sysDateStr) ? 'Active' : 'New';
+
                 $lock = RoomLock::create([
                     'room_number' => $pItem['room_number'],
                     'start_date' => $pItem['start_date'],
                     'end_date' => $pItem['end_date'],
                     'reason' => $pItem['reason'],
                     'maintenance_percent' => $pItem['maintenance_percent'],
-                    'status' => $pItem['status'],
+                    'status' => $determinedStatus,
                     'username' => $username,
                     'is_active' => 1,
                     'lock_type' => $pItem['lock_type'],
                 ]);
 
-                // Update room status to ooo / oos
-                $lockCode = $pItem['lock_type'] === 'OOS' ? 'oos' : 'ooo';
-                Room::where('room_number', $pItem['room_number'])->update(['room_status_code' => $lockCode]);
+                // Update room status ONLY if status is Active
+                if ($determinedStatus === 'Active') {
+                    $lockCode = $pItem['lock_type'] === 'OOS' ? 'oos' : 'ooo';
+                    $room = Room::where('room_number', $pItem['room_number'])->first();
+                    Room::where('room_number', $pItem['room_number'])->update(['room_status_code' => $lockCode]);
+                    if ($room) {
+                        event(new \App\Events\RoomStatusUpdated($room->id, $lockCode, 'Phòng khóa bảo trì'));
+                    }
+                }
 
                 $locksCreated[] = $lock;
             }
@@ -433,11 +458,16 @@ class RoomLockController extends Controller
             $affectedRoomNumbers[] = $lock->room_number;
 
             $oldValues = $lock->toArray();
-            $lock->update([
-                'is_active' => 2,
-                'unlock_username' => $unlockUsername,
-                'unlocked_at' => $now
-            ]);
+            if ($lock->status === 'New') {
+                $lock->delete();
+            } else {
+                $lock->update([
+                    'is_active' => 2,
+                    'status' => 'Done',
+                    'unlock_username' => $unlockUsername,
+                    'unlocked_at' => $now
+                ]);
+            }
 
             \App\Services\ActivityLogService::logUpdate(
                 $request,
@@ -729,11 +759,16 @@ class RoomLockController extends Controller
         $unlockUsername = $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
         $oldValues = $lock->toArray();
 
-        $lock->update([
-            'is_active' => 2,
-            'unlock_username' => $unlockUsername,
-            'unlocked_at' => now(),
-        ]);
+        if ($lock->status === 'New') {
+            $lock->delete();
+        } else {
+            $lock->update([
+                'is_active' => 2,
+                'status' => 'Done',
+                'unlock_username' => $unlockUsername,
+                'unlocked_at' => now(),
+            ]);
+        }
 
         \App\Services\ActivityLogService::logUpdate(
             $request,

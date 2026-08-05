@@ -189,6 +189,7 @@ class BookingRoom extends Model
     const STATUS_CHECKED_IN = 1; // Đang ở (inhouse)
     const STATUS_CHECKED_OUT = 2; // Đã trả phòng
     const STATUS_CANCELLED  = 3; // Đã hủy
+    const STATUS_NOSHOW     = 4; // Noshow
 
     // =========================================
     // RELATIONSHIPS

@@ -182,7 +182,7 @@ class AvailabilityController extends Controller
             $isBookingNoShow    = ($parentBooking && $parentBooking->status === Booking::STATUS_NO_SHOW);
             
             $isCancelled        = $isRoomCancelled || $isBookingCancelled;
-            $isNoShow           = $isBookingNoShow;
+            $isNoShow           = $isBookingNoShow || ($br->status === BookingRoom::STATUS_NOSHOW);
             
             // Chỉ lấy các booking có is_availability = 1
             $isAvailableStatus  = $parentBooking && $parentBooking->registrationStatus && ($parentBooking->registrationStatus->is_availability == 1);
