@@ -359,6 +359,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split']);
     Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany']);
     Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
+    Route::get('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'debtSettlements']);
+    Route::post('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'storeDebtSettlement']);
+    Route::delete('/payments/{id}/debt-settlements/{settlementId}', [\App\Http\Controllers\Api\PaymentController::class, 'destroyDebtSettlement']);
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
