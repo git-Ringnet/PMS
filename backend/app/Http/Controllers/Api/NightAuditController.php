@@ -200,6 +200,8 @@ class NightAuditController extends Controller
 
             // Cập nhật khách và trẻ em gán vào phòng
             BookingRoomGuest::where('booking_room_id', $room->id)->update(['status' => 4]);
+            $guestIds = BookingRoomGuest::where('booking_room_id', $room->id)->pluck('guest_id');
+            Guest::whereIn('id', $guestIds)->update(['guest_status' => 4]);
             BookingChild::where('booking_room_id', $room->id)->update(['child_status' => 4]);
 
             // 2. Giải phóng phòng vật lý
@@ -211,7 +213,7 @@ class NightAuditController extends Controller
                 }
             }
 
-            // 3. Nếu toàn bộ phòng trong booking noshow -> update booking status = 4
+            // 3. Nếu toàn bộ phòng trong booking noshow -> cập nhật trạng thái booking (SP2000)
             $booking = $room->booking;
             $remainingBooked = $booking->bookingRooms()->where('status', BookingRoom::STATUS_BOOKED)->count();
 
@@ -220,10 +222,22 @@ class NightAuditController extends Controller
                 $warning = "Booking {$booking->code} còn {$remainingBooked} phòng chưa xử lý (vẫn ở trạng thái Đặt trước).";
             }
 
-            // Nếu noshow có charge: giữ booking status = 1 (Reservation) để kế toán thanh toán
             $allNoShow = $booking->bookingRooms()->where('status', '!=', 4)->count() === 0;
-            if ($allNoShow && $chargeOption === 'no_charge') {
-                $booking->update(['status' => 4]);
+            if ($allNoShow) {
+                $noshowRegStatus = \App\Models\RegistrationStatus::where('booking_status_id', 25)->first();
+                $noshowRegStatusId = $noshowRegStatus ? $noshowRegStatus->id : null;
+
+                if ($chargeOption === 'no_charge') {
+                    $booking->update([
+                        'status' => 4, // Noshow
+                        'registration_status_id' => $noshowRegStatusId ?? $booking->registration_status_id
+                    ]);
+                } else {
+                    $booking->update([
+                        'status' => 0, // Reservation
+                        'registration_status_id' => $noshowRegStatusId ?? $booking->registration_status_id
+                    ]);
+                }
             }
 
             // 4. Lưu log noshow
