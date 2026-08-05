@@ -459,21 +459,52 @@ async function handlePostRoomCharge() {
     return
   }
 
+  const roomNames = selected.map(item => item.roomNumber || item.id).join(', ')
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận post tiền phòng',
+    message: `Bạn có chắc chắn muốn thực hiện post tiền phòng cho các phòng đã chọn: ${roomNames}?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy'
+  })
+
+  if (!confirmed) return
+
   try {
     isLoading.value = true
     const sysDateStr = getNormalizedDate(systemDate.value)
     
+    const postedList = []
+    const skippedList = []
+
     for (const item of selected) {
       const parts = item.id.split('-')
       const bookingRoomId = parts[parts.length - 1]
-      await http.post('/booking-room-services/post-room-charge', {
+      const res = await http.post('/booking-room-services/post-room-charge', {
         booking_room_id: bookingRoomId,
         date_from: sysDateStr,
         date_to: sysDateStr,
         mode: 'auto'
       })
+
+      const data = res.data || {}
+      if (data.posted_rooms && data.posted_rooms.length > 0) {
+        postedList.push(...data.posted_rooms)
+      }
+      if (data.skipped_rooms && data.skipped_rooms.length > 0) {
+        skippedList.push(...data.skipped_rooms)
+      }
     }
-    uiStore.showToast('Đã post tiền phòng thành công cho các phòng đã chọn.', 'success')
+
+    if (postedList.length > 0 && skippedList.length > 0) {
+      uiStore.showToast(`Đã post tiền phòng thành công cho các phòng: ${postedList.join(', ')}. Bỏ qua các phòng đã được post trước đó: ${skippedList.join(', ')}.`, 'warning')
+    } else if (postedList.length > 0) {
+      uiStore.showToast(`Đã post tiền phòng thành công cho các phòng: ${postedList.join(', ')}.`, 'success')
+    } else if (skippedList.length > 0) {
+      uiStore.showToast(`Bỏ qua các phòng đã được post tiền phòng trước đó: ${skippedList.join(', ')}.`, 'warning')
+    } else {
+      uiStore.showToast('Không có phòng nào cần post tiền phòng.', 'info')
+    }
+
     await fetchRealData()
   } catch (err) {
     console.error(err)
