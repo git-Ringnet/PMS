@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\Payment;
+use App\Models\PaymentDebtSettlement;
 use App\Models\PaymentMethod;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
@@ -61,6 +62,29 @@ class PaymentController extends Controller
         return (string)$input;
     }
 
+    private function assertActiveDebtPayment(Payment $payment): void
+    {
+        if (strtoupper((string) $payment->payment_method_id) !== 'AC') {
+            abort(422, 'Chỉ có thể giải trừ dòng thanh toán công nợ.');
+        }
+
+        if ((int) $payment->edit_flag !== 0 || (int) $payment->status === Payment::STATUS_DELETED) {
+            abort(422, 'Dòng thanh toán công nợ đã bị xóa hoặc không còn hiệu lực.');
+        }
+    }
+
+    private function resolveDebtSettlementMethod($input): PaymentMethod
+    {
+        $code = $this->resolvePaymentMethodCode($input);
+        $method = PaymentMethod::where('code', $code)->first();
+
+        if (!$method || $method->is_inactive || $method->is_free || in_array((int) $method->payment_group, [4, 5], true)) {
+            abort(422, 'Hình thức giải trừ công nợ không hợp lệ.');
+        }
+
+        return $method;
+    }
+
     private function getDepartmentId(Request $request)
     {
         return $request->input('department_id') 
@@ -93,6 +117,113 @@ class PaymentController extends Controller
             'data'          => $payments,
             'total_deposit' => $totalDeposit,
         ]);
+    }
+
+    /** GET /payments/{id}/debt-settlements */
+    public function debtSettlements($id)
+    {
+        $payment = Payment::with(['booking.company'])->findOrFail($id);
+        $this->assertActiveDebtPayment($payment);
+
+        $settlements = PaymentDebtSettlement::with('paymentMethod')
+            ->where('payment_id', $payment->id)
+            ->orderBy('payment_date')
+            ->orderBy('id')
+            ->get();
+        $settledAmount = $settlements->where('edit_flag', 0)->sum('amount');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'payment' => [
+                    'id' => $payment->id,
+                    'payment_code' => $payment->payment_id,
+                    'company_name' => $payment->booking?->company?->name ?? 'KHÁCH LẺ',
+                    'amount' => (float) $payment->amount,
+                    'settled_amount' => (float) $settledAmount,
+                    'remaining_amount' => max(0, (float) $payment->amount - (float) $settledAmount),
+                    'currency' => $payment->currency ?? 'VND',
+                ],
+                'settlements' => $settlements,
+            ],
+        ]);
+    }
+
+    /** POST /payments/{id}/debt-settlements */
+    public function storeDebtSettlement(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'payment_date' => ['required', 'date'],
+            'payment_time' => ['nullable', 'date_format:H:i'],
+            'payment_method_id' => ['required', 'string', 'max:50'],
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'description' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $systemDate = $this->getSystemDate();
+        if (Carbon::parse($validated['payment_date'])->toDateString() < $systemDate && !$this->canOperateOldDay()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tài khoản không được phân quyền giải trừ công nợ cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).',
+            ], 403);
+        }
+
+        $settlement = DB::transaction(function () use ($validated, $id) {
+            $payment = Payment::whereKey($id)->lockForUpdate()->firstOrFail();
+            $this->assertActiveDebtPayment($payment);
+            $paymentMethod = $this->resolveDebtSettlementMethod($validated['payment_method_id']);
+
+            $settledAmount = (float) PaymentDebtSettlement::where('payment_id', $payment->id)
+                ->where('edit_flag', 0)
+                ->sum('amount');
+            $remainingAmount = max(0, (float) $payment->amount - $settledAmount);
+            if ((float) $validated['amount'] > $remainingAmount + 0.00001) {
+                abort(422, 'Số tiền giải trừ không được lớn hơn công nợ còn lại.');
+            }
+
+            return PaymentDebtSettlement::create([
+                'payment_id' => $payment->id,
+                'payment_date' => $validated['payment_date'],
+                'payment_time' => $validated['payment_time'] ?? now()->format('H:i'),
+                'payment_method_id' => $paymentMethod->code,
+                'amount' => $validated['amount'],
+                'currency' => $payment->currency ?? 'VND',
+                'description' => $validated['description'] ?? null,
+                'edit_flag' => 0,
+                'created_by' => Auth::user()?->username ?? 'system',
+            ]);
+        });
+
+        return response()->json(['success' => true, 'message' => 'Đã thêm giải trừ công nợ.', 'data' => $settlement], 201);
+    }
+
+    /** DELETE /payments/{id}/debt-settlements/{settlementId} */
+    public function destroyDebtSettlement($id, $settlementId)
+    {
+        $payment = Payment::findOrFail($id);
+        $this->assertActiveDebtPayment($payment);
+
+        $settlement = PaymentDebtSettlement::where('payment_id', $payment->id)->findOrFail($settlementId);
+        if ((int) $settlement->edit_flag === 1) {
+            return response()->json(['success' => false, 'message' => 'Dòng giải trừ đã bị xóa.'], 422);
+        }
+
+        $systemDate = $this->getSystemDate();
+        if (Carbon::parse($settlement->payment_date)->toDateString() < $systemDate && !$this->canOperateOldDay()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tài khoản không được phân quyền xóa giải trừ công nợ ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).',
+            ], 403);
+        }
+
+        $settlement->update([
+            'edit_flag' => 1,
+            'deleted_by' => Auth::user()?->username ?? 'system',
+            'deleted_at' => now(),
+            'updated_by' => Auth::user()?->username ?? 'system',
+        ]);
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa giải trừ công nợ.']);
     }
 
     // =========================================
@@ -988,6 +1119,12 @@ class PaymentController extends Controller
             ->exists();
         if ($hasActiveRooms) return;
 
+        $checkedOutRoomIds = $booking->bookingRooms()
+            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
         $hasUnpaidMasterBills = \App\Models\ServiceBill::query()
             ->where('Edit', 0)
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
@@ -996,7 +1133,11 @@ class PaymentController extends Controller
                 $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
                     ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
             })
-            ->where(function ($q) { $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0'); })
+            ->where(function ($q) use ($booking, $checkedOutRoomIds) {
+                $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
+                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'RMS']);
+            })
             ->exists();
         if ($hasUnpaidMasterBills) return;
 

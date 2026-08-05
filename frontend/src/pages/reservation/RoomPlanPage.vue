@@ -1333,6 +1333,16 @@ function handleWindowClick(event) {
 
 let bc = null
 
+function notifyRoomUpdates() {
+  if (!bc) return
+  try {
+    bc.postMessage('rooms-updated')
+  } catch (error) {
+    if (error?.name === 'InvalidStateError') bc = null
+    else throw error
+  }
+}
+
 onMounted(async () => {
   // 1. Fetch system date, user settings, and hotel settings in parallel
   let sysDateStr = null
@@ -1423,6 +1433,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', handleWindowClick)
   if (bc) {
     bc.close()
+    bc = null
   }
 
   // Hủy lắng nghe sự kiện realtime qua Laravel Echo
@@ -2548,7 +2559,7 @@ async function triggerMenuAction(actionName) {
             uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
             await roomStore.fetchRooms()
             await loadBookings()
-            if (bc) bc.postMessage('rooms-updated')
+            notifyRoomUpdates()
           } else {
             uiStore.showToast(res?.message || res?.data?.message || 'Có lỗi xảy ra khi mở khóa phòng.', 'error')
           }
@@ -2651,7 +2662,7 @@ async function triggerMenuAction(actionName) {
             uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
             await roomStore.fetchRooms()
             await loadBookings()
-            if (bc) bc.postMessage('rooms-updated')
+            notifyRoomUpdates()
           } else {
             uiStore.showToast(res?.data?.message || 'Giao phòng thất bại.', 'error')
           }
@@ -3141,7 +3152,7 @@ async function saveQuickBooking() {
     
     await roomStore.fetchRooms()
     await loadBookings()
-    if (bc) bc.postMessage('rooms-updated')
+    notifyRoomUpdates()
   } catch (err) {
     console.error(err)
     uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi tạo đăng ký nhanh.', 'error')
@@ -3236,7 +3247,7 @@ async function saveLockRoom() {
 
     await roomStore.fetchRooms()
     await loadBookings()
-    if (bc) bc.postMessage('rooms-updated')
+    notifyRoomUpdates()
     
     uiStore.showToast(`Đã khóa các phòng thành công!`, 'success')
   } catch (err) {

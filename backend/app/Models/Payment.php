@@ -93,6 +93,11 @@ class Payment extends Model
         return $this->belongsTo(Guest::class);
     }
 
+    public function debtSettlements()
+    {
+        return $this->hasMany(PaymentDebtSettlement::class);
+    }
+
     // =========================================
     // HELPERS
     // =========================================

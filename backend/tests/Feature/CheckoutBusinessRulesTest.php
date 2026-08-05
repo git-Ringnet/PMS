@@ -12,9 +12,10 @@ use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\Room;
 use App\Models\ServiceBill;
+use App\Models\ServiceBillDetail;
+use App\Models\HotelSetting;
 use App\Models\SystemDateRoll;
 use App\Models\User;
-use App\Models\PaymentMethod;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -43,6 +44,7 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->guest = Guest::create(['full_name' => 'Guest checkout']);
         BookingRoomGuest::create(['booking_room_id' => $this->room->id, 'guest_id' => $this->guest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN, 'is_primary' => true]);
         HotelConfig::create(['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'Allow early checkout']);
+        HotelSetting::create(['hotel_name' => 'Checkout test hotel', 'breakfast_adult_rate' => 50000]);
     }
 
     public function test_master_checkout_ignores_room_departure_date(): void
@@ -82,24 +84,82 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
     }
 
-    public function test_room_checkout_moves_only_unpaid_bills_to_master(): void
+    public function test_room_checkout_is_blocked_when_it_has_unpaid_bills(): void
     {
         $base = ['Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $this->guest->full_name, 'DepartmentId' => 'FO', 'ServiceId' => 'MB', 'Username' => 'checkout_rules_user', 'Edit' => 0, 'RegisterId1' => $this->booking->id, 'RentalRoomId1' => $this->room->id, 'RegisterID2' => $this->booking->id, 'RentalRoomId2' => $this->room->id];
         $unpaid = ServiceBill::create([...$base, 'Status' => 1]);
         $paid = ServiceBill::create([...$base, 'Status' => 2, 'PaymentId' => 1]);
 
-        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", ['guest_ids' => [$this->guest->id], 'skip_remaining_room_charge' => true])->assertSuccessful();
+        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", ['guest_ids' => [$this->guest->id], 'skip_remaining_room_charge' => true])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'unpaid_bill');
 
-        $this->assertDatabaseHas('service_bills', ['Ma' => $unpaid->Ma, 'RegisterID2' => $this->booking->id, 'RentalRoomId2' => null]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $unpaid->Ma, 'RentalRoomId2' => $this->room->id]);
         $this->assertDatabaseHas('service_bills', ['Ma' => $paid->Ma, 'RentalRoomId2' => $this->room->id, 'PaymentId' => 1]);
-        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+    }
 
-        PaymentMethod::create(['code' => 'CA', 'name' => 'Tiền mặt', 'payment_group' => 1]);
-        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
-            'folio_id' => 1,
-            'payments' => [['amount' => 1, 'payment_method_id' => 'CA']],
+    public function test_room_checkout_allows_unpaid_room_charge_when_room_rate_is_sent_to_master(): void
+    {
+        $this->booking->update(['is_master_room_rate' => true]);
+        ServiceBill::create([
+            'Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $this->guest->full_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id,
+            'RentalRoomId1' => $this->room->id, 'RentalRoomId2' => $this->room->id,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", [
+            'guest_ids' => [$this->guest->id],
+            'skip_remaining_room_charge' => true,
         ])->assertSuccessful();
-        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
+
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+    }
+
+    public function test_room_checkout_reopens_booking_when_unpaid_master_room_charge_remains(): void
+    {
+        $this->booking->update(['status' => Booking::STATUS_CHECKOUT, 'is_master_room_rate' => true]);
+        ServiceBill::create([
+            'Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $this->booking->booking_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id,
+            'RentalRoomId1' => $this->room->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId2' => $this->room->id,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", [
+            'guest_ids' => [$this->guest->id],
+            'skip_remaining_room_charge' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+    }
+
+    public function test_master_can_adjust_an_unpaid_room_charge_with_audit_bills(): void
+    {
+        $this->room->update(['adults' => 2, 'breakfast' => true]);
+        $original = ServiceBill::create([
+            'Date' => '2026-08-03', 'OpenTime' => '12:00', 'Guest' => $this->guest->full_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Amount' => 650000, 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId1' => $this->room->id, 'RentalRoomId2' => $this->room->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/adjust-room-rate", [
+            'booking_room_id' => $this->room->id, 'service_date' => '2026-08-03', 'rate' => 700000,
+            'reason' => 'Sửa giá hợp đồng', 'update_room_rate' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $original->Ma, 'Edit' => 1, 'Status' => 3, 'IsAdjustment' => 1]);
+        $this->assertDatabaseHas('service_bills', ['AdjustmentBillId' => $original->Ma, 'Amount' => -650000, 'Edit' => 1, 'Status' => 3, 'IsAdjustment' => 1]);
+        $this->assertDatabaseHas('service_bills', ['AdjustmentBillId' => $original->Ma, 'Amount' => 700000, 'Edit' => 0, 'Status' => 1, 'IsAdjustment' => 1]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'rate' => 700000]);
+        $adjustment = ServiceBill::where('AdjustmentBillId', $original->Ma)->where('Edit', 0)->firstOrFail();
+        $this->assertSame(3, ServiceBillDetail::where('BillServiceId', $adjustment->Ma)->count());
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $adjustment->Ma, 'Ma' => 2, 'ServiceId' => 'BF', 'Amount' => 100000]);
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $adjustment->Ma, 'Ma' => 3, 'ServiceId' => 'RM', 'Amount' => -100000]);
     }
 
     public function test_early_checkout_returns_only_dates_without_room_charge(): void

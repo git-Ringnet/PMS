@@ -51,6 +51,7 @@ return new class extends Migration
             $table->string('CreatedHour', 5)->nullable();
             $table->dateTime('UpdatedDate')->nullable();
             $table->unsignedBigInteger('AdjustmentBillId')->nullable();
+            $table->boolean('IsAdjustment')->default(false);
             $table->string('MisaRefId', 50)->nullable();
             $table->timestamps();
             $table->index(['RentalRoomId2', 'CustomerId2']);

@@ -151,6 +151,7 @@ export const fetchNationalities = (params = {}) => http.get('/nationalities', { 
 // ==================== POST BILLS (THÊM DỊCH VỤ LỄ TÂN) ====================
 export const postFoServiceBill = (data) => http.post('/booking-room-services/post-fo-service-bill', data)
 export const postRoomCharge    = (data) => http.post('/booking-room-services/post-room-charge', data)
+export const adjustRoomRate    = (bookingId, data) => http.post(`/bookings/${bookingId}/adjust-room-rate`, data)
 
 // ==================== PAYMENTS & SETTLEMENT (THANH TOÁN & HỦY THANH TOÁN) ====================
 export const settleBookingPayment = (bookingId, data) => http.post(`/bookings/${bookingId}/settle-payment`, data)
