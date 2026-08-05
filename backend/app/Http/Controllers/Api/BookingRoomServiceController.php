@@ -11,6 +11,8 @@ use App\Models\HotelService;
 use App\Models\HotelSetting;
 use App\Models\HousekeepingServiceBill;
 use App\Models\HousekeepingServiceBillDetail;
+use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\RoomNightBill;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
@@ -812,8 +814,8 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Khách được chọn không thuộc phòng này.'], 422);
         }
 
-        // Endpoint này chỉ dành cho post dịch vụ buồng phòng.
-        $department = 'HK';
+        // Nguồn Lễ tân hạch toán FO; thao tác từ Buồng phòng vẫn hạch toán HK.
+        $department = $postingSource === 'FO' ? 'FO' : 'HK';
         $serviceDate = $request->service_date ?: now()->toDateString();
         $systemDate = $this->avService->getSystemDate();
         $serviceDateCarbon = Carbon::parse($serviceDate);
@@ -824,10 +826,18 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Tài khoản không có quyền post dịch vụ cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).'], 403);
         }
         $folio = $request->folio ?? 1;
+        $isFree = $request->boolean('is_free');
+        $complimentaryMethod = null;
+        if ($isFree) {
+            $complimentaryMethod = PaymentMethod::where('code', 'CL')->where('is_free', true)->first();
+            if (!$complimentaryMethod) {
+                return response()->json(['success' => false, 'message' => 'Chưa cấu hình phương thức thanh toán Complimentary (CL).'], 422);
+            }
+        }
         $user = Auth::user()?->username ?? 'Admin';
         $createdRecords = [];
 
-        DB::transaction(function () use ($request, $room, $guestPivot, $department, $serviceDate, $serviceDateCarbon, $folio, $user, &$createdRecords) {
+        DB::transaction(function () use ($request, $room, $guestPivot, $department, $serviceDate, $serviceDateCarbon, $folio, $isFree, $complimentaryMethod, $user, &$createdRecords) {
             $groupMeta = [
                 'minibar' => ['label' => 'Minibar', 'service' => 'MB', 'outlet' => 'MB'],
                 'giatui'  => ['label' => 'Giặt ủi', 'service' => 'LA', 'outlet' => 'LA'],
@@ -845,6 +855,7 @@ class BookingRoomServiceController extends Controller
                 if (!isset($groupMeta[$groupKey])) continue;
                 $meta = $groupMeta[$groupKey];
                 $groupTitle = $meta['label'];
+                $effectiveFolio = $isFree ? 3 : $folio;
                 $originalAmount = collect($items)->sum(fn ($item) => (float)($item['original_rate'] ?? $item['price'] ?? 0) * (float)($item['qty'] ?? 1));
                 $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
                 $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
@@ -860,7 +871,7 @@ class BookingRoomServiceController extends Controller
                         'DescriptionServive' => $groupTitle,
                         'Quantity' => 1,
                         'Amount' => $billAmount,
-                        'Folio' => (string)$folio,
+                        'Folio' => (string)$effectiveFolio,
                         'UpdatedDate' => now(),
                         'UpdatedHour' => now()->format('H:i'),
                         'updated_at' => now(),
@@ -884,7 +895,7 @@ class BookingRoomServiceController extends Controller
                             'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
                             'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
                             'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
-                            'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                            'BillNote' => $request->note, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                             'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
                             'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
                             'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
@@ -899,10 +910,10 @@ class BookingRoomServiceController extends Controller
                         'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
                         'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
                         'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
-                        'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
+                        'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$effectiveFolio,
                         'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
                         'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
-                        'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'Username' => $user, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                         'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
                         'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
                     ]);
@@ -910,11 +921,26 @@ class BookingRoomServiceController extends Controller
                         'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
                         'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
                         'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
-                        'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'BillNote' => $request->note, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                         'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
                         'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
                         'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
                     ]);
+                }
+
+                if ($isFree) {
+                    $payment = Payment::create([
+                        'booking_id' => $booking?->id, 'booking_room_id' => $room->id, 'guest_id' => $guestId,
+                        'company_id' => $booking?->company_id, 'date' => $serviceDateCarbon->toDateString(),
+                        'open_time' => now()->format('H:i:s'), 'guest_display' => trim(($booking?->booking_code ?: '') . ' - ' . $guestName, ' -'),
+                        'description' => 'Thanh toán miễn phí - ' . $groupTitle, 'amount' => 0, 'total_amount_before_split' => 0,
+                        'pack4' => 'PY', 'folio_id' => 3, 'payment_method_id' => $complimentaryMethod->code,
+                        'department_id' => $department, 'outlet' => $meta['outlet'], 'status' => Payment::STATUS_PAID,
+                        'edit_flag' => 0, 'shift' => '1', 'created_by' => $user,
+                    ]);
+                    $payment->update(['payment_id' => $payment->id]);
+                    $serviceBill->update(['Folio' => '3', 'PaymentId' => $payment->id, 'Status' => 2]);
+                    $bill->update(['Status' => 2]);
                 }
 
                 foreach ($items as $index => $item) {
@@ -946,7 +972,7 @@ class BookingRoomServiceController extends Controller
                         'tax'             => $taxAmt,
                         'service_charge'  => $svcChargeAmt,
                         'unit'            => $item['unit'] ?? 'Cái',
-                        'folio'           => $folio,
+                        'folio'           => $effectiveFolio,
                         'is_room'         => 1,
                         'is_posted'       => 1,
                         'posted_at'       => now(),

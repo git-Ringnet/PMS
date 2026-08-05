@@ -61,7 +61,7 @@ const handleSuccess = (data) => {
           :initialAdjustment="initialAdjustment"
           :initialFolioId="folioId"
           :isModal="true"
-          :department="'HK'"
+          :department="'FO'"
           :postingSource="'FO'"
           @close="handleClose"
           @success="handleSuccess"

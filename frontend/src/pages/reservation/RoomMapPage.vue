@@ -788,6 +788,19 @@ async function handleRoomMoveSuccess() {
 
 // Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
+  if (actionName === 'Thêm dịch vụ buồng phòng') {
+    const room = contextMenu.value.room
+    router.push({
+      path: '/housekeeping',
+      query: {
+        tab: 'add-service',
+        bookingRoomId: room?.booking_room_id || room?.id || ''
+      }
+    })
+    closeContextMenu()
+    return
+  }
+
   if (actionName === 'Chuyển Phòng') {
     handleRoomMoveClick(contextMenu.value.room)
     return
@@ -2561,6 +2574,17 @@ const uniqueFloors = computed(() => {
             </button>
 
             <div class="h-px bg-slate-300 my-1"></div>
+
+            <!-- Thêm dịch vụ buồng phòng: chỉ hiển thị khi Room Map được mở từ Housekeeping -->
+            <button v-if="route.path === '/housekeeping'" @click="triggerMenuItem('Thêm dịch vụ buồng phòng')"
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14M5 12h14" />
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+              <span>Thêm dịch vụ buồng phòng</span>
+            </button>
 
             <!-- Chuyển Phòng -->
             <button @click="triggerMenuItem('Chuyển Phòng')"

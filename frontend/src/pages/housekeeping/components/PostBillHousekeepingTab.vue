@@ -1,25 +1,27 @@
 <template>
   <div class="h-full flex flex-col bg-[#dde3ea] p-3 text-xs font-sans">
     <div class="modal-card flex flex-col h-full bg-white rounded-lg shadow-lg overflow-hidden border border-slate-200 relative">
-      <LoadingOverlay :show="loadingProducts || loadingRooms" />
+      <LoadingOverlay :show="loadingProducts || loadingRooms || isSending" />
       
       <!-- INFO STRIP -->
       <div class="info-strip flex items-center gap-3 p-2.5 bg-slate-100 border-b border-slate-200 shrink-0 flex-wrap">
         <div class="info-field flex flex-col gap-1">
           <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">&nbsp;</label>
           <div class="info-room flex items-center gap-2 bg-white border border-slate-300 rounded px-3 h-8 min-w-[240px] text-xs font-semibold shadow-xs">
-            <select v-model="form.roomId" disabled class="border-none bg-transparent focus:outline-none w-full font-bold text-slate-800 cursor-not-allowed disabled:opacity-100">
+            <select v-model="form.roomId" :disabled="props.isModal" class="border-none bg-transparent focus:outline-none w-full font-bold text-slate-800 disabled:opacity-100" :class="props.isModal ? 'cursor-not-allowed' : 'cursor-pointer'">
               <option value="">-- Chọn phòng --</option>
-              <option v-for="room in bookingRooms" :key="room.id" :value="room.id">
-                {{ room.name }}
-              </option>
+              <optgroup v-for="group in bookingRoomGroups" :key="group.bookingId" :label="group.label">
+                <option v-for="room in group.rooms" :key="room.id" :value="room.id">
+                  ↳ {{ room.name }}
+                </option>
+              </optgroup>
             </select>
           </div>
         </div>
 
         <div class="info-field flex flex-col gap-1">
           <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Khách</label>
-          <select v-model="form.guestId" :disabled="roomGuestsForPosting.length === 0 || Boolean(props.initialGuestId)" class="h-8 min-w-[180px] px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] disabled:bg-slate-100">
+          <select v-model="form.guestId" :disabled="roomGuestsForPosting.length === 0 || props.isModal" class="h-8 min-w-[180px] px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] disabled:bg-slate-100">
             <option value="">-- Chọn khách --</option>
             <option v-for="guest in roomGuestsForPosting" :key="guest.id" :value="guest.id">{{ guest.name }}</option>
           </select>
@@ -277,10 +279,10 @@
       <!-- FOOTER -->
       <div class="modal-footer border-t-2 border-slate-200 bg-slate-100 flex items-center justify-end p-2.5 shrink-0 gap-2">
         <div class="footer-actions flex gap-2">
-          <button @click="undoCart" class="btn btn-cancel h-9 px-4 rounded border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5">
+          <button @click="undoCart" class="btn btn-cancel h-9 px-4 rounded border border-rose-700 !bg-rose-600 hover:!bg-rose-700 !text-white text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs">
             <span>↩ Undo</span>
           </button>
-          <button @click="sendToRoom" :disabled="isSending" class="btn btn-save h-9 px-5 rounded bg-[#1a6b8a] hover:bg-[#155a76] text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs disabled:opacity-60">
+          <button @click="sendToRoom" :disabled="isSending" class="btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs">
             <span v-if="isSending" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
             <span>💾 Gửi về phòng</span>
           </button>
@@ -335,6 +337,7 @@ const emit = defineEmits(['close', 'success'])
 const uiStore = useUiStore()
 
 const bookingRooms = ref([])
+const bookingRoomGroups = ref([])
 const loadingRooms = ref(true)
 
 const form = ref({
@@ -366,6 +369,7 @@ const loadBookingRooms = async () => {
     const res = await fetchBookings({ status: '0,1' })
     const list = res.data?.data || res.data || []
     const options = []
+    const groups = []
 
     list.forEach(b => {
       const code = b.booking_code || b.code || ''
@@ -382,7 +386,10 @@ const loadBookingRooms = async () => {
       )
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
-        b.booking_rooms.forEach(r => {
+        const inhouseRooms = []
+        b.booking_rooms
+          .filter(r => Number(r.status) === 1)
+          .forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
           
           const roomGuests = (r.guests || []).map(g => ({
@@ -398,12 +405,7 @@ const loadBookingRooms = async () => {
             roomGuest = mainGuestName
           }
           
-          let labelParts = []
-          if (code) labelParts.push(code)
-          if (roomNo) labelParts.push(roomNo)
-          if (roomGuest) labelParts.push(roomGuest)
-
-          options.push({
+          const roomOption = {
             id: r.id || b.id,
             roomId: r.room_id || r.id,
             bookingId: b.id,
@@ -411,28 +413,25 @@ const loadBookingRooms = async () => {
             roomNumber: roomNo,
             guestName: roomGuest,
             guests: roomGuests,
-            name: labelParts.join(' - ')
-          })
+            name: [roomNo, roomGuest].filter(Boolean).join(' - ')
+          }
+          options.push(roomOption)
+          inhouseRooms.push(roomOption)
         })
-      } else {
-        let labelParts = []
-        if (code) labelParts.push(code)
-        if (b.room_number) labelParts.push(b.room_number)
-        if (mainGuestName) labelParts.push(mainGuestName)
 
-        options.push({
-          id: b.id,
-          bookingId: b.id,
-          code: code,
-          roomNumber: b.room_number || '',
-          guestName: mainGuestName,
-          name: labelParts.join(' - ')
-        })
+        if (inhouseRooms.length > 0) {
+          groups.push({
+            bookingId: b.id,
+            label: [code, b.booking_name || mainGuestName].filter(Boolean).join(' - '),
+            rooms: inhouseRooms
+          })
+        }
       }
     })
 
     if (options.length > 0) {
       bookingRooms.value = options
+      bookingRoomGroups.value = groups
       if (props.initialRoomId) {
         const matched = options.find(o => String(o.id) === String(props.initialRoomId) || String(o.roomId) === String(props.initialRoomId) || String(o.bookingId) === String(props.initialRoomId))
         if (matched) {
@@ -446,6 +445,7 @@ const loadBookingRooms = async () => {
       }
     } else {
       bookingRooms.value = []
+      bookingRoomGroups.value = []
     }
   } catch (err) {
     console.error('Lỗi khi tải dữ liệu booking cho dropdown:', err)
