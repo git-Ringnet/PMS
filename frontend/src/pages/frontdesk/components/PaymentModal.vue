@@ -358,6 +358,15 @@ const handleSubmit = async () => {
     return
   }
 
+  const settlementAmount = finalPayments.reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
+  const difference = netTotalAmount.value - settlementAmount
+  if (Math.abs(difference) > 0.01) {
+    errorMsg.value = difference > 0
+      ? `Còn thiếu ${formatMoney(difference)} VND. Vui lòng thanh toán đủ trước khi lưu.`
+      : `Số tiền thanh toán vượt ${formatMoney(Math.abs(difference))} VND. Vui lòng nhập đúng số tiền cần thanh toán.`
+    return
+  }
+
   isSubmitting.value = true
   try {
     const payload = {
@@ -368,7 +377,8 @@ const handleSubmit = async () => {
       date: dateStr.value,
       open_time: timeStr.value,
       shift_id: workShift.value,
-      currency: currency.value
+      currency: currency.value,
+      department_id: 'FO'
     }
 
     const res = await settleBookingPayment(props.bookingId, payload)
@@ -561,8 +571,6 @@ onMounted(() => {
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Bộ phận</label>
                 <select v-model="department" class="w-full px-1 py-1 bg-white border border-gray-300 rounded text-xs font-semibold focus:outline-none">
                   <option value="FO">FO</option>
-                  <option value="HK">HK</option>
-                  <option value="FB">FB</option>
                 </select>
               </div>
             </div>

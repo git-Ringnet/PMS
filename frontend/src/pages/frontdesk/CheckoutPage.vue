@@ -1661,9 +1661,9 @@ const openDebtSettlementModal = () => {
   }
 }
 
-const handleDebtSettlementSuccess = async () => {
-  showDebtSettlementModal.value = false
-  await handleServiceAdded()
+const handleDebtSettlementSuccess = async (message) => {
+  await refreshCheckoutData()
+  uiStore.showToast(message || 'Đã cập nhật giải trừ công nợ thành công!', 'success')
 }
 
 const openQuickTransferBillModal = async () => {

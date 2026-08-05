@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Printer, Save, Trash2, X } from '@lucide/vue'
 import http from '@/services/http'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const props = defineProps({
   show: Boolean,
@@ -149,8 +150,8 @@ async function submit() {
       amount,
       payment_time: new Date().toTimeString().slice(0, 5),
     })
-    emit('success')
-    emit('close')
+    await load()
+    emit('success', 'Đã thêm giải trừ công nợ thành công!')
   } catch (err) {
     error.value = err.response?.data?.message || 'Không thể lưu giải trừ công nợ.'
   } finally {
@@ -165,7 +166,7 @@ async function removeSettlement(item) {
   try {
     await http.delete(`/payments/${props.payment.id}/debt-settlements/${item.id}`)
     await load()
-    emit('success')
+    emit('success', 'Đã xóa giải trừ công nợ thành công!')
   } catch (err) {
     error.value = err.response?.data?.message || 'Không thể xóa giải trừ công nợ.'
   } finally {
@@ -186,7 +187,8 @@ async function confirmDelete() {
 
 <template>
   <div v-if="show" class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4" @click.self="emit('close')">
-    <section class="w-[920px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
+    <section class="relative w-[920px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
+      <LoadingOverlay :show="loading" />
       <header class="flex h-8 items-center justify-between bg-[#0788eb] px-4 text-sm font-bold text-white">
         <span>Thanh toán công nợ</span>
         <button class="rounded p-1 hover:bg-white/15" @click="emit('close')"><X class="h-4 w-4" /></button>

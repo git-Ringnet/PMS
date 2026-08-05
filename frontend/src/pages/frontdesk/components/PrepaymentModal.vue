@@ -213,6 +213,7 @@ const handleSubmit = async () => {
       open_time: timeStr.value,
       currency: currency.value,
       shift_id: workShift.value,
+      department_id: 'FO',
       pack4: 'AP'
     }
 
