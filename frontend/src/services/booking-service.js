@@ -115,7 +115,7 @@ export const deleteBookingRoomServicesBulk = (roomId, data) => http.delete(`/boo
 export const cancelBookingRoomServices = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/cancel`, data)
 export const transferBookingRoomServicesFolio = (roomId, data) => http.patch(`/booking-rooms/${roomId}/services/folio`, data)
 export const splitBookingRoomServicesFolio = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/split-folio`, data)
-export const fetchQuickTransferCandidates = (roomId) => http.get(`/booking-rooms/${roomId}/services/quick-transfer-candidates`)
+export const fetchQuickTransferCandidates = (roomId, params = {}) => http.get(`/booking-rooms/${roomId}/services/quick-transfer-candidates`, { params })
 export const quickTransferBookingRoomServices = (roomId, data) => http.post(`/booking-rooms/${roomId}/services/quick-transfer`, data)
 export const fetchHotelServices = (params = {}) => http.get('/hotel-services', { params })
 

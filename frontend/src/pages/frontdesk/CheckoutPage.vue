@@ -83,10 +83,17 @@ function isMasterBillRecord(sb, booking, masterSend) {
   return isCurrentMasterOwner || isOriginalMasterBill
 }
 
-function billBelongsToCurrentRoom(sb, roomId) {
-  if (String(sb.RentalRoomId2) === String(roomId)) return true
+function billBelongsToCurrentRoom(sb, roomOrId) {
+  const candidates = typeof roomOrId === 'object'
+    ? [roomOrId.id, roomOrId.roomId, roomOrId.roomNumber, roomOrId.rawRoom?.room_number].filter(v => v !== null && v !== undefined && v !== '')
+    : [roomOrId]
+  const matches = value => candidates.some(candidate => String(value) === String(candidate))
+  const description = String(sb.DescriptionServive || sb.DescriptionService || '')
+  const descriptionMatches = candidates.some(candidate => description.includes(`Phòng ${candidate}`) || description.includes(`phòng ${candidate}`))
+  if (matches(sb.RentalRoomId2)) return true
+  if (descriptionMatches) return true
   const hasCurrentOwner = sb.RegisterID2 !== undefined && sb.RegisterID2 !== null && sb.RegisterID2 !== ''
-  return !hasCurrentOwner && String(sb.RentalRoomId1) === String(roomId)
+  return !hasCurrentOwner && matches(sb.RentalRoomId1)
 }
 
 function setFilterDatesForScope(scope = filterDateScope.value) {
@@ -283,9 +290,9 @@ const openCheckoutModal = () => {
     showCheckoutModal.value = true
     return
   }
-  // Nghiệp vụ Master checkout không yêu cầu màn hình xác nhận danh sách phòng.
+  // Checkout Master vẫn mở modal để hiển thị rõ lỗi bill/cọc nếu API từ chối.
   if (checkedRooms.length === 0 && !selectedRoomItem.value) {
-    submitCheckout()
+    showCheckoutModal.value = true
     return
   }
   checkoutGuestSelections.value = Object.fromEntries(
@@ -315,8 +322,9 @@ const submitCheckout = async () => {
         const response = await previewCheckoutRooms(selectedBooking.value.bookingId, checkedRooms.map(({ room }) => room.roomId || room.id))
         checkoutPreview.value = response.data?.data || null
         const failed = (checkoutPreview.value?.rooms || []).filter(room => !room.eligible)
-        const messages = failed.map(room => `${room.room_number || room.room_id}: ${room.message}`).join('; ')
-        checkoutError.value = `${checkoutPreview.value?.master_unpaid ? 'Master còn công nợ nhóm. Xác nhận để tiếp tục. ' : ''}${messages || 'Đã kiểm tra điều kiện. Bấm Trả phòng để thực hiện các phòng hợp lệ.'}`
+        checkoutError.value = checkoutPreview.value?.master_unpaid
+          ? 'Master còn công nợ nhóm. Xác nhận để tiếp tục.'
+          : (failed.length ? `${failed.length} phòng chưa đủ điều kiện checkout.` : 'Đã kiểm tra điều kiện. Bấm Trả phòng để tiếp tục.')
         return
       }
       if (checkoutPreview.value.master_unpaid && !masterDebtConfirmed.value) {
@@ -338,7 +346,7 @@ const submitCheckout = async () => {
       }
       if (failedRooms.length > 0) {
         await refreshCheckoutData()
-        checkoutError.value = `${successfulRooms.length ? `Đã checkout: ${successfulRooms.join(', ')}. ` : ''}Không checkout: ${failedRooms.join('; ')}`
+        checkoutError.value = `${successfulRooms.length ? `Đã checkout ${successfulRooms.length} phòng. ` : ''}Còn ${failedRooms.length} phòng chưa checkout được.`
         uiStore.showToast('Một số phòng chưa đủ điều kiện checkout.', 'warning')
         return
       }
@@ -643,7 +651,7 @@ const loadCheckoutBookings = async () => {
             if (Number(sb.Edit) === 1) return
             if (!isRoomCharge(sb)) return
 
-            if (billBelongsToCurrentRoom(sb, r.id)) {
+            if (billBelongsToCurrentRoom(sb, r)) {
               if (sb.Ma) processedBillIdsInRoom.add(String(sb.Ma))
               const amt = Number(sb.Amount) || 0
               postedRoomCharge += amt
@@ -715,7 +723,7 @@ const loadCheckoutBookings = async () => {
               if (Number(sb.Edit) === 1) return
               if (masterSend && isRoomCharge(sb)) return
               if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
-              if (billBelongsToCurrentRoom(sb, r.id)) {
+              if (billBelongsToCurrentRoom(sb, r)) {
                 const billGuestId = sb.CustomerId2 || sb.CustomerId1
                 const belongsToThisGuest = billGuestId ? (String(billGuestId) === String(guest.id)) : (String(guest.id) === String(primaryGuestId))
                 if (belongsToThisGuest) {
@@ -775,7 +783,7 @@ const loadCheckoutBookings = async () => {
             allBills.forEach(sb => {
               if (Number(sb.Edit) === 1) return
               if (sb.ServiceId !== 'RM' && sb.ServiceId !== 'RMS') return
-              if (billBelongsToCurrentRoom(sb, r.id)) {
+                if (billBelongsToCurrentRoom(sb, r)) {
                 if (sb.Ma) processedBillIdsInRoom.add(String(sb.Ma))
               }
             })
@@ -1048,7 +1056,7 @@ const servicesList = computed(() => {
     const invCode = sb.InvoiceId || sb.invoice_id || sb.InvoiceID || ''
 
     return {
-      id: `SB-${sb.Ma || idx}`,
+      id: Number(sb.Ma || idx),
       serviceBillId: sb.Ma || null,
       serviceDate: sb.Date || sb.CreatedDate || null,
       createdAt: sb.CreatedDate || sb.created_at || null,
@@ -1102,13 +1110,12 @@ const servicesList = computed(() => {
       const allBills = mergeServiceBills(rawB.master_service_bills || [], rawB.service_bills || [])
       allBills.forEach((sb, idx) => {
         if (Number(sb.Edit) === 1) return
-        if (sb.ServiceId !== 'RM' && sb.ServiceId !== 'RMS') return
         if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
 
         const isPaid = Number(sb.Status) === 2 || Boolean(sb.PaymentID || sb.PaymentId)
         const shouldSendToMaster = masterSend
 
-        const isCurrentRoomOwner = billBelongsToCurrentRoom(sb, room.roomId)
+        const isCurrentRoomOwner = billBelongsToCurrentRoom(sb, room)
         const billGuestId = sb.CustomerId2 || sb.CustomerId1
         const belongsToSelectedGuest = billGuestId
           ? String(billGuestId) === String(guestId)
@@ -1152,6 +1159,7 @@ const servicesList = computed(() => {
             // RM/RMS vẫn thuộc Master khi cờ tập hợp tiền phòng còn bật,
             // không đưa bill đã thanh toán quay lại thẻ phòng.
             if (masterSend) {
+              if (s.service_bill_id && masterBillIds.has(String(s.service_bill_id))) return
               services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
               return
             }
@@ -1284,7 +1292,14 @@ const invoiceItems = computed(() => {
     return serviceInvoiceDetails.value.map((detail, index) => ({
       id: `${detail.BillServiceId}-${detail.Ma || index}`,
       serviceName: detail.DescriptionServive || detail.ServiceId || 'Dá»‹ch vá»¥',
-      quantity: 1,
+      quantity: (() => {
+        const linked = selectedServiceGroup.value?.items?.find(item => Number(item.serviceBillDetailNo) === Number(detail.Ma))
+        if (linked?.quantity !== undefined && linked?.quantity !== null) return Number(linked.quantity)
+        if (detail.Quantity !== undefined && detail.Quantity !== null && detail.Quantity !== '') return Number(detail.Quantity)
+        const rate = Number(detail.OriginalRate ?? detail.Amount)
+        const total = Number(detail.Amount) || 0
+        return rate ? total / rate : 1
+      })(),
       amount: detail.OriginalRate ?? detail.Amount,
       totalAmount: detail.Amount
     }))
@@ -1350,7 +1365,7 @@ const canTransferServiceGroup = (group) => {
 const selectedServiceItems = computed(() => visibleServices.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
 const selectedServiceGroups = computed(() => serviceGroups.value.filter(group => isServiceGroupSelected(group)))
 const canTransferSelectedServices = computed(() => (
-  Boolean(selectedRoomItem.value)
+  Boolean(selectedBooking.value)
   && selectedServiceItems.value.length > 0
   && selectedServiceItems.value.every(service => !service.isPaid && Number(service.status) !== 2)
 ))
@@ -1374,7 +1389,7 @@ const canOpenDebtSettlement = computed(() => {
   return isDebtPayment(selectedPaymentItems.value[0])
 })
 const canCancelSelectedServices = computed(() => (
-  Boolean(selectedRoomItem.value)
+  Boolean(selectedBooking.value)
   && selectedServiceItems.value.length > 0
   && selectedServiceItems.value.every(service => service.serviceBillId)
   && selectedServiceItems.value.every(service => !service.isPaid && Number(service.status) !== 2)
@@ -1500,7 +1515,7 @@ const roomTransferPreviewServices = (booking, room, targetGuestId = null) => {
     if (Number(bill.Edit) === 1 || [3, 4].includes(Number(bill.Status))) return false
     if (linkedBillIds.has(String(bill.Ma))) return false
     if (masterSend && isRoomCharge(bill)) return false
-    if (!billBelongsToCurrentRoom(bill, room.roomId)) return false
+    if (!billBelongsToCurrentRoom(bill, room)) return false
     const billGuestId = bill.CustomerId2 || bill.CustomerId1
     return billGuestId ? String(billGuestId) === String(guestId) : isPrimary
   })
@@ -1537,7 +1552,7 @@ const guestRoomServiceAmount = (booking, room, guestId) => {
     if (sendRoomRateToMaster && roomCharge) return
     if (sb.Ma && processedBillIds.has(String(sb.Ma))) return
 
-    if (billBelongsToCurrentRoom(sb, room.roomId)) {
+    if (billBelongsToCurrentRoom(sb, room)) {
       const billGuestId = sb.CustomerId2 || sb.CustomerId1
       const belongsToGuest = billGuestId ? String(billGuestId) === String(targetGuestId) : isPrimary
       if (belongsToGuest) {
@@ -1740,6 +1755,7 @@ const openServiceAdjustment = async () => {
   }
 
   let adjustmentItems = group.items
+  let isFree = false
   if (targetBillId) {
     try {
       const response = await fetchServiceBillDetails(targetBillId)
@@ -1747,17 +1763,23 @@ const openServiceAdjustment = async () => {
       if (details.length) {
         adjustmentItems = details.map((detail, index) => {
           const matchingService = group.items.find(item => Number(item.serviceBillDetailNo) === Number(detail.Ma)) || group.items[index]
+          const originalRate = Number(detail.OriginalRate ?? matchingService?.amount ?? 0)
+          const storedQuantity = Number(detail.Quantity)
+          const quantity = storedQuantity > 0
+            ? storedQuantity
+            : (originalRate > 0 ? Number(detail.DetailBillOriginalAmount || detail.Amount || 0) / originalRate : (matchingService?.quantity || 1))
           return {
             ...matchingService,
             id: matchingService?.id || `detail-${detail.Ma || index}`,
             serviceCode: detail.ServiceId || matchingService?.serviceCode,
             serviceName: detail.DescriptionServive || matchingService?.serviceName,
-            quantity: matchingService?.quantity || 1,
-            amount: detail.OriginalRate ?? matchingService?.amount ?? detail.Amount,
+            quantity,
+            amount: originalRate || (quantity ? Number(detail.DetailBillOriginalAmount || detail.Amount || 0) / quantity : detail.Amount),
             totalAmount: detail.Amount ?? matchingService?.totalAmount
           }
         })
       }
+      isFree = Boolean(response.data?.is_free)
     } catch (error) {
       uiStore.showToast('KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t bill; Ä‘ang dÃ¹ng dá»¯ liá»‡u hiá»‡n cÃ³.', 'warning')
     }
@@ -1768,6 +1790,7 @@ const openServiceAdjustment = async () => {
     serviceDate: item.serviceDate,
     folio: item.folio || group.folio || 1,
     note: item.description || group.name,
+    isFree,
     items: adjustmentItems
   }
   showHousekeepingServiceModal.value = true
@@ -1777,8 +1800,10 @@ const cancelSelectedServices = async (reason) => {
   if (!canCancelSelectedServices.value) return
   isServiceOperationLoading.value = true
   try {
-    const serviceIds = selectedServiceItems.value.map(service => Number(service.id))
-    const response = await cancelBookingRoomServices(selectedRoomItem.value.roomId, { service_ids: serviceIds, reason })
+    const isMaster = !selectedRoomItem.value
+    const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const ids = selectedServiceItems.value.map(service => Number(service.id))
+    const response = await cancelBookingRoomServices(sourceId, isMaster ? { service_bill_ids: ids, reason } : { service_ids: ids, reason })
     showCancelServiceModal.value = false
     await refreshAfterServiceOperation()
     uiStore.showToast(response.data?.message || 'Đã xóa dịch vụ thành công!', 'success')
@@ -1824,7 +1849,9 @@ const openQuickTransferBillModal = async () => {
   isServiceOperationLoading.value = true
   try {
     const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
-    const response = await fetchQuickTransferCandidates(targetId)
+    const response = await fetchQuickTransferCandidates(targetId, selectedRoomItem.value && selectedGuestId.value
+      ? { target_guest_id: selectedGuestId.value }
+      : {})
     quickTransferCandidates.value = response.data?.data || []
   } catch (error) {
     quickTransferCandidates.value = []
@@ -1839,7 +1866,6 @@ const submitQuickTransferBills = async (billIds) => {
   if (!hasQuickTransferTarget.value || !billIds.length) return
   quickTransferLoadingText.value = 'Đang chuyển bill nhanh...'
   isServiceOperationLoading.value = true
-  uiStore.showToast('Đang chuyển bill nhanh...', 'info', 1500)
   try {
     const targetId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
     const payload = { bill_ids: billIds }
@@ -1866,8 +1892,10 @@ const splitSelectedServices = async (payload) => {
   if (!canSplitSelectedServices.value) return
   isServiceOperationLoading.value = true
   try {
-    await splitBookingRoomServicesFolio(selectedRoomItem.value.roomId, {
-      service_ids: selectedServiceIds.value.map(Number),
+    const isMaster = !selectedRoomItem.value
+    const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    await splitBookingRoomServicesFolio(sourceId, {
+      [isMaster ? 'bill_ids' : 'service_ids']: selectedServiceIds.value.map(Number),
       ...payload
     })
     showSplitServiceModal.value = false
@@ -1909,12 +1937,19 @@ const transferSelectedServices = async (destination) => {
   if (!canTransferSelectedServices.value) return
   isServiceOperationLoading.value = true
   try {
-    const response = await transferBookingRoomServicesFolio(selectedRoomItem.value.roomId, {
-      service_ids: selectedServiceIds.value.map(Number),
-      target_booking_id: destination.bookingId,
-      target_room_id: destination.roomId,
-      target_guest_id: destination.guestId
-    })
+    const isMaster = !selectedRoomItem.value
+    const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const response = isMaster
+      ? await quickTransferBookingRoomServices(destination.roomId, {
+          bill_ids: selectedServiceIds.value.map(Number),
+          target_guest_id: destination.guestId
+        })
+      : await transferBookingRoomServicesFolio(sourceId, {
+          service_ids: selectedServiceIds.value.map(Number),
+          target_booking_id: destination.bookingId,
+          target_room_id: destination.roomId,
+          target_guest_id: destination.guestId
+        })
     showTransferServiceModal.value = false
     await refreshAfterServiceOperation()
     uiStore.showToast(response.data?.message || 'Chuyển dịch vụ thành công!', 'success')
@@ -2050,9 +2085,10 @@ const handleFolioDrop = async (folio) => {
 
   isServiceOperationLoading.value = true
   try {
-    const targetRoomId = selectedRoomItem.value?.roomId || selectedBooking.value?.bookingId
+    const isMaster = !selectedRoomItem.value
+    const targetRoomId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value?.bookingId}`
     await transferBookingRoomServicesFolio(targetRoomId, {
-      service_ids: serviceIdsToTransfer,
+      [isMaster ? 'service_bill_ids' : 'service_ids']: serviceIdsToTransfer,
       folio: targetFolio,
     })
     selectedServiceIds.value = []
@@ -2709,7 +2745,7 @@ onUnmounted(() => {
             <!-- Floating Search Dropdown Popup List (Khớp chính xác Ảnh 1) -->
             <div 
               v-if="showSearchDropdown" 
-              class="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-300 rounded-md shadow-2xl z-50 max-h-72 overflow-y-auto divide-y divide-gray-100"
+              class="absolute left-0 top-full mt-1 w-[420px] max-w-[calc(100vw-24px)] bg-white border border-gray-300 rounded-md shadow-2xl z-50 max-h-72 overflow-y-auto divide-y divide-gray-100"
             >
               <div 
                 v-for="b in filteredSearchBookings" 
@@ -3185,8 +3221,8 @@ onUnmounted(() => {
           </template>
           <template v-else-if="selectedCheckoutRooms.length > 1">
             <div v-if="checkoutPreview" class="space-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
-              <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}<span v-if="room.message">: {{ room.message }}</span></p>
-              <label v-if="checkoutPreview.master_unpaid" class="mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800"><input v-model="masterDebtConfirmed" type="checkbox" class="accent-amber-500" /> Master còn công nợ nhóm, vẫn tiếp tục checkout phòng hợp lệ.</label>
+              <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}</p>
+              <label v-if="checkoutPreview.master_unpaid" class="mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800"><input v-model="masterDebtConfirmed" type="checkbox" class="accent-amber-500" /> Master còn công nợ — vẫn checkout phòng hợp lệ.</label>
             </div>
             <p class="py-2 text-center text-sm text-slate-700">Đã chọn {{ selectedCheckoutRooms.length }} phòng để checkout.</p>
             <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">

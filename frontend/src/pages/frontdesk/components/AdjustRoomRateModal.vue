@@ -48,9 +48,7 @@ const roomDepartureDate = computed(() => normalizeYmd(selectedRoom.value?.rawRoo
 const maxDate = computed(() => {
   const systemDate = normalizeYmd(props.systemDate)
   if (!systemDate) return ''
-  const date = new Date(`${systemDate}T00:00:00`)
-  date.setDate(date.getDate() - 1)
-  return toYmd(date)
+  return systemDate
 })
 const minDate = computed(() => roomArrivalDate.value)
 const departureDate = computed(() => roomDepartureDate.value)
