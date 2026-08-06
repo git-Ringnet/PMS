@@ -45,6 +45,16 @@ class BookingRoomServiceController extends Controller
         return response()->json(['success' => true, 'data' => $services]);
     }
 
+    public function billDetails($billId)
+    {
+        $bill = ServiceBill::findOrFail($billId);
+        $details = ServiceBillDetail::where('BillServiceId', $bill->Ma)
+            ->orderBy('Ma')
+            ->get();
+
+        return response()->json(['success' => true, 'data' => $details]);
+    }
+
     // =========================================
     // GET: Danh sách dịch vụ FO khả dụng (dùng để populate dropdown chọn dịch vụ)
     // GET /booking-room-services/fo-list
@@ -464,22 +474,45 @@ class BookingRoomServiceController extends Controller
             DB::transaction(function () use ($validated, $room) {
                 $serviceIds = array_map('intval', $validated['service_ids']);
 
-                // 1. Cập nhật booking_room_services nếu có
-                $services = BookingRoomService::whereIn('id', $serviceIds)
+                // Chỉ cho phép cập nhật dòng dịch vụ thuộc phòng đang thao tác.
+                $services = BookingRoomService::where('booking_room_id', $room->id)
+                    ->whereIn('id', $serviceIds)
                     ->lockForUpdate()
                     ->get();
+
+                if ($services->count() !== count(array_unique($serviceIds))) {
+                    abort(422, 'Có dịch vụ không thuộc phòng đang chọn.');
+                }
+
+                $billIdsFromServices = $services->pluck('service_bill_id')->filter()->unique()->values();
+                $hasPaidBill = $billIdsFromServices->isNotEmpty()
+                    && ServiceBill::whereIn('Ma', $billIdsFromServices)
+                        ->where(function ($query) {
+                            $query->whereNotNull('PaymentId')
+                                ->orWhere('Status', '!=', 1)
+                                ->orWhere('Edit', 1);
+                        })
+                        ->exists();
+                $hasPaidHousekeepingBill = $billIdsFromServices->isNotEmpty()
+                    && HousekeepingServiceBill::whereIn('BillServiceId', $billIdsFromServices)
+                        ->where(function ($query) {
+                            $query->where('Status', '!=', 1)
+                                ->orWhere('BillEdit', 1);
+                        })
+                        ->exists();
+                if ($hasPaidBill || $hasPaidHousekeepingBill) {
+                    abort(422, 'Không thể chuyển dịch vụ đã thanh toán, hủy hoặc đã chỉnh sửa.');
+                }
 
                 $services->each(function (BookingRoomService $service) use ($validated) {
                     $service->folio = $validated['folio'];
                     $service->save();
                 });
 
-                // 2. Cập nhật ServiceBill (cho cả bill RM và bill lẻ)
-                $billIdsFromServices = $services->pluck('service_bill_id')->filter()->toArray();
-                $allBillIds = array_unique(array_merge($serviceIds, $billIdsFromServices));
-
-                if (!empty($allBillIds)) {
-                    ServiceBill::whereIn('Ma', $allBillIds)->update(['Folio' => (string) $validated['folio']]);
+                // Chỉ cập nhật ServiceBill được liên kết từ các dòng dịch vụ đã xác thực.
+                if ($billIdsFromServices->isNotEmpty()) {
+                    ServiceBill::whereIn('Ma', $billIdsFromServices)
+                        ->update(['Folio' => (string) $validated['folio']]);
                 }
             });
 
@@ -526,6 +559,14 @@ class BookingRoomServiceController extends Controller
             foreach ($services->groupBy('service_bill_id') as $serviceBillId => $billServices) {
                 $bill = ServiceBill::whereKey($serviceBillId)->lockForUpdate()->firstOrFail();
                 if ($bill->PaymentId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) abort(422, 'Chỉ được chuyển dịch vụ chưa thanh toán.');
+                $hasPaidHousekeepingBill = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)
+                    ->where(function ($query) {
+                        $query->where('Status', '!=', 1)
+                            ->orWhere('BillEdit', 1);
+                    })
+                    ->exists();
+                if ($hasPaidHousekeepingBill) abort(422, 'Cannot transfer a paid service.');
+
                 $allBillServices = BookingRoomService::where('booking_room_id', $sourceRoom->id)
                     ->where('service_bill_id', $bill->Ma)->lockForUpdate()->get();
                 if ($allBillServices->count() !== $billServices->count()) abort(422, 'Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để chuyển.');
@@ -873,6 +914,7 @@ class BookingRoomServiceController extends Controller
                         'Quantity' => 1,
                         'Amount' => $billAmount,
                         'Folio' => (string)$effectiveFolio,
+                        'Status' => $isFree ? 2 : $serviceBill->Status,
                         'UpdatedDate' => now(),
                         'UpdatedHour' => now()->format('H:i'),
                         'updated_at' => now(),
@@ -888,6 +930,7 @@ class BookingRoomServiceController extends Controller
                             'BillNote' => $request->note,
                             'Date' => $serviceDateCarbon->startOfDay(),
                             'RoomNo' => $room->room_number,
+                            'Status' => $isFree ? 2 : $bill->Status,
                             'UpdatedDate' => now(),
                             'updated_at' => now(),
                         ]);
@@ -929,6 +972,7 @@ class BookingRoomServiceController extends Controller
                     ]);
                 }
 
+                $payment = null;
                 if ($isFree) {
                     $payment = Payment::create([
                         'booking_id' => $booking?->id, 'booking_room_id' => $room->id, 'guest_id' => $guestId,
@@ -1429,8 +1473,17 @@ class BookingRoomServiceController extends Controller
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
 
-        if ($isBookingPost) {
-            // Khi post từ Master, bỏ qua các phòng chưa đến trong toàn bộ khoảng ngày.
+        if ($isBookingPost && $request->mode === 'auto') {
+            // Tiền phòng tự động từ Master chỉ áp dụng cho phòng đã gán số và đang Inhouse.
+            $roomsToPost = $roomsToPost->filter(function ($targetRoom) {
+                return (int) $targetRoom->status === BookingRoom::STATUS_CHECKED_IN
+                    && filled(trim((string) $targetRoom->room_number));
+            })->values();
+            if ($roomsToPost->isEmpty()) {
+                return response()->json(['success' => false, 'message' => 'Không có phòng Inhouse đã gán số phòng để post tiền phòng tự động.'], 422);
+            }
+        } elseif ($isBookingPost) {
+            // Các chế độ Master khác vẫn bỏ qua phòng chưa đến trong toàn bộ khoảng ngày.
             $roomsToPost = $roomsToPost->filter(function ($targetRoom) use ($dateTo) {
                 if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
                     return false;

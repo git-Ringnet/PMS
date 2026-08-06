@@ -94,6 +94,7 @@ class BookingController extends Controller
         if ($request->boolean('with_billing') || $request->input('with_billing') === 'true') {
             $relations[] = 'serviceBills';
             $relations[] = 'bookingRooms.serviceBills';
+            $relations[] = 'bookingRooms.currentServiceBills';
             $relations[] = 'masterServiceBills';
             $relations[] = 'payments.paymentMethod';
         }
