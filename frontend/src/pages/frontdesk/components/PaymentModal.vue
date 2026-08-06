@@ -39,6 +39,10 @@ const props = defineProps({
     type: Number,
     default: 0
   },
+  serviceBillIds: {
+    type: Array,
+    default: () => []
+  },
   systemDate: {
     type: String,
     default: ''
@@ -374,6 +378,7 @@ const handleSubmit = async () => {
       guest_id: props.selectedGuestId || null,
       folio_id: String(props.folioId).toUpperCase() === 'A' ? 'A' : (Number(props.folioId) || 1),
       payments: finalPayments,
+      service_bill_ids: props.serviceBillIds,
       date: dateStr.value,
       open_time: timeStr.value,
       shift_id: workShift.value,

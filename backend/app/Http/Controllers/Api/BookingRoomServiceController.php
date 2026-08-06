@@ -1540,6 +1540,8 @@ class BookingRoomServiceController extends Controller
                 $currentGuestName = $sendRoomRateToMaster
                     ? ($booking?->booking_name ?: 'Khách lẻ')
                     : $guestName;
+                $currentRentalRoomId = $sendRoomRateToMaster ? null : $targetRoom->id;
+                $currentGuestId = $sendRoomRateToMaster ? null : $guestId;
 
                 $current = $dateFrom->copy()->startOfDay();
                 $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
@@ -1637,8 +1639,8 @@ class BookingRoomServiceController extends Controller
                                 'Folio'              => (string)$folio,
                                 'Guest'              => $currentGuestName,
                                 'RegisterID2'        => $booking?->id,
-                                'RentalRoomId2'      => $targetRoom->id,
-                                'CustomerId2'        => $guestId,
+                                'RentalRoomId2'      => $currentRentalRoomId,
+                                'CustomerId2'        => $currentGuestId,
                                 'CompanyId2'         => $booking?->company_id,
                                 'Username'           => $user,
                             ]);
@@ -1665,8 +1667,8 @@ class BookingRoomServiceController extends Controller
                                 'CustomerId1'        => $guestId,
                                 'CompanyId1'         => $booking?->company_id,
                                 'RegisterID2'        => $booking?->id,
-                                'RentalRoomId2'      => $targetRoom->id,
-                                'CustomerId2'        => $guestId,
+                                'RentalRoomId2'      => $currentRentalRoomId,
+                                'CustomerId2'        => $currentGuestId,
                                 'CompanyId2'         => $booking?->company_id,
                                 'Username'           => $user,
                                 'Status'             => 1,
@@ -1701,8 +1703,8 @@ class BookingRoomServiceController extends Controller
                             'CustomerId1'        => $guestId,
                             'CompanyId1'         => $booking?->company_id,
                             'RegisterID2'        => $booking?->id,
-                            'RentalRoomId2'      => $targetRoom->id,
-                            'CustomerId2'        => $guestId,
+                            'RentalRoomId2'      => $currentRentalRoomId,
+                            'CustomerId2'        => $currentGuestId,
                             'CompanyId2'         => $booking?->company_id,
                             'Username'           => $user,
                             'Status'             => 1,
