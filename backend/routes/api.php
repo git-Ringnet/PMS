@@ -304,6 +304,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
     Route::get('/booking-services/fo-list', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'foServiceList']);
     Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill']);
+    Route::get('/housekeeping/service-bills', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'searchHousekeepingInvoices']);
+    Route::post('/housekeeping/service-bills/{billId}/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancelHousekeepingInvoice']);
     Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill']);
     Route::post('/booking-room-services/post-room-charge', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge']);
     Route::post('/bookings/{bookingId}/adjust-room-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'adjustRoomRate']);

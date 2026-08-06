@@ -158,7 +158,11 @@ onUnmounted(() => document.removeEventListener('click', closeFab))
       <div class="flex-1 overflow-hidden relative">
         <LoadingOverlay :show="isTabLoading" />
         <Transition name="hk-tab" mode="out-in">
-          <component :is="activeComponent" :key="activeTabKey" />
+          <component
+            :is="activeComponent"
+            :key="activeTabKey"
+            :initial-room-id="activeTabKey === 'add-service' ? route.query.bookingRoomId || '' : ''"
+          />
         </Transition>
       </div>
     </div>

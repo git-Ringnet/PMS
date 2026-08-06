@@ -11,6 +11,8 @@ use App\Models\HotelService;
 use App\Models\HotelSetting;
 use App\Models\HousekeepingServiceBill;
 use App\Models\HousekeepingServiceBillDetail;
+use App\Models\Payment;
+use App\Models\PaymentMethod;
 use App\Models\RoomNightBill;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
@@ -812,8 +814,8 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Khách được chọn không thuộc phòng này.'], 422);
         }
 
-        // Endpoint này chỉ dành cho post dịch vụ buồng phòng.
-        $department = 'HK';
+        // Nguồn Lễ tân hạch toán FO; thao tác từ Buồng phòng vẫn hạch toán HK.
+        $department = $postingSource === 'FO' ? 'FO' : 'HK';
         $serviceDate = $request->service_date ?: now()->toDateString();
         $systemDate = $this->avService->getSystemDate();
         $serviceDateCarbon = Carbon::parse($serviceDate);
@@ -824,10 +826,19 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Tài khoản không có quyền post dịch vụ cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).'], 403);
         }
         $folio = $request->folio ?? 1;
+        $isFree = $request->boolean('is_free');
+        $complimentaryMethod = null;
+        if ($isFree) {
+            $complimentaryMethod = PaymentMethod::where('code', 'CL')->where('is_free', true)->first();
+            if (!$complimentaryMethod) {
+                return response()->json(['success' => false, 'message' => 'Chưa cấu hình phương thức thanh toán Complimentary (CL).'], 422);
+            }
+        }
         $user = Auth::user()?->username ?? 'Admin';
+        $postingCreatedAt = Carbon::parse($systemDate)->setTimeFromTimeString(now()->format('H:i:s'));
         $createdRecords = [];
 
-        DB::transaction(function () use ($request, $room, $guestPivot, $department, $serviceDate, $serviceDateCarbon, $folio, $user, &$createdRecords) {
+        DB::transaction(function () use ($request, $room, $guestPivot, $department, $serviceDate, $serviceDateCarbon, $folio, $isFree, $complimentaryMethod, $user, $postingCreatedAt, &$createdRecords) {
             $groupMeta = [
                 'minibar' => ['label' => 'Minibar', 'service' => 'MB', 'outlet' => 'MB'],
                 'giatui'  => ['label' => 'Giặt ủi', 'service' => 'LA', 'outlet' => 'LA'],
@@ -845,6 +856,7 @@ class BookingRoomServiceController extends Controller
                 if (!isset($groupMeta[$groupKey])) continue;
                 $meta = $groupMeta[$groupKey];
                 $groupTitle = $meta['label'];
+                $effectiveFolio = $isFree ? 3 : $folio;
                 $originalAmount = collect($items)->sum(fn ($item) => (float)($item['original_rate'] ?? $item['price'] ?? 0) * (float)($item['qty'] ?? 1));
                 $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
                 $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
@@ -860,7 +872,7 @@ class BookingRoomServiceController extends Controller
                         'DescriptionServive' => $groupTitle,
                         'Quantity' => 1,
                         'Amount' => $billAmount,
-                        'Folio' => (string)$folio,
+                        'Folio' => (string)$effectiveFolio,
                         'UpdatedDate' => now(),
                         'UpdatedHour' => now()->format('H:i'),
                         'updated_at' => now(),
@@ -884,7 +896,7 @@ class BookingRoomServiceController extends Controller
                             'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
                             'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
                             'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
-                            'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                            'BillNote' => $request->note, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                             'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
                             'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
                             'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
@@ -899,22 +911,37 @@ class BookingRoomServiceController extends Controller
                         'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
                         'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
                         'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
-                        'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$folio,
+                        'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$effectiveFolio,
                         'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
                         'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
-                        'Username' => $user, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'Username' => $user, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                         'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
-                        'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'),
+                        'CreatedUser' => $user, 'CreatedDate' => $postingCreatedAt, 'CreatedHour' => $postingCreatedAt->format('H:i'),
                     ]);
                     $bill = HousekeepingServiceBill::create([
                         'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
                         'BillDiscountAmount' => $discountAmount, 'BillAmount' => $billAmount,
                         'BillDiscount' => $originalAmount > 0 ? ($discountAmount / $originalAmount) * 100 : 0,
-                        'BillNote' => $request->note, 'Status' => 1, 'Outlet' => $meta['outlet'],
+                        'BillNote' => $request->note, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                         'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
                         'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
                         'Currency' => 'VND', 'ExchangeRate' => 1, 'BillUsername' => $user, 'BillEdit' => 0,
                     ]);
+                }
+
+                if ($isFree) {
+                    $payment = Payment::create([
+                        'booking_id' => $booking?->id, 'booking_room_id' => $room->id, 'guest_id' => $guestId,
+                        'company_id' => $booking?->company_id, 'date' => $serviceDateCarbon->toDateString(),
+                        'open_time' => now()->format('H:i:s'), 'guest_display' => trim(($booking?->booking_code ?: '') . ' - ' . $guestName, ' -'),
+                        'description' => 'Thanh toán miễn phí - ' . $groupTitle, 'amount' => 0, 'total_amount_before_split' => 0,
+                        'pack4' => 'PY', 'folio_id' => 3, 'payment_method_id' => $complimentaryMethod->code,
+                        'department_id' => $department, 'outlet' => $meta['outlet'], 'status' => Payment::STATUS_PAID,
+                        'edit_flag' => 0, 'shift' => '1', 'created_by' => $user,
+                    ]);
+                    $payment->update(['payment_id' => $payment->id]);
+                    $serviceBill->update(['Folio' => '3', 'PaymentId' => $payment->id, 'Status' => 2]);
+                    $bill->update(['Status' => 2]);
                 }
 
                 foreach ($items as $index => $item) {
@@ -946,7 +973,7 @@ class BookingRoomServiceController extends Controller
                         'tax'             => $taxAmt,
                         'service_charge'  => $svcChargeAmt,
                         'unit'            => $item['unit'] ?? 'Cái',
-                        'folio'           => $folio,
+                        'folio'           => $effectiveFolio,
                         'is_room'         => 1,
                         'is_posted'       => 1,
                         'posted_at'       => now(),
@@ -981,6 +1008,146 @@ class BookingRoomServiceController extends Controller
             'message' => 'Đã lưu hóa đơn dịch vụ thành công!',
             'data'    => $createdRecords
         ]);
+    }
+
+    /** Danh sách hóa đơn Buồng phòng, bao gồm bill được post từ FO. */
+    public function searchHousekeepingInvoices(Request $request)
+    {
+        $validated = $request->validate([
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'booking_code' => 'nullable|string|max:50',
+            'room_no' => 'nullable|string|max:20',
+            'department' => 'nullable|string|in:FO,HK',
+            'username' => 'nullable|string|max:50',
+            'outlet' => 'nullable|string|max:10',
+            'status' => 'nullable|string|in:all,paid,unpaid,deleted',
+        ]);
+
+        $query = HousekeepingServiceBill::query();
+        if (!empty($validated['date_from'])) $query->whereDate('Date', '>=', $validated['date_from']);
+        if (!empty($validated['date_to'])) $query->whereDate('Date', '<=', $validated['date_to']);
+        if (!empty($validated['room_no'])) $query->where('RoomNo', 'like', '%' . $validated['room_no'] . '%');
+        if (!empty($validated['department'])) $query->where('Department', $validated['department']);
+        if (!empty($validated['username'])) $query->where('BillUsername', $validated['username']);
+        if (!empty($validated['outlet'])) $query->where('Outlet', $validated['outlet']);
+
+        $status = $validated['status'] ?? 'all';
+        if ($status === 'deleted') {
+            $query->where('BillEdit', 1);
+        } elseif ($status === 'paid') {
+            $query->where('BillEdit', 0)->whereIn('BillServiceId', ServiceBill::query()
+                ->whereNotNull('PaymentId')->where('PaymentId', '!=', '')->pluck('Ma'));
+        } elseif ($status === 'unpaid') {
+            $query->where('BillEdit', 0)->whereIn('BillServiceId', ServiceBill::query()
+                ->where(fn ($payment) => $payment->whereNull('PaymentId')->orWhere('PaymentId', ''))->pluck('Ma'));
+        }
+
+        $bills = $query->orderByDesc('Date')->orderByDesc('Ma')->get();
+        $serviceBills = ServiceBill::whereIn('Ma', $bills->pluck('BillServiceId')->filter())->get()->keyBy('Ma');
+        $freePaymentIds = Payment::whereIn('payment_id', $serviceBills->pluck('PaymentId')->filter())
+            ->where('payment_method_id', 'CL')->pluck('payment_id')->mapWithKeys(fn ($id) => [(string) $id => true]);
+        $details = HousekeepingServiceBillDetail::whereIn('BillId', $bills->pluck('Ma'))
+            ->where('Deleted', 0)->orderBy('DetailId')->get()->groupBy('BillId');
+        $bookings = \App\Models\Booking::withTrashed()->whereIn('id', $bills->pluck('BookingId')->filter())->get()->keyBy('id');
+
+        $rows = $bills->map(function (HousekeepingServiceBill $bill) use ($serviceBills, $freePaymentIds, $details, $bookings, $validated) {
+            $booking = $bookings->get($bill->BookingId);
+            $bookingCode = $booking?->booking_code ?? '';
+            if (!empty($validated['booking_code']) && !str_contains(strtolower($bookingCode), strtolower($validated['booking_code']))) return null;
+            $serviceBill = $serviceBills->get($bill->BillServiceId);
+            $items = ($details->get($bill->Ma) ?? collect())->map(fn ($item) => [
+                'name' => $item->Product,
+                'quantity' => (float) $item->Quantity,
+                'amount' => (float) $item->TotalAmount,
+            ])->values();
+
+            $billDate = $serviceBill?->Date ?: $bill->Date;
+            return [
+                'id' => $bill->Ma,
+                'booking_code' => $bookingCode,
+                'room_no' => $bill->RoomNo,
+                'date' => $billDate ? Carbon::parse($billDate)->format('Y-m-d') : null,
+                'time' => $serviceBill?->OpenTime ?: ($billDate ? Carbon::parse($billDate)->format('H:i') : null),
+                'outlet' => $bill->Outlet,
+                'products' => $items,
+                'is_free' => $serviceBill?->PaymentId && $freePaymentIds->has((string) $serviceBill->PaymentId),
+                'amount' => (float) $bill->BillAmount,
+                'payment_id' => $serviceBill?->PaymentId,
+                'manual_invoice_code' => $serviceBill?->InvoiceId,
+                'department' => $bill->Department,
+                'username' => $bill->BillUsername,
+                'is_deleted' => (bool) $bill->BillEdit,
+                'can_cancel' => !$bill->BillEdit && $bill->Department === 'HK' && empty($serviceBill?->PaymentId),
+            ];
+        })->filter()->values();
+
+        return response()->json(['success' => true, 'data' => $rows]);
+    }
+
+    /** Hủy bill HK chưa thanh toán bằng các dòng âm audit theo nghiệp vụ SP6000/SP3000. */
+    public function cancelHousekeepingInvoice(Request $request, $billId)
+    {
+        $validated = $request->validate(['reason' => 'required|string|max:255']);
+
+        DB::transaction(function () use ($billId, $validated) {
+            $bill = HousekeepingServiceBill::whereKey($billId)->lockForUpdate()->firstOrFail();
+            $serviceBill = ServiceBill::whereKey($bill->BillServiceId)->lockForUpdate()->firstOrFail();
+            if ($bill->Department !== 'HK' || $bill->BillEdit || !empty($serviceBill->PaymentId)) {
+                abort(422, 'Chỉ được xóa hóa đơn Buồng phòng chưa thanh toán.');
+            }
+            if ((int) $serviceBill->Status !== 1 || (int) $serviceBill->Edit === 1) {
+                abort(422, 'Hóa đơn không còn ở trạng thái có thể xóa.');
+            }
+            $serviceDate = Carbon::parse($serviceBill->Date)->startOfDay();
+            if ($serviceDate->lt(Carbon::parse($this->avService->getSystemDate())->startOfDay()) && !$this->canOperateOldDay()) {
+                abort(403, 'Tài khoản không có quyền xóa hóa đơn ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).');
+            }
+
+            $reason = trim($validated['reason']);
+            $description = trim(($serviceBill->DescriptionServive ?: $serviceBill->ServiceId) . ' (Correct : ' . $reason . ')');
+            $negativeServiceBill = $serviceBill->replicate();
+            $negativeServiceBill->Amount = -abs((float) $serviceBill->Amount);
+            $negativeServiceBill->DescriptionServive = $description;
+            $negativeServiceBill->Edit = 1;
+            $negativeServiceBill->Status = 3;
+            $negativeServiceBill->Pack1 = (string) $serviceBill->Ma;
+            $negativeServiceBill->UpdatedDate = now();
+            $negativeServiceBill->save();
+
+            $serviceBill->DescriptionServive = $description;
+            $serviceBill->Edit = 1;
+            $serviceBill->Status = 3;
+            $serviceBill->Pack1 = (string) $negativeServiceBill->Ma;
+            $serviceBill->UpdatedDate = now();
+            $serviceBill->save();
+
+            $negativeBill = $bill->replicate();
+            $negativeBill->BillServiceId = $negativeServiceBill->Ma;
+            $negativeBill->BillOriginalAmount = -abs((float) $bill->BillOriginalAmount);
+            $negativeBill->BillDiscountAmount = -abs((float) $bill->BillDiscountAmount);
+            $negativeBill->BillAmount = -abs((float) $bill->BillAmount);
+            $negativeBill->BillNote = trim(($bill->BillNote ?: '') . ' (Correct : ' . $reason . ')');
+            $negativeBill->BillEdit = 1;
+            $negativeBill->Status = 3;
+            $negativeBill->save();
+
+            $bill->BillEdit = 1;
+            $bill->Status = 3;
+            $bill->save();
+
+            HousekeepingServiceBillDetail::where('BillId', $bill->Ma)->get()->each(function ($detail) use ($negativeBill) {
+                $negativeDetail = $detail->replicate();
+                $negativeDetail->BillId = $negativeBill->Ma;
+                $negativeDetail->Rate = -abs((float) $detail->Rate);
+                $negativeDetail->TotalAmount = -abs((float) $detail->TotalAmount);
+                $negativeDetail->save();
+            });
+            ServiceBillDetail::where('BillServiceId', $serviceBill->Ma)->delete();
+            BookingRoomService::where('service_bill_id', $serviceBill->Ma)->delete();
+        });
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa hóa đơn và tạo dòng âm đối trừ.']);
     }
 
     // =========================================

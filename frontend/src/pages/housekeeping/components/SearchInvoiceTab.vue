@@ -3,7 +3,7 @@
     
     <!-- Filters Grid Panel -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4 flex flex-col gap-3 shrink-0">
-      <div class="flex flex-wrap items-end justify-between gap-4">
+      <div class="flex flex-wrap items-end gap-4">
         <!-- Left side: Date Range -->
         <div class="flex flex-col gap-1.5 relative w-[240px]" ref="datePickerWrapper">
           <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Thời gian</label>
@@ -113,7 +113,7 @@
             class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
           >
             <option value="">Tất cả</option>
-            <option v-for="r in ['402', '403', '405', '406', '407']" :key="r" :value="r">Phòng {{ r }}</option>
+            <option v-for="r in filterOptions.rooms" :key="r" :value="r">Phòng {{ r }}</option>
           </select>
         </div>
 
@@ -125,9 +125,7 @@
             class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
           >
             <option value="all">Tất cả</option>
-            <option value="Minibar">Minibar</option>
-            <option value="Giặt ủi">Giặt ủi</option>
-            <option value="Hàng đền bù">Hàng đền bù</option>
+            <option v-for="dept in filterOptions.departments" :key="dept" :value="dept">{{ dept }}</option>
           </select>
         </div>
 
@@ -139,9 +137,7 @@
             class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
           >
             <option value="all">Tất cả</option>
-            <option value="Nguyễn Văn A">Nguyễn Văn A</option>
-            <option value="Trần Thị B">Trần Thị B</option>
-            <option value="Lê Văn C">Lê Văn C</option>
+            <option v-for="user in filterOptions.users" :key="user" :value="user">{{ user }}</option>
           </select>
         </div>
 
@@ -153,9 +149,7 @@
             class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
           >
             <option value="all">Tất cả</option>
-            <option value="Khu A">Khu A</option>
-            <option value="Khu B">Khu B</option>
-            <option value="Khu C">Khu C</option>
+            <option v-for="outlet in filterOptions.outlets" :key="outlet" :value="outlet">{{ outlet }}</option>
           </select>
         </div>
 
@@ -338,17 +332,27 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Calendar, Plus, Inbox, ChevronDown, CheckCircle2, X, HelpCircle } from '@lucide/vue'
 import PostBillHousekeepingTab from './PostBillHousekeepingTab.vue'
+import http from '@/services/http'
 
 const route = useRoute()
 
 // Mock Invoice data
-const invoicesList = ref([
+const mockInvoices = ref([
   { id: 101, regCode: '5197', room: '402', time: '19-06-2026 09:30', isFree: false, price: 45000, payCode: 'PAY-101', manualCode: 'M-129', user: 'Nguyễn Văn A', isDeleted: false, dept: 'Minibar', zone: 'Khu A' },
   { id: 102, regCode: '5407', room: '403', time: '19-06-2026 10:15', isFree: false, price: 120000, payCode: '', manualCode: '', user: 'Trần Thị B', isDeleted: false, dept: 'Giặt ủi', zone: 'Khu B' },
   { id: 103, regCode: '5408', room: '405', time: '18-06-2026 14:00', isFree: true, price: 15000, payCode: 'FREE-103', manualCode: '', user: 'Lê Văn C', isDeleted: false, dept: 'Minibar', zone: 'Khu A' },
   { id: 104, regCode: '5330', room: '406', time: '17-06-2026 16:45', isFree: false, price: 50000, payCode: 'PAY-104', manualCode: 'M-130', user: 'Nguyễn Văn A', isDeleted: true, dept: 'Hàng đền bù', zone: 'Khu C' },
   { id: 105, regCode: '5041', room: '407', time: '15-06-2026 11:20', isFree: false, price: 150000, payCode: 'PAY-105', manualCode: '', user: 'Trần Thị B', isDeleted: false, dept: 'Hàng đền bù', zone: 'Khu B' }
 ])
+
+const invoicesList = ref([])
+
+const filterOptions = computed(() => ({
+  rooms: [...new Set(invoicesList.value.map(item => item.room).filter(Boolean))].sort(),
+  departments: [...new Set(invoicesList.value.map(item => item.dept).filter(Boolean))].sort(),
+  users: [...new Set(invoicesList.value.map(item => item.user).filter(Boolean))].sort(),
+  outlets: [...new Set(invoicesList.value.map(item => item.zone).filter(Boolean))].sort()
+}))
 
 const filterState = ref({
   regCode: '',
@@ -362,16 +366,44 @@ const filterState = ref({
 const hasLoadedData = ref(false)
 const isSearching = ref(false)
 
-const triggerSearch = () => {
+const triggerSearch = async () => {
   isSearching.value = true
-  setTimeout(() => {
+  try {
+    const { data } = await http.get('/housekeeping/service-bills', { params: {
+      date_from: fromDate.value,
+      date_to: toDate.value,
+      booking_code: filterState.value.regCode || undefined,
+      room_no: filterState.value.room || undefined,
+      department: filterState.value.dept === 'all' ? undefined : filterState.value.dept,
+      username: filterState.value.user === 'all' ? undefined : filterState.value.user,
+      outlet: filterState.value.zone === 'all' ? undefined : filterState.value.zone,
+      status: filterState.value.status
+    } })
+    invoicesList.value = (data.data || []).map(item => ({
+      id: item.id, regCode: item.booking_code || '', room: item.room_no || '',
+      time: item.date ? `${item.date.split('-').reverse().join('-')} ${item.time || ''}` : '',
+      isFree: item.is_free, price: item.amount, payCode: item.payment_id || '',
+      manualCode: item.manual_invoice_code || '', user: item.username || '',
+      isDeleted: item.is_deleted, dept: item.department || '', zone: item.outlet || ''
+    }))
+  } finally {
     isSearching.value = false
     hasLoadedData.value = true
-  }, 650)
+  }
 }
 
-onMounted(() => {
-  if (route.query.triggerSearch === 'true') {
+onMounted(async () => {
+  try {
+    const { data } = await http.get('/system-date')
+    const businessDate = data?.data?.system_date
+    if (businessDate) {
+      systemDate.value = businessDate
+      fromDate.value = businessDate
+      toDate.value = businessDate
+      tempFromDate.value = businessDate
+      tempToDate.value = businessDate
+    }
+  } finally {
     triggerSearch()
   }
 })
@@ -398,10 +430,11 @@ const getToday = () => {
   return d.toISOString().split('T')[0]
 }
 
-const fromDate = ref(getToday())
-const toDate = ref(getToday())
-const tempFromDate = ref(getToday())
-const tempToDate = ref(getToday())
+const systemDate = ref(getToday())
+const fromDate = ref(systemDate.value)
+const toDate = ref(systemDate.value)
+const tempFromDate = ref(systemDate.value)
+const tempToDate = ref(systemDate.value)
 const dateRangeType = ref('today')
 
 const tempDateRangeType = ref('today')
@@ -445,7 +478,7 @@ const selectDateRange = (value) => {
   tempDateRangeType.value = value
   showDropdown.value = false
   
-  const d = new Date()
+  const d = new Date(`${systemDate.value}T00:00:00`)
   let start = new Date(d)
   let end = new Date(d)
   
@@ -521,6 +554,7 @@ const applyDateRange = () => {
   toDate.value = tempToDate.value
   dateRangeType.value = tempDateRangeType.value
   showDatePicker.value = false
+  triggerSearch()
 }
 
 // Close popovers on click outside
