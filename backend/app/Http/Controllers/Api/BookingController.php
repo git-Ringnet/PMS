@@ -1785,4 +1785,142 @@ class BookingController extends Controller
         $this->upsertExtraBedServices($room, $detail);
         $this->upsertAdditionalServices($room, $detail);
     }
+
+    /**
+     * Khôi phục booking noshow (khi chọn no_charge)
+     * POST /bookings/{id}/revert-noshow
+     */
+    public function revertNoshow(Request $request, $id)
+    {
+        $booking = Booking::with(['bookingRooms', 'registrationStatus'])->find($id);
+
+        if (!$booking) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
+        }
+
+        // Đăng ký được coi là noshow nếu status = 4 hoặc tất cả các phòng đều có status = 4 (Noshow)
+        $allRoomsNoshow = $booking->bookingRooms->count() > 0 && $booking->bookingRooms->every(function ($r) {
+            return intval($r->status) === BookingRoom::STATUS_NOSHOW;
+        });
+
+        $isBookingNoshow = intval($booking->status) === Booking::STATUS_NO_SHOW || $allRoomsNoshow;
+
+        if (!$isBookingNoshow) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Đăng ký không ở trạng thái Noshow, không thể khôi phục.',
+            ], 422);
+        }
+
+        $systemDate = SystemDateRoll::latest('id')->first();
+        $sysDateStr = $systemDate
+            ? Carbon::parse($systemDate->system_date)->toDateString()
+            : now()->toDateString();
+
+        // 1. Validate Ngày đến: nếu có phòng nào có arrival_date < system_date -> báo lỗi
+        foreach ($booking->bookingRooms as $bRoom) {
+            $arrivalStr = Carbon::parse($bRoom->arrival_date)->toDateString();
+            if ($arrivalStr < $sysDateStr) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ngày đến của phòng nhỏ hơn ngày hệ thống. Vui lòng kiểm tra lại thông tin.',
+                ], 422);
+            }
+        }
+
+        // 2. Validate AV (Phòng trống)
+        $allowOver = HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
+        $force = filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN);
+
+        if (!$force) {
+            $avService = app(RoomAvailabilityService::class);
+            // Gom các phòng theo room_class_id
+            $roomsByClass = [];
+            foreach ($booking->bookingRooms as $bRoom) {
+                if (intval($bRoom->status) === BookingRoom::STATUS_NOSHOW) {
+                    $roomsByClass[$bRoom->room_class_id][] = $bRoom;
+                }
+            }
+
+            foreach ($roomsByClass as $classId => $bRooms) {
+                $roomClass = \App\Models\RoomClass::find($classId);
+                $className = $roomClass ? $roomClass->name : "ID $classId";
+
+                // Duyệt qua tất cả các ngày trong khoảng ngày của các phòng này để kiểm tra over
+                foreach ($bRooms as $bRoom) {
+                    $start = Carbon::parse($bRoom->arrival_date);
+                    $end = Carbon::parse($bRoom->departure_date);
+                    
+                    for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
+                        $dateStr = $d->toDateString();
+                        // AV hiện tại cho 1 ngày này
+                        $av = $avService->getAvailability($classId, $dateStr, $d->copy()->addDay()->toDateString());
+                        
+                        // Đếm số phòng của chính booking này bao phủ ngày dateStr và đang có status là Noshow (nên chưa được tính trong booked count)
+                        $needed = 0;
+                        foreach ($bRooms as $r) {
+                            if ($r->arrival_date <= $dateStr && $r->departure_date > $dateStr) {
+                                $needed++;
+                            }
+                        }
+
+                        if ($av - $needed < 0) {
+                            if (!$allowOver) {
+                                return response()->json([
+                                    'success' => false,
+                                    'message' => "Loại phòng $className đã bị Over, không thể khôi phục thông tin.",
+                                ], 422);
+                            } else {
+                                return response()->json([
+                                    'success' => false,
+                                    'needs_confirm' => true,
+                                    'message' => 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
+                                ], 200);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Thực hiện khôi phục
+        DB::transaction(function () use ($booking) {
+            $newStatus = RegistrationStatus::where('booking_status_id', 1)->first();
+
+            $booking->update([
+                'status'                 => Booking::STATUS_RESERVATION,
+                'registration_status_id' => $newStatus ? $newStatus->id : $booking->registration_status_id,
+                'updated_by'             => Auth::user()?->username ?? 'system',
+            ]);
+
+            foreach ($booking->bookingRooms as $bRoom) {
+                if (intval($bRoom->status) === BookingRoom::STATUS_NOSHOW) {
+                    $bRoom->update([
+                        'status' => BookingRoom::STATUS_BOOKED,
+                    ]);
+
+                    // Khôi phục guests
+                    BookingRoomGuest::where('booking_room_id', $bRoom->id)
+                        ->where('status', 4)
+                        ->update(['status' => 0]);
+
+                    $guestIds = BookingRoomGuest::where('booking_room_id', $bRoom->id)->pluck('guest_id');
+                    Guest::whereIn('id', $guestIds)
+                        ->where('guest_status', 4)
+                        ->update(['guest_status' => 0]);
+
+                    // Khôi phục children
+                    BookingChild::where('booking_room_id', $bRoom->id)
+                        ->where('child_status', 4)
+                        ->update(['child_status' => 0]);
+                }
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Khôi phục booking noshow thành công!',
+            'data'    => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass']),
+        ]);
+    }
 }
