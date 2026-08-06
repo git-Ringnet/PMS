@@ -101,7 +101,7 @@ const registrationDisplay = computed(() => {
 })
 
 const depositRows = computed(() => props.deposits.filter(deposit => (
-  String(deposit.pack2 || '').toUpperCase() === 'DPR'
+  String(deposit.pack4 || '').toUpperCase() === 'AP'
   && Number(deposit.edit_flag || 0) === 0
   && !deposit.deleted_at
 )))
@@ -191,7 +191,7 @@ watch(paymentMethodId, () => {
 function updateDefaultDescription() {
   const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
   const methodName = selectedMethod ? selectedMethod.name : 'Cash'
-  description.value = `Deposit (${methodName})`
+  description.value = `Advance Payment (${methodName})`
 }
 
 const handleSubmit = async () => {
@@ -232,7 +232,7 @@ const handleSubmit = async () => {
       currency: currency.value,
       shift_id: workShift.value,
       department_id: 'FO',
-      pack2: 'DPR'
+      pack4: 'AP'
     }
 
     const res = await http.post(`/bookings/${props.bookingId}/payments`, payload)
@@ -267,7 +267,7 @@ onMounted(() => {
       
       <!-- Header (Màu xanh dương mạ #0088ff chuẩn Ảnh 2) -->
       <div class="bg-[#0088ff] text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs">
-        <span class="text-sm font-bold tracking-wide">Thêm đặt cọc</span>
+        <span class="text-sm font-bold tracking-wide">Thanh toán trước</span>
         <button @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
           <X class="w-4 h-4" />
         </button>
@@ -407,7 +407,7 @@ onMounted(() => {
       </div>
 
       <div class="border-t border-gray-200 bg-white px-4 py-3">
-        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh sách đặt cọc</div>
+        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh sách thanh toán trước</div>
         <div class="max-h-36 overflow-auto rounded border border-slate-200">
           <table class="w-full text-left text-xs">
             <thead class="sticky top-0 bg-slate-100 text-slate-600">
@@ -421,7 +421,7 @@ onMounted(() => {
                 <td class="px-2 py-1.5">{{ deposit.description || '--' }}</td>
                 <td class="px-2 py-1.5 text-right font-mono font-semibold">{{ formatDepositAmount(deposit.amount) }}</td>
               </tr>
-              <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400">Chưa có đặt cọc.</td></tr>
+              <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400">Chưa có thanh toán trước.</td></tr>
             </tbody>
           </table>
         </div>

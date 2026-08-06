@@ -206,6 +206,7 @@ class BookingRoomServiceFolioTest extends TestCase
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
         ]);
+        $booking->update(['is_master_room_rate' => true]);
         $inhouseRoom = $this->makeRoom($booking, 'GAL1-101');
         $reservedRoom = $this->makeRoom($booking, 'GAL1-102');
         $unassignedRoom = $this->makeRoom($booking, 'GAL1-UNASSIGNED');
@@ -239,7 +240,14 @@ class BookingRoomServiceFolioTest extends TestCase
             ])
             ->assertSuccessful();
 
-        $this->assertDatabaseHas('service_bills', ['RentalRoomId1' => $inhouseRoom->id, 'ServiceId' => 'RM', 'Edit' => 0]);
+        $this->assertDatabaseHas('service_bills', [
+            'RentalRoomId1' => $inhouseRoom->id,
+            'RegisterID2' => $booking->id,
+            'RentalRoomId2' => null,
+            'CustomerId2' => null,
+            'ServiceId' => 'RM',
+            'Edit' => 0,
+        ]);
         $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $reservedRoom->id, 'ServiceId' => 'RM', 'Edit' => 0]);
         $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $unassignedRoom->id, 'ServiceId' => 'RM', 'Edit' => 0]);
     }
