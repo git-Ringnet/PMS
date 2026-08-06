@@ -256,6 +256,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy']);
     // #22 — Khôi phục booking đã hủy
     Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore']);
+    // Khôi phục booking noshow
+    Route::post('bookings/{id}/revert-noshow', [\App\Http\Controllers\Api\BookingController::class, 'revertNoshow']);
 
     // --- Booking Rooms (SP2100) ---
     Route::prefix('bookings/{bookingId}/rooms')->group(function () {
@@ -272,6 +274,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{roomId}/unassign', [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
         // Epic 9 - Hủy phòng
         Route::delete('/{roomId}/cancel', [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
+        // Khôi phục phòng noshow
+        Route::post('/{roomId}/revert-noshow', [\App\Http\Controllers\Api\BookingRoomController::class, 'revertNoshow']);
+        // Charge noshow
+        Route::post('/{roomId}/charge-noshow', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'chargeNoshow']);
         // Tách phòng
         Route::post('/{roomId}/split', [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
         // Epic 3 - Auto assign room number
