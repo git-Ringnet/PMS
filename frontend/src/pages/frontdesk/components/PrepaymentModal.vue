@@ -37,6 +37,10 @@ const props = defineProps({
   roomOptions: {
     type: Array,
     default: () => []
+  },
+  deposits: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -95,6 +99,20 @@ const registrationDisplay = computed(() => {
   }
   return props.bookingName || props.bookingCode || 'Select Value'
 })
+
+const depositRows = computed(() => props.deposits.filter(deposit => (
+  String(deposit.pack2 || '').toUpperCase() === 'DPR'
+  && Number(deposit.edit_flag || 0) === 0
+  && !deposit.deleted_at
+)))
+
+const formatDepositDate = (value) => {
+  if (!value) return '--'
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value)
+}
+
+const formatDepositAmount = (value) => Number(value || 0).toLocaleString('en-US')
 
 const isBankTransfer = computed(() => {
   const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
@@ -173,7 +191,7 @@ watch(paymentMethodId, () => {
 function updateDefaultDescription() {
   const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
   const methodName = selectedMethod ? selectedMethod.name : 'Cash'
-  description.value = `Advance Payment (${methodName})`
+  description.value = `Deposit (${methodName})`
 }
 
 const handleSubmit = async () => {
@@ -214,14 +232,14 @@ const handleSubmit = async () => {
       currency: currency.value,
       shift_id: workShift.value,
       department_id: 'FO',
-      pack4: 'AP'
+      pack2: 'DPR'
     }
 
     const res = await http.post(`/bookings/${props.bookingId}/payments`, payload)
     if (res.data?.success) {
-      uiStore.showToast('Đã lưu thanh toán trước thành công!', 'success')
+      amount.value = 0
+      updateDefaultDescription()
       emit('success', res.data.data)
-      emit('close')
     } else {
       errorMsg.value = res.data?.message || 'Không thể lưu thanh toán trước.'
     }
@@ -249,7 +267,7 @@ onMounted(() => {
       
       <!-- Header (Màu xanh dương mạ #0088ff chuẩn Ảnh 2) -->
       <div class="bg-[#0088ff] text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs">
-        <span class="text-sm font-bold tracking-wide">Thanh toán trước</span>
+        <span class="text-sm font-bold tracking-wide">Thêm đặt cọc</span>
         <button @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
           <X class="w-4 h-4" />
         </button>
@@ -385,6 +403,27 @@ onMounted(() => {
             ></textarea>
           </div>
 
+        </div>
+      </div>
+
+      <div class="border-t border-gray-200 bg-white px-4 py-3">
+        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh sách đặt cọc</div>
+        <div class="max-h-36 overflow-auto rounded border border-slate-200">
+          <table class="w-full text-left text-xs">
+            <thead class="sticky top-0 bg-slate-100 text-slate-600">
+              <tr><th class="px-2 py-1.5">Ngày</th><th class="px-2 py-1.5">Giờ</th><th class="px-2 py-1.5">HTTT</th><th class="px-2 py-1.5">Mô tả</th><th class="px-2 py-1.5 text-right">Số tiền</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="deposit in depositRows" :key="deposit.id" class="border-t border-slate-100">
+                <td class="px-2 py-1.5">{{ formatDepositDate(deposit.date) }}</td>
+                <td class="px-2 py-1.5">{{ deposit.open_time || '--' }}</td>
+                <td class="px-2 py-1.5">{{ deposit.payment_method?.name || deposit.payment_method_id || '--' }}</td>
+                <td class="px-2 py-1.5">{{ deposit.description || '--' }}</td>
+                <td class="px-2 py-1.5 text-right font-mono font-semibold">{{ formatDepositAmount(deposit.amount) }}</td>
+              </tr>
+              <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400">Chưa có đặt cọc.</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

@@ -239,6 +239,11 @@ class BookingRoom extends Model
         return $this->hasMany(ServiceBill::class, 'RentalRoomId1', 'id');
     }
 
+    public function currentServiceBills()
+    {
+        return $this->hasMany(ServiceBill::class, 'RentalRoomId2', 'id');
+    }
+
     public function specialRequests()
     {
         return $this->hasMany(BookingRoomSpecialRequest::class);

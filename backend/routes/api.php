@@ -303,6 +303,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     Route::patch('booking-rooms/{roomId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateRoom']);
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
+    Route::get('/service-bills/{billId}/details', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'billDetails']);
     // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
     Route::get('/booking-services/fo-list', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'foServiceList']);
     Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill']);

@@ -755,7 +755,10 @@ const selectedRoomNumber = computed(() => {
 
 // Hiển thị danh sách cọc: lọc theo phòng được chọn (nếu chọn phòng cụ thể) và trạng thái hiển thị xóa
 const visibleDeposits = computed(() => {
-  let list = localDeposits.value
+  let list = localDeposits.value.filter(dep => (
+    String(dep.pack2 || '').toUpperCase() === 'DPR'
+    && String(dep.pack4 || '').toUpperCase() !== 'PY'
+  ))
   if (!showDeleted.value) {
     list = list.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
   }
@@ -884,7 +887,8 @@ async function syncDepositsFromBackend() {
       edit_flag: p.edit_flag,
       reversal_ref: p.reversal_ref,
       debit_account: p.debit_account,
-      pack2: p.pack2
+      pack2: p.pack2,
+      pack4: p.pack4
     }))
 
     const activeDeposits = localDeposits.value.filter(p => p.edit_flag === 0 && p.pack2 === 'DPR')
