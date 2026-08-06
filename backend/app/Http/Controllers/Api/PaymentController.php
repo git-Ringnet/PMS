@@ -336,7 +336,7 @@ class PaymentController extends Controller
                 'amount'            => $request->amount,
                 'currency'          => $request->currency ?: 'VND',
                 'pack2'             => $request->pack4 === 'AP' ? null : Payment::PACK2_DEPOSIT,
-                'pack4'             => $request->pack4 ?: 'AP',
+                'pack4'             => $request->pack4 ?: null,
                 'folio_id'          => $request->booking_room_id ? ($request->folio_id ?? 1) : 1,
                 'payment_method_id' => $pmCode,
                 'debit_account'     => $request->debit_account,
@@ -426,25 +426,33 @@ class PaymentController extends Controller
     /** Chuyển Folio cho cọc chưa được dùng để thanh toán. */
     public function transferFolio(Request $request, $id)
     {
-        $validated = $request->validate(['folio_id' => 'required|integer|between:1,3']);
-        $payment = Payment::findOrFail($id);
-
-        if ($payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Chỉ được chuyển Folio cho cọc chưa dùng để thanh toán.',
-            ], 422);
-        }
-
-        $payment->update([
-            'folio_id' => $validated['folio_id'],
-            'updated_by' => Auth::user()?->username ?? 'system',
+        $validated = $request->validate([
+            'folio_id' => 'required|integer|between:1,3',
+            'payment_ids' => 'nullable|array|min:1',
+            'payment_ids.*' => 'integer',
         ]);
+        $paymentIds = array_unique(array_merge([(int) $id], array_map('intval', $validated['payment_ids'] ?? [])));
+
+        DB::transaction(function () use ($paymentIds, $validated) {
+            $payments = Payment::whereIn('id', $paymentIds)->lockForUpdate()->get();
+            if ($payments->count() !== count($paymentIds)) {
+                abort(404, 'Không tìm thấy cọc.');
+            }
+            if ($payments->contains(fn (Payment $payment) => $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id))) {
+                abort(422, 'Chỉ được chuyển Folio cho cọc chưa dùng để thanh toán.');
+            }
+
+            $payments->each(function (Payment $payment) use ($validated) {
+                $payment->update([
+                    'folio_id' => $validated['folio_id'],
+                    'updated_by' => Auth::user()?->username ?? 'system',
+                ]);
+            });
+        });
 
         return response()->json([
             'success' => true,
-            'data' => $payment->fresh(),
-            'message' => 'Đã chuyển cọc sang Folio mới.',
+            'message' => count($paymentIds) > 1 ? 'Đã chuyển các cọc sang Folio mới.' : 'Đã chuyển cọc sang Folio mới.',
         ]);
     }
 

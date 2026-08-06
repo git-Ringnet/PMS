@@ -24,7 +24,7 @@ import {
   ArrowRightLeft,
   X
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge, fetchServiceBillDetails } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
 import echo from '@/services/echo'
@@ -457,6 +457,8 @@ const addServiceBookingInfo = computed(() => {
   return ''
 })
 const selectedServiceGroup = ref(null)
+const serviceInvoiceDetails = ref([])
+const isServiceInvoiceDetailsLoading = ref(false)
 const selectedServiceIds = ref([])
 const selectedPaymentIds = ref([])
 const draggedServiceGroup = ref(null)
@@ -892,8 +894,8 @@ const handleServiceAdded = async (data) => {
 }
 
 const handlePrepaymentSuccess = async () => {
-  showPrepaymentModal.value = false
-  await handleServiceAdded()
+  await refreshCheckoutData()
+  uiStore.showToast('Đã thêm đặt cọc thành công!', 'success')
 }
 
 const toggleBookingCheck = (b) => {
@@ -910,7 +912,10 @@ const servicesList = computed(() => {
   const services = []
 
   const withServiceBillTime = (room, service) => {
-    const bills = room?.service_bills || room?.serviceBills || []
+    const bills = mergeServiceBills(
+      room?.service_bills || room?.serviceBills || [],
+      room?.current_service_bills || room?.currentServiceBills || []
+    )
     const bill = bills.find(candidate => String(candidate.Ma || candidate.id) === String(service.service_bill_id))
     return bill ? { ...service, openTime: service.open_time || service.openTime || bill.OpenTime || bill.CreatedHour } : service
   }
@@ -918,7 +923,10 @@ const servicesList = computed(() => {
   const findLinkedBill = (s, roomNo = '', roomId = '') => {
     if (!selectedBooking.value?.rawBooking) return null
     const rawB = selectedBooking.value.rawBooking
-    const roomBills = selectedRoomItem.value?.rawRoom?.service_bills || selectedRoomItem.value?.rawRoom?.serviceBills || []
+    const roomBills = mergeServiceBills(
+      selectedRoomItem.value?.rawRoom?.service_bills || selectedRoomItem.value?.rawRoom?.serviceBills || [],
+      selectedRoomItem.value?.rawRoom?.current_service_bills || selectedRoomItem.value?.rawRoom?.currentServiceBills || []
+    )
     const allBills = [
       ...(rawB.master_service_bills || []),
       ...(rawB.service_bills || []),
@@ -985,6 +993,7 @@ const servicesList = computed(() => {
     return {
       id: s.id || `S${idx}`,
       serviceDate: s.service_date || s.created_at || null,
+      serviceBillDetailNo: s.service_bill_detail_no || s.serviceBillDetailNo || null,
       createdAt: s.created_at || null,
       dateTime: formatServiceDateTime(s.service_date, s.created_at, s.open_time || s.openTime || s.service_bill?.OpenTime || s.serviceBill?.OpenTime || linkedBill?.OpenTime),
       serviceCode: codeVal,
@@ -1235,7 +1244,7 @@ const serviceGroups = computed(() => {
     const sourceKey = service.serviceBillId ? `sb-${service.serviceBillId}` : `svc-${service.id || service.createdAt}`
     const key = [meta.key, sourceKey, service.folio || 'A', service.department || 'FO'].join('|')
     if (!groups.has(key)) {
-      groups.set(key, { id: key, ...meta, name: service.description || meta.name, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode || '', invoiceCode: service.invoiceCode || '', totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
+      groups.set(key, { id: key, ...meta, serviceBillId: service.serviceBillId || null, name: service.description || meta.name, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode || '', invoiceCode: service.invoiceCode || '', totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
     }
     const group = groups.get(key)
     group.items.push(service)
@@ -1253,13 +1262,48 @@ const serviceGroups = computed(() => {
   return Array.from(groups.values())
 })
 
-const openServiceInvoice = (group) => { selectedServiceGroup.value = group }
-const closeServiceInvoice = () => { selectedServiceGroup.value = null }
+const invoiceItems = computed(() => {
+  if (serviceInvoiceDetails.value.length) {
+    return serviceInvoiceDetails.value.map((detail, index) => ({
+      id: `${detail.BillServiceId}-${detail.Ma || index}`,
+      serviceName: detail.DescriptionServive || detail.ServiceId || 'Dá»‹ch vá»¥',
+      quantity: 1,
+      amount: detail.OriginalRate ?? detail.Amount,
+      totalAmount: detail.Amount
+    }))
+  }
+
+  return selectedServiceGroup.value?.items || []
+})
+const invoiceTotalAmount = computed(() => invoiceItems.value.reduce((total, item) => total + (Number(item.totalAmount) || 0), 0))
+
+const openServiceInvoice = async (group) => {
+  selectedServiceGroup.value = group
+  serviceInvoiceDetails.value = []
+  if (!group?.serviceBillId) return
+
+  isServiceInvoiceDetailsLoading.value = true
+  try {
+    const response = await fetchServiceBillDetails(group.serviceBillId)
+    if (selectedServiceGroup.value?.id === group.id) {
+      serviceInvoiceDetails.value = response.data?.data || []
+    }
+  } catch (error) {
+    console.error('KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t hÃ³a Ä‘Æ¡n:', error)
+  } finally {
+    isServiceInvoiceDetailsLoading.value = false
+  }
+}
+const closeServiceInvoice = () => {
+  selectedServiceGroup.value = null
+  serviceInvoiceDetails.value = []
+}
 const formatInvoiceProductName = (name) => String(name || '').replace(/^\[[^\]]+\]\s*/, '')
 
 const isServiceGroupSelected = (group) => group.items.every(item => selectedServiceIds.value.includes(Number(item.id)))
 
 const toggleServiceGroupSelection = (group, checked) => {
+  if (checked && !canTransferServiceGroup(group)) return
   const ids = group.items.map(item => Number(item.id)).filter(id => Number.isInteger(id) && id > 0)
   selectedServiceIds.value = checked
     ? [...new Set([...selectedServiceIds.value, ...ids])]
@@ -1268,6 +1312,7 @@ const toggleServiceGroupSelection = (group, checked) => {
 }
 
 const serviceSelectionIds = computed(() => serviceGroups.value
+  .filter(canTransferServiceGroup)
   .flatMap(group => group.items)
   .map(item => Number(item.id))
   .filter(id => Number.isInteger(id) && id > 0))
@@ -1287,7 +1332,11 @@ const canTransferServiceGroup = (group) => {
 
 const selectedServiceItems = computed(() => visibleServices.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
 const selectedServiceGroups = computed(() => serviceGroups.value.filter(group => isServiceGroupSelected(group)))
-const canTransferSelectedServices = computed(() => Boolean(selectedRoomItem.value) && selectedServiceItems.value.length > 0)
+const canTransferSelectedServices = computed(() => (
+  Boolean(selectedRoomItem.value)
+  && selectedServiceItems.value.length > 0
+  && selectedServiceItems.value.every(service => !service.isPaid && Number(service.status) !== 2)
+))
 const canSplitSelectedServices = computed(() => {
   if (!canTransferSelectedServices.value || selectedServiceItems.value.some(service => service.serviceCode === 'RM')) return false
   const billIds = selectedServiceItems.value.map(service => service.serviceBillId).filter(Boolean)
@@ -1311,26 +1360,59 @@ const canCancelSelectedServices = computed(() => (
   Boolean(selectedRoomItem.value)
   && selectedServiceItems.value.length > 0
   && selectedServiceItems.value.every(service => service.serviceBillId)
+  && selectedServiceItems.value.every(service => !service.isPaid && Number(service.status) !== 2)
 ))
 const selectedServicesTotal = computed(() => selectedServiceItems.value.reduce((sum, service) => sum + (Number(service.totalAmount) || 0), 0))
+const firstPreviewValue = (...values) => values.find(value => value !== undefined && value !== null && value !== '')
 const toTransferPreviewService = (service) => {
-  const rate = Number(service.rate ?? service.price ?? service.amount) || 0
-  const quantity = Number(service.quantity ?? service.qty) || 1
+  const rate = Number(firstPreviewValue(service.rate, service.price, service.amount, service.OriginalRate)) || 0
+  const quantity = Number(firstPreviewValue(service.quantity, service.qty, service.Quantity)) || 1
+  const totalAmount = Number(firstPreviewValue(service.total_amount, service.totalAmount, service.Amount))
+  const status = Number(firstPreviewValue(service.status, service.Status)) || 1
+  const paymentId = firstPreviewValue(service.payment_id, service.payment_code, service.PaymentID, service.PaymentId)
   return {
-    id: service.id,
-    dateTime: formatServiceDateTime(service.service_date, service.created_at),
-    department: service.department || 'FO',
-    serviceCode: service.service_code || 'DV',
+    id: firstPreviewValue(service.id, service.Ma),
+    dateTime: formatServiceDateTime(firstPreviewValue(service.service_date, service.serviceDate, service.Date, service.date), firstPreviewValue(service.created_at, service.CreatedDate), firstPreviewValue(service.open_time, service.openTime, service.OpenTime, service.CreatedHour)),
+    department: firstPreviewValue(service.department, service.DepartmentId) || 'FO',
+    serviceCode: firstPreviewValue(service.service_code, service.serviceCode, service.ServiceId, service.ServiceID) || 'DV',
     description: String(service.note || service.description || '').replace(/^Post bill\s+/i, ''),
     serviceName: service.service_name || service.name || 'Dịch vụ',
-    totalAmount: Number(service.total_amount) || (rate * quantity),
-    unit: service.unit || 'VND',
-    folio: service.folio || 1,
-    tax: service.tax || 0,
-    serviceCharge: service.service_charge || 0,
-    userName: service.created_by || service.user_name || ''
+    totalAmount: Number.isFinite(totalAmount) ? totalAmount : (rate * quantity),
+    unit: firstPreviewValue(service.unit, service.currency, service.Currency) || 'VND',
+    folio: firstPreviewValue(service.folio, service.Folio) || 1,
+    tax: firstPreviewValue(service.tax, service.Tax) || 0,
+    serviceCharge: firstPreviewValue(service.service_charge, service.serviceCharge, service.ServiceCharge) || 0,
+    userName: firstPreviewValue(service.created_by, service.user_name, service.CreatedUser, service.Username) || '',
+    isPaid: Boolean(service.isPaid || status === 2 || paymentId)
   }
 }
+
+const toTransferPreviewBill = (bill) => toTransferPreviewService({
+  id: `bill-${bill.Ma}`,
+  service_date: bill.Date || bill.CreatedDate,
+  created_at: bill.CreatedDate,
+  open_time: bill.OpenTime || bill.CreatedHour,
+  department: bill.DepartmentId,
+  service_code: bill.ServiceId,
+  description: bill.DescriptionServive,
+  service_name: bill.DescriptionServive || bill.ServiceId,
+  total_amount: bill.Amount,
+  unit: 'Láº§n',
+  folio: bill.Folio,
+  tax: bill.Tax,
+  service_charge: bill.ServiceCharge,
+  created_by: bill.CreatedUser || bill.Username,
+  status: bill.Status,
+  payment_id: bill.PaymentID || bill.PaymentId,
+  unit: bill.Currency || bill.currency || 'VND'
+})
+
+const previewBookingBills = (booking) => mergeServiceBills(
+  booking.rawBooking?.master_service_bills || [],
+  booking.rawBooking?.service_bills || [],
+  booking.roomItems.flatMap(room => room.rawRoom?.service_bills || []),
+  booking.roomItems.flatMap(room => room.rawRoom?.current_service_bills || [])
+)
 
 const isMasterRoomRateEnabled = (booking) => {
   const value = booking.rawBooking?.is_master_room_rate
@@ -1346,7 +1428,9 @@ const isRoomCharge = (service) => {
 const groupTransferPreviewServices = (services) => {
   const groups = new Map()
   services.forEach((service, index) => {
-    const preview = toTransferPreviewService(service)
+    const preview = service.dateTime && service.serviceCode
+      ? service
+      : toTransferPreviewService(service)
     const meta = getServiceGroup({
       serviceCode: preview.serviceCode,
       serviceName: preview.serviceName
@@ -1365,6 +1449,7 @@ const groupTransferPreviewServices = (services) => {
         tax: 0,
         serviceCharge: 0,
         userName: preview.userName,
+        isPaid: false,
         itemCount: 0
       })
     }
@@ -1372,6 +1457,7 @@ const groupTransferPreviewServices = (services) => {
     group.totalAmount += preview.totalAmount
     group.tax += preview.tax
     group.serviceCharge += preview.serviceCharge
+    group.isPaid = group.isPaid || preview.isPaid
     group.itemCount += 1
   })
   return Array.from(groups.values()).map(group => ({
@@ -1392,7 +1478,18 @@ const roomTransferPreviewServices = (booking, room, targetGuestId = null) => {
       : isPrimary
     return (!masterSend || !roomCharge) && belongsToGuest
   })
-  return groupTransferPreviewServices(roomServices)
+  const linkedBillIds = new Set(roomServices.map(service => service.service_bill_id).filter(Boolean).map(String))
+  const currentRoomBills = previewBookingBills(booking).filter(bill => {
+    if (Number(bill.Edit) === 1 || [3, 4].includes(Number(bill.Status))) return false
+    if (linkedBillIds.has(String(bill.Ma))) return false
+    if (masterSend && isRoomCharge(bill)) return false
+    const billRoomId = bill.RentalRoomId2 || bill.RentalRoomId1
+    if (String(billRoomId) !== String(room.roomId)) return false
+    const billGuestId = bill.CustomerId2 || bill.CustomerId1
+    return billGuestId ? String(billGuestId) === String(guestId) : isPrimary
+  })
+
+  return groupTransferPreviewServices([...roomServices, ...currentRoomBills.map(toTransferPreviewBill)])
 }
 
 const guestRoomServiceAmount = (booking, room, guestId) => {
@@ -1481,10 +1578,19 @@ const getGuestsToDisplay = (b, r) => {
 }
 
 const masterTransferPreviewServices = (booking) => {
-  if (!isMasterRoomRateEnabled(booking)) return []
-  return groupTransferPreviewServices(booking.roomItems.flatMap(room => (
-    (room.rawRoom?.services || []).filter(isRoomCharge)
-  )))
+  const masterSend = isMasterRoomRateEnabled(booking)
+  const masterBills = previewBookingBills(booking).filter(bill => (
+    ![3, 4].includes(Number(bill.Status))
+    && isMasterBillRecord(bill, booking.rawBooking?.booking_rooms, masterSend)
+  ))
+  const billIds = new Set(masterBills.map(bill => String(bill.Ma)))
+  const unlinkedRoomCharges = masterSend ? booking.roomItems.flatMap(room => (
+    (room.rawRoom?.services || []).filter(service => isRoomCharge(service) && (
+      !service.service_bill_id || !billIds.has(String(service.service_bill_id))
+    ))
+  )) : []
+
+  return groupTransferPreviewServices([...masterBills.map(toTransferPreviewBill), ...unlinkedRoomCharges])
 }
 
 const transferPreviewPayments = (booking, room = null, targetGuestId = null) => {
@@ -1576,7 +1682,10 @@ const openSplitAction = () => {
 
 const isPaymentSelected = payment => selectedPaymentIds.value.includes(Number(payment.id))
 const togglePaymentSelection = (payment, checked) => {
-  selectedPaymentIds.value = checked ? [Number(payment.id)] : []
+  const paymentId = Number(payment.id)
+  selectedPaymentIds.value = checked
+    ? [...new Set([...selectedPaymentIds.value, paymentId])]
+    : selectedPaymentIds.value.filter(id => id !== paymentId)
   if (checked) selectedServiceIds.value = []
 }
 const paymentSelectionIds = computed(() => visiblePaymentsList.value
@@ -1597,7 +1706,7 @@ const openCancelServiceModal = () => {
   if (canOpenCancelServiceModal.value) showCancelServiceModal.value = true
 }
 
-const openServiceAdjustment = () => {
+const openServiceAdjustment = async () => {
   if (!canAdjustSelectedService.value) return
   const group = selectedServiceGroups.value[0]
   const item = group.items[0]
@@ -1616,12 +1725,36 @@ const openServiceAdjustment = () => {
     return
   }
 
+  let adjustmentItems = group.items
+  if (targetBillId) {
+    try {
+      const response = await fetchServiceBillDetails(targetBillId)
+      const details = response.data?.data || []
+      if (details.length) {
+        adjustmentItems = details.map((detail, index) => {
+          const matchingService = group.items.find(item => Number(item.serviceBillDetailNo) === Number(detail.Ma)) || group.items[index]
+          return {
+            ...matchingService,
+            id: matchingService?.id || `detail-${detail.Ma || index}`,
+            serviceCode: detail.ServiceId || matchingService?.serviceCode,
+            serviceName: detail.DescriptionServive || matchingService?.serviceName,
+            quantity: matchingService?.quantity || 1,
+            amount: detail.OriginalRate ?? matchingService?.amount ?? detail.Amount,
+            totalAmount: detail.Amount ?? matchingService?.totalAmount
+          }
+        })
+      }
+    } catch (error) {
+      uiStore.showToast('KhÃ´ng táº£i Ä‘Æ°á»£c chi tiáº¿t bill; Ä‘ang dÃ¹ng dá»¯ liá»‡u hiá»‡n cÃ³.', 'warning')
+    }
+  }
+
   housekeepingAdjustment.value = {
     serviceBillId: targetBillId,
     serviceDate: item.serviceDate,
     folio: item.folio || group.folio || 1,
     note: item.description || group.name,
-    items: group.items
+    items: adjustmentItems
   }
   showHousekeepingServiceModal.value = true
 }
@@ -1837,16 +1970,33 @@ const handleFolioDrop = async (folio) => {
   const targetFolio = Number(folio)
   draggedOverFolio.value = null
   if (payment) {
-    if (!canTransferPayment(payment) || Number(payment.folio) === targetFolio) {
+    if (!canTransferPayment(payment)) {
+      handleServiceDragEnd()
+      return
+    }
+    const selectedTransferablePayments = selectedPaymentItems.value.filter(canTransferPayment)
+    const paymentIdsToTransfer = [...new Set([
+      ...selectedTransferablePayments.map(item => Number(item.id)),
+      Number(payment.id),
+    ])].filter(id => Number.isInteger(id) && id > 0)
+    const movablePaymentIds = paymentIdsToTransfer.filter(id => {
+      const item = paymentsList.value.find(candidate => Number(candidate.id) === id)
+      return item && Number(item.folio) !== targetFolio
+    })
+    if (movablePaymentIds.length === 0) {
       handleServiceDragEnd()
       return
     }
     isServiceOperationLoading.value = true
     try {
-      const response = await transferPaymentFolio(payment.id, { folio_id: targetFolio })
+      const response = await transferPaymentFolio(payment.id, {
+        folio_id: targetFolio,
+        payment_ids: movablePaymentIds,
+      })
+      selectedPaymentIds.value = []
       activeFolioTab.value = String(targetFolio)
       await handleServiceAdded()
-      uiStore.showToast(response.data?.message || 'Đã chuyển cọc sang Folio mới.', 'success')
+      uiStore.showToast(response.data?.message || `Đã chuyển ${movablePaymentIds.length} cọc sang Folio mới.`, 'success')
     } catch (error) {
       uiStore.showToast(error.response?.data?.message || 'Không thể chuyển Folio cọc.', 'error')
     } finally {
@@ -1861,7 +2011,7 @@ const handleFolioDrop = async (folio) => {
     return
   }
 
-  // Thu thập ID các bill chưa thanh toán được tick chọn + nhóm kéo thả
+  // Khi có dòng được tick, kéo thả chuyển tất cả dòng chưa thanh toán đã chọn.
   const extractIds = (items) => {
     const ids = []
     items.forEach(item => {
@@ -1869,16 +2019,12 @@ const handleFolioDrop = async (folio) => {
       if (item.id && Number.isInteger(Number(item.id)) && Number(item.id) > 0) {
         ids.push(Number(item.id))
       }
-      if (item.serviceBillId && Number.isInteger(Number(item.serviceBillId)) && Number(item.serviceBillId) > 0) {
-        ids.push(Number(item.serviceBillId))
-      }
     })
     return ids
   }
 
   const selectedUnpaidIds = extractIds(selectedServiceItems.value)
   const draggedGroupIds = extractIds(group.items)
-
   const serviceIdsToTransfer = selectedUnpaidIds.length > 0
     ? [...new Set([...selectedUnpaidIds, ...draggedGroupIds])]
     : [...new Set(draggedGroupIds)]
@@ -1995,6 +2141,17 @@ const visiblePaymentsList = computed(() => activeFolioTab.value === 'A'
   ? paymentsList.value
   : paymentsList.value.filter(payment => String(payment.folio) === String(activeFolioTab.value))
 )
+
+const frontDeskDeposits = computed(() => {
+  const payments = selectedBooking.value?.rawBooking?.payments || []
+  return payments.filter(payment => (
+    payment
+    && String(payment.pack2 || '').toUpperCase() === 'DPR'
+    && String(payment.pack4 || '').toUpperCase() !== 'PY'
+    && Number(payment.edit_flag || 0) === 0
+    && !payment.deleted_at
+  ))
+})
 
 const folioDepositTotal = (folio) => {
   const unusedPayments = paymentsList.value.filter(payment => (
@@ -2324,7 +2481,7 @@ onUnmounted(() => {
             :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Tách cọc' : 'Tách dịch vụ') : ''"
           >
             <Scissors class="w-3.5 h-3.5 text-white shrink-0" />
-            <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Tách Dịch Vụ' : 'Tách Dịch Vụ' }}</span>
+            <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Tách Cọc' : 'Tách Dịch Vụ' }}</span>
           </button>
 
           <!-- Chuyển dịch vụ / cọc -->
@@ -2336,7 +2493,7 @@ onUnmounted(() => {
             :title="isSidebarCollapsed ? (hasSelectedDeposit ? 'Chuyển cọc' : 'Chuyển dịch vụ') : ''"
           >
             <ArrowRightLeft class="w-3.5 h-3.5 text-white shrink-0" />
-            <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Chuyển Dịch Vụ' : 'Chuyển Dịch Vụ' }}</span>
+            <span v-if="!isSidebarCollapsed" class="truncate">{{ hasSelectedDeposit ? 'Chuyển Cọc' : 'Chuyển Dịch Vụ' }}</span>
           </button>
 
           <!-- Tập hợp DV -->
@@ -2368,14 +2525,14 @@ onUnmounted(() => {
         <div class="pb-2 mb-1 border-b border-[#334155]">
           <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">Thanh Toán & Cọc</div>
 
-          <!-- Thanh toán trước -->
+          <!-- Thêm đặt cọc -->
           <button 
             @click="showPrepaymentModal = true"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
-            :title="isSidebarCollapsed ? 'Thanh toán trước' : ''"
+            :title="isSidebarCollapsed ? 'Thêm đặt cọc' : ''"
           >
             <CreditCard class="w-3.5 h-3.5 text-white shrink-0" />
-            <span v-if="!isSidebarCollapsed" class="truncate">Thanh Toán Trước</span>
+            <span v-if="!isSidebarCollapsed" class="truncate">Thêm Đặt Cọc</span>
           </button>
 
           <!-- Thanh toán -->
@@ -2727,10 +2884,10 @@ onUnmounted(() => {
           <div class="checkout-folio-section border-t border-slate-300 mb-auto px-2 py-1">
             <div class="checkout-folio-title"><i class="fa-solid fa-wallet"></i> Folio</div>
             <div class="grid grid-cols-2 gap-1">
-              <button @click="activeFolioTab = 'A'" :class="[activeFolioTab === 'A' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
-              <button @click="activeFolioTab = '1'" @dragover.prevent="draggedOverFolio = 1" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(1)" :class="[activeFolioTab === '1' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 1</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(1)) }}</div></button>
-              <button @click="activeFolioTab = '2'" @dragover.prevent="draggedOverFolio = 2" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(2)" :class="[activeFolioTab === '2' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 2</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(2)) }}</div></button>
-              <button @click="activeFolioTab = '3'" @dragover.prevent="draggedOverFolio = 3" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(3)" :class="[activeFolioTab === '3' ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 3</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(3)) }}</div></button>
+              <button @click="activeFolioTab = 'A'" :class="[String(activeFolioTab) === 'A' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
+              <button @click="activeFolioTab = '1'" @dragover.prevent="draggedOverFolio = 1" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(1)" :class="[String(activeFolioTab) === '1' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 1</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(1)) }}</div></button>
+              <button @click="activeFolioTab = '2'" @dragover.prevent="draggedOverFolio = 2" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(2)" :class="[String(activeFolioTab) === '2' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 2</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(2)) }}</div></button>
+              <button @click="activeFolioTab = '3'" @dragover.prevent="draggedOverFolio = 3" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(3)" :class="[String(activeFolioTab) === '3' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 3</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(3)) }}</div></button>
             </div>
           </div>
         </div>
@@ -2792,9 +2949,10 @@ onUnmounted(() => {
                     <input
                       type="checkbox"
                       :checked="isServiceGroupSelected(group)"
+                      :disabled="!canTransferServiceGroup(group)"
                       @click.stop
                       @change="toggleServiceGroupSelection(group, $event.target.checked)"
-                      class="rounded border-gray-300"
+                      class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </td>
                   <td class="px-2.5 py-1.5 font-mono">{{ group.dateTime }}</td>
@@ -2805,7 +2963,7 @@ onUnmounted(() => {
                   <td class="px-2.5 py-1.5 text-center font-mono">{{ group.quantity }}</td>
                   <td class="px-2.5 py-1.5 font-mono font-bold text-red-600">{{ group.paymentCode }}</td>
                   <td class="px-2.5 py-1.5 text-center font-bold">
-                    <span class="bg-[#8fd1d9] text-gray-900 px-2 py-0.5 rounded text-xs font-bold inline-block">{{ group.folio }}</span>
+                    <span class="px-2 py-0.5 text-xs font-bold inline-block">{{ group.folio }}</span>
                   </td>
                   <td class="px-2.5 py-1.5 text-right font-mono">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
                   <td class="px-2.5 py-1.5 text-right font-mono">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
@@ -2890,7 +3048,7 @@ onUnmounted(() => {
                   <td class="px-2.5 py-1.5" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'">{{ p.description }}</td>
                   <td class="px-2.5 py-1.5 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
                   <td class="px-2.5 py-1.5 text-right font-mono font-bold" :class="p.paymentCode ? 'text-red-600' : 'text-emerald-700'">{{ formatMoney(p.amount) }}</td>
-                  <td class="px-2.5 py-1.5 text-center font-bold"><span class="inline-block rounded bg-[#8fd1d9] px-2 py-0.5 text-xs text-gray-900">{{ p.folio }}</span></td>
+                  <td class="px-2.5 py-1.5 text-center font-bold"><span class="inline-block px-2 py-0.5 text-xs">{{ p.folio }}</span></td>
                   <td class="px-2.5 py-1.5 font-mono font-bold text-red-600">{{ p.paymentCode }}</td>
                   <td class="px-2.5 py-1.5">{{ p.vatNo }}</td>
                   <td class="px-2.5 py-1.5">{{ p.accounting }}</td>
@@ -2968,7 +3126,10 @@ onUnmounted(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(item, index) in selectedServiceGroup.items" :key="item.id" class="text-gray-800">
+                  <tr v-if="isServiceInvoiceDetailsLoading">
+                    <td colspan="5" class="border border-gray-200 px-3 py-5 text-center text-gray-500">Äang táº£i chi tiáº¿t hÃ³a Ä‘Æ¡n...</td>
+                  </tr>
+                  <tr v-else v-for="(item, index) in invoiceItems" :key="item.id" class="text-gray-800">
                     <td class="border border-gray-200 px-3 py-2 text-center">{{ index + 1 }}</td>
                     <td class="border border-gray-200 px-3 py-2">{{ formatInvoiceProductName(item.serviceName) }}</td>
                     <td class="border border-gray-200 px-3 py-2 text-center">{{ formatInvoiceQuantity(item.quantity) }}</td>
@@ -2979,7 +3140,7 @@ onUnmounted(() => {
                 <tfoot>
                   <tr class="font-semibold text-gray-900">
                     <td colspan="4" class="border border-gray-200 px-3 py-3 text-right">Tổng tiền</td>
-                    <td class="border border-gray-200 px-3 py-3 text-right font-mono">{{ formatInvoiceMoney(selectedServiceGroup.totalAmount) }}</td>
+                    <td class="border border-gray-200 px-3 py-3 text-right font-mono">{{ formatInvoiceMoney(invoiceTotalAmount) }}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -3100,6 +3261,7 @@ onUnmounted(() => {
       :selectedGuestId="selectedGuestId"
       :systemDate="systemDate"
       :roomOptions="selectedBooking?.roomItems || []"
+      :deposits="frontDeskDeposits"
       @close="showPrepaymentModal = false" 
       @success="handlePrepaymentSuccess"
     />
@@ -3339,6 +3501,12 @@ onUnmounted(() => {
 .checkout-actions { position: static !important; grid-column: 3; grid-row: 2; align-self: stretch; width: auto !important; min-width: 0 !important; height: calc(100% - 3px); margin: 3px 2px 0 0; }
 /* Registration/Folio panels copied from the reference sidebar-detail sections. */
 .checkout-info-panel { background: #f8fafc !important; font-size: 10px; }
+.checkout-services-panel tbody td:nth-child(9) span,
+.checkout-payments-panel tbody td:nth-child(7) span { background: transparent !important; color: inherit !important; border-radius: 0 !important; }
+.checkout-services-panel tbody td:nth-child(9) span,
+.checkout-payments-panel tbody td:nth-child(7) span { background: transparent !important; color: inherit !important; border-radius: 0 !important; }
+.checkout-actions [data-action="add-deposit"] span { font-size: 0; }
+.checkout-actions [data-action="add-deposit"] span::after { content: 'Thêm Đặt Cọc'; font-size: 12px; }
 .checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #64748b; }
 .checkout-info-title,
 .checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
@@ -3352,7 +3520,8 @@ onUnmounted(() => {
 .checkout-folio-section { padding: 4px 8px !important; background: #f8fafc; border-top: 1px solid #cbd5e1; }
 .checkout-folio-title { margin-bottom: 2px; }
 .checkout-folio-section > div:last-child { gap: 4px; }
-.checkout-folio-card { height: 38px !important; padding: 3px 6px !important; background: #ffffff !important; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-folio-card { height: 38px !important; padding: 3px 6px !important; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-folio-card.active { background: #cbd5e1 !important; border-color: #475569 !important; }
 .checkout-folio-card div:first-child { font-size: 10px; font-weight: 700; color: #0f172a; }
 .checkout-folio-card div:last-child { font-size: 15px; font-weight: 700; line-height: 1; text-align: right; color: #2563eb; }
 .checkout-folio-card:first-child div:last-child { color: #ef4444; }
