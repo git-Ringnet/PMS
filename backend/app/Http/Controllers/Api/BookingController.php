@@ -624,7 +624,37 @@ class BookingController extends Controller
 
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request) {
+                $wasMasterRoomRate = (bool) $booking->is_master_room_rate;
+                $willMasterRoomRate = array_key_exists('is_master_room_rate', $validated)
+                    ? (bool) $validated['is_master_room_rate']
+                    : $wasMasterRoomRate;
                 $booking->update($validated);
+
+                // Chỉ khi bật gom tiền phòng mới chuyển các bill RM/RMS đã post về Master.
+                // Tắt cờ không chuyển ngược các bill cũ đang thuộc Master về phòng.
+                if (!$wasMasterRoomRate && $willMasterRoomRate) {
+                    $roomRateBillIds = \App\Models\ServiceBill::where('RegisterId1', $booking->id)
+                        ->whereIn('ServiceId', ['RM', 'RMS'])
+                        ->where('Edit', 0)
+                        ->where(function ($q) {
+                            $q->whereNotNull('RentalRoomId2')->where('RentalRoomId2', '!=', '')->where('RentalRoomId2', '!=', '0')
+                              ->orWhere(function ($q2) {
+                                  $q2->whereNotNull('CustomerId2')->where('CustomerId2', '!=', '')->where('CustomerId2', '!=', '0');
+                              });
+                        })
+                        ->pluck('Ma');
+
+                    if ($roomRateBillIds->isNotEmpty()) {
+                        \App\Models\ServiceBill::whereIn('Ma', $roomRateBillIds)->update([
+                            'RentalRoomId2' => null,
+                            'CustomerId2' => null,
+                            'CompanyId2' => $booking->company_id,
+                        ]);
+                        \App\Models\BookingRoomService::whereIn('service_bill_id', $roomRateBillIds)
+                            ->whereIn('service_code', ['RM', 'RMS'])
+                            ->delete();
+                    }
+                }
 
                 // Đồng bộ room_allocations (từ UI gửi lên) - xử lý thông minh để cập nhật thay vì xóa/tạo lại
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {

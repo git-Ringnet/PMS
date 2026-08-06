@@ -958,7 +958,11 @@ class PaymentController extends Controller
                 $unpaidDepositQuery->where('folio_id', $folioId);
             }
             if ($reqGuestId) {
-                $unpaidDepositQuery->where('guest_id', $reqGuestId);
+                $unpaidDepositQuery->where(function ($q) use ($reqGuestId) {
+                    $q->where('guest_id', $reqGuestId)
+                      ->orWhereNull('guest_id')
+                      ->orWhere('guest_id', '');
+                });
             }
 
             $unpaidServiceQuery = \App\Models\ServiceBill::query();
@@ -1098,7 +1102,11 @@ class PaymentController extends Controller
                 $paymentQuery->where('folio_id', $folioId);
             }
             if ($reqGuestId) {
-                $paymentQuery->where('guest_id', $reqGuestId);
+                $paymentQuery->where(function ($q) use ($reqGuestId) {
+                    $q->where('guest_id', $reqGuestId)
+                      ->orWhereNull('guest_id')
+                      ->orWhere('guest_id', '');
+                });
             }
             $updatePaymentData = [
                 'payment_id' => $settlementCode,

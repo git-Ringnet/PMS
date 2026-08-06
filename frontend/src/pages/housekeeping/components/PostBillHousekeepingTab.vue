@@ -585,6 +585,7 @@ const loadInitialAdjustment = () => {
   form.value.date = String(adjustment.serviceDate || form.value.date).slice(0, 10)
   form.value.folio = Number(adjustment.folio) || 1
   form.value.note = adjustment.note || form.value.note
+  form.value.isFree = Boolean(adjustment.isFree)
   cart.value = adjustment.items.map((item, index) => {
     const productId = `adjustment-${item.id || index}`
     const product = {
@@ -773,8 +774,8 @@ const sendToRoom = async () => {
         service_charge: itemSvcCharge,
         unit: prod.unit || prod.unit_name || prod.dvt || 'Cái'
         ,original_rate: unitPrice
-        ,discount_pct: discountMode.value === 'gg' ? Math.min(100, Math.max(0, (Number(globalPct.value) || 0) + (Number(item.discPct) || 0))) : 0
-        ,discount_amount: discountMode.value === 'gg' ? rowCalc.discAmt : 0
+        ,discount_pct: form.value.isFree ? 100 : (discountMode.value === 'gg' ? Math.min(100, Math.max(0, (Number(globalPct.value) || 0) + (Number(item.discPct) || 0))) : 0)
+        ,discount_amount: form.value.isFree ? rowCalc.base : (discountMode.value === 'gg' ? rowCalc.discAmt : 0)
         ,increase_pct: discountMode.value === 'pt' ? Math.min(100, Math.max(0, (Number(globalPct.value) || 0) + (Number(item.discPct) || 0))) : 0
         ,increase_amount: discountMode.value === 'pt' ? rowCalc.discAmt : 0
         ,total_amount: rowCalc.net

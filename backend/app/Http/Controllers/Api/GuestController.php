@@ -303,11 +303,35 @@ class GuestController extends Controller
         $data = $request->validate(['room_ids' => 'required|array|min:1', 'room_ids.*' => 'string|max:50']);
         $booking = Booking::with('bookingRooms')->findOrFail($bookingId);
         $rooms = $booking->bookingRooms->whereIn('id', $data['room_ids']);
+        $roomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $unpaidMasterBills = \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->where(function ($q) use ($booking, $roomIds) {
+                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
+                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
+                if ($roomIds) {
+                    $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $roomIds)
+                        ->orWhereIn(DB::raw('CAST(RentalRoomId1 AS CHAR)'), $roomIds);
+                }
+            })
+            ->get(['Ma', 'Date', 'CreatedDate', 'OpenTime', 'ServiceId', 'DescriptionServive', 'Amount', 'RentalRoomId2', 'CustomerId2', 'Folio', 'Status']);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'master_unpaid' => $this->hasUnpaidMasterBills($booking),
+                'master_unpaid_bills' => $unpaidMasterBills->map(fn ($bill) => [
+                    'id' => $bill->Ma,
+                    'date' => $bill->Date ?: $bill->CreatedDate,
+                    'time' => $bill->OpenTime,
+                    'service' => $bill->DescriptionServive ?: $bill->ServiceId,
+                    'amount' => (float) $bill->Amount,
+                    'room_id' => $bill->RentalRoomId2,
+                    'guest_id' => $bill->CustomerId2,
+                    'folio' => $bill->Folio,
+                ])->values(),
                 'rooms' => $rooms->map(function (BookingRoom $room) {
                     $eligibility = $this->validateFullCheckout($room);
                     return [
@@ -471,6 +495,7 @@ class GuestController extends Controller
                     'status' => BookingRoom::STATUS_CHECKED_OUT,
                     'CheckoutDate' => $systemDate->toDateString(),
                     'CheckoutTime' => now()->format('H:i:s'),
+                    'departure_date' => $systemDate->toDateString(),
                     'check_out_user' => Auth::user()?->username ?? 'system',
                 ]);
                 if ($room->room) $room->room->update(['status' => 'checkout']);
