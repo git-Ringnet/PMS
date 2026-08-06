@@ -547,10 +547,10 @@ const loadCheckoutBookings = async () => {
     const activeFilter = appliedCheckoutFilter.value
     const params = {}
     if (activeFilter.register === 'old') {
-      // Đăng ký cũ gồm Master checkout và Booking còn hiệu lực có phòng checkout.
-      params.status = '0,1,2'
+      // Đăng ký cũ gồm Master checkout, Booking còn hiệu lực có phòng checkout và Noshow.
+      params.status = '0,1,2,4'
     } else {
-      params.status = '0,1'
+      params.status = '0,1,4'
     }
     if (activeFilter.departureEnabled && activeFilter.dateFrom && activeFilter.dateTo) {
       params.from_date = activeFilter.dateFrom
@@ -589,11 +589,12 @@ const loadCheckoutBookings = async () => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
           const isVirtualRoom = Boolean(r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || !roomNo)
           const roomIsCheckedOut = isCheckedOutRecord(r)
+          const isNoshowRoom = Number(r.status) === 4
           const includeRoom = activeFilter.register === 'old'
-            ? roomIsCheckedOut
+            ? roomIsCheckedOut || isNoshowRoom
             : activeFilter.register === 'virtual'
-              ? isVirtualRoom && Number(r.status) === 1 && !roomIsCheckedOut
-              : Number(r.status) === 1 && !roomIsCheckedOut
+              ? isVirtualRoom && (Number(r.status) === 1 || isNoshowRoom) && !roomIsCheckedOut
+              : (Number(r.status) === 1 || isNoshowRoom) && !roomIsCheckedOut
           if ((!roomNo && !isVirtualRoom) || !includeRoom) return
           const displayRoomNo = roomNo || 'PM'
           

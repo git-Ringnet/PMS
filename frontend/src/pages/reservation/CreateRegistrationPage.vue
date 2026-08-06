@@ -57,7 +57,9 @@ import {
   createBookingRoomService,
   deleteBookingRoomServicesBulk,
   lockRoomMove,
-  unlockRoomMove
+  unlockRoomMove,
+  revertBookingNoshow,
+  revertRoomNoshow
 } from '@/services/booking-service'
 
 const route = useRoute()
@@ -844,6 +846,20 @@ const isCheckInDisabled = computed(() => {
   return targetList.every(r => r.bookingRoomStatus === 1)
 })
 
+const hasNoshowRoomSelected = computed(() => {
+  const tab = activeTab.value
+  if (!tab || !tab.rooms || tab.rooms.length === 0) return false
+
+  const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+  return selected.length > 0 && selected.every(r => Number(r.bookingRoomStatus) === 4)
+})
+
+const isAllRoomsNoshow = computed(() => {
+  const tab = activeTab.value
+  if (!tab || !tab.rooms || tab.rooms.length === 0) return false
+  return tab.rooms.every(r => Number(r.bookingRoomStatus) === 4)
+})
+
 const filteredActiveRooms = computed(() => {
   if (!activeTab.value || !activeTab.value.rooms) return []
   let list = activeTab.value.rooms
@@ -1526,6 +1542,7 @@ function bookingToTab(b) {
     rooms: rooms,
     createdBy: b.created_by || '',
     createdAt: b.created_at || '',
+    status: b.status !== undefined ? Number(b.status) : 0,
   }
 }
 
@@ -3489,6 +3506,123 @@ async function triggerAction(actionName) {
         setTimeout(() => window.print(), 500)
       }
     })
+  } else if (actionName === 'Khôi phục BK') {
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) return
+
+    uiStore.confirm({
+      title: 'Xác nhận khôi phục booking',
+      message: 'Bạn có chắc chắn muốn khôi phục booking noshow này về hoạt động?',
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        try {
+          uiStore.showToast('Đang khôi phục booking...', 'info')
+          let res = await revertBookingNoshow(tab.dbId)
+          if (res.data?.success) {
+            uiStore.showToast('Khôi phục booking thành công!', 'success')
+            await loadBookings()
+          } else if (res.data?.needs_confirm) {
+            uiStore.confirm({
+              title: 'Cảnh báo Over booking',
+              message: res.data.message || 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
+              confirmText: 'Tiếp tục', cancelText: 'Hủy'
+            }).then(async (confirmedOver) => {
+              if (confirmedOver) {
+                try {
+                  uiStore.showToast('Đang khôi phục booking (force)...', 'info')
+                  let resForce = await revertBookingNoshow(tab.dbId, { force: true })
+                  if (resForce.data?.success) {
+                    uiStore.showToast('Khôi phục booking thành công!', 'success')
+                    await loadBookings()
+                  } else {
+                    uiStore.showToast(resForce.data?.message || 'Khôi phục booking thất bại!', 'error')
+                  }
+                } catch (err) {
+                  uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+                }
+              }
+            })
+          } else {
+            uiStore.showToast(res.data?.message || 'Khôi phục booking thất bại!', 'error')
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+        }
+      }
+    })
+  } else if (actionName === 'Khôi phục phòng noshow') {
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) return
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    if (selected.length === 0) return
+
+    uiStore.confirm({
+      title: 'Xác nhận khôi phục phòng',
+      message: `Bạn có chắc chắn muốn khôi phục ${selected.length} phòng noshow đã chọn?`,
+      confirmText: 'Đồng ý', cancelText: 'Hủy'
+    }).then(async (confirmed) => {
+      if (confirmed) {
+        try {
+          uiStore.showToast('Đang khôi phục phòng...', 'info')
+          let successCount = 0
+          let overBookingNeeded = []
+
+          for (const r of selected) {
+            try {
+              let res = await revertRoomNoshow(tab.dbId, r.bookingRoomId)
+              if (res.data?.success) {
+                successCount++
+              } else if (res.data?.needs_confirm) {
+                overBookingNeeded.push(r)
+              } else {
+                uiStore.showToast(res.data?.message || `Khôi phục phòng ${r.roomNumber || ''} thất bại!`, 'error')
+              }
+            } catch (err) {
+              uiStore.showToast(err.response?.data?.message || `Khôi phục phòng ${r.roomNumber || ''} thất bại!`, 'error')
+            }
+          }
+
+          if (overBookingNeeded.length > 0) {
+            uiStore.confirm({
+              title: 'Cảnh báo Over booking',
+              message: `Khôi phục các phòng còn lại dẫn đến âm phòng. Bạn có muốn tiếp tục thao tác?`,
+              confirmText: 'Tiếp tục', cancelText: 'Hủy'
+            }).then(async (confirmedOver) => {
+              if (confirmedOver) {
+                for (const r of overBookingNeeded) {
+                  try {
+                    let resForce = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { force: true })
+                    if (resForce.data?.success) {
+                      successCount++
+                    } else {
+                      uiStore.showToast(resForce.data?.message || `Khôi phục phòng ${r.roomNumber || ''} thất bại!`, 'error')
+                    }
+                  } catch (err) {
+                    uiStore.showToast(err.response?.data?.message || `Khôi phục phòng ${r.roomNumber || ''} thất bại!`, 'error')
+                  }
+                }
+                await loadBookings()
+                selectedRows.value = []
+                if (successCount > 0) {
+                  uiStore.showToast(`Khôi phục thành công ${successCount} phòng!`, 'success')
+                }
+              }
+            })
+          } else {
+            await loadBookings()
+            selectedRows.value = []
+            if (successCount > 0) {
+              uiStore.showToast(`Khôi phục thành công ${successCount} phòng!`, 'success')
+            }
+          }
+        } catch (err) {
+          console.error(err)
+          uiStore.showToast('Lỗi khi khôi phục phòng noshow!', 'error')
+        }
+      }
+    })
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
     if (!tab) return
@@ -3911,7 +4045,23 @@ defineExpose({
           Nhân bản
         </button>
 
-        <button class="btn red" @click="triggerAction('Xóa')">
+        <button 
+          v-if="activeTab && activeTab.dbId && (Number(activeTab.status) === 4 || isAllRoomsNoshow)" 
+          class="btn blue" 
+          @click="triggerAction('Khôi phục BK')"
+        >
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+          </svg>
+          Khôi phục
+        </button>
+
+        <button 
+          v-if="activeTab && Number(activeTab.status) !== 4 && !isAllRoomsNoshow" 
+          class="btn red" 
+          @click="triggerAction('Xóa')"
+        >
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
           Xoá
         </button>
@@ -5285,6 +5435,19 @@ defineExpose({
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>
               </span>
               <span class="lbl">Giao phòng (Check-in)</span>
+            </div>
+          </div>
+
+          <div v-if="hasNoshowRoomSelected" class="dock-group">
+            <div class="dock-group-label">Khôi phục phòng</div>
+            <div class="dock-item" @click="triggerAction('Khôi phục phòng noshow')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
+                  <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                </svg>
+              </span>
+              <span class="lbl">Khôi phục phòng noshow</span>
             </div>
           </div>
 
