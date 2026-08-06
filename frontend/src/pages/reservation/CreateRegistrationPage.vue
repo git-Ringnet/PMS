@@ -16,6 +16,7 @@ import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
 import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import GuestInfoModal from './components/GuestInfoModal.vue'
 import CancelReasonModal from './components/CancelReasonModal.vue'
+import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -59,7 +60,8 @@ import {
   lockRoomMove,
   unlockRoomMove,
   revertBookingNoshow,
-  revertRoomNoshow
+  revertRoomNoshow,
+  chargeRoomNoshow
 } from '@/services/booking-service'
 
 const route = useRoute()
@@ -3623,6 +3625,24 @@ async function triggerAction(actionName) {
         }
       }
     })
+  } else if (actionName === 'Charge noshow') {
+    const tab = activeTab.value
+    if (!tab) return
+    const selected = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    if (selected.length === 0) {
+      uiStore.showToast('Vui lòng chọn một phòng noshow!', 'warning')
+      return
+    }
+    const targetRoom = selected[0]
+    chargeNoshowBookingId.value = tab.dbId
+    chargeNoshowBookingName.value = tab.name || tab.id || 'Đăng ký phòng'
+    chargeNoshowGuestName.value = targetRoom.guestName || ''
+    chargeNoshowRoomId.value = targetRoom.bookingRoomId
+    chargeNoshowRoomNumber.value = targetRoom.roomNumber
+    chargeNoshowArrivalDate.value = targetRoom.checkIn
+    chargeNoshowDepartureDate.value = targetRoom.checkOut
+    chargeNoshowRoomRate.value = Number(targetRoom.price) || 0
+    isChargeNoshowModalOpen.value = true
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
     if (!tab) return
@@ -3643,6 +3663,21 @@ async function triggerAction(actionName) {
   } else {
     uiStore.showToast(`Tính năng "${actionName}" đang được thực hiện!`, 'info')
   }
+}
+
+// ==================== CHARGE NOSHOW MODAL ====================
+const isChargeNoshowModalOpen = ref(false)
+const chargeNoshowBookingId = ref(null)
+const chargeNoshowBookingName = ref('')
+const chargeNoshowGuestName = ref('')
+const chargeNoshowRoomId = ref(null)
+const chargeNoshowRoomNumber = ref('')
+const chargeNoshowArrivalDate = ref('')
+const chargeNoshowDepartureDate = ref('')
+const chargeNoshowRoomRate = ref(0)
+
+async function handleChargeNoshowSaved() {
+  await loadBookings()
 }
 
 // ==================== HỦY ĐĂNG KÝ / HỦY PHÒNG REASON MODAL ====================
@@ -5449,6 +5484,14 @@ defineExpose({
               </span>
               <span class="lbl">Khôi phục phòng noshow</span>
             </div>
+            <div class="dock-item" @click="triggerAction('Charge noshow')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
+                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+                </svg>
+              </span>
+              <span class="lbl">Charge noshow</span>
+            </div>
           </div>
 
           <div class="dock-group">
@@ -6645,6 +6688,22 @@ defineExpose({
         :title="cancelModalTitle"
         :subTitle="cancelModalSubTitle"
         @confirm="handleConfirmCancelReason"
+      />
+    </Teleport>
+
+    <!-- CHARGE NOSHOW MODAL -->
+    <Teleport to="body">
+      <ChargeNoshowModal
+        v-model:show="isChargeNoshowModalOpen"
+        :bookingId="chargeNoshowBookingId"
+        :bookingName="chargeNoshowBookingName"
+        :guestName="chargeNoshowGuestName"
+        :roomId="chargeNoshowRoomId"
+        :roomNumber="chargeNoshowRoomNumber"
+        :arrivalDate="chargeNoshowArrivalDate"
+        :departureDate="chargeNoshowDepartureDate"
+        :roomRate="chargeNoshowRoomRate"
+        @saved="handleChargeNoshowSaved"
       />
     </Teleport>
 

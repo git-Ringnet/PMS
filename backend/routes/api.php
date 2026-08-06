@@ -276,6 +276,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{roomId}/cancel', [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
         // Khôi phục phòng noshow
         Route::post('/{roomId}/revert-noshow', [\App\Http\Controllers\Api\BookingRoomController::class, 'revertNoshow']);
+        // Charge noshow
+        Route::post('/{roomId}/charge-noshow', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'chargeNoshow']);
         // Tách phòng
         Route::post('/{roomId}/split', [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
         // Epic 3 - Auto assign room number

@@ -48,6 +48,7 @@ export const undoCheckInRoom = (bookingId, roomId) => http.post(`/bookings/${boo
 export const upgradeRoom = (bookingId, roomId, data) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/upgrade`, data)
 export const cancelBookingRoom = (bookingId, roomId, data = {}) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`, { data })
 export const revertRoomNoshow = (bookingId, roomId, params = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/revert-noshow`, params)
+export const chargeRoomNoshow = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/charge-noshow`, data)
 export const lockRoomMove = (bookingId, roomId, data = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/lock-move`, data)
 export const unlockRoomMove = (bookingId, roomId) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/lock-move`)
 export const updateBookingRoom = (bookingId, roomId, data) => http.put(`/bookings/${bookingId}/rooms/${roomId}`, data)
