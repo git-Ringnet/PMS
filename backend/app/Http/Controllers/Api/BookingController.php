@@ -86,7 +86,7 @@ class BookingController extends Controller
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.guests.guest',
-            'bookingRooms.children',
+            'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.specialRequests.specialRequest',
         ];

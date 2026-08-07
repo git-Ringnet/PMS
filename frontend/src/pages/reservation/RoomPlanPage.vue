@@ -1170,7 +1170,8 @@ async function loadBookings() {
 
     const res = await fetchBookings({
       from_date: formatDateStr(startRange),
-      to_date: formatDateStr(endRange)
+      to_date: formatDateStr(endRange),
+      with_billing: true
     })
 
     if (res && res.data && res.data.success && res.data.data && res.data.data.length > 0) {
@@ -1180,11 +1181,70 @@ async function loadBookings() {
         if (Number(b.status) === 3) return
         if (!b.booking_rooms) return
 
+        const calculateRoomAmounts = (room) => {
+          const roomServices = (room.services || []).filter(service => (
+            Number(service.is_posted) !== 1
+            && !service.service_bill_id
+            && !service.housekeeping_service_bill_id
+          ))
+          const serviceAmount = service => {
+            const quantity = Number(service.quantity ?? service.Quantity ?? 1) || 1
+            const rate = Number(service.rate ?? service.price ?? service.Amount ?? service.amount ?? 0) || 0
+            return Number(service.total_amount ?? service.totalAmount ?? '') || (rate * quantity)
+          }
+          const isRoomService = service => (
+            ['RM', 'ROOM_CHARGE'].includes(String(service.service_code ?? service.serviceCode ?? service.ServiceId ?? '').toUpperCase())
+          )
+          const roomCharge = roomServices.filter(isRoomService).reduce((sum, service) => sum + serviceAmount(service), 0)
+          const arrival = room.arrival_date || b.arrival_date
+          const departure = room.CheckoutDate || room.checkout_date || room.checkoutDate || room.departure_date || b.departure_date
+          const nights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / (1000 * 60 * 60 * 24)) || Number(b.num_of_days) || 1)
+          const hasConfiguredExtraBed = roomServices.some(service => String(service.service_code ?? service.serviceCode ?? '').toUpperCase() === 'EB')
+          const extraBedAmount = hasConfiguredExtraBed
+            ? 0
+            : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * nights
+          const childBreakfastAmount = (room.children || [])
+            .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
+            .filter(detail => Number(detail.is_extra_charge) === 1 && Number(detail.breakfast) === 1)
+            .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
+          const serviceCharge = roomServices
+            .filter(service => !isRoomService(service))
+            .reduce((sum, service) => sum + serviceAmount(service), 0)
+            + extraBedAmount
+            + childBreakfastAmount
+
+          return {
+            roomCharge: roomCharge || (Number(room.rate) || 0) * nights,
+            serviceCharge
+          }
+        }
+
+        const bookingAmounts = b.booking_rooms
+          .filter(room => Number(room.status) !== 3)
+          .map(calculateRoomAmounts)
+          .reduce((totals, amounts) => ({
+            roomCharge: totals.roomCharge + amounts.roomCharge,
+            serviceCharge: totals.serviceCharge + amounts.serviceCharge
+          }), { roomCharge: 0, serviceCharge: 0 })
+        const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
+        const activePayments = (b.payments || []).filter(payment => Number(payment.edit_flag) === 0 && !payment.deleted_at)
+        const depositAmount = activePayments
+          .filter(payment => (
+            String(payment.pack2 || '').toUpperCase() === 'DPR'
+            && String(payment.pack4 || '').toUpperCase() !== 'AP'
+            && !payment.payment_id
+            && !payment.paymentId
+            && !String(payment.description || '').trim().toUpperCase().startsWith('[TRANSFER IN')
+          ))
+          .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+        const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount)
+
         b.booking_rooms.forEach(br => {
           if (![0, 1, 2].includes(Number(br.status))) return
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
+          const roomAmounts = calculateRoomAmounts(br)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
 
           // Map status values to matching UI classes
@@ -1223,26 +1283,6 @@ async function loadBookings() {
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
 
-          const roomServices = br.services || []
-          const roomChargeDue = roomServices
-            .filter(s => s.service_code === 'RM' || s.is_room === 1)
-            .reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity)), 0) 
-            || (Number(br.rate) * Number(b.num_of_days || 1))
-
-          const serviceChargeDue = roomServices
-            .filter(s => s.service_code !== 'RM' && s.is_room !== 1)
-            .reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity)), 0)
-
-          const totalAmount = roomChargeDue + serviceChargeDue
-
-          const activePayments = b.payments ? b.payments.filter(p => p.edit_flag === 0 && p.pack2 === 'DPR') : []
-          const depositAmount = activePayments.reduce((sum, p) => sum + Number(p.amount), 0)
-
-          const paidPayments = b.payments ? b.payments.filter(p => p.edit_flag === 0) : []
-          const paidAmount = paidPayments.reduce((sum, p) => sum + Number(p.amount), 0)
-
-          const balance = Math.max(0, totalAmount - paidAmount)
-
           apiBookings.push({
             room: roomVal,
             checkIn: `${arrivalStr} ${arrivalTime}`,
@@ -1261,19 +1301,19 @@ async function loadBookings() {
             children: br.children ? br.children.filter(c => c.age_group === 'child').length : 0,
             babies: br.children ? br.children.filter(c => c.age_group === 'baby').length : 0,
             extraBed: br.extra_bed_qty || 0,
-            specialRequest: b.special_requests || br.note || '',
+            specialRequest: b.note || b.special_requests || br.note || '',
             price: priceStr,
             label,
             isVirtual,
             bookingId: b.id,
             bookingRoomId: br.id,
             phone: b.contact_phone || '',
-            roomChargeDue,
-            serviceChargeDue,
-            totalAmount,
+            roomChargeDue: roomAmounts.roomCharge,
+            serviceChargeDue: roomAmounts.serviceCharge,
+            totalAmount: roomAmounts.roomCharge + roomAmounts.serviceCharge,
             depositAmount,
-            paidAmount,
-            balance
+            bookingTotalAmount,
+            bookingBalance
           })
         })
       })
@@ -3800,7 +3840,7 @@ function getRoomStatusIconName(item) {
                     class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-all"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
-                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
+                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-visible',
                       draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-40 border-dashed' : ''
                     ]"
                     :style="{
@@ -3825,7 +3865,10 @@ function getRoomStatusIconName(item) {
                       @mousedown.stop="startResize(bk, 'end', $event)"
                     ></div>
 
-                    <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">
+                    <div
+                      class="flex items-center gap-1 w-full overflow-hidden pb-1.5"
+                      :class="Number(bk.depositAmount) > 0 ? 'pr-9' : 'pr-1'"
+                    >
                       <svg 
                         v-if="bk.isDoNotMove"
                         class="w-3 h-3 text-slate-700 shrink-0" 
@@ -3834,7 +3877,18 @@ function getRoomStatusIconName(item) {
                       >
                         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                       </svg>
-                      <span class="truncate">{{ bk.label }}</span>
+                      <span class="truncate flex-1 min-w-0">{{ bk.label }}</span>
+                      <span
+                        v-if="Number(bk.depositAmount) > 0"
+                        class="absolute -right-[5px] top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center shrink-0"
+                        title="Booking đã có cọc"
+                      >
+                        <img
+                          src="/deposit-money.png"
+                          alt="Booking đã có cọc"
+                          class="w-9 h-9 object-contain"
+                        />
+                      </span>
                     </div>
 
                     <!-- Green line for stay / arrival -->
@@ -4063,16 +4117,16 @@ function getRoomStatusIconName(item) {
           <!-- Payment Info -->
           <div class="flex flex-col gap-1 text-slate-600 font-semibold pt-1">
             <div class="flex justify-between items-center text-[10px]">
+              <span>Tổng tiền BK:</span>
+              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.bookingTotalAmount) }} ₫</span>
+            </div>
+            <div class="flex justify-between items-center text-[10px]">
               <span>Đã đặt cọc:</span>
               <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
             </div>
-            <div class="flex justify-between items-center text-[10px]">
-              <span>Đã thanh toán:</span>
-              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.paidAmount) }} ₫</span>
-            </div>
             <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 font-extrabold text-slate-900 text-xs">
               <span>Còn lại:</span>
-              <span class="text-rose-600 font-black">{{ formatMoney(hoveredBooking.balance) }} ₫</span>
+              <span class="text-rose-600 font-black">{{ formatMoney(hoveredBooking.bookingBalance) }} ₫</span>
             </div>
           </div>
 
