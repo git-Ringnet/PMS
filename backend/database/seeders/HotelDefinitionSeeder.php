@@ -244,6 +244,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoomPlan_ColorOOS', 'value' => '#107eeb', 'description' => 'màu phòng khóa OOS', 'is_visible' => true],
             ['name' => 'RoomPlan_AllowChangeArrivalDate', 'value' => '0', 'description' => 'Cho phép kéo thay đổi ngày đến của phòng trên Room Plan (0: không cho, 1: cho phép)', 'is_visible' => true],
             ['name' => 'AllowPostBillCheckedOutRoom', 'value' => '0', 'description' => 'Cho phép post bill sau khi phòng đã check-out (0: không cho, 1: cho phép)', 'is_visible' => true],
+            ['name' => 'SyncRoomDateByBookingDate', 'value' => '1', 'description' => 'Tự động đồng bộ ngày của phòng theo ngày của booking (0: không đồng bộ, 1: đồng bộ cho phòng chưa check-in)', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {

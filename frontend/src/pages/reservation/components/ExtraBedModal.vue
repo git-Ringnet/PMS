@@ -1,12 +1,18 @@
 <template>
   <div
     v-if="show"
-    class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+    class="fixed inset-0 bg-black/20 z-[99999] flex items-center justify-center p-4 animate-in"
     @click.self="close"
   >
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-[640px] overflow-hidden border border-slate-300 flex flex-col max-h-[90vh]">
+    <div 
+      class="bg-white rounded-xl shadow-2xl w-full max-w-[640px] overflow-hidden border border-slate-300 flex flex-col max-h-[90vh]"
+      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
+    >
       <!-- MODAL HEADER -->
-      <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none">
+      <div 
+        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        @mousedown="startDragModal"
+      >
         <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
           <i class="fa-solid fa-bed text-sky-400"></i>
           <span>Chi tiết thêm giường - PHÒNG {{ room?.roomNumber || room?.type || room?.shape || 'CHƯA GÁN' }}</span>
@@ -226,6 +232,45 @@ const props = defineProps({
 
 const emit = defineEmits(['update:show', 'saved'])
 
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
 const totalQuantity = ref(0)
 const totalRate = ref(0)
 const totalIsRoom = ref(false) // false = MASTER (FIT), true = PHÒNG (GIT)
@@ -289,6 +334,7 @@ function buildStayDates(checkInStr, checkOutStr) {
 
 watch(() => props.show, (newVal) => {
   if (newVal && props.room) {
+    modalPos.value = { x: 0, y: 0 }
     const checkIn = props.room.checkIn || props.room.arrivalDate || props.room.arrival_date
     const checkOut = props.room.checkOut || props.room.departureDate || props.room.departure_date
     const stayDates = buildStayDates(checkIn, checkOut)

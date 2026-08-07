@@ -625,11 +625,14 @@ const loadCheckoutBookings = async () => {
           const isVirtualRoom = Boolean(r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || !roomNo)
           const roomIsCheckedOut = isCheckedOutRecord(r)
           const isNoshowRoom = Number(r.status) === 4
+          const hasTransactions = (r.services && r.services.length > 0) ||
+            (b.service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id)) ||
+            (b.master_service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id));
           const includeRoom = activeFilter.register === 'old'
-            ? roomIsCheckedOut || isNoshowRoom
+            ? roomIsCheckedOut || isNoshowRoom || (Number(r.status) === 0 && hasTransactions)
             : activeFilter.register === 'virtual'
-              ? isVirtualRoom && (Number(r.status) === 1 || isNoshowRoom) && !roomIsCheckedOut
-              : (Number(r.status) === 1 || isNoshowRoom) && !roomIsCheckedOut
+              ? isVirtualRoom && (Number(r.status) === 1 || isNoshowRoom || (Number(r.status) === 0 && hasTransactions)) && !roomIsCheckedOut
+              : (Number(r.status) === 1 || isNoshowRoom || (Number(r.status) === 0 && hasTransactions)) && !roomIsCheckedOut
           if ((!roomNo && !isVirtualRoom) || !includeRoom) return
           const displayRoomNo = roomNo || 'PM'
           

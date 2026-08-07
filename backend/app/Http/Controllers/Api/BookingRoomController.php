@@ -274,6 +274,16 @@ class BookingRoomController extends Controller
         $departureDate = $validated['departure_date'] ?? $bookingRoom->departure_date->toDateString();
         $roomClassId  = $validated['room_class_id'] ?? $bookingRoom->room_class_id;
 
+        $parentArrival = $bookingRoom->booking->arrival_date->toDateString();
+        $parentDeparture = $bookingRoom->booking->departure_date->toDateString();
+
+        if ($arrivalDate < $parentArrival || $departureDate > $parentDeparture) {
+            return response()->json([
+                'success' => false,
+                'message' => "Thời gian ở của phòng phải nằm trong khoảng thời gian của booking (từ {$parentArrival} đến {$parentDeparture}).",
+            ], 422);
+        }
+
         $isDayUse = filter_var($request->has('is_day_use') ? $request->input('is_day_use') : $bookingRoom->is_day_use, FILTER_VALIDATE_BOOLEAN);
         if (!$isDayUse && $departureDate === $arrivalDate) {
             return response()->json([
@@ -764,6 +774,8 @@ class BookingRoomController extends Controller
             $bookingRoom->guests()->update(['status' => 3]);
             // Cascade: hủy children gắn với phòng này
             $bookingRoom->children()->update(['child_status' => 3]);
+            // Cascade: hủy/xóa các dịch vụ tự động của phòng này
+            \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)->delete();
             $reasonText = $request->note;
             if ($request->cancel_reason_id && empty($reasonText)) {
                 $cReason = \App\Models\CancelReason::find($request->cancel_reason_id);
@@ -980,62 +992,66 @@ class BookingRoomController extends Controller
     // =========================================
     public function autoAssign($bookingId, $roomId)
     {
-        $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+        return DB::transaction(function () use ($bookingId, $roomId) {
+            $bookingRoom = BookingRoom::where('booking_id', $bookingId)->lockForUpdate()->findOrFail($roomId);
 
-        if ($bookingRoom->status !== BookingRoom::STATUS_BOOKED) {
-            return response()->json(['success' => false, 'message' => 'Chỉ tự động gán phòng cho phòng ở trạng thái đăng ký.'], 422);
-        }
-
-        $arrivalDate   = request('arrival_date') ?? $bookingRoom->arrival_date->toDateString();
-        $departureDate = request('departure_date') ?? $bookingRoom->departure_date->toDateString();
-
-        // Lấy danh sách phòng vật lý cùng loại (không lấy phòng ảo: is_internal = 0), sắp xếp theo tầng thấp→cao
-        $candidates = \App\Models\Room::where('room_class_id', $bookingRoom->room_class_id)
-            ->where('is_internal', false)
-            ->orderBy('floor', 'asc')
-            ->orderBy('room_number', 'asc')
-            ->get();
-
-        $assignedRoom = null;
-        foreach ($candidates as $room) {
-            // Kiểm tra không bị OOO/OOS
-            $isLocked = \App\Models\RoomLock::where('room_number', $room->room_number)
-                ->where('is_active', 1)
-                ->where('start_date', '<', $departureDate)
-                ->where('end_date', '>', $arrivalDate)
-                ->exists();
-
-            if ($isLocked) continue;
-
-            // Kiểm tra không bị trùng booking khác
-            $isOccupied = $this->avService->isRoomNumberOccupied(
-                $room->room_number, $arrivalDate, $departureDate, $roomId
-            );
-
-            if (!$isOccupied) {
-                $assignedRoom = $room;
-                break;
+            if ($bookingRoom->status !== BookingRoom::STATUS_BOOKED) {
+                return response()->json(['success' => false, 'message' => 'Chỉ tự động gán phòng cho phòng ở trạng thái đăng ký.'], 422);
             }
-        }
 
-        if (!$assignedRoom) {
+            $arrivalDate   = request('arrival_date') ?? $bookingRoom->arrival_date->toDateString();
+            $departureDate = request('departure_date') ?? $bookingRoom->departure_date->toDateString();
+
+            // Lấy danh sách phòng vật lý cùng loại (không lấy phòng ảo: is_internal = 0), sắp xếp theo tầng thấp→cao
+            $candidates = \App\Models\Room::where('room_class_id', $bookingRoom->room_class_id)
+                ->where('is_internal', false)
+                ->orderBy('floor', 'asc')
+                ->orderBy('room_number', 'asc')
+                ->lockForUpdate()
+                ->get();
+
+            $assignedRoom = null;
+            foreach ($candidates as $room) {
+                // Kiểm tra không bị OOO/OOS
+                $isLocked = \App\Models\RoomLock::where('room_number', $room->room_number)
+                    ->where('is_active', 1)
+                    ->where('start_date', '<', $departureDate)
+                    ->where('end_date', '>', $arrivalDate)
+                    ->exists();
+
+                if ($isLocked) continue;
+
+                // Kiểm tra không bị trùng booking khác
+                $isOccupied = $this->avService->isRoomNumberOccupied(
+                    $room->room_number, $arrivalDate, $departureDate, $roomId, null,
+                    $bookingRoom->arrival_time, $bookingRoom->departure_time
+                );
+
+                if (!$isOccupied) {
+                    $assignedRoom = $room;
+                    break;
+                }
+            }
+
+            if (!$assignedRoom) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không tìm thấy phòng vật lý trống phù hợp trong khoảng thời gian này.',
+                ], 422);
+            }
+
+            $bookingRoom->update([
+                'room_number' => $assignedRoom->room_number,
+                'updated_by'  => Auth::user()?->username ?? 'system',
+            ]);
+
             return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phòng vật lý trống phù hợp trong khoảng thời gian này.',
-            ], 422);
-        }
-
-        $bookingRoom->update([
-            'room_number' => $assignedRoom->room_number,
-            'updated_by'  => Auth::user()?->username ?? 'system',
-        ]);
-
-        return response()->json([
-            'success'      => true,
-            'room_number'  => $assignedRoom->room_number,
-            'data'         => $bookingRoom->fresh()->load('room'),
-            'message'      => 'Tự động gán phòng ' . $assignedRoom->room_number . ' thành công.',
-        ]);
+                'success'      => true,
+                'room_number'  => $assignedRoom->room_number,
+                'data'         => $bookingRoom->fresh()->load('room'),
+                'message'      => 'Tự động gán phòng ' . $assignedRoom->room_number . ' thành công.',
+            ]);
+        });
     }
 
     // =========================================
@@ -1979,6 +1995,8 @@ class BookingRoomController extends Controller
                 ]);
             }
         });
+
+        event(new \App\Events\ReservationUpdated($bookingId, 'revert_room_noshow', "Khôi phục phòng noshow {$bookingRoom->room_number} thành công"));
 
         return response()->json([
             'success' => true,

@@ -7,6 +7,45 @@ import RoomIcon from '@/components/RoomIcon.vue'
 
 const uiStore = useUiStore()
 
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
 // State variables
 const rooms = ref([])
 const hotelConfigs = ref([])
@@ -44,6 +83,11 @@ const loadingHistory = ref(false)
 
 // Lock Modal State
 const isBulkModalOpen = ref(false)
+watch(isBulkModalOpen, (newVal) => {
+  if (newVal) {
+    modalPos.value = { x: 0, y: 0 }
+  }
+})
 const bulkLockType = ref('OOO') // 'OOO' | 'OOS'
 const editingLockId = ref(null) // null if creating, lock_id if editing
 const bulkForm = ref({
@@ -1106,15 +1150,17 @@ const toggleRowMenu = (rowKey, event) => {
     <!-- BULK / SINGLE LOCK MODAL -->
     <div 
       v-if="isBulkModalOpen" 
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs font-bold"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/20 font-bold animate-in fade-in duration-200"
       @click.self="isBulkModalOpen = false"
     >
       <div 
-        class="bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200 rounded-2xl w-[620px] max-w-[95vw]"
+        class="bg-white shadow-2xl border border-slate-200 rounded-2xl w-[620px] max-w-[95vw]"
+        :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       >
         <!-- Modal Header -->
         <div 
-          class="px-5 py-3.5 flex items-center justify-between text-white border-b border-slate-100 rounded-t-2xl bg-[#8dcbf4]"
+          class="px-5 py-3.5 flex items-center justify-between text-white border-b border-slate-100 rounded-t-2xl bg-[#8dcbf4] cursor-move select-none"
+          @mousedown="startDragModal"
         >
           <h2 class="text-xs font-black uppercase tracking-wider m-0">
             {{ editingLockId ? 'Chỉnh sửa thông tin khóa' : 'Thêm khóa' }}
