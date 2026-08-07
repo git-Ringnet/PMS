@@ -9,6 +9,7 @@ import { fetchFOServicesList, postFoServiceBill, postRoomCharge } from '@/servic
 const props = defineProps({
   show: Boolean,
   bookingRoomId: { type: String, default: null },
+  guestId:       { type: [String, Number], default: null },
   bookingId:     { type: [String, Number], default: '' },
   bookingInfo:   { type: String, default: '' },
   arrivalDate:   { type: String, default: '' },
@@ -226,6 +227,7 @@ async function handleSubmit() {
       if (!quantity.value || quantity.value <= 0) { errorMsg.value = 'Số lượng phải > 0.'; isSubmitting.value = false; return }
       await postFoServiceBill({
         booking_room_id: props.bookingRoomId || undefined,
+        guest_id:        props.guestId || undefined,
         booking_id:      props.bookingId || undefined,
         date_from:    serviceFrom.value,
         date_to:      serviceTo.value,
@@ -244,6 +246,7 @@ async function handleSubmit() {
       }
       await postRoomCharge({
         booking_room_id: props.bookingRoomId || undefined,
+        guest_id:        props.guestId || undefined,
         booking_id:      props.bookingId || undefined,
         date_from:   roomFrom.value,
         date_to:     roomTo.value,

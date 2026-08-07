@@ -1326,6 +1326,7 @@ class BookingRoomServiceController extends Controller
     {
         $request->validate([
             'booking_room_id' => 'required_without:booking_id|nullable|string',
+            'guest_id'        => 'nullable|string|max:50',
             'booking_id'      => 'nullable',
             'date_from'       => 'required|date',
             'date_to'         => 'required|date|after_or_equal:date_from',
@@ -1342,6 +1343,14 @@ class BookingRoomServiceController extends Controller
 
         $room = $roomId ? BookingRoom::find($roomId) : null;
         $booking = $room ? $room->booking : ($bookingId ? \App\Models\Booking::find($bookingId) : null);
+
+        $selectedGuest = null;
+        if ($room && $request->filled('guest_id')) {
+            $selectedGuest = $room->guests()->with('guest')->where('guest_id', $request->guest_id)->first();
+            if (!$selectedGuest) {
+                return response()->json(['success' => false, 'message' => 'Khách được chọn không thuộc phòng này.'], 422);
+            }
+        }
 
         if (!$room && !$booking) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
@@ -1379,8 +1388,9 @@ class BookingRoomServiceController extends Controller
         $description = $request->description ?: $foService->name;
 
         $primaryGuest = $room ? ($room->guests()->where('is_primary', 1)->with('guest')->first() ?: $room->guests()->with('guest')->first()) : null;
-        $guestId   = $primaryGuest?->guest_id;
-        $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
+        $billGuest = $selectedGuest ?: $primaryGuest;
+        $guestId   = $billGuest?->guest_id;
+        $guestName = $billGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
 
         $createdBills = [];
 
@@ -1450,6 +1460,9 @@ class BookingRoomServiceController extends Controller
                     $existingBrs = BookingRoomService::where('booking_room_id', $room->id)
                         ->where('service_code', $foService->code)
                         ->where('service_date', $current->toDateString())
+                        ->where(function ($query) use ($guestId) {
+                            $query->whereNull('guest_id')->orWhere('guest_id', $guestId);
+                        })
                         ->whereNull('service_bill_id')
                         ->first();
 
@@ -1457,6 +1470,7 @@ class BookingRoomServiceController extends Controller
                         $existingBrs->update([
                             'service_bill_id'        => $bill->Ma,
                             'service_bill_detail_no' => $detailSeq,
+                            'guest_id'               => $guestId,
                             'quantity'               => $qty,
                             'rate'                   => $rate,
                             'total_amount'           => $totalAmount,
@@ -1468,6 +1482,7 @@ class BookingRoomServiceController extends Controller
                     } else {
                         BookingRoomService::create([
                             'booking_room_id' => $room->id,
+                            'guest_id'        => $guestId,
                             'service_bill_id' => $bill->Ma,
                             'service_bill_detail_no' => $detailSeq,
                             'service_code'    => $foService->code,
@@ -1567,6 +1582,7 @@ class BookingRoomServiceController extends Controller
     {
         $request->validate([
             'booking_room_id' => 'required_without:booking_id|nullable|string',
+            'guest_id'        => 'nullable|string|max:50',
             'booking_id'      => 'nullable',
             'date_from'       => 'required|date',
             'date_to'         => 'required|date|after_or_equal:date_from',
@@ -1583,6 +1599,14 @@ class BookingRoomServiceController extends Controller
 
         $room = $roomId ? BookingRoom::find($roomId) : null;
         $booking = $room ? $room->booking : ($bookingId ? \App\Models\Booking::with('bookingRooms')->find($bookingId) : null);
+
+        $selectedGuest = null;
+        if ($room && $request->filled('guest_id')) {
+            $selectedGuest = $room->guests()->with('guest')->where('guest_id', $request->guest_id)->first();
+            if (!$selectedGuest) {
+                return response()->json(['success' => false, 'message' => 'Khách được chọn không thuộc phòng này.'], 422);
+            }
+        }
 
         if (!$room && !$booking) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
@@ -1652,15 +1676,16 @@ class BookingRoomServiceController extends Controller
         DB::transaction(function () use (
             $roomsToPost, $booking, $setting, $isBookingPost,
             $dateFrom, $dateTo, $folio, $currency, $mode,
-            $request, $user, $description, $chargePercent, &$createdBills,
+            $request, $selectedGuest, $user, $description, $chargePercent, &$createdBills,
             &$postedRooms, &$skippedRooms
         ) {
             foreach ($roomsToPost as $targetRoom) {
                 $roomLabel = $targetRoom->room_number ?: 'Phòng ' . $targetRoom->id;
                 $primaryGuest = $targetRoom->guests()->where('is_primary', 1)->with('guest')->first()
                                 ?: $targetRoom->guests()->with('guest')->first();
-                $guestId   = $primaryGuest?->guest_id;
-                $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
+                $billGuest = (!$isBookingPost && $selectedGuest) ? $selectedGuest : $primaryGuest;
+                $guestId   = $billGuest?->guest_id;
+                $guestName = $billGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
                 $sendRoomRateToMaster = (bool) ($booking?->is_master_room_rate);
                 $currentGuestName = $sendRoomRateToMaster
                     ? ($booking?->booking_name ?: 'Khách lẻ')
@@ -1762,6 +1787,9 @@ class BookingRoomServiceController extends Controller
                                 'Amount'             => $totalAmount,
                                 'DescriptionServive' => $targetDesc,
                                 'Folio'              => (string)$folio,
+                                'Guest'              => $currentGuestName,
+                                'CustomerId1'        => $guestId,
+                                'CustomerId2'        => $currentGuestId,
                                 'Username'           => $user,
                             ]);
                             $bill = $existingBill;
@@ -1980,6 +2008,7 @@ class BookingRoomServiceController extends Controller
                         ],
                         [
                             'service_name'   => 'Tiền phòng',
+                            'guest_id'       => $guestId,
                             'service_bill_id' => $bill->Ma,
                             'service_bill_detail_no' => 1,
                             'quantity'       => 1,

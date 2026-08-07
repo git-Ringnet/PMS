@@ -360,6 +360,7 @@ const submitCheckout = async () => {
     } else await checkoutBooking(selectedBooking.value.bookingId)
     showCheckoutModal.value = false
     await refreshCheckoutData()
+    clearCheckoutPanels()
     uiStore.showToast('Checkout thành công.', 'success')
   } catch (err) {
     console.error('Checkout API error:', err?.response?.data || err)
@@ -409,6 +410,7 @@ const checkoutEarlyWithoutCharge = async () => {
     if (adultIds.length > 0) await checkoutRoom(selectedRoomItem.value.roomId || selectedRoomItem.value.id, adultIds, { skip_remaining_room_charge: true })
     showCheckoutModal.value = false
     await refreshCheckoutData()
+    clearCheckoutPanels()
     uiStore.showToast('Checkout sớm thành công.', 'success')
   } catch (err) { checkoutError.value = err?.response?.data?.message || 'Không thể checkout sớm.' }
   finally { isServiceOperationLoading.value = false }
@@ -453,6 +455,28 @@ const toggleCheckoutGuest = (roomId, guestId, checked) => {
 const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
 const systemDate = ref('')
+
+const clearCheckoutPanels = () => {
+  allBookingsList.value.forEach(booking => {
+    ;(booking.roomItems || []).forEach(room => { room.checked = false })
+  })
+  displayedBookingsList.value = []
+  selectedBooking.value = null
+  selectedRoomItem.value = null
+  selectedGuest.value = 'Guest 1'
+  selectedGuestId.value = null
+  roomNumber.value = ''
+  noteText.value = ''
+  isNoPost.value = false
+  activeFolioTab.value = 'A'
+  selectedServiceIds.value = []
+  selectedPaymentIds.value = []
+  serviceFilter.value = null
+  checkoutGuestSelections.value = {}
+  checkoutGuestIds.value = []
+  checkoutPreview.value = null
+  checkoutError.value = ''
+}
 
 const addServiceBookingInfo = computed(() => {
   if (selectedRoomItem.value) {
@@ -908,19 +932,21 @@ const refreshCheckoutData = async () => {
   }
 }
 
-const handleServiceAdded = async (data) => {
+const handleServiceAdded = async (data, options = {}) => {
   showAddServiceModal.value = false
   showHousekeepingServiceModal.value = false
   selectedPaymentIds.value = []
 
   await refreshCheckoutData()
 
-  uiStore.showToast('Đã thêm dịch vụ thành công!', 'success')
+  if (options.showToast !== false) {
+    uiStore.showToast('Đã thêm dịch vụ thành công!', 'success')
+  }
 }
 
 const handlePrepaymentSuccess = async () => {
   await refreshCheckoutData()
-  uiStore.showToast('Đã thêm đặt cọc thành công!', 'success')
+  uiStore.showToast('Thanh toán trước thành công!', 'success')
 }
 
 const toggleBookingCheck = (b) => {
@@ -1332,25 +1358,28 @@ const closeServiceInvoice = () => {
 }
 const formatInvoiceProductName = (name) => String(name || '').replace(/^\[[^\]]+\]\s*/, '')
 
-const isServiceGroupSelected = (group) => group.items.every(item => selectedServiceIds.value.includes(Number(item.id)))
+const serviceSelectionKey = value => String(value ?? '')
+const isServiceGroupSelected = (group) => group.items.every(item => (
+  selectedServiceIds.value.some(id => serviceSelectionKey(id) === serviceSelectionKey(item.id))
+))
 
 const toggleServiceGroupSelection = (group, checked) => {
   if (checked && !canTransferServiceGroup(group)) return
-  const ids = group.items.map(item => Number(item.id)).filter(id => Number.isInteger(id) && id > 0)
+  const ids = group.items.map(item => item.id).filter(id => serviceSelectionKey(id) !== '')
   selectedServiceIds.value = checked
     ? [...new Set([...selectedServiceIds.value, ...ids])]
-    : selectedServiceIds.value.filter(id => !ids.includes(id))
+    : selectedServiceIds.value.filter(id => !ids.some(itemId => serviceSelectionKey(itemId) === serviceSelectionKey(id)))
   if (checked) selectedPaymentIds.value = []
 }
 
 const serviceSelectionIds = computed(() => serviceGroups.value
   .filter(canTransferServiceGroup)
   .flatMap(group => group.items)
-  .map(item => Number(item.id))
-  .filter(id => Number.isInteger(id) && id > 0))
+  .map(item => item.id)
+  .filter(id => serviceSelectionKey(id) !== ''))
 const areAllServicesSelected = computed(() => (
   serviceSelectionIds.value.length > 0
-  && serviceSelectionIds.value.every(id => selectedServiceIds.value.includes(id))
+  && serviceSelectionIds.value.every(id => selectedServiceIds.value.some(selectedId => serviceSelectionKey(selectedId) === serviceSelectionKey(id)))
 ))
 const toggleAllServiceSelection = (checked) => {
   selectedServiceIds.value = checked ? [...new Set(serviceSelectionIds.value)] : []
@@ -1362,7 +1391,9 @@ const canTransferServiceGroup = (group) => {
   return group.items.every(item => !item.isPaid && Number(item.status) !== 2)
 }
 
-const selectedServiceItems = computed(() => visibleServices.value.filter(service => selectedServiceIds.value.includes(Number(service.id))))
+const selectedServiceItems = computed(() => visibleServices.value.filter(service => (
+  selectedServiceIds.value.some(id => serviceSelectionKey(id) === serviceSelectionKey(service.id))
+)))
 const selectedServiceGroups = computed(() => serviceGroups.value.filter(group => isServiceGroupSelected(group)))
 const canTransferSelectedServices = computed(() => (
   Boolean(selectedBooking.value)
@@ -1724,7 +1755,17 @@ const areAllPaymentsSelected = computed(() => (
   paymentSelectionIds.value.length > 0
   && paymentSelectionIds.value.every(id => selectedPaymentIds.value.includes(id))
 ))
-const canAdjustSelectedService = computed(() => Boolean(selectedRoomItem.value) && selectedServiceGroups.value.length === 1)
+const isRoomRateService = (service) => {
+  const code = String(service?.serviceCode || service?.service_code || service?.ServiceId || '').toUpperCase()
+  const name = String(service?.serviceName || service?.service_name || service?.description || service?.DescriptionServive || '')
+  return code === 'RM' || code === 'RMS' || name.includes('Tiền phòng')
+}
+
+const canAdjustSelectedService = computed(() => (
+  Boolean(selectedRoomItem.value)
+  && selectedServiceGroups.value.length === 1
+  && selectedServiceGroups.value[0].items.every(item => !isRoomRateService(item))
+))
 const canOpenCancelServiceModal = computed(() => canCancelSelectedServices.value || canAdjustSelectedService.value)
 const toggleAllPaymentSelection = (checked) => {
   selectedPaymentIds.value = checked ? [...new Set(paymentSelectionIds.value)] : []
@@ -1742,10 +1783,10 @@ const openServiceAdjustment = async () => {
   showCancelServiceModal.value = false
   const targetBillId = item?.serviceBillId || group?.serviceBillId || (group?.id && String(group.id).startsWith('sb-') ? Number(String(group.id).replace('sb-', '')) : null)
 
-  if (group.code === 'RM') {
+  if (isRoomRateService(item) || group.code === 'RM' || group.code === 'RMS') {
     roomAdjustment.value = {
       serviceBillId: targetBillId,
-      serviceDate: item.serviceDate,
+      serviceDate: item.serviceDate || group.dateTime,
       folio: item.folio || group.folio || 1,
       amount: item.totalAmount || group.totalAmount,
       description: item.description || group.name
@@ -1885,7 +1926,7 @@ const submitQuickTransferBills = async (billIds) => {
 const refreshAfterServiceOperation = async (folio = null) => {
   selectedServiceIds.value = []
   if (folio) activeFolioTab.value = String(folio)
-  await handleServiceAdded()
+  await handleServiceAdded(null, { showToast: false })
 }
 
 const splitSelectedServices = async (payload) => {
@@ -1924,7 +1965,7 @@ const splitSelectedDeposit = async ({ amount, folio }) => {
     showSplitDepositModal.value = false
     selectedPaymentIds.value = []
     activeFolioTab.value = String(folio)
-    await handleServiceAdded()
+    await handleServiceAdded(null, { showToast: false })
     uiStore.showToast(response.data?.message || 'Đã tách cọc thành công!', 'success')
   } catch (error) {
     uiStore.showToast(error.response?.data?.message || 'Không thể tách cọc.', 'error')
@@ -1974,7 +2015,7 @@ const transferSelectedPayment = async (destination) => {
     })
     showTransferPaymentModal.value = false
     selectedPaymentIds.value = []
-    await handleServiceAdded()
+    await handleServiceAdded(null, { showToast: false })
     uiStore.showToast(response.data?.message || 'Chuyển cọc thành công!', 'success')
   } catch (error) {
     transferPaymentError.value = error.response?.data?.message || 'Không thể chuyển cọc. Vui lòng kiểm tra lại cọc và nơi nhận.'
@@ -2044,7 +2085,7 @@ const handleFolioDrop = async (folio) => {
       })
       selectedPaymentIds.value = []
       activeFolioTab.value = String(targetFolio)
-      await handleServiceAdded()
+      await handleServiceAdded(null, { showToast: false })
       uiStore.showToast(response.data?.message || `Đã chuyển ${movablePaymentIds.length} cọc sang Folio mới.`, 'success')
     } catch (error) {
       uiStore.showToast(error.response?.data?.message || 'Không thể chuyển Folio cọc.', 'error')
@@ -2093,7 +2134,7 @@ const handleFolioDrop = async (folio) => {
     })
     selectedServiceIds.value = []
     activeFolioTab.value = String(targetFolio)
-    await handleServiceAdded()
+    await handleServiceAdded(null, { showToast: false })
     uiStore.showToast(`Đã chuyển ${serviceIdsToTransfer.length} dịch vụ sang Folio ${targetFolio}!`, 'success')
   } catch (error) {
     console.error('Không thể chuyển Folio dịch vụ:', error)
@@ -2250,7 +2291,9 @@ const openPaymentModal = () => {
 
 const handlePaymentSuccess = async () => {
   showPaymentModal.value = false
-  await handleServiceAdded()
+  await refreshCheckoutData()
+  clearCheckoutPanels()
+  uiStore.showToast('Đã thực hiện thanh toán thành công!', 'success')
 }
 
 const openDeletePaymentModal = async () => {
@@ -2276,8 +2319,8 @@ const deleteSelectedPayment = async (reason) => {
     const res = await deleteBookingPayment(payment.id, { reason })
     showDeletePaymentModal.value = false
     selectedPaymentIds.value = []
-    await handleServiceAdded()
-    uiStore.showToast(res.data?.message || 'Đã xóa thanh toán thành công.', 'success')
+    await handleServiceAdded(null, { showToast: false })
+    uiStore.showToast('Xóa thanh toán thành công!', 'success')
   } catch (err) {
     uiStore.showToast(err.response?.data?.message || 'Không thể xóa thanh toán.', 'error')
   } finally {
@@ -2763,9 +2806,9 @@ onUnmounted(() => {
                 <template v-for="r in b.roomItems" :key="r.id">
                   <template v-if="showAllGuestsInRoom && r.allGuests.length > 1">
                     <div 
-                      v-for="(gName, gIdx) in r.allGuests"
+                      v-for="(guest, gIdx) in r.allGuests"
                       :key="gIdx"
-                      @click.stop="selectBookingFromSearch(b, r, gName)"
+                      @click.stop="selectBookingFromSearch(b, r, guest)"
                       class="flex items-center gap-4 mt-1.5 text-gray-700 pl-[36px] hover:text-sky-600"
                     >
                       <span class="font-bold text-gray-800 shrink-0 min-w-[75px]">{{ r.roomNumber }}</span>
@@ -2773,7 +2816,7 @@ onUnmounted(() => {
                       <span
                         class="text-gray-800 truncate"
                         :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
-                      >{{ gName }}</span>
+                      >{{ guest.name }}</span>
                     </div>
                   </template>
                   <template v-else>
@@ -3267,6 +3310,7 @@ onUnmounted(() => {
       :show="showAddServiceModal" 
       :bookingInfo="addServiceBookingInfo"
       :bookingRoomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
+      :guestId="selectedRoomItem ? selectedGuestId : null"
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
       :arrivalDate="selectedBooking?.arrivalDate || selectedRoomItem?.rawRoom?.arrival_date || ''"
       :departureDate="selectedBooking?.departureDate || selectedRoomItem?.rawRoom?.departure_date || ''"
@@ -3320,6 +3364,7 @@ onUnmounted(() => {
       :selectedRoomId="selectedRoomItem?.roomId || null"
       :selectedRoomNumber="selectedRoomItem?.roomNumber || ''"
       :selectedGuestId="selectedGuestId"
+      :folioId="activeFolioTab === 'A' ? 1 : (Number(activeFolioTab) || 1)"
       :systemDate="systemDate"
       :roomOptions="selectedBooking?.roomItems || []"
       :deposits="frontDeskPrepayments"
