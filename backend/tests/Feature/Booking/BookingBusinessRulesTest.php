@@ -969,4 +969,74 @@ class BookingBusinessRulesTest extends TestCase
             'departure_date' => '2026-08-09 00:00:00',
         ]);
     }
+
+    /**
+     * TC-16: Inline service update (such as RM bypass and EB sync to booking_rooms)
+     */
+    public function test_inline_service_update_bypasses_service_check_and_syncs_extra_bed(): void
+    {
+        // 1. Create a booking and booking_room
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+        ]);
+
+        $bookingRoom = BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => '101',
+            'price' => 500000,
+            'arrival_date' => '2026-08-07 00:00:00',
+            'departure_date' => '2026-08-08 00:00:00',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // 2. Call POST /api/booking-rooms/{roomId}/services with service_code = RM
+        // It should bypass the existence check and save successfully.
+        $payloadRM = [
+            'service_code' => 'RM',
+            'service_name' => 'Dịch vụ phòng nghỉ',
+            'service_date' => '2026-08-07',
+            'quantity' => 1,
+            'rate' => 600000,
+            'is_room' => true,
+            'folio' => 1,
+        ];
+
+        $response = $this->postJson("/api/booking-rooms/{$bookingRoom->id}/services", $payloadRM);
+        $response->assertSuccessful();
+
+        $this->assertDatabaseHas('booking_room_services', [
+            'booking_room_id' => $bookingRoom->id,
+            'service_code' => 'RM',
+            'rate' => 600000,
+        ]);
+
+        // 3. Call POST /api/booking-rooms/{roomId}/services with service_code = EB
+        // Seed the EB hotel_service first so it passes the check
+        \App\Models\HotelService::create([
+            'code' => 'EB',
+            'name' => 'Extra Bed',
+            'is_active' => true,
+            'price' => 250000,
+        ]);
+
+        $payloadEB = [
+            'service_code' => 'EB',
+            'service_name' => 'Extra Bed',
+            'service_date' => '2026-08-07',
+            'quantity' => 1,
+            'rate' => 300000,
+            'is_room' => false,
+            'folio' => 1,
+        ];
+
+        $response = $this->postJson("/api/booking-rooms/{$bookingRoom->id}/services", $payloadEB);
+        $response->assertSuccessful();
+
+        // 4. Assert that booking_rooms has extra_bed_qty and extra_bed_rate synced
+        $bookingRoom->refresh();
+        $this->assertEquals(1, $bookingRoom->extra_bed_qty);
+        $this->assertEquals(300000, $bookingRoom->extra_bed_rate);
+    }
 }
