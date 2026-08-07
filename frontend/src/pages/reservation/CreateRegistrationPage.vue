@@ -2375,19 +2375,10 @@ function validateRoomQuantity(alloc) {
 }
 
 async function handleCheckInChange() {
-  if (modalForm.value.checkIn) {
-    const nights = Number(modalForm.value.nights) > 0 ? Number(modalForm.value.nights) : 1
-    modalForm.value.checkOut = addDaysToDateStr(modalForm.value.checkIn, nights)
-  }
   await handleDateChange()
 }
 
 async function handleMainCheckInChange() {
-  const tab = activeTab.value
-  if (tab && tab.checkIn) {
-    const nights = Number(tab.nights) > 0 ? Number(tab.nights) : 1
-    tab.checkOut = addDaysToDateStr(tab.checkIn, nights)
-  }
   await handleMainDateChange()
 }
 
@@ -2396,7 +2387,7 @@ async function handleDateChange() {
   const co = new Date(modalForm.value.checkOut)
   if (!isNaN(ci) && !isNaN(co)) {
     const diff = Math.ceil((co - ci) / 86400000)
-    modalForm.value.nights = diff > 0 ? diff : 1
+    modalForm.value.nights = diff >= 0 ? diff : 0
     
     // Đồng bộ ngày check-in/check-out cho tất cả các phòng & allocations
     if (modalForm.value.roomAllocations) {
@@ -2441,7 +2432,7 @@ async function handleMainDateChange() {
   const co = new Date(tab.checkOut)
   if (!isNaN(ci) && !isNaN(co)) {
     const diff = Math.ceil((co - ci) / 86400000)
-    tab.nights = diff > 0 ? diff : 1
+    tab.nights = diff >= 0 ? diff : 0
     
     // Sync dates to allocations & rooms in tab
     if (tab.roomAllocations) {

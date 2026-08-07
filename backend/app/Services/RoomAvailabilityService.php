@@ -38,15 +38,48 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
+            // Rule: Ignore same-day stays that are not dayuse
+            ->where(function ($q) {
+                $q->whereColumn('arrival_date', '!=', 'departure_date')
+                  ->orWhere('is_day_use', 1);
+            })
             ->whereHas('booking', function ($q) {
                 $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
                   ->whereHas('registrationStatus', function ($subQ) {
                       $subQ->where('is_availability', 1);
                   });
-            })
-            // Overlap condition: arrival < departure_other AND departure > arrival_other
-            ->where('arrival_date', '<', $departureDate)
-            ->where('departure_date', '>', $arrivalDate);
+            });
+
+        // Comprehensive overlap checking
+        $query->where(function ($q) use ($arrivalDate, $departureDate) {
+            // Case 1: Standard date overlap
+            $q->where(function ($sub) use ($arrivalDate, $departureDate) {
+                $sub->where('arrival_date', '<', $departureDate)
+                    ->where('departure_date', '>', $arrivalDate);
+            });
+
+            // Case 2: Dayuse database room overlaps with query dates
+            $q->orWhere(function ($sub) use ($arrivalDate, $departureDate) {
+                $sub->whereColumn('arrival_date', '=', 'departure_date')
+                    ->where('is_day_use', 1)
+                    ->where(function ($sub2) use ($arrivalDate, $departureDate) {
+                        if ($arrivalDate === $departureDate) {
+                            $sub2->whereBetween('arrival_date', [$arrivalDate . ' 00:00:00', $arrivalDate . ' 23:59:59']);
+                        } else {
+                            $sub2->where('arrival_date', '>=', $arrivalDate . ' 00:00:00')
+                                 ->where('arrival_date', '<', $departureDate . ' 00:00:00');
+                        }
+                    });
+            });
+
+            // Case 3: If query itself is Dayuse ($arrivalDate === $departureDate)
+            if ($arrivalDate === $departureDate) {
+                $q->orWhere(function ($sub) use ($arrivalDate) {
+                    $sub->where('arrival_date', '<=', $arrivalDate . ' 23:59:59')
+                        ->where('departure_date', '>', $arrivalDate . ' 00:00:00');
+                });
+            }
+        });
 
         if ($excludeBookingRoomId) {
             $query->where('id', '!=', $excludeBookingRoomId);
@@ -129,7 +162,9 @@ class RoomAvailabilityService
         string $arrivalDate,
         string $departureDate,
         string|int|null $excludeBookingRoomId = null,
-        string|int|null $excludeBookingId = null
+        string|int|null $excludeBookingId = null,
+        string|null $arrivalTime = null,
+        string|null $departureTime = null
     ): bool {
         $query = BookingRoom::where('room_number', $roomNumber)
             ->whereIn('status', [
@@ -137,18 +172,39 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
+            ->where(function ($q) {
+                $q->whereColumn('arrival_date', '!=', 'departure_date')
+                  ->orWhere('is_day_use', 1);
+            })
             ->whereHas('booking', function ($q) use ($excludeBookingId) {
                 $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW]);
                 if ($excludeBookingId) {
                     $q->where('id', '!=', $excludeBookingId);
                 }
-            })
-            ->where('arrival_date', '<', $departureDate)
-            ->where('departure_date', '>', $arrivalDate);
+            });
 
         if ($excludeBookingRoomId) {
             $query->where('id', '!=', $excludeBookingRoomId);
         }
+
+        $query->where(function ($q) use ($arrivalDate, $departureDate, $arrivalTime, $departureTime) {
+            // Case 1: Standard date overlap check
+            $q->where(function ($sub) use ($arrivalDate, $departureDate) {
+                $sub->where('arrival_date', '<', $departureDate)
+                    ->where('departure_date', '>', $arrivalDate);
+            });
+
+            // Case 2: Same-day Dayuse hourly overlap check
+            $q->orWhere(function ($sub) use ($arrivalDate, $departureDate, $arrivalTime, $departureTime) {
+                $sub->whereBetween('arrival_date', [$arrivalDate . ' 00:00:00', $arrivalDate . ' 23:59:59'])
+                    ->whereBetween('departure_date', [$departureDate . ' 00:00:00', $departureDate . ' 23:59:59']);
+
+                if ($arrivalTime && $departureTime) {
+                    $sub->where('arrival_time', '<', $departureTime)
+                        ->where('departure_time', '>', $arrivalTime);
+                }
+            });
+        });
 
         if ($query->exists()) {
             return true;
