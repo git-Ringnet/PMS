@@ -5,26 +5,77 @@
       
       <!-- INFO STRIP -->
       <div class="info-strip flex items-center gap-3 p-2.5 bg-slate-100 border-b border-slate-200 shrink-0 flex-wrap">
-        <div class="info-field flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">&nbsp;</label>
-          <div class="info-room flex items-center gap-2 bg-white border border-slate-300 rounded px-3 h-8 min-w-[240px] text-xs font-semibold shadow-xs">
-            <select v-model="form.roomId" :disabled="props.isModal" class="border-none bg-transparent focus:outline-none w-full font-bold text-slate-800 disabled:opacity-100" :class="props.isModal ? 'cursor-not-allowed' : 'cursor-pointer'">
-              <option value="">-- Chọn phòng --</option>
-              <optgroup v-for="group in bookingRoomGroups" :key="group.bookingId" :label="group.label">
-                <option v-for="room in group.rooms" :key="room.id" :value="room.id">
-                  ↳ {{ room.name }}
-                </option>
-              </optgroup>
-            </select>
+        <div class="info-field flex flex-col gap-1 min-w-[320px] max-w-[450px] relative" ref="dropdownRef">
+          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Phòng / Khách</label>
+          <div 
+            @click="!isModal && (isDropdownOpen = !isDropdownOpen)"
+            class="flex items-center justify-between bg-white border border-slate-300 rounded px-3 h-8 text-xs font-semibold shadow-xs cursor-pointer hover:border-[#1a6b8a] transition-colors select-none"
+            :class="{ 'opacity-80 cursor-not-allowed bg-slate-50': isModal }"
+          >
+            <div v-if="selectedOption" class="flex items-center gap-1.5 truncate">
+              <span class="text-[#1a6b8a] font-bold shrink-0">{{ selectedOption.code }}</span>
+              <span class="text-slate-300">·</span>
+              <span class="font-bold text-slate-800 shrink-0">{{ selectedOption.roomNumber }}</span>
+              <span class="text-slate-300">·</span>
+              <span class="text-slate-700 truncate font-normal">{{ selectedOption.guestName }}</span>
+            </div>
+            <div v-else class="text-slate-400 font-normal italic">
+              -- Chọn phòng / khách --
+            </div>
+            <span class="text-slate-400 text-[9px] ml-2 shrink-0">▼</span>
           </div>
-        </div>
 
-        <div class="info-field flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Khách</label>
-          <select v-model="form.guestId" :disabled="roomGuestsForPosting.length === 0 || props.isModal" class="h-8 min-w-[180px] px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] disabled:bg-slate-100">
-            <option value="">-- Chọn khách --</option>
-            <option v-for="guest in roomGuestsForPosting" :key="guest.id" :value="guest.id">{{ guest.name }}</option>
-          </select>
+          <!-- Dropdown Menu -->
+          <div 
+            v-if="isDropdownOpen && !isModal" 
+            class="absolute left-0 top-full mt-1 w-full min-w-[340px] max-h-60 bg-white border border-slate-300 rounded shadow-xl z-50 flex flex-col overflow-hidden"
+          >
+            <!-- Search inside dropdown -->
+            <div class="p-1.5 border-b border-slate-100 bg-slate-50 shrink-0">
+              <input 
+                type="text" 
+                v-model="roomSearchQuery" 
+                placeholder="Tìm mã booking, phòng, tên khách..." 
+                class="w-full h-7 px-2.5 text-xs border border-slate-300 rounded bg-white focus:outline-none focus:border-[#1a6b8a]"
+                @click.stop
+              />
+            </div>
+            
+            <!-- Options List Grouped by Booking -->
+            <div class="overflow-y-auto flex-1 max-h-56">
+              <template v-if="filteredBookingGroups.length > 0">
+                <div 
+                  v-for="grp in filteredBookingGroups" 
+                  :key="grp.bookingId" 
+                  class="border-b border-slate-100 last:border-none"
+                >
+                  <!-- Master Group Header (Non-selectable) -->
+                  <div class="px-3 py-1.5 bg-slate-100/90 text-[11px] font-bold text-[#1a6b8a] sticky top-0 z-10 border-y border-slate-200/80 flex items-center justify-between select-none">
+                    <div class="flex items-center gap-1.5 truncate">
+                      <span class="font-bold text-[#1a6b8a]">{{ grp.code }}</span>
+                      <span v-if="grp.bookingName" class="text-slate-600 font-normal">· {{ grp.bookingName }}</span>
+                    </div>
+                  </div>
+
+                  <!-- Selectable Room Items -->
+                  <div 
+                    v-for="opt in grp.items" 
+                    :key="opt.key"
+                    @click="selectOption(opt)"
+                    class="flex items-center gap-2 pl-6 pr-3 py-2 text-xs cursor-pointer border-b border-slate-50 last:border-none hover:bg-blue-50/80 transition-colors select-none"
+                    :class="{ 'bg-blue-50 font-bold': selectedOption?.key === opt.key }"
+                  >
+                    <span class="font-bold text-slate-800 shrink-0">{{ opt.roomNumber }}</span>
+                    <span class="text-slate-300">·</span>
+                    <span class="text-slate-700 truncate font-normal">{{ opt.guestName }}</span>
+                  </div>
+                </div>
+              </template>
+              <div v-else class="p-3 text-center text-slate-400 text-xs italic">
+                Không tìm thấy phòng / khách phù hợp
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="info-field flex flex-col gap-1">
@@ -294,7 +345,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import http from '@/services/http'
@@ -336,8 +387,12 @@ const emit = defineEmits(['close', 'success'])
 
 const uiStore = useUiStore()
 
-const bookingRooms = ref([])
-const bookingRoomGroups = ref([])
+const bookingGroups = ref([])
+const roomGuestOptions = ref([])
+const selectedOption = ref(null)
+const isDropdownOpen = ref(false)
+const roomSearchQuery = ref('')
+const dropdownRef = ref(null)
 const loadingRooms = ref(true)
 
 const form = ref({
@@ -350,6 +405,88 @@ const form = ref({
   isFree: false,
   note: ''
 })
+
+const handleClickOutside = (e) => {
+  if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
+    isDropdownOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  loadSystemDate()
+  loadBookingRooms()
+  loadDbProducts()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
+
+const filteredBookingGroups = computed(() => {
+  const q = roomSearchQuery.value.trim().toLowerCase()
+  if (!q) return bookingGroups.value
+
+  const result = []
+  bookingGroups.value.forEach(group => {
+    const codeMatch = group.code.toLowerCase().includes(q)
+    const nameMatch = (group.bookingName || '').toLowerCase().includes(q)
+
+    const matchedItems = group.items.filter(opt =>
+      codeMatch ||
+      nameMatch ||
+      opt.roomNumber.toLowerCase().includes(q) ||
+      opt.guestName.toLowerCase().includes(q) ||
+      opt.label.toLowerCase().includes(q)
+    )
+
+    if (matchedItems.length > 0) {
+      result.push({
+        ...group,
+        items: matchedItems
+      })
+    }
+  })
+
+  return result
+})
+
+const selectOption = (opt) => {
+  selectedOption.value = opt
+  if (opt) {
+    form.value.roomId = opt.bookingRoomId
+    form.value.guestId = opt.guestId
+  } else {
+    form.value.roomId = ''
+    form.value.guestId = ''
+  }
+  isDropdownOpen.value = false
+}
+
+const syncSelectedOption = () => {
+  if (!roomGuestOptions.value.length) return
+  const rId = form.value.roomId || props.initialRoomId
+  const gId = form.value.guestId || props.initialGuestId
+
+  let matched = null
+  if (gId) {
+    matched = roomGuestOptions.value.find(o => 
+      (String(o.bookingRoomId) === String(rId) || String(o.roomId) === String(rId) || String(o.bookingId) === String(rId)) &&
+      String(o.guestId) === String(gId)
+    )
+  }
+  if (!matched && rId) {
+    matched = roomGuestOptions.value.find(o => 
+      String(o.bookingRoomId) === String(rId) || String(o.roomId) === String(rId) || String(o.bookingId) === String(rId)
+    )
+  }
+
+  if (matched) {
+    selectOption(matched)
+  } else if (!rId && !gId) {
+    selectOption(null)
+  }
+}
 
 const loadSystemDate = async () => {
   try {
@@ -368,7 +505,7 @@ const loadBookingRooms = async () => {
   try {
     const res = await fetchBookings({ status: '0,1' })
     const list = res.data?.data || res.data || []
-    const options = []
+    const allOptions = []
     const groups = []
 
     list.forEach(b => {
@@ -386,91 +523,79 @@ const loadBookingRooms = async () => {
       )
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
-        const inhouseRooms = []
-        b.booking_rooms
-          .filter(r => Number(r.status) === 1)
-          .forEach(r => {
-          const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
-          
-          const roomGuests = (r.guests || []).map(g => ({
-            id: g.guest_id || g.guest?.id || g.id,
-            name: g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
-            isPrimary: Boolean(g.is_primary)
-          })).filter(g => g.id && g.name)
-          let roomGuest = roomGuests.find(g => g.isPrimary)?.name || roomGuests[0]?.name || ''
-          if (!roomGuest && r.guest_name && r.guest_name.trim()) {
-            roomGuest = r.guest_name.trim()
-          }
-          if (!roomGuest) {
-            roomGuest = mainGuestName
-          }
-          
-          const roomOption = {
-            id: r.id || b.id,
-            roomId: r.room_id || r.id,
-            bookingId: b.id,
-            code: code,
-            roomNumber: roomNo,
-            guestName: roomGuest,
-            guests: roomGuests,
-            name: [roomNo, roomGuest].filter(Boolean).join(' - ')
-          }
-          options.push(roomOption)
-          inhouseRooms.push(roomOption)
-        })
+        const activeRooms = b.booking_rooms.filter(r => Number(r.status) === 1 || Number(r.status) === 0)
+        if (activeRooms.length > 0) {
+          const groupItems = []
+          activeRooms.forEach(r => {
+            const rawRoomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
+            const roomNoDisplay = String(rawRoomNo).toLowerCase().startsWith('phòng') ? rawRoomNo : `Phòng ${rawRoomNo}`
+            
+            const roomGuests = (r.guests || []).map(g => ({
+              id: g.guest_id || g.guest?.id || g.id,
+              name: g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : ''),
+              isPrimary: Boolean(g.is_primary)
+            })).filter(g => g.id && g.name)
 
-        if (inhouseRooms.length > 0) {
-          groups.push({
-            bookingId: b.id,
-            label: [code, b.booking_name || mainGuestName].filter(Boolean).join(' - '),
-            rooms: inhouseRooms
+            if (roomGuests.length > 0) {
+              roomGuests.forEach(g => {
+                const opt = {
+                  key: `${r.id}_${g.id}`,
+                  bookingRoomId: r.id || b.id,
+                  roomId: r.room_id || r.id,
+                  guestId: g.id,
+                  bookingId: b.id,
+                  code: code,
+                  roomNumber: roomNoDisplay,
+                  guestName: g.name,
+                  label: `${code} · ${roomNoDisplay} · ${g.name}`
+                }
+                allOptions.push(opt)
+                groupItems.push(opt)
+              })
+            } else {
+              let fallbackGuest = r.guest_name && r.guest_name.trim() ? r.guest_name.trim() : mainGuestName
+              const opt = {
+                key: `${r.id}_default`,
+                bookingRoomId: r.id || b.id,
+                roomId: r.room_id || r.id,
+                guestId: '',
+                bookingId: b.id,
+                code: code,
+                roomNumber: roomNoDisplay,
+                guestName: fallbackGuest,
+                label: `${code} · ${roomNoDisplay} · ${fallbackGuest}`
+              }
+              allOptions.push(opt)
+              groupItems.push(opt)
+            }
           })
+
+          if (groupItems.length > 0) {
+            groups.push({
+              bookingId: b.id,
+              code: code,
+              bookingName: b.booking_name || mainGuestName,
+              items: groupItems
+            })
+          }
         }
       }
     })
 
-    if (options.length > 0) {
-      bookingRooms.value = options
-      bookingRoomGroups.value = groups
-      if (props.initialRoomId) {
-        const matched = options.find(o => String(o.id) === String(props.initialRoomId) || String(o.roomId) === String(props.initialRoomId) || String(o.bookingId) === String(props.initialRoomId))
-        if (matched) {
-          form.value.roomId = matched.id
-          if (props.initialGuestId && matched.guests.some(guest => String(guest.id) === String(props.initialGuestId))) {
-            form.value.guestId = props.initialGuestId
-          }
-        }
-      } else if (form.value.roomId && !options.some(o => o.id === form.value.roomId)) {
-        form.value.roomId = ''
-      }
-    } else {
-      bookingRooms.value = []
-      bookingRoomGroups.value = []
-    }
+    roomGuestOptions.value = allOptions
+    bookingGroups.value = groups
+    syncSelectedOption()
   } catch (err) {
     console.error('Lỗi khi tải dữ liệu booking cho dropdown:', err)
-    bookingRooms.value = []
+    roomGuestOptions.value = []
+    bookingGroups.value = []
   } finally {
     loadingRooms.value = false
   }
 }
 
-watch(() => props.initialRoomId, (newVal) => {
-  if (newVal && bookingRooms.value.length > 0) {
-    const matched = bookingRooms.value.find(o => String(o.id) === String(newVal) || String(o.roomId) === String(newVal) || String(o.bookingId) === String(newVal))
-    if (matched) {
-      form.value.roomId = matched.id
-      if (props.initialGuestId && matched.guests.some(guest => String(guest.id) === String(props.initialGuestId))) {
-        form.value.guestId = props.initialGuestId
-      }
-    }
-  }
-})
-
-watch(() => props.initialGuestId, (newVal) => {
-  if (newVal && roomGuestsForPosting.value.some(guest => String(guest.id) === String(newVal))) {
-    form.value.guestId = newVal
-  }
+watch(() => [props.initialRoomId, props.initialGuestId], () => {
+  syncSelectedOption()
 })
 
 const dbProductsData = ref({
@@ -602,15 +727,6 @@ const loadInitialAdjustment = () => {
 }
 
 watch(() => props.initialAdjustment, loadInitialAdjustment, { immediate: true, deep: true })
-
-const selectedPostingRoom = computed(() => bookingRooms.value.find(room => String(room.id) === String(form.value.roomId)))
-const roomGuestsForPosting = computed(() => selectedPostingRoom.value?.guests || [])
-
-watch(roomGuestsForPosting, (guests) => {
-  if (!guests.some(guest => String(guest.id) === String(form.value.guestId))) {
-    form.value.guestId = guests.find(guest => guest.isPrimary)?.id || guests[0]?.id || ''
-  }
-}, { immediate: true })
 
 const switchTab = (tabKey) => {
   currentTab.value = tabKey

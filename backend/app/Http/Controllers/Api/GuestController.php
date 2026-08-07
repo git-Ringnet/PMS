@@ -554,6 +554,9 @@ class GuestController extends Controller
         }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
+        if ($this->hasUnpaidDebt($room->booking_id, $masterScope ? null : $room->id)) {
+            return ['code' => 'unpaid_debt', 'message' => 'Phòng vẫn còn công nợ chưa thanh toán.'];
+        }
         $unusedDepositQuery = \App\Models\Payment::where('booking_id', $room->booking_id)
             ->where('edit_flag', 0)
             ->whereNull('payment_id')
@@ -587,6 +590,10 @@ class GuestController extends Controller
             ->exists();
         if ($unpaid) return ['code' => 'unpaid_master', 'message' => 'Master còn hóa đơn chưa thanh toán.'];
 
+        if ($this->hasUnpaidDebt($booking->id)) {
+            return ['code' => 'unpaid_debt', 'message' => 'Phòng vẫn còn công nợ chưa thanh toán.'];
+        }
+
         $unusedDeposit = \App\Models\Payment::where('booking_id', $booking->id)
             ->where('edit_flag', 0)
             ->whereNull('payment_id')
@@ -595,6 +602,30 @@ class GuestController extends Controller
         if ($unusedDeposit) return ['code' => 'unused_deposit', 'message' => 'Master còn tiền cọc chưa dùng để thanh toán hóa đơn.'];
 
         return null;
+    }
+
+    /** Công nợ AC chỉ được xem là đã thanh toán khi tổng giải trừ đạt đủ số tiền gốc. */
+    private function hasUnpaidDebt(int|string $bookingId, int|string|null $roomId = null): bool
+    {
+        $query = \App\Models\Payment::query()
+            ->where('booking_id', $bookingId)
+            ->where('payment_method_id', 'AC')
+            ->where('edit_flag', 0)
+            ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
+            ->whereNull('deleted_at');
+
+        if ($roomId !== null) {
+            $query->whereRaw('CAST(booking_room_id AS CHAR) = ?', [(string) $roomId]);
+        }
+
+        return $query->get(['id', 'amount'])->contains(function ($payment) {
+            $settled = \App\Models\PaymentDebtSettlement::query()
+                ->where('payment_id', $payment->id)
+                ->where('edit_flag', 0)
+                ->sum('amount');
+
+            return round((float) $payment->amount - (float) $settled, 2) > 0;
+        });
     }
 
     private function hasUnpaidMasterBills(Booking $booking): bool

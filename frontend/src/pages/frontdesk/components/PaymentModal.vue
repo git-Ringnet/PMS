@@ -388,7 +388,6 @@ const handleSubmit = async () => {
 
     const res = await settleBookingPayment(props.bookingId, payload)
     if (res.data?.success) {
-      uiStore.showToast('Đã thực hiện thanh toán thành công!', 'success')
       emit('success', res.data.data)
       emit('close')
     } else {
