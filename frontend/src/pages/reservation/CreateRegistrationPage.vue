@@ -5583,7 +5583,7 @@ defineExpose({
     <Teleport to="body">
       <div 
         v-if="isModalOpen" 
-        class="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+        class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-4 animate-in"
       >
         <div 
           class="bg-white rounded-xl shadow-2xl w-full max-w-[1400px] overflow-hidden border border-gray-300 flex flex-col max-h-[90vh]"
