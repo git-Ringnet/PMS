@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Calendar,
@@ -27,6 +27,7 @@ import {
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import echo from '@/services/echo'
 
 const router = useRouter()
 const uiStore = useUiStore()
@@ -369,6 +370,22 @@ watch(activeFilterTab, () => {
 
 onMounted(() => {
   fetchRealData()
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', () => {
+        fetchRealData()
+      })
+      .listen('.reservation.updated', () => {
+        fetchRealData()
+      })
+  }
+})
+
+onUnmounted(() => {
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated')
+    echo.channel('pms-channel').stopListening('.reservation.updated')
+  }
 })
 
 // Select all state

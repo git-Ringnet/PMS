@@ -1980,6 +1980,8 @@ class BookingRoomController extends Controller
             }
         });
 
+        event(new \App\Events\ReservationUpdated($bookingId, 'revert_room_noshow', "Khôi phục phòng noshow {$bookingRoom->room_number} thành công"));
+
         return response()->json([
             'success' => true,
             'message' => 'Khôi phục phòng noshow thành công!',

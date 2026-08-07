@@ -1918,6 +1918,8 @@ class BookingController extends Controller
             }
         });
 
+        event(new \App\Events\ReservationUpdated($booking->id, 'revert_noshow', "Khôi phục booking noshow {$booking->booking_code} thành công"));
+
         return response()->json([
             'success' => true,
             'message' => 'Khôi phục booking noshow thành công!',
