@@ -30,6 +30,10 @@ const props = defineProps({
     type: [String, Number],
     default: null
   },
+  folioId: {
+    type: [String, Number],
+    default: 1
+  },
   systemDate: {
     type: String,
     default: ''
@@ -232,6 +236,7 @@ const handleSubmit = async () => {
       currency: currency.value,
       shift_id: workShift.value,
       department_id: 'FO',
+      folio_id: Number(props.folioId) || 1,
       pack4: 'AP'
     }
 

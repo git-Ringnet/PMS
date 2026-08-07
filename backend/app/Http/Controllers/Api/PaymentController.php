@@ -337,7 +337,7 @@ class PaymentController extends Controller
                 'currency'          => $request->currency ?: 'VND',
                 'pack2'             => $request->pack4 === 'AP' ? null : Payment::PACK2_DEPOSIT,
                 'pack4'             => $request->pack4 ?: null,
-                'folio_id'          => $request->booking_room_id ? ($request->folio_id ?? 1) : 1,
+                'folio_id'          => $request->folio_id ?? 1,
                 'payment_method_id' => $pmCode,
                 'debit_account'     => $request->debit_account,
                 'department_id'     => $departmentId,
@@ -365,7 +365,9 @@ class PaymentController extends Controller
         return response()->json([
             'success' => true,
             'data'    => $payment->load('paymentMethod'),
-            'message' => 'Tạo cọc thành công!',
+            'message' => $request->pack4 === Payment::PACK4_ADVANCE
+                ? 'Thanh toán trước thành công!'
+                : 'Tạo cọc thành công!',
         ], 201);
     }
 
