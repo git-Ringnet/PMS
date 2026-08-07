@@ -918,6 +918,8 @@ class PaymentController extends Controller
         $request->validate([
             'payments' => 'required|array|min:1',
             'payments.*.amount' => 'required|numeric',
+            'service_bill_ids' => 'nullable|array',
+            'service_bill_ids.*' => 'integer',
         ]);
 
         $folioId = $request->input('folio_id', '1');
@@ -935,6 +937,12 @@ class PaymentController extends Controller
 
             $reqRoomId = $request->input('booking_room_id') ?? $request->input('bookingRoomId') ?? $request->input('room_id') ?? $request->input('roomId');
             $reqGuestId = $request->input('guest_id') ?? $request->input('guestId');
+            $selectedBillIds = collect($request->input('service_bill_ids', []))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
             $unpaidDepositQuery = Payment::where('booking_id', $bookingId)
                 ->where('edit_flag', 0)
                 ->whereNull('deleted_at')
@@ -950,10 +958,18 @@ class PaymentController extends Controller
                 $unpaidDepositQuery->where('folio_id', $folioId);
             }
             if ($reqGuestId) {
-                $unpaidDepositQuery->where('guest_id', $reqGuestId);
+                $unpaidDepositQuery->where(function ($q) use ($reqGuestId) {
+                    $q->where('guest_id', $reqGuestId)
+                      ->orWhereNull('guest_id')
+                      ->orWhere('guest_id', '');
+                });
             }
 
-            $unpaidServiceQuery = \App\Models\ServiceBill::where(function ($q) use ($booking, $bookingId, $reqRoomId) {
+            $unpaidServiceQuery = \App\Models\ServiceBill::query();
+            if ($selectedBillIds) {
+                $unpaidServiceQuery->whereIn('Ma', $selectedBillIds);
+            } else {
+                $unpaidServiceQuery->where(function ($q) use ($booking, $bookingId, $reqRoomId) {
                 if ($reqRoomId) {
                     $q->where(function ($q2) use ($reqRoomId) {
                         $q2->whereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $reqRoomId])
@@ -964,22 +980,32 @@ class PaymentController extends Controller
 
                 $q->where(function ($q2) use ($bookingId) {
                     $q2->where(function ($q3) use ($bookingId) {
+                        $q3->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId])
+                           ->where(function ($q4) {
+                               $q4->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                           });
+                    })->orWhere(function ($q3) use ($bookingId) {
                         $q3->whereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $bookingId])
-                           ->orWhereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId]);
-                    })->where(function ($q3) {
-                        $q3->whereNull('RentalRoomId2');
-                    });
-                });
-                if ((bool) $booking->is_master_room_rate) {
-                    $q->orWhere(function ($q2) use ($bookingId) {
-                        $q2->whereIn('ServiceId', ['RM', 'RMS'])
-                           ->where(function ($q3) use ($bookingId) {
-                               $q3->whereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $bookingId])
-                                  ->orWhereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId]);
+                           ->whereNull('RentalRoomId1')
+                           ->where(function ($q4) {
+                               $q4->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
                            });
                     });
-                }
-            });
+                });
+                });
+            }
+            if ($reqRoomId) {
+                $unpaidServiceQuery->where(function ($q) use ($reqRoomId) {
+                    $q->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $reqRoomId])
+                      ->orWhere(function ($fallback) use ($reqRoomId) {
+                          $fallback->where(function ($owner) {
+                              $owner->whereNull('RegisterID2')->orWhere('RegisterID2', '');
+                          })->where(function ($room) {
+                              $room->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                          })->whereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $reqRoomId]);
+                      });
+                });
+            }
             if (!$isFolioA) {
                 $unpaidServiceQuery->where(function ($q) use ($folioId) {
                     $q->where('Folio', (string) $folioId)
@@ -1000,7 +1026,11 @@ class PaymentController extends Controller
             if ($reqGuestId) {
                 $unpaidServiceQuery->where(function ($q) use ($reqGuestId) {
                     $q->whereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $reqGuestId])
-                      ->orWhereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $reqGuestId]);
+                      ->orWhere(function ($fallback) use ($reqGuestId) {
+                          $fallback->where(function ($guest) {
+                              $guest->whereNull('CustomerId2')->orWhere('CustomerId2', '');
+                          })->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $reqGuestId]);
+                      });
                 });
             }
 
@@ -1072,7 +1102,11 @@ class PaymentController extends Controller
                 $paymentQuery->where('folio_id', $folioId);
             }
             if ($reqGuestId) {
-                $paymentQuery->where('guest_id', $reqGuestId);
+                $paymentQuery->where(function ($q) use ($reqGuestId) {
+                    $q->where('guest_id', $reqGuestId)
+                      ->orWhereNull('guest_id')
+                      ->orWhere('guest_id', '');
+                });
             }
             $updatePaymentData = [
                 'payment_id' => $settlementCode,
@@ -1084,7 +1118,11 @@ class PaymentController extends Controller
             $paymentQuery->update($updatePaymentData);
 
             // 3. Cập nhật dịch vụ ServiceBill thuộc Folio này thành Đã thanh toán (status = 2) và gán PaymentId & InvoiceId
-            $serviceBillQuery = \App\Models\ServiceBill::where(function ($q) use ($booking, $bookingId, $targetRoomIds, $reqRoomId) {
+            $serviceBillQuery = \App\Models\ServiceBill::query();
+            if ($selectedBillIds) {
+                $serviceBillQuery->whereIn('Ma', $selectedBillIds);
+            } else {
+                $serviceBillQuery->where(function ($q) use ($booking, $bookingId, $targetRoomIds, $reqRoomId) {
                 if ($reqRoomId) {
                     $q->where(function ($q2) use ($reqRoomId) {
                         $q2->whereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $reqRoomId])
@@ -1093,25 +1131,33 @@ class PaymentController extends Controller
                 } else {
                     $q->where(function ($q2) use ($bookingId) {
                         $q2->where(function ($q3) use ($bookingId) {
+                            $q3->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId])
+                               ->where(function ($q4) {
+                                   $q4->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                               });
+                        })->orWhere(function ($q3) use ($bookingId) {
                             $q3->whereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $bookingId])
-                               ->orWhereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId]);
-                        })->where(function ($q3) {
-                            $q3->whereNull('RentalRoomId2');
-                        });
-                    });
-                    if ((bool) $booking->is_master_room_rate) {
-                        // RM/RMS của booking thuộc Master; dùng Register ID để
-                        // tránh so sánh mã phòng Gxxxx với cột RentalRoomId kiểu số.
-                        $q->orWhere(function ($q2) use ($bookingId) {
-                            $q2->whereIn('ServiceId', ['RM', 'RMS'])
-                               ->where(function ($q3) use ($bookingId) {
-                                   $q3->whereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $bookingId])
-                                      ->orWhereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $bookingId]);
+                               ->whereNull('RentalRoomId1')
+                               ->where(function ($q4) {
+                                   $q4->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
                                });
                         });
-                    }
+                    });
                 }
-            });
+                });
+            }
+            if ($reqRoomId) {
+                $serviceBillQuery->where(function ($q) use ($reqRoomId) {
+                    $q->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $reqRoomId])
+                      ->orWhere(function ($fallback) use ($reqRoomId) {
+                          $fallback->where(function ($owner) {
+                              $owner->whereNull('RegisterID2')->orWhere('RegisterID2', '');
+                          })->where(function ($room) {
+                              $room->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                          })->whereRaw('CAST(RentalRoomId1 AS CHAR) = ?', [(string) $reqRoomId]);
+                      });
+                });
+            }
             if (!$isFolioA) {
                 $serviceBillQuery->where(function ($q) use ($folioId) {
                     $q->where('Folio', (string) $folioId)
@@ -1135,7 +1181,11 @@ class PaymentController extends Controller
             if ($reqGuestId) {
                 $serviceBillQuery->where(function ($q) use ($reqGuestId) {
                     $q->whereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $reqGuestId])
-                      ->orWhereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $reqGuestId]);
+                      ->orWhere(function ($fallback) use ($reqGuestId) {
+                          $fallback->where(function ($guest) {
+                              $guest->whereNull('CustomerId2')->orWhere('CustomerId2', '');
+                          })->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $reqGuestId]);
+                      });
                 });
             }
 
@@ -1170,6 +1220,9 @@ class PaymentController extends Controller
             // 4. Cập nhật dịch vụ BookingRoomService thuộc Folio này thành Đã thanh toán và chuyển về Folio 3 nếu là Folio A
             if ($reqRoomId && !empty($targetRoomIds)) {
                 $roomServiceQuery = \App\Models\BookingRoomService::whereIn('booking_room_id', $targetRoomIds);
+                if ($selectedBillIds && \Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'service_bill_id')) {
+                    $roomServiceQuery->whereIn('service_bill_id', $selectedBillIds);
+                }
                 if ($reqRoomId && (bool) $booking->is_master_room_rate) {
                     $roomServiceQuery->whereNotIn('service_code', ['RM', 'RMS']);
                 }

@@ -632,8 +632,8 @@ class NightAuditController extends Controller
             'RegisterID2'        => $booking?->id,
             // Noshow: set RentalRoomId2=null để frontend gom về Master Folio
             // (isMasterBillRecord: bill không có RentalRoomId2 → luôn vào master)
-            'RentalRoomId2'      => $isNoshow ? null : $room->id,
-            'CustomerId2'        => $guestId,
+            'RentalRoomId2'      => ($isNoshow || $sendRoomRateToMaster) ? null : $room->id,
+            'CustomerId2'        => $sendRoomRateToMaster ? null : $guestId,
             'CompanyId2'         => $booking?->company_id,
             'Username'           => $user,
             'Status'             => 1,
