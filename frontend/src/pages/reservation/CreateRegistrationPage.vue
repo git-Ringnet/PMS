@@ -660,6 +660,202 @@ function handleServiceRateChange(room, svc, newRate) {
   }
 }
 
+async function handleInlineServiceRateChange(room, svc, newRate) {
+  const cleanDate = cleanDateStr(svc.service_date)
+  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
+
+  // Cập nhật local
+  svc.rate = newRate
+  if (svc.svc_ref) {
+    svc.svc_ref.rate = newRate
+    svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
+  }
+
+  if (isRoomCharge) {
+    if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
+    
+    const checkIn = room.checkIn
+    const nights = Number(room.nights) || 1
+    if (checkIn) {
+      for (let i = 0; i < nights; i++) {
+        const parts = checkIn.split('-')
+        let curr = new Date()
+        if (parts.length === 3) {
+          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+        } else {
+          curr = new Date(checkIn)
+        }
+        curr.setDate(curr.getDate() + i)
+        const yyyy = curr.getFullYear()
+        const mm = String(curr.getMonth() + 1).padStart(2, '0')
+        const dd = String(curr.getDate()).padStart(2, '0')
+        const dStr = `${yyyy}-${mm}-${dd}`
+        if (room.dailyRoomPrices[dStr] === undefined) {
+          room.dailyRoomPrices[dStr] = Number(room.price) || 0
+        }
+      }
+    }
+    room.dailyRoomPrices[cleanDate] = newRate
+    room.price = newRate
+  }
+
+  // Đồng bộ Extra Bed (EB)
+  if (svc.service_code === 'EB') {
+    room.extraBedPrice = newRate
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existing) {
+      existing.rate = newRate
+      existing.total = (existing.quantity || 1) * newRate
+    }
+  }
+
+  room.total = calculateRoomTotal(room)
+
+  // Gọi API cập nhật ngay lập tức nếu phòng đã lưu ở Database
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      const payload = {
+        booking_room_id: room.bookingRoomId,
+        service_code: isRoomCharge ? 'RM' : svc.service_code,
+        service_name: svc.service_name,
+        guest_id: svc.guest_id || null,
+        service_date: cleanDate,
+        quantity: svc.quantity || 1,
+        rate: newRate,
+        is_room: isRoomCharge ? 1 : 0
+      }
+      const res = await createBookingRoomService(room.bookingRoomId, payload)
+      if (res.data?.success) {
+        uiStore.showToast('Cập nhật đơn giá dịch vụ thành công!', 'success')
+        const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = (freshRes.data?.data || []).map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
+        room.total = calculateRoomTotal(room)
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật đơn giá vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineServiceQtyChange(room, svc, newQty) {
+  const cleanDate = cleanDateStr(svc.service_date)
+  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
+
+  if (isRoomCharge) return
+
+  svc.quantity = newQty
+  if (svc.svc_ref) {
+    svc.svc_ref.quantity = newQty
+    svc.svc_ref.total = newQty * (svc.svc_ref.rate || 0)
+  }
+
+  // Đồng bộ Extra Bed (EB)
+  if (svc.service_code === 'EB') {
+    room.extraBedQty = newQty
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existing) {
+      existing.quantity = newQty
+      existing.total = newQty * (existing.rate || 0)
+    }
+  }
+
+  room.total = calculateRoomTotal(room)
+
+  // Gọi API cập nhật ngay lập tức nếu phòng đã lưu ở Database
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      const payload = {
+        booking_room_id: room.bookingRoomId,
+        service_code: svc.service_code,
+        service_name: svc.service_name,
+        guest_id: svc.guest_id || null,
+        service_date: cleanDate,
+        quantity: newQty,
+        rate: svc.rate || 0,
+        is_room: 0
+      }
+      const res = await createBookingRoomService(room.bookingRoomId, payload)
+      if (res.data?.success) {
+        uiStore.showToast('Cập nhật số lượng dịch vụ thành công!', 'success')
+        const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = (freshRes.data?.data || []).map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
+        room.total = calculateRoomTotal(room)
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật số lượng vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineServiceDelete(room, svc) {
+  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
+  if (isRoomCharge) return
+
+  if (!confirm(`Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`)) {
+    return
+  }
+
+  const cleanDate = cleanDateStr(svc.service_date)
+
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-') && svc.id && !String(svc.id).startsWith('room-charge-')) {
+    try {
+      const res = await deleteBookingRoomServicesBulk(room.bookingRoomId, {
+        service_ids: [svc.id]
+      })
+      if (res.data?.success) {
+        uiStore.showToast('Xóa dịch vụ thành công!', 'success')
+        room.services = (room.services || []).filter(s => s.id !== svc.id)
+        
+        if (svc.service_code === 'EB') {
+          const remainingEB = room.services.filter(s => s.service_code === 'EB')
+          if (remainingEB.length === 0) {
+            room.extraBedQty = 0
+            room.extraBedPrice = 0
+            room.dailyExtraBeds = []
+          } else {
+            room.extraBedQty = Math.max(...remainingEB.map(s => s.quantity || 0))
+            room.extraBedPrice = remainingEB[0]?.rate || 0
+            room.dailyExtraBeds = (room.dailyExtraBeds || []).filter(d => cleanDateStr(d.dateStr || d.date) !== cleanDate)
+          }
+        }
+        
+        room.total = calculateRoomTotal(room)
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể xóa dịch vụ khỏi hệ thống!', 'error')
+    }
+  } else {
+    room.services = (room.services || []).filter(s => s.id !== svc.id && !(s.service_code === svc.service_code && cleanDateStr(s.service_date) === cleanDate))
+    
+    if (svc.service_code === 'EB') {
+      const remainingEB = room.services.filter(s => s.service_code === 'EB')
+      if (remainingEB.length === 0) {
+        room.extraBedQty = 0
+        room.extraBedPrice = 0
+        room.dailyExtraBeds = []
+      } else {
+        room.extraBedQty = Math.max(...remainingEB.map(s => s.quantity || 0))
+        room.extraBedPrice = remainingEB[0]?.rate || 0
+        room.dailyExtraBeds = (room.dailyExtraBeds || []).filter(d => cleanDateStr(d.dateStr || d.date) !== cleanDate)
+      }
+    }
+    
+    room.total = calculateRoomTotal(room)
+    uiStore.showToast('Đã xóa dịch vụ tạm thời.', 'info')
+  }
+}
+
 function getRoomDisplayServices(room) {
   const list = []
   const hasDbRoomCharges = room.services && room.services.some(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE')
@@ -5326,25 +5522,48 @@ defineExpose({
                                       <tr 
                                         v-for="svc in getRoomDisplayServices(room)" 
                                         :key="svc.id" 
-                                        class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold"
+                                        class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold group"
                                       >
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
-                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
+                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">
+                                          <input 
+                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                            type="number"
+                                            :value="svc.quantity !== undefined && svc.quantity !== null ? parseFloat(svc.quantity) : 1"
+                                            min="0"
+                                            @change="e => handleInlineServiceQtyChange(room, svc, Number(e.target.value) || 0)"
+                                            class="w-14 text-center font-bold text-slate-800 bg-white border border-slate-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                          />
+                                          <span v-else>{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</span>
+                                        </td>
                                         <td class="p-2 border-r border-slate-100 text-right">
-                                     <input 
-                                       v-if="isEditing && isServiceRateEditable(svc.service_date)"
-                                       type="text"
-                                       :value="formatCurrencyInput(svc.rate)"
-                                       @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
-                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                       class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
-                                     />
-                                     <span v-else class="font-bold text-slate-800">
-                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
-                                     </span>
-                                   </td>
-                                        <td class="p-2 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                          <input 
+                                            v-if="isServiceRateEditable(svc.service_date)"
+                                            type="text"
+                                            :value="formatCurrencyInput(svc.rate)"
+                                            @change="e => handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                            @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                            class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                          />
+                                          <span v-else class="font-bold text-slate-800">
+                                            {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
+                                          </span>
+                                        </td>
+                                        <td class="p-2 text-right text-sky-700 font-bold">
+                                          <div class="flex items-center justify-end space-x-2">
+                                            <span>{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
+                                            <button 
+                                              v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                              @click.stop="handleInlineServiceDelete(room, svc)"
+                                              class="text-rose-500 hover:text-rose-700 opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer w-3 flex justify-center shrink-0"
+                                              title="Xóa dịch vụ"
+                                            >
+                                              <i class="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
+                                            <div v-else class="w-3 shrink-0"></div>
+                                          </div>
+                                        </td>
                                       </tr>
                                     </tbody>
                                   </table>

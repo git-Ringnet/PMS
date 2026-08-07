@@ -103,14 +103,26 @@ class BookingRoomServiceController extends Controller
             'folio'         => 'nullable|integer|between:1,3',
         ]);
 
-        // Kiểm tra service_code phải tồn tại trong hệ thống
-        $foService = HotelService::where('code', $request->service_code)->first();
-
-        if (!$foService) {
+        // Tất cả các dịch vụ không được điều chỉnh cho ngày cũ (trước ngày hệ thống)
+        $systemDate = $this->avService->getSystemDate();
+        $svcDate = \Carbon\Carbon::parse($request->service_date)->startOfDay();
+        if ($svcDate->lt($systemDate)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Mã dịch vụ "' . $request->service_code . '" không tồn tại trong hệ thống.',
+                'message' => 'Không thể thêm hoặc điều chỉnh dịch vụ cho ngày cũ (trước ngày hệ thống ' . $systemDate->toDateString() . ').',
             ], 422);
+        }
+
+        // Kiểm tra service_code phải tồn tại trong hệ thống (ngoại trừ mã RM hoặc ROOM_CHARGE)
+        $foService = null;
+        if ($request->service_code !== 'RM' && $request->service_code !== 'ROOM_CHARGE') {
+            $foService = HotelService::where('code', $request->service_code)->first();
+            if (!$foService) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Mã dịch vụ "' . $request->service_code . '" không tồn tại trong hệ thống.',
+                ], 422);
+            }
         }
 
         if ($request->filled('guest_id') && !$room->guests()->where('guest_id', $request->guest_id)->exists()) {
@@ -168,6 +180,15 @@ class BookingRoomServiceController extends Controller
             ]
         );
 
+        if ($request->service_code === BookingRoomService::CODE_EXTRA_BED || $request->service_code === 'EB') {
+            $remainingEB = BookingRoomService::where('booking_room_id', $roomId)
+                ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                ->get();
+            $maxQty = $remainingEB->max('quantity') ?? 0;
+            $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+            $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $service,
@@ -217,13 +238,17 @@ class BookingRoomServiceController extends Controller
             $deletedCount++;
         }
 
-        // Nếu xóa hết EB → reset extra_bed_qty = 0
+        // Nếu xóa EB → cập nhật lại extra_bed_qty và extra_bed_rate
         if ($hasEbDeleted) {
-            $remainingEB = $room->services()
+            $remainingEB = BookingRoomService::where('booking_room_id', $roomId)
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
-                ->count();
-            if ($remainingEB === 0) {
+                ->get();
+            if ($remainingEB->isEmpty()) {
                 $room->update(['extra_bed_qty' => 0, 'extra_bed_rate' => 0]);
+            } else {
+                $maxQty = $remainingEB->max('quantity') ?? 0;
+                $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+                $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
             }
         }
 
