@@ -465,13 +465,61 @@ class GuestController extends Controller
     /** Khôi phục checkout Master: chỉ mở lại trạng thái booking, không khôi phục phòng con. */
     public function restoreBookingCheckout($bookingId)
     {
-        $booking = Booking::findOrFail($bookingId);
-        if ($booking->status !== Booking::STATUS_CHECKOUT) {
-            return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
-        }
+        return DB::transaction(function () use ($bookingId) {
+            $booking = Booking::findOrFail($bookingId);
+            if ($booking->status !== Booking::STATUS_CHECKOUT) {
+                return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
+            }
 
-        $booking->update(['status' => Booking::STATUS_CHECKIN]);
-        return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
+            $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
+
+            $bookingRooms = $booking->bookingRooms()->where('status', BookingRoom::STATUS_CHECKED_OUT)->get();
+            foreach ($bookingRooms as $room) {
+                if ($room->room_number) {
+                    $hasInhouseBooking = BookingRoom::where('room_number', $room->room_number)
+                        ->where('id', '!=', $room->id)
+                        ->where('status', BookingRoom::STATUS_CHECKED_IN)
+                        ->exists();
+                    if ($hasInhouseBooking) {
+                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đã được booking khác check-in, không thể khôi phục checkout."], 422);
+                    }
+
+                    $hasActiveLock = RoomLock::where('room_number', $room->room_number)
+                        ->where('is_active', RoomLock::STATUS_ACTIVE)
+                        ->where('start_date', '<=', $systemDate->copy()->endOfDay())
+                        ->where('end_date', '>=', $systemDate->copy()->startOfDay())
+                        ->exists();
+                    if ($hasActiveLock) {
+                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đang bị khóa, không thể khôi phục checkout."], 422);
+                    }
+                }
+
+                $room->guests()->where('status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
+                    'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                    'actual_checkout_date' => null,
+                    'actual_checkout_time' => null,
+                    'checkout_by' => null,
+                ]);
+
+                $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
+                    'child_status' => BookingRoomGuest::STATUS_CHECKED_IN
+                ]);
+
+                $room->update([
+                    'status' => BookingRoom::STATUS_CHECKED_IN,
+                    'CheckoutDate' => null,
+                    'CheckoutTime' => null,
+                    'check_out_user' => null,
+                ]);
+
+                if ($room->room) {
+                    $room->room->update(['status' => 'occupied']);
+                }
+            }
+
+            $booking->update(['status' => Booking::STATUS_CHECKIN]);
+            return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
+        });
     }
 
     private function checkoutScope(BookingRoom $room, $guestIds, bool $wrap = true, bool $fullRoom = false)

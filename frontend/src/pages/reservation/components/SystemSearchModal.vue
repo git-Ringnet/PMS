@@ -1,15 +1,19 @@
 <template>
   <div 
     v-if="show" 
-    class="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex justify-center items-start pt-16 z-[99999]"
+    class="fixed inset-0 bg-slate-900/20 flex justify-center items-start pt-16 z-[99999]"
     @click="close"
   >
     <div 
       class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-visible border border-slate-200"
+      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       @click.stop
     >
       <!-- DÒNG 1: INPUT SEARCH HEADER -->
-      <div class="flex items-center px-5 py-3 border-b border-slate-100 rounded-t-2xl bg-white relative">
+      <div 
+        class="flex items-center px-5 py-3 border-b border-slate-100 rounded-t-2xl bg-white relative cursor-move select-none"
+        @mousedown="startDragModal"
+      >
         <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm mr-3"></i>
         <input 
           type="text" 
@@ -55,23 +59,27 @@
 
           <!-- KHOẢNG NGÀY (CHỈ HIỂN THỊ KHI BẬT) -->
           <div v-if="filterByArrivalDate" class="flex items-center space-x-1.5 border border-slate-300 rounded-md px-2.5 py-1 bg-white shadow-2xs">
-            <input 
-              type="text" 
-              v-model="displayFromDate" 
-              @change="onDisplayFromDateBlur"
-              placeholder="dd/mm/yyyy"
-              class="w-24 text-center font-medium text-xs text-slate-800 outline-none bg-transparent"
-            />
-            <i class="fa-regular fa-calendar text-slate-400 text-[11px]"></i>
+            <div class="flex items-center cursor-pointer" @click="openFromDatePicker">
+              <input 
+                ref="fromInputRef"
+                type="date" 
+                v-model="searchFromDate" 
+                @change="executeGlobalSearch"
+                class="w-[105px] text-center font-semibold text-xs text-slate-800 outline-none border-none bg-transparent cursor-pointer"
+              />
+              <i class="fa-regular fa-calendar text-slate-400 text-[11px] ml-1"></i>
+            </div>
             <span class="text-slate-400 px-1">-</span>
-            <input 
-              type="text" 
-              v-model="displayToDate" 
-              @change="onDisplayToDateBlur"
-              placeholder="dd/mm/yyyy"
-              class="w-24 text-center font-medium text-xs text-slate-800 outline-none bg-transparent"
-            />
-            <i class="fa-regular fa-calendar text-slate-400 text-[11px]"></i>
+            <div class="flex items-center cursor-pointer" @click="openToDatePicker">
+              <input 
+                ref="toInputRef"
+                type="date" 
+                v-model="searchToDate" 
+                @change="executeGlobalSearch"
+                class="w-[105px] text-center font-semibold text-xs text-slate-800 outline-none border-none bg-transparent cursor-pointer"
+              />
+              <i class="fa-regular fa-calendar text-slate-400 text-[11px] ml-1"></i>
+            </div>
           </div>
         </div>
 
@@ -226,6 +234,68 @@ const props = defineProps({
 
 const emit = defineEmits(['update:show', 'select-booking'])
 
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+const fromInputRef = ref(null)
+const toInputRef = ref(null)
+
+function openFromDatePicker() {
+  if (fromInputRef.value) {
+    try {
+      fromInputRef.value.showPicker()
+    } catch (e) {
+      fromInputRef.value.focus()
+    }
+  }
+}
+
+function openToDatePicker() {
+  if (toInputRef.value) {
+    try {
+      toInputRef.value.showPicker()
+    } catch (e) {
+      toInputRef.value.focus()
+    }
+  }
+}
+
 const globalSearchQuery = ref('')
 const globalSearchResults = ref([])
 const filterByArrivalDate = ref(false)
@@ -298,10 +368,11 @@ function getStatusBadgeStyle(status) {
 
 function formatDateDisplay(dateStr) {
   if (!dateStr) return '-'
-  if (dateStr.includes('/')) return dateStr
-  const parts = dateStr.split('-')
+  const onlyDate = dateStr.trim().substring(0, 10)
+  if (onlyDate.includes('/')) return onlyDate
+  const parts = onlyDate.split('-')
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
-  return dateStr
+  return onlyDate
 }
 
 function parseInputDate(displayStr) {
@@ -340,6 +411,7 @@ function applyStatusFilter() {
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
+    modalPos.value = { x: 0, y: 0 }
     globalSearchQuery.value = ''
     filterByArrivalDate.value = false
     isStatusDropdownOpen.value = false

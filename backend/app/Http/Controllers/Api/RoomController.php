@@ -371,7 +371,7 @@ class RoomController extends Controller
         $request->validate([
             'room_class_id' => 'required|exists:room_classes,id',
             'arrival_date'  => 'required|date',
-            'departure_date'=> 'required|date|after:arrival_date',
+            'departure_date'=> 'required|date|after_or_equal:arrival_date',
         ]);
 
         $roomClassId   = $request->room_class_id;

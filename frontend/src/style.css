@@ -553,3 +553,10 @@ select option:disabled {
   color: #94a3b8 !important;
   background-color: #f1f5f9 !important;
 }
+
+/* Custom date input styling to hide native calendar picker icon */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+}
+

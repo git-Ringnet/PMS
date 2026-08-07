@@ -2207,6 +2207,8 @@ class BookingRoomServiceController extends Controller
             return $bill;
         });
 
+        event(new \App\Events\ReservationUpdated($bookingId, 'charge_noshow', "Charge noshow cho phòng {$room->room_number} thành công"));
+
         return response()->json([
             'success' => true,
             'message' => 'Charge tiền phòng noshow thành công!',

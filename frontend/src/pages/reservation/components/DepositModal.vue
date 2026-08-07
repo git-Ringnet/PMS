@@ -1,12 +1,18 @@
 <template>
   <div 
     v-if="show" 
-    class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+    class="fixed inset-0 bg-black/20 z-[99999] flex items-center justify-center p-4 animate-in"
   >
-    <div class="w-full max-w-5xl bg-white shadow-2xl rounded-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+    <div 
+      class="w-full max-w-5xl bg-white shadow-2xl rounded-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]"
+      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
+    >
         
         <!-- HEADER -->
-        <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 border-b border-[#1a2d42]">
+        <div 
+          class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 border-b border-[#1a2d42] cursor-move select-none"
+          @mousedown="startDragModal"
+        >
             <div class="flex items-center space-x-2">
                 <div class="bg-blue-400/20 p-1.5 rounded-lg">
                     <i class="fa-solid fa-file-invoice-dollar text-blue-200 text-xs"></i>
@@ -566,6 +572,45 @@ const emit = defineEmits(['update:show', 'update:deposits', 'update:paymentValue
 const uiStore = useUiStore()
 const authStore = useAuthStore()
 
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
 const localDeposits = ref([])
 const selectedDepositIds = ref([])
 const isSubmitting = ref(false)
@@ -812,6 +857,7 @@ watch(() => depositForm.value.paymentMethodId, (newPmId) => {
 
 watch(() => props.show, async (newVal) => {
   if (newVal) {
+    modalPos.value = { x: 0, y: 0 }
     await loadSystemDate()
     resetForm()
     selectedDepositIds.value = []
