@@ -581,7 +581,7 @@ function handleServiceRateChange(room, svc, newRate) {
   svc.rate = newRate
   svc.service_date = cleanDate
 
-  if (svc.service_code === 'ROOM_CHARGE') {
+  if (svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM') {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
     
     // Khởi tạo trước giá mặc định cho tất cả các ngày lưu trú nếu chưa có
@@ -696,7 +696,6 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
       }
     }
     room.dailyRoomPrices[cleanDate] = newRate
-    room.price = newRate
   }
 
   // Đồng bộ Extra Bed (EB)
@@ -858,27 +857,31 @@ async function handleInlineServiceDelete(room, svc) {
 
 function getRoomDisplayServices(room) {
   const list = []
-  const hasDbRoomCharges = room.services && room.services.some(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE')
   
-  // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) - chỉ hiển thị nếu DB chưa có bản ghi tiền phòng thực tế
-  if (!hasDbRoomCharges) {
-    const checkIn = room.checkIn
-    const nights = Number(room.nights) || 1
-    if (checkIn) {
-      for (let i = 0; i < nights; i++) {
-        const parts = checkIn.split('-')
-        let curr = new Date()
-        if (parts.length === 3) {
-          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
-        } else {
-          curr = new Date(checkIn)
-        }
-        curr.setDate(curr.getDate() + i)
-        const yyyy = curr.getFullYear()
-        const mm = String(curr.getMonth() + 1).padStart(2, '0')
-        const dd = String(curr.getDate()).padStart(2, '0')
-        const dStr = `${yyyy}-${mm}-${dd}`
-        
+  // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) cho từng ngày lưu trú nếu ngày đó chưa có tiền phòng thực tế trong DB
+  const checkIn = room.checkIn
+  const nights = Number(room.nights) || 1
+  if (checkIn) {
+    for (let i = 0; i < nights; i++) {
+      const parts = checkIn.split('-')
+      let curr = new Date()
+      if (parts.length === 3) {
+        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      } else {
+        curr = new Date(checkIn)
+      }
+      curr.setDate(curr.getDate() + i)
+      const yyyy = curr.getFullYear()
+      const mm = String(curr.getMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getDate()).padStart(2, '0')
+      const dStr = `${yyyy}-${mm}-${dd}`
+      
+      const hasDbChargeForDate = room.services && room.services.some(svc => 
+        (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
+        cleanDateStr(svc.service_date) === dStr
+      )
+
+      if (!hasDbChargeForDate) {
         const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[dStr] !== undefined)
           ? room.dailyRoomPrices[dStr]
           : room.price
@@ -893,8 +896,14 @@ function getRoomDisplayServices(room) {
           is_room: true
         })
       }
-    } else {
-      const todayStr = systemDate.value || formatLocalYYYYMMDD(new Date())
+    }
+  } else {
+    const todayStr = systemDate.value || formatLocalYYYYMMDD(new Date())
+    const hasDbChargeForToday = room.services && room.services.some(svc => 
+      (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
+      cleanDateStr(svc.service_date) === todayStr
+    )
+    if (!hasDbChargeForToday) {
       const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[todayStr] !== undefined)
         ? room.dailyRoomPrices[todayStr]
         : room.price
@@ -910,7 +919,7 @@ function getRoomDisplayServices(room) {
     }
   }
 
-  // 2. Các dịch vụ bổ sung
+  // 2. Các dịch vụ bổ sung và dịch vụ phòng nghỉ từ DB
   if (room.services && room.services.length > 0) {
     room.services.forEach(svc => {
       list.push({
@@ -991,15 +1000,12 @@ function getRoomExtraBedTotal(room) {
 }
 
 function getRoomChargeTotal(room) {
+  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE' || s.service_code === 'RM')
+  if (displayServices.length > 0) {
+    return displayServices.reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity || 1)), 0)
+  }
   const nights = Number(room.nights) || 1
   const basePrice = Number(room.price) || 0
-  if (!room.dailyRoomPrices || Object.keys(room.dailyRoomPrices).length === 0) {
-    return basePrice * nights
-  }
-  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE')
-  if (displayServices.length > 0) {
-    return displayServices.reduce((sum, s) => sum + (Number(s.rate) || 0), 0)
-  }
   return basePrice * nights
 }
 
@@ -1107,9 +1113,7 @@ const roomsTotalSummary = computed(() => {
   let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
   const roomList = filteredActiveRooms.value
   roomList.forEach(r => {
-    const nights = Number(r.nights) || 1
-    const p = Number(r.price) || 0
-    priceSum += p * nights
+    priceSum += getRoomChargeTotal(r)
     adults   += Number(r.adults) || 0
     babies   += Number(r.babies) || 0
     children += Number(r.children) || 0
@@ -1505,7 +1509,7 @@ function bookingToTab(b) {
         }
       })
 
-      rooms.push({
+      const roomObj = {
         id: idCounter++,
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
         isDoNotMove: br.is_do_not_move !== undefined ? !!br.is_do_not_move : false,
@@ -1536,7 +1540,7 @@ function bookingToTab(b) {
         roomStatus: (br.status === 1 || physicalRoom.status === 'dirty') ? 'Bẩn' : (physicalRoom.status === 'cleaning' ? 'Đang dọn' : (physicalRoom.status === 'inspecting' ? 'Kiểm tra' : 'Sạch')),
         allotmentCode: '',
         roomCode: br.id || '',
-        total: totalNum,
+        total: 0,
         roomClassId: br.room_class_id,
         services: br.services || [],
         dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
@@ -1549,7 +1553,9 @@ function bookingToTab(b) {
         discountValue: br.discount_value !== undefined ? Number(br.discount_value) : 0,
         discountUnit: br.discount_unit || 'percent',
         basePrice: br.base_price !== undefined ? Number(br.base_price) : priceNum,
-      })
+      }
+      roomObj.total = calculateRoomTotal(roomObj)
+      rooms.push(roomObj)
     })
   } else {
     // Dữ liệu cũ (nếu còn)
