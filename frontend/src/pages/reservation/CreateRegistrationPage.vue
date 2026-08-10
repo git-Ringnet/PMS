@@ -946,9 +946,11 @@ async function handleInlineServiceDelete(room, svc) {
   const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
   if (isRoomCharge) return
 
-  if (!confirm(`Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`)) {
-    return
-  }
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa dịch vụ',
+    message: `Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`
+  })
+  if (!confirmed) return
 
   const cleanDate = cleanDateStr(svc.service_date)
 
@@ -4947,7 +4949,7 @@ defineExpose({
                           <span v-else>{{ room.children }}</span>
                         </template>
                         <template v-else-if="col.key === 'childBreakfast'">
-                          <button @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                          <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'breakfast'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -5514,7 +5516,7 @@ defineExpose({
                                   <span v-else>{{ room.children }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'childBreakfast'">
-                                  <button @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                                  <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                                 </template>
                                 <template v-else-if="col.key === 'breakfast'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>

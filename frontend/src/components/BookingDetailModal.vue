@@ -1166,6 +1166,8 @@ function parseNumber(val) {
   <ChildBreakfastModal
     v-model:show="showChildBreakfastModal"
     :room="formattedRoomForModals"
+    :bookingId="bookingId"
+    @saved="emit('refresh')"
   />
 
   <ExtraBedModal

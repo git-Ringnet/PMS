@@ -548,7 +548,11 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
     console.error('Lỗi khi chuyển phòng:', err)
     const errorData = err.response?.data
     if (errorData?.require_capacity_confirm) {
-      if (confirm(errorData.message)) {
+      const confirmed = await uiStore.confirm({
+        title: 'Xác nhận vượt sức chứa',
+        message: errorData.message
+      })
+      if (confirmed) {
         submitting.value = false
         executeSubmit(selectedGuestIds, true)
         return

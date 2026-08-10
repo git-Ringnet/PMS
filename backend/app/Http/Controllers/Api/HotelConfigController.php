@@ -12,9 +12,16 @@ class HotelConfigController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $configs = HotelConfig::all();
+        $query = HotelConfig::query();
+
+        // Filter theo name nếu có (hỗ trợ ?name=BreakfastRateChild)
+        if ($request->filled('name')) {
+            $query->where('name', $request->name);
+        }
+
+        $configs = $query->get();
         return response()->json([
             'success' => true,
             'data' => HotelConfigResource::collection($configs)

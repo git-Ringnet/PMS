@@ -50,6 +50,34 @@ class BookingRoomService extends Model
                 $model->total_amount = floatval($model->quantity) * floatval($model->rate);
             }
         });
+
+        static::deleted(function ($model) {
+            $note = strtolower($model->note ?? '');
+            if ($model->service_code === 'BD' && str_starts_with($note, 'phụ thu ăn sáng trẻ em:')) {
+                $childName = trim(substr($model->note, strlen('Phụ thu ăn sáng trẻ em:')));
+                if ($childName) {
+                    $child = \App\Models\BookingChild::where('booking_room_id', $model->booking_room_id)
+                        ->where('full_name', $childName)
+                        ->first();
+                    if ($child) {
+                        $detail = \App\Models\BookingChildBreakfastDetail::where('booking_child_id', $child->id)
+                            ->whereDate('service_date', $model->service_date)
+                            ->first();
+                        if ($detail) {
+                            $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+                            $setting = \App\Models\HotelSetting::first();
+                            $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+                            
+                            $detail->update([
+                                'is_extra_charge' => false,
+                                'is_room' => true,
+                                'amount' => $amount
+                            ]);
+                        }
+                    }
+                }
+            }
+        });
     }
 
     protected $casts = [

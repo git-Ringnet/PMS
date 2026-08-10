@@ -280,7 +280,11 @@ function handleSelectLang(lang) {
 }
 
 async function handleLogout() {
-  if (confirm(t('header.logoutConfirm'))) {
+  const confirmed = await uiStore.confirm({
+    title: t('header.logoutTitle') || 'Đăng xuất',
+    message: t('header.logoutConfirm')
+  })
+  if (confirmed) {
     isDropdownOpen.value = false
     await authStore.logout()
     router.push('/login')
