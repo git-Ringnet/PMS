@@ -162,11 +162,11 @@ function onRateCodeChange() {
 
 function onExtraBedSaved(data) {
   if (data) {
-    if (data.totalQuantity !== undefined) {
-      pricingInfo.value.extra_bed_qty = data.totalQuantity
+    if (data.quantity !== undefined) {
+      pricingInfo.value.extra_bed_qty = data.quantity
     }
-    if (data.totalRate !== undefined) {
-      pricingInfo.value.extra_bed_price = formatNumber(data.totalRate)
+    if (data.rate !== undefined) {
+      pricingInfo.value.extra_bed_price = formatNumber(data.rate)
     }
   }
 }
@@ -1166,6 +1166,8 @@ function parseNumber(val) {
   <ChildBreakfastModal
     v-model:show="showChildBreakfastModal"
     :room="formattedRoomForModals"
+    :bookingId="bookingId"
+    @saved="emit('refresh')"
   />
 
   <ExtraBedModal

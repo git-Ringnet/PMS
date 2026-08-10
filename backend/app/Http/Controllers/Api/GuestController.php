@@ -104,7 +104,7 @@ class GuestController extends Controller
 
                 // Tạo em bé còn thiếu
                 for ($i = $existingBabies + 1; $i <= $targetBabies; $i++) {
-                    BookingChild::create([
+                    $baby = BookingChild::create([
                         'booking_id'       => $bookingId,
                         'booking_room_id'  => $room->id,
                         'full_name'        => "Baby {$i}",
@@ -113,11 +113,12 @@ class GuestController extends Controller
                         'age_group'        => 'baby',
                         'child_status'     => 0,
                     ]);
+                    $this->generateBreakfastDetails($baby);
                 }
 
                 // Tạo trẻ em còn thiếu
                 for ($i = $existingChildren + 1; $i <= $targetChildren; $i++) {
-                    BookingChild::create([
+                    $childRecord = BookingChild::create([
                         'booking_id'       => $bookingId,
                         'booking_room_id'  => $room->id,
                         'full_name'        => "Child {$i}",
@@ -126,6 +127,7 @@ class GuestController extends Controller
                         'age_group'        => 'child',
                         'child_status'     => 0,
                     ]);
+                    $this->generateBreakfastDetails($childRecord);
                 }
 
 
@@ -950,7 +952,14 @@ class GuestController extends Controller
         $child->breakfastDetails()->delete();
         $child->delete();
 
+        // Xóa các dịch vụ ăn sáng trẻ em tương ứng trong booking_room_services
         if ($roomId) {
+            $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+            \App\Models\BookingRoomService::where('booking_room_id', $roomId)
+                ->where('service_code', $serviceCode)
+                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
+                ->delete();
+
             $r = BookingRoom::find($roomId);
             if ($r) {
                 $r->update([
@@ -990,9 +999,53 @@ class GuestController extends Controller
             'amount'          => 'nullable|numeric|min:0',
         ]);
 
-        $detail->update($request->only(['breakfast', 'is_free', 'is_extra_charge', 'is_room', 'amount']));
+        $updateData = $request->only(['breakfast', 'is_free', 'is_extra_charge', 'is_room', 'amount']);
 
-        return response()->json(['success' => true, 'data' => $detail, 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
+        // Tự động tính toán lại amount nếu client không gửi kèm
+        if (!$request->has('amount')) {
+            $breakfast = $request->has('breakfast')
+                ? filter_var($request->breakfast, FILTER_VALIDATE_BOOLEAN)
+                : (bool) $detail->breakfast;
+
+            $isExtraCharge = $request->has('is_extra_charge')
+                ? filter_var($request->is_extra_charge, FILTER_VALIDATE_BOOLEAN)
+                : (bool) $detail->is_extra_charge;
+
+            $isFree = $request->has('is_free')
+                ? filter_var($request->is_free, FILTER_VALIDATE_BOOLEAN)
+                : (bool) $detail->is_free;
+
+            // Loại trừ tương hỗ giữa Miễn phí (is_free) và Phụ phí (is_extra_charge)
+            if ($request->has('is_extra_charge') && filter_var($request->is_extra_charge, FILTER_VALIDATE_BOOLEAN)) {
+                $isFree = false;
+                $updateData['is_free'] = false;
+            }
+            if ($request->has('is_free') && filter_var($request->is_free, FILTER_VALIDATE_BOOLEAN)) {
+                $isExtraCharge = false;
+                $updateData['is_extra_charge'] = false;
+            }
+
+            if (!$breakfast || $isFree) {
+                $updateData['amount'] = 0.0;
+            } else {
+                $setting = \App\Models\HotelSetting::first();
+                if ($isExtraCharge) {
+                    // Bật phụ phí → lấy giá ăn sáng trẻ em từ cấu hình công ty
+                    $updateData['amount'] = (float) ($setting?->breakfast_child_rate ?? 0);
+                } else {
+                    // Tắt phụ phí → lấy giá từ tham số BreakfastRateChild
+                    $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+                    $updateData['amount'] = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+                }
+            }
+        }
+
+        $detail->update($updateData);
+
+        // Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services
+        $this->syncChildBreakfastToService($detail);
+
+        return response()->json(['success' => true, 'data' => $detail->fresh(), 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
     }
 
     // =========================================
@@ -1142,6 +1195,13 @@ class GuestController extends Controller
 
     /**
      * Tự động tạo booking_child_breakfast_details cho mỗi ngày trong giai đoạn ở.
+     *
+     * Logic tham số:
+     *  - Booking_AutoExtraChargeBFChild = 1 → is_extra_charge = true (mặc định thu phụ phí)
+     *                                         amount = hotel_settings.breakfast_child_rate (giá màn hình công ty)
+     *  - Booking_AutoExtraChargeBFChild = 0 → is_extra_charge = false (không thu phụ phí mặc định)
+     *                                         amount = HotelConfig['BreakfastRateChild'] (giá từ tham số hệ thống)
+     *  - Em bé (baby): luôn miễn phí, is_extra_charge = false, amount = 0
      */
     private function generateBreakfastDetails(\App\Models\BookingChild $child): void
     {
@@ -1150,29 +1210,88 @@ class GuestController extends Controller
         $room = BookingRoom::find($child->booking_room_id);
         if (!$room) return;
 
-        $isBaby     = $child->age_group === 'baby';
-        $current    = Carbon::parse($room->arrival_date);
-        $end        = Carbon::parse($room->departure_date);
+        $isBaby  = $child->age_group === 'baby';
+        $current = Carbon::parse($room->arrival_date);
+        $end     = Carbon::parse($room->departure_date);
 
-        // Lấy giá ăn sáng từ hotel_settings
+        // Đọc tham số hệ thống Booking_AutoExtraChargeBFChild từ hotel_configs
+        $autoExtraChargeVal = \App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')
+            ->value('value');
+        $autoExtraCharge = (int) $autoExtraChargeVal === 1;
+
+        // Xác định amount:
+        //  - autoExtraCharge = true  → giá từ hotel_settings.breakfast_child_rate (màn hình công ty)
+        //  - autoExtraCharge = false → giá từ HotelConfig['BreakfastRateChild']
         $setting = \App\Models\HotelSetting::first();
-        $amount  = $setting?->child_breakfast_rate ?? 0;
+        if ($autoExtraCharge) {
+            $amount = (float) ($setting?->breakfast_child_rate ?? 0);
+        } else {
+            $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+            $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+        }
 
         while ($current->lt($end)) {
-            \App\Models\BookingChildBreakfastDetail::firstOrCreate(
+            $detail = \App\Models\BookingChildBreakfastDetail::firstOrCreate(
                 [
                     'booking_child_id' => $child->id,
                     'service_date'     => $current->toDateString(),
                 ],
                 [
                     'breakfast'       => true,
-                    'is_free'         => $isBaby,   // Em bé: miễn phí
-                    'is_extra_charge' => false,
-                    'is_room'         => true,
+                    'is_free'         => $isBaby,           // Em bé: miễn phí
+                    'is_extra_charge' => !$isBaby && $autoExtraCharge,
+                    'is_room'         => !$autoExtraCharge, // Nếu extra charge thì không phân bổ vào phòng
                     'amount'          => $isBaby ? 0 : $amount,
                 ]
             );
+            
+            // Đồng bộ sang booking_room_services
+            $this->syncChildBreakfastToService($detail);
+
             $current = $current->addDay();
+        }
+    }
+
+    /**
+     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
+     */
+    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
+    {
+        $child = $detail->bookingChild;
+        if (!$child || !$child->booking_room_id) return;
+
+        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
+        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+
+        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
+        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
+
+        if ($shouldHaveService) {
+            \App\Models\BookingRoomService::updateOrCreate(
+                [
+                    'booking_room_id' => $child->booking_room_id,
+                    'service_code'    => $serviceCode,
+                    'service_date'    => $detail->service_date->toDateString(),
+                    'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                ],
+                [
+                    'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                    'quantity'        => 1,
+                    'rate'            => $detail->amount,
+                    'total_amount'    => $detail->amount,
+                    'department'      => 'FO',
+                    'folio'           => 1,
+                    'is_room'         => 0,
+                    'is_posted'       => 0,
+                ]
+            );
+        } else {
+            // Xóa dịch vụ nếu có
+            \App\Models\BookingRoomService::where('booking_room_id', $child->booking_room_id)
+                ->where('service_code', $serviceCode)
+                ->whereDate('service_date', $detail->service_date->toDateString())
+                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
+                ->delete();
         }
     }
 }
