@@ -798,6 +798,18 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
 
 async function handleInlineExtraBedQtyChange(room) {
   const qty = Number(room.extraBedQty) || 0
+  
+  if (qty > 0) {
+    // Tự động điền giá thêm giường mặc định nếu chưa điền hoặc bằng 0
+    if (!room.extraBedPrice || Number(room.extraBedPrice) === 0) {
+      const rc = roomClasses.value.find(c => c.id === room.roomClassId)
+      room.extraBedPrice = rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)
+    }
+  } else {
+    // Nếu số lượng về 0 hoặc trống -> đưa giá về lại 0
+    room.extraBedPrice = 0
+  }
+  
   const rate = Number(room.extraBedPrice) || 0
 
   // 1. Cập nhật local dailyExtraBeds
@@ -1789,7 +1801,7 @@ function bookingToTab(b) {
           discountUnit: br.discount_unit || 'percent',
           basePrice: br.base_price !== undefined ? Number(br.base_price) : (Number(br.rate) || 0),
           upgradeClassId: br.upgrade_class_id || null,
-          extraBedPrice: br.extra_bed_rate !== undefined ? Number(br.extra_bed_rate) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
+          extraBedPrice: br.extra_bed_rate !== undefined ? Number(br.extra_bed_rate) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)),
           adults: br.adults || rc?.max_adults || 2,
           babies: 0,
           children: 0,
@@ -1812,6 +1824,7 @@ function bookingToTab(b) {
       const isBfChecked = hotelSettings.value?.DefaultBreakfast !== undefined 
         ? (Number(hotelSettings.value.DefaultBreakfast) === 1) 
         : true
+      const rc = roomClasses.value.find(c => c.id === alloc.roomClassId || c.code === alloc.roomClassCode)
       roomAllocations.push({
         roomClassId: alloc.roomClassId,
         roomClassCode: alloc.roomClassCode,
@@ -1827,7 +1840,7 @@ function bookingToTab(b) {
         discountUnit: alloc.discountUnit || 'percent',
         basePrice: alloc.basePrice !== undefined ? Number(alloc.basePrice) : (Number(alloc.price) || 0),
         upgradeClassId: alloc.upgradeClassId || alloc.upgradeRoomClassId || null,
-        extraBedPrice: alloc.extraBedPrice !== undefined ? Number(alloc.extraBedPrice) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
+        extraBedPrice: alloc.extraBedPrice !== undefined ? Number(alloc.extraBedPrice) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)),
         adults: Number(alloc.adults) || 2,
         babies: Number(alloc.babies) || 0,
         children: Number(alloc.children) || 0,
@@ -1981,7 +1994,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
         children: 0,
         childBreakfastRate: found.childBreakfastRate !== undefined ? Number(found.childBreakfastRate) : (hotelSettings.value?.breakfast_child_rate || 90000),
         breakfastIncluded: found.breakfastIncluded !== undefined ? !!found.breakfastIncluded : isBreakfastChecked,
-        extraBedPrice: found.extraBedPrice !== undefined ? Number(found.extraBedPrice) : (rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
+        extraBedPrice: found.extraBedPrice !== undefined ? Number(found.extraBedPrice) : (rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)),
       }
     }
 
@@ -2006,7 +2019,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
       children: 0,
       childBreakfastRate: hotelSettings.value?.breakfast_child_rate || 90000,
       breakfastIncluded: isBreakfastChecked,
-      extraBedPrice: rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0,
+      extraBedPrice: rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
     }
   })
 }
@@ -2645,7 +2658,7 @@ function updateAllocatedRooms(row) {
         babies: row.babies || 0,
         children: row.children || 0,
         breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : getDefaultBreakfastSetting(),
-        extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : 0,
+        extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
         hourly: false,
         arrivalTime: '14:00',
         hoursOut: '12:00',
@@ -4970,7 +4983,7 @@ defineExpose({
                               v-model.number="room.extraBedQty" 
                               min="0"
                               max="10"
-                              @change="handleInlineExtraBedQtyChange(room)"
+                              @input="handleInlineExtraBedQtyChange(room)"
                               class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
                             />
                           </div>
@@ -5537,7 +5550,7 @@ defineExpose({
                                       v-model.number="room.extraBedQty" 
                                       min="0"
                                       max="10"
-                                      @change="handleInlineExtraBedQtyChange(room)"
+                                      @input="handleInlineExtraBedQtyChange(room)"
                                       class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
                                     />
                                   </div>
