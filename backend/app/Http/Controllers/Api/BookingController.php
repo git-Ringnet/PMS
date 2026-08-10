@@ -327,6 +327,7 @@ class BookingController extends Controller
 
                             $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? null;
                             $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? null;
+                            $hasExplicitRoomDates = !empty($roomArrival) && !empty($roomDeparture);
 
                             $parseDate = function ($date) {
                                 if (!$date) return null;
@@ -342,7 +343,8 @@ class BookingController extends Controller
                                 return Carbon::parse($date)->toDateString();
                             };
 
-                            if ($syncRoomDates) {
+                            // Preserve explicitly selected room periods even when legacy synchronization is enabled.
+                            if ($syncRoomDates && !$hasExplicitRoomDates) {
                                 $roomArrival = $validated['arrival_date'];
                                 $roomDeparture = $validated['departure_date'];
                             } else {
