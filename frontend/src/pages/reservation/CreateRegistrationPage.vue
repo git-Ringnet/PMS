@@ -796,13 +796,161 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
   }
 }
 
+async function handleInlineExtraBedQtyChange(room) {
+  const qty = Number(room.extraBedQty) || 0
+  const rate = Number(room.extraBedPrice) || 0
+
+  // 1. Cập nhật local dailyExtraBeds
+  const checkIn = room.checkIn
+  const nights = Number(room.nights) || 1
+  const dailyRates = []
+  if (checkIn) {
+    for (let i = 0; i < nights; i++) {
+      const parts = checkIn.split('-')
+      let curr = new Date()
+      if (parts.length === 3) {
+        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      } else {
+        curr = new Date(checkIn)
+      }
+      curr.setDate(curr.getDate() + i)
+      const yyyy = curr.getFullYear()
+      const mm = String(curr.getMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getDate()).padStart(2, '0')
+      const dStr = `${yyyy}-${mm}-${dd}`
+      
+      dailyRates.push({
+        dateStr: dStr,
+        date: dStr,
+        quantity: qty,
+        rate: rate,
+        total: qty * rate,
+        isRoom: false
+      })
+    }
+  }
+  room.dailyExtraBeds = dailyRates
+  room.total = calculateRoomTotal(room)
+
+  // 2. Cập nhật Database nếu đã lưu
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+      
+      // 2.1 Cập nhật booking_rooms
+      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+        extra_bed_qty: qty,
+        extra_bed_rate: rate
+      })
+
+      // 2.2 Cập nhật booking_room_services
+      for (const d of dailyRates) {
+        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+          service_code: 'EB',
+          service_name: 'Extra Bed',
+          service_date: d.dateStr,
+          quantity: d.quantity,
+          rate: d.rate,
+          is_room: 0
+        })
+      }
+
+      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+      room.services = (freshRes.data?.data || []).map(s => ({
+        ...s,
+        service_date: cleanDateStr(s.service_date)
+      }))
+      room.total = calculateRoomTotal(room)
+      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineExtraBedRateChange(room) {
+  const qty = Number(room.extraBedQty) || 0
+  const rate = Number(room.extraBedPrice) || 0
+
+  // 1. Cập nhật local dailyExtraBeds
+  const checkIn = room.checkIn
+  const nights = Number(room.nights) || 1
+  const dailyRates = []
+  if (checkIn) {
+    for (let i = 0; i < nights; i++) {
+      const parts = checkIn.split('-')
+      let curr = new Date()
+      if (parts.length === 3) {
+        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      } else {
+        curr = new Date(checkIn)
+      }
+      curr.setDate(curr.getDate() + i)
+      const yyyy = curr.getFullYear()
+      const mm = String(curr.getMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getDate()).padStart(2, '0')
+      const dStr = `${yyyy}-${mm}-${dd}`
+      
+      dailyRates.push({
+        dateStr: dStr,
+        date: dStr,
+        quantity: qty,
+        rate: rate,
+        total: qty * rate,
+        isRoom: false
+      })
+    }
+  }
+  room.dailyExtraBeds = dailyRates
+  room.total = calculateRoomTotal(room)
+
+  // 2. Cập nhật Database nếu đã lưu
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+      
+      // 2.1 Cập nhật booking_rooms
+      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+        extra_bed_qty: qty,
+        extra_bed_rate: rate
+      })
+
+      // 2.2 Cập nhật booking_room_services
+      for (const d of dailyRates) {
+        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+          service_code: 'EB',
+          service_name: 'Extra Bed',
+          service_date: d.dateStr,
+          quantity: d.quantity,
+          rate: d.rate,
+          is_room: 0
+        })
+      }
+
+      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+      room.services = (freshRes.data?.data || []).map(s => ({
+        ...s,
+        service_date: cleanDateStr(s.service_date)
+      }))
+      room.total = calculateRoomTotal(room)
+      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
+    }
+  }
+}
+
 async function handleInlineServiceDelete(room, svc) {
   const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
   if (isRoomCharge) return
 
-  if (!confirm(`Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`)) {
-    return
-  }
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa dịch vụ',
+    message: `Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`
+  })
+  if (!confirmed) return
 
   const cleanDate = cleanDateStr(svc.service_date)
 
@@ -4801,7 +4949,7 @@ defineExpose({
                           <span v-else>{{ room.children }}</span>
                         </template>
                         <template v-else-if="col.key === 'childBreakfast'">
-                          <button @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                          <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'breakfast'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -4816,7 +4964,17 @@ defineExpose({
                           </select>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
-                          <div class="flex items-center justify-center gap-1">
+                          <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                            <input 
+                              type="number" 
+                              v-model.number="room.extraBedQty" 
+                              min="0"
+                              max="10"
+                              @change="handleInlineExtraBedQtyChange(room)"
+                              class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                            />
+                          </div>
+                          <div v-else class="flex items-center justify-center gap-1">
                             <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
                             <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
                               <span>Chi tiết</span>
@@ -4824,7 +4982,16 @@ defineExpose({
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
+                          <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                            <input 
+                              type="text" 
+                              :value="formatCurrencyInput(room.extraBedPrice)"
+                              @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
+                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                              class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                            />
+                          </div>
+                          <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
@@ -5349,7 +5516,7 @@ defineExpose({
                                   <span v-else>{{ room.children }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'childBreakfast'">
-                                  <button @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                                  <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                                 </template>
                                 <template v-else-if="col.key === 'breakfast'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -5364,7 +5531,17 @@ defineExpose({
                                   </select>
                                 </template>
                                 <template v-else-if="col.key === 'extraBed'">
-                                  <div class="flex items-center justify-center gap-1">
+                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                                    <input 
+                                      type="number" 
+                                      v-model.number="room.extraBedQty" 
+                                      min="0"
+                                      max="10"
+                                      @change="handleInlineExtraBedQtyChange(room)"
+                                      class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                    />
+                                  </div>
+                                  <div v-else class="flex items-center justify-center gap-1">
                                     <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
                                     <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
                                       <span>Chi tiết</span>
@@ -5372,7 +5549,16 @@ defineExpose({
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <span class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
+                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                                    <input 
+                                      type="text" 
+                                      :value="formatCurrencyInput(room.extraBedPrice)"
+                                      @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
+                                      @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                      class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                    />
+                                  </div>
+                                  <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hourly'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75">

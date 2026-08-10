@@ -245,6 +245,10 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoomPlan_AllowChangeArrivalDate', 'value' => '0', 'description' => 'Cho phép kéo thay đổi ngày đến của phòng trên Room Plan (0: không cho, 1: cho phép)', 'is_visible' => true],
             ['name' => 'AllowPostBillCheckedOutRoom', 'value' => '0', 'description' => 'Cho phép post bill sau khi phòng đã check-out (0: không cho, 1: cho phép)', 'is_visible' => true],
             ['name' => 'SyncRoomDateByBookingDate', 'value' => '1', 'description' => 'Tự động đồng bộ ngày của phòng theo ngày của booking (0: không đồng bộ, 1: đồng bộ cho phòng chưa check-in)', 'is_visible' => true],
+            // Tham số trẻ em - ăn sáng
+            ['name' => 'Booking_AutoExtraChargeBFChild', 'value' => '0', 'description' => 'Mặc định tự động tính phụ phí ăn sáng trẻ em khi thêm trẻ em vào phòng (0: không tính, 1: tự động tính phụ phí theo giá hotel_settings.breakfast_child_rate)', 'is_visible' => true],
+            ['name' => 'Booking_BFChildSetServiceId', 'value' => 'BD', 'description' => 'Mã dịch vụ mặc định dùng khi post extra charge ăn sáng trẻ em (ví dụ: BD)', 'is_visible' => true],
+            ['name' => 'BreakfastRateChild', 'value' => '0', 'description' => 'Giá ăn sáng trẻ em mặc định khi KHÔNG có extra charge (is_extra_charge = 0). Đơn vị: VND', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {
