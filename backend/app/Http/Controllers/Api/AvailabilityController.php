@@ -55,7 +55,8 @@ class AvailabilityController extends Controller
         // 2. Lấy room classes
         $roomClasses = RoomClass::where('is_active', true)->get();
 
-        $roomCounts = Room::select('room_class_id', DB::raw('count(*) as total'), DB::raw('max(extra_beds_limit) as max_extra'))
+        $roomCounts = Room::where('room_number', 'not like', '0%')
+            ->select('room_class_id', DB::raw('count(*) as total'), DB::raw('max(extra_beds_limit) as max_extra'))
             ->groupBy('room_class_id')
             ->get()
             ->keyBy('room_class_id');
@@ -296,7 +297,10 @@ class AvailabilityController extends Controller
         }
 
         // Lấy tất cả phòng của mỗi loại phòng
-        $roomsByClass = Room::select('room_number', 'room_class_id')->get()->groupBy('room_class_id');
+        $roomsByClass = Room::where('room_number', 'not like', '0%')
+            ->select('room_number', 'room_class_id')
+            ->get()
+            ->groupBy('room_class_id');
 
         // 5. Build grid và statistics
         $grid = [];
