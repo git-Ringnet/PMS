@@ -53,7 +53,8 @@ class BookingRoomService extends Model
 
         static::deleted(function ($model) {
             $note = strtolower($model->note ?? '');
-            if ($model->service_code === 'BD' && str_starts_with($note, 'phụ thu ăn sáng trẻ em:')) {
+            $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+            if ($model->service_code === $serviceCode && str_starts_with($note, 'phụ thu ăn sáng trẻ em:')) {
                 $childName = trim(substr($model->note, strlen('Phụ thu ăn sáng trẻ em:')));
                 if ($childName) {
                     $child = \App\Models\BookingChild::where('booking_room_id', $model->booking_room_id)
