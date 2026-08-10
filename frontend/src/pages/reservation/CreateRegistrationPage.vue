@@ -1829,8 +1829,8 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
         basePrice: found.basePrice !== undefined ? Number(found.basePrice) : (found.price !== undefined ? Number(found.price) : (rc.room_price !== undefined ? Number(rc.room_price) : 0)),
         upgradeClassId: found.upgradeClassId || found.upgradeRoomClassId || null,
         adults: found.adults !== undefined ? Number(found.adults) : (rc.max_adults || 2),
-        babies: found.babies !== undefined ? Number(found.babies) : 0,
-        children: found.children !== undefined ? Number(found.children) : 0,
+        babies: 0,
+        children: 0,
         childBreakfastRate: found.childBreakfastRate !== undefined ? Number(found.childBreakfastRate) : (hotelSettings.value?.breakfast_child_rate || 90000),
         breakfastIncluded: found.breakfastIncluded !== undefined ? !!found.breakfastIncluded : isBreakfastChecked,
         extraBedPrice: found.extraBedPrice !== undefined ? Number(found.extraBedPrice) : (rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
@@ -5149,9 +5149,11 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="date" 
                                     v-model="room.checkIn" 
+                                    :min="activeTab?.checkIn || ''"
+                                    :max="activeTab?.checkOut || ''"
                                     @change="handleRowDateChangeInline(room)"
                                     @click="$event.target.showPicker && $event.target.showPicker()"
-                                    class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
+                                    class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-[11px] font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
                                   />
                                   <span v-else class="text-gray-500 font-semibold">{{ formatDateVi(room.checkIn) }}</span>
                                 </template>
@@ -5160,9 +5162,11 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="date" 
                                     v-model="room.checkOut" 
+                                    :min="activeTab?.checkIn || ''"
+                                    :max="activeTab?.checkOut || ''"
                                     @change="handleRowDateChangeInline(room)"
                                     @click="$event.target.showPicker && $event.target.showPicker()"
-                                    class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
+                                    class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-[11px] font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
                                   />
                                   <span v-else class="text-gray-500 font-semibold">{{ formatDateVi(room.checkOut) }}</span>
                                 </template>
