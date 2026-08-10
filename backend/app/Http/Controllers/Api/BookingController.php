@@ -1663,37 +1663,90 @@ class BookingController extends Controller
      */
     private function createChildBreakfastDetails($child, $bRoom)
     {
+        $isBaby = $child->age_group === 'baby';
+
+        // Đọc tham số hệ thống từ hotel_configs
+        $autoExtraChargeVal = \App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')->value('value');
+        $autoExtraCharge = (int) $autoExtraChargeVal === 1;
+
+        // Xác định amount và extra charge
         $setting = \App\Models\HotelSetting::first();
-        $autoExtra = $setting?->booking_auto_extra_charge_bf_child == 1;
-        $childRate = $setting?->breakfast_child_rate ?? 90000;
+        if ($isBaby) {
+            $isFree = true;
+            $isExtra = false;
+            $amount = 0.0;
+        } else {
+            $isFree = false;
+            $isExtra = $autoExtraCharge;
+            if ($autoExtraCharge) {
+                $amount = (float) ($setting?->breakfast_child_rate ?? 0);
+            } else {
+                $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+                $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+            }
+        }
 
         $current = Carbon::parse($bRoom->arrival_date);
         $departure = Carbon::parse($bRoom->departure_date);
 
         while ($current->lt($departure)) {
-            $isFree = true;
-            $isExtra = false;
-            $amount = 0;
-
-            if ($child->age_group === 'child') {
-                if ($autoExtra) {
-                    $isFree = false;
-                    $isExtra = true;
-                    $amount = $childRate;
-                }
-            }
-
-            \App\Models\BookingChildBreakfastDetail::create([
+            $detail = \App\Models\BookingChildBreakfastDetail::create([
                 'booking_child_id' => $child->id,
                 'service_date'     => $current->toDateString(),
                 'breakfast'        => true,
                 'is_free'          => $isFree,
                 'is_extra_charge'  => $isExtra,
-                'is_room'          => true, // FIT
+                'is_room'          => !$isExtra, // Nếu extra charge thì không phân bổ vào phòng (GIT)
                 'amount'           => $amount,
             ]);
 
+            // Đồng bộ sang booking_room_services
+            $this->syncChildBreakfastToService($detail);
+
             $current = $current->addDay();
+        }
+    }
+
+    /**
+     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
+     */
+    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
+    {
+        $child = $detail->bookingChild;
+        if (!$child || !$child->booking_room_id) return;
+
+        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
+        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+
+        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
+        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
+
+        if ($shouldHaveService) {
+            \App\Models\BookingRoomService::updateOrCreate(
+                [
+                    'booking_room_id' => $child->booking_room_id,
+                    'service_code'    => $serviceCode,
+                    'service_date'    => $detail->service_date->toDateString(),
+                    'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                ],
+                [
+                    'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                    'quantity'        => 1,
+                    'rate'            => $detail->amount,
+                    'total_amount'    => $detail->amount,
+                    'department'      => 'FO',
+                    'folio'           => 1,
+                    'is_room'         => 0,
+                    'is_posted'       => 0,
+                ]
+            );
+        } else {
+            // Xóa dịch vụ nếu có
+            \App\Models\BookingRoomService::where('booking_room_id', $child->booking_room_id)
+                ->where('service_code', $serviceCode)
+                ->whereDate('service_date', $detail->service_date->toDateString())
+                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
+                ->delete();
         }
     }
 

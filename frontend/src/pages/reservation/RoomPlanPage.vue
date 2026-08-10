@@ -1227,8 +1227,12 @@ async function loadBookings() {
             .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
             .filter(detail => Number(detail.is_extra_charge) === 1 && Number(detail.breakfast) === 1)
             .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
+          const isChildBreakfastService = service => {
+            const note = String(service.note ?? service.Note ?? '').toLowerCase()
+            return note.startsWith('phụ thu ăn sáng trẻ em')
+          }
           const serviceCharge = roomServices
-            .filter(service => !isRoomService(service))
+            .filter(service => !isRoomService(service) && !isChildBreakfastService(service))
             .reduce((sum, service) => sum + serviceAmount(service), 0)
             + extraBedAmount
             + childBreakfastAmount
