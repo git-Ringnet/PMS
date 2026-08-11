@@ -1218,18 +1218,23 @@ const hasNoshowRoomSelected = computed(() => {
   return selected.length > 0 && selected.every(r => Number(r.bookingRoomStatus) === 4)
 })
 
+const bookingContext = computed(() => {
+  return (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
+})
+
 const isAllRoomsNoshow = computed(() => {
-  const tab = activeTab.value
+  const tab = bookingContext.value
   if (!tab || !tab.rooms || tab.rooms.length === 0) return false
   return tab.rooms.every(r => Number(r.bookingRoomStatus) === 4)
 })
 
 const filteredActiveRooms = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return []
-  let list = activeTab.value.rooms
+  const tab = bookingContext.value
+  if (!tab || !tab.rooms) return []
+  let list = tab.rooms
 
   // Check if ALL rooms in this registration are cancelled
-  const allRoomsCancelled = activeTab.value.status === 'CANCELLED' || 
+  const allRoomsCancelled = tab.status === 'CANCELLED' || 
     (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3 || Number(r.bookingRoomStatus) === 100))
 
   // If not all rooms are cancelled, hide individual cancelled/transferred rooms
@@ -1255,12 +1260,14 @@ const filteredActiveRooms = computed(() => {
 
 const selectRangeVal = computed({
   get() {
-    if (!activeTab.value) return 0
-    return activeTab.value.rooms.filter(r => selectedRows.value.includes(r.id)).length
+    const tab = bookingContext.value
+    if (!tab) return 0
+    return tab.rooms.filter(r => selectedRows.value.includes(r.id)).length
   },
   set(val) {
-    if (!activeTab.value) return
-    const rooms = activeTab.value.rooms
+    const tab = bookingContext.value
+    if (!tab) return
+    const rooms = tab.rooms
     const countToSelect = Math.min(Number(val), rooms.length)
     const newSelected = []
     for (let i = 0; i < countToSelect; i++) newSelected.push(rooms[i].id)
@@ -1269,7 +1276,8 @@ const selectRangeVal = computed({
 })
 
 const roomsTotalSummary = computed(() => {
-  if (!activeTab.value) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
+  const tab = bookingContext.value
+  if (!tab) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
   let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
   const roomList = filteredActiveRooms.value
   roomList.forEach(r => {
@@ -1286,12 +1294,13 @@ const roomsTotalSummary = computed(() => {
 })
 
 const activeTabStatusName = computed(() => {
-  if (!activeTab.value) return '—'
-  if (activeTab.value.registrationStatusId) {
-    const s = registrationStatuses.value.find(rs => Number(rs.id) === Number(activeTab.value.registrationStatusId))
+  const tab = bookingContext.value
+  if (!tab) return '—'
+  if (tab.registrationStatusId) {
+    const s = registrationStatuses.value.find(rs => Number(rs.id) === Number(tab.registrationStatusId))
     if (s) return s.name
   }
-  return activeTab.value.statusLabel || '—'
+  return tab.statusLabel || '—'
 })
 
 const allocationsSummary = computed(() => {
@@ -1344,7 +1353,8 @@ function getStatusOrderAndName(status) {
 
 // Grouped by room type (always) - Returns sorted array
 const groupedRooms = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return []
+  const tab = bookingContext.value
+  if (!tab || !tab.rooms) return []
   const groupsMap = {}
   filteredActiveRooms.value.forEach(room => {
     const key = room.type || 'Khác'
@@ -1381,7 +1391,8 @@ const hasStatusGroups = computed(() => true)
 
 // Build nested: Returns sorted array of status groups, each containing typeGroups sorted by room class order
 const groupedRoomsNested = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return []
+  const tab = bookingContext.value
+  if (!tab || !tab.rooms) return []
   
   const statusGroupsMap = {}
   filteredActiveRooms.value.forEach(room => {
@@ -1635,7 +1646,7 @@ function bookingToTab(b) {
       const co = new Date(br.departure_date || b.departure_date)
       if (!isNaN(ci) && !isNaN(co)) {
         const diff = Math.ceil((co - ci) / 86400000)
-        nightsCount = diff > 0 ? diff : 1
+        nightsCount = diff > 0 ? diff : (br.is_day_use ? 0 : 1)
       }
       const priceNum = Number(br.rate) || 0
       const servicesList = br.services || []
@@ -1691,7 +1702,7 @@ function bookingToTab(b) {
         breakfast: br.breakfast !== undefined ? !!br.breakfast : true,
         extraBedPrice: Number(br.extra_bed_rate) || (dailyExtraBeds.length ? (dailyExtraBeds.find(d => d.rate > 0)?.rate || 0) : 0),
         extraBedQty: Number(br.extra_bed_qty) || (dailyExtraBeds.length ? Math.max(...dailyExtraBeds.map(d => d.quantity || 0)) : 0),
-        hourly: false,
+        hourly: !!br.is_day_use,
         arrivalTime: br.arrival_time || '14:00',
         hoursOut: br.departure_time || '12:00',
         isPreassigned: !!physicalRoom.room_number,
@@ -1758,7 +1769,7 @@ function bookingToTab(b) {
           children: Number(roomDetail.children || alloc.children) || 0,
           breakfast: roomDetail.breakfast !== undefined ? !!roomDetail.breakfast : !!alloc.breakfastIncluded,
           extraBedPrice: Number(roomDetail.extraBedPrice) || 0,
-          hourly: !!roomDetail.hourly,
+          hourly: !!roomDetail.hourly || !!roomDetail.is_day_use || (alloc.arrivalDate === alloc.departureDate),
           arrivalTime: roomDetail.arrivalTime || '14:00',
           hoursOut: roomDetail.hoursOut || '12:00',
           isPreassigned: roomDetail.isPreassigned !== undefined ? !!roomDetail.isPreassigned : false,
@@ -2575,7 +2586,7 @@ function formatDateTime(val) {
 async function updateRoomAvailability() {
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) return
 
-  if (modalForm.value.checkIn >= modalForm.value.checkOut) {
+  if (modalForm.value.checkIn > modalForm.value.checkOut) {
     if (modalForm.value.roomAllocations) {
       modalForm.value.roomAllocations.forEach(alloc => {
         alloc.availableRooms = 0
@@ -2592,11 +2603,15 @@ async function updateRoomAvailability() {
     const grid = res.data?.data?.grid || res.data?.grid || {}
 
     const dates = []
-    let curr = new Date(modalForm.value.checkIn)
-    const end = new Date(modalForm.value.checkOut)
-    while (curr < end) {
-      dates.push(curr.toISOString().split('T')[0])
-      curr.setDate(curr.getDate() + 1)
+    if (modalForm.value.checkIn === modalForm.value.checkOut) {
+      dates.push(modalForm.value.checkIn)
+    } else {
+      let curr = new Date(modalForm.value.checkIn)
+      const end = new Date(modalForm.value.checkOut)
+      while (curr < end) {
+        dates.push(curr.toISOString().split('T')[0])
+        curr.setDate(curr.getDate() + 1)
+      }
     }
 
     if (modalForm.value.roomAllocations) {
@@ -2659,7 +2674,7 @@ function updateAllocatedRooms(row) {
         children: row.children || 0,
         breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : getDefaultBreakfastSetting(),
         extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
-        hourly: false,
+        hourly: (row.arrivalDate || modalForm.value.checkIn) === (row.departureDate || modalForm.value.checkOut),
         arrivalTime: '14:00',
         hoursOut: '12:00',
         isPreassigned: false,
@@ -2747,8 +2762,13 @@ async function handleMainCheckInChange() {
 
 async function handleDateChange() {
   const ci = new Date(modalForm.value.checkIn)
-  const co = new Date(modalForm.value.checkOut)
+  let co = new Date(modalForm.value.checkOut)
   if (!isNaN(ci) && !isNaN(co)) {
+    if (co < ci) {
+      co = new Date(ci)
+      co.setDate(ci.getDate() + 1)
+      modalForm.value.checkOut = co.toISOString().split('T')[0]
+    }
     const diff = Math.ceil((co - ci) / 86400000)
     modalForm.value.nights = diff >= 0 ? diff : 0
     
@@ -2792,8 +2812,13 @@ async function handleMainDateChange() {
   const tab = activeTab.value
   if (!tab) return
   const ci = new Date(tab.checkIn)
-  const co = new Date(tab.checkOut)
+  let co = new Date(tab.checkOut)
   if (!isNaN(ci) && !isNaN(co)) {
+    if (co < ci) {
+      co = new Date(ci)
+      co.setDate(ci.getDate() + 1)
+      tab.checkOut = co.toISOString().split('T')[0]
+    }
     const diff = Math.ceil((co - ci) / 86400000)
     tab.nights = diff >= 0 ? diff : 0
     
@@ -2947,14 +2972,23 @@ async function handleRowDateChangeInline(room) {
     const ci = new Date(room.checkIn)
     const co = new Date(room.checkOut)
     if (!isNaN(ci) && !isNaN(co)) {
-      if (co <= ci) {
-        const nextDay = new Date(ci)
-        nextDay.setDate(ci.getDate() + 1)
-        room.checkOut = nextDay.toISOString().split('T')[0]
+      if (co < ci) {
+        if (room.hourly) {
+          room.checkOut = room.checkIn
+        } else {
+          const nextDay = new Date(ci)
+          nextDay.setDate(ci.getDate() + 1)
+          room.checkOut = nextDay.toISOString().split('T')[0]
+        }
+      }
+      
+      // Nếu check-out bằng check-in nhưng chưa bật hourly -> tự động bật hourly
+      if (room.checkOut === room.checkIn && !room.hourly) {
+        room.hourly = true
       }
       
       const diffTime = new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()
-      room.nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
+      room.nights = Math.max(room.hourly ? 0 : 1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
       room.total = calculateRoomTotal(room)
 
       // Đồng bộ ngược lại allocation của tab hiện tại để khi lưu sẽ update đúng
@@ -2968,6 +3002,7 @@ async function handleRowDateChangeInline(room) {
         }
         syncBookingDatesFromRooms(tab)
       }
+      updateRoomAvailability()
     }
   }
 }
@@ -2991,8 +3026,40 @@ async function handleRowNightsChangeInline(room) {
         }
         syncBookingDatesFromRooms(tab)
       }
+      updateRoomAvailability()
     }
   }
+}
+
+async function handleHourlyToggle(room) {
+  if (room.hourly) {
+    room.checkOut = room.checkIn
+    room.nights = 0
+  } else {
+    if (room.checkOut === room.checkIn) {
+      const ci = new Date(room.checkIn)
+      if (!isNaN(ci)) {
+        const co = new Date(ci)
+        co.setDate(ci.getDate() + 1)
+        room.checkOut = co.toISOString().split('T')[0]
+        room.nights = 1
+      }
+    }
+  }
+  room.total = calculateRoomTotal(room)
+
+  // Đồng bộ ngược lại allocation của tab hiện tại
+  const tab = activeTab.value
+  if (tab && tab.roomAllocations) {
+    const alloc = tab.roomAllocations.find(a => a.roomClassId === room.roomClassId)
+    if (alloc) {
+      alloc.arrivalDate = room.checkIn
+      alloc.departureDate = room.checkOut
+      alloc.nights = room.nights
+    }
+    syncBookingDatesFromRooms(tab)
+  }
+  updateRoomAvailability()
 }
 
 
@@ -3256,6 +3323,34 @@ async function handleGuestInfoSaved() {
   if (bc2) bc2.postMessage('rooms-updated')
 }
 
+function areRoomPeriodsOverlapping(r1, r2) {
+  if (!r1.checkIn || !r1.checkOut || !r2.checkIn || !r2.checkOut) return false
+
+  const start1 = new Date(r1.checkIn)
+  const end1 = new Date(r1.checkOut)
+  const start2 = new Date(r2.checkIn)
+  const end2 = new Date(r2.checkOut)
+
+  const isHourly1 = r1.checkIn === r1.checkOut || !!r1.hourly
+  const isHourly2 = r2.checkIn === r2.checkOut || !!r2.hourly
+
+  if (isHourly1 && isHourly2) {
+    return r1.checkIn === r2.checkIn
+  }
+
+  if (isHourly1) {
+    const t1 = start1.getTime()
+    return t1 >= start2.getTime() && t1 < end2.getTime()
+  }
+
+  if (isHourly2) {
+    const t2 = start2.getTime()
+    return t2 >= start1.getTime() && t2 < end1.getTime()
+  }
+
+  return start1 < end2 && end1 > start2
+}
+
 function parseDateVi(dateStr) {
   if (!dateStr) return ''
   const parts = dateStr.split('/')
@@ -3302,7 +3397,7 @@ function getVacantRoomsList(room) {
   
   const parentObj = (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
   const assignedRoomNumbers = (parentObj?.rooms || [])
-    .filter(r => r.id !== room.id && r.roomNumber)
+    .filter(r => r.id !== room.id && r.roomNumber && areRoomPeriodsOverlapping(r, room))
     .map(r => r.roomNumber)
 
   return list.filter(r => r.room_number !== room.roomNumber && !assignedRoomNumbers.includes(r.room_number))
@@ -3316,12 +3411,8 @@ function validateRoomsDuplication(rooms) {
       const r1 = roomsWithNumber[i]
       const r2 = roomsWithNumber[j]
       if (r1.roomNumber === r2.roomNumber) {
-        const start1 = new Date(r1.checkIn)
-        const end1 = new Date(r1.checkOut)
-        const start2 = new Date(r2.checkIn)
-        const end2 = new Date(r2.checkOut)
-        if (start1 < end2 && start2 < end1) {
-          return `Số phòng ${r1.roomNumber} bị trùng lặp trong giai đoạn ở trùng nhau (${formatDateVi(r1.checkIn)} → ${formatDateVi(r1.checkOut)} và ${formatDateVi(r2.checkIn)} → ${formatDateVi(r2.checkOut)})!`
+        if (areRoomPeriodsOverlapping(r1, r2)) {
+          return `Số phòng ${r1.roomNumber} bị trùng lặp trong giai đoạn ở trùng nhau (${formatDateVi(r1.checkIn)} - ${formatDateVi(r1.checkOut)} và ${formatDateVi(r2.checkIn)} - ${formatDateVi(r2.checkOut)})!`
         }
       }
     }
@@ -5008,7 +5099,7 @@ defineExpose({
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
-                            <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing">
+                            <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing" @change="handleHourlyToggle(room)">
                             <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                           </label>
                         </template>
@@ -5575,7 +5666,7 @@ defineExpose({
                                 </template>
                                 <template v-else-if="col.key === 'hourly'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75">
-                                    <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing">
+                                    <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing" @change="handleHourlyToggle(room)">
                                     <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                                   </label>
                                 </template>
