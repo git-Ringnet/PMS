@@ -11,6 +11,7 @@ use App\Models\HotelService;
 use App\Models\HotelSetting;
 use App\Models\HousekeepingServiceBill;
 use App\Models\HousekeepingServiceBillDetail;
+use App\Models\HousekeepingOutlet;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\RoomNightBill;
@@ -1027,13 +1028,18 @@ class BookingRoomServiceController extends Controller
         $user = Auth::user()?->username ?? 'Admin';
         $postingCreatedAt = Carbon::parse($systemDate)->setTimeFromTimeString(now()->format('H:i:s'));
         $createdRecords = [];
+        $groupMeta = HousekeepingOutlet::where('is_active', true)
+            ->orderBy('order_index')
+            ->get()
+            ->keyBy('group_key')
+            ->map(fn ($outlet) => [
+                'label' => $outlet->name,
+                'service' => $outlet->service_code ?: $outlet->code,
+                'outlet' => $outlet->code,
+            ])
+            ->all();
 
-        DB::transaction(function () use ($request, $room, $guestPivot, $department, $serviceDate, $serviceDateCarbon, $folio, $isFree, $complimentaryMethod, $user, $postingCreatedAt, &$createdRecords) {
-            $groupMeta = [
-                'minibar' => ['label' => 'Minibar', 'service' => 'MB', 'outlet' => 'MB'],
-                'giatui'  => ['label' => 'Giặt ủi', 'service' => 'LA', 'outlet' => 'LA'],
-                'dengbu'  => ['label' => 'Hàng đền bù', 'service' => 'BR', 'outlet' => 'BR'],
-            ];
+        DB::transaction(function () use ($request, $room, $guestPivot, $department, $serviceDate, $serviceDateCarbon, $folio, $isFree, $complimentaryMethod, $user, $postingCreatedAt, $groupMeta, &$createdRecords) {
             $booking = $room->booking;
             $guestId = $guestPivot?->guest_id;
             $guestName = $guestPivot?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
