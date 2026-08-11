@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchAvailabilityGrid, fetchAvailabilityDetails, fetchRegistrationStatuses } from '@/services/availability-service'
 import { fetchSystemDate } from '@/services/booking-service'
@@ -9,6 +10,8 @@ import DateRangePicker from '@/components/DateRangePicker.vue'
 import AvailabilityDetailModal from './components/AvailabilityDetailModal.vue'
 
 const uiStore = useUiStore()
+const route = useRoute()
+const router = useRouter()
 
 const isLoading = ref(true)
 const systemDate = ref('')
@@ -19,6 +22,8 @@ const roomClasses = ref([])
 const gridData = ref({})
 const statistics = ref({})
 const totals = ref({ grand_total: 0, grand_max_rooms: 0, grand_max_extra_beds: 0 })
+const occBookings = ref({})
+const expandedRoomClasses = ref(new Set())
 const showDetailModal = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
@@ -123,6 +128,107 @@ function toggleStatus(code) {
 
 function getAvailableCount(classCode, dateStr) {
   return gridData.value[classCode]?.[dateStr]?.av ?? 0
+}
+
+const occBookingRows = computed(() => {
+  const result = {}
+  Object.entries(occBookings.value || {}).forEach(([classCode, rows]) => {
+    const groups = new Map()
+    rows.forEach((row) => {
+      const key = `${row.booking_id || row.booking_code}-${row.arrival_date}-${row.departure_date}`
+      if (!groups.has(key)) {
+        groups.set(key, { ...row, room_count: 0, room_numbers: [] })
+      }
+      const group = groups.get(key)
+      group.room_count += Number(row.room_count || 1)
+      if (row.room_number) group.room_numbers.push(row.room_number)
+    })
+    const bookings = Array.from(groups.values()).sort((a, b) => {
+      return String(a.arrival_date).localeCompare(String(b.arrival_date)) || String(a.departure_date).localeCompare(String(b.departure_date))
+    })
+    const lanes = []
+    bookings.forEach((booking) => {
+      const bookingEnd = booking.is_day_use && booking.arrival_date === booking.departure_date
+        ? addDays(booking.departure_date, 1)
+        : booking.departure_date
+      const lane = lanes.find((candidate) => candidate.lastDeparture <= booking.arrival_date)
+      if (lane) {
+        lane.items.push(booking)
+        lane.lastDeparture = bookingEnd
+      } else {
+        lanes.push({ items: [booking], lastDeparture: bookingEnd })
+      }
+    })
+    result[classCode] = lanes
+  })
+  return result
+})
+
+function addDays(dateStr, amount) {
+  const date = new Date(`${dateStr}T00:00:00`)
+  date.setDate(date.getDate() + amount)
+  return date.toISOString().slice(0, 10)
+}
+
+function toggleRoomClass(code) {
+  const next = new Set(expandedRoomClasses.value)
+  if (next.has(code)) next.delete(code)
+  else next.add(code)
+  expandedRoomClasses.value = next
+}
+
+function isRoomClassExpanded(code) {
+  return expandedRoomClasses.value.has(code)
+}
+
+function isBookingVisibleOnDate(booking, dateStr) {
+  if (booking.is_day_use) return dateStr === booking.arrival_date
+  return dateStr >= booking.arrival_date && dateStr < booking.departure_date
+}
+
+function bookingForLaneDate(lane, dateStr) {
+  return lane.items.find((booking) => isBookingVisibleOnDate(booking, dateStr)) || null
+}
+
+function bookingTimelineKey(booking) {
+  return booking ? `${booking.booking_id || booking.booking_code}-${booking.arrival_date}-${booking.departure_date}` : null
+}
+
+function bookingTimelineCells(lane) {
+  const cells = []
+  let index = 0
+  while (index < days.value.length) {
+    const booking = bookingForLaneDate(lane, days.value[index].fullDateStr)
+    let span = 1
+    while (
+      index + span < days.value.length &&
+      bookingTimelineKey(bookingForLaneDate(lane, days.value[index + span].fullDateStr)) === bookingTimelineKey(booking)
+    ) {
+      span += 1
+    }
+    cells.push({ booking, visible: Boolean(booking), span })
+    index += span
+  }
+  return cells
+}
+
+function bookingLabel(booking) {
+  const count = Number(booking.room_count || 0)
+  const code = booking.booking_code || '—'
+  const name = booking.booking_name || booking.company || ''
+  return `(${count}) ${code}${name ? ` - ${name}` : ''}`
+}
+
+function openBookingFromModal(booking) {
+  if (!booking?.booking_code) return
+  const closedKey = 'pms_closed_tabs'
+  try {
+    const closed = JSON.parse(localStorage.getItem(closedKey) || '[]')
+    localStorage.setItem(closedKey, JSON.stringify(closed.filter((value) => String(value) !== String(booking.booking_code) && String(value) !== String(booking.booking_id))))
+  } catch (error) {
+    localStorage.removeItem(closedKey)
+  }
+  router.push({ query: { ...route.query, tab: 'create-res', bookingCode: booking.booking_code } })
 }
 
 function getSubColValue(rcCode, dateStr, subCol) {
@@ -280,6 +386,7 @@ async function loadAvailability(start = null, end = null) {
       dates.value = data.dates
       roomClasses.value = data.room_classes
       gridData.value = data.grid
+      occBookings.value = data.occ_bookings || {}
       statistics.value = data.statistics
       totals.value = data.totals
 
@@ -532,15 +639,17 @@ function showExportToast() {
         <!-- Matrix Body -->
         <tbody>
           <!-- Room Classes Rows -->
-          <tr 
-            v-for="rc in roomClasses" 
-            :key="rc.code" 
-            class="border-b border-slate-200 h-9"
-          >
+          <template v-for="rc in roomClasses" :key="rc.code">
+          <tr class="border-b border-slate-200 h-9">
             <!-- Room Type Identifiers (Sticky on Left) -->
-            <td class="p-2 border-r border-slate-200 text-left pl-3 font-semibold text-gray-900 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold text-gray-900 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
               <div class="flex items-center gap-1 justify-start">
-                <span class="text-gray-450 font-extrabold mr-0.5">•</span>
+                <button
+                  type="button"
+                  class="w-3.5 h-3.5 flex items-center justify-center border border-sky-300 bg-sky-100 text-sky-700 leading-none text-[11px] font-bold cursor-pointer"
+                  :title="isRoomClassExpanded(rc.code) ? 'Thu booking OCC' : 'Mở booking OCC'"
+                  @click.stop="toggleRoomClass(rc.code)"
+                >{{ isRoomClassExpanded(rc.code) ? '−' : '+' }}</button>
                 {{ rc.code }}
               </div>
             </td>
@@ -567,6 +676,33 @@ function showExportToast() {
               </td>
             </template>
           </tr>
+
+          <!-- OCC booking timeline rows -->
+          <template v-if="isRoomClassExpanded(rc.code)">
+            <tr
+              v-for="(lane, laneIndex) in (occBookingRows[rc.code] || [])"
+              :key="`${rc.code}-occ-lane-${laneIndex}`"
+              class="h-7 border-b border-slate-100 bg-white"
+            >
+              <td colspan="4" class="p-0 sticky left-0 z-10 bg-white border-r border-slate-200 shadow-[inset_-1px_0_0_#e2e8f0]">
+                <div class="h-6 mx-1"></div>
+              </td>
+              <template v-for="(cell, cellIndex) in bookingTimelineCells(lane)" :key="`${rc.code}-${laneIndex}-${cellIndex}`">
+                <td
+                  :colspan="cell.span * activeSubColumns.length"
+                  class="p-0 border-r border-slate-100"
+                  @dblclick="cell.visible && openBookingFromModal(cell.booking)"
+                >
+                  <div
+                    v-if="cell.visible"
+                    class="h-6 mx-px px-1 flex items-center truncate rounded-sm bg-sky-200 text-slate-800 text-[12px] cursor-pointer hover:bg-sky-300"
+                    :title="`${bookingLabel(cell.booking)}\nPhòng: ${(cell.booking.room_numbers || []).join(', ')}`"
+                  >{{ bookingLabel(cell.booking) }}</div>
+                </td>
+              </template>
+            </tr>
+          </template>
+          </template>
 
           <!-- TỔNG Row (Sum totals) -->
           <tr class="bg-slate-200 border-b border-slate-300 h-9 text-gray-900 text-[12px]">
@@ -986,14 +1122,15 @@ function showExportToast() {
     </div>
   </div>
 
-  <AvailabilityDetailModal
+          <AvailabilityDetailModal
     :show="showDetailModal"
     :loading="detailLoading"
     :error="detailError"
     :detail="detailData"
     :date="detailDate"
     :metric="detailMetric"
-    :room-class-label="detailRoomClassLabel"
-    @close="closeAvailabilityDetails"
-  />
+            :room-class-label="detailRoomClassLabel"
+            @close="closeAvailabilityDetails"
+            @open-booking="openBookingFromModal"
+          />
 </template>
