@@ -262,12 +262,12 @@ function getCellClass(subCol, val, isWeekend, clickable = false) {
   if (isWeekend) {
     base += 'bg-[#8cc4fb] hover:bg-[#b5defc] '
   }
-  if (val <= 0) {
-    base += 'text-red-500 font-light'
-  } else {
-    base += 'text-gray-900 font-light'
-  }
+  base += subCol === 'AV' && val <= 0 ? 'av-negative ' : 'availability-number '
   return base
+}
+
+function roomRowBackground(index) {
+  return index % 2 === 0 ? '#ffffff' : '#f8fafc'
 }
 
 function isDetailClickable(metric, isTotalRow = false) {
@@ -589,7 +589,7 @@ function showExportToast() {
       <!-- Loading Overlay -->
       <LoadingOverlay :show="isLoading" />
 
-      <table class="text-slate-900 text-left border-collapse table-fixed w-max min-w-max">
+      <table class="availability-table text-left border-collapse table-fixed w-max min-w-max">
         <!-- Main Column Width Definitions (Narrowed to fit more days at once) -->
         <colgroup>
           <col class="w-[80px] sticky left-0 z-20" />
@@ -615,7 +615,7 @@ function showExportToast() {
               :key="idx" 
               :colspan="activeSubColumns.length"
               class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
-              :class="[day.isWeekend ? 'bg-[#8cc4fb] text-gray-900' : 'bg-slate-200 text-gray-900']"
+              :class="[idx > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
             >
               {{ day.dow }}<br/>{{ day.dateStr }}
             </th>
@@ -623,12 +623,12 @@ function showExportToast() {
 
           <!-- Second Row: Sub-Columns (AV, OOO, OOS...) -->
           <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-[10px]">
-            <template v-for="day in days" :key="day.fullDateStr">
+            <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <th 
-                v-for="subCol in activeSubColumns" 
+                v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
                 class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
-                :class="[day.isWeekend ? 'bg-[#8cc4fb] text-gray-900' : 'bg-slate-200 text-gray-900']"
+                :class="[subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
               >
                 {{ subCol }}
               </th>
@@ -639,10 +639,10 @@ function showExportToast() {
         <!-- Matrix Body -->
         <tbody>
           <!-- Room Classes Rows -->
-          <template v-for="rc in roomClasses" :key="rc.code">
-          <tr class="border-b border-slate-200 h-9">
+          <template v-for="(rc, rcIndex) in roomClasses" :key="rc.code">
+          <tr class="border-b border-slate-200 h-8" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
             <!-- Room Type Identifiers (Sticky on Left) -->
-            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold text-gray-900 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold sticky left-0 shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               <div class="flex items-center gap-1 justify-start">
                 <button
                   type="button"
@@ -653,22 +653,22 @@ function showExportToast() {
                 {{ rc.code }}
               </div>
             </td>
-            <td class="p-2 border-r border-slate-200 font-semibold text-gray-900 sticky left-[80px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]">
+            <td class="p-2 border-r border-slate-200 font-semibold sticky left-[80px] shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.name }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[250px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-center font-semibold sticky left-[250px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.total }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[300px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-center font-semibold sticky left-[300px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.max_rooms ?? 0 }}
             </td>
 
             <!-- Dynamic grid cells based on selected filters -->
-            <template v-for="day in days" :key="day.fullDateStr">
+            <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <td 
-                v-for="subCol in activeSubColumns" 
+                v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
-                :class="getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend, isDetailClickable(subCol))"
+                :class="[getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend, isDetailClickable(subCol)), subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '']"
                 :title="getCellTooltip(rc.code, day.fullDateStr, subCol)"
                 @click="openAvailabilityDetails(day.fullDateStr, subCol, rc)"
               >
@@ -682,7 +682,7 @@ function showExportToast() {
             <tr
               v-for="(lane, laneIndex) in (occBookingRows[rc.code] || [])"
               :key="`${rc.code}-occ-lane-${laneIndex}`"
-              class="h-7 border-b border-slate-100 bg-white"
+              class="h-6 border-b border-slate-100 bg-white"
             >
               <td colspan="4" class="p-0 sticky left-0 z-10 bg-white border-r border-slate-200 shadow-[inset_-1px_0_0_#e2e8f0]">
                 <div class="h-6 mx-1"></div>
@@ -705,24 +705,25 @@ function showExportToast() {
           </template>
 
           <!-- TỔNG Row (Sum totals) -->
-          <tr class="bg-slate-200 border-b border-slate-300 h-9 text-gray-900 text-[12px]">
+          <tr class="bg-slate-200 border-b border-slate-300 h-8 text-[12px]">
             <td class="p-2 border-r border-slate-300 text-center sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">TỔNG</td>
             <td class="p-2 border-r border-slate-300 sticky left-[80px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1]"></td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
+            <td class="p-2 border-r border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
               {{ totals.grand_total }}
             </td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
+            <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
               {{ totals.grand_max_rooms ?? 0 }}
             </td>
 
-            <template v-for="day in days" :key="day.fullDateStr">
+            <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <td 
-                v-for="subCol in activeSubColumns"
+                v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
                 class="p-2 border-r border-slate-300 text-center text-[12px] font-light text-gray-900"
                 :class="[
                   day.isWeekend ? 'bg-[#8cc4fb]' : '',
-                  getSumValue(subCol, day.fullDateStr) === 0 ? 'text-gray-400 font-light' : '',
+                  subCol === 'AV' && getSumValue(subCol, day.fullDateStr) <= 0 ? 'av-negative' : 'availability-number',
+                  subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '',
                   isDetailClickable(subCol, true) ? 'hover:bg-slate-300 cursor-pointer' : 'cursor-default'
                 ]"
                 :title="getStatTooltip(subCol, day.fullDateStr)"
@@ -1134,3 +1135,21 @@ function showExportToast() {
             @open-booking="openBookingFromModal"
           />
 </template>
+
+<style scoped>
+:deep(.availability-table td),
+:deep(.availability-table th) {
+  color: #000000d9 !important;
+  font-size: 13px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
+:deep(.availability-table tr) {
+  height: 28px;
+}
+
+:deep(.availability-table .av-negative) {
+  color: #ef4444 !important;
+}
+</style>
