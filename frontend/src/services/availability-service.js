@@ -22,3 +22,16 @@ export const fetchAvailabilityGrid = (startDate, endDate) => {
 export const fetchRegistrationStatuses = () => {
   return http.get('/registration-statuses', { params: { is_availability: true } })
 }
+
+/**
+ * Lấy dữ liệu chi tiết cho một ô AV/OCC/ALM/OOO/OOS/EB/SOFAB.
+ */
+export const fetchAvailabilityDetails = ({ date, metric, roomClassId = null }) => {
+  return http.get('/availability/details', {
+    params: {
+      date,
+      metric,
+      room_class_id: roomClassId || undefined,
+    }
+  })
+}
