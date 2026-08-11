@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchAvailabilityGrid, fetchAvailabilityDetails, fetchRegistrationStatuses } from '@/services/availability-service'
 import { fetchSystemDate } from '@/services/booking-service'
@@ -9,6 +10,8 @@ import DateRangePicker from '@/components/DateRangePicker.vue'
 import AvailabilityDetailModal from './components/AvailabilityDetailModal.vue'
 
 const uiStore = useUiStore()
+const route = useRoute()
+const router = useRouter()
 
 const isLoading = ref(true)
 const systemDate = ref('')
@@ -19,6 +22,8 @@ const roomClasses = ref([])
 const gridData = ref({})
 const statistics = ref({})
 const totals = ref({ grand_total: 0, grand_max_rooms: 0, grand_max_extra_beds: 0 })
+const occBookings = ref({})
+const expandedRoomClasses = ref(new Set())
 const showDetailModal = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
@@ -125,6 +130,107 @@ function getAvailableCount(classCode, dateStr) {
   return gridData.value[classCode]?.[dateStr]?.av ?? 0
 }
 
+const occBookingRows = computed(() => {
+  const result = {}
+  Object.entries(occBookings.value || {}).forEach(([classCode, rows]) => {
+    const groups = new Map()
+    rows.forEach((row) => {
+      const key = `${row.booking_id || row.booking_code}-${row.arrival_date}-${row.departure_date}`
+      if (!groups.has(key)) {
+        groups.set(key, { ...row, room_count: 0, room_numbers: [] })
+      }
+      const group = groups.get(key)
+      group.room_count += Number(row.room_count || 1)
+      if (row.room_number) group.room_numbers.push(row.room_number)
+    })
+    const bookings = Array.from(groups.values()).sort((a, b) => {
+      return String(a.arrival_date).localeCompare(String(b.arrival_date)) || String(a.departure_date).localeCompare(String(b.departure_date))
+    })
+    const lanes = []
+    bookings.forEach((booking) => {
+      const bookingEnd = booking.is_day_use && booking.arrival_date === booking.departure_date
+        ? addDays(booking.departure_date, 1)
+        : booking.departure_date
+      const lane = lanes.find((candidate) => candidate.lastDeparture <= booking.arrival_date)
+      if (lane) {
+        lane.items.push(booking)
+        lane.lastDeparture = bookingEnd
+      } else {
+        lanes.push({ items: [booking], lastDeparture: bookingEnd })
+      }
+    })
+    result[classCode] = lanes
+  })
+  return result
+})
+
+function addDays(dateStr, amount) {
+  const date = new Date(`${dateStr}T00:00:00`)
+  date.setDate(date.getDate() + amount)
+  return date.toISOString().slice(0, 10)
+}
+
+function toggleRoomClass(code) {
+  const next = new Set(expandedRoomClasses.value)
+  if (next.has(code)) next.delete(code)
+  else next.add(code)
+  expandedRoomClasses.value = next
+}
+
+function isRoomClassExpanded(code) {
+  return expandedRoomClasses.value.has(code)
+}
+
+function isBookingVisibleOnDate(booking, dateStr) {
+  if (booking.is_day_use) return dateStr === booking.arrival_date
+  return dateStr >= booking.arrival_date && dateStr < booking.departure_date
+}
+
+function bookingForLaneDate(lane, dateStr) {
+  return lane.items.find((booking) => isBookingVisibleOnDate(booking, dateStr)) || null
+}
+
+function bookingTimelineKey(booking) {
+  return booking ? `${booking.booking_id || booking.booking_code}-${booking.arrival_date}-${booking.departure_date}` : null
+}
+
+function bookingTimelineCells(lane) {
+  const cells = []
+  let index = 0
+  while (index < days.value.length) {
+    const booking = bookingForLaneDate(lane, days.value[index].fullDateStr)
+    let span = 1
+    while (
+      index + span < days.value.length &&
+      bookingTimelineKey(bookingForLaneDate(lane, days.value[index + span].fullDateStr)) === bookingTimelineKey(booking)
+    ) {
+      span += 1
+    }
+    cells.push({ booking, visible: Boolean(booking), span })
+    index += span
+  }
+  return cells
+}
+
+function bookingLabel(booking) {
+  const count = Number(booking.room_count || 0)
+  const code = booking.booking_code || '—'
+  const name = booking.booking_name || booking.company || ''
+  return `(${count}) ${code}${name ? ` - ${name}` : ''}`
+}
+
+function openBookingFromModal(booking) {
+  if (!booking?.booking_code) return
+  const closedKey = 'pms_closed_tabs'
+  try {
+    const closed = JSON.parse(localStorage.getItem(closedKey) || '[]')
+    localStorage.setItem(closedKey, JSON.stringify(closed.filter((value) => String(value) !== String(booking.booking_code) && String(value) !== String(booking.booking_id))))
+  } catch (error) {
+    localStorage.removeItem(closedKey)
+  }
+  router.push({ query: { ...route.query, tab: 'create-res', bookingCode: booking.booking_code } })
+}
+
 function getSubColValue(rcCode, dateStr, subCol) {
   const data = gridData.value[rcCode]?.[dateStr]
   if (!data) return 0
@@ -156,12 +262,12 @@ function getCellClass(subCol, val, isWeekend, clickable = false) {
   if (isWeekend) {
     base += 'bg-[#8cc4fb] hover:bg-[#b5defc] '
   }
-  if (val <= 0) {
-    base += 'text-red-500 font-light'
-  } else {
-    base += 'text-gray-900 font-light'
-  }
+  base += subCol === 'AV' && val <= 0 ? 'av-negative ' : 'availability-number '
   return base
+}
+
+function roomRowBackground(index) {
+  return index % 2 === 0 ? '#ffffff' : '#f8fafc'
 }
 
 function isDetailClickable(metric, isTotalRow = false) {
@@ -280,6 +386,7 @@ async function loadAvailability(start = null, end = null) {
       dates.value = data.dates
       roomClasses.value = data.room_classes
       gridData.value = data.grid
+      occBookings.value = data.occ_bookings || {}
       statistics.value = data.statistics
       totals.value = data.totals
 
@@ -482,7 +589,7 @@ function showExportToast() {
       <!-- Loading Overlay -->
       <LoadingOverlay :show="isLoading" />
 
-      <table class="text-slate-900 text-left border-collapse table-fixed w-max min-w-max">
+      <table class="availability-table text-left border-collapse table-fixed w-max min-w-max">
         <!-- Main Column Width Definitions (Narrowed to fit more days at once) -->
         <colgroup>
           <col class="w-[80px] sticky left-0 z-20" />
@@ -508,7 +615,7 @@ function showExportToast() {
               :key="idx" 
               :colspan="activeSubColumns.length"
               class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
-              :class="[day.isWeekend ? 'bg-[#8cc4fb] text-gray-900' : 'bg-slate-200 text-gray-900']"
+              :class="[idx > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
             >
               {{ day.dow }}<br/>{{ day.dateStr }}
             </th>
@@ -516,12 +623,12 @@ function showExportToast() {
 
           <!-- Second Row: Sub-Columns (AV, OOO, OOS...) -->
           <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-[10px]">
-            <template v-for="day in days" :key="day.fullDateStr">
+            <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <th 
-                v-for="subCol in activeSubColumns" 
+                v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
                 class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
-                :class="[day.isWeekend ? 'bg-[#8cc4fb] text-gray-900' : 'bg-slate-200 text-gray-900']"
+                :class="[subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
               >
                 {{ subCol }}
               </th>
@@ -532,34 +639,36 @@ function showExportToast() {
         <!-- Matrix Body -->
         <tbody>
           <!-- Room Classes Rows -->
-          <tr 
-            v-for="rc in roomClasses" 
-            :key="rc.code" 
-            class="border-b border-slate-200 h-9"
-          >
+          <template v-for="(rc, rcIndex) in roomClasses" :key="rc.code">
+          <tr class="border-b border-slate-200 h-8" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
             <!-- Room Type Identifiers (Sticky on Left) -->
-            <td class="p-2 border-r border-slate-200 text-left pl-3 font-semibold text-gray-900 sticky left-0 bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold sticky left-0 shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               <div class="flex items-center gap-1 justify-start">
-                <span class="text-gray-450 font-extrabold mr-0.5">•</span>
+                <button
+                  type="button"
+                  class="w-3.5 h-3.5 flex items-center justify-center border border-sky-300 bg-sky-100 text-sky-700 leading-none text-[11px] font-bold cursor-pointer"
+                  :title="isRoomClassExpanded(rc.code) ? 'Thu booking OCC' : 'Mở booking OCC'"
+                  @click.stop="toggleRoomClass(rc.code)"
+                >{{ isRoomClassExpanded(rc.code) ? '−' : '+' }}</button>
                 {{ rc.code }}
               </div>
             </td>
-            <td class="p-2 border-r border-slate-200 font-semibold text-gray-900 sticky left-[80px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]">
+            <td class="p-2 border-r border-slate-200 font-semibold sticky left-[80px] shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.name }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[250px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-center font-semibold sticky left-[250px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.total }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-light text-gray-900 sticky left-[300px] bg-white shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]">
+            <td class="p-2 border-r border-slate-200 text-center font-semibold sticky left-[300px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.max_rooms ?? 0 }}
             </td>
 
             <!-- Dynamic grid cells based on selected filters -->
-            <template v-for="day in days" :key="day.fullDateStr">
+            <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <td 
-                v-for="subCol in activeSubColumns" 
+                v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
-                :class="getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend, isDetailClickable(subCol))"
+                :class="[getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend, isDetailClickable(subCol)), subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '']"
                 :title="getCellTooltip(rc.code, day.fullDateStr, subCol)"
                 @click="openAvailabilityDetails(day.fullDateStr, subCol, rc)"
               >
@@ -568,25 +677,53 @@ function showExportToast() {
             </template>
           </tr>
 
+          <!-- OCC booking timeline rows -->
+          <template v-if="isRoomClassExpanded(rc.code)">
+            <tr
+              v-for="(lane, laneIndex) in (occBookingRows[rc.code] || [])"
+              :key="`${rc.code}-occ-lane-${laneIndex}`"
+              class="h-6 border-b border-slate-100 bg-white"
+            >
+              <td colspan="4" class="p-0 sticky left-0 z-10 bg-white border-r border-slate-200 shadow-[inset_-1px_0_0_#e2e8f0]">
+                <div class="h-6 mx-1"></div>
+              </td>
+              <template v-for="(cell, cellIndex) in bookingTimelineCells(lane)" :key="`${rc.code}-${laneIndex}-${cellIndex}`">
+                <td
+                  :colspan="cell.span * activeSubColumns.length"
+                  class="p-0 border-r border-slate-100"
+                  @dblclick="cell.visible && openBookingFromModal(cell.booking)"
+                >
+                  <div
+                    v-if="cell.visible"
+                    class="h-6 mx-px px-1 flex items-center truncate rounded-sm bg-sky-200 text-slate-800 text-[12px] cursor-pointer hover:bg-sky-300"
+                    :title="`${bookingLabel(cell.booking)}\nPhòng: ${(cell.booking.room_numbers || []).join(', ')}`"
+                  >{{ bookingLabel(cell.booking) }}</div>
+                </td>
+              </template>
+            </tr>
+          </template>
+          </template>
+
           <!-- TỔNG Row (Sum totals) -->
-          <tr class="bg-slate-200 border-b border-slate-300 h-9 text-gray-900 text-[12px]">
+          <tr class="bg-slate-200 border-b border-slate-300 h-8 text-[12px]">
             <td class="p-2 border-r border-slate-300 text-center sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">TỔNG</td>
             <td class="p-2 border-r border-slate-300 sticky left-[80px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1]"></td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
+            <td class="p-2 border-r border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
               {{ totals.grand_total }}
             </td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-light">
+            <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
               {{ totals.grand_max_rooms ?? 0 }}
             </td>
 
-            <template v-for="day in days" :key="day.fullDateStr">
+            <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <td 
-                v-for="subCol in activeSubColumns"
+                v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
                 class="p-2 border-r border-slate-300 text-center text-[12px] font-light text-gray-900"
                 :class="[
                   day.isWeekend ? 'bg-[#8cc4fb]' : '',
-                  getSumValue(subCol, day.fullDateStr) === 0 ? 'text-gray-400 font-light' : '',
+                  subCol === 'AV' && getSumValue(subCol, day.fullDateStr) <= 0 ? 'av-negative' : 'availability-number',
+                  subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '',
                   isDetailClickable(subCol, true) ? 'hover:bg-slate-300 cursor-pointer' : 'cursor-default'
                 ]"
                 :title="getStatTooltip(subCol, day.fullDateStr)"
@@ -986,14 +1123,33 @@ function showExportToast() {
     </div>
   </div>
 
-  <AvailabilityDetailModal
+          <AvailabilityDetailModal
     :show="showDetailModal"
     :loading="detailLoading"
     :error="detailError"
     :detail="detailData"
     :date="detailDate"
     :metric="detailMetric"
-    :room-class-label="detailRoomClassLabel"
-    @close="closeAvailabilityDetails"
-  />
+            :room-class-label="detailRoomClassLabel"
+            @close="closeAvailabilityDetails"
+            @open-booking="openBookingFromModal"
+          />
 </template>
+
+<style scoped>
+:deep(.availability-table td),
+:deep(.availability-table th) {
+  color: #000000d9 !important;
+  font-size: 13px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
+:deep(.availability-table tr) {
+  height: 28px;
+}
+
+:deep(.availability-table .av-negative) {
+  color: #ef4444 !important;
+}
+</style>

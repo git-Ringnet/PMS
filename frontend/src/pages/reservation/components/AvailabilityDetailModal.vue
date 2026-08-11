@@ -11,7 +11,7 @@ const props = defineProps({
   roomClassLabel: { type: String, default: '' },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'open-booking'])
 const position = ref({ x: 0, y: 0 })
 const dragging = ref(false)
 const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
@@ -67,6 +67,11 @@ function toggleBooking(key) {
   if (next.has(key)) next.delete(key)
   else next.add(key)
   collapsedBookingKeys.value = next
+}
+
+function openBooking(row) {
+  if (!row?.booking_code) return
+  emit('open-booking', row)
 }
 
 const formatDate = (value) => {
@@ -195,7 +200,7 @@ onUnmounted(() => endDrag())
                       </td>
                     </tr>
                     <template v-if="!isBookingCollapsed(group.key)">
-                    <tr v-for="(row, rowIndex) in group.rooms" :key="`${row.booking_id}-${row.room_number}-${row.arrival_date}`" class="hover:bg-sky-50">
+                    <tr v-for="(row, rowIndex) in group.rooms" :key="`${row.booking_id}-${row.room_number}-${row.arrival_date}`" class="hover:bg-sky-50" @dblclick="openBooking(row)">
                       <td class="p-1 pl-3 border-r border-b">{{ row.room_status }}</td>
                       <td class="p-1 border-r border-b">{{ row.company || '' }}</td>
                       <td class="p-1 border-r border-b whitespace-nowrap">{{ row.booking_code || row.booking_id }}</td>

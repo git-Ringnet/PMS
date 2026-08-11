@@ -170,6 +170,7 @@ class AvailabilityController extends Controller
         $bookedRooms     = []; // $bookedRooms[classCode][dateStr][] = room_number
         $inhouseRooms    = []; // $inhouseRooms[classCode][dateStr][] = room_number
         $allotmentRooms  = []; // $allotmentRooms[classCode][dateStr][] = room_number
+        $occBookings     = []; // $occBookings[classCode][] = booking room timeline rows
 
         foreach ($bookings as $br) {
             if (!$br->roomClass) continue;
@@ -211,6 +212,22 @@ class AvailabilityController extends Controller
 
             // Dayuse booking rule
             $isDayUse = ($arrDate === $depDate && $parentBooking && $parentBooking->is_day_use);
+
+            if ($isOccupied && !$isAllotment && !$isCancelled && !$isNoShow && $isAvailableStatus) {
+                $occBookings[$classCode][] = [
+                    'booking_id' => $parentBooking?->id,
+                    'booking_room_id' => $br->id,
+                    'booking_code' => $parentBooking?->booking_code,
+                    'booking_name' => $parentBooking?->booking_name,
+                    'company' => $parentBooking?->company?->name,
+                    'room_class_code' => $classCode,
+                    'room_number' => $br->room_number,
+                    'arrival_date' => $arrDate,
+                    'departure_date' => $depDate,
+                    'is_day_use' => $isDayUse,
+                    'room_count' => 1,
+                ];
+            }
 
             foreach ($dates as $dStr) {
                 $isMatchDate = $isDayUse ? ($dStr === $arrDate) : ($dStr >= $arrDate && $dStr < $depDate);
@@ -423,6 +440,7 @@ class AvailabilityController extends Controller
             'room_classes' => $roomClassesData,
             'dates'        => $dates,
             'grid'         => $grid,
+            'occ_bookings' => $occBookings,
             'statistics'   => $statistics,
             'totals'       => [
                 'grand_total'          => $grandTotalRooms,
