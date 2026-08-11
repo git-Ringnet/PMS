@@ -1357,7 +1357,7 @@ const groupedRooms = computed(() => {
   if (!tab || !tab.rooms) return []
   const groupsMap = {}
   filteredActiveRooms.value.forEach(room => {
-    const key = room.type || 'Khác'
+    const key = (isEditing.value ? room.initialType : null) || room.type || 'Khác'
     if (!groupsMap[key]) groupsMap[key] = []
     groupsMap[key].push(room)
   })
@@ -1371,7 +1371,9 @@ const groupedRooms = computed(() => {
       return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
     })
 
-    const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
+    const firstRoom = rooms[0]
+    const classId = firstRoom ? ((isEditing.value ? firstRoom.initialRoomClassId : null) || firstRoom.roomClassId) : null
+    const rc = roomClasses.value.find(c => c.id === classId || c.name === typeName || c.code === typeName)
     const order = rc ? (rc.orders !== undefined ? Number(rc.orders) : 0) : 9999
 
     return {
@@ -1404,7 +1406,7 @@ const groupedRoomsNested = computed(() => {
         typeGroupsMap: {}
       }
     }
-    const typeKey = room.type || 'Khác'
+    const typeKey = (isEditing.value ? room.initialType : null) || room.type || 'Khác'
     if (!statusGroupsMap[statusOrder].typeGroupsMap[typeKey]) {
       statusGroupsMap[statusOrder].typeGroupsMap[typeKey] = []
     }
@@ -1421,7 +1423,9 @@ const groupedRoomsNested = computed(() => {
         return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
       })
 
-      const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
+      const firstRoom = rooms[0]
+      const classId = firstRoom ? ((isEditing.value ? firstRoom.initialRoomClassId : null) || firstRoom.roomClassId) : null
+      const rc = roomClasses.value.find(c => c.id === classId || c.name === typeName || c.code === typeName)
       const order = rc ? (rc.orders !== undefined ? Number(rc.orders) : 0) : 9999
 
       return {
@@ -1685,6 +1689,8 @@ function bookingToTab(b) {
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
         isDoNotMove: br.is_do_not_move !== undefined ? !!br.is_do_not_move : false,
         type: rc.name || 'Unknown Class',
+        initialType: rc.name || 'Unknown Class',
+        initialRoomClassId: br.room_class_id,
         shape: (() => {
           const matched = roomClasses.value.find(c => c.id === br.room_class_id)
           return matched ? (matched.room_form_name || matched.code) : (rc.code || '')
@@ -1756,6 +1762,8 @@ function bookingToTab(b) {
         rooms.push({
           id: idCounter++,
           type: typeName,
+          initialType: typeName,
+          initialRoomClassId: alloc.roomClassId,
           shape: shapeName,
           roomNumber: roomDetail.roomNumber || '',
           checkIn: parseApiDate(alloc.arrivalDate || b.arrival_date),
@@ -2448,7 +2456,11 @@ async function openEditModal() {
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
     roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
-    rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
+    rooms: JSON.parse(JSON.stringify(tab.rooms || [])).map(r => ({
+      ...r,
+      initialType: r.initialType || r.type,
+      initialRoomClassId: r.initialRoomClassId || r.roomClassId
+    })),
     createdBy: tab.createdBy || '',
     createdAt: tab.createdAt || '',
   }
@@ -2660,7 +2672,10 @@ function updateAllocatedRooms(row) {
       modalForm.value.rooms.push({
         id: Date.now() + Math.random(),
         roomClassId: row.roomClassId,
+        initialRoomClassId: row.roomClassId,
         roomClassName: row.roomClassName,
+        type: row.roomClassName,
+        initialType: row.roomClassName,
         shape: row.roomClassCode,
         roomNumber: '',
         checkIn: row.arrivalDate || modalForm.value.checkIn,
@@ -3260,7 +3275,7 @@ async function handleSaveNewBooking() {
   isSavingModal.value = true
   try {
     const payload = {
-      booking_name:           modalForm.value.bookingName.toUpperCase(),
+      booking_name:           modalForm.value.bookingName,
       color:                  (isColorChanged.value || modalForm.value.color !== '#000000') ? modalForm.value.color : null,
       arrival_date:           modalForm.value.checkIn,
       departure_date:         modalForm.value.checkOut,
@@ -3518,7 +3533,7 @@ async function triggerAction(actionName) {
       if (tab && tab.dbId) {
         try {
           const payload = {
-            booking_name:           tab.bookingName.toUpperCase(),
+            booking_name:           tab.bookingName,
             arrival_date:           tab.checkIn,
             departure_date:         tab.checkOut,
             num_of_days:            tab.nights,
@@ -4645,10 +4660,10 @@ defineExpose({
             v-if="isEditing" 
             type="text" 
             v-model="activeTab.bookingName" 
-            class="border border-slate-300 rounded px-2 py-0.5 text-xs w-48 font-semibold text-slate-800 focus:outline-none focus:border-blue-500 uppercase" 
+            class="border border-slate-300 rounded px-2 py-0.5 text-xs w-48 font-semibold text-slate-800 focus:outline-none focus:border-blue-500" 
             @click.stop
           />
-          <b v-else class="uppercase font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
+          <b v-else class="font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
         </div>
         <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
         <div>
@@ -4776,7 +4791,6 @@ defineExpose({
                         class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
                         :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
                         @click="handleRowSelect(room.id)"
-                        :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
                       >
                         <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
                         <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -5343,7 +5357,6 @@ defineExpose({
                                 (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
                               ]"
                               @click="handleRowSelect(room.id)"
-                              :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
                             >
                               <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
                               <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -5938,7 +5951,7 @@ defineExpose({
       </div>
 
         <!-- ACTION DOCK (Redesigned Sidebar Dock) -->
-        <aside class="dock shrink-0" id="dock">
+        <aside class="dock shrink-0" id="dock" :class="{ 'opacity-50 pointer-events-none': isEditing }">
           <div class="dock-head"><span class="dot"></span>Chức năng</div>
 
           <div class="dock-group">
@@ -6195,7 +6208,7 @@ defineExpose({
                   type="text" 
                   v-model="modalForm.bookingName" 
                   placeholder="Nhập tên đăng ký..."
-                  class="font-bold text-sm text-black border border-blue-200 rounded-xl px-3 h-[32px] flex items-center bg-blue-50/70 shadow-sm w-full outline-none focus:border-blue-400 focus:bg-blue-50/90 uppercase"
+                  class="font-bold text-sm text-black border border-blue-200 rounded-xl px-3 h-[32px] flex items-center bg-blue-50/70 shadow-sm w-full outline-none focus:border-blue-400 focus:bg-blue-50/90"
                 />
             </div>
             <div class="flex flex-col">
