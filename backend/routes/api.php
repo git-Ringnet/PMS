@@ -374,6 +374,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+    Route::get('/availability/details', [\App\Http\Controllers\Api\AvailabilityController::class, 'details']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 });
 
