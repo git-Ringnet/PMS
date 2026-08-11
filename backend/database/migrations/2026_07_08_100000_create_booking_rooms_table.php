@@ -31,7 +31,7 @@ return new class extends Migration
             // Loại phòng hiện tại (có thể thay đổi khi nâng/hạ hạng)
             $table->foreignId('room_class_id')->constrained('room_classes')->restrictOnDelete();
             // Dạng giường của phòng (Double, Twin, Triple, v.v.)
-            $table->string('RoomKind', 50)->nullable();
+            $table->unsignedInteger('RoomKind')->nullable();
             // Loại phòng khởi tạo ban đầu — giữ nguyên kể cả khi nâng hạng (LP Khởi tạo / Pack4)
             $table->string('original_room_class_id', 50)->nullable();
 

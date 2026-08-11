@@ -1039,4 +1039,36 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertEquals(1, $bookingRoom->extra_bed_qty);
         $this->assertEquals(300000, $bookingRoom->extra_bed_rate);
     }
+
+    /**
+     * TC-15: RoomKind is saved as RoomForm ID instead of name.
+     */
+    public function test_booking_room_stores_room_kind_as_integer(): void
+    {
+        // 1. Create StandardRate for the room class
+        \App\Models\StandardRate::create([
+            'room_class_id' => $this->roomClass->id,
+            'room_form_id' => $this->roomForm->id,
+            'rate' => 100000,
+        ]);
+
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+        ]);
+
+        $bRoom = BookingRoom::create([
+            'id' => 'G0000001',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // Assert that RoomKind is stored as an integer/ID (equal to $this->roomForm->id)
+        $bRoom->refresh();
+        $this->assertEquals($this->roomForm->id, (int)$bRoom->RoomKind);
+    }
 }

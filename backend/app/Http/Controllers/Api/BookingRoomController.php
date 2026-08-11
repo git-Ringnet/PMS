@@ -1609,7 +1609,7 @@ class BookingRoomController extends Controller
                     unset($attributes['id'], $attributes['created_at'], $attributes['updated_at'], $attributes['deleted_at']);
 
                     $attributes['room_class_id']       = $physicalRoom->room_class_id;
-                    $attributes['RoomKind']            = $physicalRoom->roomForm?->name ?? $physicalRoom->roomClass?->name ?? $bookingRoom->RoomKind;
+                    $attributes['RoomKind']            = $physicalRoom->room_form_id ?? $bookingRoom->RoomKind;
                     $attributes['room_number']         = $targetRoomNumber;
                     $attributes['status']              = BookingRoom::STATUS_CHECKED_IN;
                     $attributes['arrival_date']        = $sysDateStr;
