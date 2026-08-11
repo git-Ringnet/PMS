@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
-import { fetchAvailabilityGrid, fetchRegistrationStatuses } from '@/services/availability-service'
+import { fetchAvailabilityGrid, fetchAvailabilityDetails, fetchRegistrationStatuses } from '@/services/availability-service'
 import { fetchSystemDate } from '@/services/booking-service'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import DateRangePicker from '@/components/DateRangePicker.vue'
+import AvailabilityDetailModal from './components/AvailabilityDetailModal.vue'
 
 const uiStore = useUiStore()
 
@@ -18,6 +19,14 @@ const roomClasses = ref([])
 const gridData = ref({})
 const statistics = ref({})
 const totals = ref({ grand_total: 0, grand_max_rooms: 0, grand_max_extra_beds: 0 })
+const showDetailModal = ref(false)
+const detailLoading = ref(false)
+const detailError = ref('')
+const detailData = ref(null)
+const detailDate = ref('')
+const detailMetric = ref('')
+const detailRoomClass = ref(null)
+const detailRoomClassLabel = ref('')
 
 // Dropdown statuses
 const registrationStatuses = ref([])
@@ -141,8 +150,9 @@ function getSumValue(subCol, dateStr) {
   return 0
 }
 
-function getCellClass(subCol, val, isWeekend) {
-  let base = 'p-1.5 border-r border-slate-200 text-center text-[12px] hover:bg-slate-200 transition-colors cursor-pointer '
+function getCellClass(subCol, val, isWeekend, clickable = false) {
+  let base = 'p-1.5 border-r border-slate-200 text-center text-[12px] transition-colors '
+  base += clickable ? 'hover:bg-slate-200 cursor-pointer ' : 'cursor-default '
   if (isWeekend) {
     base += 'bg-[#8cc4fb] hover:bg-[#b5defc] '
   }
@@ -152,6 +162,43 @@ function getCellClass(subCol, val, isWeekend) {
     base += 'text-gray-900 font-light'
   }
   return base
+}
+
+function isDetailClickable(metric, isTotalRow = false) {
+  return isTotalRow
+    ? ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB'].includes(metric)
+    : ['AV', 'OCC', 'ALM', 'OOO', 'OOS'].includes(metric)
+}
+
+async function openAvailabilityDetails(date, metric, roomClass = null) {
+  if (!isDetailClickable(metric, !roomClass)) return
+
+  showDetailModal.value = true
+  detailLoading.value = true
+  detailError.value = ''
+  detailData.value = null
+  detailDate.value = date
+  detailMetric.value = metric
+  detailRoomClass.value = roomClass?.id || null
+  detailRoomClassLabel.value = roomClass ? `${roomClass.code} — ${roomClass.name}` : ''
+
+  try {
+    const response = await fetchAvailabilityDetails({
+      date,
+      metric,
+      roomClassId: roomClass?.id || null,
+    })
+    detailData.value = response.data
+  } catch (error) {
+    console.error('Error fetching availability details:', error)
+    detailError.value = 'Không thể tải chi tiết thống kê phòng.'
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function closeAvailabilityDetails() {
+  showDetailModal.value = false
 }
 
 function getCellTooltip(rcCode, dateStr, subCol) {
@@ -512,8 +559,9 @@ function showExportToast() {
               <td 
                 v-for="subCol in activeSubColumns" 
                 :key="subCol"
-                :class="getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend)"
+                :class="getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend, isDetailClickable(subCol))"
                 :title="getCellTooltip(rc.code, day.fullDateStr, subCol)"
+                @click="openAvailabilityDetails(day.fullDateStr, subCol, rc)"
               >
                 {{ getSubColValue(rc.code, day.fullDateStr, subCol) }}
               </td>
@@ -538,9 +586,11 @@ function showExportToast() {
                 class="p-2 border-r border-slate-300 text-center text-[12px] font-light text-gray-900"
                 :class="[
                   day.isWeekend ? 'bg-[#8cc4fb]' : '',
-                  getSumValue(subCol, day.fullDateStr) === 0 ? 'text-gray-400 font-light' : ''
+                  getSumValue(subCol, day.fullDateStr) === 0 ? 'text-gray-400 font-light' : '',
+                  isDetailClickable(subCol, true) ? 'hover:bg-slate-300 cursor-pointer' : 'cursor-default'
                 ]"
                 :title="getStatTooltip(subCol, day.fullDateStr)"
+                @click="openAvailabilityDetails(day.fullDateStr, subCol)"
               >
                 {{ getSumValue(subCol, day.fullDateStr) }}
               </td>
@@ -935,4 +985,15 @@ function showExportToast() {
       </table>
     </div>
   </div>
+
+  <AvailabilityDetailModal
+    :show="showDetailModal"
+    :loading="detailLoading"
+    :error="detailError"
+    :detail="detailData"
+    :date="detailDate"
+    :metric="detailMetric"
+    :room-class-label="detailRoomClassLabel"
+    @close="closeAvailabilityDetails"
+  />
 </template>
