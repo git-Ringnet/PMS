@@ -13,7 +13,6 @@ return new class extends Migration
             $table->id();
             $table->string('code', 30)->unique();
             $table->string('name', 100);
-            $table->string('group_key', 30)->unique();
             $table->string('service_code', 30)->nullable();
             $table->boolean('is_active')->default(true);
             $table->unsignedInteger('order_index')->default(0);
@@ -21,11 +20,48 @@ return new class extends Migration
         });
 
         DB::table('housekeeping_outlets')->insert([
-            ['code' => 'MB', 'name' => 'Minibar', 'group_key' => 'minibar', 'service_code' => 'MB', 'is_active' => true, 'order_index' => 1, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'LA', 'name' => 'Giặt ủi', 'group_key' => 'giatui', 'service_code' => 'LA', 'is_active' => true, 'order_index' => 2, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'BR', 'name' => 'Hàng đền bù', 'group_key' => 'dengbu', 'service_code' => 'BR', 'is_active' => true, 'order_index' => 3, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'AM', 'name' => 'Amenity', 'group_key' => 'amenity', 'service_code' => 'AM', 'is_active' => true, 'order_index' => 4, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'MB', 'name' => 'Minibar', 'service_code' => 'MB', 'is_active' => true, 'order_index' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'LA', 'name' => 'Giặt ủi', 'service_code' => 'LA', 'is_active' => true, 'order_index' => 2, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'BR', 'name' => 'Hàng đền bù', 'service_code' => 'BR', 'is_active' => true, 'order_index' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'AM', 'name' => 'Amenity', 'service_code' => 'AM', 'is_active' => true, 'order_index' => 4, 'created_at' => now(), 'updated_at' => now()],
         ]);
+
+        $legacyOutletMap = [
+            'minibar' => 'MB',
+            'giatui' => 'LA',
+            'dengbu' => 'BR',
+            'amenity' => 'AM',
+        ];
+
+        foreach ($legacyOutletMap as $legacyValue => $outletCode) {
+            DB::table('product_categories')
+                ->whereRaw('LOWER(outlet) = ?', [$legacyValue])
+                ->update(['outlet' => $outletCode]);
+        }
+
+        DB::table('housekeeping_outlets')->get(['code', 'name'])->each(function ($outlet) {
+            DB::table('product_categories')
+                ->where('outlet', $outlet->name)
+                ->update(['outlet' => $outlet->code]);
+        });
+
+        $outletValues = DB::table('housekeeping_outlets')
+            ->get(['code', 'name'])
+            ->flatMap(fn ($outlet) => [$outlet->code, $outlet->name])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (Schema::hasColumn('products', 'open_key') && $outletValues) {
+            DB::table('products')
+                ->whereIn('product_category_id', function ($query) use ($outletValues) {
+                    $query->select('id')
+                        ->from('product_categories')
+                        ->whereIn('outlet', $outletValues);
+                })
+                ->update(['open_key' => true]);
+        }
     }
 
     public function down(): void

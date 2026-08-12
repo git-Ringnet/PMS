@@ -1031,7 +1031,7 @@ class BookingRoomServiceController extends Controller
         $groupMeta = HousekeepingOutlet::where('is_active', true)
             ->orderBy('order_index')
             ->get()
-            ->keyBy('group_key')
+            ->keyBy(fn ($outlet) => strtolower($outlet->code))
             ->map(fn ($outlet) => [
                 'label' => $outlet->name,
                 'service' => $outlet->service_code ?: $outlet->code,

@@ -267,6 +267,11 @@
                   <input type="checkbox" v-model="newProduct.isActive" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
                   <span class="font-bold text-slate-700 text-[12px]">Đang sử dụng (Active)</span>
                 </label>
+
+                <label class="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" v-model="newProduct.openKey" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
+                  <span class="font-bold text-slate-700 text-[12px]">Mở bán (OpenKey)</span>
+                </label>
                 
                 <label class="flex items-center gap-2.5 cursor-pointer">
                   <input type="checkbox" v-model="newProduct.flexiblePrice" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
@@ -577,18 +582,17 @@ const fetchGroupsAndProducts = async () => {
     ])
 
     const housekeepingOutlets = (resOutlets.data || []).filter(outlet => outlet.is_active)
-    tabs.value = housekeepingOutlets.map(outlet => outlet.name)
+    tabs.value = housekeepingOutlets.map(outlet => outlet.code)
     if (!tabs.value.includes(activeTab.value)) activeTab.value = tabs.value[0] || ''
     const categories = Array.isArray(resCategories.data) ? resCategories.data : (resCategories.data?.data || [])
     const products = Array.isArray(resProducts.data) ? resProducts.data : (resProducts.data?.data || [])
     const resolveOutletName = (value) => {
       const normalized = String(value || '').toLowerCase()
-      const outlet = housekeepingOutlets.find(item =>
+    const outlet = housekeepingOutlets.find(item =>
         String(item.code).toLowerCase() === normalized ||
-        String(item.name).toLowerCase() === normalized ||
-        String(item.group_key).toLowerCase() === normalized
-      )
-      return outlet?.name || value
+        String(item.name).toLowerCase() === normalized
+    )
+      return outlet?.code || value
     }
     
     // Map data
@@ -686,6 +690,7 @@ const newProduct = ref({
   currency: '',
   groupId: null,
   isActive: true,
+  openKey: true,
   trackStock: false,
   flexiblePrice: false,
   inventory_id: '',
@@ -739,6 +744,7 @@ const openCreateProduct = (groupId) => {
     currency: units.value.length > 0 ? units.value[0].code : '',
     groupId: groupId,
     isActive: true,
+    openKey: true,
     trackStock: false,
     flexiblePrice: false,
     inventory_id: inventories.value.length > 0 ? inventories.value[0].id : '',
@@ -761,6 +767,7 @@ const editProduct = (product) => {
     currency: product.currency || (units.value.length > 0 ? units.value[0].code : ''),
     groupId: product.product_category_id,
     isActive: product.isActive,
+    openKey: Number(product.open_key) === 1,
     trackStock: product.trackStock,
     flexiblePrice: product.flexiblePrice,
     inventory_id: product.inventory_id || '',
@@ -784,6 +791,7 @@ const saveProduct = async () => {
   formData.append('price', newProduct.value.price)
   formData.append('currency', newProduct.value.currency || '')
   formData.append('is_active', newProduct.value.isActive ? 1 : 0)
+  formData.append('open_key', newProduct.value.openKey ? 1 : 0)
   formData.append('track_stock', newProduct.value.trackStock ? 1 : 0)
   formData.append('flexible_price', newProduct.value.flexiblePrice ? 1 : 0)
   formData.append('inventory_id', newProduct.value.trackStock ? newProduct.value.inventory_id : '')
