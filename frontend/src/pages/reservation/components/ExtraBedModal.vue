@@ -1,12 +1,18 @@
 <template>
   <div
     v-if="show"
-    class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+    class="fixed inset-0 bg-black/20 z-[99999] flex items-center justify-center p-4 animate-in"
     @click.self="close"
   >
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-[640px] overflow-hidden border border-slate-300 flex flex-col max-h-[90vh]">
+    <div 
+      class="bg-white rounded-xl shadow-2xl w-full max-w-[640px] overflow-hidden border border-slate-300 flex flex-col max-h-[90vh]"
+      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
+    >
       <!-- MODAL HEADER -->
-      <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none">
+      <div 
+        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        @mousedown="startDragModal"
+      >
         <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
           <i class="fa-solid fa-bed text-sky-400"></i>
           <span>Chi tiết thêm giường - PHÒNG {{ room?.roomNumber || room?.type || room?.shape || 'CHƯA GÁN' }}</span>
@@ -100,85 +106,92 @@
               </tr>
 
               <!-- CHI TIẾT GIÁ TỪNG ĐÊM -->
-              <tr
-                v-for="(night, idx) in dailyRates"
-                :key="idx"
-                class="border-b border-slate-100 hover:bg-slate-50/50 h-12 transition-colors"
-                :class="night.isPast ? 'bg-slate-50/80 opacity-60' : 'bg-white'"
-              >
-                <!-- NGÀY -->
-                <td class="p-2.5 text-left pl-4 font-semibold text-slate-700">
-                  <span>{{ night.displayDate }}</span>
-                  <span v-if="night.isPast" class="ml-1.5 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-bold">
-                    Quá khứ
-                  </span>
-                </td>
-
-                <!-- SỐ LƯỢNG NGHỈ TỪNG ĐÊM -->
-                <td class="p-2.5 text-center">
-                  <div class="relative inline-flex items-center justify-center">
-                    <input
-                      type="number"
-                      v-model.number="night.quantity"
-                      @input="updateNightTotal(night)"
-                      :disabled="night.isPast"
-                      min="0"
-                      max="10"
-                      class="w-20 h-8 text-center font-bold border rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 pr-5 text-xs shadow-2xs"
-                      :class="night.isPast ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800'"
-                    />
-                    <div v-if="!night.isPast" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
-                      <button type="button" @click="night.quantity = Math.min(10, (night.quantity || 0) + 1); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
-                        <i class="fa-solid fa-chevron-up"></i>
-                      </button>
-                      <button type="button" @click="night.quantity = Math.max(0, (night.quantity || 0) - 1); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
-                        <i class="fa-solid fa-chevron-down"></i>
-                      </button>
-                    </div>
-                  </div>
-                </td>
-
-                <!-- THÀNH TIỀN TỪNG ĐÊM -->
-                <td class="p-2.5 text-center">
-                  <div class="relative inline-flex items-center justify-center w-full">
-                    <input
-                      type="text"
-                      :value="formatCurrencyInput(night.rate)"
-                      @input="e => { night.rate = cleanCurrencyValue(e.target.value); updateNightTotal(night); }"
-                      :disabled="night.isPast"
-                      class="w-full h-8 text-right font-bold border rounded-md px-2 pr-5 focus:outline-none focus:ring-1 focus:ring-sky-500 text-xs shadow-2xs"
-                      :class="night.isPast ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800'"
-                    />
-                    <div v-if="!night.isPast" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
-                      <button type="button" @click="night.rate = (night.rate || 0) + 50000; updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
-                        <i class="fa-solid fa-chevron-up"></i>
-                      </button>
-                      <button type="button" @click="night.rate = Math.max(0, (night.rate || 0) - 50000); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
-                        <i class="fa-solid fa-chevron-down"></i>
-                      </button>
-                    </div>
-                  </div>
-                </td>
-
-                <!-- TỔNG TIỀN TỪNG ĐÊM -->
-                <td class="p-2.5 text-right font-bold pr-4" :class="night.isPast ? 'text-slate-400' : 'text-slate-800'">
-                  {{ formatCurrencyInput(night.total) }}
-                </td>
-
-                <!-- FIT/GIT TOGGLE SWITCH TỪNG ĐÊM -->
-                <td class="p-2.5 text-center">
-                  <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="night.isPast ? 'opacity-40 pointer-events-none' : ''">
-                    <input
-                      type="checkbox"
-                      v-model="night.isRoom"
-                      :disabled="night.isPast"
-                      class="sr-only peer"
-                    />
-                    <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                    <span class="text-[10px] font-extrabold uppercase min-w-[42px] text-left" :class="night.isRoom ? 'text-sky-600' : 'text-slate-500'">
-                      {{ night.isRoom ? 'Phòng' : 'Master' }}
+              <template v-if="showDailyDetails">
+                <tr
+                  v-for="(night, idx) in dailyRates"
+                  :key="idx"
+                  class="border-b border-slate-100 hover:bg-slate-50/50 h-12 transition-colors"
+                  :class="night.isPast ? 'bg-slate-50/80 opacity-60' : 'bg-white'"
+                >
+                  <!-- NGÀY -->
+                  <td class="p-2.5 text-left pl-4 font-semibold text-slate-700">
+                    <span>{{ night.displayDate }}</span>
+                    <span v-if="night.isPast" class="ml-1.5 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-bold">
+                      Quá khứ
                     </span>
-                  </label>
+                  </td>
+
+                  <!-- SỐ LƯỢNG NGHỈ TỪNG ĐÊM -->
+                  <td class="p-2.5 text-center">
+                    <div class="relative inline-flex items-center justify-center">
+                      <input
+                        type="number"
+                        v-model.number="night.quantity"
+                        @input="updateNightTotal(night)"
+                        :disabled="night.isPast"
+                        min="0"
+                        max="10"
+                        class="w-20 h-8 text-center font-bold border rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 pr-5 text-xs shadow-2xs"
+                        :class="night.isPast ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800'"
+                      />
+                      <div v-if="!night.isPast" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
+                        <button type="button" @click="night.quantity = Math.min(10, (night.quantity || 0) + 1); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                          <i class="fa-solid fa-chevron-up"></i>
+                        </button>
+                        <button type="button" @click="night.quantity = Math.max(0, (night.quantity || 0) - 1); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                          <i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- THÀNH TIỀN TỪNG ĐÊM -->
+                  <td class="p-2.5 text-center">
+                    <div class="relative inline-flex items-center justify-center w-full">
+                      <input
+                        type="text"
+                        :value="formatCurrencyInput(night.rate)"
+                        @input="e => { night.rate = cleanCurrencyValue(e.target.value); updateNightTotal(night); }"
+                        :disabled="night.isPast"
+                        class="w-full h-8 text-right font-bold border rounded-md px-2 pr-5 focus:outline-none focus:ring-1 focus:ring-sky-500 text-xs shadow-2xs"
+                        :class="night.isPast ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800'"
+                      />
+                      <div v-if="!night.isPast" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
+                        <button type="button" @click="night.rate = (night.rate || 0) + 50000; updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                          <i class="fa-solid fa-chevron-up"></i>
+                        </button>
+                        <button type="button" @click="night.rate = Math.max(0, (night.rate || 0) - 50000); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                          <i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- TỔNG TIỀN TỪNG ĐÊM -->
+                  <td class="p-2.5 text-right font-bold pr-4" :class="night.isPast ? 'text-slate-400' : 'text-slate-800'">
+                    {{ formatCurrencyInput(night.total) }}
+                  </td>
+
+                  <!-- FIT/GIT TOGGLE SWITCH TỪNG ĐÊM -->
+                  <td class="p-2.5 text-center">
+                    <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="night.isPast ? 'opacity-40 pointer-events-none' : ''">
+                      <input
+                        type="checkbox"
+                        v-model="night.isRoom"
+                        :disabled="night.isPast"
+                        class="sr-only peer"
+                      />
+                      <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                      <span class="text-[10px] font-extrabold uppercase min-w-[42px] text-left" :class="night.isRoom ? 'text-sky-600' : 'text-slate-500'">
+                        {{ night.isRoom ? 'Phòng' : 'Master' }}
+                      </span>
+                    </label>
+                  </td>
+                </tr>
+              </template>
+              <tr v-else>
+                <td colspan="5" class="p-6 text-center text-slate-400 font-medium italic">
+                  Phòng chưa thêm Extra Bed. Tăng số lượng ở dòng Total để bắt đầu thêm.
                 </td>
               </tr>
             </tbody>
@@ -226,12 +239,55 @@ const props = defineProps({
 
 const emit = defineEmits(['update:show', 'saved'])
 
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
 const totalQuantity = ref(0)
 const totalRate = ref(0)
 const totalIsRoom = ref(false) // false = MASTER (FIT), true = PHÒNG (GIT)
 const dailyRates = ref([])
 
 const hasPastNights = computed(() => dailyRates.value.some(d => d.isPast))
+
+const showDailyDetails = computed(() => {
+  return dailyRates.value.some(d => (Number(d.quantity) || 0) > 0) || (Number(totalQuantity.value) || 0) > 0
+})
 
 const computedTotalSum = computed(() => {
   if (!dailyRates.value || dailyRates.value.length === 0) {
@@ -289,6 +345,7 @@ function buildStayDates(checkInStr, checkOutStr) {
 
 watch(() => props.show, (newVal) => {
   if (newVal && props.room) {
+    modalPos.value = { x: 0, y: 0 }
     const checkIn = props.room.checkIn || props.room.arrivalDate || props.room.arrival_date
     const checkOut = props.room.checkOut || props.room.departureDate || props.room.departure_date
     const stayDates = buildStayDates(checkIn, checkOut)
@@ -350,24 +407,33 @@ watch(() => props.show, (newVal) => {
       }
     })
 
-    // Compute total row values from first active night or defaults
-    const activeNight = dailyRates.value.find(d => !d.isPast && d.quantity > 0)
-    const firstValidNight = dailyRates.value.find(d => !d.isPast)
-    const refNight = activeNight || firstValidNight
+    const hasActiveEB = dailyRates.value.some(d => Number(d.quantity) > 0)
+    if (hasActiveEB) {
+      const activeNight = dailyRates.value.find(d => !d.isPast && d.quantity > 0)
+      const firstValidNight = dailyRates.value.find(d => !d.isPast)
+      const refNight = activeNight || firstValidNight
 
-    totalQuantity.value = refNight ? refNight.quantity : defaultQty
-    totalRate.value = refNight ? refNight.rate : defaultRate
-    totalIsRoom.value = refNight ? refNight.isRoom : false
+      totalQuantity.value = refNight ? refNight.quantity : defaultQty
+      totalRate.value = refNight ? refNight.rate : defaultRate
+      totalIsRoom.value = refNight ? refNight.isRoom : false
+    } else {
+      totalQuantity.value = 0
+      totalRate.value = 0
+      totalIsRoom.value = false
+    }
   }
 })
 
 function handleTotalQuantityChange() {
   const qty = Number(totalQuantity.value) || 0
+  if (qty > 0 && (Number(totalRate.value) || 0) === 0) {
+    totalRate.value = Number(props.room?.extraBedPrice) || 300000
+  }
   dailyRates.value.forEach(d => {
     if (!d.isPast) {
       d.quantity = qty
-      if (qty > 0 && d.rate === 0) {
-        d.rate = totalRate.value || 300000
+      if (qty > 0 && (Number(d.rate) || 0) === 0) {
+        d.rate = totalRate.value
       }
       d.total = d.quantity * d.rate
     }

@@ -1,13 +1,17 @@
 <template>
   <div 
     v-if="show" 
-    class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+    class="fixed inset-0 bg-black/20 z-[99999] flex items-center justify-center p-4 animate-in"
   >
     <div 
       class="bg-white rounded-xl shadow-2xl w-full max-w-[600px] overflow-hidden border border-slate-300 flex flex-col max-h-[90vh]"
+      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
     >
       <!-- HEADER -->
-      <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none">
+      <div 
+        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        @mousedown="startDragModal"
+      >
         <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
           <i class="fa-solid fa-arrow-up text-sky-400"></i>
           <span>Nâng hạng phòng</span>
@@ -149,6 +153,45 @@ const emit = defineEmits(['update:show', 'upgraded'])
 
 const uiStore = useUiStore()
 
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
 const upgradeTargetClassId = ref(null)
 const upgradeTargetFormId = ref(null)
 const upgradeTargetRateCode = ref('')
@@ -261,6 +304,7 @@ function handleToggleChangePrice() {
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
+    modalPos.value = { x: 0, y: 0 }
     const targetRoom = props.targetRooms?.[0]
     if (targetRoom) {
       const matchedClass = props.roomClasses?.find(c => 

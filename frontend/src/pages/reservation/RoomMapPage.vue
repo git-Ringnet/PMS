@@ -281,6 +281,9 @@ const checkinStats = computed(() => {
 })
 
 const checkoutStats = computed(() => {
+  if (roomStore.stats && roomStore.stats.departures_total !== undefined) {
+    return `${roomStore.stats.departures_checked_out}/${roomStore.stats.departures_total}`
+  }
   const count = roomStore.rooms.filter(r => r.booking_status === 'checkout').length
   return `${count}/31`
 })

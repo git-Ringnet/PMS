@@ -86,7 +86,7 @@ class BookingController extends Controller
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.guests.guest',
-            'bookingRooms.children',
+            'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.specialRequests.specialRequest',
         ];
@@ -175,8 +175,8 @@ class BookingController extends Controller
         $validated = $request->validate([
             'booking_name'             => 'required|string|max:255',
             'arrival_date'             => 'required|date',
-            'departure_date'           => 'required|date|after:arrival_date',
-            'num_of_days'              => 'required|integer|min:1',
+            'departure_date'           => 'required|date|after_or_equal:arrival_date',
+            'num_of_days'              => 'required|integer|min:0',
             'confirm_date'             => 'nullable|date',
             'expired_date'             => 'nullable|date',
             'arrival_flight'           => 'nullable|string|max:50',
@@ -323,13 +323,45 @@ class BookingController extends Controller
                         for ($i = 0; $i < $qty; $i++) {
                             $detail = $details[$i] ?? [];
                             
+                            $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';
+
+                            $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? null;
+                            $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? null;
+                            $hasExplicitRoomDates = !empty($roomArrival) && !empty($roomDeparture);
+
+                            $parseDate = function ($date) {
+                                if (!$date) return null;
+                                $date = trim($date);
+                                if (strpos($date, '/') !== false) {
+                                    $parts = explode('/', $date);
+                                    if (count($parts) === 3) {
+                                        if (strlen($parts[2]) === 4) {
+                                            return "{$parts[2]}-{$parts[1]}-{$parts[0]}";
+                                        }
+                                    }
+                                }
+                                return Carbon::parse($date)->toDateString();
+                            };
+
+                            // Preserve explicitly selected room periods even when legacy synchronization is enabled.
+                            if ($syncRoomDates && !$hasExplicitRoomDates) {
+                                $roomArrival = $validated['arrival_date'];
+                                $roomDeparture = $validated['departure_date'];
+                            } else {
+                                $roomArrival = $roomArrival ?? $validated['arrival_date'];
+                                $roomDeparture = $roomDeparture ?? $validated['departure_date'];
+                            }
+
+                            $roomArrival = $parseDate($roomArrival);
+                            $roomDeparture = $parseDate($roomDeparture);
+
                             $bRoom = \App\Models\BookingRoom::create([
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
                                 'original_room_class_id' => $alloc['roomClassId'] ?? null,
-                                'arrival_date' => $alloc['arrivalDate'] ?? $alloc['arrival_date'] ?? $validated['arrival_date'],
-                                'departure_date' => $alloc['departureDate'] ?? $alloc['departure_date'] ?? $validated['departure_date'],
+                                'arrival_date' => $roomArrival,
+                                'departure_date' => $roomDeparture,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $alloc['price'] ?? 0,
@@ -551,8 +583,8 @@ class BookingController extends Controller
             $validated = $request->validate([
                 'booking_name'             => 'sometimes|required|string|max:255',
                 'arrival_date'             => 'sometimes|required|date',
-                'departure_date'           => 'sometimes|required|date|after:arrival_date',
-                'num_of_days'              => 'sometimes|required|integer|min:1',
+                'departure_date'           => 'sometimes|required|date|after_or_equal:arrival_date',
+                'num_of_days'              => 'sometimes|required|integer|min:0',
                 'confirm_date'             => 'nullable|date',
                 'expired_date'             => 'nullable|date',
                 'arrival_flight'           => 'nullable|string|max:50',
@@ -622,9 +654,84 @@ class BookingController extends Controller
             ], 422);
         }
 
+        // Chặn nếu cập nhật ngày booking làm ngày phòng nằm ngoài giai đoạn đăng ký mới
+        $newArrival = $validated['arrival_date'] ?? Carbon::parse($booking->arrival_date)->toDateString();
+        $newDeparture = $validated['departure_date'] ?? Carbon::parse($booking->departure_date)->toDateString();
+        $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';
+
+        $rooms = $booking->bookingRooms()->where('status', \App\Models\BookingRoom::STATUS_BOOKED)->get();
+        foreach ($rooms as $room) {
+            $roomArrival = Carbon::parse($room->arrival_date)->toDateString();
+            $roomDeparture = Carbon::parse($room->departure_date)->toDateString();
+
+            $isBooked = $room->status === \App\Models\BookingRoom::STATUS_BOOKED;
+            if ($isBooked && $syncRoomDates) {
+                continue;
+            }
+
+            if ($roomArrival < $newArrival || $roomDeparture > $newDeparture) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ngày của phòng phải nằm trong giai đoạn của đăng ký ({$newArrival} đến {$newDeparture}). Không thể cập nhật thông tin.",
+                ], 422);
+            }
+        }
+
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request) {
+                $wasMasterRoomRate = (bool) $booking->is_master_room_rate;
+                $willMasterRoomRate = array_key_exists('is_master_room_rate', $validated)
+                    ? (bool) $validated['is_master_room_rate']
+                    : $wasMasterRoomRate;
+                
+                // Đồng bộ ngày của phòng theo cấu hình SyncRoomDateByBookingDate
+                $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';
+                if ($syncRoomDates) {
+                    $arrivalChanged = isset($validated['arrival_date']) && $validated['arrival_date'] !== Carbon::parse($booking->getOriginal('arrival_date'))->toDateString();
+                    $departureChanged = isset($validated['departure_date']) && $validated['departure_date'] !== Carbon::parse($booking->getOriginal('departure_date'))->toDateString();
+
+                    if ($arrivalChanged || $departureChanged) {
+                        $roomsToSync = $booking->bookingRooms()->where('status', \App\Models\BookingRoom::STATUS_BOOKED)->get();
+                        foreach ($roomsToSync as $roomToSync) {
+                            $syncData = [];
+                            if ($arrivalChanged) {
+                                $syncData['arrival_date'] = $validated['arrival_date'];
+                            }
+                            if ($departureChanged) {
+                                $syncData['departure_date'] = $validated['departure_date'];
+                            }
+                            $roomToSync->update($syncData);
+                        }
+                    }
+                }
+
                 $booking->update($validated);
+
+                // Chỉ khi bật gom tiền phòng mới chuyển các bill RM/RMS đã post về Master.
+                // Tắt cờ không chuyển ngược các bill cũ đang thuộc Master về phòng.
+                if (!$wasMasterRoomRate && $willMasterRoomRate) {
+                    $roomRateBillIds = \App\Models\ServiceBill::where('RegisterId1', $booking->id)
+                        ->whereIn('ServiceId', ['RM', 'RMS'])
+                        ->where('Edit', 0)
+                        ->where(function ($q) {
+                            $q->whereNotNull('RentalRoomId2')->where('RentalRoomId2', '!=', '')->where('RentalRoomId2', '!=', '0')
+                              ->orWhere(function ($q2) {
+                                  $q2->whereNotNull('CustomerId2')->where('CustomerId2', '!=', '')->where('CustomerId2', '!=', '0');
+                              });
+                        })
+                        ->pluck('Ma');
+
+                    if ($roomRateBillIds->isNotEmpty()) {
+                        \App\Models\ServiceBill::whereIn('Ma', $roomRateBillIds)->update([
+                            'RentalRoomId2' => null,
+                            'CustomerId2' => null,
+                            'CompanyId2' => $booking->company_id,
+                        ]);
+                        \App\Models\BookingRoomService::whereIn('service_bill_id', $roomRateBillIds)
+                            ->whereIn('service_code', ['RM', 'RMS'])
+                            ->delete();
+                    }
+                }
 
                 // Đồng bộ room_allocations (từ UI gửi lên) - xử lý thông minh để cập nhật thay vì xóa/tạo lại
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
@@ -699,8 +806,45 @@ class BookingController extends Controller
                                 }
                             }
                             
-                            $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? $validated['arrival_date'] ?? $booking->arrival_date;
-                            $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? $validated['departure_date'] ?? $booking->departure_date;
+                            $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';
+                             
+                            $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? null;
+                            $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? null;
+
+                            $parseDate = function ($date) {
+                                if (!$date) return null;
+                                $date = trim($date);
+                                if (strpos($date, '/') !== false) {
+                                    $parts = explode('/', $date);
+                                    if (count($parts) === 3) {
+                                        if (strlen($parts[2]) === 4) {
+                                            return "{$parts[2]}-{$parts[1]}-{$parts[0]}";
+                                        }
+                                    }
+                                }
+                                return Carbon::parse($date)->toDateString();
+                            };
+
+                            $roomArrival = $parseDate($roomArrival);
+                            $roomDeparture = $parseDate($roomDeparture);
+
+                            if ($bRoom && $bRoom->status !== \App\Models\BookingRoom::STATUS_BOOKED) {
+                                // For checked-in or checked-out rooms: keep their original dates when booking dates change.
+                                // We only use values from $detail if explicitly provided.
+                                $roomArrival = $roomArrival ?? Carbon::parse($bRoom->arrival_date)->toDateString();
+                                $roomDeparture = $roomDeparture ?? Carbon::parse($bRoom->departure_date)->toDateString();
+                            } else {
+                                // For reservation rooms (STATUS_BOOKED)
+                                if ($syncRoomDates) {
+                                    $roomArrival = $roomArrival ?? $parseDate($validated['arrival_date'] ?? $booking->arrival_date);
+                                    $roomDeparture = $roomDeparture ?? $parseDate($validated['departure_date'] ?? $booking->departure_date);
+                                } else {
+                                    // If SyncRoomDateByBookingDate = 0, keep original room dates if room exists,
+                                    // otherwise fallback to booking dates.
+                                    $roomArrival = $roomArrival ?? ($bRoom ? Carbon::parse($bRoom->arrival_date)->toDateString() : $parseDate($validated['arrival_date'] ?? $booking->arrival_date));
+                                    $roomDeparture = $roomDeparture ?? ($bRoom ? Carbon::parse($bRoom->departure_date)->toDateString() : $parseDate($validated['departure_date'] ?? $booking->departure_date));
+                                }
+                            }
 
                             $roomData = [
                                 'booking_id' => $booking->id,
@@ -715,7 +859,7 @@ class BookingController extends Controller
                                 'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
                                 'rate_code' => $detail['rateCode'] ?? $alloc['rateCode'] ?? null,
                                 'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
-                                'is_day_use' => !empty($booking->is_day_use) || ($detail['hourly'] ?? false) || ($roomArrival === $roomDeparture),
+                                'is_day_use' => filter_var($detail['hourly'] ?? false, FILTER_VALIDATE_BOOLEAN),
                                 'discount' => $detail['discount'] ?? $alloc['discount'] ?? null,
                                 'discount_type' => $detail['discountType'] ?? $alloc['discountType'] ?? null,
                                 'discount_value' => $detail['discountValue'] ?? $alloc['discountValue'] ?? 0,
@@ -1065,7 +1209,7 @@ class BookingController extends Controller
 
         $request->validate([
             'arrival_date'   => 'required|date',
-            'departure_date' => 'required|date|after:arrival_date',
+            'departure_date' => 'required|date|after_or_equal:arrival_date',
         ]);
 
         $systemDate = SystemDateRoll::latest('id')->first();
@@ -1410,6 +1554,23 @@ class BookingController extends Controller
         $allowOver = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
         $payloadAssignments = [];
 
+        $parseDate = function ($date) {
+            if (!$date) return null;
+            $date = trim($date);
+            if (strpos($date, '/') !== false) {
+                $parts = explode('/', $date);
+                if (count($parts) === 3) {
+                    if (strlen($parts[2]) === 4) {
+                        return "{$parts[2]}-{$parts[1]}-{$parts[0]}";
+                    }
+                }
+            }
+            return Carbon::parse($date)->toDateString();
+        };
+
+        $arrivalDate = $parseDate($arrivalDate);
+        $departureDate = $parseDate($departureDate);
+
         foreach ($roomAllocations as $alloc) {
             $roomClassId = $alloc['roomClassId'] ?? null;
             if (!$roomClassId) {
@@ -1424,8 +1585,13 @@ class BookingController extends Controller
                 $detail = $details[$i] ?? [];
                 
                 // Lấy ngày đến/đi riêng của phòng con này nếu có, nếu không lấy của booking
-                $roomArrival = $detail['arrivalDate'] ?? $detail['checkIn'] ?? $arrivalDate;
-                $roomDeparture = $detail['departureDate'] ?? $detail['checkOut'] ?? $departureDate;
+                $roomArrival = $parseDate($detail['arrivalDate'] ?? $detail['checkIn'] ?? $arrivalDate);
+                $roomDeparture = $parseDate($detail['departureDate'] ?? $detail['checkOut'] ?? $departureDate);
+
+                // Giai đoạn lịch chỉ cho chọn trong khu vực giai đoạn của bk thôi
+                if ($roomArrival < $arrivalDate || $roomDeparture > $departureDate) {
+                    throw new \Exception("Thời gian ở của phòng phải nằm trong khoảng thời gian của booking (từ {$arrivalDate} đến {$departureDate}).");
+                }
 
                 // Validate AV cho khoảng ngày của phòng con này
                 $av = $avService->getAvailability(
@@ -1497,37 +1663,90 @@ class BookingController extends Controller
      */
     private function createChildBreakfastDetails($child, $bRoom)
     {
+        $isBaby = $child->age_group === 'baby';
+
+        // Đọc tham số hệ thống từ hotel_configs
+        $autoExtraChargeVal = \App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')->value('value');
+        $autoExtraCharge = (int) $autoExtraChargeVal === 1;
+
+        // Xác định amount và extra charge
         $setting = \App\Models\HotelSetting::first();
-        $autoExtra = $setting?->booking_auto_extra_charge_bf_child == 1;
-        $childRate = $setting?->breakfast_child_rate ?? 90000;
+        if ($isBaby) {
+            $isFree = true;
+            $isExtra = false;
+            $amount = 0.0;
+        } else {
+            $isFree = false;
+            $isExtra = $autoExtraCharge;
+            if ($autoExtraCharge) {
+                $amount = (float) ($setting?->breakfast_child_rate ?? 0);
+            } else {
+                $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+                $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+            }
+        }
 
         $current = Carbon::parse($bRoom->arrival_date);
         $departure = Carbon::parse($bRoom->departure_date);
 
         while ($current->lt($departure)) {
-            $isFree = true;
-            $isExtra = false;
-            $amount = 0;
-
-            if ($child->age_group === 'child') {
-                if ($autoExtra) {
-                    $isFree = false;
-                    $isExtra = true;
-                    $amount = $childRate;
-                }
-            }
-
-            \App\Models\BookingChildBreakfastDetail::create([
+            $detail = \App\Models\BookingChildBreakfastDetail::create([
                 'booking_child_id' => $child->id,
                 'service_date'     => $current->toDateString(),
                 'breakfast'        => true,
                 'is_free'          => $isFree,
                 'is_extra_charge'  => $isExtra,
-                'is_room'          => true, // FIT
+                'is_room'          => !$isExtra, // Nếu extra charge thì không phân bổ vào phòng (GIT)
                 'amount'           => $amount,
             ]);
 
+            // Đồng bộ sang booking_room_services
+            $this->syncChildBreakfastToService($detail);
+
             $current = $current->addDay();
+        }
+    }
+
+    /**
+     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
+     */
+    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
+    {
+        $child = $detail->bookingChild;
+        if (!$child || !$child->booking_room_id) return;
+
+        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
+        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+
+        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
+        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
+
+        if ($shouldHaveService) {
+            \App\Models\BookingRoomService::updateOrCreate(
+                [
+                    'booking_room_id' => $child->booking_room_id,
+                    'service_code'    => $serviceCode,
+                    'service_date'    => $detail->service_date->toDateString(),
+                    'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                ],
+                [
+                    'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                    'quantity'        => 1,
+                    'rate'            => $detail->amount,
+                    'total_amount'    => $detail->amount,
+                    'department'      => 'FO',
+                    'folio'           => 1,
+                    'is_room'         => 0,
+                    'is_posted'       => 0,
+                ]
+            );
+        } else {
+            // Xóa dịch vụ nếu có
+            \App\Models\BookingRoomService::where('booking_room_id', $child->booking_room_id)
+                ->where('service_code', $serviceCode)
+                ->whereDate('service_date', $detail->service_date->toDateString())
+                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
+                ->delete();
         }
     }
 
@@ -1917,6 +2136,8 @@ class BookingController extends Controller
                 }
             }
         });
+
+        event(new \App\Events\ReservationUpdated($booking->id, 'revert_noshow', "Khôi phục booking noshow {$booking->booking_code} thành công"));
 
         return response()->json([
             'success' => true,

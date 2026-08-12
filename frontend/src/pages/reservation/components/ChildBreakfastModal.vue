@@ -1,14 +1,18 @@
 <template>
   <div 
     v-if="show" 
-    class="fixed inset-0 bg-black/50 z-[99999] flex items-center justify-center p-4 backdrop-blur-xs select-none"
+    class="fixed inset-0 bg-black/20 z-[99999] flex items-center justify-center p-4 select-none"
     @click.self="close"
   >
     <div 
       class="bg-white rounded-xl shadow-2xl w-full max-w-[1000px] overflow-hidden border border-gray-300 flex flex-col max-h-[90vh]"
+      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
     >
       <!-- HEADER -->
-      <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0">
+      <div 
+        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 cursor-move"
+        @mousedown="startDragModal"
+      >
         <div class="flex items-center space-x-2 font-semibold text-sm uppercase tracking-wider">
           <i class="fa-solid fa-mug-saucer text-sky-300"></i>
           <span>Chi tiết ăn sáng - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }} ({{ room?.type }})</span>
@@ -109,10 +113,11 @@
                         <input 
                           type="checkbox" 
                           :checked="child.is_free"
+                          disabled
                           @change="e => onParentFieldChange(child, 'is_free', e.target.checked)"
                           class="sr-only peer"
                         />
-                        <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                        <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                       </label>
                     </td>
                     <!-- Parent Extra Charge Toggle -->
@@ -121,10 +126,11 @@
                         <input 
                           type="checkbox" 
                           :checked="child.is_extra_charge"
+                          disabled
                           @change="e => onParentFieldChange(child, 'is_extra_charge', e.target.checked)"
                           class="sr-only peer"
                         />
-                        <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                        <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                       </label>
                     </td>
                     <!-- Parent FIT/GIT Toggle -->
@@ -169,7 +175,8 @@
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
-                            v-model="d.breakfast"
+                            :checked="d.breakfast"
+                            @change="e => onDetailFieldChange(child, d, 'breakfast', e.target.checked)"
                             class="sr-only peer"
                           />
                           <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
@@ -180,11 +187,12 @@
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
-                            v-model="d.is_free"
+                            :checked="d.is_free"
+                            disabled
                             @change="e => onDetailFieldChange(child, d, 'is_free', e.target.checked)"
                             class="sr-only peer"
                           />
-                          <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                          <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                         </label>
                       </td>
                       <!-- Extra Charge -->
@@ -192,10 +200,12 @@
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
-                            v-model="d.is_extra_charge"
+                            :checked="d.is_extra_charge"
+                            disabled
+                            @change="e => onDetailFieldChange(child, d, 'is_extra_charge', e.target.checked)"
                             class="sr-only peer"
                           />
-                          <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                          <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                         </label>
                       </td>
                       <!-- FIT/GIT -->
@@ -340,7 +350,8 @@
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
-                            v-model="d.breakfast"
+                            :checked="d.breakfast"
+                            @change="e => onDetailFieldChange(child, d, 'breakfast', e.target.checked)"
                             class="sr-only peer"
                           />
                           <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
@@ -351,7 +362,7 @@
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
-                            v-model="d.is_free"
+                            :checked="d.is_free"
                             @change="e => onDetailFieldChange(child, d, 'is_free', e.target.checked)"
                             class="sr-only peer"
                           />
@@ -363,7 +374,8 @@
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
-                            v-model="d.is_extra_charge"
+                            :checked="d.is_extra_charge"
+                            @change="e => onDetailFieldChange(child, d, 'is_extra_charge', e.target.checked)"
                             class="sr-only peer"
                           />
                           <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:bg-sky-400 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
@@ -438,7 +450,9 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import { fetchBookingChildren, updateChildBreakfastDetail } from '@/services/booking-service'
+import { fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import http from '@/services/http'
 
 const props = defineProps({
   show: Boolean,
@@ -449,10 +463,54 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'saved'])
 
 const uiStore = useUiStore()
+
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
 const isLoading = ref(false)
 const localChildren = ref([])
 const initialData = ref([])
 const expandedChildren = ref([])
+
+// Giá ăn sáng trẻ em từ hai nguồn
+const priceExtraCharge = ref(0)  // giá khi is_extra_charge = true (từ hotel_settings.breakfast_child_rate)
+const priceNoCharge    = ref(0)  // giá khi is_extra_charge = false (từ HotelConfig.BreakfastRateChild)
 
 // Collapsible Group Headers
 const isBabyGroupExpanded = ref(true)
@@ -460,15 +518,45 @@ const isChildGroupExpanded = ref(true)
 
 watch(() => props.show, async (newVal) => {
   if (newVal) {
+    modalPos.value = { x: 0, y: 0 }
     expandedChildren.value = []
+    localChildren.value = [] // Xóa trắng dữ liệu cũ ngay lập tức
     isBabyGroupExpanded.value = true
     isChildGroupExpanded.value = true
+    isLoading.value = true // Bật loading ngay khi mở modal
+    await loadPriceSettings()
     await loadData()
   }
 })
 
+// Load giá ăn sáng trẻ em từ hai nguồn
+async function loadPriceSettings() {
+  try {
+    // 1. Giá từ hotel_settings.breakfast_child_rate (màn hình công ty)
+    const settingRes = await fetchHotelSettings()
+    if (settingRes.data?.success) {
+      priceExtraCharge.value = Number(settingRes.data.data?.breakfast_child_rate ?? 0)
+    }
+    // 2. Giá từ HotelConfig['BreakfastRateChild'] (thông số hệ thống)
+    const cfgRes = await http.get('/hotel-configs', { params: { name: 'BreakfastRateChild' } }).catch(() => null)
+    if (cfgRes?.data?.data) {
+      const cfgArr = Array.isArray(cfgRes.data.data) ? cfgRes.data.data : [cfgRes.data.data]
+      const cfg = cfgArr.find(c => c.name === 'BreakfastRateChild')
+      priceNoCharge.value = Number(cfg?.value ?? priceExtraCharge.value)
+    } else {
+      priceNoCharge.value = priceExtraCharge.value
+    }
+  } catch (e) {
+    // Fallback: nếu không lấy được, giữ giá mặc định
+    console.warn('Không tải được giá ăn sáng trẻ em:', e)
+  }
+}
+
 async function loadData() {
-  if (!props.bookingId) return
+  if (!props.bookingId) {
+    isLoading.value = false
+    return
+  }
   isLoading.value = true
   try {
     const res = await fetchBookingChildren(props.bookingId)
@@ -477,16 +565,21 @@ async function loadData() {
       const filtered = (res.data.data || []).filter(c => c.booking_room_id === targetRoomId)
       
       localChildren.value = filtered.map(c => {
-        const details = (c.breakfast_details || []).map(d => ({
-          id: d.id,
-          booking_child_id: d.booking_child_id,
-          service_date: d.service_date,
-          breakfast: !!d.breakfast,
-          is_free: !!d.is_free,
-          is_extra_charge: !!d.is_extra_charge,
-          is_room: !!d.is_room,
-          amount: Number(d.amount) || 0
-        }))
+        const details = (c.breakfast_details || []).map(d => {
+          const isBaby = c.age_group === 'baby'
+          const is_free = isBaby ? true : (!!d.is_free)
+          const is_extra_charge = isBaby ? false : (!!d.is_extra_charge)
+          return {
+            id: d.id,
+            booking_child_id: d.booking_child_id,
+            service_date: d.service_date,
+            breakfast: !!d.breakfast,
+            is_free,
+            is_extra_charge,
+            is_room: is_extra_charge ? false : (!!d.is_room),
+            amount: isBaby ? 0 : (Number(d.amount) || 0)
+          }
+        })
         
         // Use first date values or defaults for bulk fields
         const first = details[0] || {}
@@ -503,12 +596,9 @@ async function loadData() {
         }
       })
       
-      // Auto expand children that have details
-      localChildren.value.forEach(child => {
-        if (child.breakfast_details.length > 0) {
-          expandedChildren.value.push(child.id)
-        }
-      })
+      // Không tự động xổ rộng (collapse mặc định khi mở modal)
+      expandedChildren.value = []
+
 
       initialData.value = JSON.parse(JSON.stringify(localChildren.value))
     }
@@ -536,25 +626,88 @@ function isExpanded(childId) {
   return expandedChildren.value.includes(childId)
 }
 
+function getBreakfastDetailAmount(d, ageGroup) {
+  if (!d.breakfast) return 0
+  if (ageGroup === 'baby' || d.is_free) return 0
+  return d.is_extra_charge ? priceExtraCharge.value : priceNoCharge.value
+}
+
 function onParentFieldChange(child, field, value) {
   child[field] = value
+
+  // Nếu là em bé thì luôn khóa ở trạng thái Miễn phí và không Phụ phí
+  if (child.age_group === 'baby') {
+    child.is_free = true
+    child.is_extra_charge = false
+  } else {
+    // Loại trừ tương hỗ ở cấp cha (nhóm) cho trẻ em
+    if (field === 'is_extra_charge' && value) {
+      child.is_free = false;
+    }
+    if (field === 'is_free' && value) {
+      child.is_extra_charge = false;
+    }
+  }
+
   child.breakfast_details.forEach(d => {
     d[field] = value
-    if (field === 'is_free' && value) {
-      d.amount = 0
+    
+    if (child.age_group === 'baby') {
+      d.is_free = true
+      d.is_extra_charge = false
+    } else {
+      // Loại trừ tương hỗ ở cấp chi tiết ngày cho trẻ em
+      if (field === 'is_extra_charge' && value) {
+        d.is_free = false;
+      }
+      if (field === 'is_free' && value) {
+        d.is_extra_charge = false;
+      }
     }
+
+    d.amount = getBreakfastDetailAmount(d, child.age_group)
   })
-  if (field === 'is_free' && value) {
-    child.amount = 0
+
+  // Đồng bộ giá trị hiển thị ở ô đại diện cha (dòng đầu tiên)
+  const first = child.breakfast_details[0]
+  if (first) {
+    child.amount = first.amount
+    child.breakfast = first.breakfast
+    child.is_free = first.is_free
+    child.is_extra_charge = first.is_extra_charge
+    child.is_room = first.is_room
   }
 }
 
 function onDetailFieldChange(child, detail, field, value) {
   detail[field] = value
-  if (field === 'is_free' && value) {
-    detail.amount = 0
+
+  if (child.age_group === 'baby') {
+    detail.is_free = true
+    detail.is_extra_charge = false
+  } else {
+    // Loại trừ tương hỗ ở cấp chi tiết ngày cho trẻ em
+    if (field === 'is_extra_charge' && value) {
+      detail.is_free = false;
+    }
+    if (field === 'is_free' && value) {
+      detail.is_extra_charge = false;
+    }
+  }
+
+  detail.amount = getBreakfastDetailAmount(detail, child.age_group)
+
+  // Đồng bộ giá trị hiển thị ở ô đại diện cha (dòng đầu tiên)
+  const first = child.breakfast_details[0]
+  if (first) {
+    child.amount = first.amount
+    child.breakfast = first.breakfast
+    child.is_free = first.is_free
+    child.is_extra_charge = first.is_extra_charge
+    child.is_room = first.is_room
   }
 }
+
 
 function formatCurrency(val) {
   if (!val && val !== 0) return ''

@@ -17,6 +17,7 @@ import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import GuestInfoModal from './components/GuestInfoModal.vue'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
+import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -149,6 +150,7 @@ const isModalOpen = ref(false)
 const isEditModal = ref(false)
 const isSavingModal = ref(false)
 const modalSubTab = ref('info')
+const isQuickUpdateModalOpen = ref(false)
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
@@ -581,7 +583,7 @@ function handleServiceRateChange(room, svc, newRate) {
   svc.rate = newRate
   svc.service_date = cleanDate
 
-  if (svc.service_code === 'ROOM_CHARGE') {
+  if (svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM') {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
     
     // Khởi tạo trước giá mặc định cho tất cả các ngày lưu trú nếu chưa có
@@ -660,12 +662,20 @@ function handleServiceRateChange(room, svc, newRate) {
   }
 }
 
-function getRoomDisplayServices(room) {
-  const list = []
-  const hasDbRoomCharges = room.services && room.services.some(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE')
-  
-  // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) - chỉ hiển thị nếu DB chưa có bản ghi tiền phòng thực tế
-  if (!hasDbRoomCharges) {
+async function handleInlineServiceRateChange(room, svc, newRate) {
+  const cleanDate = cleanDateStr(svc.service_date)
+  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
+
+  // Cập nhật local
+  svc.rate = newRate
+  if (svc.svc_ref) {
+    svc.svc_ref.rate = newRate
+    svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
+  }
+
+  if (isRoomCharge) {
+    if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
+    
     const checkIn = room.checkIn
     const nights = Number(room.nights) || 1
     if (checkIn) {
@@ -682,7 +692,358 @@ function getRoomDisplayServices(room) {
         const mm = String(curr.getMonth() + 1).padStart(2, '0')
         const dd = String(curr.getDate()).padStart(2, '0')
         const dStr = `${yyyy}-${mm}-${dd}`
+        if (room.dailyRoomPrices[dStr] === undefined) {
+          room.dailyRoomPrices[dStr] = Number(room.price) || 0
+        }
+      }
+    }
+    room.dailyRoomPrices[cleanDate] = newRate
+  }
+
+  // Đồng bộ Extra Bed (EB)
+  if (svc.service_code === 'EB') {
+    room.extraBedPrice = newRate
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existing) {
+      existing.rate = newRate
+      existing.total = (existing.quantity || 1) * newRate
+    }
+  }
+
+  room.total = calculateRoomTotal(room)
+
+  // Gọi API cập nhật ngay lập tức nếu phòng đã lưu ở Database
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      const payload = {
+        booking_room_id: room.bookingRoomId,
+        service_code: isRoomCharge ? 'RM' : svc.service_code,
+        service_name: svc.service_name,
+        guest_id: svc.guest_id || null,
+        service_date: cleanDate,
+        quantity: svc.quantity || 1,
+        rate: newRate,
+        is_room: isRoomCharge ? 1 : 0
+      }
+      const res = await createBookingRoomService(room.bookingRoomId, payload)
+      if (res.data?.success) {
+        uiStore.showToast('Cập nhật đơn giá dịch vụ thành công!', 'success')
+        const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = (freshRes.data?.data || []).map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
+        room.total = calculateRoomTotal(room)
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật đơn giá vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineServiceQtyChange(room, svc, newQty) {
+  const cleanDate = cleanDateStr(svc.service_date)
+  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
+
+  if (isRoomCharge) return
+
+  svc.quantity = newQty
+  if (svc.svc_ref) {
+    svc.svc_ref.quantity = newQty
+    svc.svc_ref.total = newQty * (svc.svc_ref.rate || 0)
+  }
+
+  // Đồng bộ Extra Bed (EB)
+  if (svc.service_code === 'EB') {
+    room.extraBedQty = newQty
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existing) {
+      existing.quantity = newQty
+      existing.total = newQty * (existing.rate || 0)
+    }
+  }
+
+  room.total = calculateRoomTotal(room)
+
+  // Gọi API cập nhật ngay lập tức nếu phòng đã lưu ở Database
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      const payload = {
+        booking_room_id: room.bookingRoomId,
+        service_code: svc.service_code,
+        service_name: svc.service_name,
+        guest_id: svc.guest_id || null,
+        service_date: cleanDate,
+        quantity: newQty,
+        rate: svc.rate || 0,
+        is_room: 0
+      }
+      const res = await createBookingRoomService(room.bookingRoomId, payload)
+      if (res.data?.success) {
+        uiStore.showToast('Cập nhật số lượng dịch vụ thành công!', 'success')
+        const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = (freshRes.data?.data || []).map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
+        room.total = calculateRoomTotal(room)
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật số lượng vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineExtraBedQtyChange(room) {
+  const qty = Number(room.extraBedQty) || 0
+  
+  if (qty > 0) {
+    // Tự động điền giá thêm giường mặc định nếu chưa điền hoặc bằng 0
+    if (!room.extraBedPrice || Number(room.extraBedPrice) === 0) {
+      const rc = roomClasses.value.find(c => c.id === room.roomClassId)
+      room.extraBedPrice = rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)
+    }
+  } else {
+    // Nếu số lượng về 0 hoặc trống -> đưa giá về lại 0
+    room.extraBedPrice = 0
+  }
+  
+  const rate = Number(room.extraBedPrice) || 0
+
+  // 1. Cập nhật local dailyExtraBeds
+  const checkIn = room.checkIn
+  const nights = Number(room.nights) || 1
+  const dailyRates = []
+  if (checkIn) {
+    for (let i = 0; i < nights; i++) {
+      const parts = checkIn.split('-')
+      let curr = new Date()
+      if (parts.length === 3) {
+        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      } else {
+        curr = new Date(checkIn)
+      }
+      curr.setDate(curr.getDate() + i)
+      const yyyy = curr.getFullYear()
+      const mm = String(curr.getMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getDate()).padStart(2, '0')
+      const dStr = `${yyyy}-${mm}-${dd}`
+      
+      dailyRates.push({
+        dateStr: dStr,
+        date: dStr,
+        quantity: qty,
+        rate: rate,
+        total: qty * rate,
+        isRoom: false
+      })
+    }
+  }
+  room.dailyExtraBeds = dailyRates
+  room.total = calculateRoomTotal(room)
+
+  // 2. Cập nhật Database nếu đã lưu
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+      
+      // 2.1 Cập nhật booking_rooms
+      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+        extra_bed_qty: qty,
+        extra_bed_rate: rate
+      })
+
+      // 2.2 Cập nhật booking_room_services
+      for (const d of dailyRates) {
+        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+          service_code: 'EB',
+          service_name: 'Extra Bed',
+          service_date: d.dateStr,
+          quantity: d.quantity,
+          rate: d.rate,
+          is_room: 0
+        })
+      }
+
+      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+      room.services = (freshRes.data?.data || []).map(s => ({
+        ...s,
+        service_date: cleanDateStr(s.service_date)
+      }))
+      room.total = calculateRoomTotal(room)
+      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineExtraBedRateChange(room) {
+  const qty = Number(room.extraBedQty) || 0
+  const rate = Number(room.extraBedPrice) || 0
+
+  // 1. Cập nhật local dailyExtraBeds
+  const checkIn = room.checkIn
+  const nights = Number(room.nights) || 1
+  const dailyRates = []
+  if (checkIn) {
+    for (let i = 0; i < nights; i++) {
+      const parts = checkIn.split('-')
+      let curr = new Date()
+      if (parts.length === 3) {
+        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      } else {
+        curr = new Date(checkIn)
+      }
+      curr.setDate(curr.getDate() + i)
+      const yyyy = curr.getFullYear()
+      const mm = String(curr.getMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getDate()).padStart(2, '0')
+      const dStr = `${yyyy}-${mm}-${dd}`
+      
+      dailyRates.push({
+        dateStr: dStr,
+        date: dStr,
+        quantity: qty,
+        rate: rate,
+        total: qty * rate,
+        isRoom: false
+      })
+    }
+  }
+  room.dailyExtraBeds = dailyRates
+  room.total = calculateRoomTotal(room)
+
+  // 2. Cập nhật Database nếu đã lưu
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+      
+      // 2.1 Cập nhật booking_rooms
+      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+        extra_bed_qty: qty,
+        extra_bed_rate: rate
+      })
+
+      // 2.2 Cập nhật booking_room_services
+      for (const d of dailyRates) {
+        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+          service_code: 'EB',
+          service_name: 'Extra Bed',
+          service_date: d.dateStr,
+          quantity: d.quantity,
+          rate: d.rate,
+          is_room: 0
+        })
+      }
+
+      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+      room.services = (freshRes.data?.data || []).map(s => ({
+        ...s,
+        service_date: cleanDateStr(s.service_date)
+      }))
+      room.total = calculateRoomTotal(room)
+      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
+    }
+  }
+}
+
+async function handleInlineServiceDelete(room, svc) {
+  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
+  if (isRoomCharge) return
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa dịch vụ',
+    message: `Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`
+  })
+  if (!confirmed) return
+
+  const cleanDate = cleanDateStr(svc.service_date)
+
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-') && svc.id && !String(svc.id).startsWith('room-charge-')) {
+    try {
+      const res = await deleteBookingRoomServicesBulk(room.bookingRoomId, {
+        service_ids: [svc.id]
+      })
+      if (res.data?.success) {
+        uiStore.showToast('Xóa dịch vụ thành công!', 'success')
+        room.services = (room.services || []).filter(s => s.id !== svc.id)
         
+        if (svc.service_code === 'EB') {
+          const remainingEB = room.services.filter(s => s.service_code === 'EB')
+          if (remainingEB.length === 0) {
+            room.extraBedQty = 0
+            room.extraBedPrice = 0
+            room.dailyExtraBeds = []
+          } else {
+            room.extraBedQty = Math.max(...remainingEB.map(s => s.quantity || 0))
+            room.extraBedPrice = remainingEB[0]?.rate || 0
+            room.dailyExtraBeds = (room.dailyExtraBeds || []).filter(d => cleanDateStr(d.dateStr || d.date) !== cleanDate)
+          }
+        }
+        
+        room.total = calculateRoomTotal(room)
+      }
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Không thể xóa dịch vụ khỏi hệ thống!', 'error')
+    }
+  } else {
+    room.services = (room.services || []).filter(s => s.id !== svc.id && !(s.service_code === svc.service_code && cleanDateStr(s.service_date) === cleanDate))
+    
+    if (svc.service_code === 'EB') {
+      const remainingEB = room.services.filter(s => s.service_code === 'EB')
+      if (remainingEB.length === 0) {
+        room.extraBedQty = 0
+        room.extraBedPrice = 0
+        room.dailyExtraBeds = []
+      } else {
+        room.extraBedQty = Math.max(...remainingEB.map(s => s.quantity || 0))
+        room.extraBedPrice = remainingEB[0]?.rate || 0
+        room.dailyExtraBeds = (room.dailyExtraBeds || []).filter(d => cleanDateStr(d.dateStr || d.date) !== cleanDate)
+      }
+    }
+    
+    room.total = calculateRoomTotal(room)
+    uiStore.showToast('Đã xóa dịch vụ tạm thời.', 'info')
+  }
+}
+
+function getRoomDisplayServices(room) {
+  const list = []
+  
+  // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) cho từng ngày lưu trú nếu ngày đó chưa có tiền phòng thực tế trong DB
+  const checkIn = room.checkIn
+  const nights = Number(room.nights) || 1
+  if (checkIn) {
+    for (let i = 0; i < nights; i++) {
+      const parts = checkIn.split('-')
+      let curr = new Date()
+      if (parts.length === 3) {
+        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      } else {
+        curr = new Date(checkIn)
+      }
+      curr.setDate(curr.getDate() + i)
+      const yyyy = curr.getFullYear()
+      const mm = String(curr.getMonth() + 1).padStart(2, '0')
+      const dd = String(curr.getDate()).padStart(2, '0')
+      const dStr = `${yyyy}-${mm}-${dd}`
+      
+      const hasDbChargeForDate = room.services && room.services.some(svc => 
+        (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
+        cleanDateStr(svc.service_date) === dStr
+      )
+
+      if (!hasDbChargeForDate) {
         const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[dStr] !== undefined)
           ? room.dailyRoomPrices[dStr]
           : room.price
@@ -697,8 +1058,14 @@ function getRoomDisplayServices(room) {
           is_room: true
         })
       }
-    } else {
-      const todayStr = systemDate.value || formatLocalYYYYMMDD(new Date())
+    }
+  } else {
+    const todayStr = systemDate.value || formatLocalYYYYMMDD(new Date())
+    const hasDbChargeForToday = room.services && room.services.some(svc => 
+      (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
+      cleanDateStr(svc.service_date) === todayStr
+    )
+    if (!hasDbChargeForToday) {
       const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[todayStr] !== undefined)
         ? room.dailyRoomPrices[todayStr]
         : room.price
@@ -714,7 +1081,7 @@ function getRoomDisplayServices(room) {
     }
   }
 
-  // 2. Các dịch vụ bổ sung
+  // 2. Các dịch vụ bổ sung và dịch vụ phòng nghỉ từ DB
   if (room.services && room.services.length > 0) {
     room.services.forEach(svc => {
       list.push({
@@ -795,15 +1162,12 @@ function getRoomExtraBedTotal(room) {
 }
 
 function getRoomChargeTotal(room) {
+  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE' || s.service_code === 'RM')
+  if (displayServices.length > 0) {
+    return displayServices.reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity || 1)), 0)
+  }
   const nights = Number(room.nights) || 1
   const basePrice = Number(room.price) || 0
-  if (!room.dailyRoomPrices || Object.keys(room.dailyRoomPrices).length === 0) {
-    return basePrice * nights
-  }
-  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE')
-  if (displayServices.length > 0) {
-    return displayServices.reduce((sum, s) => sum + (Number(s.rate) || 0), 0)
-  }
   return basePrice * nights
 }
 
@@ -856,18 +1220,23 @@ const hasNoshowRoomSelected = computed(() => {
   return selected.length > 0 && selected.every(r => Number(r.bookingRoomStatus) === 4)
 })
 
+const bookingContext = computed(() => {
+  return (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
+})
+
 const isAllRoomsNoshow = computed(() => {
-  const tab = activeTab.value
+  const tab = bookingContext.value
   if (!tab || !tab.rooms || tab.rooms.length === 0) return false
   return tab.rooms.every(r => Number(r.bookingRoomStatus) === 4)
 })
 
 const filteredActiveRooms = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return []
-  let list = activeTab.value.rooms
+  const tab = bookingContext.value
+  if (!tab || !tab.rooms) return []
+  let list = tab.rooms
 
   // Check if ALL rooms in this registration are cancelled
-  const allRoomsCancelled = activeTab.value.status === 'CANCELLED' || 
+  const allRoomsCancelled = tab.status === 'CANCELLED' || 
     (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3 || Number(r.bookingRoomStatus) === 100))
 
   // If not all rooms are cancelled, hide individual cancelled/transferred rooms
@@ -893,12 +1262,14 @@ const filteredActiveRooms = computed(() => {
 
 const selectRangeVal = computed({
   get() {
-    if (!activeTab.value) return 0
-    return activeTab.value.rooms.filter(r => selectedRows.value.includes(r.id)).length
+    const tab = bookingContext.value
+    if (!tab) return 0
+    return tab.rooms.filter(r => selectedRows.value.includes(r.id)).length
   },
   set(val) {
-    if (!activeTab.value) return
-    const rooms = activeTab.value.rooms
+    const tab = bookingContext.value
+    if (!tab) return
+    const rooms = tab.rooms
     const countToSelect = Math.min(Number(val), rooms.length)
     const newSelected = []
     for (let i = 0; i < countToSelect; i++) newSelected.push(rooms[i].id)
@@ -907,13 +1278,12 @@ const selectRangeVal = computed({
 })
 
 const roomsTotalSummary = computed(() => {
-  if (!activeTab.value) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
+  const tab = bookingContext.value
+  if (!tab) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
   let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
   const roomList = filteredActiveRooms.value
   roomList.forEach(r => {
-    const nights = Number(r.nights) || 1
-    const p = Number(r.price) || 0
-    priceSum += p * nights
+    priceSum += getRoomChargeTotal(r)
     adults   += Number(r.adults) || 0
     babies   += Number(r.babies) || 0
     children += Number(r.children) || 0
@@ -926,12 +1296,13 @@ const roomsTotalSummary = computed(() => {
 })
 
 const activeTabStatusName = computed(() => {
-  if (!activeTab.value) return '—'
-  if (activeTab.value.registrationStatusId) {
-    const s = registrationStatuses.value.find(rs => Number(rs.id) === Number(activeTab.value.registrationStatusId))
+  const tab = bookingContext.value
+  if (!tab) return '—'
+  if (tab.registrationStatusId) {
+    const s = registrationStatuses.value.find(rs => Number(rs.id) === Number(tab.registrationStatusId))
     if (s) return s.name
   }
-  return activeTab.value.statusLabel || '—'
+  return tab.statusLabel || '—'
 })
 
 const allocationsSummary = computed(() => {
@@ -984,10 +1355,11 @@ function getStatusOrderAndName(status) {
 
 // Grouped by room type (always) - Returns sorted array
 const groupedRooms = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return []
+  const tab = bookingContext.value
+  if (!tab || !tab.rooms) return []
   const groupsMap = {}
   filteredActiveRooms.value.forEach(room => {
-    const key = room.type || 'Khác'
+    const key = (isEditing.value ? room.initialType : null) || room.type || 'Khác'
     if (!groupsMap[key]) groupsMap[key] = []
     groupsMap[key].push(room)
   })
@@ -1001,7 +1373,9 @@ const groupedRooms = computed(() => {
       return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
     })
 
-    const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
+    const firstRoom = rooms[0]
+    const classId = firstRoom ? ((isEditing.value ? firstRoom.initialRoomClassId : null) || firstRoom.roomClassId) : null
+    const rc = roomClasses.value.find(c => c.id === classId || c.name === typeName || c.code === typeName)
     const order = rc ? (rc.orders !== undefined ? Number(rc.orders) : 0) : 9999
 
     return {
@@ -1021,7 +1395,8 @@ const hasStatusGroups = computed(() => true)
 
 // Build nested: Returns sorted array of status groups, each containing typeGroups sorted by room class order
 const groupedRoomsNested = computed(() => {
-  if (!activeTab.value || !activeTab.value.rooms) return []
+  const tab = bookingContext.value
+  if (!tab || !tab.rooms) return []
   
   const statusGroupsMap = {}
   filteredActiveRooms.value.forEach(room => {
@@ -1033,7 +1408,7 @@ const groupedRoomsNested = computed(() => {
         typeGroupsMap: {}
       }
     }
-    const typeKey = room.type || 'Khác'
+    const typeKey = (isEditing.value ? room.initialType : null) || room.type || 'Khác'
     if (!statusGroupsMap[statusOrder].typeGroupsMap[typeKey]) {
       statusGroupsMap[statusOrder].typeGroupsMap[typeKey] = []
     }
@@ -1050,7 +1425,9 @@ const groupedRoomsNested = computed(() => {
         return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
       })
 
-      const rc = roomClasses.value.find(c => c.name === typeName || c.code === typeName)
+      const firstRoom = rooms[0]
+      const classId = firstRoom ? ((isEditing.value ? firstRoom.initialRoomClassId : null) || firstRoom.roomClassId) : null
+      const rc = roomClasses.value.find(c => c.id === classId || c.name === typeName || c.code === typeName)
       const order = rc ? (rc.orders !== undefined ? Number(rc.orders) : 0) : 9999
 
       return {
@@ -1275,7 +1652,7 @@ function bookingToTab(b) {
       const co = new Date(br.departure_date || b.departure_date)
       if (!isNaN(ci) && !isNaN(co)) {
         const diff = Math.ceil((co - ci) / 86400000)
-        nightsCount = diff > 0 ? diff : 1
+        nightsCount = diff > 0 ? diff : (br.is_day_use ? 0 : 1)
       }
       const priceNum = Number(br.rate) || 0
       const servicesList = br.services || []
@@ -1309,11 +1686,13 @@ function bookingToTab(b) {
         }
       })
 
-      rooms.push({
+      const roomObj = {
         id: idCounter++,
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
         isDoNotMove: br.is_do_not_move !== undefined ? !!br.is_do_not_move : false,
         type: rc.name || 'Unknown Class',
+        initialType: rc.name || 'Unknown Class',
+        initialRoomClassId: br.room_class_id,
         shape: (() => {
           const matched = roomClasses.value.find(c => c.id === br.room_class_id)
           return matched ? (matched.room_form_name || matched.code) : (rc.code || '')
@@ -1331,7 +1710,7 @@ function bookingToTab(b) {
         breakfast: br.breakfast !== undefined ? !!br.breakfast : true,
         extraBedPrice: Number(br.extra_bed_rate) || (dailyExtraBeds.length ? (dailyExtraBeds.find(d => d.rate > 0)?.rate || 0) : 0),
         extraBedQty: Number(br.extra_bed_qty) || (dailyExtraBeds.length ? Math.max(...dailyExtraBeds.map(d => d.quantity || 0)) : 0),
-        hourly: false,
+        hourly: !!br.is_day_use,
         arrivalTime: br.arrival_time || '14:00',
         hoursOut: br.departure_time || '12:00',
         isPreassigned: !!physicalRoom.room_number,
@@ -1340,7 +1719,7 @@ function bookingToTab(b) {
         roomStatus: (br.status === 1 || physicalRoom.status === 'dirty') ? 'Bẩn' : (physicalRoom.status === 'cleaning' ? 'Đang dọn' : (physicalRoom.status === 'inspecting' ? 'Kiểm tra' : 'Sạch')),
         allotmentCode: '',
         roomCode: br.id || '',
-        total: totalNum,
+        total: 0,
         roomClassId: br.room_class_id,
         services: br.services || [],
         dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
@@ -1353,7 +1732,9 @@ function bookingToTab(b) {
         discountValue: br.discount_value !== undefined ? Number(br.discount_value) : 0,
         discountUnit: br.discount_unit || 'percent',
         basePrice: br.base_price !== undefined ? Number(br.base_price) : priceNum,
-      })
+      }
+      roomObj.total = calculateRoomTotal(roomObj)
+      rooms.push(roomObj)
     })
   } else {
     // Dữ liệu cũ (nếu còn)
@@ -1383,6 +1764,8 @@ function bookingToTab(b) {
         rooms.push({
           id: idCounter++,
           type: typeName,
+          initialType: typeName,
+          initialRoomClassId: alloc.roomClassId,
           shape: shapeName,
           roomNumber: roomDetail.roomNumber || '',
           checkIn: parseApiDate(alloc.arrivalDate || b.arrival_date),
@@ -1396,7 +1779,7 @@ function bookingToTab(b) {
           children: Number(roomDetail.children || alloc.children) || 0,
           breakfast: roomDetail.breakfast !== undefined ? !!roomDetail.breakfast : !!alloc.breakfastIncluded,
           extraBedPrice: Number(roomDetail.extraBedPrice) || 0,
-          hourly: !!roomDetail.hourly,
+          hourly: !!roomDetail.hourly || !!roomDetail.is_day_use || (alloc.arrivalDate === alloc.departureDate),
           arrivalTime: roomDetail.arrivalTime || '14:00',
           hoursOut: roomDetail.hoursOut || '12:00',
           isPreassigned: roomDetail.isPreassigned !== undefined ? !!roomDetail.isPreassigned : false,
@@ -1439,7 +1822,7 @@ function bookingToTab(b) {
           discountUnit: br.discount_unit || 'percent',
           basePrice: br.base_price !== undefined ? Number(br.base_price) : (Number(br.rate) || 0),
           upgradeClassId: br.upgrade_class_id || null,
-          extraBedPrice: br.extra_bed_rate !== undefined ? Number(br.extra_bed_rate) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
+          extraBedPrice: br.extra_bed_rate !== undefined ? Number(br.extra_bed_rate) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)),
           adults: br.adults || rc?.max_adults || 2,
           babies: 0,
           children: 0,
@@ -1462,6 +1845,7 @@ function bookingToTab(b) {
       const isBfChecked = hotelSettings.value?.DefaultBreakfast !== undefined 
         ? (Number(hotelSettings.value.DefaultBreakfast) === 1) 
         : true
+      const rc = roomClasses.value.find(c => c.id === alloc.roomClassId || c.code === alloc.roomClassCode)
       roomAllocations.push({
         roomClassId: alloc.roomClassId,
         roomClassCode: alloc.roomClassCode,
@@ -1477,7 +1861,7 @@ function bookingToTab(b) {
         discountUnit: alloc.discountUnit || 'percent',
         basePrice: alloc.basePrice !== undefined ? Number(alloc.basePrice) : (Number(alloc.price) || 0),
         upgradeClassId: alloc.upgradeClassId || alloc.upgradeRoomClassId || null,
-        extraBedPrice: alloc.extraBedPrice !== undefined ? Number(alloc.extraBedPrice) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
+        extraBedPrice: alloc.extraBedPrice !== undefined ? Number(alloc.extraBedPrice) : (rc?.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)),
         adults: Number(alloc.adults) || 2,
         babies: Number(alloc.babies) || 0,
         children: Number(alloc.children) || 0,
@@ -1627,11 +2011,11 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
         basePrice: found.basePrice !== undefined ? Number(found.basePrice) : (found.price !== undefined ? Number(found.price) : (rc.room_price !== undefined ? Number(rc.room_price) : 0)),
         upgradeClassId: found.upgradeClassId || found.upgradeRoomClassId || null,
         adults: found.adults !== undefined ? Number(found.adults) : (rc.max_adults || 2),
-        babies: found.babies !== undefined ? Number(found.babies) : 0,
-        children: found.children !== undefined ? Number(found.children) : 0,
+        babies: 0,
+        children: 0,
         childBreakfastRate: found.childBreakfastRate !== undefined ? Number(found.childBreakfastRate) : (hotelSettings.value?.breakfast_child_rate || 90000),
         breakfastIncluded: found.breakfastIncluded !== undefined ? !!found.breakfastIncluded : isBreakfastChecked,
-        extraBedPrice: found.extraBedPrice !== undefined ? Number(found.extraBedPrice) : (rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0),
+        extraBedPrice: found.extraBedPrice !== undefined ? Number(found.extraBedPrice) : (rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000)),
       }
     }
 
@@ -1656,7 +2040,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
       children: 0,
       childBreakfastRate: hotelSettings.value?.breakfast_child_rate || 90000,
       breakfastIncluded: isBreakfastChecked,
-      extraBedPrice: rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : 0,
+      extraBedPrice: rc.extra_bed_price !== undefined ? Number(rc.extra_bed_price) : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
     }
   })
 }
@@ -2074,7 +2458,11 @@ async function openEditModal() {
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
     roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
-    rooms: JSON.parse(JSON.stringify(tab.rooms || [])),
+    rooms: JSON.parse(JSON.stringify(tab.rooms || [])).map(r => ({
+      ...r,
+      initialType: r.initialType || r.type,
+      initialRoomClassId: r.initialRoomClassId || r.roomClassId
+    })),
     createdBy: tab.createdBy || '',
     createdAt: tab.createdAt || '',
   }
@@ -2212,7 +2600,7 @@ function formatDateTime(val) {
 async function updateRoomAvailability() {
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) return
 
-  if (modalForm.value.checkIn >= modalForm.value.checkOut) {
+  if (modalForm.value.checkIn > modalForm.value.checkOut) {
     if (modalForm.value.roomAllocations) {
       modalForm.value.roomAllocations.forEach(alloc => {
         alloc.availableRooms = 0
@@ -2229,11 +2617,15 @@ async function updateRoomAvailability() {
     const grid = res.data?.data?.grid || res.data?.grid || {}
 
     const dates = []
-    let curr = new Date(modalForm.value.checkIn)
-    const end = new Date(modalForm.value.checkOut)
-    while (curr < end) {
-      dates.push(curr.toISOString().split('T')[0])
-      curr.setDate(curr.getDate() + 1)
+    if (modalForm.value.checkIn === modalForm.value.checkOut) {
+      dates.push(modalForm.value.checkIn)
+    } else {
+      let curr = new Date(modalForm.value.checkIn)
+      const end = new Date(modalForm.value.checkOut)
+      while (curr < end) {
+        dates.push(curr.toISOString().split('T')[0])
+        curr.setDate(curr.getDate() + 1)
+      }
     }
 
     if (modalForm.value.roomAllocations) {
@@ -2282,7 +2674,10 @@ function updateAllocatedRooms(row) {
       modalForm.value.rooms.push({
         id: Date.now() + Math.random(),
         roomClassId: row.roomClassId,
+        initialRoomClassId: row.roomClassId,
         roomClassName: row.roomClassName,
+        type: row.roomClassName,
+        initialType: row.roomClassName,
         shape: row.roomClassCode,
         roomNumber: '',
         checkIn: row.arrivalDate || modalForm.value.checkIn,
@@ -2295,8 +2690,8 @@ function updateAllocatedRooms(row) {
         babies: row.babies || 0,
         children: row.children || 0,
         breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : getDefaultBreakfastSetting(),
-        extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : 0,
-        hourly: false,
+        extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
+        hourly: (row.arrivalDate || modalForm.value.checkIn) === (row.departureDate || modalForm.value.checkOut),
         arrivalTime: '14:00',
         hoursOut: '12:00',
         isPreassigned: false,
@@ -2375,28 +2770,24 @@ function validateRoomQuantity(alloc) {
 }
 
 async function handleCheckInChange() {
-  if (modalForm.value.checkIn) {
-    const nights = Number(modalForm.value.nights) > 0 ? Number(modalForm.value.nights) : 1
-    modalForm.value.checkOut = addDaysToDateStr(modalForm.value.checkIn, nights)
-  }
   await handleDateChange()
 }
 
 async function handleMainCheckInChange() {
-  const tab = activeTab.value
-  if (tab && tab.checkIn) {
-    const nights = Number(tab.nights) > 0 ? Number(tab.nights) : 1
-    tab.checkOut = addDaysToDateStr(tab.checkIn, nights)
-  }
   await handleMainDateChange()
 }
 
 async function handleDateChange() {
   const ci = new Date(modalForm.value.checkIn)
-  const co = new Date(modalForm.value.checkOut)
+  let co = new Date(modalForm.value.checkOut)
   if (!isNaN(ci) && !isNaN(co)) {
+    if (co < ci) {
+      co = new Date(ci)
+      co.setDate(ci.getDate() + 1)
+      modalForm.value.checkOut = co.toISOString().split('T')[0]
+    }
     const diff = Math.ceil((co - ci) / 86400000)
-    modalForm.value.nights = diff > 0 ? diff : 1
+    modalForm.value.nights = diff >= 0 ? diff : 0
     
     // Đồng bộ ngày check-in/check-out cho tất cả các phòng & allocations
     if (modalForm.value.roomAllocations) {
@@ -2438,10 +2829,15 @@ async function handleMainDateChange() {
   const tab = activeTab.value
   if (!tab) return
   const ci = new Date(tab.checkIn)
-  const co = new Date(tab.checkOut)
+  let co = new Date(tab.checkOut)
   if (!isNaN(ci) && !isNaN(co)) {
+    if (co < ci) {
+      co = new Date(ci)
+      co.setDate(ci.getDate() + 1)
+      tab.checkOut = co.toISOString().split('T')[0]
+    }
     const diff = Math.ceil((co - ci) / 86400000)
-    tab.nights = diff > 0 ? diff : 1
+    tab.nights = diff >= 0 ? diff : 0
     
     // Sync dates to allocations & rooms in tab
     if (tab.roomAllocations) {
@@ -2593,14 +2989,23 @@ async function handleRowDateChangeInline(room) {
     const ci = new Date(room.checkIn)
     const co = new Date(room.checkOut)
     if (!isNaN(ci) && !isNaN(co)) {
-      if (co <= ci) {
-        const nextDay = new Date(ci)
-        nextDay.setDate(ci.getDate() + 1)
-        room.checkOut = nextDay.toISOString().split('T')[0]
+      if (co < ci) {
+        if (room.hourly) {
+          room.checkOut = room.checkIn
+        } else {
+          const nextDay = new Date(ci)
+          nextDay.setDate(ci.getDate() + 1)
+          room.checkOut = nextDay.toISOString().split('T')[0]
+        }
+      }
+      
+      // Nếu check-out bằng check-in nhưng chưa bật hourly -> tự động bật hourly
+      if (room.checkOut === room.checkIn && !room.hourly) {
+        room.hourly = true
       }
       
       const diffTime = new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()
-      room.nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
+      room.nights = Math.max(room.hourly ? 0 : 1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
       room.total = calculateRoomTotal(room)
 
       // Đồng bộ ngược lại allocation của tab hiện tại để khi lưu sẽ update đúng
@@ -2614,6 +3019,7 @@ async function handleRowDateChangeInline(room) {
         }
         syncBookingDatesFromRooms(tab)
       }
+      updateRoomAvailability()
     }
   }
 }
@@ -2637,8 +3043,40 @@ async function handleRowNightsChangeInline(room) {
         }
         syncBookingDatesFromRooms(tab)
       }
+      updateRoomAvailability()
     }
   }
+}
+
+async function handleHourlyToggle(room) {
+  if (room.hourly) {
+    room.checkOut = room.checkIn
+    room.nights = 0
+  } else {
+    if (room.checkOut === room.checkIn) {
+      const ci = new Date(room.checkIn)
+      if (!isNaN(ci)) {
+        const co = new Date(ci)
+        co.setDate(ci.getDate() + 1)
+        room.checkOut = co.toISOString().split('T')[0]
+        room.nights = 1
+      }
+    }
+  }
+  room.total = calculateRoomTotal(room)
+
+  // Đồng bộ ngược lại allocation của tab hiện tại
+  const tab = activeTab.value
+  if (tab && tab.roomAllocations) {
+    const alloc = tab.roomAllocations.find(a => a.roomClassId === room.roomClassId)
+    if (alloc) {
+      alloc.arrivalDate = room.checkIn
+      alloc.departureDate = room.checkOut
+      alloc.nights = room.nights
+    }
+    syncBookingDatesFromRooms(tab)
+  }
+  updateRoomAvailability()
 }
 
 
@@ -2839,7 +3277,7 @@ async function handleSaveNewBooking() {
   isSavingModal.value = true
   try {
     const payload = {
-      booking_name:           modalForm.value.bookingName.toUpperCase(),
+      booking_name:           modalForm.value.bookingName,
       color:                  (isColorChanged.value || modalForm.value.color !== '#000000') ? modalForm.value.color : null,
       arrival_date:           modalForm.value.checkIn,
       departure_date:         modalForm.value.checkOut,
@@ -2902,6 +3340,34 @@ async function handleGuestInfoSaved() {
   if (bc2) bc2.postMessage('rooms-updated')
 }
 
+function areRoomPeriodsOverlapping(r1, r2) {
+  if (!r1.checkIn || !r1.checkOut || !r2.checkIn || !r2.checkOut) return false
+
+  const start1 = new Date(r1.checkIn)
+  const end1 = new Date(r1.checkOut)
+  const start2 = new Date(r2.checkIn)
+  const end2 = new Date(r2.checkOut)
+
+  const isHourly1 = r1.checkIn === r1.checkOut || !!r1.hourly
+  const isHourly2 = r2.checkIn === r2.checkOut || !!r2.hourly
+
+  if (isHourly1 && isHourly2) {
+    return r1.checkIn === r2.checkIn
+  }
+
+  if (isHourly1) {
+    const t1 = start1.getTime()
+    return t1 >= start2.getTime() && t1 < end2.getTime()
+  }
+
+  if (isHourly2) {
+    const t2 = start2.getTime()
+    return t2 >= start1.getTime() && t2 < end1.getTime()
+  }
+
+  return start1 < end2 && end1 > start2
+}
+
 function parseDateVi(dateStr) {
   if (!dateStr) return ''
   const parts = dateStr.split('/')
@@ -2948,7 +3414,7 @@ function getVacantRoomsList(room) {
   
   const parentObj = (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
   const assignedRoomNumbers = (parentObj?.rooms || [])
-    .filter(r => r.id !== room.id && r.roomNumber)
+    .filter(r => r.id !== room.id && r.roomNumber && areRoomPeriodsOverlapping(r, room))
     .map(r => r.roomNumber)
 
   return list.filter(r => r.room_number !== room.roomNumber && !assignedRoomNumbers.includes(r.room_number))
@@ -2962,12 +3428,8 @@ function validateRoomsDuplication(rooms) {
       const r1 = roomsWithNumber[i]
       const r2 = roomsWithNumber[j]
       if (r1.roomNumber === r2.roomNumber) {
-        const start1 = new Date(r1.checkIn)
-        const end1 = new Date(r1.checkOut)
-        const start2 = new Date(r2.checkIn)
-        const end2 = new Date(r2.checkOut)
-        if (start1 < end2 && start2 < end1) {
-          return `Số phòng ${r1.roomNumber} bị trùng lặp trong giai đoạn ở trùng nhau (${formatDateVi(r1.checkIn)} → ${formatDateVi(r1.checkOut)} và ${formatDateVi(r2.checkIn)} → ${formatDateVi(r2.checkOut)})!`
+        if (areRoomPeriodsOverlapping(r1, r2)) {
+          return `Số phòng ${r1.roomNumber} bị trùng lặp trong giai đoạn ở trùng nhau (${formatDateVi(r1.checkIn)} - ${formatDateVi(r1.checkOut)} và ${formatDateVi(r2.checkIn)} - ${formatDateVi(r2.checkOut)})!`
         }
       }
     }
@@ -3073,7 +3535,7 @@ async function triggerAction(actionName) {
       if (tab && tab.dbId) {
         try {
           const payload = {
-            booking_name:           tab.bookingName.toUpperCase(),
+            booking_name:           tab.bookingName,
             arrival_date:           tab.checkIn,
             departure_date:         tab.checkOut,
             num_of_days:            tab.nights,
@@ -3111,7 +3573,20 @@ async function triggerAction(actionName) {
         uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
       }
     })
-  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký') {
+  } else if (actionName === 'Cập nhật') {
+    const tab = activeTab.value
+    if (tab && selectedRows.value.length > 0) {
+      const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+      const validRooms = selectedRooms.filter(r => r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled')
+      if (validRooms.length === 0) {
+        uiStore.showToast('Chỉ cho phép cập nhật nhanh các phòng ở trạng thái Đăng ký hoặc Đang ở!', 'warning')
+        return
+      }
+      isQuickUpdateModalOpen.value = true
+    } else {
+      openEditModal()
+    }
+  } else if (actionName === 'Thông tin đăng ký') {
     openEditModal()
   } else if (actionName === 'Thông tin khách hàng') {
     openGuestInfoModal()
@@ -3836,6 +4311,29 @@ function handleUpgraded(payload) {
   }
 }
 
+function handleQuickUpdateSaved(payload) {
+  if (activeTab.value?.rooms && payload?.room_ids) {
+    activeTab.value.rooms.forEach(r => {
+      if (payload.room_ids.includes(String(r.bookingRoomId))) {
+        if (payload.arrival_date !== undefined) r.checkIn = payload.arrival_date
+        if (payload.arrival_time !== undefined) r.arrivalTime = payload.arrival_time
+        if (payload.departure_date !== undefined) r.checkOut = payload.departure_date
+        if (payload.departure_time !== undefined) r.hoursOut = payload.departure_time
+        if (payload.rate !== undefined) r.price = payload.rate
+        if (payload.adults !== undefined) r.adults = payload.adults
+        if (payload.children_qty !== undefined) {
+          r.children = payload.children_qty
+        }
+        if (payload.extra_bed_qty !== undefined) r.extraBedQty = payload.extra_bed_qty
+        if (payload.extra_bed_rate !== undefined) r.extraBedPrice = payload.extra_bed_rate
+      }
+    })
+  }
+  selectedRows.value = []
+  notifyRoomUpdates()
+  loadBookings()
+}
+
 // ==================== XÓA DỊCH VỤ BỔ SUNG MODAL ====================
 const isDeleteServiceModalOpen = ref(false)
 const deleteServiceModalRoom = ref(null)
@@ -4200,10 +4698,10 @@ defineExpose({
             v-if="isEditing" 
             type="text" 
             v-model="activeTab.bookingName" 
-            class="border border-slate-300 rounded px-2 py-0.5 text-xs w-48 font-semibold text-slate-800 focus:outline-none focus:border-blue-500 uppercase" 
+            class="border border-slate-300 rounded px-2 py-0.5 text-xs w-48 font-semibold text-slate-800 focus:outline-none focus:border-blue-500" 
             @click.stop
           />
-          <b v-else class="uppercase font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
+          <b v-else class="font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
         </div>
         <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
         <div>
@@ -4331,7 +4829,6 @@ defineExpose({
                         class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
                         :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
                         @click="handleRowSelect(room.id)"
-                        :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
                       >
                         <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
                         <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -4608,7 +5105,7 @@ defineExpose({
                           <span v-else>{{ room.children }}</span>
                         </template>
                         <template v-else-if="col.key === 'childBreakfast'">
-                          <button @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                          <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'breakfast'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -4623,7 +5120,17 @@ defineExpose({
                           </select>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
-                          <div class="flex items-center justify-center gap-1">
+                          <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                            <input 
+                              type="number" 
+                              v-model.number="room.extraBedQty" 
+                              min="0"
+                              max="10"
+                              @input="handleInlineExtraBedQtyChange(room)"
+                              class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                            />
+                          </div>
+                          <div v-else class="flex items-center justify-center gap-1">
                             <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
                             <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
                               <span>Chi tiết</span>
@@ -4631,11 +5138,20 @@ defineExpose({
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <span class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
+                          <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                            <input 
+                              type="text" 
+                              :value="formatCurrencyInput(room.extraBedPrice)"
+                              @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
+                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                              class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                            />
+                          </div>
+                          <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75">
-                            <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing">
+                            <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing" @change="handleHourlyToggle(room)">
                             <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                           </label>
                         </template>
@@ -4879,7 +5395,6 @@ defineExpose({
                                 (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
                               ]"
                               @click="handleRowSelect(room.id)"
-                              :title="`Phòng: ${room.roomNumber || '(chưa gán)'} | Khách: ${room.guestName || ''} | CI: ${room.checkIn} → CO: ${room.checkOut} | ${room.nights} đêm | ${(Number(room.total)||0).toLocaleString('en-US')}đ`"
                             >
                               <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
                               <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -4956,9 +5471,11 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="date" 
                                     v-model="room.checkIn" 
+                                    :min="activeTab?.checkIn || ''"
+                                    :max="activeTab?.checkOut || ''"
                                     @change="handleRowDateChangeInline(room)"
                                     @click="$event.target.showPicker && $event.target.showPicker()"
-                                    class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
+                                    class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-[11px] font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
                                   />
                                   <span v-else class="text-gray-500 font-semibold">{{ formatDateVi(room.checkIn) }}</span>
                                 </template>
@@ -4967,9 +5484,11 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="date" 
                                     v-model="room.checkOut" 
+                                    :min="activeTab?.checkIn || ''"
+                                    :max="activeTab?.checkOut || ''"
                                     @change="handleRowDateChangeInline(room)"
                                     @click="$event.target.showPicker && $event.target.showPicker()"
-                                    class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
+                                    class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-[11px] font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
                                   />
                                   <span v-else class="text-gray-500 font-semibold">{{ formatDateVi(room.checkOut) }}</span>
                                 </template>
@@ -5152,7 +5671,7 @@ defineExpose({
                                   <span v-else>{{ room.children }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'childBreakfast'">
-                                  <button @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                                  <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
                                 </template>
                                 <template v-else-if="col.key === 'breakfast'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -5167,7 +5686,17 @@ defineExpose({
                                   </select>
                                 </template>
                                 <template v-else-if="col.key === 'extraBed'">
-                                  <div class="flex items-center justify-center gap-1">
+                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                                    <input 
+                                      type="number" 
+                                      v-model.number="room.extraBedQty" 
+                                      min="0"
+                                      max="10"
+                                      @input="handleInlineExtraBedQtyChange(room)"
+                                      class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                    />
+                                  </div>
+                                  <div v-else class="flex items-center justify-center gap-1">
                                     <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
                                     <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
                                       <span>Chi tiết</span>
@@ -5175,11 +5704,20 @@ defineExpose({
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <span class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedTotal(room) > 0 ? formatCurrencyInput(getRoomExtraBedTotal(room)) : '' }}</span>
+                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                                    <input 
+                                      type="text" 
+                                      :value="formatCurrencyInput(room.extraBedPrice)"
+                                      @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
+                                      @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                      class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                    />
+                                  </div>
+                                  <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hourly'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75">
-                                    <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing">
+                                    <input type="checkbox" v-model="room.hourly" class="sr-only peer" :disabled="!isEditing" @change="handleHourlyToggle(room)">
                                     <div class="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                                   </label>
                                 </template>
@@ -5335,25 +5873,48 @@ defineExpose({
                                       <tr 
                                         v-for="svc in getRoomDisplayServices(room)" 
                                         :key="svc.id" 
-                                        class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold"
+                                        class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold group"
                                       >
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
-                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
+                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">
+                                          <input 
+                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                            type="number"
+                                            :value="svc.quantity !== undefined && svc.quantity !== null ? parseFloat(svc.quantity) : 1"
+                                            min="0"
+                                            @change="e => handleInlineServiceQtyChange(room, svc, Number(e.target.value) || 0)"
+                                            class="w-14 text-center font-bold text-slate-800 bg-white border border-slate-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                          />
+                                          <span v-else>{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</span>
+                                        </td>
                                         <td class="p-2 border-r border-slate-100 text-right">
-                                     <input 
-                                       v-if="isEditing && isServiceRateEditable(svc.service_date)"
-                                       type="text"
-                                       :value="formatCurrencyInput(svc.rate)"
-                                       @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
-                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                       class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
-                                     />
-                                     <span v-else class="font-bold text-slate-800">
-                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
-                                     </span>
-                                   </td>
-                                        <td class="p-2 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                          <input 
+                                            v-if="isServiceRateEditable(svc.service_date)"
+                                            type="text"
+                                            :value="formatCurrencyInput(svc.rate)"
+                                            @change="e => handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                            @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                            class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                          />
+                                          <span v-else class="font-bold text-slate-800">
+                                            {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
+                                          </span>
+                                        </td>
+                                        <td class="p-2 text-right text-sky-700 font-bold">
+                                          <div class="flex items-center justify-end space-x-2">
+                                            <span>{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
+                                            <button 
+                                              v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                              @click.stop="handleInlineServiceDelete(room, svc)"
+                                              class="text-rose-500 hover:text-rose-700 opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer w-3 flex justify-center shrink-0"
+                                              title="Xóa dịch vụ"
+                                            >
+                                              <i class="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
+                                            <div v-else class="w-3 shrink-0"></div>
+                                          </div>
+                                        </td>
                                       </tr>
                                     </tbody>
                                   </table>
@@ -5428,7 +5989,7 @@ defineExpose({
       </div>
 
         <!-- ACTION DOCK (Redesigned Sidebar Dock) -->
-        <aside class="dock shrink-0" id="dock">
+        <aside class="dock shrink-0" id="dock" :class="{ 'opacity-50 pointer-events-none': isEditing }">
           <div class="dock-head"><span class="dot"></span>Chức năng</div>
 
           <div class="dock-group">
@@ -5592,7 +6153,7 @@ defineExpose({
     <Teleport to="body">
       <div 
         v-if="isModalOpen" 
-        class="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-xs animate-in"
+        class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-4 animate-in"
       >
         <div 
           class="bg-white rounded-xl shadow-2xl w-full max-w-[1400px] overflow-hidden border border-gray-300 flex flex-col max-h-[90vh]"
@@ -5685,7 +6246,7 @@ defineExpose({
                   type="text" 
                   v-model="modalForm.bookingName" 
                   placeholder="Nhập tên đăng ký..."
-                  class="font-bold text-sm text-black border border-blue-200 rounded-xl px-3 h-[32px] flex items-center bg-blue-50/70 shadow-sm w-full outline-none focus:border-blue-400 focus:bg-blue-50/90 uppercase"
+                  class="font-bold text-sm text-black border border-blue-200 rounded-xl px-3 h-[32px] flex items-center bg-blue-50/70 shadow-sm w-full outline-none focus:border-blue-400 focus:bg-blue-50/90"
                 />
             </div>
             <div class="flex flex-col">
@@ -6630,6 +7191,17 @@ defineExpose({
         :roomForms="roomForms"
         :roomRateCodes="roomRateCodes"
         @upgraded="handleUpgraded" 
+      />
+    </Teleport>
+
+    <!-- QUICK UPDATE MODAL -->
+    <Teleport to="body">
+      <QuickUpdateModal
+        v-model:show="isQuickUpdateModalOpen"
+        :bookingId="activeTab?.dbId"
+        :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id) && r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled') : []"
+        :system-date="systemDate"
+        @saved="handleQuickUpdateSaved"
       />
     </Teleport>
 

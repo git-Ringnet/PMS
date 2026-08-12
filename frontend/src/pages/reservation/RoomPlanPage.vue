@@ -227,19 +227,26 @@ const selectedCells = ref([])
 const isDragSelecting = ref(false)
 const dragSelectionStart = ref(null) // { roomIdx, dayIdx, roomNo }
 const initialSelectedCells = ref([])
+const selectionDragMoved = ref(false)
+let selectionGroupCounter = 0
 
 // Resize state
 const resizeState = ref(null)
 
 // Drag and drop & Splitting Room states
 const draggedBooking = ref(null)
-const draggedOverRoom = ref(null)
-const draggedOverDayIdx = ref(null)
 const draggedBookingRect = ref(null)
 const dragGhostY = ref(0)
+const dragSourceStartIdx = ref(null)
+const dragSourceEndIdx = ref(null)
+const dragSourceRoom = ref(null)
+const roomPlanScrollContainer = ref(null)
+const dragTopZoneHeight = ref(0)
 
-const activeHighlightRoom = computed(() => draggedOverRoom.value)
-const activeHighlightDayIdx = computed(() => draggedOverDayIdx.value)
+let dragBoundsCache = null
+let lastGhostCellKey = null
+let lastGhostTop = null
+let dragGhostElement = null
 const splittingBooking = ref(null)
 const splitIndex = ref(-1)
 
@@ -679,6 +686,7 @@ const dbRooms = computed(() => {
           hasBroom,
           hasSparkles,
           isVirtual: false,
+          excludeFromStatistics: false,
           active_locks: [],
           orders: 0,
           classOrders: 0
@@ -710,6 +718,7 @@ const dbRooms = computed(() => {
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
+        excludeFromStatistics: String(r.room_number || '').trim().startsWith('0'),
         active_locks: r.active_locks ? [...r.active_locks] : [],
         orders: r.orders || 0,
         classOrders: r.room_class?.orders || 0,
@@ -736,10 +745,21 @@ const dbRooms = computed(() => {
 
   // 2. Append virtual rooms from active bookings
   const virtualRooms = new Set()
+  const visibleStart = days.value.length > 0 ? new Date(days.value[0].fullDate) : null
+  const visibleEnd = days.value.length > 0 ? new Date(days.value[days.value.length - 1].fullDate) : null
+  if (visibleStart) visibleStart.setHours(0, 0, 0, 0)
+  if (visibleEnd) visibleEnd.setHours(23, 59, 59, 999)
+
   bookings.value.forEach(bk => {
-    if (bk.isVirtual) {
-      virtualRooms.add(bk.room)
-    }
+    if (!bk.isVirtual || !visibleStart || !visibleEnd) return
+
+    const checkInDate = parseDateTime(bk.checkIn)
+    const checkOutDate = parseDateTime(bk.checkOut)
+    if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime())) return
+
+    // Do not create an unassigned-room row for bookings outside the visible period.
+    if (checkOutDate < visibleStart || checkInDate > visibleEnd) return
+    virtualRooms.add(bk.room)
   })
 
   virtualRooms.forEach(vRoom => {
@@ -1170,7 +1190,8 @@ async function loadBookings() {
 
     const res = await fetchBookings({
       from_date: formatDateStr(startRange),
-      to_date: formatDateStr(endRange)
+      to_date: formatDateStr(endRange),
+      with_billing: true
     })
 
     if (res && res.data && res.data.success && res.data.data && res.data.data.length > 0) {
@@ -1180,11 +1201,74 @@ async function loadBookings() {
         if (Number(b.status) === 3) return
         if (!b.booking_rooms) return
 
+        const calculateRoomAmounts = (room) => {
+          const roomServices = (room.services || []).filter(service => (
+            Number(service.is_posted) !== 1
+            && !service.service_bill_id
+            && !service.housekeeping_service_bill_id
+          ))
+          const serviceAmount = service => {
+            const quantity = Number(service.quantity ?? service.Quantity ?? 1) || 1
+            const rate = Number(service.rate ?? service.price ?? service.Amount ?? service.amount ?? 0) || 0
+            return Number(service.total_amount ?? service.totalAmount ?? '') || (rate * quantity)
+          }
+          const isRoomService = service => (
+            ['RM', 'ROOM_CHARGE'].includes(String(service.service_code ?? service.serviceCode ?? service.ServiceId ?? '').toUpperCase())
+          )
+          const roomCharge = roomServices.filter(isRoomService).reduce((sum, service) => sum + serviceAmount(service), 0)
+          const arrival = room.arrival_date || b.arrival_date
+          const departure = room.CheckoutDate || room.checkout_date || room.checkoutDate || room.departure_date || b.departure_date
+          const nights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / (1000 * 60 * 60 * 24)) || Number(b.num_of_days) || 1)
+          const hasConfiguredExtraBed = roomServices.some(service => String(service.service_code ?? service.serviceCode ?? '').toUpperCase() === 'EB')
+          const extraBedAmount = hasConfiguredExtraBed
+            ? 0
+            : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * nights
+          const childBreakfastAmount = (room.children || [])
+            .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
+            .filter(detail => Number(detail.is_extra_charge) === 1 && Number(detail.breakfast) === 1)
+            .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
+          const isChildBreakfastService = service => {
+            const note = String(service.note ?? service.Note ?? '').toLowerCase()
+            return note.startsWith('phụ thu ăn sáng trẻ em')
+          }
+          const serviceCharge = roomServices
+            .filter(service => !isRoomService(service) && !isChildBreakfastService(service))
+            .reduce((sum, service) => sum + serviceAmount(service), 0)
+            + extraBedAmount
+            + childBreakfastAmount
+
+          return {
+            roomCharge: roomCharge || (Number(room.rate) || 0) * nights,
+            serviceCharge
+          }
+        }
+
+        const bookingAmounts = b.booking_rooms
+          .filter(room => Number(room.status) !== 3)
+          .map(calculateRoomAmounts)
+          .reduce((totals, amounts) => ({
+            roomCharge: totals.roomCharge + amounts.roomCharge,
+            serviceCharge: totals.serviceCharge + amounts.serviceCharge
+          }), { roomCharge: 0, serviceCharge: 0 })
+        const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
+        const activePayments = (b.payments || []).filter(payment => Number(payment.edit_flag) === 0 && !payment.deleted_at)
+        const depositAmount = activePayments
+          .filter(payment => (
+            String(payment.pack2 || '').toUpperCase() === 'DPR'
+            && String(payment.pack4 || '').toUpperCase() !== 'AP'
+            && !payment.payment_id
+            && !payment.paymentId
+            && !String(payment.description || '').trim().toUpperCase().startsWith('[TRANSFER IN')
+          ))
+          .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+        const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount)
+
         b.booking_rooms.forEach(br => {
           if (![0, 1, 2].includes(Number(br.status))) return
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
+          const roomAmounts = calculateRoomAmounts(br)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
 
           // Map status values to matching UI classes
@@ -1223,26 +1307,6 @@ async function loadBookings() {
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
 
-          const roomServices = br.services || []
-          const roomChargeDue = roomServices
-            .filter(s => s.service_code === 'RM' || s.is_room === 1)
-            .reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity)), 0) 
-            || (Number(br.rate) * Number(b.num_of_days || 1))
-
-          const serviceChargeDue = roomServices
-            .filter(s => s.service_code !== 'RM' && s.is_room !== 1)
-            .reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity)), 0)
-
-          const totalAmount = roomChargeDue + serviceChargeDue
-
-          const activePayments = b.payments ? b.payments.filter(p => p.edit_flag === 0 && p.pack2 === 'DPR') : []
-          const depositAmount = activePayments.reduce((sum, p) => sum + Number(p.amount), 0)
-
-          const paidPayments = b.payments ? b.payments.filter(p => p.edit_flag === 0) : []
-          const paidAmount = paidPayments.reduce((sum, p) => sum + Number(p.amount), 0)
-
-          const balance = Math.max(0, totalAmount - paidAmount)
-
           apiBookings.push({
             room: roomVal,
             checkIn: `${arrivalStr} ${arrivalTime}`,
@@ -1261,19 +1325,19 @@ async function loadBookings() {
             children: br.children ? br.children.filter(c => c.age_group === 'child').length : 0,
             babies: br.children ? br.children.filter(c => c.age_group === 'baby').length : 0,
             extraBed: br.extra_bed_qty || 0,
-            specialRequest: b.special_requests || br.note || '',
+            specialRequest: b.note || b.special_requests || br.note || '',
             price: priceStr,
             label,
             isVirtual,
             bookingId: b.id,
             bookingRoomId: br.id,
             phone: b.contact_phone || '',
-            roomChargeDue,
-            serviceChargeDue,
-            totalAmount,
+            roomChargeDue: roomAmounts.roomCharge,
+            serviceChargeDue: roomAmounts.serviceCharge,
+            totalAmount: roomAmounts.roomCharge + roomAmounts.serviceCharge,
             depositAmount,
-            paidAmount,
-            balance
+            bookingTotalAmount,
+            bookingBalance
           })
         })
       })
@@ -1548,6 +1612,45 @@ function isCellSelected(roomNo, date) {
   return selectedCells.value.some(c => c.room === roomNo && c.date === dateStr)
 }
 
+function isSelectionGroupStart(roomNo, date) {
+  const dateStr = formatDateStr(date)
+  const current = selectedCells.value.find(c => c.room === roomNo && c.date === dateStr)
+  if (!current) return false
+
+  const currentDayIdx = days.value.findIndex(day => formatDateStr(day.fullDate) === dateStr)
+  if (currentDayIdx <= 0) return false
+
+  const previousDate = formatDateStr(days.value[currentDayIdx - 1]?.fullDate)
+  const previous = selectedCells.value.find(c => c.room === roomNo && c.date === previousDate)
+  if (!previous) return false
+
+  return (previous.selectionGroup ?? previous.date) !== (current.selectionGroup ?? current.date)
+}
+
+function isSelectionGroupTop(roomNo, date) {
+  const dateStr = formatDateStr(date)
+  const current = selectedCells.value.find(c => c.room === roomNo && c.date === dateStr)
+  if (!current) return false
+
+  const roomIdx = dbRooms.value.findIndex(room => room.room === roomNo)
+  if (roomIdx <= 0) return false
+
+  const previousRoom = dbRooms.value[roomIdx - 1]
+  const previous = selectedCells.value.find(c => c.room === previousRoom?.room && c.date === dateStr)
+  if (!previous) return false
+
+  return (previous.selectionGroup ?? previous.date) !== (current.selectionGroup ?? current.date)
+}
+
+function isBookingSegmented(bk) {
+  const roomBookings = processedBookings.value[bk.room] || []
+  return roomBookings.some(other => (
+    other.bookingId === bk.bookingId
+    && other.bookingRoomId !== bk.bookingRoomId
+    && (other.endIndex === bk.startIndex || other.startIndex === bk.endIndex)
+  ))
+}
+
 function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
   if (event.button !== 0) return // Left click only
   if (!event.ctrlKey && !event.metaKey) return
@@ -1555,12 +1658,19 @@ function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
 
   event.preventDefault()
   isDragSelecting.value = true
-  dragSelectionStart.value = { roomIdx, dayIdx, roomNo: roomItem.room }
+  selectionDragMoved.value = false
+  const startDate = formatDateStr(dayItem.fullDate)
+  const existingCell = selectedCells.value.find(c => c.room === roomItem.room && c.date === startDate)
+  dragSelectionStart.value = {
+    roomIdx,
+    dayIdx,
+    roomNo: roomItem.room,
+    groupId: ++selectionGroupCounter,
+    previousGroupId: existingCell?.selectionGroup
+  }
 
   // Save current selection snapshot before this drag operation
   initialSelectedCells.value = [...selectedCells.value]
-
-  updateDragSelection(roomIdx, dayIdx)
 
   window.addEventListener('mouseup', handleGlobalCellMouseUp)
 }
@@ -1568,6 +1678,11 @@ function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
 function handleCellMouseEnter(roomItem, dayItem, dayIdx, roomIdx, event) {
   if (!isDragSelecting.value || !dragSelectionStart.value) return
   if (roomItem.isVirtual) return
+  if (!event.ctrlKey && !event.metaKey) return
+  if (roomItem.room !== dragSelectionStart.value.roomNo) return
+  if (dayIdx === dragSelectionStart.value.dayIdx) return
+
+  selectionDragMoved.value = true
 
   updateDragSelection(roomIdx, dayIdx)
 }
@@ -1576,34 +1691,34 @@ function updateDragSelection(currentRoomIdx, currentDayIdx) {
   const start = dragSelectionStart.value
   if (!start) return
 
-  const minRoomIdx = Math.min(start.roomIdx, currentRoomIdx)
-  const maxRoomIdx = Math.max(start.roomIdx, currentRoomIdx)
   const minDayIdx = Math.min(start.dayIdx, currentDayIdx)
   const maxDayIdx = Math.max(start.dayIdx, currentDayIdx)
 
-  // Start with snapshot before current drag
-  const newSelection = [...initialSelectedCells.value]
+  // Replace the previous group only after the pointer actually moves.
+  const baseSelection = start.previousGroupId !== undefined
+    ? initialSelectedCells.value.filter(c => c.selectionGroup !== start.previousGroupId)
+    : initialSelectedCells.value.filter(c => !(c.room === start.roomNo && c.date === formatDateStr(days.value[start.dayIdx]?.fullDate)))
+  const newSelection = baseSelection.filter(c => c.selectionGroup !== start.groupId)
 
-  for (let rIdx = minRoomIdx; rIdx <= maxRoomIdx; rIdx++) {
-    const roomObj = dbRooms.value[rIdx]
-    if (!roomObj || roomObj.isVirtual) continue
-    const roomNo = roomObj.room
+  const roomObj = dbRooms.value[start.roomIdx]
+  if (!roomObj || roomObj.isVirtual) return
+  const roomNo = roomObj.room
 
-    for (let dIdx = minDayIdx; dIdx <= maxDayIdx; dIdx++) {
-      const dayObj = days.value[dIdx]
-      if (!dayObj) continue
+  for (let dIdx = minDayIdx; dIdx <= maxDayIdx; dIdx++) {
+    const dayObj = days.value[dIdx]
+    if (!dayObj) continue
 
-      if (isCellOccupied(roomNo, dayObj.fullDate)) continue
+    if (isCellOccupied(roomNo, dayObj.fullDate)) continue
 
-      const dateStr = formatDateStr(dayObj.fullDate)
-      const exists = newSelection.some(c => c.room === roomNo && c.date === dateStr)
-      if (!exists) {
-        newSelection.push({
-          room: roomNo,
-          date: dateStr,
-          dayIdx: dIdx
-        })
-      }
+    const dateStr = formatDateStr(dayObj.fullDate)
+    const exists = newSelection.some(c => c.room === roomNo && c.date === dateStr)
+    if (!exists) {
+      newSelection.push({
+        room: roomNo,
+        date: dateStr,
+        dayIdx: dIdx,
+        selectionGroup: start.groupId
+      })
     }
   }
 
@@ -1624,7 +1739,23 @@ function handleCellClick(roomItem, dayItem, dayIdx, event) {
     return
   }
 
-  // Selection is ONLY allowed when holding Ctrl or Cmd key
+  if (event.ctrlKey || event.metaKey) {
+    if (!selectionDragMoved.value) {
+      const dateStr = formatDateStr(dayItem.fullDate)
+      const alreadySelected = selectedCells.value.some(c => c.room === roomItem.room && c.date === dateStr)
+      if (!alreadySelected) {
+        selectedCells.value.push({
+          room: roomItem.room,
+          date: dateStr,
+          dayIdx,
+          selectionGroup: ++selectionGroupCounter
+        })
+      }
+    }
+    selectionDragMoved.value = false
+    return
+  }
+
   if (!event.ctrlKey && !event.metaKey) {
     selectedCells.value = []
   }
@@ -1632,65 +1763,49 @@ function handleCellClick(roomItem, dayItem, dayIdx, event) {
 
 const selectedRoomsRanges = computed(() => {
   if (selectedCells.value.length === 0) return []
-  
+
   const groups = {}
-  selectedCells.value.forEach(c => {
-    if (!groups[c.room]) groups[c.room] = []
-    groups[c.room].push(c.date)
+  selectedCells.value.forEach(cell => {
+    const groupKey = `${cell.room}:${cell.selectionGroup ?? cell.date}`
+    if (!groups[groupKey]) groups[groupKey] = { room: cell.room, dates: [] }
+    groups[groupKey].dates.push(cell.date)
   })
-  
-  const result = []
-  Object.keys(groups).forEach(roomNo => {
-    const dateStrings = [...new Set(groups[roomNo])].sort()
-    if (dateStrings.length === 0) return
 
-    let currentBlock = [dateStrings[0]]
+  const ranges = []
+  Object.values(groups).forEach(group => {
+    const dates = [...new Set(group.dates)].sort()
+    if (dates.length === 0) return
 
-    for (let i = 1; i < dateStrings.length; i++) {
-      const prevDate = new Date(dateStrings[i - 1])
-      const currDate = new Date(dateStrings[i])
-      const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / (1000 * 3600 * 24))
+    let blockStart = dates[0]
+    let previous = dates[0]
 
-      if (diffDays === 1) {
-        currentBlock.push(dateStrings[i])
-      } else {
-        const checkIn = currentBlock[0]
-        const lastDateStr = currentBlock[currentBlock.length - 1]
-        const lastDateObj = new Date(lastDateStr)
-        const nextDay = new Date(lastDateObj)
-        nextDay.setDate(nextDay.getDate() + 1)
-        const checkOut = formatDateStr(nextDay)
-
-        result.push({
-          room: roomNo,
-          checkIn,
-          checkOut,
-          lastDate: lastDateStr,
-          nights: currentBlock.length
-        })
-
-        currentBlock = [dateStrings[i]]
-      }
-    }
-
-    if (currentBlock.length > 0) {
-      const checkIn = currentBlock[0]
-      const lastDateStr = currentBlock[currentBlock.length - 1]
-      const lastDateObj = new Date(lastDateStr)
-      const nextDay = new Date(lastDateObj)
+    const pushBlock = (start, last) => {
+      const nextDay = new Date(last)
       nextDay.setDate(nextDay.getDate() + 1)
-      const checkOut = formatDateStr(nextDay)
-
-      result.push({
-        room: roomNo,
-        checkIn,
-        checkOut,
-        lastDate: lastDateStr,
-        nights: currentBlock.length
+      ranges.push({
+        room: group.room,
+        checkIn: start,
+        checkOut: formatDateStr(nextDay),
+        lastDate: last,
+        nights: Math.max(1, Math.round((nextDay - new Date(start)) / (1000 * 60 * 60 * 24)))
       })
     }
+
+    for (let i = 1; i < dates.length; i++) {
+      const current = new Date(dates[i])
+      const previousDate = new Date(previous)
+      const diffDays = Math.round((current - previousDate) / (1000 * 60 * 60 * 24))
+      if (diffDays !== 1) {
+        pushBlock(blockStart, previous)
+        blockStart = dates[i]
+      }
+      previous = dates[i]
+    }
+
+    pushBlock(blockStart, previous)
   })
-  return result
+
+  return ranges.sort((a, b) => a.room.localeCompare(b.room) || a.checkIn.localeCompare(b.checkIn))
 })
 
 const selectedDateRange = computed(() => {
@@ -1879,7 +1994,7 @@ const dynamicStats = computed(() => {
     }
   }
 
-  const physicalRooms = dbRooms.value.filter(r => !r.isVirtual && !r.is_internal)
+  const physicalRooms = dbRooms.value.filter(r => !r.isVirtual && !r.is_internal && !r.excludeFromStatistics)
   const totalRooms = physicalRooms.length || 131
 
   const occCounts = Array(numDays).fill(0)
@@ -1889,6 +2004,26 @@ const dynamicStats = computed(() => {
   const occRooms = Array(numDays).fill(null).map(() => [])
   const oooRooms = Array(numDays).fill(null).map(() => [])
   const avRooms = Array(numDays).fill(null).map(() => [])
+
+  // Include booking rooms that do not have a physical room number in OCC.
+  // Keep them out of the room grid and do not alter AV/OOO calculations.
+  const unassignedOccByDay = Array(numDays).fill(null).map(() => [])
+  bookings.value.forEach(item => {
+    if (!item.isVirtual || item.type === 'OOO' || item.type === 'OOS') return
+
+    const itemCheckIn = parseDateTime(item.checkIn)
+    const itemCheckOut = parseDateTime(item.checkOut)
+    itemCheckIn.setHours(0, 0, 0, 0)
+    itemCheckOut.setHours(0, 0, 0, 0)
+
+    for (let idx = 0; idx < numDays; idx++) {
+      const dayDate = new Date(days.value[idx].fullDate)
+      dayDate.setHours(0, 0, 0, 0)
+      if (dayDate >= itemCheckIn && dayDate < itemCheckOut) {
+        unassignedOccByDay[idx].push(item.code || `BookingRoom ${item.bookingRoomId}`)
+      }
+    }
+  })
 
   for (let idx = 0; idx < numDays; idx++) {
     let occ = 0
@@ -1905,7 +2040,8 @@ const dynamicStats = computed(() => {
 
       const hasLock = items.some(item => {
         if (item.type !== 'OOO' && item.type !== 'OOS') return false
-        return idx >= item.startIndex && idx < item.endIndex
+        // Room locks occupy the checkout/end date as well.
+        return idx >= item.startIndex && idx <= item.endIndex
       })
 
       if (hasGuest) {
@@ -1919,7 +2055,8 @@ const dynamicStats = computed(() => {
       }
     })
 
-    occCounts[idx] = occ
+    occCounts[idx] = occ + unassignedOccByDay[idx].length
+    occRooms[idx].push(...unassignedOccByDay[idx].map(code => `${code} (chưa gán)`))
     oooCounts[idx] = ooo
     avCounts[idx] = Math.max(0, totalRooms - occ - ooo)
   }
@@ -2717,6 +2854,15 @@ function handleDragStart(bk, event) {
   }
   hideTooltip()
   draggedBooking.value = bk
+  dragSourceStartIdx.value = bk.startIndex
+  dragSourceEndIdx.value = bk.endIndex
+  dragSourceRoom.value = bk.room
+  lastGhostCellKey = null
+  lastGhostTop = null
+  dragBoundsCache = null
+  requestAnimationFrame(() => {
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 2
+  })
 
   if (event && event.currentTarget) {
     const el = event.currentTarget
@@ -2726,6 +2872,10 @@ function handleDragStart(bk, event) {
       width: rect.width
     }
     dragGhostY.value = rect.top + 2
+    requestAnimationFrame(() => {
+      dragGhostElement = document.querySelector('[data-room-plan-ghost]')
+      if (dragGhostElement) dragGhostElement.style.top = `${dragGhostY.value}px`
+    })
 
     try {
       const transparentImg = new Image()
@@ -2740,7 +2890,10 @@ function handleDragStart(bk, event) {
   event.dataTransfer.effectAllowed = 'move'
 
   window.addEventListener('wheel', handleDragWheel, { passive: true })
-  window.addEventListener('dragover', handleGlobalDragOver)
+  window.addEventListener('dragenter', handleWindowDragOver)
+  window.addEventListener('dragover', handleWindowDragOver)
+  document.addEventListener('dragenter', handleWindowDragOver, true)
+  document.addEventListener('dragover', handleWindowDragOver, true)
 }
 
 let scrollAnimationFrame = null
@@ -2748,12 +2901,14 @@ let currentScrollX = 0
 let currentScrollY = 0
 let scrollContainer = null
 
-function getDragVerticalBounds() {
+function getDragVerticalBounds(force = false) {
+  if (!force && dragBoundsCache) return dragBoundsCache
   if (!scrollContainer) {
-    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+    scrollContainer = roomPlanScrollContainer.value || document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
   }
   if (!scrollContainer) {
-    return { minTop: 0, maxTop: window.innerHeight - 35, headerBottom: 0, occTop: window.innerHeight }
+    dragBoundsCache = { minTop: 0, maxTop: window.innerHeight - 35, headerBottom: 0, occTop: window.innerHeight }
+    return dragBoundsCache
   }
 
   const containerRect = scrollContainer.getBoundingClientRect()
@@ -2766,16 +2921,27 @@ function getDragVerticalBounds() {
   const minTop = Math.max(headerBottom + 2, containerRect.top + 42)
   const maxTop = Math.min(occTop - 35, containerRect.bottom - 40)
 
-  return { minTop, maxTop, headerBottom, occTop, containerRect }
+  dragBoundsCache = { minTop, maxTop, headerBottom, occTop, containerRect }
+  return dragBoundsCache
 }
 
 function handleDragWheel(e) {
   if (!draggedBooking.value) return
   if (!scrollContainer) {
-    scrollContainer = document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
+    scrollContainer = roomPlanScrollContainer.value || document.querySelector('.overflow-auto') || document.querySelector('.overflow-y-auto')
   }
   if (scrollContainer) {
     scrollContainer.scrollTop += e.deltaY
+  }
+}
+
+function setDragGhostTop(top) {
+  if (lastGhostTop === top) return
+  lastGhostTop = top
+  if (dragGhostElement) {
+    dragGhostElement.style.top = `${top}px`
+  } else {
+    dragGhostY.value = top
   }
 }
 
@@ -2783,22 +2949,34 @@ function handleGlobalDragOver(event) {
   if (!draggedBooking.value) return
   event.preventDefault()
 
+  const targetCell = event.target?.closest?.('[data-room-plan-cell]')
+  if (targetCell && targetCell !== event.currentTarget) {
+    const cellKey = `${targetCell.dataset.room}:${targetCell.dataset.dayIndex}`
+    if (lastGhostCellKey !== cellKey) {
+      lastGhostCellKey = cellKey
+      const cellRect = targetCell.getBoundingClientRect()
+      const bounds = getDragVerticalBounds()
+      const targetY = Math.max(bounds.minTop, Math.min(cellRect.top + 2, bounds.maxTop))
+      setDragGhostTop(targetY)
+    }
+  }
+
   const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
   const clientY = event.clientY
 
   // If mouse is inside or above header, clamp ghost card strictly below header!
   if (clientY <= headerBottom) {
-    dragGhostY.value = minTop
+    setDragGhostTop(minTop)
   } else if (clientY >= occTop) {
-    dragGhostY.value = maxTop
+    setDragGhostTop(maxTop)
   }
 
   let scrollY = 0
 
-  // Trigger auto-scroll UP as soon as mouse reaches within 25px of header bottom
-  if (clientY < headerBottom + 25) {
-    const overflow = Math.max(0, (headerBottom + 25) - clientY)
-    // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as mouse moves further up
+  // Keep the current scroll area; extend it upward only after crossing the top boundary.
+  if (clientY < headerBottom) {
+    const overflow = Math.max(0, headerBottom - clientY)
+    // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as the pointer moves further up.
     const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
     scrollY = -speed
   } 
@@ -2816,20 +2994,48 @@ function handleGlobalDragOver(event) {
   if (scrollY !== 0) {
     startAutoScrollLoop()
   } else {
-    stopDragAutoScroll()
+    stopAutoScrollLoop()
   }
 }
 
-function stopDragAutoScroll() {
+function handleWindowDragOver(event) {
+  if (!draggedBooking.value) return
+  event.preventDefault()
+  if (!scrollContainer) getDragVerticalBounds()
+
+  const { headerBottom } = getDragVerticalBounds()
+  if (event.clientY < headerBottom) handleGlobalDragOver(event)
+}
+
+function allowRoomPlanDrop(event) {
+  event.preventDefault()
+}
+
+function handleTopDragOver(event) {
+  if (!draggedBooking.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  handleGlobalDragOver(event)
+}
+
+function stopAutoScrollLoop() {
   if (scrollAnimationFrame) {
     cancelAnimationFrame(scrollAnimationFrame)
     scrollAnimationFrame = null
   }
   currentScrollX = 0
   currentScrollY = 0
+}
+
+function stopDragAutoScroll() {
+  stopAutoScrollLoop()
   scrollContainer = null
+  dragBoundsCache = null
   window.removeEventListener('wheel', handleDragWheel)
-  window.removeEventListener('dragover', handleGlobalDragOver)
+  window.removeEventListener('dragenter', handleWindowDragOver)
+  window.removeEventListener('dragover', handleWindowDragOver)
+  document.removeEventListener('dragenter', handleWindowDragOver, true)
+  document.removeEventListener('dragover', handleWindowDragOver, true)
 }
 
 function startAutoScrollLoop() {
@@ -2837,9 +3043,13 @@ function startAutoScrollLoop() {
   const loop = () => {
     if (scrollContainer && currentScrollY !== 0) {
       scrollContainer.scrollTop += currentScrollY
-      const { minTop, maxTop } = getDragVerticalBounds()
+      const { minTop, maxTop } = getDragVerticalBounds(true)
       if (draggedBooking.value) {
-        dragGhostY.value = Math.max(minTop, Math.min(dragGhostY.value, maxTop))
+        const currentTop = dragGhostElement
+          ? parseFloat(dragGhostElement.style.top || `${dragGhostY.value}`)
+          : dragGhostY.value
+        const clampedTop = Math.max(minTop, Math.min(currentTop, maxTop))
+        setDragGhostTop(clampedTop)
       }
       scrollAnimationFrame = requestAnimationFrame(loop)
     } else {
@@ -2849,38 +3059,28 @@ function startAutoScrollLoop() {
   scrollAnimationFrame = requestAnimationFrame(loop)
 }
 
-function handleDragOver(event, item, dayIdx) {
-  event.preventDefault()
-  if (item && item.room && draggedOverRoom.value !== item.room) {
-    draggedOverRoom.value = item.room
-  }
-  if (draggedBooking.value) {
-    draggedOverDayIdx.value = draggedBooking.value.startIndex
-    if (event && event.currentTarget) {
-      const cellRect = event.currentTarget.getBoundingClientRect()
-      const { minTop, maxTop } = getDragVerticalBounds()
-      const targetY = cellRect.top + 2
-      dragGhostY.value = Math.max(minTop, Math.min(targetY, maxTop))
-    }
-  } else if (dayIdx !== undefined && draggedOverDayIdx.value !== dayIdx) {
-    draggedOverDayIdx.value = dayIdx
-  }
-
-  handleGlobalDragOver(event)
-}
-
 function handleDragEnd() {
   draggedBooking.value = null
   draggedBookingRect.value = null
-  draggedOverRoom.value = null
-  draggedOverDayIdx.value = null
+  dragSourceStartIdx.value = null
+  dragSourceEndIdx.value = null
+  dragSourceRoom.value = null
+  dragTopZoneHeight.value = 0
+  lastGhostCellKey = null
+  lastGhostTop = null
+  dragGhostElement = null
   stopDragAutoScroll()
 }
 
 async function handleDrop(targetRoom, targetDay, event) {
   event.preventDefault()
-  draggedOverRoom.value = null
-  draggedOverDayIdx.value = null
+  dragSourceStartIdx.value = null
+  dragSourceEndIdx.value = null
+  dragSourceRoom.value = null
+  dragTopZoneHeight.value = 0
+  lastGhostCellKey = null
+  lastGhostTop = null
+  dragGhostElement = null
   stopDragAutoScroll()
 
   let bk = draggedBooking.value
@@ -2892,6 +3092,11 @@ async function handleDrop(targetRoom, targetDay, event) {
   }
   if (!bk) return
   draggedBooking.value = null
+
+  if (targetRoom.isVirtual) {
+    uiStore.showToast('Di chuyển phòng không thành công', 'error')
+    return
+  }
 
   if (bk.code === 'LOCK') {
     uiStore.showToast('Không thể kéo thả ô bảo trì phòng.', 'error')
@@ -3245,6 +3450,10 @@ async function saveLockRoom() {
       }
     }
 
+    // Close the form only after the lock request has succeeded.
+    showLockRoomModal.value = false
+    selectedCells.value = []
+
     await roomStore.fetchRooms()
     await loadBookings()
     notifyRoomUpdates()
@@ -3256,8 +3465,6 @@ async function saveLockRoom() {
   } finally {
     loadingBookings.value = false
     emit('loading', false)
-    showLockRoomModal.value = false
-    selectedCells.value = []
   }
 }
 
@@ -3669,7 +3876,7 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragover="handleGlobalDragOver($event)">
+    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
@@ -3677,7 +3884,7 @@ function getRoomStatusIconName(item) {
         </colgroup>
 
         <!-- Header -->
-        <thead>
+        <thead @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
           <tr class="border-b border-slate-200 text-slate-700 font-bold select-none h-10">
             <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
             <th 
@@ -3685,8 +3892,12 @@ function getRoomStatusIconName(item) {
               :key="idx" 
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700')
+                dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
+                  ? 'bg-amber-500 text-white border-amber-700 shadow-[inset_0_-2px_0_#b45309]'
+                  : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700'))
               ]"
+              @dragenter.prevent="allowRoomPlanDrop"
+              @dragover.prevent="allowRoomPlanDrop"
             >
               <div class="flex flex-col items-center justify-center leading-tight py-0.5">
                 <span class="text-[11px] font-extrabold uppercase">{{ day.dow }}</span>
@@ -3728,7 +3939,7 @@ function getRoomStatusIconName(item) {
               <td 
                 class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden transition-colors"
                 :class="[
-                  activeHighlightRoom === item.room ? '!bg-amber-200 shadow-[inset_-1px_0_0_#d97706]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
+                  dragSourceRoom === item.room ? '!bg-amber-500 !text-white shadow-[inset_-1px_0_0_#b45309]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
                 ]"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
@@ -3764,23 +3975,25 @@ function getRoomStatusIconName(item) {
               <td 
                 v-for="(day, dayIdx) in days" 
                 :key="dayIdx" 
+                data-room-plan-cell
+                :data-room="item.room"
+                :data-day-index="dayIdx"
                 class="border-r border-slate-300 h-full p-0 relative transition-colors duration-75"
                 :class="[
                   isCellSelected(item.room, day.fullDate)
-                    ? 'ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm'
-                    : (
-                        (activeHighlightRoom === item.room)
-                          ? 'bg-amber-100/60 shadow-xs'
-                          : (item.isVirtual
-                              ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
-                              : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')))
-                      )
+                    ? `ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm ${isSelectionGroupStart(item.room, day.fullDate) ? '!border-l-4 !border-l-white' : ''} ${isSelectionGroupTop(item.room, day.fullDate) ? '!border-t-4 !border-t-white' : ''}`
+                    : (dragSourceStartIdx !== null && dayIdx >= dragSourceStartIdx && dayIdx < dragSourceEndIdx
+                        ? 'bg-amber-100/60 shadow-xs'
+                        : (item.isVirtual
+                            ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
+                            : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white'))))
                 ]"
                 @mousedown="handleCellMouseDown(item, day, dayIdx, idx, $event)"
                 @mouseenter="handleCellMouseEnter(item, day, dayIdx, idx, $event)"
                 @click="handleCellClick(item, day, dayIdx, $event)"
                 @contextmenu.prevent="handleCellContextMenu(item, day, $event)"
-                @dragover="handleDragOver($event, item, dayIdx)"
+                @dragenter="allowRoomPlanDrop"
+                @dragover="allowRoomPlanDrop"
                 @drop="handleDrop(item, day, $event)"
               >
                 <!-- Render bookings starting at this cell -->
@@ -3800,12 +4013,12 @@ function getRoomStatusIconName(item) {
                     class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-all"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
-                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
-                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-40 border-dashed' : ''
+                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-visible',
+                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : ''
                     ]"
                     :style="{
-                      left: `${bk.leftRatio * 100}%`,
-                      width: `calc(${bk.span * 100}% - 2px)`,
+                      left: isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`,
+                      width: isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 2px)`,
                       ...(isBookingMatched(bk) ? getBookingStyle(bk.type) : {})
                     }"
                   >
@@ -3825,7 +4038,10 @@ function getRoomStatusIconName(item) {
                       @mousedown.stop="startResize(bk, 'end', $event)"
                     ></div>
 
-                    <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">
+                    <div
+                      class="flex items-center gap-1 w-full overflow-hidden pb-1.5"
+                      :class="Number(bk.depositAmount) > 0 ? 'pr-9' : 'pr-1'"
+                    >
                       <svg 
                         v-if="bk.isDoNotMove"
                         class="w-3 h-3 text-slate-700 shrink-0" 
@@ -3834,7 +4050,18 @@ function getRoomStatusIconName(item) {
                       >
                         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                       </svg>
-                      <span class="truncate">{{ bk.label }}</span>
+                      <span class="truncate flex-1 min-w-0">{{ bk.label }}</span>
+                      <span
+                        v-if="Number(bk.depositAmount) > 0"
+                        class="absolute -right-[5px] top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center shrink-0"
+                        title="Booking đã có cọc"
+                      >
+                        <img
+                          src="/deposit-money.png"
+                          alt="Booking đã có cọc"
+                          class="w-9 h-9 object-contain"
+                        />
+                      </span>
                     </div>
 
                     <!-- Green line for stay / arrival -->
@@ -3890,7 +4117,7 @@ function getRoomStatusIconName(item) {
           </template>
         </tbody>
         <!-- Summary Footers wrapped inside tfoot for gapless sticky bottom rendering -->
-        <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200" @dragover="handleGlobalDragOver($event)">
+        <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200">
           <!-- Summary OCC Footer Row -->
           <tr class="h-[38px] font-black text-slate-800">
             <td 
@@ -3907,7 +4134,9 @@ function getRoomStatusIconName(item) {
               :key="idx" 
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]'
+                dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
+                  ? 'bg-amber-200 shadow-[inset_-1px_-1px_0_#d97706]'
+                  : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]')
               ]"
               :title="'Danh sách phòng bận ngày ' + day.dateStr + ':\n' + (dynamicStats.occRooms[idx]?.join(', ') || 'Không có')"
             >
@@ -4063,16 +4292,16 @@ function getRoomStatusIconName(item) {
           <!-- Payment Info -->
           <div class="flex flex-col gap-1 text-slate-600 font-semibold pt-1">
             <div class="flex justify-between items-center text-[10px]">
+              <span>Tổng tiền BK:</span>
+              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.bookingTotalAmount) }} ₫</span>
+            </div>
+            <div class="flex justify-between items-center text-[10px]">
               <span>Đã đặt cọc:</span>
               <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
             </div>
-            <div class="flex justify-between items-center text-[10px]">
-              <span>Đã thanh toán:</span>
-              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.paidAmount) }} ₫</span>
-            </div>
             <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 font-extrabold text-slate-900 text-xs">
               <span>Còn lại:</span>
-              <span class="text-rose-600 font-black">{{ formatMoney(hoveredBooking.balance) }} ₫</span>
+              <span class="text-rose-600 font-black">{{ formatMoney(hoveredBooking.bookingBalance) }} ₫</span>
             </div>
           </div>
 
@@ -4792,8 +5021,16 @@ function getRoomStatusIconName(item) {
 
   <!-- CUSTOM VERTICAL DRAG GHOST -->
   <Teleport to="body">
+    <div
+      v-if="draggedBooking && dragTopZoneHeight"
+      class="fixed inset-x-0 top-0 z-[9998] bg-transparent"
+      :style="{ height: `${dragTopZoneHeight}px` }"
+      @dragenter.prevent="handleTopDragOver"
+      @dragover.prevent="handleTopDragOver"
+    ></div>
     <div 
       v-if="draggedBooking && draggedBookingRect"
+      data-room-plan-ghost
       class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-[9px] font-bold leading-tight select-none shadow-2xl opacity-90 transition-all duration-100 ease-out"
       :class="[
         isBookingMatched(draggedBooking) ? getBookingClass(draggedBooking.type) : 'bg-slate-100 text-slate-400 border-slate-200'

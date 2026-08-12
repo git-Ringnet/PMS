@@ -104,7 +104,7 @@ class GuestController extends Controller
 
                 // Tạo em bé còn thiếu
                 for ($i = $existingBabies + 1; $i <= $targetBabies; $i++) {
-                    BookingChild::create([
+                    $baby = BookingChild::create([
                         'booking_id'       => $bookingId,
                         'booking_room_id'  => $room->id,
                         'full_name'        => "Baby {$i}",
@@ -113,11 +113,12 @@ class GuestController extends Controller
                         'age_group'        => 'baby',
                         'child_status'     => 0,
                     ]);
+                    $this->generateBreakfastDetails($baby);
                 }
 
                 // Tạo trẻ em còn thiếu
                 for ($i = $existingChildren + 1; $i <= $targetChildren; $i++) {
-                    BookingChild::create([
+                    $childRecord = BookingChild::create([
                         'booking_id'       => $bookingId,
                         'booking_room_id'  => $room->id,
                         'full_name'        => "Child {$i}",
@@ -126,6 +127,7 @@ class GuestController extends Controller
                         'age_group'        => 'child',
                         'child_status'     => 0,
                     ]);
+                    $this->generateBreakfastDetails($childRecord);
                 }
 
 
@@ -303,11 +305,35 @@ class GuestController extends Controller
         $data = $request->validate(['room_ids' => 'required|array|min:1', 'room_ids.*' => 'string|max:50']);
         $booking = Booking::with('bookingRooms')->findOrFail($bookingId);
         $rooms = $booking->bookingRooms->whereIn('id', $data['room_ids']);
+        $roomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $unpaidMasterBills = \App\Models\ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
+            ->where('Status', '!=', 2)
+            ->where(function ($q) use ($booking, $roomIds) {
+                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
+                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
+                if ($roomIds) {
+                    $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $roomIds)
+                        ->orWhereIn(DB::raw('CAST(RentalRoomId1 AS CHAR)'), $roomIds);
+                }
+            })
+            ->get(['Ma', 'Date', 'CreatedDate', 'OpenTime', 'ServiceId', 'DescriptionServive', 'Amount', 'RentalRoomId2', 'CustomerId2', 'Folio', 'Status']);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'master_unpaid' => $this->hasUnpaidMasterBills($booking),
+                'master_unpaid_bills' => $unpaidMasterBills->map(fn ($bill) => [
+                    'id' => $bill->Ma,
+                    'date' => $bill->Date ?: $bill->CreatedDate,
+                    'time' => $bill->OpenTime,
+                    'service' => $bill->DescriptionServive ?: $bill->ServiceId,
+                    'amount' => (float) $bill->Amount,
+                    'room_id' => $bill->RentalRoomId2,
+                    'guest_id' => $bill->CustomerId2,
+                    'folio' => $bill->Folio,
+                ])->values(),
                 'rooms' => $rooms->map(function (BookingRoom $room) {
                     $eligibility = $this->validateFullCheckout($room);
                     return [
@@ -441,13 +467,61 @@ class GuestController extends Controller
     /** Khôi phục checkout Master: chỉ mở lại trạng thái booking, không khôi phục phòng con. */
     public function restoreBookingCheckout($bookingId)
     {
-        $booking = Booking::findOrFail($bookingId);
-        if ($booking->status !== Booking::STATUS_CHECKOUT) {
-            return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
-        }
+        return DB::transaction(function () use ($bookingId) {
+            $booking = Booking::findOrFail($bookingId);
+            if ($booking->status !== Booking::STATUS_CHECKOUT) {
+                return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
+            }
 
-        $booking->update(['status' => Booking::STATUS_CHECKIN]);
-        return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
+            $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
+
+            $bookingRooms = $booking->bookingRooms()->where('status', BookingRoom::STATUS_CHECKED_OUT)->get();
+            foreach ($bookingRooms as $room) {
+                if ($room->room_number) {
+                    $hasInhouseBooking = BookingRoom::where('room_number', $room->room_number)
+                        ->where('id', '!=', $room->id)
+                        ->where('status', BookingRoom::STATUS_CHECKED_IN)
+                        ->exists();
+                    if ($hasInhouseBooking) {
+                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đã được booking khác check-in, không thể khôi phục checkout."], 422);
+                    }
+
+                    $hasActiveLock = RoomLock::where('room_number', $room->room_number)
+                        ->where('is_active', RoomLock::STATUS_ACTIVE)
+                        ->where('start_date', '<=', $systemDate->copy()->endOfDay())
+                        ->where('end_date', '>=', $systemDate->copy()->startOfDay())
+                        ->exists();
+                    if ($hasActiveLock) {
+                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đang bị khóa, không thể khôi phục checkout."], 422);
+                    }
+                }
+
+                $room->guests()->where('status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
+                    'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                    'actual_checkout_date' => null,
+                    'actual_checkout_time' => null,
+                    'checkout_by' => null,
+                ]);
+
+                $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
+                    'child_status' => BookingRoomGuest::STATUS_CHECKED_IN
+                ]);
+
+                $room->update([
+                    'status' => BookingRoom::STATUS_CHECKED_IN,
+                    'CheckoutDate' => null,
+                    'CheckoutTime' => null,
+                    'check_out_user' => null,
+                ]);
+
+                if ($room->room) {
+                    $room->room->update(['status' => 'occupied']);
+                }
+            }
+
+            $booking->update(['status' => Booking::STATUS_CHECKIN]);
+            return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
+        });
     }
 
     private function checkoutScope(BookingRoom $room, $guestIds, bool $wrap = true, bool $fullRoom = false)
@@ -471,6 +545,7 @@ class GuestController extends Controller
                     'status' => BookingRoom::STATUS_CHECKED_OUT,
                     'CheckoutDate' => $systemDate->toDateString(),
                     'CheckoutTime' => now()->format('H:i:s'),
+                    'departure_date' => $systemDate->toDateString(),
                     'check_out_user' => Auth::user()?->username ?? 'system',
                 ]);
                 if ($room->room) $room->room->update(['status' => 'checkout']);
@@ -529,6 +604,9 @@ class GuestController extends Controller
         }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
+        if ($this->hasUnpaidDebt($room->booking_id, $masterScope ? null : $room->id)) {
+            return ['code' => 'unpaid_debt', 'message' => 'Phòng vẫn còn công nợ chưa thanh toán.'];
+        }
         $unusedDepositQuery = \App\Models\Payment::where('booking_id', $room->booking_id)
             ->where('edit_flag', 0)
             ->whereNull('payment_id')
@@ -562,6 +640,10 @@ class GuestController extends Controller
             ->exists();
         if ($unpaid) return ['code' => 'unpaid_master', 'message' => 'Master còn hóa đơn chưa thanh toán.'];
 
+        if ($this->hasUnpaidDebt($booking->id)) {
+            return ['code' => 'unpaid_debt', 'message' => 'Phòng vẫn còn công nợ chưa thanh toán.'];
+        }
+
         $unusedDeposit = \App\Models\Payment::where('booking_id', $booking->id)
             ->where('edit_flag', 0)
             ->whereNull('payment_id')
@@ -570,6 +652,30 @@ class GuestController extends Controller
         if ($unusedDeposit) return ['code' => 'unused_deposit', 'message' => 'Master còn tiền cọc chưa dùng để thanh toán hóa đơn.'];
 
         return null;
+    }
+
+    /** Công nợ AC chỉ được xem là đã thanh toán khi tổng giải trừ đạt đủ số tiền gốc. */
+    private function hasUnpaidDebt(int|string $bookingId, int|string|null $roomId = null): bool
+    {
+        $query = \App\Models\Payment::query()
+            ->where('booking_id', $bookingId)
+            ->where('payment_method_id', 'AC')
+            ->where('edit_flag', 0)
+            ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
+            ->whereNull('deleted_at');
+
+        if ($roomId !== null) {
+            $query->whereRaw('CAST(booking_room_id AS CHAR) = ?', [(string) $roomId]);
+        }
+
+        return $query->get(['id', 'amount'])->contains(function ($payment) {
+            $settled = \App\Models\PaymentDebtSettlement::query()
+                ->where('payment_id', $payment->id)
+                ->where('edit_flag', 0)
+                ->sum('amount');
+
+            return round((float) $payment->amount - (float) $settled, 2) > 0;
+        });
     }
 
     private function hasUnpaidMasterBills(Booking $booking): bool
@@ -846,7 +952,14 @@ class GuestController extends Controller
         $child->breakfastDetails()->delete();
         $child->delete();
 
+        // Xóa các dịch vụ ăn sáng trẻ em tương ứng trong booking_room_services
         if ($roomId) {
+            $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+            \App\Models\BookingRoomService::where('booking_room_id', $roomId)
+                ->where('service_code', $serviceCode)
+                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
+                ->delete();
+
             $r = BookingRoom::find($roomId);
             if ($r) {
                 $r->update([
@@ -886,9 +999,53 @@ class GuestController extends Controller
             'amount'          => 'nullable|numeric|min:0',
         ]);
 
-        $detail->update($request->only(['breakfast', 'is_free', 'is_extra_charge', 'is_room', 'amount']));
+        $updateData = $request->only(['breakfast', 'is_free', 'is_extra_charge', 'is_room', 'amount']);
 
-        return response()->json(['success' => true, 'data' => $detail, 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
+        // Tự động tính toán lại amount nếu client không gửi kèm
+        if (!$request->has('amount')) {
+            $breakfast = $request->has('breakfast')
+                ? filter_var($request->breakfast, FILTER_VALIDATE_BOOLEAN)
+                : (bool) $detail->breakfast;
+
+            $isExtraCharge = $request->has('is_extra_charge')
+                ? filter_var($request->is_extra_charge, FILTER_VALIDATE_BOOLEAN)
+                : (bool) $detail->is_extra_charge;
+
+            $isFree = $request->has('is_free')
+                ? filter_var($request->is_free, FILTER_VALIDATE_BOOLEAN)
+                : (bool) $detail->is_free;
+
+            // Loại trừ tương hỗ giữa Miễn phí (is_free) và Phụ phí (is_extra_charge)
+            if ($request->has('is_extra_charge') && filter_var($request->is_extra_charge, FILTER_VALIDATE_BOOLEAN)) {
+                $isFree = false;
+                $updateData['is_free'] = false;
+            }
+            if ($request->has('is_free') && filter_var($request->is_free, FILTER_VALIDATE_BOOLEAN)) {
+                $isExtraCharge = false;
+                $updateData['is_extra_charge'] = false;
+            }
+
+            if (!$breakfast || $isFree) {
+                $updateData['amount'] = 0.0;
+            } else {
+                $setting = \App\Models\HotelSetting::first();
+                if ($isExtraCharge) {
+                    // Bật phụ phí → lấy giá ăn sáng trẻ em từ cấu hình công ty
+                    $updateData['amount'] = (float) ($setting?->breakfast_child_rate ?? 0);
+                } else {
+                    // Tắt phụ phí → lấy giá từ tham số BreakfastRateChild
+                    $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+                    $updateData['amount'] = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+                }
+            }
+        }
+
+        $detail->update($updateData);
+
+        // Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services
+        $this->syncChildBreakfastToService($detail);
+
+        return response()->json(['success' => true, 'data' => $detail->fresh(), 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
     }
 
     // =========================================
@@ -1038,6 +1195,13 @@ class GuestController extends Controller
 
     /**
      * Tự động tạo booking_child_breakfast_details cho mỗi ngày trong giai đoạn ở.
+     *
+     * Logic tham số:
+     *  - Booking_AutoExtraChargeBFChild = 1 → is_extra_charge = true (mặc định thu phụ phí)
+     *                                         amount = hotel_settings.breakfast_child_rate (giá màn hình công ty)
+     *  - Booking_AutoExtraChargeBFChild = 0 → is_extra_charge = false (không thu phụ phí mặc định)
+     *                                         amount = HotelConfig['BreakfastRateChild'] (giá từ tham số hệ thống)
+     *  - Em bé (baby): luôn miễn phí, is_extra_charge = false, amount = 0
      */
     private function generateBreakfastDetails(\App\Models\BookingChild $child): void
     {
@@ -1046,29 +1210,88 @@ class GuestController extends Controller
         $room = BookingRoom::find($child->booking_room_id);
         if (!$room) return;
 
-        $isBaby     = $child->age_group === 'baby';
-        $current    = Carbon::parse($room->arrival_date);
-        $end        = Carbon::parse($room->departure_date);
+        $isBaby  = $child->age_group === 'baby';
+        $current = Carbon::parse($room->arrival_date);
+        $end     = Carbon::parse($room->departure_date);
 
-        // Lấy giá ăn sáng từ hotel_settings
+        // Đọc tham số hệ thống Booking_AutoExtraChargeBFChild từ hotel_configs
+        $autoExtraChargeVal = \App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')
+            ->value('value');
+        $autoExtraCharge = (int) $autoExtraChargeVal === 1;
+
+        // Xác định amount:
+        //  - autoExtraCharge = true  → giá từ hotel_settings.breakfast_child_rate (màn hình công ty)
+        //  - autoExtraCharge = false → giá từ HotelConfig['BreakfastRateChild']
         $setting = \App\Models\HotelSetting::first();
-        $amount  = $setting?->child_breakfast_rate ?? 0;
+        if ($autoExtraCharge) {
+            $amount = (float) ($setting?->breakfast_child_rate ?? 0);
+        } else {
+            $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
+            $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
+        }
 
         while ($current->lt($end)) {
-            \App\Models\BookingChildBreakfastDetail::firstOrCreate(
+            $detail = \App\Models\BookingChildBreakfastDetail::firstOrCreate(
                 [
                     'booking_child_id' => $child->id,
                     'service_date'     => $current->toDateString(),
                 ],
                 [
                     'breakfast'       => true,
-                    'is_free'         => $isBaby,   // Em bé: miễn phí
-                    'is_extra_charge' => false,
-                    'is_room'         => true,
+                    'is_free'         => $isBaby,           // Em bé: miễn phí
+                    'is_extra_charge' => !$isBaby && $autoExtraCharge,
+                    'is_room'         => !$autoExtraCharge, // Nếu extra charge thì không phân bổ vào phòng
                     'amount'          => $isBaby ? 0 : $amount,
                 ]
             );
+            
+            // Đồng bộ sang booking_room_services
+            $this->syncChildBreakfastToService($detail);
+
             $current = $current->addDay();
+        }
+    }
+
+    /**
+     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
+     */
+    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
+    {
+        $child = $detail->bookingChild;
+        if (!$child || !$child->booking_room_id) return;
+
+        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
+        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
+
+        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
+        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
+
+        if ($shouldHaveService) {
+            \App\Models\BookingRoomService::updateOrCreate(
+                [
+                    'booking_room_id' => $child->booking_room_id,
+                    'service_code'    => $serviceCode,
+                    'service_date'    => $detail->service_date->toDateString(),
+                    'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                ],
+                [
+                    'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
+                    'quantity'        => 1,
+                    'rate'            => $detail->amount,
+                    'total_amount'    => $detail->amount,
+                    'department'      => 'FO',
+                    'folio'           => 1,
+                    'is_room'         => 0,
+                    'is_posted'       => 0,
+                ]
+            );
+        } else {
+            // Xóa dịch vụ nếu có
+            \App\Models\BookingRoomService::where('booking_room_id', $child->booking_room_id)
+                ->where('service_code', $serviceCode)
+                ->whereDate('service_date', $detail->service_date->toDateString())
+                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
+                ->delete();
         }
     }
 }

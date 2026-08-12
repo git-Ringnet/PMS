@@ -150,13 +150,13 @@ onBeforeUnmount(() => {
           <div class="tp-head">PHÚT</div>
           <div class="tp-list">
             <div
-              v-for="m in [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]"
-              :key="m"
+              v-for="m in 60"
+              :key="m - 1"
               class="tp-item"
-              :class="{ active: currentMinute === m }"
-              @click="selectMinute(m)"
+              :class="{ active: currentMinute === (m - 1) }"
+              @click="selectMinute(m - 1)"
             >
-              {{ String(m).padStart(2, '0') }}
+              {{ String(m - 1).padStart(2, '0') }}
             </div>
           </div>
         </div>

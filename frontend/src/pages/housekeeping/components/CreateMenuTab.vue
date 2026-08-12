@@ -267,6 +267,11 @@
                   <input type="checkbox" v-model="newProduct.isActive" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
                   <span class="font-bold text-slate-700 text-[12px]">Đang sử dụng (Active)</span>
                 </label>
+
+                <label class="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" v-model="newProduct.openKey" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
+                  <span class="font-bold text-slate-700 text-[12px]">Mở bán (OpenKey)</span>
+                </label>
                 
                 <label class="flex items-center gap-2.5 cursor-pointer">
                   <input type="checkbox" v-model="newProduct.flexiblePrice" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
@@ -466,13 +471,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Trash2, Printer, FileSpreadsheet, Download, Upload, PlusCircle, ChevronUp, ChevronDown, ImageOff, Inbox, X, Check, Plus, Eye, EyeOff, Save, Power } from '@lucide/vue'
 import http from '@/services/http'
+import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
 
-const tabs = ['Minibar', 'Giặt ủi', 'Hàng đền bù', 'Amenity']
-const activeTab = ref('Minibar')
+const tabs = ref([])
+const activeTab = ref('')
 const showProductModal = ref(false)
 const showGroupModal = ref(false)
 const newGroupName = ref('')
@@ -569,17 +575,34 @@ const fetchUnitsAndInventories = async () => {
 const fetchGroupsAndProducts = async () => {
   isLoading.value = true
   try {
-    const resCategories = await http.get('/product-categories')
-    const resProducts = await http.get('/products')
+    const [resOutlets, resCategories, resProducts] = await Promise.all([
+      fetchHousekeepingOutlets(),
+      http.get('/product-categories'),
+      http.get('/products')
+    ])
+
+    const housekeepingOutlets = (resOutlets.data || []).filter(outlet => outlet.is_active)
+    tabs.value = housekeepingOutlets.map(outlet => outlet.code)
+    if (!tabs.value.includes(activeTab.value)) activeTab.value = tabs.value[0] || ''
+    const categories = Array.isArray(resCategories.data) ? resCategories.data : (resCategories.data?.data || [])
+    const products = Array.isArray(resProducts.data) ? resProducts.data : (resProducts.data?.data || [])
+    const resolveOutletName = (value) => {
+      const normalized = String(value || '').toLowerCase()
+    const outlet = housekeepingOutlets.find(item =>
+        String(item.code).toLowerCase() === normalized ||
+        String(item.name).toLowerCase() === normalized
+    )
+      return outlet?.code || value
+    }
     
     // Map data
-    const categoriesMap = resCategories.data.map(cat => ({
+    const categoriesMap = categories.map(cat => ({
       id: cat.id,
       name: cat.name,
       expanded: true,
       isEditing: false,
-      outlet: cat.outlet,
-      products: resProducts.data.filter(p => p.product_category_id === cat.id).map(p => {
+      outlet: resolveOutletName(cat.outlet),
+      products: products.filter(p => p.product_category_id === cat.id).map(p => {
         let basePrice = Number(p.price) || 0;
         let svcPercent = Number(p.service_charge_percent) || 0;
         let taxPercent = Number(p.tax_percent) || 0;
@@ -594,7 +617,7 @@ const fetchGroupsAndProducts = async () => {
         isActive: !!p.is_active,
         trackStock: !!p.track_stock,
         flexiblePrice: !!p.flexible_price,
-        tab: cat.outlet || 'Minibar',
+        tab: resolveOutletName(cat.outlet),
         imageUrl: p.image ? `http://localhost:8000/storage/${p.image}` : null
         }
       })
@@ -667,6 +690,7 @@ const newProduct = ref({
   currency: '',
   groupId: null,
   isActive: true,
+  openKey: true,
   trackStock: false,
   flexiblePrice: false,
   inventory_id: '',
@@ -720,6 +744,7 @@ const openCreateProduct = (groupId) => {
     currency: units.value.length > 0 ? units.value[0].code : '',
     groupId: groupId,
     isActive: true,
+    openKey: true,
     trackStock: false,
     flexiblePrice: false,
     inventory_id: inventories.value.length > 0 ? inventories.value[0].id : '',
@@ -742,6 +767,7 @@ const editProduct = (product) => {
     currency: product.currency || (units.value.length > 0 ? units.value[0].code : ''),
     groupId: product.product_category_id,
     isActive: product.isActive,
+    openKey: Number(product.open_key) === 1,
     trackStock: product.trackStock,
     flexiblePrice: product.flexiblePrice,
     inventory_id: product.inventory_id || '',
@@ -765,6 +791,7 @@ const saveProduct = async () => {
   formData.append('price', newProduct.value.price)
   formData.append('currency', newProduct.value.currency || '')
   formData.append('is_active', newProduct.value.isActive ? 1 : 0)
+  formData.append('open_key', newProduct.value.openKey ? 1 : 0)
   formData.append('track_stock', newProduct.value.trackStock ? 1 : 0)
   formData.append('flexible_price', newProduct.value.flexiblePrice ? 1 : 0)
   formData.append('inventory_id', newProduct.value.trackStock ? newProduct.value.inventory_id : '')

@@ -95,11 +95,11 @@ class CheckoutRestoreTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
-    public function test_restore_master_checkout_does_not_restore_child_rooms(): void
+    public function test_restore_master_checkout_restores_child_rooms(): void
     {
         $this->postJson("/api/bookings/{$this->booking->id}/restore-checkout")->assertSuccessful();
 
         $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
-        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
     }
 }

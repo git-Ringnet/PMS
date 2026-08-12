@@ -15,21 +15,25 @@ return new class extends Migration
             $table->id();
             $table->integer('log_no')->nullable();
             $table->string('item_found', 200);
-            $table->time('time_found');
-            $table->date('date_found');
-            $table->string('who_found', 200);
-            $table->string('received', 200);
+            $table->date('date_found')->nullable();
+            $table->string('who_found', 200)->nullable();
+            $table->string('received', 200)->nullable();
             $table->date('date_handling')->nullable();
-            $table->time('time_handling')->nullable();
             $table->string('method_handling', 200)->nullable();
             $table->string('delieved_handling', 200)->nullable();
             $table->string('received_handling', 200)->nullable();
             $table->string('remarks', 500)->nullable();
-            $table->string('where_found', 200);
-            $table->boolean('status')->default(0);
+            $table->string('where_found', 200)->nullable();
+            $table->string('guest_info', 200)->nullable();
+            $table->string('storage_location', 200)->nullable();
+            $table->date('date_reported')->nullable();
+            // Dòng nghiệp vụ chỉ có hai trạng thái: Lost và Found.
+            $table->string('status', 5)->default('lost');
 
             $table->longText('image')->nullable();
             $table->timestamps();
+
+            $table->index(['status', 'date_found']);
         });
     }
 

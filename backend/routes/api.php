@@ -170,6 +170,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
     Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class);
+    Route::post('/housekeeping/outlets/reorder', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'reorder']);
+    Route::delete('/housekeeping/outlets/{housekeepingOutlet}/force', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'forceDestroy'])->name('housekeeping.outlets.force-destroy');
+    Route::get('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'index'])->name('housekeeping.outlets.index');
+    Route::post('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'store'])->name('housekeeping.outlets.store');
+    Route::get('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'show'])->name('housekeeping.outlets.show');
+    Route::put('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.update');
+    Route::patch('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.patch');
+    Route::delete('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'destroy'])->name('housekeeping.outlets.destroy');
     Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive']);
     Route::get('/products/export', [\App\Http\Controllers\Api\ProductController::class, 'exportExcel']);
     Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);
@@ -374,6 +382,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+    Route::get('/availability/details', [\App\Http\Controllers\Api\AvailabilityController::class, 'details']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 });
 

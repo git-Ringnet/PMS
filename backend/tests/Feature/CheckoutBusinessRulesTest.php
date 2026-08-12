@@ -11,6 +11,8 @@ use App\Models\HotelConfig;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\Room;
+use App\Models\Payment;
+use App\Models\PaymentDebtSettlement;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
 use App\Models\HotelSetting;
@@ -97,6 +99,53 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
         $this->assertDatabaseHas('service_bills', ['Ma' => $unpaid->Ma, 'RentalRoomId2' => $this->room->id]);
         $this->assertDatabaseHas('service_bills', ['Ma' => $paid->Ma, 'RentalRoomId2' => $this->room->id, 'PaymentId' => 1]);
+    }
+
+    public function test_room_checkout_is_blocked_when_debt_has_remaining_balance(): void
+    {
+        $debt = Payment::create([
+            'booking_id' => $this->booking->id,
+            'booking_room_id' => $this->room->id,
+            'date' => '2026-08-04',
+            'guest_display' => $this->guest->full_name,
+            'amount' => 1000000,
+            'payment_method_id' => 'AC',
+            'status' => Payment::STATUS_PENDING,
+            'edit_flag' => 0,
+            'created_by' => 'checkout_rules_user',
+        ]);
+
+        PaymentDebtSettlement::create([
+            'payment_id' => $debt->id,
+            'payment_date' => '2026-08-04',
+            'payment_time' => '12:00',
+            'payment_method_id' => 'CA',
+            'amount' => 400000,
+            'edit_flag' => 0,
+            'created_by' => 'checkout_rules_user',
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", [
+            'guest_ids' => [$this->guest->id],
+            'skip_remaining_room_charge' => true,
+        ])->assertStatus(422)
+            ->assertJsonPath('code', 'unpaid_debt')
+            ->assertJsonPath('message', 'Phòng vẫn còn công nợ chưa thanh toán.');
+
+        PaymentDebtSettlement::create([
+            'payment_id' => $debt->id,
+            'payment_date' => '2026-08-04',
+            'payment_time' => '13:00',
+            'payment_method_id' => 'CA',
+            'amount' => 600000,
+            'edit_flag' => 0,
+            'created_by' => 'checkout_rules_user',
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", [
+            'guest_ids' => [$this->guest->id],
+            'skip_remaining_room_charge' => true,
+        ])->assertSuccessful();
     }
 
     public function test_room_checkout_allows_unpaid_room_charge_when_room_rate_is_sent_to_master(): void

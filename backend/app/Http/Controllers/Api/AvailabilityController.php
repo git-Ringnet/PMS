@@ -55,7 +55,8 @@ class AvailabilityController extends Controller
         // 2. Lấy room classes
         $roomClasses = RoomClass::where('is_active', true)->get();
 
-        $roomCounts = Room::select('room_class_id', DB::raw('count(*) as total'), DB::raw('max(extra_beds_limit) as max_extra'))
+        $roomCounts = Room::where('room_number', 'not like', '0%')
+            ->select('room_class_id', DB::raw('count(*) as total'), DB::raw('max(extra_beds_limit) as max_extra'))
             ->groupBy('room_class_id')
             ->get()
             ->keyBy('room_class_id');
@@ -169,6 +170,7 @@ class AvailabilityController extends Controller
         $bookedRooms     = []; // $bookedRooms[classCode][dateStr][] = room_number
         $inhouseRooms    = []; // $inhouseRooms[classCode][dateStr][] = room_number
         $allotmentRooms  = []; // $allotmentRooms[classCode][dateStr][] = room_number
+        $occBookings     = []; // $occBookings[classCode][] = booking room timeline rows
 
         foreach ($bookings as $br) {
             if (!$br->roomClass) continue;
@@ -210,6 +212,22 @@ class AvailabilityController extends Controller
 
             // Dayuse booking rule
             $isDayUse = ($arrDate === $depDate && $parentBooking && $parentBooking->is_day_use);
+
+            if ($isOccupied && !$isAllotment && !$isCancelled && !$isNoShow && $isAvailableStatus) {
+                $occBookings[$classCode][] = [
+                    'booking_id' => $parentBooking?->id,
+                    'booking_room_id' => $br->id,
+                    'booking_code' => $parentBooking?->booking_code,
+                    'booking_name' => $parentBooking?->booking_name,
+                    'company' => $parentBooking?->company?->name,
+                    'room_class_code' => $classCode,
+                    'room_number' => $br->room_number,
+                    'arrival_date' => $arrDate,
+                    'departure_date' => $depDate,
+                    'is_day_use' => $isDayUse,
+                    'room_count' => 1,
+                ];
+            }
 
             foreach ($dates as $dStr) {
                 $isMatchDate = $isDayUse ? ($dStr === $arrDate) : ($dStr >= $arrDate && $dStr < $depDate);
@@ -296,7 +314,10 @@ class AvailabilityController extends Controller
         }
 
         // Lấy tất cả phòng của mỗi loại phòng
-        $roomsByClass = Room::select('room_number', 'room_class_id')->get()->groupBy('room_class_id');
+        $roomsByClass = Room::where('room_number', 'not like', '0%')
+            ->select('room_number', 'room_class_id')
+            ->get()
+            ->groupBy('room_class_id');
 
         // 5. Build grid và statistics
         $grid = [];
@@ -419,6 +440,7 @@ class AvailabilityController extends Controller
             'room_classes' => $roomClassesData,
             'dates'        => $dates,
             'grid'         => $grid,
+            'occ_bookings' => $occBookings,
             'statistics'   => $statistics,
             'totals'       => [
                 'grand_total'          => $grandTotalRooms,
@@ -437,7 +459,7 @@ class AvailabilityController extends Controller
         $request->validate([
             'room_class_id' => 'required|exists:room_classes,id',
             'arrival_date'  => 'required|date',
-            'departure_date'=> 'required|date|after:arrival_date',
+            'departure_date'=> 'required|date|after_or_equal:arrival_date',
         ]);
 
         $av = $this->avService->getAvailability(
@@ -451,6 +473,193 @@ class AvailabilityController extends Controller
             'success'       => true,
             'av'            => $av,
             'is_available'  => $av > 0,
+        ]);
+    }
+
+    /**
+     * Chi tiết dữ liệu của một ô trong lưới availability.
+     * GET /availability/details?date=YYYY-MM-DD&metric=AV&room_class_id=1
+     */
+    public function details(Request $request)
+    {
+        $validated = $request->validate([
+            'date'         => ['required', 'date'],
+            'metric'       => ['required', 'in:AV,OCC,ALM,OOO,OOS,EB,SOFAB'],
+            'room_class_id'=> ['nullable', 'integer', 'exists:room_classes,id'],
+        ]);
+
+        $date = Carbon::parse($validated['date'])->toDateString();
+        $metric = $validated['metric'];
+        $roomClassId = $validated['room_class_id'] ?? null;
+
+        $roomsQuery = Room::query()
+            ->where('is_internal', false)
+            ->where('room_number', 'not like', '0%')
+            ->with('roomClass:id,code,name')
+            ->orderBy('room_number');
+
+        if ($roomClassId) {
+            $roomsQuery->where('room_class_id', $roomClassId);
+        }
+
+        $rooms = $roomsQuery->get();
+        $roomNumbers = $rooms->pluck('room_number')->values();
+
+        $locks = RoomLock::query()
+            ->where('is_active', true)
+            ->whereDate('start_date', '<=', $date)
+            ->whereDate('end_date', '>=', $date)
+            ->when($roomNumbers->isNotEmpty(), fn ($q) => $q->whereIn('room_number', $roomNumbers))
+            ->get(['room_number', 'lock_type']);
+
+        $lockedNumbers = $locks->pluck('room_number')->unique()->values();
+
+        $bookingRooms = BookingRoom::query()
+            ->whereIn('status', [
+                BookingRoom::STATUS_BOOKED,
+                BookingRoom::STATUS_CHECKED_IN,
+                BookingRoom::STATUS_CHECKED_OUT,
+            ])
+            ->whereDate('arrival_date', '<=', $date)
+            ->where(function ($query) use ($date) {
+                $query->whereDate('departure_date', '>', $date)
+                    ->orWhere(function ($dayUse) use ($date) {
+                        $dayUse->whereDate('arrival_date', $date)
+                            ->whereDate('departure_date', $date)
+                            ->where('is_day_use', true);
+                    });
+            })
+            ->whereHas('booking.registrationStatus', fn ($q) => $q->where('is_availability', true))
+            ->when($roomClassId, fn ($q) => $q->where('room_class_id', $roomClassId))
+            ->with([
+                'booking.registrationStatus',
+                'booking.company:id,name,code',
+                'roomClass:id,code,name',
+                'guests.guest:id,full_name',
+            ])
+            ->orderBy('booking_id')
+            ->orderBy('id')
+            ->get();
+
+        $isAllotment = fn ($bookingRoom) => str_contains(
+            strtolower((string) ($bookingRoom->booking?->registrationStatus?->name ?? '')),
+            'allot'
+        );
+
+        $occRooms = $bookingRooms
+            ->filter(fn ($room) => !$isAllotment($room))
+            ->pluck('room_number')
+            ->filter()
+            ->unique();
+
+        $allotmentRooms = $bookingRooms
+            ->filter(fn ($room) => $isAllotment($room))
+            ->pluck('room_number')
+            ->filter()
+            ->unique();
+
+        $availableRooms = $rooms
+            ->reject(fn ($room) => $lockedNumbers->contains($room->room_number))
+            ->reject(fn ($room) => $occRooms->contains($room->room_number) || $allotmentRooms->contains($room->room_number))
+            ->values()
+            ->map(fn ($room) => [
+                'room_number' => $room->room_number,
+                'room_class_code' => $room->roomClass?->code,
+                'room_class_name' => $room->roomClass?->name,
+            ]);
+
+        $mapBookingRow = function ($room) {
+            $guestNames = $room->guests
+                ->map(fn ($pivot) => $pivot->guest?->full_name)
+                ->filter()
+                ->values()
+                ->implode(', ');
+
+            return [
+                'booking_id' => $room->booking?->id,
+                'booking_code' => $room->booking?->booking_code,
+                'booking_name' => $room->booking?->booking_name,
+                'company' => $room->booking?->company?->name,
+                'registration_status' => $room->booking?->registrationStatus?->name,
+                'room_status' => match ((int) $room->status) {
+                    BookingRoom::STATUS_BOOKED => 'Reservation',
+                    BookingRoom::STATUS_CHECKED_IN => 'Checked in',
+                    BookingRoom::STATUS_CHECKED_OUT => 'Checked out',
+                    default => (string) $room->status,
+                },
+                'arrival_date' => optional($room->arrival_date)->toDateString(),
+                'departure_date' => optional($room->departure_date)->toDateString(),
+                'room_class_code' => $room->roomClass?->code,
+                'room_class_name' => $room->roomClass?->name,
+                'rate' => $room->rate,
+                'room_number' => $room->room_number,
+                'guest_count' => (int) $room->adults + (int) $room->children_qty + (int) $room->babies,
+                'guest_names' => $guestNames,
+                'extra_bed_qty' => (int) $room->extra_bed_qty,
+                'note' => $room->note ?: $room->booking?->note,
+            ];
+        };
+
+        $occBookingRows = $bookingRooms
+            ->filter(fn ($room) => !$isAllotment($room))
+            ->map($mapBookingRow)
+            ->values();
+
+        $allotmentBookingRows = $bookingRooms
+            ->filter(fn ($room) => $isAllotment($room))
+            ->map($mapBookingRow)
+            ->values();
+
+        $extraBedBookingRows = $bookingRooms
+            ->filter(fn ($room) => (int) $room->extra_bed_qty > 0)
+            ->map($mapBookingRow)
+            ->values();
+
+        $lockRows = $locks
+            ->filter(fn ($lock) => strtoupper((string) $lock->lock_type) === $metric)
+            ->map(function ($lock) use ($rooms) {
+                $room = $rooms->firstWhere('room_number', $lock->room_number);
+                return [
+                    'booking_id' => null,
+                    'booking_code' => null,
+                    'booking_name' => null,
+                    'company' => null,
+                    'registration_status' => null,
+                    'room_status' => strtoupper((string) $lock->lock_type),
+                    'arrival_date' => null,
+                    'departure_date' => null,
+                    'room_class_code' => $room?->roomClass?->code,
+                    'room_class_name' => $room?->roomClass?->name,
+                    'rate' => null,
+                    'room_number' => $lock->room_number,
+                    'guest_count' => 0,
+                    'guest_names' => null,
+                    'extra_bed_qty' => 0,
+                    'note' => null,
+                ];
+            })
+            ->values();
+
+        $bookingRows = match ($metric) {
+            'ALM' => $allotmentBookingRows,
+            'OOO', 'OOS' => $lockRows,
+            'EB' => $extraBedBookingRows,
+            'SOFAB' => collect(),
+            default => $occBookingRows,
+        };
+
+        return response()->json([
+            'success' => true,
+            'date' => $date,
+            'metric' => $metric,
+            'room_class_id' => $roomClassId,
+            'room_class_code' => $roomClassId ? $rooms->first()?->roomClass?->code : null,
+            'available_rooms' => $availableRooms,
+            'booking_rooms' => $bookingRows,
+            'totals' => [
+                'available_rooms' => $availableRooms->count(),
+                'booking_rooms' => $bookingRows->count(),
+            ],
         ]);
     }
 }

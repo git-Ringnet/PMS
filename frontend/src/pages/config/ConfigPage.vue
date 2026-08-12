@@ -6,6 +6,7 @@ import RoomDefinition from './components/RoomDefinition.vue'
 import SystemDefinition from './components/SystemDefinition.vue'
 import RateSetup from './components/RateSetup.vue'
 import DesignTemplate from './components/DesignTemplateTab.vue'
+import HousekeepingMenuDefinition from './components/HousekeepingMenuDefinition.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -74,7 +75,8 @@ function handleBack() {
               currentView === 'hotel' ? 'Định nghĩa khách sạn' : 
               currentView === 'room' ? 'Định nghĩa phòng' : 
               currentView === 'system' ? 'Định nghĩa hệ thống' : 
-              currentView === 'rate' ? 'Thiết lập giá' : 'Thiết kế biểu mẫu'
+              currentView === 'rate' ? 'Thiết lập giá' :
+              currentView === 'housekeeping-menu' ? 'Định nghĩa buồng phòng' : 'Thiết kế biểu mẫu'
             }}
           </span>
         </button>
@@ -138,8 +140,9 @@ function handleBack() {
             <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Thiết lập giá</span>
           </div>
 
-          <!-- Card 5: Định nghĩa channel manager -->
+          <!-- Card 5: Định nghĩa buồng phòng -->
           <div 
+            @click="currentView = 'housekeeping-menu'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
             <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
@@ -148,7 +151,7 @@ function handleBack() {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 12m-9 0a9 9 0 1118 0 9 9 0 01-18 0z" />
               </svg>
             </div>
-            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Định nghĩa channel manager</span>
+            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Định nghĩa buồng phòng</span>
           </div>
 
           <!-- Card 6: Thiết kế biểu mẫu -->
@@ -195,6 +198,7 @@ function handleBack() {
         <DesignTemplate 
           v-else-if="currentView === 'design-template'" 
         />
+        <HousekeepingMenuDefinition v-else-if="currentView === 'housekeeping-menu'" />
       </div>
     </template>
   </div>
