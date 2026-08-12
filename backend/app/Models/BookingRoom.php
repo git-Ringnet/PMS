@@ -54,7 +54,7 @@ class BookingRoom extends Model
             if (!empty($model->room_class_id)) {
                 $standardRate = \App\Models\StandardRate::where('room_class_id', $model->room_class_id)->first();
                 $roomForm = $standardRate ? \App\Models\RoomForm::find($standardRate->room_form_id) : null;
-                $model->RoomKind = $roomForm ? $roomForm->name : null;
+                $model->RoomKind = $roomForm ? $roomForm->id : null;
             }
             if ($model->ActutalNumOfDays === null && !empty($model->arrival_date) && !empty($model->departure_date)) {
                 $arr = \Carbon\Carbon::parse($model->arrival_date);
@@ -76,7 +76,7 @@ class BookingRoom extends Model
             if ($model->isDirty('room_class_id') && !empty($model->room_class_id)) {
                 $standardRate = \App\Models\StandardRate::where('room_class_id', $model->room_class_id)->first();
                 $roomForm = $standardRate ? \App\Models\RoomForm::find($standardRate->room_form_id) : null;
-                $model->RoomKind = $roomForm ? $roomForm->name : null;
+                $model->RoomKind = $roomForm ? $roomForm->id : null;
             }
             if ($model->isDirty('arrival_date') || $model->isDirty('departure_date') || $model->ActutalNumOfDays === null) {
                 if (!empty($model->arrival_date) && !empty($model->departure_date)) {

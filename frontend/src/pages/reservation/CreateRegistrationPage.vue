@@ -17,6 +17,7 @@ import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import GuestInfoModal from './components/GuestInfoModal.vue'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
+import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -149,6 +150,7 @@ const isModalOpen = ref(false)
 const isEditModal = ref(false)
 const isSavingModal = ref(false)
 const modalSubTab = ref('info')
+const isQuickUpdateModalOpen = ref(false)
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
@@ -3571,7 +3573,20 @@ async function triggerAction(actionName) {
         uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
       }
     })
-  } else if (actionName === 'Cập nhật' || actionName === 'Thông tin đăng ký') {
+  } else if (actionName === 'Cập nhật') {
+    const tab = activeTab.value
+    if (tab && selectedRows.value.length > 0) {
+      const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+      const validRooms = selectedRooms.filter(r => r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled')
+      if (validRooms.length === 0) {
+        uiStore.showToast('Chỉ cho phép cập nhật nhanh các phòng ở trạng thái Đăng ký hoặc Đang ở!', 'warning')
+        return
+      }
+      isQuickUpdateModalOpen.value = true
+    } else {
+      openEditModal()
+    }
+  } else if (actionName === 'Thông tin đăng ký') {
     openEditModal()
   } else if (actionName === 'Thông tin khách hàng') {
     openGuestInfoModal()
@@ -4294,6 +4309,29 @@ function handleUpgraded(payload) {
   } else {
     uiStore.showToast('Nâng hạng phòng thành công!', 'success')
   }
+}
+
+function handleQuickUpdateSaved(payload) {
+  if (activeTab.value?.rooms && payload?.room_ids) {
+    activeTab.value.rooms.forEach(r => {
+      if (payload.room_ids.includes(String(r.bookingRoomId))) {
+        if (payload.arrival_date !== undefined) r.checkIn = payload.arrival_date
+        if (payload.arrival_time !== undefined) r.arrivalTime = payload.arrival_time
+        if (payload.departure_date !== undefined) r.checkOut = payload.departure_date
+        if (payload.departure_time !== undefined) r.hoursOut = payload.departure_time
+        if (payload.rate !== undefined) r.price = payload.rate
+        if (payload.adults !== undefined) r.adults = payload.adults
+        if (payload.children_qty !== undefined) {
+          r.children = payload.children_qty
+        }
+        if (payload.extra_bed_qty !== undefined) r.extraBedQty = payload.extra_bed_qty
+        if (payload.extra_bed_rate !== undefined) r.extraBedPrice = payload.extra_bed_rate
+      }
+    })
+  }
+  selectedRows.value = []
+  notifyRoomUpdates()
+  loadBookings()
 }
 
 // ==================== XÓA DỊCH VỤ BỔ SUNG MODAL ====================
@@ -7153,6 +7191,17 @@ defineExpose({
         :roomForms="roomForms"
         :roomRateCodes="roomRateCodes"
         @upgraded="handleUpgraded" 
+      />
+    </Teleport>
+
+    <!-- QUICK UPDATE MODAL -->
+    <Teleport to="body">
+      <QuickUpdateModal
+        v-model:show="isQuickUpdateModalOpen"
+        :bookingId="activeTab?.dbId"
+        :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id) && r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled') : []"
+        :system-date="systemDate"
+        @saved="handleQuickUpdateSaved"
       />
     </Teleport>
 
