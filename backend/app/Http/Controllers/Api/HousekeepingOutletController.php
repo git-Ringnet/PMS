@@ -22,7 +22,6 @@ class HousekeepingOutletController extends Controller
         $data = $request->validate([
             'code' => 'required|string|max:30|unique:housekeeping_outlets,code',
             'name' => 'required|string|max:100',
-            'group_key' => 'required|string|max:30|unique:housekeeping_outlets,group_key',
             'service_code' => 'nullable|string|max:30',
             'is_active' => 'boolean',
             'order_index' => 'nullable|integer|min:0',
@@ -41,7 +40,6 @@ class HousekeepingOutletController extends Controller
         $data = $request->validate([
             'code' => 'required|string|max:30|unique:housekeeping_outlets,code,' . $housekeepingOutlet->id,
             'name' => 'required|string|max:100',
-            'group_key' => 'required|string|max:30|unique:housekeeping_outlets,group_key,' . $housekeepingOutlet->id,
             'service_code' => 'nullable|string|max:30',
             'is_active' => 'boolean',
             'order_index' => 'nullable|integer|min:0',
@@ -62,7 +60,6 @@ class HousekeepingOutletController extends Controller
         $values = array_values(array_unique(array_filter([
             $housekeepingOutlet->code,
             $housekeepingOutlet->name,
-            $housekeepingOutlet->group_key,
         ])));
 
         $categoryQuery = ProductCategory::whereIn('outlet', $values);
