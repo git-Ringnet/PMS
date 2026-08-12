@@ -2,6 +2,7 @@
 import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const uiStore = useUiStore()
 
@@ -84,6 +85,7 @@ const fetchSystemDate = async () => {
 }
 
 onMounted(() => {
+  fetchRoomData()
   fetchSystemDate()
   fetchRateCodes()
 })
@@ -154,13 +156,27 @@ const batchDaysOfWeek = reactive({
 const dailyMappingsList = ref([])
 
 const occupancies = ref([])
+const defaultOccupancies = ['Double', 'Twin', 'Triple', 'Family', 'King']
+const occupanciesList = computed(() => {
+  return occupancies.value.length > 0 ? occupancies.value : defaultOccupancies
+})
 
 const availableRatePlans = computed(() => {
   const currentRc = rateCodes.value.find(r => r.Ma === rateFormState.Ma) || selectedRateCode.value;
   if (!currentRc || !currentRc.rate_plans) return [];
   return currentRc.rate_plans
     .filter(p => p.Code !== 'DEFAULT')
-    .map(p => ({ Code: p.Code }));
+    .map(p => ({
+      Code: p.Code,
+      Description: p.Description,
+      BeginDate: p.BeginDate,
+      EndDate: p.EndDate
+    }));
+})
+
+const selectedBatchPlan = computed(() => {
+  if (!batchRateType.value) return null;
+  return availableRatePlans.value.find(p => p.Code === batchRateType.value) || null;
 })
 
 // --- RATE PLAN MODAL STATE ---
@@ -200,6 +216,9 @@ const openRatePlanModal = async () => {
     const saved = await handleSave();
     if (!saved || !selectedRateCode.value) return;
   }
+  if (roomTypes.value.length === 0) {
+    await fetchRoomData()
+  }
   showRatePlanModal.value = true;
   const plans = selectedRateCode.value.rate_plans || [];
   modalRatePlans.value = JSON.parse(JSON.stringify(plans.filter(p => p.Code !== 'DEFAULT')));
@@ -207,7 +226,12 @@ const openRatePlanModal = async () => {
   Object.assign(modalFormState, { Code: '', Description: '', BeginDate: '', EndDate: '' });
   for (const key in modalRateMatrix) delete modalRateMatrix[key];
   isModalEditing.value = false;
-  initialModalStateString.value = JSON.stringify({ form: modalFormState, matrix: modalRateMatrix });
+  
+  if (modalRatePlans.value.length > 0) {
+    await selectModalPlan(modalRatePlans.value[0]);
+  } else {
+    initialModalStateString.value = JSON.stringify({ form: modalFormState, matrix: modalRateMatrix });
+  }
 }
 
 const formatCurrencyInput = (val, currency) => {
@@ -286,6 +310,10 @@ const getModalMatrixKey = (roomCode, occupancy) => {
 const saveModalPlan = async () => {
   if (!modalFormState.Code) {
     uiStore.showToast('Vui lòng nhập Mã loại giá', 'warning');
+    return;
+  }
+  if (modalFormState.BeginDate && modalFormState.EndDate && modalFormState.EndDate < modalFormState.BeginDate) {
+    uiStore.showToast('Ngày kết thúc phải lớn hơn hoặc bằng Ngày bắt đầu!', 'warning');
     return;
   }
   if (modalFormState.Code.toUpperCase() === 'DEFAULT') {
@@ -406,6 +434,12 @@ const isEditing = computed(() => {
 
 const setDefaultBatchDates = () => {
   const sysDate = getTodayString()
+  const plan = selectedBatchPlan.value
+  if (plan && plan.BeginDate && plan.EndDate) {
+    batchFromDate.value = plan.BeginDate >= sysDate ? plan.BeginDate : sysDate
+    batchToDate.value = plan.EndDate
+    return
+  }
   const begin = rateFormState.BeginDate
   const end = rateFormState.EndDate
 
@@ -421,6 +455,22 @@ const setDefaultBatchDates = () => {
   }
 }
 
+watch(batchRateType, (newCode) => {
+  if (!newCode) return
+  const plan = availableRatePlans.value.find(p => p.Code === newCode)
+  if (plan && plan.BeginDate && plan.EndDate) {
+    const sysDate = getTodayString()
+    batchFromDate.value = plan.BeginDate >= sysDate ? plan.BeginDate : sysDate
+    batchToDate.value = plan.EndDate
+  } else if (plan && plan.BeginDate) {
+    const sysDate = getTodayString()
+    batchFromDate.value = plan.BeginDate >= sysDate ? plan.BeginDate : sysDate
+    batchToDate.value = rateFormState.EndDate || ''
+  } else {
+    setDefaultBatchDates()
+  }
+})
+
 const applyBatchUpdate = async () => {
   if (availableRatePlans.value.length === 0) {
     uiStore.showToast('Bạn chưa thiết lập loại giá nào. Vui lòng bấm dấu [+] ở Loại giá để thiết lập thêm loại giá.', 'warning');
@@ -433,6 +483,18 @@ const applyBatchUpdate = async () => {
   if (!batchFromDate.value || !batchToDate.value) {
     uiStore.showToast('Vui lòng chọn ngày cập nhật thông tin', 'warning');
     return;
+  }
+
+  const selectedPlan = selectedBatchPlan.value;
+  if (selectedPlan) {
+    if (selectedPlan.BeginDate && batchFromDate.value < selectedPlan.BeginDate) {
+      uiStore.showToast(`Từ ngày áp dụng (${formatDateVN(batchFromDate.value)}) không được nhỏ hơn Ngày bắt đầu của loại giá (${formatDateVN(selectedPlan.BeginDate)})!`, 'warning');
+      return;
+    }
+    if (selectedPlan.EndDate && batchToDate.value > selectedPlan.EndDate) {
+      uiStore.showToast(`Đến ngày áp dụng (${formatDateVN(batchToDate.value)}) không được lớn hơn Ngày kết thúc của loại giá (${formatDateVN(selectedPlan.EndDate)})!`, 'warning');
+      return;
+    }
   }
 
   const sysDateStr = getTodayString();
@@ -469,11 +531,6 @@ const applyBatchUpdate = async () => {
         dailyMappingsList.value.push({ Date: dateStr, Code: batchRateType.value });
       }
       appliedCount++;
-    } else {
-      // Nếu thứ trong tuần KHÔNG ĐƯỢC TICK (ví dụ T7, CN bỏ tick), gỡ/reset loại giá về '-'
-      if (existingIdx !== -1) {
-        dailyMappingsList.value.splice(existingIdx, 1);
-      }
     }
     currentDate.setDate(currentDate.getDate() + 1);
   }
@@ -505,7 +562,7 @@ const displayedDailyMappings = computed(() => {
   const list = [];
   let currentDate = new Date(from.getTime());
   let safetyCounter = 0;
-  while (currentDate <= to && safetyCounter < 2000) {
+  while (currentDate <= to && safetyCounter < 10000) {
     safetyCounter++;
     const year = currentDate.getFullYear();
     const month = String(currentDate.getMonth() + 1).padStart(2, '0');
@@ -588,15 +645,38 @@ watch(() => rateFormState.IsDaily, (newVal) => {
     dailyPagination.page = 1
   }
 })
-watch(() => rateFormState.BeginDate, () => {
+watch(() => rateFormState.BeginDate, (newVal) => {
+  if (newVal && rateFormState.EndDate && rateFormState.EndDate < newVal) {
+    rateFormState.EndDate = newVal
+  }
   dailyPagination.page = 1
   setDefaultBatchDates()
   nextTick(() => focusDailyMappingDate())
 })
-watch(() => rateFormState.EndDate, () => {
+watch(() => rateFormState.EndDate, (newVal) => {
+  if (newVal && rateFormState.BeginDate && newVal < rateFormState.BeginDate) {
+    uiStore.showToast('Ngày kết thúc không được nhỏ hơn Ngày bắt đầu!', 'warning')
+    rateFormState.EndDate = rateFormState.BeginDate
+  }
   dailyPagination.page = 1
   setDefaultBatchDates()
   nextTick(() => focusDailyMappingDate())
+})
+watch(() => modalFormState.BeginDate, (newVal) => {
+  if (newVal && modalFormState.EndDate && modalFormState.EndDate < newVal) {
+    modalFormState.EndDate = newVal
+  }
+})
+watch(() => modalFormState.EndDate, (newVal) => {
+  if (newVal && modalFormState.BeginDate && newVal < modalFormState.BeginDate) {
+    uiStore.showToast('Ngày kết thúc không được nhỏ hơn Ngày bắt đầu!', 'warning')
+    modalFormState.EndDate = modalFormState.BeginDate
+  }
+})
+watch(() => batchFromDate.value, (newVal) => {
+  if (newVal && batchToDate.value && batchToDate.value < newVal) {
+    batchToDate.value = newVal
+  }
 })
 
 const updateSingleMapping = (dateStr, newCode) => {
@@ -685,6 +765,10 @@ const handleAdd = async () => {
 const handleSave = async () => {
   if (!rateFormState.Ma) {
     uiStore.showToast('Vui lòng nhập Mã giá phòng trước khi lưu!', 'warning');
+    return false;
+  }
+  if (rateFormState.BeginDate && rateFormState.EndDate && rateFormState.EndDate < rateFormState.BeginDate) {
+    uiStore.showToast('Ngày kết thúc phải lớn hơn hoặc bằng Ngày bắt đầu!', 'warning');
     return false;
   }
   try {
@@ -909,13 +993,11 @@ const selectPackage = (pkg) => {
                 <div class="w-[45%] flex gap-2">
                   <div class="w-1/2">
                     <label class="block text-xs font-bold text-gray-900 mb-1">Từ ngày</label>
-                    <input type="date" v-model="rateFormState.BeginDate"
-                      class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                    <SingleDatePicker v-model="rateFormState.BeginDate" placeholder="dd/mm/yyyy" />
                   </div>
                   <div class="w-1/2">
                     <label class="block text-xs font-bold text-gray-900 mb-1">Đến ngày</label>
-                    <input type="date" v-model="rateFormState.EndDate"
-                      class="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                    <SingleDatePicker v-model="rateFormState.EndDate" :min-date="rateFormState.BeginDate" placeholder="dd/mm/yyyy" />
                   </div>
                 </div>
 
@@ -975,11 +1057,13 @@ const selectPackage = (pkg) => {
                 <div class="flex gap-4 items-end flex-wrap">
                   <div class="flex items-center gap-2">
                     <label class="text-xs font-bold text-gray-900 whitespace-nowrap">Ngày áp dụng</label>
-                    <input type="date" v-model="batchFromDate" :min="getTodayString()"
-                      class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                    <div class="w-36">
+                      <SingleDatePicker v-model="batchFromDate" :min-date="selectedBatchPlan?.BeginDate || getTodayString()" :max-date="selectedBatchPlan?.EndDate" placeholder="dd/mm/yyyy" />
+                    </div>
                     <span class="text-xs text-slate-400">~</span>
-                    <input type="date" v-model="batchToDate" :min="batchFromDate || getTodayString()"
-                      class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                    <div class="w-36">
+                      <SingleDatePicker v-model="batchToDate" :min-date="batchFromDate || selectedBatchPlan?.BeginDate || getTodayString()" :max-date="selectedBatchPlan?.EndDate" placeholder="dd/mm/yyyy" />
+                    </div>
                   </div>
                 </div>
                 <div class="flex items-center gap-3 flex-wrap">
@@ -1412,11 +1496,13 @@ const selectPackage = (pkg) => {
               <div class="flex flex-col gap-1.5 mt-4">
                 <label class="text-xs font-bold text-gray-900">Từ ngày - đến ngày</label>
                 <div class="flex items-center gap-2">
-                  <input type="date" v-model="modalFormState.BeginDate"
-                    class="border border-slate-200 rounded p-1.5 text-xs focus:outline-sky-400 w-full font-semibold text-gray-900" />
+                  <div class="w-full">
+                    <SingleDatePicker v-model="modalFormState.BeginDate" placeholder="dd/mm/yyyy" />
+                  </div>
                   <span class="text-slate-400">~</span>
-                  <input type="date" v-model="modalFormState.EndDate"
-                    class="border border-slate-200 rounded p-1.5 text-xs focus:outline-sky-400 w-full font-semibold text-gray-900" />
+                  <div class="w-full">
+                    <SingleDatePicker v-model="modalFormState.EndDate" :min-date="modalFormState.BeginDate" placeholder="dd/mm/yyyy" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1435,13 +1521,9 @@ const selectPackage = (pkg) => {
                 <thead>
                   <tr
                     class="bg-slate-100 border-b border-slate-200 text-gray-900 font-bold sticky top-0 z-10 text-center">
-                    <th class="p-2 border border-slate-200 bg-slate-100 text-left">Loại phòng</th>
-                    <th class="p-2 border border-slate-200 bg-slate-100 text-left">Mô tả</th>
-                    <th class="p-2 border border-slate-200">Double</th>
-                    <th class="p-2 border border-slate-200">Twin</th>
-                    <th class="p-2 border border-slate-200">Triple</th>
-                    <th class="p-2 border border-slate-200">Family</th>
-                    <th class="p-2 border border-slate-200">King</th>
+                    <th class="p-2 border border-slate-200 bg-slate-100 text-left w-36">Loại phòng</th>
+                    <th class="p-2 border border-slate-200 bg-slate-100 text-left w-48">Mô tả</th>
+                    <th v-for="occ in occupanciesList" :key="occ" class="p-2 border border-slate-200 w-32">{{ occ }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1449,35 +1531,16 @@ const selectPackage = (pkg) => {
                     <td class="p-2 font-bold text-gray-900 border border-slate-200 bg-slate-50">{{ rt.code }}</td>
                     <td class="p-2 text-gray-900 font-semibold border border-slate-200">{{ rt.description }}</td>
 
-                    <td class="p-1 border border-slate-200">
+                    <td v-for="occ in occupanciesList" :key="rt.code + '-' + occ" class="p-1 border border-slate-200">
                       <input type="text" :disabled="!modalFormState.Code"
-                        :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, 'Double')], selectedRateCode?.Currency)"
-                        @input="e => modalRateMatrix[getModalMatrixKey(rt.code, 'Double')] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
+                        :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, occ)], selectedRateCode?.Currency)"
+                        @input="e => modalRateMatrix[getModalMatrixKey(rt.code, occ)] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
                         class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
                     </td>
-                    <td class="p-1 border border-slate-200">
-                      <input type="text" :disabled="!modalFormState.Code"
-                        :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, 'Twin')], selectedRateCode?.Currency)"
-                        @input="e => modalRateMatrix[getModalMatrixKey(rt.code, 'Twin')] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
-                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
-                    </td>
-                    <td class="p-1 border border-slate-200">
-                      <input type="text" :disabled="!modalFormState.Code"
-                        :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, 'Triple')], selectedRateCode?.Currency)"
-                        @input="e => modalRateMatrix[getModalMatrixKey(rt.code, 'Triple')] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
-                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
-                    </td>
-                    <td class="p-1 border border-slate-200">
-                      <input type="text" :disabled="!modalFormState.Code"
-                        :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, 'Family')], selectedRateCode?.Currency)"
-                        @input="e => modalRateMatrix[getModalMatrixKey(rt.code, 'Family')] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
-                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
-                    </td>
-                    <td class="p-1 border border-slate-200">
-                      <input type="text" :disabled="!modalFormState.Code"
-                        :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, 'King')], selectedRateCode?.Currency)"
-                        @input="e => modalRateMatrix[getModalMatrixKey(rt.code, 'King')] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
-                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
+                  </tr>
+                  <tr v-if="roomTypes.length === 0">
+                    <td :colspan="2 + occupanciesList.length" class="p-8 text-center text-gray-500 font-semibold text-sm">
+                      Đang tải danh sách loại phòng...
                     </td>
                   </tr>
                 </tbody>
