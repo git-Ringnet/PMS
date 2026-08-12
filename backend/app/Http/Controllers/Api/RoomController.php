@@ -333,28 +333,43 @@ class RoomController extends Controller
         $avService = app(\App\Services\RoomAvailabilityService::class);
         $sysDateStr = $request->date ? \Carbon\Carbon::parse($request->date)->toDateString() : $avService->getSystemDate()->toDateString();
 
-        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
-            ->where(function($q) use ($sysDateStr) {
-                $q->whereDate('arrival_date', '<=', $sysDateStr)
-                  ->whereDate('departure_date', '>=', $sysDateStr);
-            })
-            ->count();
+        // 1. Số phòng đang ở tại thời điểm hiện tại (Checked In)
+        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)->count();
 
+        // 2. Những phòng chưa check-in hôm nay hoặc trước đó (chưa in hôm nay)
         $pendingArrivals = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_BOOKED)
             ->whereDate('arrival_date', '<=', $sysDateStr)
             ->count();
 
+        // 3. Những phòng đi hôm nay hoặc trước đó nhưng chưa check-out (out hôm nay nhưng chưa out)
         $pendingDepartures = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
             ->whereDate('departure_date', '<=', $sysDateStr)
             ->count();
 
+        // 4. Số dự kiến cuối ngày
         $occupiedProjected = max(0, $occupiedCurrent + $pendingArrivals - $pendingDepartures);
 
-        $stats['arrivals_checked_in'] = $occupiedCurrent;
+        // 5. Thống kê Đã đến (Arrivals)
+        $arrivalsCheckedIn = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->whereDate('arrival_date', $sysDateStr)
+            ->count();
+
+        $stats['arrivals_checked_in'] = $arrivalsCheckedIn;
         $stats['arrivals_pending']    = $pendingArrivals;
-        $stats['arrivals_total']      = $occupiedCurrent + $pendingArrivals;
+        $stats['arrivals_total']      = $arrivalsCheckedIn + $pendingArrivals;
+
+        // 6. Thống kê Đang ở (Occupied)
         $stats['occupied_current']    = $occupiedCurrent;
         $stats['occupied_projected']  = $occupiedProjected;
+
+        // 7. Thống kê Đã đi (Departures)
+        $departuresCheckedOut = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_OUT)
+            ->whereDate('departure_date', $sysDateStr)
+            ->count();
+
+        $stats['departures_checked_out'] = $departuresCheckedOut;
+        $stats['departures_pending']     = $pendingDepartures;
+        $stats['departures_total']       = $departuresCheckedOut + $pendingDepartures;
 
         return response()->json([
             'success' => true,
