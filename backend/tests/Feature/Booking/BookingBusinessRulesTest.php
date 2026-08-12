@@ -1071,4 +1071,102 @@ class BookingBusinessRulesTest extends TestCase
         $bRoom->refresh();
         $this->assertEquals($this->roomForm->id, (int)$bRoom->RoomKind);
     }
+
+    /**
+     * TC-16: Test bulkUpdate rooms business rules (Reservation and Inhouse restrictions + date sync).
+     */
+    public function test_bulk_update_rooms_business_rules(): void
+    {
+        // 1. Create a Booking with 2 rooms
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+        ]);
+
+        $room1 = BookingRoom::create([
+            'id' => 'G0000001',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $room2 = BookingRoom::create([
+            'id' => 'G0000002',
+            'booking_id' => $booking->id,
+            'room_number' => '102',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // 2. Perform bulkUpdate to shift dates forward: 2026-08-22 to 2026-08-26
+        $payload = [
+            'room_ids' => ['G0000001', 'G0000002'],
+            'arrival_date' => '2026-08-22',
+            'departure_date' => '2026-08-26',
+            'rate' => 150000,
+            'extra_bed_qty' => 1,
+            'extra_bed_rate' => 200000,
+        ];
+
+        $response = $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", $payload);
+        $response->assertSuccessful();
+
+        // 3. Verify Room dates, rates, and extra beds updated
+        $room1->refresh();
+        $room2->refresh();
+        $booking->refresh();
+
+        $this->assertEquals('2026-08-22', $room1->arrival_date->toDateString());
+        $this->assertEquals('2026-08-26', $room1->departure_date->toDateString());
+        $this->assertEquals(150000, $room1->rate);
+        $this->assertEquals(1, $room1->extra_bed_qty);
+        $this->assertEquals(200000, $room1->extra_bed_rate);
+
+        // 4. Verify booking header dates synchronized exactly
+        $this->assertEquals('2026-08-22', $booking->arrival_date->toDateString());
+        $this->assertEquals('2026-08-26', $booking->departure_date->toDateString());
+
+        // 5. Test Inhouse restrictions: set room1 status to CHECKED_IN
+        $room1->update(['status' => BookingRoom::STATUS_CHECKED_IN]);
+
+        // Scenario A: Non-FO user tries to update inhouse room dates.
+        // Arrival and Departure dates should remain unchanged. Only Rate is allowed.
+        $this->user->update(['department_code' => 'SALES']); // Set to non-FO
+
+        $payloadNonFO = [
+            'room_ids' => ['G0000001'],
+            'arrival_date' => '2026-08-23', // Should be ignored
+            'departure_date' => '2026-08-27', // Should be ignored for non-FO
+            'rate' => 180000, // Allowed
+        ];
+
+        $responseNonFO = $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", $payloadNonFO);
+        $responseNonFO->assertSuccessful();
+
+        $room1->refresh();
+        $this->assertEquals('2026-08-22', $room1->arrival_date->toDateString());
+        $this->assertEquals('2026-08-26', $room1->departure_date->toDateString()); // Unchanged
+        $this->assertEquals(180000, $room1->rate); // Changed
+
+        // Scenario B: FO user tries to update inhouse room dates.
+        // Departure date should be allowed to change.
+        $this->user->update(['department_code' => 'FO']); // Set to FO
+
+        $payloadFO = [
+            'room_ids' => ['G0000001'],
+            'departure_date' => '2026-08-27', // Allowed for FO
+        ];
+
+        $responseFO = $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", $payloadFO);
+        $responseFO->assertSuccessful();
+
+        $room1->refresh();
+        $this->assertEquals('2026-08-22', $room1->arrival_date->toDateString()); // Unchanged
+        $this->assertEquals('2026-08-27', $room1->departure_date->toDateString()); // Changed
+    }
 }
