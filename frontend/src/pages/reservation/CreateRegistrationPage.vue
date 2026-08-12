@@ -747,7 +747,7 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
   const cleanDate = cleanDateStr(svc.service_date)
   const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
 
-  if (isRoomCharge) return
+  if (isRoomCharge || isChildBreakfastService(svc)) return
 
   svc.quantity = newQty
   if (svc.svc_ref) {
@@ -796,6 +796,19 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
       uiStore.showToast('Không thể cập nhật số lượng vào hệ thống!', 'error')
     }
   }
+}
+
+function isChildBreakfastService(svc) {
+  const serviceName = String(svc?.service_name || '').toLowerCase()
+  const note = String(svc?.note || '').toLowerCase()
+  return svc?.service_code === 'BD'
+    || serviceName.startsWith('phụ thu ăn sáng trẻ em')
+    || note.startsWith('phụ thu ăn sáng trẻ em')
+}
+
+function getChildBreakfastDisplayName(svc) {
+  const name = svc?.service_name || getServiceNameFromCode(svc?.service_code)
+  return isChildBreakfastService(svc) ? name.replace(':', ' -') : name
 }
 
 async function handleInlineExtraBedQtyChange(room) {
@@ -1087,7 +1100,7 @@ function getRoomDisplayServices(room) {
       list.push({
         id: svc.id,
         service_date: parseApiDate(svc.service_date || ''),
-        service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
+        service_name: getChildBreakfastDisplayName(svc),
         service_code: svc.service_code,
         quantity: svc.quantity || 1,
         rate: svc.rate || 0,
@@ -5879,7 +5892,7 @@ defineExpose({
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                         <td class="p-2 border-r border-slate-100 text-center text-slate-700">
                                           <input 
-                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM' && !isChildBreakfastService(svc)"
                                             type="number"
                                             :value="svc.quantity !== undefined && svc.quantity !== null ? parseFloat(svc.quantity) : 1"
                                             min="0"
@@ -5957,7 +5970,7 @@ defineExpose({
                     Tổng cộng: {{ roomsTotalSummary.count }}
                   </template>
                   <template v-else-if="col.key === 'price'">
-                    {{ formatCurrencyInput(roomsTotalSummary.priceSum) }}
+                    {{ formatCurrencyInput(roomsTotalSummary.total) }}
                   </template>
                   <template v-else-if="col.key === 'adults'">
                     {{ roomsTotalSummary.adults }}
