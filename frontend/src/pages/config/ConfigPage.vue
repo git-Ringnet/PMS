@@ -7,11 +7,12 @@ import SystemDefinition from './components/SystemDefinition.vue'
 import RateSetup from './components/RateSetup.vue'
 import DesignTemplate from './components/DesignTemplateTab.vue'
 import HousekeepingMenuDefinition from './components/HousekeepingMenuDefinition.vue'
+import DatabaseBackupTab from './components/DatabaseBackupTab.vue'
 
 const router = useRouter()
 const route = useRoute()
 
-// View state: 'menu', 'hotel', 'room', 'system', 'rate'
+// View state: 'menu', 'hotel', 'room', 'system', 'rate', 'database-backup'
 const currentView = ref(route.query.view || 'menu')
 
 // Update currentView when query changes
@@ -76,14 +77,15 @@ function handleBack() {
               currentView === 'room' ? 'Định nghĩa phòng' : 
               currentView === 'system' ? 'Định nghĩa hệ thống' : 
               currentView === 'rate' ? 'Thiết lập giá' :
-              currentView === 'housekeeping-menu' ? 'Định nghĩa buồng phòng' : 'Thiết kế biểu mẫu'
+              currentView === 'housekeeping-menu' ? 'Định nghĩa buồng phòng' : 
+              currentView === 'database-backup' ? 'Sao lưu & Khôi phục Database' : 'Thiết kế biểu mẫu'
             }}
           </span>
         </button>
       </div>
     </div>
 
-    <!-- VIEW 1: LANDING CONFIGURATION MENU (6 Cards) -->
+    <!-- VIEW 1: LANDING CONFIGURATION MENU (7 Cards) -->
     <template v-if="currentView === 'menu'">
       <div class="flex-1 flex items-center justify-center min-h-[400px]">
         <div class="flex flex-wrap items-center justify-center gap-6 p-4">
@@ -167,6 +169,18 @@ function handleBack() {
             <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Thiết kế biểu mẫu</span>
           </div>
 
+          <!-- Card 7: Sao lưu & Khôi phục Database -->
+          <div 
+            @click="currentView = 'database-backup'"
+            class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
+          >
+            <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <svg class="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8-4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              </svg>
+            </div>
+            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Sao lưu & Khôi phục Database</span>
+          </div>
 
         </div>
       </div>
@@ -199,6 +213,7 @@ function handleBack() {
           v-else-if="currentView === 'design-template'" 
         />
         <HousekeepingMenuDefinition v-else-if="currentView === 'housekeeping-menu'" />
+        <DatabaseBackupTab v-else-if="currentView === 'database-backup'" />
       </div>
     </template>
   </div>

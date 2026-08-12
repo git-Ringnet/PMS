@@ -166,6 +166,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
 
     // System Administration routes
+    Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase']);
+    Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase']);
     Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
