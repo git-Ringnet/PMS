@@ -466,13 +466,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Trash2, Printer, FileSpreadsheet, Download, Upload, PlusCircle, ChevronUp, ChevronDown, ImageOff, Inbox, X, Check, Plus, Eye, EyeOff, Save, Power } from '@lucide/vue'
 import http from '@/services/http'
+import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
 
-const tabs = ['Minibar', 'Giặt ủi', 'Hàng đền bù', 'Amenity']
-const activeTab = ref('Minibar')
+const tabs = ref([])
+const activeTab = ref('')
 const showProductModal = ref(false)
 const showGroupModal = ref(false)
 const newGroupName = ref('')
@@ -569,17 +570,35 @@ const fetchUnitsAndInventories = async () => {
 const fetchGroupsAndProducts = async () => {
   isLoading.value = true
   try {
-    const resCategories = await http.get('/product-categories')
-    const resProducts = await http.get('/products')
+    const [resOutlets, resCategories, resProducts] = await Promise.all([
+      fetchHousekeepingOutlets(),
+      http.get('/product-categories'),
+      http.get('/products')
+    ])
+
+    const housekeepingOutlets = (resOutlets.data || []).filter(outlet => outlet.is_active)
+    tabs.value = housekeepingOutlets.map(outlet => outlet.name)
+    if (!tabs.value.includes(activeTab.value)) activeTab.value = tabs.value[0] || ''
+    const categories = Array.isArray(resCategories.data) ? resCategories.data : (resCategories.data?.data || [])
+    const products = Array.isArray(resProducts.data) ? resProducts.data : (resProducts.data?.data || [])
+    const resolveOutletName = (value) => {
+      const normalized = String(value || '').toLowerCase()
+      const outlet = housekeepingOutlets.find(item =>
+        String(item.code).toLowerCase() === normalized ||
+        String(item.name).toLowerCase() === normalized ||
+        String(item.group_key).toLowerCase() === normalized
+      )
+      return outlet?.name || value
+    }
     
     // Map data
-    const categoriesMap = resCategories.data.map(cat => ({
+    const categoriesMap = categories.map(cat => ({
       id: cat.id,
       name: cat.name,
       expanded: true,
       isEditing: false,
-      outlet: cat.outlet,
-      products: resProducts.data.filter(p => p.product_category_id === cat.id).map(p => {
+      outlet: resolveOutletName(cat.outlet),
+      products: products.filter(p => p.product_category_id === cat.id).map(p => {
         let basePrice = Number(p.price) || 0;
         let svcPercent = Number(p.service_charge_percent) || 0;
         let taxPercent = Number(p.tax_percent) || 0;
@@ -594,7 +613,7 @@ const fetchGroupsAndProducts = async () => {
         isActive: !!p.is_active,
         trackStock: !!p.track_stock,
         flexiblePrice: !!p.flexible_price,
-        tab: cat.outlet || 'Minibar',
+        tab: resolveOutletName(cat.outlet),
         imageUrl: p.image ? `http://localhost:8000/storage/${p.image}` : null
         }
       })

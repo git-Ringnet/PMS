@@ -135,7 +135,7 @@
           <!-- Tab Bar -->
           <div class="tab-bar flex border-b-2 border-slate-200 bg-slate-100 shrink-0">
             <button 
-              v-for="tKey in ['minibar', 'giatui', 'dengbu']" 
+              v-for="tKey in tabKeys"
               :key="tKey"
               @click="switchTab(tKey)"
               class="tab flex-1 py-2 px-1 text-xs font-medium text-slate-400 text-center border-b-2 transition-all cursor-pointer bg-none border-transparent -mb-[2px]"
@@ -349,6 +349,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import http from '@/services/http'
+import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
 // Import LoadingOverlay component của hệ thống
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
@@ -603,16 +604,20 @@ const dbProductsData = ref({
   giatui: {},
   dengbu: {}
 })
+const housekeepingOutlets = ref([])
 
 const loadingProducts = ref(true)
 
 const loadDbProducts = async () => {
   loadingProducts.value = true
   try {
-    const [resCats, resProds] = await Promise.all([
+    const [resCats, resProds, resOutlets] = await Promise.all([
       http.get('/product-categories'),
-      http.get('/products')
+      http.get('/products'),
+      fetchHousekeepingOutlets()
     ])
+
+    housekeepingOutlets.value = (resOutlets.data || []).filter(o => o.is_active && o.service_code)
 
     const categories = Array.isArray(resCats.data) ? resCats.data : (resCats.data?.data || [])
     const products = Array.isArray(resProds.data) ? resProds.data : (resProds.data?.data || [])
@@ -627,14 +632,16 @@ const loadDbProducts = async () => {
       'dengbu': 'dengbu'
     }
 
-    const newDbData = {
-      minibar: {},
-      giatui: {},
-      dengbu: {}
-    }
+    const newDbData = Object.fromEntries(housekeepingOutlets.value.map(o => [o.group_key, {}]))
 
     categories.forEach(cat => {
-      const tabKey = tabMap[cat.outlet] || tabMap[cat.name] || 'minibar'
+      const configured = housekeepingOutlets.value.find(o =>
+        String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase() ||
+        String(o.name).toLowerCase() === String(cat.outlet || cat.name || '').toLowerCase() ||
+        String(o.group_key).toLowerCase() === String(cat.outlet || '').toLowerCase()
+      )
+      const tabKey = configured?.group_key || tabMap[cat.outlet] || tabMap[cat.name]
+      if (!tabKey) return
       if (!newDbData[tabKey]) {
         newDbData[tabKey] = {}
       }
@@ -683,11 +690,12 @@ onMounted(() => {
   loadDbProducts()
 })
 
-const tabLabels = { minibar: 'Minibar', giatui: 'Giặt ủi', dengbu: 'Hàng đền bù' }
-const GROUP_LABELS = { minibar: 'Minibar', giatui: 'Giặt ủi', dengbu: 'Hàng đền bù' }
+const tabLabels = computed(() => Object.fromEntries(housekeepingOutlets.value.map(o => [o.group_key, o.name])))
+const GROUP_LABELS = tabLabels
 const GROUP_COLORS = { minibar: '#2563eb', giatui: '#16a34a', dengbu: '#d97706' }
 
 const currentTab = ref('minibar')
+const tabKeys = computed(() => housekeepingOutlets.value.map(o => o.group_key))
 const productSearchQuery = ref('')
 const discountMode = ref('gg') // 'gg' = Giảm giá | 'pt' = Phụ thu
 const globalPct = ref(0)
