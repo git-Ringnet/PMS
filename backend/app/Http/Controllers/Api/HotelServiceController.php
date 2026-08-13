@@ -14,7 +14,7 @@ class HotelServiceController extends Controller
      */
     public function index()
     {
-        $services = HotelService::all();
+        $services = HotelService::with('department')->get();
         return response()->json([
             'success' => true,
             'data' => HotelServiceResource::collection($services)
@@ -39,10 +39,12 @@ class HotelServiceController extends Controller
             'short_name' => 'nullable|string|max:255',
             'unit' => 'nullable|string|max:50',
             'price' => 'nullable|numeric|min:0',
-            'department' => 'nullable|string|max:255',
+            'department_id' => 'required|integer|exists:departments,id',
         ]);
 
         $service = HotelService::create($validated);
+        $service->departments()->syncWithoutDetaching([$validated['department_id']]);
+        $service->load('department');
 
         return response()->json([
             'success' => true,
@@ -88,10 +90,12 @@ class HotelServiceController extends Controller
             'short_name' => 'nullable|string|max:255',
             'unit' => 'nullable|string|max:50',
             'price' => 'nullable|numeric|min:0',
-            'department' => 'nullable|string|max:255',
+            'department_id' => 'required|integer|exists:departments,id',
         ]);
 
         $service->update($validated);
+        $service->departments()->syncWithoutDetaching([$validated['department_id']]);
+        $service->load('department');
 
         return response()->json([
             'success' => true,

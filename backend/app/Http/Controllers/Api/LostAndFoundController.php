@@ -44,6 +44,7 @@ class LostAndFoundController extends Controller
             ?? SystemDateRoll::latest('id')->value('system_date')
             ?? now()->toDateString();
         $validated['status'] = $validated['status'] ?? 'lost';
+        $validated['created_by'] = $request->user()?->username ?? $request->user()?->name ?? 'system';
 
         return response()->json(LostAndFoundItem::create($validated), 201);
     }
@@ -71,7 +72,7 @@ class LostAndFoundController extends Controller
     private function validatePayload(Request $request): array
     {
         $data = $request->all();
-        foreach (['method_handling', 'delieved_handling', 'received_handling', 'remarks', 'image', 'log_no', 'guest_info', 'storage_location', 'date_reported'] as $field) {
+        foreach (['date_found', 'who_found', 'received', 'date_handling', 'method_handling', 'delieved_handling', 'received_handling', 'remarks', 'where_found', 'image', 'log_no', 'guest_info', 'storage_location', 'date_reported'] as $field) {
             if (array_key_exists($field, $data) && $data[$field] === '') {
                 $data[$field] = null;
             }

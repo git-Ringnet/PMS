@@ -12,4 +12,11 @@ class Department extends Model
         'phone',
         'show'
     ];
+
+    public function hotelServices()
+    {
+        return $this->belongsToMany(HotelService::class)
+            ->withPivot('description')
+            ->withTimestamps();
+    }
 }

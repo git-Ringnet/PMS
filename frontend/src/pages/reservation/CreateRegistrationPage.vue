@@ -117,6 +117,9 @@ const activeRoomRateCodes = computed(() => {
   return (roomRateCodes.value || []).filter(rc => !rc.Disable)
 })
 const hotelServicesList = ref([])
+const getHotelService = (code) => hotelServicesList.value.find(service => String(service.code).toUpperCase() === String(code).toUpperCase())
+const getHotelServiceCode = (code) => getHotelService(code)?.code || code
+const getHotelServiceName = (code, fallback = '') => getHotelService(code)?.name || fallback
 const selectedServiceFilter = ref('all')
 const diagnosticErrors = ref([])
 
@@ -724,7 +727,7 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
         service_date: cleanDate,
         quantity: svc.quantity || 1,
         rate: newRate,
-        is_room: isRoomCharge ? 1 : 0
+        is_room: isRoomCharge ? 1 : (svc.is_room ?? svc.isRoom ?? 1)
       }
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
@@ -779,7 +782,7 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
         service_date: cleanDate,
         quantity: newQty,
         rate: svc.rate || 0,
-        is_room: 0
+        is_room: svc.is_room ?? svc.isRoom ?? 1
       }
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
@@ -873,12 +876,12 @@ async function handleInlineExtraBedQtyChange(room) {
       // 2.2 Cập nhật booking_room_services
       for (const d of dailyRates) {
         await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: 'EB',
-          service_name: 'Extra Bed',
+          service_code: getHotelServiceCode('EB'),
+          service_name: getHotelServiceName('EB', 'Extra Bed'),
           service_date: d.dateStr,
           quantity: d.quantity,
           rate: d.rate,
-          is_room: 0
+          is_room: d.isRoom ? 1 : 0
         })
       }
 
@@ -946,12 +949,12 @@ async function handleInlineExtraBedRateChange(room) {
       // 2.2 Cập nhật booking_room_services
       for (const d of dailyRates) {
         await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: 'EB',
-          service_name: 'Extra Bed',
+          service_code: getHotelServiceCode('EB'),
+          service_name: getHotelServiceName('EB', 'Extra Bed'),
           service_date: d.dateStr,
           quantity: d.quantity,
           rate: d.rate,
-          is_room: 0
+          is_room: d.isRoom ? 1 : 0
         })
       }
 
@@ -1064,8 +1067,8 @@ function getRoomDisplayServices(room) {
         list.push({
           id: `room-charge-${room.id}-${i}`,
           service_date: dStr,
-          service_name: 'Dịch vụ phòng nghỉ',
-          service_code: 'ROOM_CHARGE',
+          service_name: getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+          service_code: getHotelServiceCode('RM'),
           quantity: 1,
           rate: customRate,
           is_room: true
@@ -1085,8 +1088,8 @@ function getRoomDisplayServices(room) {
       list.push({
         id: `room-charge-${room.id}`,
         service_date: todayStr,
-        service_name: 'Dịch vụ phòng nghỉ',
-        service_code: 'ROOM_CHARGE',
+        service_name: getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+        service_code: getHotelServiceCode('RM'),
         quantity: 1,
         rate: customRate,
         is_room: true
@@ -4400,8 +4403,8 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
         for (const d of dailyRates) {
           if (d.isPast) continue // Không lưu/sửa đêm quá khứ
           await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-            service_code: 'EB',
-            service_name: 'Extra Bed',
+            service_code: getHotelServiceCode('EB'),
+            service_name: getHotelServiceName('EB', 'Extra Bed'),
             service_date: d.dateStr,
             quantity: d.quantity || 0,
             rate: d.rate || 0,
@@ -5322,7 +5325,10 @@ defineExpose({
                                   </td>
                                   <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
-                                    <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
+                                    <span
+                                      class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
+                                      :class="Number(svc.is_room) === 1 ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'"
+                                    >{{ Number(svc.is_room) === 1 ? 'FIT' : 'GIT' }}</span>
                                   </td>
                                 </tr>
                               </tbody>

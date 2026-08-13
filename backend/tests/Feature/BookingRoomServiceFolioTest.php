@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomService;
+use App\Models\Department;
 use App\Models\Guest;
 use App\Models\HousekeepingServiceBill;
 use App\Models\HotelService;
@@ -238,7 +239,8 @@ class BookingRoomServiceFolioTest extends TestCase
         $secondary = Guest::create(['full_name' => 'Khach phu']);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $primary->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'is_primary' => false, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
-        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department' => 'FO']);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id]);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-fo-service-bill', [
@@ -283,7 +285,41 @@ class BookingRoomServiceFolioTest extends TestCase
             'CustomerId1' => $secondary->id, 'CustomerId2' => $secondary->id,
         ]);
         $this->assertDatabaseHas('booking_room_services', [
-            'booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'service_code' => 'RMS',
+            'booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'service_code' => 'ER',
+        ]);
+    }
+
+    public function test_front_desk_git_service_is_owned_by_master_while_preserving_source_room(): void
+    {
+        $user = User::factory()->create();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-107');
+        $guest = Guest::create(['full_name' => 'Khach GIT']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $room->id, 'guest_id' => $guest->id,
+            'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+        ]);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id]);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-fo-service-bill', [
+                'booking_room_id' => $room->id, 'guest_id' => $guest->id,
+                'date_from' => '2026-08-06', 'date_to' => '2026-08-06',
+                'service_code' => 'MB', 'quantity' => 1, 'rate' => 100000,
+                'folio' => 1, 'is_room' => 0, 'currency' => 'VND',
+            ])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', [
+            'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'CustomerId1' => $guest->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => null, 'CustomerId2' => null,
+        ]);
+        $this->assertDatabaseHas('booking_room_services', [
+            'booking_room_id' => $room->id, 'guest_id' => $guest->id, 'service_code' => 'MB', 'is_room' => 0,
         ]);
     }
 

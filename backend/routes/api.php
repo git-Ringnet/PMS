@@ -145,6 +145,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Hotel details configuration routes
     Route::apiResource('hotel-services', \App\Http\Controllers\Api\HotelServiceController::class);
+    Route::post('departments/{department}/services', [\App\Http\Controllers\Api\DepartmentController::class, 'attachService']);
+    Route::put('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'updateService']);
+    Route::delete('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'detachService']);
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
     Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);

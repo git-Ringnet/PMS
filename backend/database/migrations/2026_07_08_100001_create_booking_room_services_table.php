@@ -45,7 +45,7 @@ return new class extends Migration
             $table->decimal('quantity', 12, 6)->default(1);  // Số lượng
             $table->decimal('rate', 15, 2)->default(0);      // Đơn giá
             $table->decimal('total_amount', 15, 2)->default(0)->comment('Tổng tiền = quantity * rate');
-            $table->string('department', 20)->default('HK');
+            $table->string('department', 20)->nullable();
             $table->text('note')->nullable();
             $table->decimal('tax', 15, 2)->default(0);
             $table->decimal('service_charge', 15, 2)->default(0);

@@ -1023,7 +1023,7 @@ class PaymentController extends Controller
                 })
                 ->where('Edit', 0);
             if ($reqRoomId && (bool) $booking->is_master_room_rate) {
-                $unpaidServiceQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+                $unpaidServiceQuery->whereNotIn('ServiceId', ['RM', 'ER']);
             }
             if ($reqGuestId) {
                 $unpaidServiceQuery->where(function ($q) use ($reqGuestId) {
@@ -1174,10 +1174,11 @@ class PaymentController extends Controller
             })
             ->where('Edit', 0);
 
-            // Khi thu riêng một phòng, tiền phòng RM/RMS chưa thanh toán
+            // Khi thu riêng một phòng, tiền phòng RM/ER chưa thanh toán
             // vẫn thuộc Master nếu booking đang bật tập hợp tiền phòng.
             if ($reqRoomId && (bool) $booking->is_master_room_rate) {
-                $serviceBillQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+                // Khi thu riêng một phòng, tiền phòng RM/ER chưa thanh toán
+                $serviceBillQuery->whereNotIn('ServiceId', ['RM', 'ER']);
             }
 
             if ($reqGuestId) {
@@ -1226,7 +1227,7 @@ class PaymentController extends Controller
                     $roomServiceQuery->whereIn('service_bill_id', $selectedBillIds);
                 }
                 if ($reqRoomId && (bool) $booking->is_master_room_rate) {
-                    $roomServiceQuery->whereNotIn('service_code', ['RM', 'RMS']);
+                    $roomServiceQuery->whereNotIn('service_code', ['RM', 'ER']);
                 }
                 if (!$isFolioA) {
                     $roomServiceQuery->where('folio', $folioId);
@@ -1301,7 +1302,7 @@ class PaymentController extends Controller
             ->where(function ($q) use ($booking, $checkedOutRoomIds) {
                 $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
                 if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
-                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'RMS']);
+                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'ER']);
             })
             ->exists();
         if ($hasUnpaidMasterBills) return;

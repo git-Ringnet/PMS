@@ -707,11 +707,11 @@ class BookingController extends Controller
 
                 $booking->update($validated);
 
-                // Chỉ khi bật gom tiền phòng mới chuyển các bill RM/RMS đã post về Master.
+                // Chỉ khi bật gom tiền phòng mới chuyển các bill RM/ER đã post về Master.
                 // Tắt cờ không chuyển ngược các bill cũ đang thuộc Master về phòng.
                 if (!$wasMasterRoomRate && $willMasterRoomRate) {
                     $roomRateBillIds = \App\Models\ServiceBill::where('RegisterId1', $booking->id)
-                        ->whereIn('ServiceId', ['RM', 'RMS'])
+                        ->whereIn('ServiceId', ['RM', 'ER'])
                         ->where('Edit', 0)
                         ->where(function ($q) {
                             $q->whereNotNull('RentalRoomId2')->where('RentalRoomId2', '!=', '')->where('RentalRoomId2', '!=', '0')
@@ -728,7 +728,7 @@ class BookingController extends Controller
                             'CompanyId2' => $booking->company_id,
                         ]);
                         \App\Models\BookingRoomService::whereIn('service_bill_id', $roomRateBillIds)
-                            ->whereIn('service_code', ['RM', 'RMS'])
+                            ->whereIn('service_code', ['RM', 'ER'])
                             ->delete();
                     }
                 }
@@ -1736,7 +1736,7 @@ class BookingController extends Controller
                     'total_amount'    => $detail->amount,
                     'department'      => 'FO',
                     'folio'           => 1,
-                    'is_room'         => 0,
+                    'is_room'         => $detail->is_room ? 1 : 0,
                     'is_posted'       => 0,
                 ]
             );
@@ -1861,9 +1861,10 @@ class BookingController extends Controller
                     'service_date'    => $dateStr,
                 ],
                 [
-                    'service_name' => 'Extra Bed',
+                    'service_name' => \App\Models\BookingRoomService::catalogName(\App\Models\BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
                     'quantity'     => $qty,
                     'rate'         => $rate,
+                    'department'   => 'FO',
                     'is_room'      => $isRoom ? 1 : 0,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
@@ -1935,6 +1936,7 @@ class BookingController extends Controller
                     'service_name' => $svc['service_name'] ?? 'Dịch vụ bổ sung',
                     'quantity'     => $qty,
                     'rate'         => $rate,
+                    'department'   => 'FO',
                     'is_room'      => isset($svc['is_room']) ? ($svc['is_room'] ? 1 : 0) : 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
@@ -1984,9 +1986,10 @@ class BookingController extends Controller
                     'service_date'    => $dateStr,
                 ],
                 [
-                    'service_name' => 'Dịch vụ phòng nghỉ',
+                    'service_name' => \App\Models\BookingRoomService::catalogName(\App\Models\BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
                     'quantity'     => 1,
                     'rate'         => $rate,
+                    'department'   => 'FO',
                     'is_room'      => 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,

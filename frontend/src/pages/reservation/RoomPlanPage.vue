@@ -1213,7 +1213,7 @@ async function loadBookings() {
             return Number(service.total_amount ?? service.totalAmount ?? '') || (rate * quantity)
           }
           const isRoomService = service => (
-            ['RM', 'ROOM_CHARGE'].includes(String(service.service_code ?? service.serviceCode ?? service.ServiceId ?? '').toUpperCase())
+            ['RM', 'ER', 'ROOM_CHARGE'].includes(String(service.service_code ?? service.serviceCode ?? service.ServiceId ?? '').toUpperCase())
           )
           const roomCharge = roomServices.filter(isRoomService).reduce((sum, service) => sum + serviceAmount(service), 0)
           const arrival = room.arrival_date || b.arrival_date

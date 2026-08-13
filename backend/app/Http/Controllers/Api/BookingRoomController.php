@@ -1229,10 +1229,12 @@ class BookingRoomController extends Controller
                     'service_date'    => $dateStr,
                 ],
                 [
-                    'service_name' => 'Extra Bed',
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
                     'quantity'     => $room->extra_bed_qty,
                     'rate'         => $room->extra_bed_rate,
-                    'is_room'      => 1,
+                    'department'   => 'FO',
+                    // Giữ nguyên FIT/GIT đã setup; mặc định FIT cho dữ liệu cũ.
+                    'is_room'      => $existing?->is_room ?? 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',
@@ -1285,13 +1287,14 @@ class BookingRoomController extends Controller
             BookingRoomService::withTrashed()->updateOrCreate(
                 [
                     'booking_room_id' => $room->id,
-                    'service_code'    => 'RM',
+                    'service_code'    => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM),
                     'service_date'    => $dateStr,
                 ],
                 [
-                    'service_name' => 'Dịch vụ phòng nghỉ',
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
                     'quantity'     => 1,
                     'rate'         => $room->rate,
+                    'department'   => 'FO',
                     'is_room'      => 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
@@ -1463,7 +1466,7 @@ class BookingRoomController extends Controller
                     'total_amount'    => $detail->amount,
                     'department'      => 'FO',
                     'folio'           => 1,
-                    'is_room'         => 0,
+                    'is_room'         => $detail->is_room ? 1 : 0,
                     'is_posted'       => 0,
                 ]
             );
@@ -2226,4 +2229,3 @@ class BookingRoomController extends Controller
         ]);
     }
 }
-

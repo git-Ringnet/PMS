@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\HotelService;
+use App\Models\Department;
 use App\Models\Shift;
 use App\Models\HotelConfig;
 use App\Models\Branch;
@@ -321,8 +322,21 @@ class HotelDefinitionSeeder extends Seeder
             ]
         ];
 
+        $departmentCodes = [
+            'Reception/ Lê Tân' => 'FO',
+            'House Keeping/Buồng Phòng' => 'HK',
+            'Restaurant/Nhà Hàng' => 'FB',
+            'SPA' => 'SP',
+            'Spa' => 'SP',
+        ];
+        $departmentIds = Department::pluck('id', 'code');
+
         foreach ($services as $s) {
-            HotelService::updateOrCreate(['code' => $s['code']], $s);
+            $departmentCode = $departmentCodes[$s['department']] ?? $s['department'];
+            unset($s['department']);
+            $s['department_id'] = $departmentIds[$departmentCode];
+            $service = HotelService::updateOrCreate(['code' => $s['code']], $s);
+            $service->departments()->syncWithoutDetaching([$s['department_id']]);
         }
 
         // 2. Seed Shifts
