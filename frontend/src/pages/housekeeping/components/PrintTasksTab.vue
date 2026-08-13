@@ -1,57 +1,1443 @@
-﻿<script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+<script setup>
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useHkStore, GROUP_COLORS, getRoomDisplayCode } from '@/stores/hk-store'
+import { useRoomStore } from '@/stores/room-store'
+import {
+  CalendarDays, Clock3, Search, Filter, ChevronDown,
+  Users, Printer, UserCog, Plus, X, Pencil, Loader2,
+  GripVertical, CheckSquare, Square, Minus
+} from '@lucide/vue'
 
-const mount = ref(null)
-const legacyMarkup = "\u003cdiv class=\"app\"\u003e\n\n  \u003c!-- HEADER --\u003e\n  \u003cdiv class=\"app-header\"\u003e\n    \u003cspan class=\"app-title\"\u003e🏨 Phân công phòng — Housekeeping\u003c/span\u003e\n  \u003c/div\u003e\n\n  \u003c!-- BODY --\u003e\n  \u003cdiv class=\"app-body\"\u003e\n\n    \u003c!-- LEFT: phòng --\u003e\n    \u003cdiv class=\"col-rooms\"\u003e\n      \u003c!-- Ngày + Ca (thay thế vị trí chọn tất cả cũ) --\u003e\n      \u003cdiv class=\"col-rooms-header\"\u003e\n        \u003cinput type=\"text\" id=\"headerDate\" placeholder=\"dd/mm/yyyy\" maxlength=\"10\" class=\"subheader-date\" oninput=\"formatDateInput(this)\" style=\"width:100px;\"\u003e\n        \u003cdiv class=\"shift-tabs\" style=\"margin-left:6px;\"\u003e\n          \u003cbutton class=\"shift-tab active\" onclick=\"setShift(this)\"\u003eCa sáng\u003c/button\u003e\n          \u003cbutton class=\"shift-tab\" onclick=\"setShift(this)\"\u003eCa chiều\u003c/button\u003e\n          \u003cbutton class=\"shift-tab\" onclick=\"setShift(this)\"\u003eCa tối\u003c/button\u003e\n        \u003c/div\u003e\n      \u003c/div\u003e\n\n      \u003c!-- FILTER BAR --\u003e\n      \u003cdiv class=\"room-filter-bar\"\u003e\n        \u003cdiv class=\"filter-top-row\"\u003e\n          \u003cdiv class=\"filter-search-wrap\"\u003e\n            \u003cspan class=\"filter-search-icon\"\u003e🔍\u003c/span\u003e\n            \u003cinput class=\"filter-search\" type=\"text\" id=\"roomSearch\" placeholder=\"Tìm số phòng, loại phòng...\" oninput=\"renderRooms()\"\u003e\n          \u003c/div\u003e\n          \u003cdiv class=\"filter-icon-wrap\" id=\"filterWrap\"\u003e\n            \u003cbutton class=\"filter-icon-btn\" id=\"filterBtn\" onclick=\"toggleFilter(event)\" title=\"Lọc tình trạng\"\u003e\n              \u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\"\u003e\u003cpath d=\"M1 2.5h12M3 7h8M5 11.5h4\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\"/\u003e\u003c/svg\u003e\n              \u003cspan class=\"filter-badge\" id=\"filterBadge\"\u003e\u003c/span\u003e\n            \u003c/button\u003e\n            \u003cdiv class=\"filter-panel\" id=\"filterPanel\"\u003e\n              \u003cdiv class=\"fp-section\"\u003e\n                \u003cdiv class=\"fp-label\"\u003eVệ sinh\u003c/div\u003e\n                \u003cdiv class=\"fp-row\" id=\"hkRow\"\u003e\n                  \u003cbutton class=\"fp-btn on-all\" onclick=\"setHk(\u0027all\u0027,this)\"\u003eTất cả\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn dirty\"      onclick=\"setHk(\u0027dirty\u0027,this)\"\u003e🧹 Dirty\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn inspecting\" onclick=\"setHk(\u0027inspecting\u0027,this)\"\u003e✨ Clean\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn clean\"      onclick=\"setHk(\u0027clean\u0027,this)\"\u003e✅ Ready\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn oot\" onclick=\"setHk(\u0027oot\u0027,this)\"\u003e\u003csvg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#f59e0b\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"vertical-align:middle\"\u003e\u003crect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/\u003e\u003cpath d=\"M7 11V7a5 5 0 0 1 10 0v4\"/\u003e\u003c/svg\u003e OOO\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn oos\" onclick=\"setHk(\u0027oos\u0027,this)\"\u003e\u003csvg width=\"11\" height=\"11\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#7dd3fc\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"vertical-align:middle\"\u003e\u003crect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/\u003e\u003cpath d=\"M7 11V7a5 5 0 0 1 9.9-1\"/\u003e\u003c/svg\u003e OOS\u003c/button\u003e\n                \u003c/div\u003e\n              \u003c/div\u003e\n              \u003cdiv class=\"fp-divider\"\u003e\u003c/div\u003e\n              \u003cdiv class=\"fp-section\"\u003e\n                \u003cdiv class=\"fp-label\"\u003eĐặt phòng\u003c/div\u003e\n                \u003cdiv class=\"fp-row\" id=\"bookRow\"\u003e\n                  \u003cbutton class=\"fp-btn on-all\" onclick=\"setBook(\u0027all\u0027,this)\"\u003eTất cả\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn checkout\" onclick=\"setBook(\u0027checkout\u0027,this)\"\u003eCheck-out\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn stayover\" onclick=\"setBook(\u0027stayover\u0027,this)\"\u003eStay-over\u003c/button\u003e\n                  \u003cbutton class=\"fp-btn checkin\"  onclick=\"setBook(\u0027checkin\u0027,this)\"\u003eCheck-in\u003c/button\u003e\n                \u003c/div\u003e\n              \u003c/div\u003e\n            \u003c/div\u003e\n          \u003c/div\u003e\n        \u003c/div\u003e\n        \u003c!-- Lọc tầng --\u003e\n        \u003cdiv class=\"filter-row\" id=\"floorRow\"\u003e\n          \u003cbutton class=\"fc all-on\" id=\"floor-all\" onclick=\"setFloor(\u0027all\u0027,this)\"\u003eTất cả\u003c/button\u003e\n        \u003c/div\u003e\n        \u003c!-- Chọn tất cả (dưới filter tầng) --\u003e\n        \u003cdiv style=\"border-top:1px solid var(--border);padding-top:5px;\"\u003e\n          \u003clabel class=\"select-all-wrap\"\u003e\n            \u003cinput type=\"checkbox\" id=\"selectAll\" onchange=\"toggleSelectAll(this)\"\u003e Chọn tất cả\n          \u003c/label\u003e\n        \u003c/div\u003e\n      \u003c/div\u003e\n\n      \u003cdiv class=\"room-list\" id=\"roomList\"\u003e\u003c/div\u003e\n    \u003c/div\u003e\n\n    \u003c!-- RIGHT: phân công --\u003e\n    \u003cdiv class=\"col-staff\"\u003e\n      \u003cdiv class=\"col-staff-header\"\u003e\n        \u003ch4\u003ePhân công ca\u003c/h4\u003e\n      \u003c/div\u003e\n      \u003cdiv class=\"staff-grid\" id=\"staffGrid\"\u003e\u003c/div\u003e\n    \u003c/div\u003e\n  \u003c/div\u003e\n\n  \u003c!-- STAFF MANAGE MODAL --\u003e\n  \u003cdiv class=\"modal-overlay\" id=\"staffModal\" onclick=\"closeManageStaff(event)\"\u003e\n    \u003cdiv class=\"modal\"\u003e\n      \u003cdiv class=\"modal-header\"\u003e\n        \u003ch3\u003e👤 Quản lý danh sách nhân viên\u003c/h3\u003e\n        \u003cbutton class=\"modal-close\" onclick=\"closeManageStaffBtn()\"\u003e✕\u003c/button\u003e\n      \u003c/div\u003e\n      \u003cdiv style=\"display:flex;gap:0;border-bottom:1px solid var(--border);background:#fff;flex-shrink:0;\"\u003e\n        \u003cbutton id=\"tabActive\" class=\"modal-tab modal-tab-on\" onclick=\"setStaffTab(\u0027active\u0027)\"\u003eĐang hoạt động\u003c/button\u003e\n        \u003cbutton id=\"tabHidden\" class=\"modal-tab\" onclick=\"setStaffTab(\u0027hidden\u0027)\"\u003eĐã ẩn \u003cspan id=\"hiddenCount\" style=\"display:none;background:#94a3b8;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;\"\u003e\u003c/span\u003e\u003c/button\u003e\n      \u003c/div\u003e\n      \u003cdiv class=\"modal-body\"\u003e\n        \u003cdiv class=\"modal-add-row\" id=\"addStaffRow\"\u003e\n          \u003cinput type=\"text\" id=\"newStaffName\" placeholder=\"Nhập tên nhân viên mới...\" onkeydown=\"if(event.key===\u0027Enter\u0027)addToMasterList()\"\u003e\n          \u003cbutton class=\"btn-modal-add\" onclick=\"addToMasterList()\"\u003e+ Thêm\u003c/button\u003e\n        \u003c/div\u003e\n        \u003cdiv class=\"staff-master-list\" id=\"staffMasterList\"\u003e\u003c/div\u003e\n      \u003c/div\u003e\n      \u003cdiv class=\"modal-footer\"\u003e\n        \u003cbutton class=\"btn btn-assign\" style=\"display:inline-flex;\" onclick=\"closeManageStaffBtn()\"\u003eXong\u003c/button\u003e\n      \u003c/div\u003e\n    \u003c/div\u003e\n  \u003c/div\u003e\n\n  \u003c!-- ASSIGN BAR --\u003e\n  \u003cdiv class=\"assign-bar\"\u003e\n    \u003cspan class=\"assign-selected\" id=\"assignSelected\"\u003e\u003c/span\u003e\n    \u003cdiv class=\"assign-to\"\u003e\n      \u003cdiv class=\"staff-picker-wrap\" id=\"staffPickerWrap\"\u003e\n        \u003cbutton class=\"staff-picker-btn\" id=\"staffPickerBtn\" onclick=\"toggleStaffPicker(event)\"\u003e\n          \u003cspan class=\"picker-label\" id=\"pickerLabel\"\u003e-- Chọn nhân viên làm phòng --\u003c/span\u003e\n          \u003cspan class=\"picker-arrow\"\u003e▼\u003c/span\u003e\n        \u003c/button\u003e\n        \u003cdiv class=\"staff-picker-dropdown\" id=\"staffPickerDropdown\"\u003e\u003c/div\u003e\n      \u003c/div\u003e\n      \u003cbutton class=\"btn btn-assign\" id=\"btnAssign\" onclick=\"assignSelected()\" disabled\u003ePhân công\u003c/button\u003e\n      \u003cbutton class=\"btn\" style=\"background:#64748b;color:#fff;\" onclick=\"openManageStaff()\"\u003e👤 Quản lý NV\u003c/button\u003e\n      \u003cbutton class=\"btn\" style=\"background:#0f766e;color:#fff;\" onclick=\"doPrint()\"\u003e🖨 In lịch\u003c/button\u003e\n    \u003c/div\u003e\n  \u003c/div\u003e\n\u003c/div\u003e\n\n  \u003c!-- EDIT GROUP MODAL --\u003e\n  \u003cdiv class=\"modal-overlay\" id=\"editGroupModal\" onclick=\"closeEditGroup(event)\"\u003e\n    \u003cdiv class=\"modal\" style=\"width:420px;height:480px;\"\u003e\n      \u003cdiv class=\"modal-header\"\u003e\n        \u003ch3\u003e✏️ Chỉnh sửa nhân viên nhóm\u003c/h3\u003e\n        \u003cbutton class=\"modal-close\" onclick=\"document.getElementById(\u0027editGroupModal\u0027).classList.remove(\u0027open\u0027)\"\u003e✕\u003c/button\u003e\n      \u003c/div\u003e\n      \u003cdiv class=\"modal-body\" style=\"gap:8px;\"\u003e\n        \u003cdiv style=\"font-size:11.5px;color:var(--text-muted);margin-bottom:2px;\"\u003eNhân viên hiện tại trong nhóm:\u003c/div\u003e\n        \u003cdiv id=\"editGroupCurrent\" style=\"display:flex;flex-direction:column;gap:4px;\"\u003e\u003c/div\u003e\n        \u003cdiv style=\"border-top:1px solid var(--border);padding-top:10px;margin-top:4px;\"\u003e\n          \u003cdiv style=\"font-size:11.5px;color:var(--text-muted);margin-bottom:6px;\"\u003eThêm nhân viên vào nhóm:\u003c/div\u003e\n          \u003cdiv id=\"editGroupAvail\" style=\"display:flex;flex-direction:column;gap:4px;\"\u003e\u003c/div\u003e\n        \u003c/div\u003e\n      \u003c/div\u003e\n      \u003cdiv class=\"modal-footer\"\u003e\n        \u003cbutton class=\"btn btn-assign\" style=\"display:inline-flex;\" onclick=\"document.getElementById(\u0027editGroupModal\u0027).classList.remove(\u0027open\u0027)\"\u003eXong\u003c/button\u003e\n      \u003c/div\u003e\n    \u003c/div\u003e\n  \u003c/div\u003e\n\n\u003cscript\u003e\nconst ROOMS=[\n  {id:\u0027101\u0027,floor:1,type:\u0027Deluxe Twin\u0027,   book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027102\u0027,floor:1,type:\u0027Deluxe Double\u0027, book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027103\u0027,floor:1,type:\u0027Standard\u0027,      book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027104\u0027,floor:1,type:\u0027Standard\u0027,      book:\u0027checkout\u0027, hk:\u0027inspecting\u0027},\n  {id:\u0027105\u0027,floor:1,type:\u0027Deluxe Twin\u0027,   book:\u0027stayover\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027201\u0027,floor:2,type:\u0027Superior\u0027,      book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027202\u0027,floor:2,type:\u0027Superior\u0027,      book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027203\u0027,floor:2,type:\u0027Deluxe Double\u0027, book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027204\u0027,floor:2,type:\u0027Standard\u0027,      book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027205\u0027,floor:2,type:\u0027Superior\u0027,      book:\u0027stayover\u0027, hk:\u0027inspecting\u0027},\n  {id:\u0027206\u0027,floor:2,type:\u0027Standard\u0027,      book:\u0027checkout\u0027, hk:\u0027oot\u0027},\n  {id:\u0027301\u0027,floor:3,type:\u0027Junior Suite\u0027,  book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027302\u0027,floor:3,type:\u0027Deluxe Twin\u0027,   book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027303\u0027,floor:3,type:\u0027Deluxe Double\u0027, book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027304\u0027,floor:3,type:\u0027Junior Suite\u0027,  book:\u0027checkout\u0027, hk:\u0027inspecting\u0027},\n  {id:\u0027305\u0027,floor:3,type:\u0027Standard\u0027,      book:\u0027stayover\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027401\u0027,floor:4,type:\u0027Suite\u0027,         book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027402\u0027,floor:4,type:\u0027Suite\u0027,         book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027403\u0027,floor:4,type:\u0027Deluxe Twin\u0027,   book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027404\u0027,floor:4,type:\u0027Superior\u0027,      book:\u0027checkout\u0027, hk:\u0027oot\u0027},\n];\n\nconst STAFF_LIST=[\n  {id:\u0027p01\u0027,name:\u0027Nguyễn Thị Lan\u0027},\n  {id:\u0027p02\u0027,name:\u0027Trần Thị Mai\u0027},\n  {id:\u0027p03\u0027,name:\u0027Lê Thị Hoa\u0027},\n  {id:\u0027p04\u0027,name:\u0027Phạm Thị Thu\u0027},\n  {id:\u0027p05\u0027,name:\u0027Vũ Thị Ngọc\u0027},\n  {id:\u0027p06\u0027,name:\u0027Đặng Thị Hương\u0027},\n  {id:\u0027p07\u0027,name:\u0027Bùi Thị Linh\u0027},\n  {id:\u0027p08\u0027,name:\u0027Hoàng Thị Yến\u0027},\n  {id:\u0027p09\u0027,name:\u0027Ngô Thị Thanh\u0027},\n  {id:\u0027p10\u0027,name:\u0027Đinh Văn Minh\u0027},\n  {id:\u0027p11\u0027,name:\u0027Trương Văn Nam\u0027},\n  {id:\u0027p12\u0027,name:\u0027Phan Thị Quỳnh\u0027},\n];\n\nconst HK_CODE  ={dirty:\u0027OD\u0027,inspecting:\u0027OC\u0027,clean:\u0027VC\u0027,oot:\u0027OOS\u0027,oos:\u0027OOS\u0027};\nconst BK_CODE  ={checkout:\u0027CO\u0027,stayover:\u0027SO\u0027,checkin:\u0027CI\u0027};\nconst HK_ICON ={dirty:\u0027🧹\u0027,inspecting:\u0027✨\u0027,clean:\u0027✅\u0027,\n  oot:\u0027\u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#f59e0b\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"\u003e\u003crect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/\u003e\u003cpath d=\"M7 11V7a5 5 0 0 1 10 0v4\"/\u003e\u003c/svg\u003e\u0027,\n  oos:\u0027\u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#7dd3fc\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"\u003e\u003crect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/\u003e\u003cpath d=\"M7 11V7a5 5 0 0 1 9.9-1\"/\u003e\u003c/svg\u003e\u0027};\nconst HK_LABEL={dirty:\u0027Dirty\u0027,inspecting:\u0027Clean\u0027,clean:\u0027Ready\u0027,oot:\u0027Out of Order\u0027,oos:\u0027Out of Service\u0027};\nconst BK_LABEL={checkout:\u0027Check-out\u0027,stayover:\u0027Stay-over\u0027,checkin:\u0027Check-in\u0027};\nconst BKCLS   ={checkout:\u0027book-checkout\u0027,stayover:\u0027book-stayover\u0027,checkin:\u0027book-checkin\u0027};\nconst COLORS  =[\u0027#0ea5e9\u0027,\u0027#8b5cf6\u0027,\u0027#f59e0b\u0027,\u0027#10b981\u0027,\u0027#ef4444\u0027,\u0027#ec4899\u0027,\u0027#06b6d4\u0027,\u0027#84cc16\u0027];\n\nconst SHIFTS=[\u0027sang\u0027,\u0027chieu\u0027,\u0027toi\u0027];\nconst shiftData={\n  sang:{groups:[],gc:0},\n  chieu:{groups:[],gc:0},\n  toi:{groups:[],gc:0}\n};\nlet currentShift=\u0027sang\u0027;\nlet groups=shiftData.sang.groups; // [{id, staffList:[{id,pid,name,color}], roomIds:[...]}]\n// compat shims cho các hàm cũ\nlet staff=[];\nlet assignments={}; // roomId -\u003e [staffId,...] — derived, không dùng trực tiếp nữa\n\nfunction getGroupOfRoom(rid){return groups.find(g=\u003eg.roomIds.includes(rid));}\nfunction getGroupStaffIds(g){return g.staffList.map(s=\u003es.id);}\n// Rebuild assignments từ groups (để các hàm filter/stats còn dùng được)\nfunction rebuildAssignments(){\n  assignments={};\n  groups.forEach(g=\u003eg.roomIds.forEach(rid=\u003e{assignments[rid]=g.staffList.map(s=\u003es.id);}));\n}\nlet sc=0,selectedRooms=new Set(),hkStatus={};\nlet fHk=\u0027all\u0027,fBook=\u0027all\u0027,fFloors=new Set(),dragId=null,dragFrom=null;\n\nROOMS.forEach(r=\u003e{hkStatus[r.id]=r.hk;});\n\nfunction init(){\n  initDate();\n  // floor chips\n  const floors=[...new Set(ROOMS.map(r=\u003er.floor))].sort();\n  const row=document.getElementById(\u0027floorRow\u0027);\n  floors.forEach(f=\u003e{\n    const b=document.createElement(\u0027button\u0027);\n    b.className=\u0027fc\u0027;b.textContent=\u0027Tầng \u0027+f;\n    b.onclick=()=\u003esetFloor(f,b);row.appendChild(b);\n  });\n  refreshPicker();\n  syncAssignSel();\n  renderRooms();\n  updateStats();\n  renderMasterList();\n}\n\n// Staff picker\n// Staff combobox\nlet selectedPid=\u0027\u0027;\nlet comboHighlight=-1;\n\nfunction getAvailableStaff(){\n  const inCa=new Set(staff.map(s=\u003es.pid));\n  return STAFF_LIST.filter(p=\u003e!inCa.has(p.id)\u0026\u0026!p.hidden);\n}\n\nfunction refreshPicker(){\n  selectedPid=\u0027\u0027;\n  const inp=document.getElementById(\u0027staffPickerInput\u0027);\n  if(inp)inp.value=\u0027\u0027;\n  const list=document.getElementById(\u0027staffComboList\u0027);\n  if(list)renderComboList(\u0027\u0027);\n}\n\nfunction renderComboList(q){\n  const list=document.getElementById(\u0027staffComboList\u0027);\n  if(!list)return;\n  const items=getAvailableStaff().filter(p=\u003e!q||p.name.toLowerCase().includes(q.toLowerCase()));\n  list.innerHTML=\u0027\u0027;\n  if(!items.length){\n    list.innerHTML=\u0027\u003cdiv class=\"staff-combo-empty\"\u003eKhông tìm thấy nhân viên\u003c/div\u003e\u0027;\n  } else {\n    items.forEach((p,i)=\u003e{\n      const d=document.createElement(\u0027div\u0027);\n      d.className=\u0027staff-combo-item\u0027+(i===comboHighlight?\u0027 active\u0027:\u0027\u0027);\n      d.textContent=p.name;d.dataset.pid=p.id;\n      d.onmousedown=()=\u003eselectComboItem(p);\n      list.appendChild(d);\n    });\n  }\n}\n\nfunction filterCombo(q){comboHighlight=-1;renderComboList(q);openCombo();}\nfunction openCombo(){document.getElementById(\u0027staffComboList\u0027).classList.add(\u0027open\u0027);renderComboList(document.getElementById(\u0027staffPickerInput\u0027).value);}\nfunction closeCombo(){document.getElementById(\u0027staffComboList\u0027).classList.remove(\u0027open\u0027);}\nfunction selectComboItem(p){selectedPid=p.id;document.getElementById(\u0027staffPickerInput\u0027).value=p.name;closeCombo();}\n\nfunction comboKeydown(e){\n  const list=document.getElementById(\u0027staffComboList\u0027);\n  const items=list.querySelectorAll(\u0027.staff-combo-item\u0027);\n  if(e.key===\u0027ArrowDown\u0027){e.preventDefault();comboHighlight=Math.min(comboHighlight+1,items.length-1);}\n  else if(e.key===\u0027ArrowUp\u0027){e.preventDefault();comboHighlight=Math.max(comboHighlight-1,0);}\n  else if(e.key===\u0027Enter\u0027){e.preventDefault();if(comboHighlight\u003e=0\u0026\u0026items[comboHighlight]){const pid=items[comboHighlight].dataset.pid;const p=STAFF_LIST.find(x=\u003ex.id===pid);if(p)selectComboItem(p);}else addStaff();return;}\n  else if(e.key===\u0027Escape\u0027){closeCombo();return;}\n  items.forEach((it,i)=\u003eit.classList.toggle(\u0027active\u0027,i===comboHighlight));\n}\n\ndocument.addEventListener(\u0027click\u0027,e=\u003e{\n  const combo=document.getElementById(\u0027staffCombo\u0027);\n  if(combo\u0026\u0026!combo.contains(e.target))closeCombo();\n});\n\nfunction addStaff(){} // không dùng nữa\nfunction removeStaff(gid,sid){\n  const g=groups.find(x=\u003ex.id===gid);if(!g)return;\n  g.staffList=g.staffList.filter(s=\u003es.id!==sid);\n  if(!g.staffList.length){\n    // Xóa cả nhóm nếu không còn NV\n    const idx=groups.indexOf(g);if(idx\u003e-1)groups.splice(idx,1);\n  }\n  rebuildAssignments();refreshPicker();syncAssignSel();renderRooms();renderStaff();updateStats();\n}\nfunction removeGroup(gid){\n  if(!confirm(\u0027Bạn có chắc chắn muốn xóa nhóm này?\u0027))return;\n  const idx=groups.findIndex(g=\u003eg.id===gid);if(idx\u003e-1)groups.splice(idx,1);\n  rebuildAssignments();renderRooms();renderStaff();updateStats();\n}\n// Custom staff picker\nlet selectedPids=new Set();\nfunction toggleStaffPicker(e){\n  e.stopPropagation();\n  const btn=document.getElementById(\u0027staffPickerBtn\u0027);\n  const dd=document.getElementById(\u0027staffPickerDropdown\u0027);\n  const isOpen=dd.classList.contains(\u0027open\u0027);\n  if(isOpen){dd.classList.remove(\u0027open\u0027);btn.classList.remove(\u0027open\u0027);}\n  else{buildPickerDropdown();dd.classList.add(\u0027open\u0027);btn.classList.add(\u0027open\u0027);}\n}\ndocument.addEventListener(\u0027click\u0027,e=\u003e{\n  const wrap=document.getElementById(\u0027staffPickerWrap\u0027);\n  if(wrap\u0026\u0026!wrap.contains(e.target)){\n    document.getElementById(\u0027staffPickerDropdown\u0027).classList.remove(\u0027open\u0027);\n    document.getElementById(\u0027staffPickerBtn\u0027).classList.remove(\u0027open\u0027);\n  }\n});\nfunction buildPickerDropdown(){\n  const dd=document.getElementById(\u0027staffPickerDropdown\u0027);\n  dd.innerHTML=\u0027\u0027;\n  const list=STAFF_LIST.filter(p=\u003e!p.hidden);\n  if(!list.length){dd.innerHTML=\u0027\u003cdiv class=\"staff-picker-empty\"\u003eChưa có nhân viên\u003c/div\u003e\u0027;return;}\n  list.forEach((p,i)=\u003e{\n    const color=COLORS[STAFF_LIST.indexOf(p)%COLORS.length];\n    const ini=p.name.split(\u0027 \u0027).slice(-2).map(w=\u003ew[0]).join(\u0027\u0027).toUpperCase();\n    const row=document.createElement(\u0027div\u0027);row.className=\u0027staff-picker-item\u0027;\n    const cb=document.createElement(\u0027input\u0027);cb.type=\u0027checkbox\u0027;cb.value=p.id;cb.checked=selectedPids.has(p.id);\n    cb.addEventListener(\u0027change\u0027,e=\u003e{e.stopPropagation();togglePickerItem(p.id,cb.checked);});\n    const av=document.createElement(\u0027div\u0027);av.className=\u0027pi-avatar\u0027;av.style.background=color;av.textContent=ini;\n    const nm=document.createElement(\u0027span\u0027);nm.textContent=p.name;\n    row.appendChild(cb);row.appendChild(av);row.appendChild(nm);\n    row.addEventListener(\u0027click\u0027,e=\u003e{if(e.target===cb)return;cb.checked=!cb.checked;togglePickerItem(p.id,cb.checked);});\n    dd.appendChild(row);\n  });\n}\nfunction togglePickerItem(pid,checked){\n  if(checked)selectedPids.add(pid);else selectedPids.delete(pid);\n  updatePickerLabel();updateAssignBar();\n}\nfunction updatePickerLabel(){\n  const lbl=document.getElementById(\u0027pickerLabel\u0027);\n  if(!selectedPids.size){lbl.textContent=\u0027-- Chọn nhân viên làm phòng --\u0027;lbl.style.color=\u0027var(--text-muted)\u0027;}\n  else{\n    const names=STAFF_LIST.filter(p=\u003eselectedPids.has(p.id)).map(p=\u003ep.name.split(\u0027 \u0027).pop());\n    lbl.textContent=names.join(\u0027, \u0027);lbl.style.color=\u0027var(--text-primary)\u0027;\n  }\n}\nfunction syncAssignSel(){\n  // Xóa NV đã ẩn khỏi selection\n  STAFF_LIST.filter(p=\u003ep.hidden).forEach(p=\u003eselectedPids.delete(p.id));\n  updatePickerLabel();updateAssignBar();\n}\n\n// Shift\nfunction setShift(el){\n  document.querySelectorAll(\u0027.shift-tab\u0027).forEach(t=\u003et.classList.remove(\u0027active\u0027));\n  el.classList.add(\u0027active\u0027);\n  const map={\u0027Ca sáng\u0027:\u0027sang\u0027,\u0027Ca chiều\u0027:\u0027chieu\u0027,\u0027Ca tối\u0027:\u0027toi\u0027};\n  currentShift=map[el.textContent]||\u0027sang\u0027;\n  groups=shiftData[currentShift].groups;\n  rebuildAssignments();\n  selectedRooms.clear();\n  refreshPicker();syncAssignSel();renderRooms();renderStaff();updateStats();\n}\n\n// Filters\nfunction toggleFilter(e){e.stopPropagation();document.getElementById(\u0027filterPanel\u0027).classList.toggle(\u0027open\u0027);}\ndocument.addEventListener(\u0027click\u0027,e=\u003e{const w=document.getElementById(\u0027filterWrap\u0027);if(w\u0026\u0026!w.contains(e.target))document.getElementById(\u0027filterPanel\u0027).classList.remove(\u0027open\u0027);});\nfunction updateBadge(){\n  const n=(fHk!==\u0027all\u0027?1:0)+(fBook!==\u0027all\u0027?1:0);\n  const b=document.getElementById(\u0027filterBadge\u0027);\n  b.textContent=n||\u0027\u0027;b.style.display=n?\u0027flex\u0027:\u0027none\u0027;\n  document.getElementById(\u0027filterBtn\u0027).classList.toggle(\u0027has-filter\u0027,n\u003e0);\n}\nfunction setHk(val,el){fHk=val;document.getElementById(\u0027hkRow\u0027).querySelectorAll(\u0027.fp-btn\u0027).forEach(b=\u003eb.classList.remove(\u0027on-all\u0027,\u0027on\u0027));el.classList.add(val===\u0027all\u0027?\u0027on-all\u0027:\u0027on\u0027);updateBadge();renderRooms();}\nfunction setBook(val,el){fBook=val;document.getElementById(\u0027bookRow\u0027).querySelectorAll(\u0027.fp-btn\u0027).forEach(b=\u003eb.classList.remove(\u0027on-all\u0027,\u0027on\u0027));el.classList.add(val===\u0027all\u0027?\u0027on-all\u0027:\u0027on\u0027);updateBadge();renderRooms();}\nfunction setFloor(val,el){\n  const row=document.getElementById(\u0027floorRow\u0027);\n  const allBtn=document.getElementById(\u0027floor-all\u0027);\n  if(val===\u0027all\u0027){\n    fFloors.clear();\n    row.querySelectorAll(\u0027.fc\u0027).forEach(b=\u003eb.classList.remove(\u0027all-on\u0027,\u0027on\u0027));\n    allBtn.classList.add(\u0027all-on\u0027);\n  } else {\n    if(fFloors.has(val)){fFloors.delete(val);el.classList.remove(\u0027on\u0027);}\n    else{fFloors.add(val);el.classList.add(\u0027on\u0027);}\n    allBtn.classList.toggle(\u0027all-on\u0027,fFloors.size===0);\n  }\n  renderRooms();\n}\n\nfunction getVisible(){\n  const q=(document.getElementById(\u0027roomSearch\u0027).value||\u0027\u0027).toLowerCase();\n  return ROOMS.filter(r=\u003e{\n    if(fHk!==\u0027all\u0027\u0026\u0026hkStatus[r.id]!==fHk)return false;\n    if(fBook!==\u0027all\u0027\u0026\u0026r.book!==fBook)return false;\n    if(fFloors.size\u003e0\u0026\u0026!fFloors.has(r.floor))return false;\n    if(q\u0026\u0026!r.id.includes(q)\u0026\u0026!r.type.toLowerCase().includes(q))return false;\n    return true;\n  });\n}\n\n// Rooms\nfunction renderRooms(){\n  const list=document.getElementById(\u0027roomList\u0027);\n  const rooms=getVisible();\n  const floors=[...new Set(rooms.map(r=\u003er.floor))].sort();\n  list.innerHTML=\u0027\u0027;\n  floors.forEach(floor=\u003e{\n    const floorRooms=rooms.filter(r=\u003er.floor===floor);\n    const allSel=floorRooms.every(r=\u003eselectedRooms.has(r.id));\n    const someSel=floorRooms.some(r=\u003eselectedRooms.has(r.id));\n\n    const lbl=document.createElement(\u0027div\u0027);lbl.className=\u0027floor-label\u0027;\n    const fcb=document.createElement(\u0027input\u0027);fcb.type=\u0027checkbox\u0027;\n    fcb.checked=allSel;fcb.indeterminate=!allSel\u0026\u0026someSel;\n    fcb.style.cssText=\u0027accent-color:var(--navy);width:13px;height:13px;cursor:pointer;margin-right:5px;vertical-align:middle;flex-shrink:0;\u0027;\n    fcb.addEventListener(\u0027change\u0027,e=\u003e{\n      e.stopPropagation();\n      if(fcb.checked)floorRooms.forEach(r=\u003eselectedRooms.add(r.id));\n      else floorRooms.forEach(r=\u003eselectedRooms.delete(r.id));\n      renderRooms();\n    });\n    lbl.appendChild(fcb);\n    lbl.appendChild(document.createTextNode(\u0027TẦNG \u0027+floor));\n    list.appendChild(lbl);\n    rooms.filter(r=\u003er.floor===floor).forEach(room=\u003e{\n      const hk=hkStatus[room.id];\n      const assigned=assignments[room.id]||[];\n      const item=document.createElement(\u0027div\u0027);\n      item.className=\u0027room-item\u0027+(selectedRooms.has(room.id)?\u0027 selected\u0027:\u0027\u0027);\n      item.draggable=true;\n      item.addEventListener(\u0027dragstart\u0027,e=\u003e{\n        dragId=room.id;dragFrom=null;\n        item.classList.add(\u0027dragging\u0027);\n        e.dataTransfer.setData(\u0027text/plain\u0027,room.id);\n        e.dataTransfer.effectAllowed=\u0027move\u0027;\n      });\n      item.addEventListener(\u0027dragend\u0027,()=\u003eitem.classList.remove(\u0027dragging\u0027));\n\n      const cb=document.createElement(\u0027input\u0027);cb.type=\u0027checkbox\u0027;cb.checked=selectedRooms.has(room.id);\n      cb.addEventListener(\u0027change\u0027,e=\u003e{e.stopPropagation();toggleRoom(room.id);});\n      item.addEventListener(\u0027click\u0027,()=\u003etoggleRoom(room.id));\n\n      // Số phòng\n      const roomNum=document.createElement(\u0027div\u0027);roomNum.className=\u0027room-num\u0027;roomNum.textContent=room.id;\n\n      // Mã ký hiệu\n      const codes=document.createElement(\u0027div\u0027);codes.className=\u0027room-codes-inline\u0027;\n      const hkCode=HK_CODE[hk]||\u0027\u0027;\n      const bkCode=room.book===\u0027stayover\u0027?\u0027\u0027:BK_CODE[room.book]||\u0027\u0027;\n      codes.textContent=[bkCode,hkCode].filter(Boolean).join(\u0027, \u0027);\n\n      // Loại phòng cuối dòng\n      const spacer=document.createElement(\u0027div\u0027);spacer.style.flex=\u00271\u0027;\n      const typeEl=document.createElement(\u0027div\u0027);typeEl.className=\u0027room-type-tag\u0027;typeEl.textContent=room.type;\n\n      item.appendChild(cb);item.appendChild(roomNum);item.appendChild(codes);item.appendChild(spacer);item.appendChild(typeEl);\n      list.appendChild(item);\n    });\n  });\n\n  updateSelectAll();updateAssignBar();updateStats();\n}\n\nfunction toggleRoom(id){\n  if(selectedRooms.has(id))selectedRooms.delete(id);else selectedRooms.add(id);\n  renderRooms();\n}\nfunction toggleSelectAll(cb){\n  const rooms=getVisible();\n  if(cb.checked)rooms.forEach(r=\u003eselectedRooms.add(r.id));\n  else rooms.forEach(r=\u003eselectedRooms.delete(r.id));\n  renderRooms();\n}\nfunction updateSelectAll(){\n  const rooms=getVisible();const cb=document.getElementById(\u0027selectAll\u0027);\n  const n=rooms.filter(r=\u003eselectedRooms.has(r.id)).length;\n  cb.checked=n\u003e0\u0026\u0026n===rooms.length;cb.indeterminate=n\u003e0\u0026\u0026n\u003crooms.length;\n}\nfunction updateAssignBar(){\n  const n=selectedRooms.size;\n  document.getElementById(\u0027assignSelected\u0027).innerHTML=\u0027\u0027;\n  document.getElementById(\u0027btnAssign\u0027).disabled=n===0||selectedPids.size===0;\n}\nfunction assignSelected(){\n  const pids=[...selectedPids];\n  if(!pids.length||!selectedRooms.size)return;\n  // Kiểm tra NV đã phân công nhóm khác chưa\n  const conflicts=pids.filter(pid=\u003egroups.some(g=\u003eg.staffList.some(s=\u003es.pid===pid)));\n  if(conflicts.length){\n    const names=conflicts.map(pid=\u003eSTAFF_LIST.find(p=\u003ep.id===pid)?.name||pid).join(\u0027, \u0027);\n    alert(\u0027Nhân viên sau đã được phân công vào nhóm khác trong ca này:\\n\u0027+names+\u0027\\n\\nMỗi nhân viên chỉ có thể thuộc 1 nhóm. Vui lòng bỏ họ khỏi nhóm cũ trước.\u0027);\n    return;\n  }\n  shiftData[currentShift].gc++;\n  const gid=currentShift+\u0027g\u0027+shiftData[currentShift].gc;\n  const colorBase=groups.length;\n  const staffList=pids.map((pid,i)=\u003e{\n    const p=STAFF_LIST.find(x=\u003ex.id===pid);if(!p)return null;\n    return {id:gid+\u0027s\u0027+(i+1),pid:p.id,name:p.name,color:COLORS[(colorBase+i)%COLORS.length]};\n  }).filter(Boolean);\n  const roomIds=[...selectedRooms];\n  roomIds.forEach(rid=\u003e{groups.forEach(g=\u003e{g.roomIds=g.roomIds.filter(r=\u003er!==rid);});});\n  for(let i=groups.length-1;i\u003e=0;i--){if(!groups[i].roomIds.length)groups.splice(i,1);}\n  groups.push({id:gid,staffList,roomIds});\n  rebuildAssignments();\n  selectedRooms.clear();selectedPids.clear();updatePickerLabel();\n  renderRooms();renderStaff();updateStats();\n}\nfunction clearSelected(){\n  selectedRooms.forEach(rid=\u003e{\n    const g=groups.find(g=\u003eg.roomIds.includes(rid));\n    if(g){g.roomIds=g.roomIds.filter(r=\u003er!==rid);if(!g.roomIds.length){const idx=groups.indexOf(g);if(idx\u003e-1)groups.splice(idx,1);}}\n  });\n  rebuildAssignments();selectedRooms.clear();renderRooms();renderStaff();updateStats();\n}\nfunction unassign(rid){\n  if(!confirm(\u0027Bạn có chắc chắn muốn xóa phân công của phòng này?\u0027))return;\n  const g=groups.find(g=\u003eg.roomIds.includes(rid));\n  if(!g)return;\n  g.roomIds=g.roomIds.filter(r=\u003er!==rid);\n  if(!g.roomIds.length){const idx=groups.indexOf(g);if(idx\u003e-1)groups.splice(idx,1);}\n  rebuildAssignments();renderRooms();renderStaff();updateStats();\n}\nfunction autoAssign(){}\n\n// Staff panel — mỗi group 1 box\nfunction renderStaff(){\n  const grid=document.getElementById(\u0027staffGrid\u0027);\n  if(!grid)return;\n  if(!groups.length){\n    grid.innerHTML=\u0027\u003cdiv class=\"staff-empty\"\u003e\u003cspan class=\"icon\"\u003e🧹\u003c/span\u003e\u003cp\u003eChưa có phân công trong ca này\u003c/p\u003e\u003c/div\u003e\u0027;\n    return;\n  }\n  grid.innerHTML=\u0027\u0027;\n  groups.forEach(g=\u003e{\n    const box=document.createElement(\u0027div\u0027);box.className=\u0027staff-single-box\u0027;\n\n    // Header: tên NV dọc + checkbox in + nút xóa nhóm\n    const hdr=document.createElement(\u0027div\u0027);hdr.className=\u0027sg-header\u0027;\n    const info=document.createElement(\u0027div\u0027);info.className=\u0027sg-info\u0027;\n    g.staffList.forEach(s=\u003e{\n      const nameEl=document.createElement(\u0027div\u0027);nameEl.className=\u0027sg-names\u0027;nameEl.textContent=s.name;\n      info.appendChild(nameEl);\n    });\n    const sub=document.createElement(\u0027div\u0027);sub.className=\u0027sg-sub\u0027;sub.textContent=g.roomIds.length+\u0027 phòng được gán\u0027;\n    info.appendChild(sub);\n    const hdrRight=document.createElement(\u0027div\u0027);hdrRight.style.cssText=\u0027display:flex;align-items:center;gap:8px;flex-shrink:0;\u0027;\n    const printLabel=document.createElement(\u0027label\u0027);printLabel.className=\u0027sg-print-label\u0027;\n    const printCb=document.createElement(\u0027input\u0027);printCb.type=\u0027checkbox\u0027;printCb.className=\u0027sg-print-cb\u0027;printCb.checked=!!g.print;\n    printCb.addEventListener(\u0027change\u0027,e=\u003e{e.stopPropagation();g.print=printCb.checked;});\n    printLabel.appendChild(printCb);\n    printLabel.appendChild(document.createTextNode(\u0027In lịch\u0027));\n    const delBtn=document.createElement(\u0027button\u0027);delBtn.className=\u0027btn-remove-staff\u0027;delBtn.textContent=\u0027✕\u0027;\n    delBtn.onclick=()=\u003eremoveGroup(g.id);\n    const editBtn=document.createElement(\u0027button\u0027);editBtn.className=\u0027btn-edit-group\u0027;editBtn.textContent=\u0027✏️\u0027;\n    editBtn.title=\u0027Chỉnh sửa nhân viên\u0027;editBtn.onclick=()=\u003eopenEditGroup(g.id);\n    hdrRight.appendChild(printLabel);hdrRight.appendChild(editBtn);hdrRight.appendChild(delBtn);\n    hdr.appendChild(info);hdr.appendChild(hdrRight);\n    box.appendChild(hdr);\n\n    // Drop zone: kéo phòng từ danh sách hoặc từ box khác vào đây\n    function setupBoxDrop(target,gid){\n      target.addEventListener(\u0027dragover\u0027,e=\u003e{\n        if(!dragId)return;\n        e.preventDefault();e.dataTransfer.dropEffect=\u0027move\u0027;\n        target.classList.add(\u0027sg-drag-over\u0027);\n      });\n      target.addEventListener(\u0027dragleave\u0027,e=\u003e{\n        if(!target.contains(e.relatedTarget))target.classList.remove(\u0027sg-drag-over\u0027);\n      });\n      target.addEventListener(\u0027drop\u0027,e=\u003e{\n        e.preventDefault();target.classList.remove(\u0027sg-drag-over\u0027);\n        if(!dragId)return;\n        const rid=dragId;const fromGid=dragFrom;\n        dragId=null;dragFrom=null;\n        // Xóa khỏi bất kỳ nhóm nào đang giữ phòng này (kể cả không phải fromGid)\n        groups.forEach(x=\u003e{if(x.id!==gid)x.roomIds=x.roomIds.filter(r=\u003er!==rid);});\n        // Xóa nhóm rỗng\n        for(let i=groups.length-1;i\u003e=0;i--){if(!groups[i].roomIds.length\u0026\u0026groups[i].id!==gid)groups.splice(i,1);}\n        // Thêm vào nhóm đích nếu chưa có\n        const dest=groups.find(x=\u003ex.id===gid);\n        if(dest\u0026\u0026!dest.roomIds.includes(rid))dest.roomIds.push(rid);\n        rebuildAssignments();renderRooms();renderStaff();updateStats();\n      });\n    }\n    setupBoxDrop(box,g.id);\n\n    // Danh sách phòng — mỗi phòng 1 dòng, có thể kéo\n    g.roomIds.forEach(rid=\u003e{\n      const r=ROOMS.find(x=\u003ex.id===rid);if(!r)return;\n      const hkCode=HK_CODE[hkStatus[rid]]||\u0027\u0027;\n      const bkCode=r.book===\u0027stayover\u0027?\u0027\u0027:BK_CODE[r.book]||\u0027\u0027;\n      const codes=[bkCode,hkCode].filter(Boolean).join(\u0027, \u0027);\n      const row=document.createElement(\u0027div\u0027);row.className=\u0027sg-room-row\u0027;row.draggable=true;\n      row.innerHTML=\u0027\u003cdiv class=\"sg-room-num\"\u003e\u0027+rid+\u0027\u003c/div\u003e\u0027\n        +\u0027\u003cdiv class=\"sg-room-info\"\u003e\u003cdiv class=\"sg-room-codes\"\u003e\u0027+codes+\u0027\u003c/div\u003e\u003cdiv class=\"sg-room-type\"\u003e\u0027+r.type+\u0027\u003c/div\u003e\u003c/div\u003e\u0027\n        +\u0027\u003cbutton class=\"sg-room-del\" onclick=\"event.stopPropagation();unassign(\\\u0027\u0027+rid+\u0027\\\u0027)\"\u003e✕\u003c/button\u003e\u0027;\n      row.addEventListener(\u0027dragstart\u0027,e=\u003e{\n        dragId=rid;dragFrom=g.id;\n        row.classList.add(\u0027dragging\u0027);\n        e.dataTransfer.setData(\u0027text/plain\u0027,rid);\n        e.dataTransfer.effectAllowed=\u0027move\u0027;\n        e.stopPropagation();\n      });\n      row.addEventListener(\u0027dragend\u0027,()=\u003erow.classList.remove(\u0027dragging\u0027));\n      box.appendChild(row);\n    });\n\n    grid.appendChild(box);\n  });\n}\n\nfunction updateStats(){}\n\nfunction formatDateInput(inp){\n  let v=inp.value.replace(/\\D/g,\u0027\u0027);\n  if(v.length\u003e2)v=v.slice(0,2)+\u0027/\u0027+v.slice(2);\n  if(v.length\u003e5)v=v.slice(0,5)+\u0027/\u0027+v.slice(5,9);\n  inp.value=v;\n}\n\nfunction initDate(){\n  const now=new Date();\n  const d=String(now.getDate()).padStart(2,\u00270\u0027);\n  const m=String(now.getMonth()+1).padStart(2,\u00270\u0027);\n  const y=now.getFullYear();\n  document.getElementById(\u0027headerDate\u0027).value=d+\u0027/\u0027+m+\u0027/\u0027+y;\n}\n\n// Staff master list management\nlet masterIdCounter=STAFF_LIST.length;\nlet staffTab=\u0027active\u0027;\n\nfunction openManageStaff(){staffTab=\u0027active\u0027;document.getElementById(\u0027staffModal\u0027).classList.add(\u0027open\u0027);setStaffTab(\u0027active\u0027);}\nfunction closeManageStaffBtn(){document.getElementById(\u0027staffModal\u0027).classList.remove(\u0027open\u0027);}\nfunction closeManageStaff(e){if(e.target===document.getElementById(\u0027staffModal\u0027))closeManageStaffBtn();}\n\nfunction setStaffTab(tab){\n  staffTab=tab;\n  document.getElementById(\u0027tabActive\u0027).classList.toggle(\u0027modal-tab-on\u0027,tab===\u0027active\u0027);\n  document.getElementById(\u0027tabHidden\u0027).classList.toggle(\u0027modal-tab-on\u0027,tab===\u0027hidden\u0027);\n  document.getElementById(\u0027addStaffRow\u0027).style.display=tab===\u0027active\u0027?\u0027flex\u0027:\u0027none\u0027;\n  renderMasterList();\n}\n\nfunction renderMasterList(){\n  const el=document.getElementById(\u0027staffMasterList\u0027);\n  el.innerHTML=\u0027\u0027;\n  const hiddenList=STAFF_LIST.filter(p=\u003ep.hidden);\n  // cập nhật badge số NV ẩn\n  const badge=document.getElementById(\u0027hiddenCount\u0027);\n  if(hiddenList.length){badge.textContent=hiddenList.length;badge.style.display=\u0027inline\u0027;}\n  else{badge.style.display=\u0027none\u0027;}\n\n  const list=staffTab===\u0027hidden\u0027?hiddenList:STAFF_LIST.filter(p=\u003e!p.hidden);\n  list.forEach((p,i)=\u003e{\n    const globalIdx=STAFF_LIST.indexOf(p);\n    const ini=p.name.split(\u0027 \u0027).slice(-2).map(w=\u003ew[0]).join(\u0027\u0027).toUpperCase();\n    const color=COLORS[globalIdx%COLORS.length];\n    const isHidden=!!p.hidden;\n    const hasData=groups.some(g=\u003eg.staffList.some(s=\u003es.pid===p.id));\n    const row=document.createElement(\u0027div\u0027);row.className=\u0027sml-item\u0027;\n    row.innerHTML=\u0027\u003cdiv class=\"sml-avatar\" style=\"background:\u0027+color+(isHidden?\u0027;filter:grayscale(1)\u0027:\u0027\u0027)+\u0027\"\u003e\u0027+ini+\u0027\u003c/div\u003e\u0027\n      +\u0027\u003cdiv class=\"sml-name\"\u003e\u0027+p.name+\u0027\u003c/div\u003e\u0027\n      +\u0027\u003cbutton class=\"btn-sml-hide\" onclick=\"toggleHideStaff(\\\u0027\u0027+p.id+\u0027\\\u0027)\"\u003e\u0027+(isHidden?\u0027👁 Hiện\u0027:\u0027👁 Ẩn\u0027)+\u0027\u003c/button\u003e\u0027\n      +(!isHidden\u0026\u0026!hasData\n        ?\u0027\u003cbutton class=\"btn-sml-del\" onclick=\"deleteMasterStaff(\\\u0027\u0027+p.id+\u0027\\\u0027)\" title=\"Xóa\"\u003e✕\u003c/button\u003e\u0027\n        :\u0027\u003cspan style=\"width:24px;flex-shrink:0;display:inline-block;\"\u003e\u003c/span\u003e\u0027);\n    el.appendChild(row);\n  });\n  if(!list.length){\n    const msg=staffTab===\u0027hidden\u0027?\u0027Không có nhân viên ẩn\u0027:\u0027Chưa có nhân viên nào\u0027;\n    el.innerHTML=\u0027\u003cdiv style=\"text-align:center;padding:20px;color:var(--text-muted);font-size:13px;\"\u003e\u0027+msg+\u0027\u003c/div\u003e\u0027;\n  }\n}\n\nfunction toggleHideStaff(pid){\n  const p=STAFF_LIST.find(x=\u003ex.id===pid);if(!p)return;\n  p.hidden=!p.hidden;\n  if(p.hidden){\n    groups.forEach(g=\u003e{\n      g.staffList=g.staffList.filter(s=\u003es.pid!==pid);\n    });\n    groups.filter(g=\u003e!g.staffList.length).forEach(g=\u003eremoveGroup(g.id));\n    rebuildAssignments();\n  }\n  refreshPicker();syncAssignSel();renderMasterList();\n}\n\nfunction addToMasterList(){\n  const inp=document.getElementById(\u0027newStaffName\u0027);\n  const name=inp.value.trim();if(!name)return;\n  masterIdCounter++;\n  const id=\u0027p\u0027+String(masterIdCounter).padStart(2,\u00270\u0027);\n  STAFF_LIST.push({id,name});\n  inp.value=\u0027\u0027;\n  refreshPicker();syncAssignSel();renderMasterList();\n}\n\nfunction deleteMasterStaff(pid){\n  groups.forEach(g=\u003e{g.staffList=g.staffList.filter(s=\u003es.pid!==pid);});\n  groups.filter(g=\u003e!g.staffList.length).forEach(g=\u003eremoveGroup(g.id));\n  rebuildAssignments();\n  const idx=STAFF_LIST.findIndex(p=\u003ep.id===pid);\n  if(idx\u003e-1)STAFF_LIST.splice(idx,1);\n  refreshPicker();syncAssignSel();renderMasterList();\n}\n\n// ===== EDIT GROUP =====\nlet editingGid=null;\nfunction closeEditGroup(e){if(e.target===document.getElementById(\u0027editGroupModal\u0027))document.getElementById(\u0027editGroupModal\u0027).classList.remove(\u0027open\u0027);}\n\nfunction openEditGroup(gid){\n  editingGid=gid;\n  renderEditGroup();\n  document.getElementById(\u0027editGroupModal\u0027).classList.add(\u0027open\u0027);\n}\n\nfunction renderEditGroup(){\n  const g=groups.find(x=\u003ex.id===editingGid);if(!g)return;\n  // NV hiện tại\n  const curEl=document.getElementById(\u0027editGroupCurrent\u0027);curEl.innerHTML=\u0027\u0027;\n  if(!g.staffList.length){\n    curEl.innerHTML=\u0027\u003cdiv style=\"font-size:12px;color:var(--text-muted);\"\u003eChưa có nhân viên\u003c/div\u003e\u0027;\n  } else {\n    g.staffList.forEach(s=\u003e{\n      const row=document.createElement(\u0027div\u0027);\n      row.style.cssText=\u0027display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;\u0027;\n      row.innerHTML=\u0027\u003cdiv style=\"flex:1;font-size:13px;font-weight:600;color:var(--text-primary);\"\u003e\u0027+s.name+\u0027\u003c/div\u003e\u0027\n        +\u0027\u003cbutton onclick=\"removeFromGroup(\\\u0027\u0027+editingGid+\u0027\\\u0027,\\\u0027\u0027+s.id+\u0027\\\u0027)\" style=\"background:none;border:none;cursor:pointer;color:var(--red);font-size:12px;padding:2px 6px;border-radius:4px;border:1px solid #fca5a5;\"\u003eXóa khỏi nhóm\u003c/button\u003e\u0027;\n      curEl.appendChild(row);\n    });\n  }\n  // NV khả dụng (không ẩn, chưa ở nhóm nào trong ca)\n  const usedPids=new Set(groups.flatMap(x=\u003ex.staffList.map(s=\u003es.pid)));\n  // NV trong nhóm hiện tại không tính là \"đã dùng\" để không bị ẩn\n  g.staffList.forEach(s=\u003eusedPids.delete(s.pid));\n  const avail=STAFF_LIST.filter(p=\u003e!p.hidden\u0026\u0026!usedPids.has(p.id));\n  const availEl=document.getElementById(\u0027editGroupAvail\u0027);availEl.innerHTML=\u0027\u0027;\n  if(!avail.length){\n    availEl.innerHTML=\u0027\u003cdiv style=\"font-size:12px;color:var(--text-muted);\"\u003eKhông còn nhân viên khả dụng\u003c/div\u003e\u0027;\n  } else {\n    avail.forEach(p=\u003e{\n      const row=document.createElement(\u0027div\u0027);\n      row.style.cssText=\u0027display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;\u0027;\n      row.innerHTML=\u0027\u003cdiv style=\"flex:1;font-size:13px;color:var(--text-primary);\"\u003e\u0027+p.name+\u0027\u003c/div\u003e\u0027\n        +\u0027\u003cbutton onclick=\"addToGroup(\\\u0027\u0027+editingGid+\u0027\\\u0027,\\\u0027\u0027+p.id+\u0027\\\u0027)\" style=\"background:var(--navy);color:#fff;border:none;cursor:pointer;font-size:12px;padding:2px 10px;border-radius:4px;\"\u003e+ Thêm\u003c/button\u003e\u0027;\n      availEl.appendChild(row);\n    });\n  }\n}\n\nfunction removeFromGroup(gid,sid){\n  const g=groups.find(x=\u003ex.id===gid);if(!g)return;\n  g.staffList=g.staffList.filter(s=\u003es.id!==sid);\n  rebuildAssignments();renderStaff();renderEditGroup();\n}\n\nfunction addToGroup(gid,pid){\n  const g=groups.find(x=\u003ex.id===gid);if(!g)return;\n  const p=STAFF_LIST.find(x=\u003ex.id===pid);if(!p)return;\n  const newId=gid+\u0027s\u0027+(g.staffList.length+1);\n  g.staffList.push({id:newId,pid:p.id,name:p.name,color:COLORS[g.staffList.length%COLORS.length]});\n  rebuildAssignments();renderStaff();renderEditGroup();\n}\n\n// ===== PRINT =====\nfunction getShiftLabel(){\n  return {sang:\u0027CA SÁNG\u0027,chieu:\u0027CA CHIỀU\u0027,toi:\u0027CA TỐI\u0027}[currentShift]||\u0027\u0027;\n}\n\nfunction buildWorksheetHTML(attendant, roomIds){\n  const shiftLabel=getShiftLabel();\n  const now=new Date();\n  const dateStr=String(now.getDate()).padStart(2,\u00270\u0027)+\u0027/\u0027+String(now.getMonth()+1).padStart(2,\u00270\u0027)+\u0027/\u0027+now.getFullYear();\n  const cols=[\n    \u0027GIỜ VÀO\u0027,\u0027GIỜ RA\u0027,\u0027TÌNH TRẠNG\u0027,\n    \u0027DRAP LỚN\u0027,\u0027DRAP NHỎ\u0027,\u0027BỌC LỚN\u0027,\u0027BỌC NHỎ\u0027,\u0027ÁO GỐI\u0027,\n    \u0027KHĂN TẮM\u0027,\u0027KHĂN MẶT\u0027,\u0027KHĂN TAY\u0027,\n    \u0027THẢM\u0027,\u0027KEM BỘT\u0027,\u0027LƯỢC\u0027,\n    \u0027DAO CAO RÂU\u0027,\u0027TẮM BÔNG\u0027,\u0027CHỤP TÓC\u0027,\u0027XÀ PHÒNG\u0027,\n    \u0027DẦU GỘI\u0027,\u0027SỬA TẮM\u0027,\u0027DẦU XẢ\u0027,\u0027GIẤY VS\u0027,\n    \u0027TRÀ\u0027,\u0027CAFÉ\u0027,\u0027SUỐI FREE\u0027,\u0027GHI CHÚ\u0027\n  ];\n  const rooms=roomIds.map(rid=\u003eROOMS.find(r=\u003er.id===rid)).filter(Boolean);\n  const headerCols=cols.map(c=\u003e`\u003cth style=\"font-size:7px;padding:2px 1px;text-align:center;border:1px solid #000;word-break:break-all;\"\u003e${c}\u003c/th\u003e`).join(\u0027\u0027);\n  const rows=rooms.map((r,i)=\u003e{\n    const hkCode=HK_CODE[hkStatus[r.id]]||\u0027\u0027;\n    const bkCode=r.book===\u0027stayover\u0027?\u0027\u0027:BK_CODE[r.book]||\u0027\u0027;\n    const codes=[bkCode,hkCode].filter(Boolean).join(\u0027,\u0027);\n    return `\u003ctr\u003e\n      \u003ctd style=\"text-align:center;font-size:10px;border:1px solid #000;\"\u003e${i+1}\u003c/td\u003e\n      \u003ctd style=\"text-align:center;font-weight:700;color:#b91c1c;border:1px solid #000;\"\u003e${r.id}\u003c/td\u003e\n      \u003ctd style=\"text-align:center;font-size:9px;border:1px solid #000;\"\u003e\u003c/td\u003e\n      \u003ctd style=\"text-align:center;font-weight:700;border:1px solid #000;\"\u003e${codes}\u003c/td\u003e\n      ${cols.map(()=\u003e\u0027\u003ctd style=\"border:1px solid #000;\"\u003e\u003c/td\u003e\u0027).join(\u0027\u0027)}\n    \u003c/tr\u003e`;\n  }).join(\u0027\u0027);\n  return `\u003cdiv style=\"font-family:Arial,sans-serif;padding:14px 18px;width:100%;box-sizing:border-box;\"\u003e\n    \u003ch2 style=\"text-align:center;font-size:15px;font-weight:900;letter-spacing:1px;margin:0 0 10px;\"\u003eROOM ANTTENDANT ${shiftLabel} WORKSHEET\u003c/h2\u003e\n    \u003ctable style=\"width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:8px;\"\u003e\n      \u003ctr\u003e\n        \u003ctd style=\"padding:4px 8px;border:1px solid #000;font-size:12px;font-weight:700;width:65%;\"\u003eHOUSEKEEPING ATTENDANT: ${attendant}\u003c/td\u003e\n        \u003ctd style=\"padding:4px 8px;border:1px solid #000;font-size:12px;\"\u003eDATE: \u003cb\u003e${dateStr}\u003c/b\u003e\u003c/td\u003e\n      \u003c/tr\u003e\n    \u003c/table\u003e\n    \u003ctable style=\"width:100%;border-collapse:collapse;font-size:10px;\"\u003e\n      \u003cthead\u003e\u003ctr style=\"background:#fff;\"\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:18px;\"\u003eSTT\u003c/th\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:32px;\"\u003ePHÒNG\u003c/th\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:24px;\"\u003eSL KHÁCH\u003c/th\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:52px;\"\u003eTÌNH TRẠNG\u003c/th\u003e\n        ${headerCols}\n      \u003c/tr\u003e\u003c/thead\u003e\n      \u003ctbody\u003e${rows}\u003c/tbody\u003e\n    \u003c/table\u003e\n    \u003cdiv style=\"margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:2px 24px;font-size:9.5px;color:#1d4ed8;\"\u003e\n      \u003cdiv\u003e\u003cb\u003eOC:\u003c/b\u003e Có khách ở đã được làm vệ sinh \u0026nbsp; \u003cb\u003eVC:\u003c/b\u003e Phòng trống sạch\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eOD:\u003c/b\u003e Có khách ở chưa làm vệ sinh \u0026nbsp; \u003cb\u003eVD:\u003c/b\u003e Phòng trống dơ\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eCI:\u003c/b\u003e Phòng chuẩn bị nhận trong ngày \u0026nbsp; \u003cb\u003eVR:\u003c/b\u003e Phòng sẵn sàng đón khách\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eCO:\u003c/b\u003e Phòng khách trả trong ngày \u0026nbsp; \u003cb\u003eOOO:\u003c/b\u003e Phòng đang sửa chữa, không bán được\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eLCO:\u003c/b\u003e Phòng trả trễ \u0026nbsp; \u003cb\u003eDND:\u003c/b\u003e Không làm phiền khách \u0026nbsp; \u003cb\u003eEP:\u003c/b\u003e Bổ sung thêm người\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eSI:\u003c/b\u003e Phòng để khách tham quan \u0026nbsp; \u003cb\u003eSofa Bed:\u003c/b\u003e Giường sofa \u0026nbsp; \u003cb\u003eEB:\u003c/b\u003e Giường phụ\u003c/div\u003e\n    \u003c/div\u003e\n  \u003c/div\u003e`;\n}\n\nfunction doPrint(){\n  const pages=[];\n  // In các nhóm đang tick \"In lịch\"\n  groups.filter(g=\u003eg.print\u0026\u0026g.roomIds.length).forEach(g=\u003e{\n    const attendant=g.staffList.map(s=\u003es.name).join(\u0027, \u0027);\n    pages.push(buildWorksheetHTML(attendant,g.roomIds));\n  });\n  // Nếu không có nhóm nào được tick nhưng có phòng đang chọn → in không tên NV\n  if(!pages.length\u0026\u0026selectedRooms.size){\n    pages.push(buildWorksheetHTML(\u0027\u0027,[ ...selectedRooms]));\n  }\n  if(!pages.length){\n    alert(\u0027Vui lòng tick \"In lịch\" trên ít nhất 1 nhóm, hoặc chọn phòng để in.\u0027);\n    return;\n  }\n  const win=window.open(\u0027\u0027,\u0027_blank\u0027,\u0027width=1200,height=850\u0027);\n  win.document.write(`\u003c!DOCTYPE html\u003e\u003chtml\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003ctitle\u003eWorksheet\u003c/title\u003e\n    \u003cstyle\u003e\n      *{box-sizing:border-box;}\n      body{margin:0;padding:0;}\n      .page{page-break-after:always;}\n      .page:last-child{page-break-after:avoid;}\n      @media print{.page{page-break-after:always;}.page:last-child{page-break-after:avoid;}}\n    \u003c/style\u003e\u003c/head\u003e\u003cbody\u003e`);\n  pages.forEach(p=\u003ewin.document.write(`\u003cdiv class=\"page\"\u003e${p}\u003c/div\u003e`));\n  win.document.write(\u0027"
-const legacyStyles = "\n*{box-sizing:border-box;margin:0;padding:0;}\n:root{\n  --navy:#1a6b8a;--navy-dark:#155a76;\n  --blue:#2563eb;--blue-light:#eff6ff;\n  --green:#16a34a;--green-light:#f0fdf4;\n  --red:#dc2626;--red-light:#fff1f2;\n  --orange:#d97706;--orange-light:#fffbeb;\n  --purple:#7c3aed;--gray:#64748b;\n  --border:#e2e8f0;--border-dark:#cbd5e1;\n  --bg:#f8fafc;--bg-header:#f1f5f9;\n  --text-primary:#1e293b;--text-secondary:#475569;--text-muted:#94a3b8;\n  --radius:6px;\n  --co-bg:#fee2e2;--co-text:#991b1b;\n  --ci-bg:#dcfce7;--ci-text:#166534;\n  --so-bg:#dbeafe;--so-text:#1e40af;\n}\nhtml,body{height:100%;margin:0;padding:0;}\nbody{font-family:\u0027Segoe UI\u0027,system-ui,sans-serif;background:#dde3ea;display:flex;flex-direction:column;}\n\n.app{display:flex;flex-direction:column;height:100vh;background:#fff;overflow:hidden;}\n\n/* HEADER */\n.app-header{background:var(--navy);color:#fff;padding:0 20px;height:48px;display:flex;align-items:center;gap:16px;flex-shrink:0;}\n.app-title{font-size:15px;font-weight:700;white-space:nowrap;}\n.hdiv{width:1px;height:24px;background:rgba(255,255,255,.25);flex-shrink:0;}\n.header-stats{display:flex;gap:20px;margin-left:auto;}\n.stat{display:flex;flex-direction:column;align-items:center;gap:1px;}\n.stat .val{font-size:16px;font-weight:700;line-height:1;}\n.stat .lbl{font-size:10px;opacity:.65;letter-spacing:.3px;}\n\n/* SUBHEADER */\n.app-subheader{background:#fff;border-bottom:2px solid var(--border);padding:0 20px;height:42px;display:flex;align-items:center;gap:12px;flex-shrink:0;}\n.subheader-date{height:30px;padding:0 10px;border:1.5px solid var(--border-dark);border-radius:var(--radius);font-size:12.5px;font-family:inherit;color:var(--text-primary);background:#fff;outline:none;width:110px;}\n.subheader-date:focus{border-color:var(--navy);}\n.hdiv-sub{width:1px;height:22px;background:var(--border-dark);flex-shrink:0;}\n.shift-tabs{display:flex;gap:4px;flex:1;}\n.shift-tab{flex:1;text-align:center;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;cursor:pointer;border:1.5px solid var(--border-dark);color:var(--text-secondary);background:#fff;font-family:inherit;transition:all .15s;}\n.shift-tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}\n.shift-tab:hover:not(.active){border-color:var(--navy);color:var(--navy);}\n.btn-sub{height:30px;padding:0 12px;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid var(--border-dark);color:var(--text-secondary);background:#fff;font-family:inherit;display:flex;align-items:center;gap:5px;transition:all .15s;white-space:nowrap;}\n.btn-sub:hover{border-color:var(--navy);color:var(--navy);}\n\n.btn{height:32px;padding:0 14px;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;border:none;font-family:inherit;display:flex;align-items:center;gap:5px;transition:all .15s;white-space:nowrap;}\n\n/* BODY */\n.app-body{display:grid;grid-template-columns:290px 1fr;flex:1;min-height:0;overflow:hidden;}\n\n/* LEFT */\n.col-rooms{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:#fff;}\n.col-rooms-header{padding:7px 10px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0;}\n.col-rooms-header h4{font-size:11px;font-weight:700;color:var(--text-primary);}\n.select-all-wrap{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;}\n.select-all-wrap input{accent-color:var(--navy);width:14px;height:14px;cursor:pointer;}\n.header-right{display:flex;align-items:center;gap:8px;}\n\n\n\n/* Room list */\n.room-list{flex:1;overflow-y:auto;}\n.floor-label{padding:4px 14px;font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--text-muted);background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1;display:flex;align-items:center;}\n.room-item{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:grab;user-select:none;transition:background .1s;}\n.room-item:hover{background:var(--bg);}\n.room-item.selected{background:#eff6ff;}\n.room-item.dragging{opacity:.4;}\n.room-item input[type=checkbox]{accent-color:var(--navy);width:14px;height:14px;cursor:pointer;flex-shrink:0;}\n.room-num{font-size:14px;font-weight:700;color:var(--text-primary);width:36px;flex-shrink:0;}\n.room-codes-inline{font-size:12px;font-weight:600;color:var(--text-secondary);flex-shrink:0;min-width:40px;}\n.room-type-tag{font-size:11.5px;color:var(--text-muted);white-space:nowrap;flex-shrink:0;}\n.room-staff-chips{display:flex;gap:3px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:140px;}\n.room-staff-chip{font-size:10px;font-weight:600;color:#fff;padding:1px 6px;border-radius:8px;white-space:nowrap;}\n.room-badge{width:40px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;border:1.5px solid rgba(0,0,0,.08);}\n.hk-icon-out{font-size:15px;flex-shrink:0;line-height:1;}\n.book-checkout{background:var(--co-bg);color:var(--co-text);}\n.book-checkin{background:var(--ci-bg);color:var(--ci-text);}\n.book-stayover{background:var(--so-bg);color:var(--so-text);}\n.room-info{flex:1;min-width:0;}\n.room-type{font-size:12px;color:var(--text-primary);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.room-assigned-chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;}\n.chip-unset{background:var(--bg);color:var(--text-muted);border:1px solid var(--border-dark);}\n.chip-set{background:var(--green-light);color:var(--green);border:1px solid #bbf7d0;}\n\n/* RIGHT */\n.col-staff{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}\n.col-staff-header{padding:0 16px;height:36px;background:var(--bg-header);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}\n.col-staff-header h4{font-size:11px;font-weight:700;color:var(--text-primary);}\n.staff-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-muted);gap:10px;text-align:center;}\n.staff-empty .icon{font-size:40px;opacity:.5;}\n.staff-empty p{font-size:13px;}\n.staff-name-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 4px;background:var(--bg);border:1px solid var(--border);border-radius:20px;font-size:12.5px;font-weight:600;color:var(--text-primary);}\n.staff-chip-av{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;}\n.staff-single-box{background:#fff;border-radius:8px;border:1px solid var(--border);overflow:hidden;margin-bottom:10px;}\n.sg-header{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);}\n.sg-avatars{display:flex;gap:4px;}\n.sg-av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}\n.sg-info{flex:1;min-width:0;}\n.sg-names{font-size:13px;font-weight:600;color:var(--text-primary);line-height:1.5;}\n.sg-sub{font-size:11px;color:var(--text-muted);margin-top:2px;}\n.sg-print-label{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-secondary);cursor:pointer;white-space:nowrap;margin-top:2px;}\n.sg-print-cb{accent-color:var(--navy);width:13px;height:13px;cursor:pointer;}\n.btn-edit-group{background:none;border:1px solid var(--border-dark);cursor:pointer;border-radius:4px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .12s;flex-shrink:0;}\n.btn-edit-group:hover{background:var(--blue-light);border-color:var(--navy);}\n.sg-room-row{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--border);cursor:grab;transition:background .1s;}\n.sg-room-row:last-child{border-bottom:none;}\n.sg-room-row:hover{background:var(--bg);}\n.sg-room-row.dragging{opacity:.4;}\n.staff-single-box.sg-drag-over{border-color:var(--navy);box-shadow:0 0 0 2px var(--blue-light);}\n.sg-room-num{font-size:14px;font-weight:700;color:var(--text-primary);width:32px;flex-shrink:0;}\n.sg-room-info{flex:1;min-width:0;}\n.sg-room-codes{font-size:12px;font-weight:600;color:var(--text-secondary);}\n.sg-room-type{font-size:11px;color:var(--text-muted);margin-top:1px;}\n.sg-room-del{background:none;border:none;cursor:pointer;color:#fca5a5;font-size:12px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .1s;flex-shrink:0;}\n.sg-room-del:hover{background:var(--red-light);color:var(--red);}\n.staff-chip-av{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff;flex-shrink:0;}\n.staff-box-divider{height:1px;background:var(--border);}\n.staff-row{display:flex;align-items:center;gap:8px;padding:9px 12px;}\n.staff-avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;}\n.staff-row-name{flex:1;font-size:13px;font-weight:600;color:var(--text-primary);}\n.staff-row-count{font-size:11px;color:var(--text-muted);white-space:nowrap;}\n.staff-row-rooms{display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 9px 48px;}\n.staff-room-pill{font-size:11.5px;padding:2px 8px;border-radius:4px;background:var(--bg);border:1px solid var(--border);color:var(--text-primary);}\n\n/* STAFF COMBOBOX */\n.staff-combo{flex:1;position:relative;}\n.staff-combo-input{width:100%;height:34px;padding:0 10px;border:1px solid var(--border-dark);border-radius:var(--radius);font-size:13px;font-family:inherit;background:#fff;outline:none;color:var(--text-primary);}\n.staff-combo-input:focus{border-color:var(--navy);}\n.staff-combo-list{display:none;position:absolute;top:38px;left:0;right:0;background:#fff;border:1.5px solid var(--border-dark);border-radius:var(--radius);box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:150;max-height:200px;overflow-y:auto;}\n.staff-combo-list.open{display:block;}\n.staff-combo-item{padding:8px 12px;font-size:13px;cursor:pointer;color:var(--text-primary);transition:background .1s;}\n.staff-combo-item:hover,.staff-combo-item.active{background:var(--blue-light);color:var(--navy);}\n.staff-combo-empty{padding:8px 12px;font-size:12px;color:var(--text-muted);}\n.col-staff-header{padding:0 16px;height:36px;background:var(--bg-header);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}\n.col-staff-header h4{font-size:11px;font-weight:700;color:var(--text-primary);}\n.staff-grid{flex:1;overflow-y:auto;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;align-content:start;}\n.staff-empty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;color:var(--text-muted);gap:10px;text-align:center;}\n.staff-empty .icon{font-size:48px;opacity:.5;}\n.staff-empty p{font-size:13px;}\n\n/* Staff card */\n.staff-card{background:#fff;border-radius:8px;border:2px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:border-color .15s;}\n.staff-card.drag-over{border-color:var(--navy);background:var(--blue-light);}\n.staff-card-header{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}\n.staff-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0;}\n.staff-meta{flex:1;min-width:0;}\n.staff-name{font-size:13px;font-weight:600;color:var(--text-primary);}\n.staff-room-count{font-size:11px;color:var(--text-muted);margin-top:1px;}\n.btn-remove-staff{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:12px;width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0;}\n.btn-remove-staff:hover{background:var(--red-light);color:var(--red);}\n.staff-progress{padding:6px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}\n.progress-bar{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;}\n.progress-fill{height:100%;border-radius:3px;background:var(--navy);transition:width .3s;}\n.progress-fill.full{background:var(--green);}\n.progress-text{font-size:11px;font-weight:600;color:var(--text-secondary);white-space:nowrap;}\n.staff-rooms{flex:1;padding:6px;display:flex;flex-direction:column;gap:3px;min-height:60px;}\n.staff-drop-zone{flex:1;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--text-muted);text-align:center;padding:10px;border:1.5px dashed var(--border-dark);border-radius:6px;margin:4px;transition:all .15s;}\n.staff-drop-zone.drag-over{border-color:var(--navy);background:var(--blue-light);color:var(--navy);}\n.staff-room-tag{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);cursor:grab;user-select:none;transition:background .1s;background:#fff;}\n.staff-room-tag:hover{background:var(--bg);}\n.staff-room-tag.dragging{opacity:.4;}\n.srt-badge{width:38px;height:34px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;border:1.5px solid rgba(0,0,0,.08);}\n.srt-info{flex:1;min-width:0;}\n.srt-num{font-size:12px;font-weight:600;color:var(--text-primary);}\n.srt-type{font-size:11px;color:var(--text-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.staff-room-remove{background:none;border:none;cursor:pointer;color:#fca5a5;font-size:11px;width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;transition:all .1s;flex-shrink:0;}\n.staff-room-remove:hover{background:var(--red-light);color:var(--red);}\n.icon-oos{color:#2563eb;font-weight:700;}\n\n/* FILTER BAR */\n.room-filter-bar{padding:7px 10px;background:#fff;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px;flex-shrink:0;}\n.filter-top-row{display:flex;align-items:center;gap:6px;}\n.filter-search-wrap{position:relative;flex:1;}\n.filter-search{width:100%;height:30px;padding:0 8px 0 26px;border:1px solid var(--border-dark);border-radius:var(--radius);font-size:12px;font-family:inherit;background:#fff;outline:none;}\n.filter-search:focus{border-color:var(--navy);}\n.filter-search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-muted);pointer-events:none;}\n/* filter icon + popup */\n.filter-icon-wrap{position:relative;flex-shrink:0;}\n.filter-icon-btn{width:30px;height:30px;border-radius:6px;border:1.5px solid var(--border-dark);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);transition:all .15s;position:relative;}\n.filter-icon-btn:hover,.filter-icon-btn.has-filter{border-color:var(--navy);color:var(--navy);background:var(--blue-light);}\n.filter-badge{position:absolute;top:-5px;right:-5px;width:15px;height:15px;background:var(--red);color:#fff;border-radius:50%;font-size:9px;font-weight:700;display:none;align-items:center;justify-content:center;}\n.filter-panel{display:none;position:absolute;top:36px;right:0;z-index:100;background:#fff;border:1.5px solid var(--border-dark);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.14);width:260px;padding:6px 0;}\n.filter-panel.open{display:block;}\n.fp-section{padding:8px 12px;}\n.fp-label{font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;margin-bottom:6px;}\n.fp-row{display:flex;flex-wrap:wrap;gap:4px;}\n.fp-divider{height:1px;background:var(--border);margin:2px 10px;}\n.fp-btn{padding:3px 9px;border-radius:12px;font-size:11px;font-weight:500;cursor:pointer;border:1.5px solid var(--border-dark);color:var(--text-secondary);background:#fff;font-family:inherit;transition:all .15s;white-space:nowrap;}\n.fp-btn:hover{border-color:var(--navy);color:var(--navy);}\n.fp-btn.on-all{background:var(--navy);color:#fff;border-color:var(--navy);}\n.fp-btn.dirty.on{background:#f97316;color:#fff;border-color:#f97316;}\n.fp-btn.inspecting.on{background:var(--purple);color:#fff;border-color:var(--purple);}\n.fp-btn.clean.on{background:var(--green);color:#fff;border-color:var(--green);}\n.fp-btn.oot.on{background:var(--gray);color:#fff;border-color:var(--gray);}\n.fp-btn.oos.on{background:var(--blue);color:#fff;border-color:var(--blue);}\n.fp-btn.checkout.on{background:var(--red);color:#fff;border-color:var(--red);}\n.fp-btn.stayover.on{background:var(--blue);color:#fff;border-color:var(--blue);}\n.fp-btn.checkin.on{background:var(--green);color:#fff;border-color:var(--green);}\n/* floor chips row */\n.filter-row{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}\n.fc{padding:2px 9px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;border:1.5px solid var(--border-dark);color:var(--text-secondary);background:#fff;font-family:inherit;transition:all .12s;white-space:nowrap;}\n.fc:hover{border-color:var(--navy);color:var(--navy);}\n.fc.all-on{background:var(--navy);color:#fff;border-color:var(--navy);}\n\n/* STAFF MANAGE MODAL */\n.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;}\n.modal-overlay.open{display:flex;}\n.modal{background:#fff;border-radius:10px;width:420px;height:520px;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.2);overflow:hidden;}\n.modal-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg-header);}\n.modal-header h3{font-size:14px;font-weight:700;color:var(--text-primary);}\n.modal-close{background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);width:28px;height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;}\n.modal-close:hover{background:var(--border);color:var(--text-primary);}\n.modal-body{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px;}\n.modal-add-row{display:flex;gap:6px;}\n.modal-add-row input{flex:1;height:34px;padding:0 10px;border:1px solid var(--border-dark);border-radius:var(--radius);font-size:13px;font-family:inherit;outline:none;}\n.modal-add-row input:focus{border-color:var(--navy);}\n.btn-modal-add{height:34px;padding:0 14px;background:var(--navy);color:#fff;border:none;border-radius:var(--radius);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;}\n.btn-modal-add:hover{background:var(--navy-dark);}\n.staff-master-list{display:flex;flex-direction:column;gap:4px;}\n.sml-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;transition:opacity .2s;}\n.sml-item.hidden-staff{opacity:.45;background:var(--bg);}\n.sml-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;}\n.sml-name{flex:1;font-size:13px;color:var(--text-primary);}\n.sml-id{font-size:10.5px;color:var(--text-muted);}\n.sml-badge-hidden{font-size:10px;color:var(--text-muted);background:var(--border);padding:1px 6px;border-radius:8px;white-space:nowrap;}\n.btn-sml-hide{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border-dark);transition:all .12s;white-space:nowrap;font-family:inherit;}\n.btn-sml-hide:hover{background:var(--orange-light);color:var(--orange);border-color:var(--orange);}\n.btn-sml-del{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:12px;width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .12s;}\n.btn-sml-del:hover{background:var(--red-light);color:var(--red);}\n.modal-footer{padding:10px 16px;border-top:1px solid var(--border);text-align:right;background:var(--bg-header);}\n.modal-tab{flex:1;height:36px;border:none;background:transparent;font-size:12.5px;font-weight:600;color:var(--text-muted);cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;transition:all .15s;}\n.modal-tab.modal-tab-on{color:var(--navy);border-bottom-color:var(--navy);background:#fff;}\n.modal-tab:hover:not(.modal-tab-on){color:var(--text-secondary);background:var(--bg);}\n.btn-manage-staff{background:rgba(255,255,255,.12);color:#fff;border:1.5px solid rgba(255,255,255,.3);height:32px;padding:0 14px;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;transition:all .15s;white-space:nowrap;}\n.btn-manage-staff:hover{background:rgba(255,255,255,.22);}\n\n/* ASSIGN BAR */\n.assign-bar{background:var(--bg-header);border-top:1px solid var(--border);padding:9px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;}\n.assign-selected{font-size:12.5px;color:var(--text-secondary);}\n.assign-selected strong{color:var(--navy);}\n.assign-to{display:flex;gap:6px;align-items:center;margin-left:auto;}\n/* custom staff picker */\n.staff-picker-wrap{position:relative;}\n.staff-picker-btn{height:32px;padding:0 10px;border:1px solid var(--border-dark);border-radius:var(--radius);font-size:12.5px;font-family:inherit;background:#fff;outline:none;min-width:220px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--text-secondary);transition:border-color .15s;}\n.staff-picker-btn:hover,.staff-picker-btn.open{border-color:var(--navy);}\n.staff-picker-btn .picker-label{flex:1;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n.staff-picker-btn .picker-arrow{font-size:10px;flex-shrink:0;color:var(--text-muted);transition:transform .15s;}\n.staff-picker-btn.open .picker-arrow{transform:rotate(180deg);}\n.staff-picker-dropdown{display:none;position:absolute;bottom:calc(100% + 4px);left:0;min-width:100%;background:#fff;border:1.5px solid var(--border-dark);border-radius:8px;box-shadow:0 -6px 20px rgba(0,0,0,.12);z-index:300;overflow:hidden;}\n.staff-picker-dropdown.open{display:block;}\n.staff-picker-item{display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;transition:background .1s;font-size:13px;color:var(--text-primary);}\n.staff-picker-item:hover{background:var(--blue-light);}\n.staff-picker-item input[type=checkbox]{accent-color:var(--navy);width:14px;height:14px;cursor:pointer;flex-shrink:0;}\n.staff-picker-item .pi-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;}\n.staff-picker-empty{padding:10px 14px;font-size:12px;color:var(--text-muted);text-align:center;}\n.btn-assign{background:var(--navy);color:#fff;height:32px;}\n.btn-assign:hover{background:var(--navy-dark);}\n.btn-assign:disabled{opacity:.4;cursor:not-allowed;}\n.btn-clear{background:#fff;color:var(--red);border:1px solid #fca5a5;height:32px;}\n.btn-clear:hover{background:var(--red-light);}\n.btn-auto{background:var(--purple);color:#fff;height:32px;}\n.btn-auto:hover{background:#6d28d9;}\n\n::-webkit-scrollbar{width:5px;}\n::-webkit-scrollbar-track{background:transparent;}\n::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}\n"
-const legacyScript = "const ROOMS=[\n  {id:\u0027101\u0027,floor:1,type:\u0027Deluxe Twin\u0027,   book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027102\u0027,floor:1,type:\u0027Deluxe Double\u0027, book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027103\u0027,floor:1,type:\u0027Standard\u0027,      book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027104\u0027,floor:1,type:\u0027Standard\u0027,      book:\u0027checkout\u0027, hk:\u0027inspecting\u0027},\n  {id:\u0027105\u0027,floor:1,type:\u0027Deluxe Twin\u0027,   book:\u0027stayover\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027201\u0027,floor:2,type:\u0027Superior\u0027,      book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027202\u0027,floor:2,type:\u0027Superior\u0027,      book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027203\u0027,floor:2,type:\u0027Deluxe Double\u0027, book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027204\u0027,floor:2,type:\u0027Standard\u0027,      book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027205\u0027,floor:2,type:\u0027Superior\u0027,      book:\u0027stayover\u0027, hk:\u0027inspecting\u0027},\n  {id:\u0027206\u0027,floor:2,type:\u0027Standard\u0027,      book:\u0027checkout\u0027, hk:\u0027oot\u0027},\n  {id:\u0027301\u0027,floor:3,type:\u0027Junior Suite\u0027,  book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027302\u0027,floor:3,type:\u0027Deluxe Twin\u0027,   book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027303\u0027,floor:3,type:\u0027Deluxe Double\u0027, book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027304\u0027,floor:3,type:\u0027Junior Suite\u0027,  book:\u0027checkout\u0027, hk:\u0027inspecting\u0027},\n  {id:\u0027305\u0027,floor:3,type:\u0027Standard\u0027,      book:\u0027stayover\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027401\u0027,floor:4,type:\u0027Suite\u0027,         book:\u0027checkout\u0027, hk:\u0027dirty\u0027},\n  {id:\u0027402\u0027,floor:4,type:\u0027Suite\u0027,         book:\u0027stayover\u0027, hk:\u0027clean\u0027},\n  {id:\u0027403\u0027,floor:4,type:\u0027Deluxe Twin\u0027,   book:\u0027checkin\u0027,  hk:\u0027dirty\u0027},\n  {id:\u0027404\u0027,floor:4,type:\u0027Superior\u0027,      book:\u0027checkout\u0027, hk:\u0027oot\u0027},\n];\n\nconst STAFF_LIST=[\n  {id:\u0027p01\u0027,name:\u0027Nguyễn Thị Lan\u0027},\n  {id:\u0027p02\u0027,name:\u0027Trần Thị Mai\u0027},\n  {id:\u0027p03\u0027,name:\u0027Lê Thị Hoa\u0027},\n  {id:\u0027p04\u0027,name:\u0027Phạm Thị Thu\u0027},\n  {id:\u0027p05\u0027,name:\u0027Vũ Thị Ngọc\u0027},\n  {id:\u0027p06\u0027,name:\u0027Đặng Thị Hương\u0027},\n  {id:\u0027p07\u0027,name:\u0027Bùi Thị Linh\u0027},\n  {id:\u0027p08\u0027,name:\u0027Hoàng Thị Yến\u0027},\n  {id:\u0027p09\u0027,name:\u0027Ngô Thị Thanh\u0027},\n  {id:\u0027p10\u0027,name:\u0027Đinh Văn Minh\u0027},\n  {id:\u0027p11\u0027,name:\u0027Trương Văn Nam\u0027},\n  {id:\u0027p12\u0027,name:\u0027Phan Thị Quỳnh\u0027},\n];\n\nconst HK_CODE  ={dirty:\u0027OD\u0027,inspecting:\u0027OC\u0027,clean:\u0027VC\u0027,oot:\u0027OOS\u0027,oos:\u0027OOS\u0027};\nconst BK_CODE  ={checkout:\u0027CO\u0027,stayover:\u0027SO\u0027,checkin:\u0027CI\u0027};\nconst HK_ICON ={dirty:\u0027🧹\u0027,inspecting:\u0027✨\u0027,clean:\u0027✅\u0027,\n  oot:\u0027\u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#f59e0b\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"\u003e\u003crect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/\u003e\u003cpath d=\"M7 11V7a5 5 0 0 1 10 0v4\"/\u003e\u003c/svg\u003e\u0027,\n  oos:\u0027\u003csvg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#7dd3fc\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"\u003e\u003crect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/\u003e\u003cpath d=\"M7 11V7a5 5 0 0 1 9.9-1\"/\u003e\u003c/svg\u003e\u0027};\nconst HK_LABEL={dirty:\u0027Dirty\u0027,inspecting:\u0027Clean\u0027,clean:\u0027Ready\u0027,oot:\u0027Out of Order\u0027,oos:\u0027Out of Service\u0027};\nconst BK_LABEL={checkout:\u0027Check-out\u0027,stayover:\u0027Stay-over\u0027,checkin:\u0027Check-in\u0027};\nconst BKCLS   ={checkout:\u0027book-checkout\u0027,stayover:\u0027book-stayover\u0027,checkin:\u0027book-checkin\u0027};\nconst COLORS  =[\u0027#0ea5e9\u0027,\u0027#8b5cf6\u0027,\u0027#f59e0b\u0027,\u0027#10b981\u0027,\u0027#ef4444\u0027,\u0027#ec4899\u0027,\u0027#06b6d4\u0027,\u0027#84cc16\u0027];\n\nconst SHIFTS=[\u0027sang\u0027,\u0027chieu\u0027,\u0027toi\u0027];\nconst shiftData={\n  sang:{groups:[],gc:0},\n  chieu:{groups:[],gc:0},\n  toi:{groups:[],gc:0}\n};\nlet currentShift=\u0027sang\u0027;\nlet groups=shiftData.sang.groups; // [{id, staffList:[{id,pid,name,color}], roomIds:[...]}]\n// compat shims cho các hàm cũ\nlet staff=[];\nlet assignments={}; // roomId -\u003e [staffId,...] — derived, không dùng trực tiếp nữa\n\nfunction getGroupOfRoom(rid){return groups.find(g=\u003eg.roomIds.includes(rid));}\nfunction getGroupStaffIds(g){return g.staffList.map(s=\u003es.id);}\n// Rebuild assignments từ groups (để các hàm filter/stats còn dùng được)\nfunction rebuildAssignments(){\n  assignments={};\n  groups.forEach(g=\u003eg.roomIds.forEach(rid=\u003e{assignments[rid]=g.staffList.map(s=\u003es.id);}));\n}\nlet sc=0,selectedRooms=new Set(),hkStatus={};\nlet fHk=\u0027all\u0027,fBook=\u0027all\u0027,fFloors=new Set(),dragId=null,dragFrom=null;\n\nROOMS.forEach(r=\u003e{hkStatus[r.id]=r.hk;});\n\nfunction init(){\n  initDate();\n  // floor chips\n  const floors=[...new Set(ROOMS.map(r=\u003er.floor))].sort();\n  const row=document.getElementById(\u0027floorRow\u0027);\n  floors.forEach(f=\u003e{\n    const b=document.createElement(\u0027button\u0027);\n    b.className=\u0027fc\u0027;b.textContent=\u0027Tầng \u0027+f;\n    b.onclick=()=\u003esetFloor(f,b);row.appendChild(b);\n  });\n  refreshPicker();\n  syncAssignSel();\n  renderRooms();\n  updateStats();\n  renderMasterList();\n}\n\n// Staff picker\n// Staff combobox\nlet selectedPid=\u0027\u0027;\nlet comboHighlight=-1;\n\nfunction getAvailableStaff(){\n  const inCa=new Set(staff.map(s=\u003es.pid));\n  return STAFF_LIST.filter(p=\u003e!inCa.has(p.id)\u0026\u0026!p.hidden);\n}\n\nfunction refreshPicker(){\n  selectedPid=\u0027\u0027;\n  const inp=document.getElementById(\u0027staffPickerInput\u0027);\n  if(inp)inp.value=\u0027\u0027;\n  const list=document.getElementById(\u0027staffComboList\u0027);\n  if(list)renderComboList(\u0027\u0027);\n}\n\nfunction renderComboList(q){\n  const list=document.getElementById(\u0027staffComboList\u0027);\n  if(!list)return;\n  const items=getAvailableStaff().filter(p=\u003e!q||p.name.toLowerCase().includes(q.toLowerCase()));\n  list.innerHTML=\u0027\u0027;\n  if(!items.length){\n    list.innerHTML=\u0027\u003cdiv class=\"staff-combo-empty\"\u003eKhông tìm thấy nhân viên\u003c/div\u003e\u0027;\n  } else {\n    items.forEach((p,i)=\u003e{\n      const d=document.createElement(\u0027div\u0027);\n      d.className=\u0027staff-combo-item\u0027+(i===comboHighlight?\u0027 active\u0027:\u0027\u0027);\n      d.textContent=p.name;d.dataset.pid=p.id;\n      d.onmousedown=()=\u003eselectComboItem(p);\n      list.appendChild(d);\n    });\n  }\n}\n\nfunction filterCombo(q){comboHighlight=-1;renderComboList(q);openCombo();}\nfunction openCombo(){document.getElementById(\u0027staffComboList\u0027).classList.add(\u0027open\u0027);renderComboList(document.getElementById(\u0027staffPickerInput\u0027).value);}\nfunction closeCombo(){document.getElementById(\u0027staffComboList\u0027).classList.remove(\u0027open\u0027);}\nfunction selectComboItem(p){selectedPid=p.id;document.getElementById(\u0027staffPickerInput\u0027).value=p.name;closeCombo();}\n\nfunction comboKeydown(e){\n  const list=document.getElementById(\u0027staffComboList\u0027);\n  const items=list.querySelectorAll(\u0027.staff-combo-item\u0027);\n  if(e.key===\u0027ArrowDown\u0027){e.preventDefault();comboHighlight=Math.min(comboHighlight+1,items.length-1);}\n  else if(e.key===\u0027ArrowUp\u0027){e.preventDefault();comboHighlight=Math.max(comboHighlight-1,0);}\n  else if(e.key===\u0027Enter\u0027){e.preventDefault();if(comboHighlight\u003e=0\u0026\u0026items[comboHighlight]){const pid=items[comboHighlight].dataset.pid;const p=STAFF_LIST.find(x=\u003ex.id===pid);if(p)selectComboItem(p);}else addStaff();return;}\n  else if(e.key===\u0027Escape\u0027){closeCombo();return;}\n  items.forEach((it,i)=\u003eit.classList.toggle(\u0027active\u0027,i===comboHighlight));\n}\n\ndocument.addEventListener(\u0027click\u0027,e=\u003e{\n  const combo=document.getElementById(\u0027staffCombo\u0027);\n  if(combo\u0026\u0026!combo.contains(e.target))closeCombo();\n});\n\nfunction addStaff(){} // không dùng nữa\nfunction removeStaff(gid,sid){\n  const g=groups.find(x=\u003ex.id===gid);if(!g)return;\n  g.staffList=g.staffList.filter(s=\u003es.id!==sid);\n  if(!g.staffList.length){\n    // Xóa cả nhóm nếu không còn NV\n    const idx=groups.indexOf(g);if(idx\u003e-1)groups.splice(idx,1);\n  }\n  rebuildAssignments();refreshPicker();syncAssignSel();renderRooms();renderStaff();updateStats();\n}\nfunction removeGroup(gid){\n  if(!confirm(\u0027Bạn có chắc chắn muốn xóa nhóm này?\u0027))return;\n  const idx=groups.findIndex(g=\u003eg.id===gid);if(idx\u003e-1)groups.splice(idx,1);\n  rebuildAssignments();renderRooms();renderStaff();updateStats();\n}\n// Custom staff picker\nlet selectedPids=new Set();\nfunction toggleStaffPicker(e){\n  e.stopPropagation();\n  const btn=document.getElementById(\u0027staffPickerBtn\u0027);\n  const dd=document.getElementById(\u0027staffPickerDropdown\u0027);\n  const isOpen=dd.classList.contains(\u0027open\u0027);\n  if(isOpen){dd.classList.remove(\u0027open\u0027);btn.classList.remove(\u0027open\u0027);}\n  else{buildPickerDropdown();dd.classList.add(\u0027open\u0027);btn.classList.add(\u0027open\u0027);}\n}\ndocument.addEventListener(\u0027click\u0027,e=\u003e{\n  const wrap=document.getElementById(\u0027staffPickerWrap\u0027);\n  if(wrap\u0026\u0026!wrap.contains(e.target)){\n    document.getElementById(\u0027staffPickerDropdown\u0027).classList.remove(\u0027open\u0027);\n    document.getElementById(\u0027staffPickerBtn\u0027).classList.remove(\u0027open\u0027);\n  }\n});\nfunction buildPickerDropdown(){\n  const dd=document.getElementById(\u0027staffPickerDropdown\u0027);\n  dd.innerHTML=\u0027\u0027;\n  const list=STAFF_LIST.filter(p=\u003e!p.hidden);\n  if(!list.length){dd.innerHTML=\u0027\u003cdiv class=\"staff-picker-empty\"\u003eChưa có nhân viên\u003c/div\u003e\u0027;return;}\n  list.forEach((p,i)=\u003e{\n    const color=COLORS[STAFF_LIST.indexOf(p)%COLORS.length];\n    const ini=p.name.split(\u0027 \u0027).slice(-2).map(w=\u003ew[0]).join(\u0027\u0027).toUpperCase();\n    const row=document.createElement(\u0027div\u0027);row.className=\u0027staff-picker-item\u0027;\n    const cb=document.createElement(\u0027input\u0027);cb.type=\u0027checkbox\u0027;cb.value=p.id;cb.checked=selectedPids.has(p.id);\n    cb.addEventListener(\u0027change\u0027,e=\u003e{e.stopPropagation();togglePickerItem(p.id,cb.checked);});\n    const av=document.createElement(\u0027div\u0027);av.className=\u0027pi-avatar\u0027;av.style.background=color;av.textContent=ini;\n    const nm=document.createElement(\u0027span\u0027);nm.textContent=p.name;\n    row.appendChild(cb);row.appendChild(av);row.appendChild(nm);\n    row.addEventListener(\u0027click\u0027,e=\u003e{if(e.target===cb)return;cb.checked=!cb.checked;togglePickerItem(p.id,cb.checked);});\n    dd.appendChild(row);\n  });\n}\nfunction togglePickerItem(pid,checked){\n  if(checked)selectedPids.add(pid);else selectedPids.delete(pid);\n  updatePickerLabel();updateAssignBar();\n}\nfunction updatePickerLabel(){\n  const lbl=document.getElementById(\u0027pickerLabel\u0027);\n  if(!selectedPids.size){lbl.textContent=\u0027-- Chọn nhân viên làm phòng --\u0027;lbl.style.color=\u0027var(--text-muted)\u0027;}\n  else{\n    const names=STAFF_LIST.filter(p=\u003eselectedPids.has(p.id)).map(p=\u003ep.name.split(\u0027 \u0027).pop());\n    lbl.textContent=names.join(\u0027, \u0027);lbl.style.color=\u0027var(--text-primary)\u0027;\n  }\n}\nfunction syncAssignSel(){\n  // Xóa NV đã ẩn khỏi selection\n  STAFF_LIST.filter(p=\u003ep.hidden).forEach(p=\u003eselectedPids.delete(p.id));\n  updatePickerLabel();updateAssignBar();\n}\n\n// Shift\nfunction setShift(el){\n  document.querySelectorAll(\u0027.shift-tab\u0027).forEach(t=\u003et.classList.remove(\u0027active\u0027));\n  el.classList.add(\u0027active\u0027);\n  const map={\u0027Ca sáng\u0027:\u0027sang\u0027,\u0027Ca chiều\u0027:\u0027chieu\u0027,\u0027Ca tối\u0027:\u0027toi\u0027};\n  currentShift=map[el.textContent]||\u0027sang\u0027;\n  groups=shiftData[currentShift].groups;\n  rebuildAssignments();\n  selectedRooms.clear();\n  refreshPicker();syncAssignSel();renderRooms();renderStaff();updateStats();\n}\n\n// Filters\nfunction toggleFilter(e){e.stopPropagation();document.getElementById(\u0027filterPanel\u0027).classList.toggle(\u0027open\u0027);}\ndocument.addEventListener(\u0027click\u0027,e=\u003e{const w=document.getElementById(\u0027filterWrap\u0027);if(w\u0026\u0026!w.contains(e.target))document.getElementById(\u0027filterPanel\u0027).classList.remove(\u0027open\u0027);});\nfunction updateBadge(){\n  const n=(fHk!==\u0027all\u0027?1:0)+(fBook!==\u0027all\u0027?1:0);\n  const b=document.getElementById(\u0027filterBadge\u0027);\n  b.textContent=n||\u0027\u0027;b.style.display=n?\u0027flex\u0027:\u0027none\u0027;\n  document.getElementById(\u0027filterBtn\u0027).classList.toggle(\u0027has-filter\u0027,n\u003e0);\n}\nfunction setHk(val,el){fHk=val;document.getElementById(\u0027hkRow\u0027).querySelectorAll(\u0027.fp-btn\u0027).forEach(b=\u003eb.classList.remove(\u0027on-all\u0027,\u0027on\u0027));el.classList.add(val===\u0027all\u0027?\u0027on-all\u0027:\u0027on\u0027);updateBadge();renderRooms();}\nfunction setBook(val,el){fBook=val;document.getElementById(\u0027bookRow\u0027).querySelectorAll(\u0027.fp-btn\u0027).forEach(b=\u003eb.classList.remove(\u0027on-all\u0027,\u0027on\u0027));el.classList.add(val===\u0027all\u0027?\u0027on-all\u0027:\u0027on\u0027);updateBadge();renderRooms();}\nfunction setFloor(val,el){\n  const row=document.getElementById(\u0027floorRow\u0027);\n  const allBtn=document.getElementById(\u0027floor-all\u0027);\n  if(val===\u0027all\u0027){\n    fFloors.clear();\n    row.querySelectorAll(\u0027.fc\u0027).forEach(b=\u003eb.classList.remove(\u0027all-on\u0027,\u0027on\u0027));\n    allBtn.classList.add(\u0027all-on\u0027);\n  } else {\n    if(fFloors.has(val)){fFloors.delete(val);el.classList.remove(\u0027on\u0027);}\n    else{fFloors.add(val);el.classList.add(\u0027on\u0027);}\n    allBtn.classList.toggle(\u0027all-on\u0027,fFloors.size===0);\n  }\n  renderRooms();\n}\n\nfunction getVisible(){\n  const q=(document.getElementById(\u0027roomSearch\u0027).value||\u0027\u0027).toLowerCase();\n  return ROOMS.filter(r=\u003e{\n    if(fHk!==\u0027all\u0027\u0026\u0026hkStatus[r.id]!==fHk)return false;\n    if(fBook!==\u0027all\u0027\u0026\u0026r.book!==fBook)return false;\n    if(fFloors.size\u003e0\u0026\u0026!fFloors.has(r.floor))return false;\n    if(q\u0026\u0026!r.id.includes(q)\u0026\u0026!r.type.toLowerCase().includes(q))return false;\n    return true;\n  });\n}\n\n// Rooms\nfunction renderRooms(){\n  const list=document.getElementById(\u0027roomList\u0027);\n  const rooms=getVisible();\n  const floors=[...new Set(rooms.map(r=\u003er.floor))].sort();\n  list.innerHTML=\u0027\u0027;\n  floors.forEach(floor=\u003e{\n    const floorRooms=rooms.filter(r=\u003er.floor===floor);\n    const allSel=floorRooms.every(r=\u003eselectedRooms.has(r.id));\n    const someSel=floorRooms.some(r=\u003eselectedRooms.has(r.id));\n\n    const lbl=document.createElement(\u0027div\u0027);lbl.className=\u0027floor-label\u0027;\n    const fcb=document.createElement(\u0027input\u0027);fcb.type=\u0027checkbox\u0027;\n    fcb.checked=allSel;fcb.indeterminate=!allSel\u0026\u0026someSel;\n    fcb.style.cssText=\u0027accent-color:var(--navy);width:13px;height:13px;cursor:pointer;margin-right:5px;vertical-align:middle;flex-shrink:0;\u0027;\n    fcb.addEventListener(\u0027change\u0027,e=\u003e{\n      e.stopPropagation();\n      if(fcb.checked)floorRooms.forEach(r=\u003eselectedRooms.add(r.id));\n      else floorRooms.forEach(r=\u003eselectedRooms.delete(r.id));\n      renderRooms();\n    });\n    lbl.appendChild(fcb);\n    lbl.appendChild(document.createTextNode(\u0027TẦNG \u0027+floor));\n    list.appendChild(lbl);\n    rooms.filter(r=\u003er.floor===floor).forEach(room=\u003e{\n      const hk=hkStatus[room.id];\n      const assigned=assignments[room.id]||[];\n      const item=document.createElement(\u0027div\u0027);\n      item.className=\u0027room-item\u0027+(selectedRooms.has(room.id)?\u0027 selected\u0027:\u0027\u0027);\n      item.draggable=true;\n      item.addEventListener(\u0027dragstart\u0027,e=\u003e{\n        dragId=room.id;dragFrom=null;\n        item.classList.add(\u0027dragging\u0027);\n        e.dataTransfer.setData(\u0027text/plain\u0027,room.id);\n        e.dataTransfer.effectAllowed=\u0027move\u0027;\n      });\n      item.addEventListener(\u0027dragend\u0027,()=\u003eitem.classList.remove(\u0027dragging\u0027));\n\n      const cb=document.createElement(\u0027input\u0027);cb.type=\u0027checkbox\u0027;cb.checked=selectedRooms.has(room.id);\n      cb.addEventListener(\u0027change\u0027,e=\u003e{e.stopPropagation();toggleRoom(room.id);});\n      item.addEventListener(\u0027click\u0027,()=\u003etoggleRoom(room.id));\n\n      // Số phòng\n      const roomNum=document.createElement(\u0027div\u0027);roomNum.className=\u0027room-num\u0027;roomNum.textContent=room.id;\n\n      // Mã ký hiệu\n      const codes=document.createElement(\u0027div\u0027);codes.className=\u0027room-codes-inline\u0027;\n      const hkCode=HK_CODE[hk]||\u0027\u0027;\n      const bkCode=room.book===\u0027stayover\u0027?\u0027\u0027:BK_CODE[room.book]||\u0027\u0027;\n      codes.textContent=[bkCode,hkCode].filter(Boolean).join(\u0027, \u0027);\n\n      // Loại phòng cuối dòng\n      const spacer=document.createElement(\u0027div\u0027);spacer.style.flex=\u00271\u0027;\n      const typeEl=document.createElement(\u0027div\u0027);typeEl.className=\u0027room-type-tag\u0027;typeEl.textContent=room.type;\n\n      item.appendChild(cb);item.appendChild(roomNum);item.appendChild(codes);item.appendChild(spacer);item.appendChild(typeEl);\n      list.appendChild(item);\n    });\n  });\n\n  updateSelectAll();updateAssignBar();updateStats();\n}\n\nfunction toggleRoom(id){\n  if(selectedRooms.has(id))selectedRooms.delete(id);else selectedRooms.add(id);\n  renderRooms();\n}\nfunction toggleSelectAll(cb){\n  const rooms=getVisible();\n  if(cb.checked)rooms.forEach(r=\u003eselectedRooms.add(r.id));\n  else rooms.forEach(r=\u003eselectedRooms.delete(r.id));\n  renderRooms();\n}\nfunction updateSelectAll(){\n  const rooms=getVisible();const cb=document.getElementById(\u0027selectAll\u0027);\n  const n=rooms.filter(r=\u003eselectedRooms.has(r.id)).length;\n  cb.checked=n\u003e0\u0026\u0026n===rooms.length;cb.indeterminate=n\u003e0\u0026\u0026n\u003crooms.length;\n}\nfunction updateAssignBar(){\n  const n=selectedRooms.size;\n  document.getElementById(\u0027assignSelected\u0027).innerHTML=\u0027\u0027;\n  document.getElementById(\u0027btnAssign\u0027).disabled=n===0||selectedPids.size===0;\n}\nfunction assignSelected(){\n  const pids=[...selectedPids];\n  if(!pids.length||!selectedRooms.size)return;\n  // Kiểm tra NV đã phân công nhóm khác chưa\n  const conflicts=pids.filter(pid=\u003egroups.some(g=\u003eg.staffList.some(s=\u003es.pid===pid)));\n  if(conflicts.length){\n    const names=conflicts.map(pid=\u003eSTAFF_LIST.find(p=\u003ep.id===pid)?.name||pid).join(\u0027, \u0027);\n    alert(\u0027Nhân viên sau đã được phân công vào nhóm khác trong ca này:\\n\u0027+names+\u0027\\n\\nMỗi nhân viên chỉ có thể thuộc 1 nhóm. Vui lòng bỏ họ khỏi nhóm cũ trước.\u0027);\n    return;\n  }\n  shiftData[currentShift].gc++;\n  const gid=currentShift+\u0027g\u0027+shiftData[currentShift].gc;\n  const colorBase=groups.length;\n  const staffList=pids.map((pid,i)=\u003e{\n    const p=STAFF_LIST.find(x=\u003ex.id===pid);if(!p)return null;\n    return {id:gid+\u0027s\u0027+(i+1),pid:p.id,name:p.name,color:COLORS[(colorBase+i)%COLORS.length]};\n  }).filter(Boolean);\n  const roomIds=[...selectedRooms];\n  roomIds.forEach(rid=\u003e{groups.forEach(g=\u003e{g.roomIds=g.roomIds.filter(r=\u003er!==rid);});});\n  for(let i=groups.length-1;i\u003e=0;i--){if(!groups[i].roomIds.length)groups.splice(i,1);}\n  groups.push({id:gid,staffList,roomIds});\n  rebuildAssignments();\n  selectedRooms.clear();selectedPids.clear();updatePickerLabel();\n  renderRooms();renderStaff();updateStats();\n}\nfunction clearSelected(){\n  selectedRooms.forEach(rid=\u003e{\n    const g=groups.find(g=\u003eg.roomIds.includes(rid));\n    if(g){g.roomIds=g.roomIds.filter(r=\u003er!==rid);if(!g.roomIds.length){const idx=groups.indexOf(g);if(idx\u003e-1)groups.splice(idx,1);}}\n  });\n  rebuildAssignments();selectedRooms.clear();renderRooms();renderStaff();updateStats();\n}\nfunction unassign(rid){\n  if(!confirm(\u0027Bạn có chắc chắn muốn xóa phân công của phòng này?\u0027))return;\n  const g=groups.find(g=\u003eg.roomIds.includes(rid));\n  if(!g)return;\n  g.roomIds=g.roomIds.filter(r=\u003er!==rid);\n  if(!g.roomIds.length){const idx=groups.indexOf(g);if(idx\u003e-1)groups.splice(idx,1);}\n  rebuildAssignments();renderRooms();renderStaff();updateStats();\n}\nfunction autoAssign(){}\n\n// Staff panel — mỗi group 1 box\nfunction renderStaff(){\n  const grid=document.getElementById(\u0027staffGrid\u0027);\n  if(!grid)return;\n  if(!groups.length){\n    grid.innerHTML=\u0027\u003cdiv class=\"staff-empty\"\u003e\u003cspan class=\"icon\"\u003e🧹\u003c/span\u003e\u003cp\u003eChưa có phân công trong ca này\u003c/p\u003e\u003c/div\u003e\u0027;\n    return;\n  }\n  grid.innerHTML=\u0027\u0027;\n  groups.forEach(g=\u003e{\n    const box=document.createElement(\u0027div\u0027);box.className=\u0027staff-single-box\u0027;\n\n    // Header: tên NV dọc + checkbox in + nút xóa nhóm\n    const hdr=document.createElement(\u0027div\u0027);hdr.className=\u0027sg-header\u0027;\n    const info=document.createElement(\u0027div\u0027);info.className=\u0027sg-info\u0027;\n    g.staffList.forEach(s=\u003e{\n      const nameEl=document.createElement(\u0027div\u0027);nameEl.className=\u0027sg-names\u0027;nameEl.textContent=s.name;\n      info.appendChild(nameEl);\n    });\n    const sub=document.createElement(\u0027div\u0027);sub.className=\u0027sg-sub\u0027;sub.textContent=g.roomIds.length+\u0027 phòng được gán\u0027;\n    info.appendChild(sub);\n    const hdrRight=document.createElement(\u0027div\u0027);hdrRight.style.cssText=\u0027display:flex;align-items:center;gap:8px;flex-shrink:0;\u0027;\n    const printLabel=document.createElement(\u0027label\u0027);printLabel.className=\u0027sg-print-label\u0027;\n    const printCb=document.createElement(\u0027input\u0027);printCb.type=\u0027checkbox\u0027;printCb.className=\u0027sg-print-cb\u0027;printCb.checked=!!g.print;\n    printCb.addEventListener(\u0027change\u0027,e=\u003e{e.stopPropagation();g.print=printCb.checked;});\n    printLabel.appendChild(printCb);\n    printLabel.appendChild(document.createTextNode(\u0027In lịch\u0027));\n    const delBtn=document.createElement(\u0027button\u0027);delBtn.className=\u0027btn-remove-staff\u0027;delBtn.textContent=\u0027✕\u0027;\n    delBtn.onclick=()=\u003eremoveGroup(g.id);\n    const editBtn=document.createElement(\u0027button\u0027);editBtn.className=\u0027btn-edit-group\u0027;editBtn.textContent=\u0027✏️\u0027;\n    editBtn.title=\u0027Chỉnh sửa nhân viên\u0027;editBtn.onclick=()=\u003eopenEditGroup(g.id);\n    hdrRight.appendChild(printLabel);hdrRight.appendChild(editBtn);hdrRight.appendChild(delBtn);\n    hdr.appendChild(info);hdr.appendChild(hdrRight);\n    box.appendChild(hdr);\n\n    // Drop zone: kéo phòng từ danh sách hoặc từ box khác vào đây\n    function setupBoxDrop(target,gid){\n      target.addEventListener(\u0027dragover\u0027,e=\u003e{\n        if(!dragId)return;\n        e.preventDefault();e.dataTransfer.dropEffect=\u0027move\u0027;\n        target.classList.add(\u0027sg-drag-over\u0027);\n      });\n      target.addEventListener(\u0027dragleave\u0027,e=\u003e{\n        if(!target.contains(e.relatedTarget))target.classList.remove(\u0027sg-drag-over\u0027);\n      });\n      target.addEventListener(\u0027drop\u0027,e=\u003e{\n        e.preventDefault();target.classList.remove(\u0027sg-drag-over\u0027);\n        if(!dragId)return;\n        const rid=dragId;const fromGid=dragFrom;\n        dragId=null;dragFrom=null;\n        // Xóa khỏi bất kỳ nhóm nào đang giữ phòng này (kể cả không phải fromGid)\n        groups.forEach(x=\u003e{if(x.id!==gid)x.roomIds=x.roomIds.filter(r=\u003er!==rid);});\n        // Xóa nhóm rỗng\n        for(let i=groups.length-1;i\u003e=0;i--){if(!groups[i].roomIds.length\u0026\u0026groups[i].id!==gid)groups.splice(i,1);}\n        // Thêm vào nhóm đích nếu chưa có\n        const dest=groups.find(x=\u003ex.id===gid);\n        if(dest\u0026\u0026!dest.roomIds.includes(rid))dest.roomIds.push(rid);\n        rebuildAssignments();renderRooms();renderStaff();updateStats();\n      });\n    }\n    setupBoxDrop(box,g.id);\n\n    // Danh sách phòng — mỗi phòng 1 dòng, có thể kéo\n    g.roomIds.forEach(rid=\u003e{\n      const r=ROOMS.find(x=\u003ex.id===rid);if(!r)return;\n      const hkCode=HK_CODE[hkStatus[rid]]||\u0027\u0027;\n      const bkCode=r.book===\u0027stayover\u0027?\u0027\u0027:BK_CODE[r.book]||\u0027\u0027;\n      const codes=[bkCode,hkCode].filter(Boolean).join(\u0027, \u0027);\n      const row=document.createElement(\u0027div\u0027);row.className=\u0027sg-room-row\u0027;row.draggable=true;\n      row.innerHTML=\u0027\u003cdiv class=\"sg-room-num\"\u003e\u0027+rid+\u0027\u003c/div\u003e\u0027\n        +\u0027\u003cdiv class=\"sg-room-info\"\u003e\u003cdiv class=\"sg-room-codes\"\u003e\u0027+codes+\u0027\u003c/div\u003e\u003cdiv class=\"sg-room-type\"\u003e\u0027+r.type+\u0027\u003c/div\u003e\u003c/div\u003e\u0027\n        +\u0027\u003cbutton class=\"sg-room-del\" onclick=\"event.stopPropagation();unassign(\\\u0027\u0027+rid+\u0027\\\u0027)\"\u003e✕\u003c/button\u003e\u0027;\n      row.addEventListener(\u0027dragstart\u0027,e=\u003e{\n        dragId=rid;dragFrom=g.id;\n        row.classList.add(\u0027dragging\u0027);\n        e.dataTransfer.setData(\u0027text/plain\u0027,rid);\n        e.dataTransfer.effectAllowed=\u0027move\u0027;\n        e.stopPropagation();\n      });\n      row.addEventListener(\u0027dragend\u0027,()=\u003erow.classList.remove(\u0027dragging\u0027));\n      box.appendChild(row);\n    });\n\n    grid.appendChild(box);\n  });\n}\n\nfunction updateStats(){}\n\nfunction formatDateInput(inp){\n  let v=inp.value.replace(/\\D/g,\u0027\u0027);\n  if(v.length\u003e2)v=v.slice(0,2)+\u0027/\u0027+v.slice(2);\n  if(v.length\u003e5)v=v.slice(0,5)+\u0027/\u0027+v.slice(5,9);\n  inp.value=v;\n}\n\nfunction initDate(){\n  const now=new Date();\n  const d=String(now.getDate()).padStart(2,\u00270\u0027);\n  const m=String(now.getMonth()+1).padStart(2,\u00270\u0027);\n  const y=now.getFullYear();\n  document.getElementById(\u0027headerDate\u0027).value=d+\u0027/\u0027+m+\u0027/\u0027+y;\n}\n\n// Staff master list management\nlet masterIdCounter=STAFF_LIST.length;\nlet staffTab=\u0027active\u0027;\n\nfunction openManageStaff(){staffTab=\u0027active\u0027;document.getElementById(\u0027staffModal\u0027).classList.add(\u0027open\u0027);setStaffTab(\u0027active\u0027);}\nfunction closeManageStaffBtn(){document.getElementById(\u0027staffModal\u0027).classList.remove(\u0027open\u0027);}\nfunction closeManageStaff(e){if(e.target===document.getElementById(\u0027staffModal\u0027))closeManageStaffBtn();}\n\nfunction setStaffTab(tab){\n  staffTab=tab;\n  document.getElementById(\u0027tabActive\u0027).classList.toggle(\u0027modal-tab-on\u0027,tab===\u0027active\u0027);\n  document.getElementById(\u0027tabHidden\u0027).classList.toggle(\u0027modal-tab-on\u0027,tab===\u0027hidden\u0027);\n  document.getElementById(\u0027addStaffRow\u0027).style.display=tab===\u0027active\u0027?\u0027flex\u0027:\u0027none\u0027;\n  renderMasterList();\n}\n\nfunction renderMasterList(){\n  const el=document.getElementById(\u0027staffMasterList\u0027);\n  el.innerHTML=\u0027\u0027;\n  const hiddenList=STAFF_LIST.filter(p=\u003ep.hidden);\n  // cập nhật badge số NV ẩn\n  const badge=document.getElementById(\u0027hiddenCount\u0027);\n  if(hiddenList.length){badge.textContent=hiddenList.length;badge.style.display=\u0027inline\u0027;}\n  else{badge.style.display=\u0027none\u0027;}\n\n  const list=staffTab===\u0027hidden\u0027?hiddenList:STAFF_LIST.filter(p=\u003e!p.hidden);\n  list.forEach((p,i)=\u003e{\n    const globalIdx=STAFF_LIST.indexOf(p);\n    const ini=p.name.split(\u0027 \u0027).slice(-2).map(w=\u003ew[0]).join(\u0027\u0027).toUpperCase();\n    const color=COLORS[globalIdx%COLORS.length];\n    const isHidden=!!p.hidden;\n    const hasData=groups.some(g=\u003eg.staffList.some(s=\u003es.pid===p.id));\n    const row=document.createElement(\u0027div\u0027);row.className=\u0027sml-item\u0027;\n    row.innerHTML=\u0027\u003cdiv class=\"sml-avatar\" style=\"background:\u0027+color+(isHidden?\u0027;filter:grayscale(1)\u0027:\u0027\u0027)+\u0027\"\u003e\u0027+ini+\u0027\u003c/div\u003e\u0027\n      +\u0027\u003cdiv class=\"sml-name\"\u003e\u0027+p.name+\u0027\u003c/div\u003e\u0027\n      +\u0027\u003cbutton class=\"btn-sml-hide\" onclick=\"toggleHideStaff(\\\u0027\u0027+p.id+\u0027\\\u0027)\"\u003e\u0027+(isHidden?\u0027👁 Hiện\u0027:\u0027👁 Ẩn\u0027)+\u0027\u003c/button\u003e\u0027\n      +(!isHidden\u0026\u0026!hasData\n        ?\u0027\u003cbutton class=\"btn-sml-del\" onclick=\"deleteMasterStaff(\\\u0027\u0027+p.id+\u0027\\\u0027)\" title=\"Xóa\"\u003e✕\u003c/button\u003e\u0027\n        :\u0027\u003cspan style=\"width:24px;flex-shrink:0;display:inline-block;\"\u003e\u003c/span\u003e\u0027);\n    el.appendChild(row);\n  });\n  if(!list.length){\n    const msg=staffTab===\u0027hidden\u0027?\u0027Không có nhân viên ẩn\u0027:\u0027Chưa có nhân viên nào\u0027;\n    el.innerHTML=\u0027\u003cdiv style=\"text-align:center;padding:20px;color:var(--text-muted);font-size:13px;\"\u003e\u0027+msg+\u0027\u003c/div\u003e\u0027;\n  }\n}\n\nfunction toggleHideStaff(pid){\n  const p=STAFF_LIST.find(x=\u003ex.id===pid);if(!p)return;\n  p.hidden=!p.hidden;\n  if(p.hidden){\n    groups.forEach(g=\u003e{\n      g.staffList=g.staffList.filter(s=\u003es.pid!==pid);\n    });\n    groups.filter(g=\u003e!g.staffList.length).forEach(g=\u003eremoveGroup(g.id));\n    rebuildAssignments();\n  }\n  refreshPicker();syncAssignSel();renderMasterList();\n}\n\nfunction addToMasterList(){\n  const inp=document.getElementById(\u0027newStaffName\u0027);\n  const name=inp.value.trim();if(!name)return;\n  masterIdCounter++;\n  const id=\u0027p\u0027+String(masterIdCounter).padStart(2,\u00270\u0027);\n  STAFF_LIST.push({id,name});\n  inp.value=\u0027\u0027;\n  refreshPicker();syncAssignSel();renderMasterList();\n}\n\nfunction deleteMasterStaff(pid){\n  groups.forEach(g=\u003e{g.staffList=g.staffList.filter(s=\u003es.pid!==pid);});\n  groups.filter(g=\u003e!g.staffList.length).forEach(g=\u003eremoveGroup(g.id));\n  rebuildAssignments();\n  const idx=STAFF_LIST.findIndex(p=\u003ep.id===pid);\n  if(idx\u003e-1)STAFF_LIST.splice(idx,1);\n  refreshPicker();syncAssignSel();renderMasterList();\n}\n\n// ===== EDIT GROUP =====\nlet editingGid=null;\nfunction closeEditGroup(e){if(e.target===document.getElementById(\u0027editGroupModal\u0027))document.getElementById(\u0027editGroupModal\u0027).classList.remove(\u0027open\u0027);}\n\nfunction openEditGroup(gid){\n  editingGid=gid;\n  renderEditGroup();\n  document.getElementById(\u0027editGroupModal\u0027).classList.add(\u0027open\u0027);\n}\n\nfunction renderEditGroup(){\n  const g=groups.find(x=\u003ex.id===editingGid);if(!g)return;\n  // NV hiện tại\n  const curEl=document.getElementById(\u0027editGroupCurrent\u0027);curEl.innerHTML=\u0027\u0027;\n  if(!g.staffList.length){\n    curEl.innerHTML=\u0027\u003cdiv style=\"font-size:12px;color:var(--text-muted);\"\u003eChưa có nhân viên\u003c/div\u003e\u0027;\n  } else {\n    g.staffList.forEach(s=\u003e{\n      const row=document.createElement(\u0027div\u0027);\n      row.style.cssText=\u0027display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;\u0027;\n      row.innerHTML=\u0027\u003cdiv style=\"flex:1;font-size:13px;font-weight:600;color:var(--text-primary);\"\u003e\u0027+s.name+\u0027\u003c/div\u003e\u0027\n        +\u0027\u003cbutton onclick=\"removeFromGroup(\\\u0027\u0027+editingGid+\u0027\\\u0027,\\\u0027\u0027+s.id+\u0027\\\u0027)\" style=\"background:none;border:none;cursor:pointer;color:var(--red);font-size:12px;padding:2px 6px;border-radius:4px;border:1px solid #fca5a5;\"\u003eXóa khỏi nhóm\u003c/button\u003e\u0027;\n      curEl.appendChild(row);\n    });\n  }\n  // NV khả dụng (không ẩn, chưa ở nhóm nào trong ca)\n  const usedPids=new Set(groups.flatMap(x=\u003ex.staffList.map(s=\u003es.pid)));\n  // NV trong nhóm hiện tại không tính là \"đã dùng\" để không bị ẩn\n  g.staffList.forEach(s=\u003eusedPids.delete(s.pid));\n  const avail=STAFF_LIST.filter(p=\u003e!p.hidden\u0026\u0026!usedPids.has(p.id));\n  const availEl=document.getElementById(\u0027editGroupAvail\u0027);availEl.innerHTML=\u0027\u0027;\n  if(!avail.length){\n    availEl.innerHTML=\u0027\u003cdiv style=\"font-size:12px;color:var(--text-muted);\"\u003eKhông còn nhân viên khả dụng\u003c/div\u003e\u0027;\n  } else {\n    avail.forEach(p=\u003e{\n      const row=document.createElement(\u0027div\u0027);\n      row.style.cssText=\u0027display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;\u0027;\n      row.innerHTML=\u0027\u003cdiv style=\"flex:1;font-size:13px;color:var(--text-primary);\"\u003e\u0027+p.name+\u0027\u003c/div\u003e\u0027\n        +\u0027\u003cbutton onclick=\"addToGroup(\\\u0027\u0027+editingGid+\u0027\\\u0027,\\\u0027\u0027+p.id+\u0027\\\u0027)\" style=\"background:var(--navy);color:#fff;border:none;cursor:pointer;font-size:12px;padding:2px 10px;border-radius:4px;\"\u003e+ Thêm\u003c/button\u003e\u0027;\n      availEl.appendChild(row);\n    });\n  }\n}\n\nfunction removeFromGroup(gid,sid){\n  const g=groups.find(x=\u003ex.id===gid);if(!g)return;\n  g.staffList=g.staffList.filter(s=\u003es.id!==sid);\n  rebuildAssignments();renderStaff();renderEditGroup();\n}\n\nfunction addToGroup(gid,pid){\n  const g=groups.find(x=\u003ex.id===gid);if(!g)return;\n  const p=STAFF_LIST.find(x=\u003ex.id===pid);if(!p)return;\n  const newId=gid+\u0027s\u0027+(g.staffList.length+1);\n  g.staffList.push({id:newId,pid:p.id,name:p.name,color:COLORS[g.staffList.length%COLORS.length]});\n  rebuildAssignments();renderStaff();renderEditGroup();\n}\n\n// ===== PRINT =====\nfunction getShiftLabel(){\n  return {sang:\u0027CA SÁNG\u0027,chieu:\u0027CA CHIỀU\u0027,toi:\u0027CA TỐI\u0027}[currentShift]||\u0027\u0027;\n}\n\nfunction buildWorksheetHTML(attendant, roomIds){\n  const shiftLabel=getShiftLabel();\n  const now=new Date();\n  const dateStr=String(now.getDate()).padStart(2,\u00270\u0027)+\u0027/\u0027+String(now.getMonth()+1).padStart(2,\u00270\u0027)+\u0027/\u0027+now.getFullYear();\n  const cols=[\n    \u0027GIỜ VÀO\u0027,\u0027GIỜ RA\u0027,\u0027TÌNH TRẠNG\u0027,\n    \u0027DRAP LỚN\u0027,\u0027DRAP NHỎ\u0027,\u0027BỌC LỚN\u0027,\u0027BỌC NHỎ\u0027,\u0027ÁO GỐI\u0027,\n    \u0027KHĂN TẮM\u0027,\u0027KHĂN MẶT\u0027,\u0027KHĂN TAY\u0027,\n    \u0027THẢM\u0027,\u0027KEM BỘT\u0027,\u0027LƯỢC\u0027,\n    \u0027DAO CAO RÂU\u0027,\u0027TẮM BÔNG\u0027,\u0027CHỤP TÓC\u0027,\u0027XÀ PHÒNG\u0027,\n    \u0027DẦU GỘI\u0027,\u0027SỬA TẮM\u0027,\u0027DẦU XẢ\u0027,\u0027GIẤY VS\u0027,\n    \u0027TRÀ\u0027,\u0027CAFÉ\u0027,\u0027SUỐI FREE\u0027,\u0027GHI CHÚ\u0027\n  ];\n  const rooms=roomIds.map(rid=\u003eROOMS.find(r=\u003er.id===rid)).filter(Boolean);\n  const headerCols=cols.map(c=\u003e`\u003cth style=\"font-size:7px;padding:2px 1px;text-align:center;border:1px solid #000;word-break:break-all;\"\u003e${c}\u003c/th\u003e`).join(\u0027\u0027);\n  const rows=rooms.map((r,i)=\u003e{\n    const hkCode=HK_CODE[hkStatus[r.id]]||\u0027\u0027;\n    const bkCode=r.book===\u0027stayover\u0027?\u0027\u0027:BK_CODE[r.book]||\u0027\u0027;\n    const codes=[bkCode,hkCode].filter(Boolean).join(\u0027,\u0027);\n    return `\u003ctr\u003e\n      \u003ctd style=\"text-align:center;font-size:10px;border:1px solid #000;\"\u003e${i+1}\u003c/td\u003e\n      \u003ctd style=\"text-align:center;font-weight:700;color:#b91c1c;border:1px solid #000;\"\u003e${r.id}\u003c/td\u003e\n      \u003ctd style=\"text-align:center;font-size:9px;border:1px solid #000;\"\u003e\u003c/td\u003e\n      \u003ctd style=\"text-align:center;font-weight:700;border:1px solid #000;\"\u003e${codes}\u003c/td\u003e\n      ${cols.map(()=\u003e\u0027\u003ctd style=\"border:1px solid #000;\"\u003e\u003c/td\u003e\u0027).join(\u0027\u0027)}\n    \u003c/tr\u003e`;\n  }).join(\u0027\u0027);\n  return `\u003cdiv style=\"font-family:Arial,sans-serif;padding:14px 18px;width:100%;box-sizing:border-box;\"\u003e\n    \u003ch2 style=\"text-align:center;font-size:15px;font-weight:900;letter-spacing:1px;margin:0 0 10px;\"\u003eROOM ANTTENDANT ${shiftLabel} WORKSHEET\u003c/h2\u003e\n    \u003ctable style=\"width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:8px;\"\u003e\n      \u003ctr\u003e\n        \u003ctd style=\"padding:4px 8px;border:1px solid #000;font-size:12px;font-weight:700;width:65%;\"\u003eHOUSEKEEPING ATTENDANT: ${attendant}\u003c/td\u003e\n        \u003ctd style=\"padding:4px 8px;border:1px solid #000;font-size:12px;\"\u003eDATE: \u003cb\u003e${dateStr}\u003c/b\u003e\u003c/td\u003e\n      \u003c/tr\u003e\n    \u003c/table\u003e\n    \u003ctable style=\"width:100%;border-collapse:collapse;font-size:10px;\"\u003e\n      \u003cthead\u003e\u003ctr style=\"background:#fff;\"\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:18px;\"\u003eSTT\u003c/th\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:32px;\"\u003ePHÒNG\u003c/th\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:24px;\"\u003eSL KHÁCH\u003c/th\u003e\n        \u003cth style=\"font-size:8px;padding:2px;border:1px solid #000;width:52px;\"\u003eTÌNH TRẠNG\u003c/th\u003e\n        ${headerCols}\n      \u003c/tr\u003e\u003c/thead\u003e\n      \u003ctbody\u003e${rows}\u003c/tbody\u003e\n    \u003c/table\u003e\n    \u003cdiv style=\"margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:2px 24px;font-size:9.5px;color:#1d4ed8;\"\u003e\n      \u003cdiv\u003e\u003cb\u003eOC:\u003c/b\u003e Có khách ở đã được làm vệ sinh \u0026nbsp; \u003cb\u003eVC:\u003c/b\u003e Phòng trống sạch\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eOD:\u003c/b\u003e Có khách ở chưa làm vệ sinh \u0026nbsp; \u003cb\u003eVD:\u003c/b\u003e Phòng trống dơ\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eCI:\u003c/b\u003e Phòng chuẩn bị nhận trong ngày \u0026nbsp; \u003cb\u003eVR:\u003c/b\u003e Phòng sẵn sàng đón khách\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eCO:\u003c/b\u003e Phòng khách trả trong ngày \u0026nbsp; \u003cb\u003eOOO:\u003c/b\u003e Phòng đang sửa chữa, không bán được\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eLCO:\u003c/b\u003e Phòng trả trễ \u0026nbsp; \u003cb\u003eDND:\u003c/b\u003e Không làm phiền khách \u0026nbsp; \u003cb\u003eEP:\u003c/b\u003e Bổ sung thêm người\u003c/div\u003e\n      \u003cdiv\u003e\u003cb\u003eSI:\u003c/b\u003e Phòng để khách tham quan \u0026nbsp; \u003cb\u003eSofa Bed:\u003c/b\u003e Giường sofa \u0026nbsp; \u003cb\u003eEB:\u003c/b\u003e Giường phụ\u003c/div\u003e\n    \u003c/div\u003e\n  \u003c/div\u003e`;\n}\n\nfunction doPrint(){\n  const pages=[];\n  // In các nhóm đang tick \"In lịch\"\n  groups.filter(g=\u003eg.print\u0026\u0026g.roomIds.length).forEach(g=\u003e{\n    const attendant=g.staffList.map(s=\u003es.name).join(\u0027, \u0027);\n    pages.push(buildWorksheetHTML(attendant,g.roomIds));\n  });\n  // Nếu không có nhóm nào được tick nhưng có phòng đang chọn → in không tên NV\n  if(!pages.length\u0026\u0026selectedRooms.size){\n    pages.push(buildWorksheetHTML(\u0027\u0027,[ ...selectedRooms]));\n  }\n  if(!pages.length){\n    alert(\u0027Vui lòng tick \"In lịch\" trên ít nhất 1 nhóm, hoặc chọn phòng để in.\u0027);\n    return;\n  }\n  const win=window.open(\u0027\u0027,\u0027_blank\u0027,\u0027width=1200,height=850\u0027);\n  win.document.write(`\u003c!DOCTYPE html\u003e\u003chtml\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003ctitle\u003eWorksheet\u003c/title\u003e\n    \u003cstyle\u003e\n      *{box-sizing:border-box;}\n      body{margin:0;padding:0;}\n      .page{page-break-after:always;}\n      .page:last-child{page-break-after:avoid;}\n      @media print{.page{page-break-after:always;}.page:last-child{page-break-after:avoid;}}\n    \u003c/style\u003e\u003c/head\u003e\u003cbody\u003e`);\n  pages.forEach(p=\u003ewin.document.write(`\u003cdiv class=\"page\"\u003e${p}\u003c/div\u003e`));\n  win.document.write(\u0027\u003c/body\u003e\u003c/html\u003e\u0027);\n  win.document.close();\n  win.onload=()=\u003e{win.focus();win.print();};\n}\n\ninit();"
-let injectedStyle = null
-let injectedScript = null
+import { useUiStore } from '@/stores/ui-store'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
-const scopeLegacyStyles = (styles) => styles
-  .replace(/(^|\n)\*\s*\{/g, '$1.room-assignment-vue-root * {')
-  .replace(/(^|\n):root\s*\{/g, '$1.room-assignment-vue-root {')
-  .replace(/html,body\s*\{/g, '.room-assignment-vue-root {')
-  .replace(/(^|\n)body\s*\{/g, '$1.room-assignment-vue-root {')
-  .replace(/::-webkit-scrollbar/g, '.room-assignment-vue-root ::-webkit-scrollbar')
+const hkStore = useHkStore()
+const roomStore = useRoomStore()
+const uiStore = useUiStore()
 
-onMounted(() => {
-  const parser = new DOMParser()
-  const documentFragment = parser.parseFromString('<body>' + legacyMarkup + '</body>', 'text/html')
-  documentFragment.body.querySelectorAll('script').forEach((script) => script.remove())
-  mount.value.replaceChildren(...Array.from(documentFragment.body.childNodes))
+// Filter panel click-outside
+const filterWrapRef = ref(null)
+function onDocClick(e) {
+  if (filterWrapRef.value && !filterWrapRef.value.contains(e.target)) {
+    showFilterPanel.value = false
+  }
+  if (staffDropdownRef.value && !staffDropdownRef.value.contains(e.target)) {
+    showStaffDropdown.value = false
+  }
+}
 
-  injectedStyle = document.createElement('style')
-  injectedStyle.dataset.roomAssignment = 'true'
-  injectedStyle.textContent = scopeLegacyStyles(legacyStyles)
-  document.head.appendChild(injectedStyle)
+// ── Ngày & Ca ────────────────────────────────────────────────
+const today = new Date()
+const pad = n => String(n).padStart(2, '0')
+const workDate = ref(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`)
+const selectedShiftId = ref(null)
 
-  injectedScript = document.createElement('script')
-  injectedScript.dataset.roomAssignment = 'true'
-  injectedScript.textContent = legacyScript
-  document.body.appendChild(injectedScript)
+const dateInputRef = ref(null)
+function triggerDatePicker() {
+  if (dateInputRef.value) {
+    if (typeof dateInputRef.value.showPicker === 'function') {
+      dateInputRef.value.showPicker()
+    } else {
+      dateInputRef.value.click()
+    }
+  }
+}
+
+function getShiftName(shift) {
+  const name = String(shift.name).trim().toLowerCase()
+  if (name === '1' || name === 'sáng' || name === 'morning') return 'Ca sáng'
+  if (name === '2' || name === 'chiều' || name === 'afternoon') return 'Ca chiều'
+  if (name === '0' || name === 'tối' || name === 'night') return 'Ca tối'
+  return `Ca ${shift.name}`
+}
+
+function getShiftShortName(shift) {
+  const name = String(shift.name).trim().toLowerCase()
+  if (name === '1' || name === 'sáng' || name === 'morning') return 'sáng'
+  if (name === '2' || name === 'chiều' || name === 'afternoon') return 'chiều'
+  if (name === '0' || name === 'tối' || name === 'night') return 'tối'
+  return shift.name
+}
+
+// ── Filter phòng ─────────────────────────────────────────────
+const searchQ = ref('')
+const filterHk = ref('all')
+const filterBook = ref('all')
+const activeFloors = ref(new Set())
+const showFilterPanel = ref(false)
+
+// ── Chọn phòng ───────────────────────────────────────────────
+const selectedRoomIds = ref(new Set())
+const selectedStaffIds = ref(new Set())
+const showStaffDropdown = ref(false)
+const staffDropdownRef = ref(null)
+
+const dropdownButtonLabel = computed(() => {
+  if (selectedStaffIds.value.size === 0) return '-- Chọn nhân viên làm phòng --'
+  const names = hkStore.availableStaff
+    .filter(s => selectedStaffIds.value.has(s.id))
+    .map(s => s.name)
+  return names.join(', ')
 })
 
-onBeforeUnmount(() => {
-  injectedStyle?.remove()
-  injectedScript?.remove()
-  mount.value?.replaceChildren()
+// ── Drag & drop ──────────────────────────────────────────────
+let dragRoomId = null
+let dragFromGroupId = null
+
+// ── Modal quản lý NV ─────────────────────────────────────────
+const showStaffModal = ref(false)
+const staffTab = ref('active') // active | hidden
+const newStaffName = ref('')
+
+// ── Modal chỉnh sửa nhóm ─────────────────────────────────────
+const showEditGroupModal = ref(false)
+const editingGroupId = ref(null)
+
+
+
+// ─────────────────────────────────────────────────────────────
+// Computed: danh sách phòng với real-time status
+// ─────────────────────────────────────────────────────────────
+const allRooms = computed(() => {
+  return roomStore.rooms
+    .filter(r => !r.is_internal && !String(r.room_number || '').startsWith('0') && r.room_class?.is_active !== false)
+    .map(r => ({
+      id: r.id,
+      room_number: r.room_number,
+      floor: r.floor,
+      room_type: r.room_class?.name || r.room_type || '',
+      room_status_code: r.room_status_code || 'vacant_dirty',
+      booking_status: r.booking_status || '',
+      displayCode: getRoomDisplayCode(r.room_status_code, r.booking_status, hkStore.activeSymbols),
+    }))
+    .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number)))
 })
+
+const floors = computed(() => [...new Set(allRooms.value.map(r => r.floor))].sort((a, b) => a - b))
+
+const filteredRooms = computed(() => {
+  const q = searchQ.value.trim().toLowerCase()
+  return allRooms.value.filter(r => {
+    if (filterHk.value !== 'all' && r.room_status_code !== filterHk.value) return false
+    if (filterBook.value !== 'all' && r.booking_status !== filterBook.value) return false
+    if (activeFloors.value.size > 0 && !activeFloors.value.has(r.floor)) return false
+    if (q && !String(r.room_number).toLowerCase().includes(q) && !r.room_type.toLowerCase().includes(q)) return false
+    return true
+  })
+})
+
+const roomsByFloor = computed(() => {
+  const map = {}
+  filteredRooms.value.forEach(r => {
+    if (!map[r.floor]) map[r.floor] = []
+    map[r.floor].push(r)
+  })
+  return map
+})
+
+// ─────────────────────────────────────────────────────────────
+// Computed: nhân viên khả dụng (chưa phân công trong ca)
+// ─────────────────────────────────────────────────────────────
+const availableStaffForPicker = computed(() => hkStore.availableStaff)
+
+const editingGroupAvailableStaff = computed(() => {
+  if (!editingGroupId.value) return []
+  const editGroup = hkStore.groups.find(g => g.id === editingGroupId.value)
+  const currentStaffIds = new Set(editGroup?.staff_list.map(s => s.staff_id) || [])
+  const usedInOtherGroups = new Set(
+    hkStore.groups
+      .filter(g => g.id !== editingGroupId.value)
+      .flatMap(g => g.staff_list.map(s => s.staff_id))
+  )
+  return hkStore.staff.filter(s => !usedInOtherGroups.has(s.id) && !currentStaffIds.has(s.id))
+})
+
+// ─────────────────────────────────────────────────────────────
+// Load
+// ─────────────────────────────────────────────────────────────
+onMounted(async () => {
+  document.addEventListener('click', onDocClick)
+  await Promise.all([
+    roomStore.fetchRooms?.() || Promise.resolve(),
+    hkStore.loadShifts(),
+    hkStore.loadStaff(),
+    hkStore.loadHkConfig(),
+  ])
+  if (hkStore.shifts.length > 0) {
+    selectedShiftId.value = hkStore.shifts[0].id
+    // Load assignment ngay sau khi có cả ngày + ca
+    await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+})
+
+watch(() => hkStore.shifts, (newShifts) => {
+  if (newShifts && newShifts.length > 0 && !selectedShiftId.value) {
+    selectedShiftId.value = newShifts[0].id
+  }
+}, { immediate: true })
+
+watch([workDate, selectedShiftId], async ([d, s]) => {
+  if (d && s) {
+    await hkStore.loadAssignment(d, s)
+  }
+}, { immediate: false })
+
+
+// ─────────────────────────────────────────────────────────────
+// Helpers: floor selection
+// ─────────────────────────────────────────────────────────────
+function toggleFloor(floor) {
+  if (activeFloors.value.has(floor)) activeFloors.value.delete(floor)
+  else activeFloors.value.add(floor)
+  activeFloors.value = new Set(activeFloors.value) // trigger reactivity
+}
+function clearFloors() { activeFloors.value = new Set() }
+
+// ─────────────────────────────────────────────────────────────
+// Chọn phòng
+// ─────────────────────────────────────────────────────────────
+function toggleRoom(id) {
+  const s = new Set(selectedRoomIds.value)
+  if (s.has(id)) s.delete(id); else s.add(id)
+  selectedRoomIds.value = s
+}
+
+function toggleFloorRooms(floor, checked) {
+  const s = new Set(selectedRoomIds.value)
+  const floorRooms = filteredRooms.value.filter(r => r.floor === floor)
+  floorRooms.forEach(r => checked ? s.add(r.id) : s.delete(r.id))
+  selectedRoomIds.value = s
+}
+
+function isFloorAllSelected(floor) {
+  const floorRooms = filteredRooms.value.filter(r => r.floor === floor)
+  return floorRooms.length > 0 && floorRooms.every(r => selectedRoomIds.value.has(r.id))
+}
+function isFloorPartialSelected(floor) {
+  const floorRooms = filteredRooms.value.filter(r => r.floor === floor)
+  return floorRooms.some(r => selectedRoomIds.value.has(r.id)) && !isFloorAllSelected(floor)
+}
+
+function toggleSelectAll(checked) {
+  const s = new Set(selectedRoomIds.value)
+  filteredRooms.value.forEach(r => checked ? s.add(r.id) : s.delete(r.id))
+  selectedRoomIds.value = s
+}
+const isAllSelected = computed(() => filteredRooms.value.length > 0 && filteredRooms.value.every(r => selectedRoomIds.value.has(r.id)))
+const isPartialSelected = computed(() => filteredRooms.value.some(r => selectedRoomIds.value.has(r.id)) && !isAllSelected.value)
+
+// ─────────────────────────────────────────────────────────────
+// Phân công
+// ─────────────────────────────────────────────────────────────
+const canAssign = computed(() => selectedRoomIds.value.size > 0 && selectedStaffIds.value.size > 0)
+
+function toggleStaffPicker(staffId) {
+  const s = new Set(selectedStaffIds.value)
+  if (s.has(staffId)) s.delete(staffId); else s.add(staffId)
+  selectedStaffIds.value = s
+}
+
+async function doAssign() {
+  if (!canAssign.value || !selectedShiftId.value) return
+  // Tạo snapshot
+  const roomSnapshots = {}
+  selectedRoomIds.value.forEach(roomId => {
+    const r = allRooms.value.find(x => x.id === roomId)
+    if (r) {
+      roomSnapshots[roomId] = {
+        room_status_snapshot:    r.room_status_code,
+        booking_status_snapshot: r.booking_status,
+      }
+    }
+  })
+  try {
+    await hkStore.assignRooms({
+      date:          workDate.value,
+      shiftId:       selectedShiftId.value,
+      staffIds:      [...selectedStaffIds.value],
+      roomIds:       [...selectedRoomIds.value],
+      roomSnapshots,
+    })
+    uiStore.showToast('Phân công phòng thành công!', 'success')
+    selectedRoomIds.value = new Set()
+    selectedStaffIds.value = new Set()
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Phân công thất bại', 'error')
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Drag & Drop
+// ─────────────────────────────────────────────────────────────
+function onDragStartFromList(e, roomId) {
+  dragRoomId = roomId
+  dragFromGroupId = null
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', String(roomId))
+}
+
+function onDragStartFromGroup(e, roomId, groupId) {
+  dragRoomId = roomId
+  dragFromGroupId = groupId
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', String(roomId))
+  e.stopPropagation()
+}
+
+function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }
+
+async function onDropToGroup(e, groupId) {
+  e.preventDefault()
+  if (!dragRoomId || dragFromGroupId === groupId) return
+  const rid = dragRoomId
+  dragRoomId = null; dragFromGroupId = null
+
+  const room = allRooms.value.find(r => r.id === rid)
+  try {
+    await hkStore.moveRoomToGroup({
+      date: workDate.value,
+      shiftId: selectedShiftId.value,
+      groupId,
+      roomId: rid,
+      roomSnapshot: room ? {
+        room_status_snapshot:    room.room_status_code,
+        booking_status_snapshot: room.booking_status,
+      } : {},
+    })
+    uiStore.showToast('Chuyển phòng phân công thành công!', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể chuyển phòng', 'error')
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Xóa nhóm / phòng
+// ─────────────────────────────────────────────────────────────
+async function confirmRemoveGroup(groupId) {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa nhóm này không?',
+    confirmText: 'Có',
+    cancelText: 'Không'
+  })
+  if (confirmed) {
+    try {
+      await hkStore.removeGroup({ date: workDate.value, shiftId: selectedShiftId.value, groupId })
+      uiStore.showToast('Xóa nhóm phân công thành công!', 'success')
+    } catch (e) {
+      console.error(e)
+      uiStore.showToast(e.response?.data?.message || 'Không thể xóa nhóm', 'error')
+    }
+  }
+}
+
+async function confirmRemoveRoom(groupId, roomId) {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận gỡ phòng',
+    message: 'Bạn có chắc chắn muốn bỏ phòng này khỏi nhóm?',
+    confirmText: 'Có',
+    cancelText: 'Không'
+  })
+  if (confirmed) {
+    try {
+      await hkStore.removeRoomFromGroup({ date: workDate.value, shiftId: selectedShiftId.value, groupId, roomId })
+      uiStore.showToast('Đã gỡ phòng khỏi nhóm!', 'success')
+    } catch (e) {
+      console.error(e)
+      uiStore.showToast(e.response?.data?.message || 'Không thể gỡ phòng', 'error')
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Edit group staff
+// ─────────────────────────────────────────────────────────────
+function openEditGroup(groupId) {
+  editingGroupId.value = groupId
+  showEditGroupModal.value = true
+}
+
+const editingGroup = computed(() => hkStore.groups.find(g => g.id === editingGroupId.value))
+
+async function addStaffToGroup(staffId) {
+  const g = editingGroup.value
+  if (!g) return
+  const newIds = [...g.staff_list.map(s => s.staff_id), staffId]
+  try {
+    await hkStore.updateGroupStaff({ date: workDate.value, shiftId: selectedShiftId.value, groupId: g.id, staffIds: newIds })
+    uiStore.showToast('Đã thêm nhân viên vào nhóm!', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể thêm nhân viên', 'error')
+  }
+}
+
+async function removeStaffFromGroup(staffId) {
+  const g = editingGroup.value
+  if (!g) return
+  const newIds = g.staff_list.map(s => s.staff_id).filter(id => id !== staffId)
+  try {
+    await hkStore.updateGroupStaff({ date: workDate.value, shiftId: selectedShiftId.value, groupId: g.id, staffIds: newIds })
+    uiStore.showToast('Đã xóa nhân viên khỏi nhóm!', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể xóa nhân viên', 'error')
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Staff management
+// ─────────────────────────────────────────────────────────────
+async function submitAddStaff() {
+  if (!newStaffName.value.trim()) return
+  try {
+    await hkStore.addStaff(newStaffName.value.trim())
+    uiStore.showToast('Thêm nhân viên mới thành công!', 'success')
+    newStaffName.value = ''
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể thêm nhân viên', 'error')
+  }
+}
+
+async function doHideStaff(staffId, hide) {
+  try {
+    await hkStore.toggleHideStaff(staffId, hide)
+    uiStore.showToast(hide ? 'Đã ẩn nhân viên!' : 'Đã hiện nhân viên!', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Thao tác thất bại', 'error')
+  }
+}
+
+async function doDeleteStaff(staffId) {
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: 'Bạn có chắc chắn muốn xóa nhân viên này không?',
+    confirmText: 'Có',
+    cancelText: 'Không'
+  })
+  if (confirmed) {
+    try {
+      await hkStore.deleteStaff(staffId)
+      // Xóa khỏi selection nếu đang được chọn
+      if (selectedStaffIds.value.has(staffId)) {
+        const s = new Set(selectedStaffIds.value)
+        s.delete(staffId)
+        selectedStaffIds.value = s
+      }
+      uiStore.showToast('Xóa nhân viên thành công!', 'success')
+    } catch (e) {
+      console.error(e)
+      uiStore.showToast(e.response?.data?.message || 'Không thể xóa nhân viên', 'error')
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Helpers: ký hiệu & màu
+// ─────────────────────────────────────────────────────────────
+function getHkCodeBadge(statusCode) {
+  return hkStore.activeSymbols.hk[statusCode]?.code || statusCode || ''
+}
+function getHkColor(statusCode) {
+  return hkStore.activeSymbols.hk[statusCode]?.color || '#94a3b8'
+}
+function getGroupColor(idx) {
+  return GROUP_COLORS[idx % GROUP_COLORS.length]
+}
+function getInitials(name) {
+  return (name || '').split(' ').slice(-2).map(w => w[0]).join('').toUpperCase()
+}
+
+// ─────────────────────────────────────────────────────────────
+// PRINT
+// ─────────────────────────────────────────────────────────────
+const printMode = ref('group') // 'group' | 'room'
+const selectedGroupsToPrint = ref(new Set())
+const selectedRoomsToPrint = ref(new Set())
+
+function toggleGroupPrint(gid) {
+  const s = new Set(selectedGroupsToPrint.value)
+  if (s.has(gid)) s.delete(gid); else s.add(gid)
+  selectedGroupsToPrint.value = s
+}
+
+function doPrint() {
+  if (printMode.value === 'group') printByGroup()
+  else printByRoom()
+}
+
+function buildWorksheetLegend() {
+  const hkItems = Object.entries(hkStore.activeSymbols.hk).map(([, v]) => `${v.code}: ${v.label}`)
+  const bkItems = Object.entries(hkStore.activeSymbols.booking).filter(([, v]) => v.code).map(([, v]) => `${v.code}: ${v.label}`)
+  return [...bkItems, ...hkItems]
+}
+
+function printByGroup() {
+  const groupsToPrint = hkStore.groups.filter(g =>
+    selectedGroupsToPrint.value.size === 0 || selectedGroupsToPrint.value.has(g.id)
+  )
+  if (!groupsToPrint.length) { alert('Chưa có nhóm nào để in'); return }
+
+  const shift = hkStore.shifts.find(s => s.id == selectedShiftId.value)
+  const shiftLabel = shift ? shift.name.toUpperCase() : 'CA LÀM VIỆC'
+  const dateStr = workDate.value.split('-').reverse().join('/')
+  const legend = buildWorksheetLegend()
+
+  const COLS = hkStore.activeWorksheetCols
+
+  const pages = groupsToPrint.map(g => {
+    const staffNames = g.staff_list.map(s => s.name).join(' / ')
+    const rows = g.rooms.map((r, i) => {
+      const code = [
+        hkStore.activeSymbols.booking[r.booking_status_snapshot]?.code || '',
+        hkStore.activeSymbols.hk[r.room_status_snapshot]?.code || '',
+      ].filter(Boolean).join(', ')
+      return `<tr>
+        <td style="text-align:center;font-size:9px;border:1px solid #000;">${i + 1}</td>
+        <td style="text-align:center;font-weight:700;color:#b91c1c;border:1px solid #000;">${r.room_number}</td>
+        <td style="text-align:center;font-size:8px;border:1px solid #000;">${r.room_class_name || ''}</td>
+        <td style="text-align:center;font-weight:700;font-size:9px;border:1px solid #000;">${code}</td>
+        ${COLS.map(() => '<td style="border:1px solid #000;"></td>').join('')}
+      </tr>`
+    }).join('')
+
+    const headerCols = COLS.map(c => `<th style="font-size:6.5px;padding:2px 1px;text-align:center;border:1px solid #000;white-space:pre-line;word-break:break-all;width:${c.width}">${c.label}</th>`).join('')
+
+    const legendHtml = legend.map(l => `<div style="font-size:8px;margin-bottom:2px;">${l}</div>`).join('')
+
+    return `<div class="page" style="padding:10mm;font-family:Calibri,Arial,sans-serif;">
+      <h2 style="text-align:center;font-size:13px;font-weight:700;margin:0 0 6px;">ROOM ATTENDANT ${shiftLabel} WORKSHEET</h2>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
+        <tr>
+          <td style="font-size:9px;font-weight:700;">HOUSEKEEPING ATTENDANT: ${staffNames}</td>
+          <td style="font-size:9px;text-align:right;">DATE: ${dateStr}</td>
+        </tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse;font-size:8px;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">STT</th>
+            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">PHÒNG</th>
+            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">LOẠI</th>
+            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">TÌNH TRẠNG</th>
+            ${headerCols}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+        ${legendHtml}
+      </div>
+    </div>`
+  })
+
+  const win = window.open('', '_blank', 'width=1000,height=700')
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Worksheet</title>
+    <style>@media print{.page{page-break-after:always;} body{margin:0}}</style></head>
+    <body>${pages.join('')}</body></html>`)
+  win.document.close()
+  win.focus()
+  setTimeout(() => win.print(), 500)
+}
+
+function printByRoom() {
+  // In theo danh sách phòng đã chọn — dạng FL/Supervisor Check List
+  const roomIds = selectedRoomsToPrint.value.size > 0
+    ? [...selectedRoomsToPrint.value]
+    : [...selectedRoomIds.value]
+
+  if (!roomIds.length) { alert('Chọn phòng cần in trong danh sách bên trái'); return }
+
+  const shift = hkStore.shifts.find(s => s.id == selectedShiftId.value)
+  const shiftLabel = shift ? shift.name.toUpperCase() : ''
+  const dateStr = workDate.value.split('-').reverse().join('/')
+  const legend = buildWorksheetLegend()
+
+  const rows = roomIds.map(rid => {
+    const r = allRooms.value.find(x => x.id === rid)
+    if (!r) return ''
+    const code = getRoomDisplayCode(r.room_status_code, r.booking_status, hkStore.activeSymbols)
+    // Tạo các cell data cho supervisor cols (3 cột đầu là data, còn lại là ô trống)
+    const dataCells = [
+      `<td style="text-align:center;color:green;font-weight:700;font-size:10px;border:1px solid #ccc;padding:4px 6px;">${r.room_number}</td>`,
+      `<td style="text-align:center;font-size:10px;border:1px solid #ccc;padding:4px 6px;">${r.room_type}</td>`,
+      `<td style="text-align:center;font-weight:700;font-size:10px;border:1px solid #ccc;padding:4px 6px;">${code}</td>`,
+      ...hkStore.activeSupervisorCols.slice(3).map((c, i) =>
+        i === hkStore.activeSupervisorCols.slice(3).findIndex(x => x.label === 'Attendance')
+          ? `<td style="text-align:center;border:1px solid #ccc;padding:4px 6px;">☐</td>`
+          : `<td style="border:1px solid #ccc;padding:4px 6px;"></td>`
+      )
+    ].join('')
+    return `<tr>${dataCells}</tr>`
+  }).join('')
+
+  const legendHtml = legend.map(l => `<div style="font-size:8px;margin-bottom:2px;">${l}</div>`).join('')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>FL/Supervisor Check List</title>
+  <style>body{font-family:Calibri,Arial,sans-serif;padding:15mm;}@media print{body{padding:10mm}}</style></head>
+  <body>
+    <div style="text-align:right;font-size:10px;margin-bottom:4px;">
+      <div style="font-weight:700;">TÊN KHÁCH SẠN</div>
+    </div>
+    <h2 style="text-align:center;font-size:15px;font-weight:700;margin:10px 0;">FL/SUPERVISOR CHECK LIST — ${shiftLabel}</h2>
+    <div style="display:flex;gap:40px;margin-bottom:12px;font-size:10px;">
+      <div>Name: <span style="display:inline-block;width:180px;border-bottom:1px solid #000;">&nbsp;</span></div>
+      <div>Date: <strong>${dateStr}</strong></div>
+      <div>Block: <span style="display:inline-block;width:100px;border-bottom:1px solid #000;">&nbsp;</span></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <thead>
+        <tr style="background:#f1f5f9;">
+          ${hkStore.activeSupervisorCols.map(c => `<th style="border:1px solid #ccc;padding:5px;text-align:center;${c.width ? 'width:' + c.width : ''}">${c.label}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:20px;display:flex;justify-content:space-between;align-items:flex-start;">
+      <div>
+        <div style="font-weight:700;font-size:10px;margin-bottom:8px;">Side Duties</div>
+        ${['Pantry','Corridor','Elevator','Trolley'].map(d => `<div style="font-size:9px;margin-bottom:5px;">- ${d}: &nbsp; Good ☐ &nbsp; Bad ☐</div>`).join('')}
+      </div>
+      <div style="font-weight:700;font-size:10px;text-align:right;">
+        SUPERVISOR ASSIGN<br>
+        <div style="margin-top:30px;border-top:1px solid #000;width:180px;"></div>
+      </div>
+    </div>
+    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:3px;">${legendHtml}</div>
+    <div style="margin-top:10px;font-size:9px;color:#64748b;">Printed by: ${new Date().toLocaleString('vi-VN')}</div>
+  </body></html>`
+
+  const win = window.open('', '_blank', 'width=900,height=700')
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  setTimeout(() => win.print(), 500)
+}
 </script>
 
 <template>
-  <div ref="mount" class="room-assignment-vue-root" />
+  <div class="hk-assign-root">
+    <div class="app-body-wrap">
+
+    <!-- ══════════════════ LEFT PANEL ══════════════════ -->
+    <div class="left-panel">
+
+      <!-- Header: Ngày + Ca -->
+      <div class="left-header">
+        <div class="date-shift-row">
+          <input ref="dateInputRef" type="date" v-model="workDate" class="date-input" @change="hkStore.loadAssignment(workDate, selectedShiftId)" />
+          <div class="shift-tabs">
+            <button
+              v-for="shift in hkStore.shifts"
+              :key="shift.id"
+              class="shift-tab"
+              :class="{ active: selectedShiftId === shift.id }"
+              @click="selectedShiftId = shift.id"
+              :title="`${getShiftName(shift)} (${shift.start_time} - ${shift.end_time})`"
+            >
+              <span>Ca</span>
+              <span>{{ getShiftShortName(shift) }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Search + Filter -->
+        <div class="search-row">
+          <div class="search-wrap">
+            <Search :size="13" class="search-icon" />
+            <input v-model="searchQ" type="text" placeholder="Tìm số phòng, loại phòng..." class="search-input" />
+          </div>
+          <div class="filter-wrap" ref="filterWrapRef">
+            <button class="filter-btn" :class="{ active: filterHk !== 'all' || filterBook !== 'all' }" @click.stop="showFilterPanel = !showFilterPanel">
+              <Filter :size="13" />
+              <span v-if="filterHk !== 'all' || filterBook !== 'all'" class="filter-badge">●</span>
+            </button>
+            <div v-if="showFilterPanel" class="filter-panel">
+              <div class="fp-section">
+                <div class="fp-label">Vệ sinh</div>
+                <div class="fp-chips">
+                  <button class="fc-chip" :class="{ on: filterHk === 'all' }" @click="filterHk = 'all'">Tất cả</button>
+                  <button v-for="[k, v] in Object.entries(hkStore.activeSymbols.hk)" :key="k"
+                    class="fc-chip" :class="{ on: filterHk === k }"
+                    @click="filterHk = k">{{ v.code }}</button>
+                </div>
+              </div>
+              <div class="fp-divider"></div>
+              <div class="fp-section">
+                <div class="fp-label">Đặt phòng</div>
+                <div class="fp-chips">
+                  <button class="fc-chip" :class="{ on: filterBook === 'all' }" @click="filterBook = 'all'">Tất cả</button>
+                  <button v-for="[k, v] in Object.entries(hkStore.activeSymbols.booking).filter(([, v]) => v.code)" :key="k"
+                    class="fc-chip" :class="{ on: filterBook === k }"
+                    @click="filterBook = k">{{ v.code }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floor chips -->
+        <div class="floor-row">
+          <button class="fc" :class="{ 'all-on': activeFloors.size === 0 }" @click="clearFloors()">Tất cả</button>
+          <button v-for="f in floors" :key="f"
+            class="fc" :class="{ on: activeFloors.has(f) }"
+            @click="toggleFloor(f)">T{{ f }}</button>
+        </div>
+
+        <!-- Select all -->
+        <div class="select-all-row">
+          <label class="check-label">
+            <input type="checkbox"
+              :checked="isAllSelected"
+              :indeterminate="isPartialSelected"
+              @change="toggleSelectAll($event.target.checked)" />
+            Chọn tất cả
+            <span class="sel-count" v-if="selectedRoomIds.size > 0">({{ selectedRoomIds.size }})</span>
+          </label>
+        </div>
+      </div><!-- /left-header -->
+
+      <!-- Room list -->
+      <div class="room-list-scroll">
+        <div v-if="hkStore.loading" class="list-loading"><Loader2 :size="18" class="spin" /> Đang tải...</div>
+        <template v-else v-for="floor in Object.keys(roomsByFloor).map(Number).sort()" :key="floor">
+          <div class="floor-label">
+            <input type="checkbox"
+              :checked="isFloorAllSelected(floor)"
+              :indeterminate="isFloorPartialSelected(floor)"
+              @change="toggleFloorRooms(floor, $event.target.checked)"
+              class="floor-cb" />
+            TẦNG {{ floor }}
+          </div>
+          <div
+            v-for="room in roomsByFloor[floor]" :key="room.id"
+            class="room-item"
+            :class="{ selected: selectedRoomIds.has(room.id), assigned: !!hkStore.roomGroupMap[room.id] }"
+            :draggable="!hkStore.saving"
+            @dragstart="!hkStore.saving && onDragStartFromList($event, room.id)"
+            @click="toggleRoom(room.id)"
+          >
+            <input type="checkbox" :checked="selectedRoomIds.has(room.id)" @change.stop="toggleRoom(room.id)" class="room-cb" />
+            <span class="room-num">{{ room.room_number }}</span>
+            <span class="room-code" :style="{ color: getHkColor(room.room_status_code) }">{{ room.displayCode }}</span>
+            <span class="room-type">{{ room.room_type }}</span>
+            <span
+              v-if="hkStore.roomGroupMap[room.id]"
+              class="assigned-dot"
+              title="Đã phân công. Chọn và phân công lại sẽ chuyển sang nhóm mới."
+            >✓</span>
+          </div>
+        </template>
+        <div v-if="!hkStore.loading && filteredRooms.length === 0" class="empty-msg">Không có phòng phù hợp</div>
+      </div>
+    </div><!-- /left-panel -->
+
+    <!-- ══════════════════ RIGHT PANEL ══════════════════ -->
+    <div class="right-panel">
+
+      <!-- Groups list -->
+      <div class="groups-scroll">
+        <div v-if="hkStore.loading" class="list-loading"><Loader2 :size="18" class="spin" /> Đang tải...</div>
+
+        <div v-else-if="!selectedShiftId" class="empty-assign">
+          <Clock3 :size="32" class="empty-icon" />
+          <p>Chọn ca làm việc để bắt đầu phân công</p>
+        </div>
+
+        <div v-else-if="hkStore.groups.length === 0" class="empty-assign">
+          <Users :size="32" class="empty-icon" />
+          <p>Chưa có phân công trong ca này<br><small>Chọn phòng ở bên trái, chọn nhân viên rồi nhấn Phân công</small></p>
+        </div>
+
+        <div
+          v-for="(group, gIdx) in hkStore.groups" :key="group.id"
+          class="group-box"
+          :style="{ '--gcolor': group.color || getGroupColor(gIdx) }"
+          @dragover.prevent="onDragOver"
+          @drop="onDropToGroup($event, group.id)"
+        >
+          <!-- Group header -->
+          <div class="group-header">
+            <div class="group-names-block">
+              <div v-for="s in group.staff_list" :key="s.staff_id" class="gn-name">{{ s.name }}</div>
+              <div class="gn-sub">{{ group.rooms.length }} phòng được gán</div>
+            </div>
+            <div class="group-actions">
+              <label class="print-cb-label">
+                <input type="checkbox"
+                  :checked="selectedGroupsToPrint.has(group.id)"
+                  @change="toggleGroupPrint(group.id)" />
+                <span>In lịch</span>
+              </label>
+              <button class="btn-group-edit" title="Chỉnh sửa nhân viên" @click="openEditGroup(group.id)"><Pencil :size="12" /></button>
+              <button class="btn-group-del" title="Xóa nhóm" @click="confirmRemoveGroup(group.id)"><X :size="14" /></button>
+            </div>
+          </div>
+
+          <!-- Room rows -->
+          <div
+            v-for="r in group.rooms" :key="r.room_id"
+            class="group-room-row"
+            :draggable="!hkStore.saving"
+            @dragstart="!hkStore.saving && onDragStartFromGroup($event, r.room_id, group.id)"
+          >
+            <span class="gr-num-bold">{{ r.room_number }}</span>
+            <div class="gr-info-block">
+              <div class="gr-status-line" :style="{ color: getHkColor(r.room_status_snapshot) }">
+                {{ [hkStore.activeSymbols.booking[r.booking_status_snapshot]?.code, hkStore.activeSymbols.hk[r.room_status_snapshot]?.code].filter(Boolean).join(', ') }}
+              </div>
+              <div class="gr-class-line">{{ r.room_class_name }}</div>
+            </div>
+            <button class="btn-rm-room" @click="confirmRemoveRoom(group.id, r.room_id)"><X :size="11" /></button>
+          </div>
+
+          <!-- Drop hint -->
+          <div class="drop-hint">Kéo phòng vào đây</div>
+        </div>
+      </div><!-- /groups-scroll -->
+    </div><!-- /right-panel -->
+    </div><!-- /app-body-wrap -->
+
+    <!-- Assign bar (fixed across bottom) -->
+    <div class="assign-bar">
+      <div class="assign-info" v-if="selectedRoomIds.size > 0">
+        <span class="badge-rooms">{{ selectedRoomIds.size }} phòng đã chọn</span>
+      </div>
+      <div v-else class="assign-info">
+        <span style="font-size: 11px; color: #94a3b8;">Chọn phòng ở bên trái để phân công</span>
+      </div>
+
+      <div class="assign-actions-right" style="display: flex; align-items: center; gap: 12px; flex: 1; justify-content: flex-end; min-width: 0;">
+        <!-- Staff picker (multi-select dropdown) -->
+        <div class="staff-dropdown-container" ref="staffDropdownRef">
+          <button class="btn-staff-dropdown" @click="showStaffDropdown = !showStaffDropdown">
+            <span>{{ dropdownButtonLabel }}</span>
+            <ChevronDown :size="14" class="caret-icon" :class="{ open: showStaffDropdown }" />
+          </button>
+          
+          <Transition name="fade-slide">
+            <div v-if="showStaffDropdown" class="staff-dropdown-panel">
+              <div
+                v-for="s in availableStaffForPicker" :key="s.id"
+                class="dropdown-staff-item"
+                :class="{ selected: selectedStaffIds.has(s.id) }"
+                @click="toggleStaffPicker(s.id)"
+              >
+                <input
+                  type="checkbox"
+                  :checked="selectedStaffIds.has(s.id)"
+                  @click.stop
+                  @change="toggleStaffPicker(s.id)"
+                  class="dropdown-staff-cb"
+                />
+                <span class="dropdown-staff-avatar" :style="{ background: GROUP_COLORS[s.id % GROUP_COLORS.length] }">
+                  {{ getInitials(s.name) }}
+                </span>
+                <span class="dropdown-staff-name">{{ s.name }}</span>
+              </div>
+              <div v-if="availableStaffForPicker.length === 0" class="no-staff-dropdown-msg">
+                Tất cả nhân viên đã được phân công
+              </div>
+            </div>
+          </Transition>
+        </div>
+
+        <div class="bar-actions" style="flex-shrink: 0;">
+          <button class="btn-assign" :disabled="!canAssign || hkStore.saving" @click="doAssign">
+            <Loader2 v-if="hkStore.saving" :size="14" class="spin" />
+            <Plus v-else :size="14" />
+            Phân công
+          </button>
+          <button class="btn-manage-staff" @click="showStaffModal = true">
+            <UserCog :size="14" />
+            Quản lý NV
+          </button>
+          <div class="print-split">
+            <button class="btn-print" @click="doPrint">
+              <Printer :size="14" />
+              In lịch
+            </button>
+            <div class="print-mode-wrap">
+              <select v-model="printMode" class="print-mode-select">
+                <option value="group">Theo nhóm NV</option>
+                <option value="room">Theo phòng (Supervisor)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /assign-bar -->
+
+    <!-- ══════════════════ MODAL: QUẢN LÝ NHÂN VIÊN ══════════════════ -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showStaffModal" class="modal-overlay" @click.self="showStaffModal = false">
+          <div class="modal">
+            <div class="modal-head">
+              <h3>👤 Quản lý nhân viên Housekeeping</h3>
+              <button class="modal-close" @click="showStaffModal = false"><X :size="16" /></button>
+            </div>
+            <div class="modal-tabs">
+              <button :class="{ 'mtab-on': staffTab === 'active' }" @click="staffTab = 'active'">
+                Đang hoạt động ({{ hkStore.staff.length }})
+              </button>
+              <button :class="{ 'mtab-on': staffTab === 'hidden' }" @click="staffTab = 'hidden'">
+                Đã ẩn ({{ hkStore.staffAll.filter(s => s.is_hidden).length }})
+              </button>
+            </div>
+            <div class="modal-body">
+              <!-- Add staff -->
+              <div v-if="staffTab === 'active'" class="add-staff-row">
+                <input v-model="newStaffName" type="text" placeholder="Nhập tên nhân viên mới..."
+                  @keydown.enter="submitAddStaff" class="add-staff-input" />
+                <button class="btn-add-staff" @click="submitAddStaff">+ Thêm</button>
+              </div>
+              <!-- Staff list -->
+              <div class="staff-master-list">
+                <div v-for="s in (staffTab === 'hidden' ? hkStore.staffAll.filter(x => x.is_hidden) : hkStore.staff)" :key="s.id" class="sml-item">
+                  <span class="sml-avatar" :style="{ background: GROUP_COLORS[s.id % GROUP_COLORS.length], filter: s.is_hidden ? 'grayscale(1)' : '' }">{{ getInitials(s.name) }}</span>
+                  <span class="sml-name">{{ s.name }}</span>
+                  <button class="btn-sml-action" @click="doHideStaff(s.id, !s.is_hidden)">
+                    {{ s.is_hidden ? '👁 Hiện' : '👁 Ẩn' }}
+                  </button>
+                  <button v-if="!s.is_hidden" class="btn-sml-del" @click="doDeleteStaff(s.id)" title="Xóa">
+                    <X :size="12" />
+                  </button>
+                </div>
+                <div v-if="(staffTab === 'hidden' ? hkStore.staffAll.filter(x => x.is_hidden) : hkStore.staff).length === 0" class="empty-msg">
+                  {{ staffTab === 'hidden' ? 'Không có nhân viên ẩn' : 'Chưa có nhân viên' }}
+                </div>
+              </div>
+            </div>
+            <div class="modal-foot">
+              <button class="btn-assign" @click="showStaffModal = false">Xong</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- ══════════════════ MODAL: CHỈNH SỬA NHÓM ══════════════════ -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showEditGroupModal && editingGroup" class="modal-overlay" @click.self="showEditGroupModal = false">
+          <div class="modal" style="max-width:420px">
+            <div class="modal-head">
+              <h3>✏️ Chỉnh sửa nhân viên nhóm</h3>
+              <button class="modal-close" @click="showEditGroupModal = false"><X :size="16" /></button>
+            </div>
+            <div class="modal-body">
+              <div class="eg-section-label">Nhân viên hiện tại:</div>
+              <div class="eg-list">
+                <div v-for="s in editingGroup.staff_list" :key="s.staff_id" class="eg-item">
+                  <span class="eg-name">{{ s.name }}</span>
+                  <button class="btn-eg-rm" @click="removeStaffFromGroup(s.staff_id)">Xóa khỏi nhóm</button>
+                </div>
+                <div v-if="!editingGroup.staff_list.length" class="empty-msg">Chưa có nhân viên</div>
+              </div>
+              <div class="eg-section-label" style="margin-top:12px;">Thêm nhân viên:</div>
+              <div class="eg-list">
+                <div v-for="s in editingGroupAvailableStaff" :key="s.id" class="eg-item">
+                  <span class="eg-name">{{ s.name }}</span>
+                  <button class="btn-eg-add" @click="addStaffToGroup(s.id)">+ Thêm</button>
+                </div>
+                <div v-if="editingGroupAvailableStaff.length === 0" class="empty-msg">Không còn nhân viên khả dụng</div>
+              </div>
+            </div>
+            <div class="modal-foot">
+              <button class="btn-assign" @click="showEditGroupModal = false">Xong</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Project-wide standard loading overlay -->
+    <LoadingOverlay :show="hkStore.loading" />
+
+  </div>
 </template>
 
-<style>
-.room-assignment-vue-root {
-  width: 100%;
+<style scoped>
+/* ── Root layout ─────────────────────────────────────────── */
+.hk-assign-root {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  overflow: hidden;
+  background: #f8fafc;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.app-body-wrap {
+  display: flex;
+  flex: 1;
   overflow: hidden;
 }
 
-.room-assignment-vue-root > .app {
-  width: 100%;
-  height: 100%;
+/* ── Left panel ──────────────────────────────────────────── */
+.left-panel {
+  width: 290px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e2e8f0;
+  background: #fff;
 }
+.left-header {
+  padding: 10px 8px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.date-shift-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.date-input {
+  height: 38px;
+  width: 125px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0 4px;
+  color: #334155;
+  background: #fff;
+  box-sizing: border-box;
+  outline: none;
+}
+.shift-tabs { display: flex; gap: 5px; align-items: center; }
+.shift-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.1;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  background: #fff;
+  color: #334155;
+  transition: all .15s;
+}
+.shift-tab.active {
+  background: #2b617a;
+  border-color: #2b617a;
+  color: #fff;
+  font-weight: 700;
+}
+
+.search-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.search-wrap { flex: 1; display: flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 8px; }
+.search-icon { color: #94a3b8; flex-shrink: 0; }
+.search-input { border: none; outline: none; font-size: 12px; width: 100%; color: #1e293b; background: transparent; }
+.filter-wrap { position: relative; }
+.filter-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #64748b; position: relative; }
+.filter-btn.active { background: #eff6ff; border-color: #93c5fd; color: #3b82f6; }
+.filter-badge { position: absolute; top: 2px; right: 2px; color: #3b82f6; font-size: 8px; }
+.filter-panel { position: absolute; top: 38px; right: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; min-width: 220px; z-index: 100; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+.fp-section { margin-bottom: 6px; }
+.fp-label { font-size: 10px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.fp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fc-chip { font-size: 10px; padding: 2px 7px; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer; background: #f8fafc; color: #64748b; }
+.fc-chip.on { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+.fp-divider { border-top: 1px solid #f1f5f9; margin: 6px 0; }
+
+.floor-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0; }
+.fc { font-size: 10px; padding: 2px 7px; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer; background: #f8fafc; color: #64748b; }
+.fc.all-on { background: #1e293b; color: #fff; border-color: #1e293b; }
+.fc.on { background: #0ea5e9; color: #fff; border-color: #0ea5e9; }
+
+.select-all-row { padding: 4px 0 8px; border-top: 1px solid #f1f5f9; }
+.check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; cursor: pointer; }
+.sel-count { font-weight: 600; color: #0ea5e9; }
+
+/* Room list */
+.room-list-scroll { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.floor-label { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .5px; padding: 6px 4px 3px; display: flex; align-items: center; gap: 5px; }
+.floor-cb { accent-color: #0ea5e9; cursor: pointer; }
+.room-cb { accent-color: #0ea5e9; cursor: pointer; flex-shrink: 0; }
+.room-item {
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px;
+  border-radius: 6px; cursor: pointer; margin-bottom: 2px;
+  border: 1px solid transparent; transition: all .12s;
+}
+.room-item:hover { background: #f0f9ff; border-color: #bae6fd; }
+.room-item.selected { background: #e0f2fe; border-color: #7dd3fc; }
+.room-item.assigned { opacity: .7; }
+.room-num { font-size: 12px; font-weight: 700; color: #1e293b; min-width: 34px; }
+.room-code { font-size: 10px; font-weight: 700; min-width: 48px; }
+.room-type { font-size: 10px; color: #94a3b8; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assigned-dot { font-size: 11px; color: #10b981; flex-shrink: 0; }
+.list-loading, .empty-msg { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+/* ── Right panel ─────────────────────────────────────────── */
+.right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Assign bar */
+.assign-bar {
+  padding: 10px 20px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+  flex-wrap: wrap;
+}
+.assign-info { display: flex; align-items: center; gap: 8px; }
+.badge-rooms { background: #eff6ff; border: 1px solid #bfdbfe; color: #3b82f6; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+
+/* Staff dropdown selection */
+.staff-dropdown-container {
+  position: relative;
+  display: inline-block;
+}
+.btn-staff-dropdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 240px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all .15s;
+}
+.btn-staff-dropdown:hover {
+  border-color: #94a3b8;
+  color: #334155;
+}
+.btn-staff-dropdown .caret-icon {
+  transition: transform .15s;
+  color: #94a3b8;
+}
+.btn-staff-dropdown .caret-icon.open {
+  transform: rotate(180deg);
+}
+
+.staff-dropdown-panel {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 6px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px;
+  width: 240px;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.08);
+  z-index: 100;
+}
+.dropdown-staff-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  user-select: none;
+}
+.dropdown-staff-item:hover {
+  background: #f8fafc;
+}
+.dropdown-staff-item.selected {
+  background: #eff6ff;
+}
+.dropdown-staff-cb {
+  accent-color: #3b82f6;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+}
+.dropdown-staff-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.dropdown-staff-name {
+  font-size: 12px;
+  color: #334155;
+}
+.no-staff-dropdown-msg {
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.bar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.btn-assign {
+  display: flex; align-items: center; gap: 5px;
+  background: #0ea5e9; color: #fff; border: none; border-radius: 7px;
+  padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background .15s;
+}
+.btn-assign:disabled { background: #cbd5e1; cursor: not-allowed; }
+.btn-assign:not(:disabled):hover { background: #0284c7; }
+.btn-manage-staff {
+  display: flex; align-items: center; gap: 5px;
+  background: #64748b; color: #fff; border: none; border-radius: 7px;
+  padding: 6px 12px; font-size: 12px; cursor: pointer;
+  transition: background .15s;
+}
+.btn-manage-staff:hover { background: #475569; }
+.print-split { display: flex; border-radius: 7px; overflow: hidden; border: 1px solid #0f766e; }
+.btn-print {
+  display: flex; align-items: center; gap: 5px;
+  background: #0f766e; color: #fff; border: none;
+  padding: 6px 12px; font-size: 12px; cursor: pointer;
+  transition: background .15s;
+}
+.btn-print:hover { background: #0d6960; }
+.print-mode-select { border: none; background: #f0fdfa; color: #0f766e; font-size: 11px; padding: 0 6px; cursor: pointer; outline: none; }
+
+/* Groups scroll */
+.groups-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  align-content: flex-start;
+}
+.empty-assign { display: flex; flex-direction: column; align-items: center; justify-content: center; grid-column: 1 / -1; height: 100%; color: #94a3b8; text-align: center; gap: 8px; padding-top: 60px; }
+.empty-icon { color: #cbd5e1; }
+.empty-assign p { font-size: 13px; }
+.empty-assign small { font-size: 11px; color: #cbd5e1; }
+
+/* Group box */
+.group-box {
+  background: #fff;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  border-left: 4px solid var(--gcolor);
+  display: flex;
+  flex-direction: column;
+  height: fit-content;
+  transition: box-shadow .15s;
+}
+.group-box:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+
+.group-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.group-names-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gn-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.2;
+}
+.gn-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.print-cb-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #64748b;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-group-edit {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #f97316;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-group-edit:hover {
+  border-color: #f97316;
+  background: #fff7ed;
+}
+.btn-group-del {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-group-del:hover {
+  color: #ef4444;
+}
+
+/* Room row in group */
+.group-room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: grab;
+  transition: background .1s;
+}
+.group-room-row:hover { background: #f8fafc; }
+.group-room-row:last-of-type { border-bottom: none; }
+
+.gr-num-bold {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 40px;
+}
+.gr-info-block {
+  flex: 1;
+  margin-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gr-status-line {
+  font-size: 11px;
+  font-weight: 600;
+}
+.gr-class-line {
+  font-size: 10px;
+  color: #64748b;
+}
+.btn-rm-room {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #fda4af;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.btn-rm-room:hover {
+  background: #fff1f2;
+  color: #ef4444;
+}
+.drop-hint { text-align: center; font-size: 10px; color: #cbd5e1; padding: 6px; font-style: italic; }
+
+/* ── Modals ──────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal { background: #fff; border-radius: 12px; width: 480px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f1f5f9; }
+.modal-head h3 { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0; }
+.modal-close { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: none; cursor: pointer; background: #f1f5f9; color: #64748b; }
+.modal-close:hover { background: #fef2f2; color: #ef4444; }
+.modal-tabs { display: flex; border-bottom: 1px solid #f1f5f9; }
+.modal-tabs button { flex: 1; padding: 8px; font-size: 12px; border: none; cursor: pointer; background: none; color: #64748b; }
+.modal-tabs button.mtab-on { color: #0ea5e9; font-weight: 700; border-bottom: 2px solid #0ea5e9; }
+.modal-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.modal-foot { padding: 10px 16px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 8px; }
+
+.add-staff-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.add-staff-input { flex: 1; font-size: 12px; border: 1px solid #e2e8f0; border-radius: 7px; padding: 6px 10px; outline: none; }
+.add-staff-input:focus { border-color: #93c5fd; }
+.btn-add-staff { background: #0ea5e9; color: #fff; border: none; border-radius: 7px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+.staff-master-list { display: flex; flex-direction: column; gap: 5px; }
+.sml-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #f1f5f9; border-radius: 7px; }
+.sml-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.sml-name { flex: 1; font-size: 12px; color: #1e293b; }
+.btn-sml-action { font-size: 10px; padding: 2px 8px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #64748b; }
+.btn-sml-del { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; background: #fff; color: #ef4444; }
+
+/* Edit group modal */
+.eg-section-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; }
+.eg-list { display: flex; flex-direction: column; gap: 5px; }
+.eg-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 7px; }
+.eg-name { flex: 1; font-size: 12px; color: #1e293b; }
+.btn-eg-rm { font-size: 11px; padding: 2px 8px; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; background: #fff; color: #ef4444; }
+.btn-eg-add { font-size: 11px; padding: 2px 8px; border: none; border-radius: 5px; cursor: pointer; background: #0ea5e9; color: #fff; }
+
+/* Transition animations */
+.modal-fade-enter-active, .modal-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.modal-fade-enter-from, .modal-fade-leave-to {
+  opacity: 0;
+}
+.modal-fade-enter-active .modal, .modal-fade-leave-active .modal {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.modal-fade-enter-from .modal, .modal-fade-leave-to .modal {
+  transform: scale(0.92);
+}
+
+.fade-slide-enter-active, .fade-slide-leave-active {
+  transition: all 0.2s ease;
+}
+.fade-slide-enter-from, .fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+/* Spin animation */
+.spin { animation: hkSpin 1s linear infinite; }
+@keyframes hkSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Scrollbar */
+.room-list-scroll::-webkit-scrollbar,
+.groups-scroll::-webkit-scrollbar { width: 4px; }
+.room-list-scroll::-webkit-scrollbar-thumb,
+.groups-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 4px; }
 </style>
