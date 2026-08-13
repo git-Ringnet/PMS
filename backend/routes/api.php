@@ -97,6 +97,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadQrCode']);
     Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
 
+    // Shifts (ca làm việc - Định nghĩa khách sạn)
+    Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
+
     // Room configurations
     Route::get('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'index']);
     Route::post('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'store']);
@@ -183,11 +186,41 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.update');
     Route::patch('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.patch');
     Route::delete('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'destroy'])->name('housekeeping.outlets.destroy');
+
+    // HK Config: ký hiệu phòng + cột mẫu in
+    Route::get('/hk-config', [\App\Http\Controllers\Api\HkConfigController::class, 'index']);
+    Route::put('/hk-config/symbols', [\App\Http\Controllers\Api\HkConfigController::class, 'updateSymbols']);
+    Route::put('/hk-config/print-cols', [\App\Http\Controllers\Api\HkConfigController::class, 'updatePrintCols']);
+    Route::post('/hk-config/reset', [\App\Http\Controllers\Api\HkConfigController::class, 'reset']);
+
+
     Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive']);
     Route::get('/products/export', [\App\Http\Controllers\Api\ProductController::class, 'exportExcel']);
     Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);
     Route::apiResource('products', \App\Http\Controllers\Api\ProductController::class);
     Route::apiResource('inventories', \App\Http\Controllers\Api\InventoryController::class);
+
+    // ─── Quản lý Kho (Warehouses) ────────────────────────────────────
+    Route::get('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'index']);
+    Route::post('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'store']);
+    Route::put('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'update']);
+    Route::delete('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'destroy']);
+
+    // ─── Kiểm kê tồn kho định kỳ (Inventory Checks) ─────────────────
+    Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index']);
+    Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store']);
+    Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
+    Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
+    Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);
+    Route::get('/inventory/products-in-stock', [\App\Http\Controllers\Api\InventoryCheckController::class, 'productsInStock']);
+
+    // ─── Nhật ký nhập/xuất/chuyển kho từng ngày (Daily Logs) ─────────
+    Route::get('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'index']);
+    Route::put('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'upsert']);
+    Route::post('/inventory/get-bill', [\App\Http\Controllers\Api\InventoryLogController::class, 'getBill']);
+
+    // ─── Chuyển kho (Transfer) ────────────────────────────────────────
+    Route::post('/inventory/transfer', [\App\Http\Controllers\Api\InventoryTransferController::class, 'store']);
     Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature']);
     Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature']);
     Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);
@@ -196,6 +229,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
     Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
     Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
+    Route::get('/outlets/hk', [\App\Http\Controllers\Api\OutletController::class, 'listHK']); // HK outlets cho Get Bill
     Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
     Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
     Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
@@ -387,6 +421,25 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+
+    // =====================================================================
+    // HK — Phân Công Phòng (Housekeeping Room Assignment)
+    // =====================================================================
+    // Staff
+    Route::get('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffIndex']);
+    Route::post('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffStore']);
+    Route::put('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffUpdate']);
+    Route::delete('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffDestroy']);
+    // Assignment (ngày + ca)
+    Route::get('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'index']);
+    Route::post('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'store']);
+    // Groups
+    Route::post('/hk/assignments/{assignmentId}/groups', [\App\Http\Controllers\Api\HkAssignmentController::class, 'storeGroup']);
+    Route::put('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'updateGroup']);
+    Route::delete('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'destroyGroup']);
+    // Rooms in group
+    Route::post('/hk/assignments/groups/{groupId}/rooms', [\App\Http\Controllers\Api\HkAssignmentController::class, 'addRooms']);
+    Route::delete('/hk/assignments/groups/{groupId}/rooms/{roomId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'removeRoom']);
     Route::get('/availability/details', [\App\Http\Controllers\Api\AvailabilityController::class, 'details']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 });

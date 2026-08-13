@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import HkConfigTab from './HkConfigTab.vue'
 
 const props = defineProps({
   initialTab: {
@@ -31,6 +32,7 @@ const systemTabs = [
   'TIỀN TỆ',
   'ĐƠN VỊ TÍNH',
   'TÌNH TRẠNG ĐĂNG KÝ',
+  'CẤU HÌNH HOUSEKEEPING',
   'Mẫu'
 ]
 
@@ -1023,6 +1025,11 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
           <button @click="pagination.status.page = Math.min(totalStatusPages, pagination.status.page + 1)" :disabled="pagination.status.page === totalStatusPages"
             class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold">&gt;</button>
         </div>
+      </div>
+
+      <!-- Tab 5: CẤU HÌNH HOUSEKEEPING -->
+      <div v-else-if="activeSystemTab === 'CẤU HÌNH HOUSEKEEPING'" class="flex flex-col gap-4">
+        <HkConfigTab />
       </div>
 
       <!-- Tab 6: MẪU -->
