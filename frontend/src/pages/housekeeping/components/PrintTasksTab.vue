@@ -110,7 +110,9 @@ const allRooms = computed(() => {
         const arrStr = r.arrival_date ? r.arrival_date.substring(0, 10) : ''
         const depStr = r.departure_date ? r.departure_date.substring(0, 10) : ''
         
-        if (depStr === dateStr) {
+        if (r.booking_status === 'occupied') {
+          displayBookingStatus = 'occupied'
+        } else if (depStr === dateStr) {
           displayBookingStatus = 'checkout'
         } else if (arrStr === dateStr) {
           displayBookingStatus = 'reserved'

@@ -13,7 +13,7 @@ class HkConfigSeeder extends Seeder
         $symbols = [
             ['group' => 'hk', 'status_key' => 'occupied_dirty',  'code' => 'OD',  'label' => 'Có khách ở chưa làm vệ sinh',    'color' => '#ef4444', 'sort_order' => 1],
             ['group' => 'hk', 'status_key' => 'occupied_clean',  'code' => 'OC',  'label' => 'Có khách ở đã được làm vệ sinh',  'color' => '#10b981', 'sort_order' => 2],
-            ['group' => 'hk', 'status_key' => 'occupied_ready',  'code' => 'OR',  'label' => 'Có khách sẵn sàng',        'color' => '#059669', 'sort_order' => 3],
+            ['group' => 'hk', 'status_key' => 'occupied_ready',  'code' => 'OR',  'label' => 'Có khách ở - phòng đã sẵn sàng',        'color' => '#059669', 'sort_order' => 3],
             ['group' => 'hk', 'status_key' => 'vacant_dirty',    'code' => 'VD',  'label' => 'Phòng trống dơ',           'color' => '#f59e0b', 'sort_order' => 4],
             ['group' => 'hk', 'status_key' => 'vacant_clean',    'code' => 'VC',  'label' => 'Phòng trống sạch',         'color' => '#6ee7b7', 'sort_order' => 5],
             ['group' => 'hk', 'status_key' => 'vacant_ready',    'code' => 'VR',  'label' => 'Phòng sẵn sàng đón khách', 'color' => '#34d399', 'sort_order' => 6],

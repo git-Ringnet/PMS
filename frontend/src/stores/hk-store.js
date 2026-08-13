@@ -24,6 +24,8 @@ export const GROUP_COLORS = [
 ]
 
 
+
+
 // ============================================================
 // STORE
 // ============================================================
@@ -36,10 +38,10 @@ export const useHkStore = defineStore('hk', () => {
   const loading = ref(false)
   const saving = ref(false)
 
-  // Config HK từ DB (ký hiệu phòng + cột mẫu in)
-  const hkSymbols = ref(null)        // null = dùng HK_SYMBOLS fallback
-  const worksheetColsDB = ref(null)  // null = dùng WORKSHEET_COLS fallback
-  const supervisorColsDB = ref(null) // null = dùng SUPERVISOR_COLS fallback
+  // Config HK từ DB (ký hiệu phòng + cột mẫu in) — nguồn duy nhất, do user cấu hình
+  const hkSymbols = ref(null)
+  const worksheetColsDB = ref(null)
+  const supervisorColsDB = ref(null)
 
   // ---- Getters ----
   const groups = computed(() => assignment.value?.groups ?? [])
@@ -99,7 +101,7 @@ export const useHkStore = defineStore('hk', () => {
     }
   }
 
-  // Computed: trả về config từ DB nếu có, fallback về cấu trúc rỗng khi đang load
+  // activeSymbols: hoàn toàn từ DB, không hardcode fallback
   const activeSymbols = computed(() => hkSymbols.value ?? { hk: {}, booking: {}, extra: {} })
   const activeWorksheetCols = computed(() => worksheetColsDB.value ?? [])
   const activeSupervisorCols = computed(() => supervisorColsDB.value ?? [])
