@@ -24,17 +24,18 @@ class HkConfigSeeder extends Seeder
             ['group' => 'hk', 'status_key' => 'housekeeping',    'code' => 'HK',  'label' => 'Đang dọn phòng',           'color' => '#60a5fa', 'sort_order' => 11],
             ['group' => 'hk', 'status_key' => 'si',              'code' => 'SI',  'label' => 'Phòng để khách tham quan',  'color' => '#f9a8d4', 'sort_order' => 12],
             ['group' => 'hk', 'status_key' => 'vacant_priority', 'code' => 'VP',  'label' => 'Ưu tiên dọn',              'color' => '#fbbf24', 'sort_order' => 13],
-            ['group' => 'booking', 'status_key' => 'checkin',  'code' => 'CI',  'label' => 'Phòng chuẩn bị nhận trong ngày', 'color' => '#3b82f6', 'sort_order' => 1],
+            ['group' => 'booking', 'status_key' => 'reserved', 'code' => 'CI',  'label' => 'Phòng chuẩn bị nhận trong ngày', 'color' => '#3b82f6', 'sort_order' => 1],
             ['group' => 'booking', 'status_key' => 'checkout', 'code' => 'CO',  'label' => 'Phòng khách trả trong ngày',    'color' => '#f43f5e', 'sort_order' => 2],
             ['group' => 'booking', 'status_key' => 'lco',      'code' => 'LCO', 'label' => 'Phòng trả trễ',                 'color' => '#f97316', 'sort_order' => 3],
-            ['group' => 'booking', 'status_key' => 'stayover', 'code' => '',    'label' => 'Đang lưu trú',                  'color' => '#64748b', 'sort_order' => 4],
-            ['group' => 'booking', 'status_key' => 'reserved', 'code' => '',    'label' => 'Đặt trước',                     'color' => '#8b5cf6', 'sort_order' => 5],
+            ['group' => 'booking', 'status_key' => 'occupied', 'code' => '',    'label' => 'Đang lưu trú',                  'color' => '#64748b', 'sort_order' => 4],
             ['group' => 'extra', 'status_key' => 'ep',      'code' => 'EP',       'label' => 'Bổ sung thêm người', 'color' => null, 'sort_order' => 1],
             ['group' => 'extra', 'status_key' => 'eb',      'code' => 'EB',       'label' => 'Giường phụ',         'color' => null, 'sort_order' => 2],
             ['group' => 'extra', 'status_key' => 'sofabed', 'code' => 'Sofa Bed', 'label' => 'Giường sofa',        'color' => null, 'sort_order' => 3],
         ];
+        
+        HkSymbol::query()->delete();
         foreach ($symbols as $sym) {
-            HkSymbol::updateOrCreate(['group' => $sym['group'], 'status_key' => $sym['status_key']], $sym);
+            HkSymbol::create($sym);
         }
 
         HkPrintCol::where('template', 'worksheet')->delete();

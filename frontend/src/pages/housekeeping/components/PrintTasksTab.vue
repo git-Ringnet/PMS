@@ -10,6 +10,8 @@ import {
 
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import { fetchSystemDate } from '@/services/booking-service'
+import echo from '@/services/echo'
 
 const hkStore = useHkStore()
 const roomStore = useRoomStore()
@@ -101,15 +103,32 @@ const editingGroupId = ref(null)
 const allRooms = computed(() => {
   return roomStore.rooms
     .filter(r => !r.is_internal && !String(r.room_number || '').startsWith('0') && r.room_class?.is_active !== false)
-    .map(r => ({
-      id: r.id,
-      room_number: r.room_number,
-      floor: r.floor,
-      room_type: r.room_class?.name || r.room_type || '',
-      room_status_code: r.room_status_code || 'vacant_dirty',
-      booking_status: r.booking_status || '',
-      displayCode: getRoomDisplayCode(r.room_status_code, r.booking_status, hkStore.activeSymbols),
-    }))
+    .map(r => {
+      let displayBookingStatus = r.booking_status || ''
+      if (r.booking_status) {
+        const dateStr = workDate.value
+        const arrStr = r.arrival_date ? r.arrival_date.substring(0, 10) : ''
+        const depStr = r.departure_date ? r.departure_date.substring(0, 10) : ''
+        
+        if (depStr === dateStr) {
+          displayBookingStatus = 'checkout'
+        } else if (arrStr === dateStr) {
+          displayBookingStatus = 'reserved'
+        } else {
+          displayBookingStatus = 'occupied'
+        }
+      }
+      return {
+        id: r.id,
+        room_number: r.room_number,
+        floor: r.floor,
+        room_type: r.room_class?.name || r.room_type || '',
+        room_status_code: r.room_status_code || 'vacant_dirty',
+        booking_status: r.booking_status || '',
+        displayBookingStatus,
+        displayCode: getRoomDisplayCode(r.room_status_code, displayBookingStatus, hkStore.activeSymbols),
+      }
+    })
     .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number)))
 })
 
@@ -119,7 +138,7 @@ const filteredRooms = computed(() => {
   const q = searchQ.value.trim().toLowerCase()
   return allRooms.value.filter(r => {
     if (filterHk.value !== 'all' && r.room_status_code !== filterHk.value) return false
-    if (filterBook.value !== 'all' && r.booking_status !== filterBook.value) return false
+    if (filterBook.value !== 'all' && r.displayBookingStatus !== filterBook.value) return false
     if (activeFloors.value.size > 0 && !activeFloors.value.has(r.floor)) return false
     if (q && !String(r.room_number).toLowerCase().includes(q) && !r.room_type.toLowerCase().includes(q)) return false
     return true
@@ -157,6 +176,18 @@ const editingGroupAvailableStaff = computed(() => {
 // ─────────────────────────────────────────────────────────────
 onMounted(async () => {
   document.addEventListener('click', onDocClick)
+  
+  // Tải ngày hệ thống của khách sạn trước
+  try {
+    const res = await fetchSystemDate()
+    const sysDate = res.data?.data?.system_date || res.data?.system_date
+    if (sysDate) {
+      workDate.value = sysDate
+    }
+  } catch (err) {
+    console.error('Lỗi khi tải ngày hệ thống:', err)
+  }
+
   await Promise.all([
     roomStore.fetchRooms?.() || Promise.resolve(),
     hkStore.loadShifts(),
@@ -168,10 +199,31 @@ onMounted(async () => {
     // Load assignment ngay sau khi có cả ngày + ca
     await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
   }
+
+  // Lắng nghe sự kiện realtime qua Laravel Echo để đồng bộ trạng thái phòng
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', async () => {
+        await roomStore.fetchRooms({ silent: true })
+        if (selectedShiftId.value) {
+          await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
+        }
+      })
+      .listen('.reservation.updated', async () => {
+        await roomStore.fetchRooms({ silent: true })
+        if (selectedShiftId.value) {
+          await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
+        }
+      })
+  }
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated')
+    echo.channel('pms-channel').stopListening('.reservation.updated')
+  }
 })
 
 watch(() => hkStore.shifts, (newShifts) => {
@@ -250,7 +302,7 @@ async function doAssign() {
     if (r) {
       roomSnapshots[roomId] = {
         room_status_snapshot:    r.room_status_code,
-        booking_status_snapshot: r.booking_status,
+        booking_status_snapshot: r.displayBookingStatus,
       }
     }
   })
@@ -448,6 +500,19 @@ function getHkCodeBadge(statusCode) {
 }
 function getHkColor(statusCode) {
   return hkStore.activeSymbols.hk[statusCode]?.color || '#94a3b8'
+}
+function getRoomSymbols(roomStatusCode, bookingStatus, customSymbols = null) {
+  if (!customSymbols) return []
+  const hkSym = customSymbols.hk?.[roomStatusCode]
+  const bkSym = customSymbols.booking?.[bookingStatus]
+  const list = []
+  if (bkSym?.code) {
+    list.push({ code: bkSym.code, color: bkSym.color || '#64748b' })
+  }
+  if (hkSym?.code && hkSym.code !== bkSym?.code) {
+    list.push({ code: hkSym.code, color: hkSym.color || '#94a3b8' })
+  }
+  return list
 }
 function getGroupColor(idx) {
   return GROUP_COLORS[idx % GROUP_COLORS.length]
@@ -706,7 +771,10 @@ function printByRoom() {
       <!-- Header: Ngày + Ca -->
       <div class="left-header">
         <div class="date-shift-row">
-          <input ref="dateInputRef" type="date" v-model="workDate" class="date-input" @change="hkStore.loadAssignment(workDate, selectedShiftId)" />
+          <div class="date-input-wrap" @click="triggerDatePicker">
+            <CalendarDays :size="13" class="calendar-icon" />
+            <input ref="dateInputRef" type="date" v-model="workDate" class="date-input" @change="hkStore.loadAssignment(workDate, selectedShiftId)" />
+          </div>
           <div class="shift-tabs">
             <button
               v-for="shift in hkStore.shifts"
@@ -800,7 +868,12 @@ function printByRoom() {
           >
             <input type="checkbox" :checked="selectedRoomIds.has(room.id)" @change.stop="toggleRoom(room.id)" class="room-cb" />
             <span class="room-num">{{ room.room_number }}</span>
-            <span class="room-code" :style="{ color: getHkColor(room.room_status_code) }">{{ room.displayCode }}</span>
+            <span class="room-code">
+              <template v-for="(sym, sIdx) in getRoomSymbols(room.room_status_code, room.displayBookingStatus, hkStore.activeSymbols)" :key="sIdx">
+                <span :style="{ color: sym.color }">{{ sym.code }}</span>
+                <span v-if="sIdx < getRoomSymbols(room.room_status_code, room.displayBookingStatus, hkStore.activeSymbols).length - 1" style="color: #64748b; margin: 0 1px;">,</span>
+              </template>
+            </span>
             <span class="room-type">{{ room.room_type }}</span>
             <span
               v-if="hkStore.roomGroupMap[room.id]"
@@ -864,8 +937,11 @@ function printByRoom() {
           >
             <span class="gr-num-bold">{{ r.room_number }}</span>
             <div class="gr-info-block">
-              <div class="gr-status-line" :style="{ color: getHkColor(r.room_status_snapshot) }">
-                {{ [hkStore.activeSymbols.booking[r.booking_status_snapshot]?.code, hkStore.activeSymbols.hk[r.room_status_snapshot]?.code].filter(Boolean).join(', ') }}
+              <div class="gr-status-line">
+                <template v-for="(sym, sIdx) in getRoomSymbols(r.room_status_snapshot, r.booking_status_snapshot, hkStore.activeSymbols)" :key="sIdx">
+                  <span :style="{ color: sym.color }">{{ sym.code }}</span>
+                  <span v-if="sIdx < getRoomSymbols(r.room_status_snapshot, r.booking_status_snapshot, hkStore.activeSymbols).length - 1" style="color: #64748b; margin: 0 1px;">,</span>
+                </template>
               </div>
               <div class="gr-class-line">{{ r.room_class_name }}</div>
             </div>
@@ -1074,18 +1150,38 @@ function printByRoom() {
   gap: 6px;
   margin-bottom: 8px;
 }
-.date-input {
-  height: 38px;
-  width: 125px;
-  font-size: 12px;
-  font-weight: 500;
+.date-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
-  padding: 0 4px;
-  color: #334155;
   background: #fff;
+  padding: 0 8px;
+  height: 38px;
+  width: 125px;
+  cursor: pointer;
   box-sizing: border-box;
+}
+.date-input-wrap:focus-within {
+  border-color: #94a3b8;
+}
+.calendar-icon {
+  color: #64748b;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.date-input-wrap .date-input {
+  border: none;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-size: 11px;
+  font-weight: 500;
+  color: #334155;
+  background: transparent;
   outline: none;
+  cursor: pointer;
 }
 .shift-tabs { display: flex; gap: 5px; align-items: center; }
 .shift-tab {
