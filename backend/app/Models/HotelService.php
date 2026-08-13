@@ -22,7 +22,7 @@ class HotelService extends Model
         'short_name',
         'unit',
         'price',
-        'department',
+        'department_id',
     ];
 
     protected $casts = [
@@ -34,4 +34,16 @@ class HotelService extends Model
         'tax' => 'float',
         'special_tax' => 'float',
     ];
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function departments()
+    {
+        return $this->belongsToMany(Department::class)
+            ->withPivot('description')
+            ->withTimestamps();
+    }
 }

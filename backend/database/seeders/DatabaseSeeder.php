@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             BookingStatusSeeder::class,
             SystemConfigurationSeeder::class,
+            DepartmentSeeder::class,
             HotelDefinitionSeeder::class,
             TemplateContentSeeder::class,
             SystemDefinitionSeeder::class,

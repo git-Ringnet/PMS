@@ -1232,6 +1232,7 @@ class BookingRoomController extends Controller
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
                     'quantity'     => $room->extra_bed_qty,
                     'rate'         => $room->extra_bed_rate,
+                    'department'   => 'FO',
                     // Giữ nguyên FIT/GIT đã setup; mặc định FIT cho dữ liệu cũ.
                     'is_room'      => $existing?->is_room ?? 1,
                     'is_posted'    => 0,
@@ -1293,6 +1294,7 @@ class BookingRoomController extends Controller
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
                     'quantity'     => 1,
                     'rate'         => $room->rate,
+                    'department'   => 'FO',
                     'is_room'      => 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,

@@ -1053,15 +1053,18 @@ class BookingBusinessRulesTest extends TestCase
             'booking_room_id' => $bookingRoom->id,
             'service_code' => 'RM',
             'rate' => 600000,
+            'department' => 'FO',
         ]);
 
         // 3. Call POST /api/booking-rooms/{roomId}/services with service_code = EB
         // Seed the EB hotel_service first so it passes the check
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
         \App\Models\HotelService::create([
             'code' => 'EB',
             'name' => 'Extra Bed',
             'is_active' => true,
             'price' => 250000,
+            'department_id' => $department->id,
         ]);
 
         $payloadEB = [
@@ -1076,6 +1079,12 @@ class BookingBusinessRulesTest extends TestCase
 
         $response = $this->postJson("/api/booking-rooms/{$bookingRoom->id}/services", $payloadEB);
         $response->assertSuccessful();
+
+        $this->assertDatabaseHas('booking_room_services', [
+            'booking_room_id' => $bookingRoom->id,
+            'service_code' => 'EB',
+            'department' => 'FO',
+        ]);
 
         // 4. Assert that booking_rooms has extra_bed_qty and extra_bed_rate synced
         $bookingRoom->refresh();

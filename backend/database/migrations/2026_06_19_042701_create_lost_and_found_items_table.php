@@ -31,6 +31,7 @@ return new class extends Migration
             $table->string('status', 5)->default('lost');
 
             $table->longText('image')->nullable();
+            $table->string('created_by')->nullable();
             $table->timestamps();
 
             $table->index(['status', 'date_found']);

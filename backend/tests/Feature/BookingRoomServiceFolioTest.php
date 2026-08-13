@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomService;
+use App\Models\Department;
 use App\Models\Guest;
 use App\Models\HousekeepingServiceBill;
 use App\Models\HotelService;
@@ -238,7 +239,8 @@ class BookingRoomServiceFolioTest extends TestCase
         $secondary = Guest::create(['full_name' => 'Khach phu']);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $primary->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'is_primary' => false, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
-        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department' => 'FO']);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id]);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-fo-service-bill', [
@@ -300,7 +302,8 @@ class BookingRoomServiceFolioTest extends TestCase
             'booking_room_id' => $room->id, 'guest_id' => $guest->id,
             'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN,
         ]);
-        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department' => 'FO']);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id]);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-fo-service-bill', [

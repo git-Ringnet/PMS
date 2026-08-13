@@ -68,15 +68,11 @@ class BookingRoomServiceController extends Controller
     // =========================================
     public function foServiceList()
     {
-        $services = HotelService::where(function($q) {
-                $q->where('department', 'FO')
-                  ->orWhere('department', 'like', '%Reception%')
-                  ->orWhere('department', 'like', '%Lễ Tân%')
-                  ->orWhere('department', 'like', '%Lễ tân%')
-                  ->orWhere('department', 'like', '%Front%');
+        $services = HotelService::whereHas('departments', function ($query) {
+                $query->where('code', 'FO');
             })
             ->orderBy('name')
-            ->get(['code', 'name', 'price', 'unit', 'short_name', 'department']);
+            ->get(['code', 'name', 'price', 'unit', 'short_name']);
 
         return response()->json(['success' => true, 'data' => $services]);
     }

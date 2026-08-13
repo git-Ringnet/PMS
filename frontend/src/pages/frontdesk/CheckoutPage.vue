@@ -1095,7 +1095,7 @@ const servicesList = computed(() => {
       serviceBillId: s.service_bill_id || linkedBill?.Ma || null,
       serviceName: stripTrailingQuantitySuffix(s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng'),
       description: descVal,
-      department: s.department || 'FO',
+      department: s.department || '',
       amount: rateVal,
       quantity: qtyVal,
       totalAmount: totalVal,
@@ -1134,7 +1134,7 @@ const servicesList = computed(() => {
       serviceCode: codeVal,
       serviceName: descVal,
       description: descVal,
-      department: sb.DepartmentId || 'FO',
+      department: sb.DepartmentId || '',
       amount: rateVal,
       quantity: qtyVal,
       totalAmount: totalVal,
@@ -1341,7 +1341,7 @@ const serviceGroups = computed(() => {
     // Mỗi bill ServiceBill hoặc dịch vụ lẻ có định danh duy nhất (serviceBillId / id)
     // để mỗi bill đêm phòng đứng riêng 1 dòng độc lập và hiển thị chuẩn xác ngày/giờ tương ứng.
     const sourceKey = service.serviceBillId ? `sb-${service.serviceBillId}` : `svc-${service.id || service.createdAt}`
-    const key = [meta.key, sourceKey, service.folio || 'A', service.department || 'FO'].join('|')
+    const key = [meta.key, sourceKey, service.folio || 'A', service.department || ''].join('|')
     if (!groups.has(key)) {
       groups.set(key, { id: key, ...meta, serviceBillId: service.serviceBillId || null, name: service.description || meta.name, dateTime: service.dateTime, department: service.department, folio: service.folio || 'A', paymentCode: service.paymentCode || '', invoiceCode: service.invoiceCode || '', totalAmount: 0, quantity: 0, tax: 0, serviceCharge: 0, items: [] })
     }
@@ -1484,7 +1484,7 @@ const toTransferPreviewService = (service) => {
   return {
     id: firstPreviewValue(service.id, service.Ma),
     dateTime: formatServiceDateTime(firstPreviewValue(service.service_date, service.serviceDate, service.Date, service.date), firstPreviewValue(service.created_at, service.CreatedDate), firstPreviewValue(service.open_time, service.openTime, service.OpenTime, service.CreatedHour)),
-    department: firstPreviewValue(service.department, service.DepartmentId) || 'FO',
+    department: firstPreviewValue(service.department, service.DepartmentId) || '',
     serviceCode: firstPreviewValue(service.service_code, service.serviceCode, service.ServiceId, service.ServiceID) || 'DV',
     description: stripTrailingQuantitySuffix(String(service.note || service.description || '').replace(/^Post bill\s+/i, '')),
     serviceName: stripTrailingQuantitySuffix(service.service_name || service.name || 'Dịch vụ'),
