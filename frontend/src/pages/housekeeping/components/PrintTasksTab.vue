@@ -474,6 +474,15 @@ function doPrint() {
   else printByRoom()
 }
 
+function getEnglishShiftName(shift) {
+  if (!shift) return 'WORK'
+  const name = String(shift.name).trim().toLowerCase()
+  if (name === '1' || name === 'sáng' || name === 'morning') return 'MORNING'
+  if (name === '2' || name === 'chiều' || name === 'afternoon') return 'AFTERNOON'
+  if (name === '0' || name === 'tối' || name === 'night') return 'NIGHT'
+  return name.toUpperCase()
+}
+
 function buildWorksheetLegend() {
   const hkItems = Object.entries(hkStore.activeSymbols.hk).map(([, v]) => `${v.code}: ${v.label}`)
   const bkItems = Object.entries(hkStore.activeSymbols.booking).filter(([, v]) => v.code).map(([, v]) => `${v.code}: ${v.label}`)
@@ -487,7 +496,7 @@ function printByGroup() {
   if (!groupsToPrint.length) { alert('Chưa có nhóm nào để in'); return }
 
   const shift = hkStore.shifts.find(s => s.id == selectedShiftId.value)
-  const shiftLabel = shift ? shift.name.toUpperCase() : 'CA LÀM VIỆC'
+  const engShiftName = getEnglishShiftName(shift)
   const dateStr = workDate.value.split('-').reverse().join('/')
   const legend = buildWorksheetLegend()
 
@@ -500,41 +509,65 @@ function printByGroup() {
         hkStore.activeSymbols.booking[r.booking_status_snapshot]?.code || '',
         hkStore.activeSymbols.hk[r.room_status_snapshot]?.code || '',
       ].filter(Boolean).join(', ')
-      return `<tr>
-        <td style="text-align:center;font-size:9px;border:1px solid #000;">${i + 1}</td>
-        <td style="text-align:center;font-weight:700;color:#b91c1c;border:1px solid #000;">${r.room_number}</td>
-        <td style="text-align:center;font-size:8px;border:1px solid #000;">${r.room_class_name || ''}</td>
-        <td style="text-align:center;font-weight:700;font-size:9px;border:1px solid #000;">${code}</td>
-        ${COLS.map(() => '<td style="border:1px solid #000;"></td>').join('')}
+
+      const isDirty = String(r.room_status_snapshot).includes('dirty')
+      const roomNumColor = isDirty ? '#b91c1c' : '#0f172a'
+
+      return `<tr style="height: 30px;">
+        <td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#64748b;">${i + 1}</td>
+        <td style="text-align:center;font-weight:800;font-size:12px;color:${roomNumColor};border:1px solid #1e293b;padding:4px;font-family:monospace;">${r.room_number}</td>
+        <td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#334155;">${r.room_class_name || ''}</td>
+        <td style="text-align:center;font-weight:700;font-size:9.5px;border:1px solid #1e293b;padding:4px;color:#0f172a;">${code}</td>
+        ${COLS.map(() => '<td style="border:1px solid #1e293b;padding:4px;"></td>').join('')}
       </tr>`
     }).join('')
 
-    const headerCols = COLS.map(c => `<th style="font-size:6.5px;padding:2px 1px;text-align:center;border:1px solid #000;white-space:pre-line;word-break:break-all;width:${c.width}">${c.label}</th>`).join('')
+    const headerCols = COLS.map(c => `<th style="font-size:7.5px;padding:6px 2px;text-align:center;border:1px solid #1e293b;white-space:pre-line;word-break:break-all;width:${c.width || 'auto'}">${c.label}</th>`).join('')
 
-    const legendHtml = legend.map(l => `<div style="font-size:8px;margin-bottom:2px;">${l}</div>`).join('')
+    const legendHtml = legend.map(l => {
+      const parts = l.split(':')
+      const code = parts[0]?.trim() || ''
+      const label = parts[1]?.trim() || ''
+      return `<div style="font-size:9px;line-height:1.4;color:#334155;">
+        <strong style="color:#0f172a;display:inline-block;width:32px;">${code}</strong>: ${label}
+      </div>`
+    }).join('')
 
-    return `<div class="page" style="padding:10mm;font-family:Calibri,Arial,sans-serif;">
-      <h2 style="text-align:center;font-size:13px;font-weight:700;margin:0 0 6px;">ROOM ATTENDANT ${shiftLabel} WORKSHEET</h2>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;">
-        <tr>
-          <td style="font-size:9px;font-weight:700;">HOUSEKEEPING ATTENDANT: ${staffNames}</td>
-          <td style="font-size:9px;text-align:right;">DATE: ${dateStr}</td>
-        </tr>
-      </table>
-      <table style="width:100%;border-collapse:collapse;font-size:8px;">
+    return `<div class="page" style="padding:15mm 10mm;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:12px;">
+        <div>
+          <h2 style="font-size:15px;font-weight:800;margin:0;text-transform:uppercase;letter-spacing:0.5px;">ROOM ATTENDANT ${engShiftName} WORKSHEET</h2>
+          <div style="font-size:9px;color:#475569;margin-top:2px;">PMS HOTEL HOUSEKEEPING SYSTEM</div>
+        </div>
+        <div style="text-align:right;font-size:10px;font-weight:500;">
+          <div>DATE: <span style="font-weight:700;">${dateStr}</span></div>
+          <div style="margin-top:2px;">SHIFT: <span style="font-weight:700;color:#0284c7;">${engShiftName}</span></div>
+        </div>
+      </div>
+      
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">
+        <div>HOUSEKEEPING ATTENDANT: <strong style="font-size:12px;color:#0f172a;">${staffNames}</strong></div>
+        <div>TOTAL ROOMS: <strong style="font-size:12px;color:#0f172a;">${g.rooms.length}</strong></div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid #1e293b;">
         <thead>
-          <tr>
-            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">STT</th>
-            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">PHÒNG</th>
-            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">LOẠI</th>
-            <th style="border:1px solid #000;font-size:8px;padding:2px 3px;">TÌNH TRẠNG</th>
+          <tr style="background:#f1f5f9;border-bottom:2px solid #1e293b;">
+            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:30px;font-weight:700;">STT</th>
+            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:55px;font-weight:700;">PHÒNG</th>
+            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:70px;font-weight:700;">LOẠI</th>
+            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:85px;font-weight:700;">TRẠNG THÁI</th>
             ${headerCols}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-        ${legendHtml}
+
+      <div style="margin-top:15px;border-top:1px dashed #cbd5e1;padding-top:10px;">
+        <div style="font-size:9px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">BẢNG GIẢI THÍCH KÝ HIỆU / STATUS LEGEND:</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;">
+          ${legendHtml}
+        </div>
       </div>
     </div>`
   })
@@ -557,7 +590,7 @@ function printByRoom() {
   if (!roomIds.length) { alert('Chọn phòng cần in trong danh sách bên trái'); return }
 
   const shift = hkStore.shifts.find(s => s.id == selectedShiftId.value)
-  const shiftLabel = shift ? shift.name.toUpperCase() : ''
+  const engShiftName = getEnglishShiftName(shift)
   const dateStr = workDate.value.split('-').reverse().join('/')
   const legend = buildWorksheetLegend()
 
@@ -565,54 +598,94 @@ function printByRoom() {
     const r = allRooms.value.find(x => x.id === rid)
     if (!r) return ''
     const code = getRoomDisplayCode(r.room_status_code, r.booking_status, hkStore.activeSymbols)
+    
+    const isDirty = String(r.room_status_code).includes('dirty')
+    const roomNumColor = isDirty ? '#b91c1c' : '#059669'
+
     // Tạo các cell data cho supervisor cols (3 cột đầu là data, còn lại là ô trống)
     const dataCells = [
-      `<td style="text-align:center;color:green;font-weight:700;font-size:10px;border:1px solid #ccc;padding:4px 6px;">${r.room_number}</td>`,
-      `<td style="text-align:center;font-size:10px;border:1px solid #ccc;padding:4px 6px;">${r.room_type}</td>`,
-      `<td style="text-align:center;font-weight:700;font-size:10px;border:1px solid #ccc;padding:4px 6px;">${code}</td>`,
+      `<td style="text-align:center;color:${roomNumColor};font-weight:800;font-size:12px;font-family:monospace;border:1px solid #475569;padding:6px 8px;">${r.room_number}</td>`,
+      `<td style="text-align:center;font-size:10px;border:1px solid #475569;padding:6px 8px;color:#334155;">${r.room_type}</td>`,
+      `<td style="text-align:center;font-weight:700;font-size:10px;border:1px solid #475569;padding:6px 8px;color:#0f172a;">${code}</td>`,
       ...hkStore.activeSupervisorCols.slice(3).map((c, i) =>
         i === hkStore.activeSupervisorCols.slice(3).findIndex(x => x.label === 'Attendance')
-          ? `<td style="text-align:center;border:1px solid #ccc;padding:4px 6px;">☐</td>`
-          : `<td style="border:1px solid #ccc;padding:4px 6px;"></td>`
+          ? `<td style="text-align:center;border:1px solid #475569;padding:6px 8px;font-size:11px;color:#64748b;">☐</td>`
+          : `<td style="border:1px solid #475569;padding:6px 8px;"></td>`
       )
     ].join('')
-    return `<tr>${dataCells}</tr>`
+    return `<tr style="height:32px;">${dataCells}</tr>`
   }).join('')
 
-  const legendHtml = legend.map(l => `<div style="font-size:8px;margin-bottom:2px;">${l}</div>`).join('')
+  const legendHtml = legend.map(l => {
+    const parts = l.split(':')
+    const code = parts[0]?.trim() || ''
+    const label = parts[1]?.trim() || ''
+    return `<div style="font-size:9px;line-height:1.4;color:#334155;">
+      <strong style="color:#0f172a;display:inline-block;width:32px;">${code}</strong>: ${label}
+    </div>`
+  }).join('')
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>FL/Supervisor Check List</title>
-  <style>body{font-family:Calibri,Arial,sans-serif;padding:15mm;}@media print{body{padding:10mm}}</style></head>
+  <style>
+    body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#0f172a; padding:10mm; margin:0; }
+    @media print { body { padding:5mm; } }
+    table { width:100%; border-collapse:collapse; font-size:10px; }
+    th, td { border:1px solid #475569; padding:6px 8px; }
+    th { background:#f1f5f9; font-weight:700; text-transform:uppercase; font-size:9px; letter-spacing:0.5px; }
+  </style></head>
   <body>
-    <div style="text-align:right;font-size:10px;margin-bottom:4px;">
-      <div style="font-weight:700;">TÊN KHÁCH SẠN</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:15px;">
+      <div>
+        <h1 style="font-size:18px;font-weight:800;margin:0;text-transform:uppercase;letter-spacing:0.5px;">FL / SUPERVISOR CHECK LIST</h1>
+        <div style="font-size:10px;color:#475569;margin-top:2px;">PMS HOTEL HOUSEKEEPING SYSTEM</div>
+      </div>
+      <div style="text-align:right;font-size:10px;font-weight:500;">
+        <div>DATE: <span style="font-weight:700;">${dateStr}</span></div>
+        <div style="margin-top:2px;">SHIFT: <span style="font-weight:700;color:#0284c7;">${engShiftName}</span></div>
+      </div>
     </div>
-    <h2 style="text-align:center;font-size:15px;font-weight:700;margin:10px 0;">FL/SUPERVISOR CHECK LIST — ${shiftLabel}</h2>
-    <div style="display:flex;gap:40px;margin-bottom:12px;font-size:10px;">
-      <div>Name: <span style="display:inline-block;width:180px;border-bottom:1px solid #000;">&nbsp;</span></div>
-      <div>Date: <strong>${dateStr}</strong></div>
-      <div>Block: <span style="display:inline-block;width:100px;border-bottom:1px solid #000;">&nbsp;</span></div>
+
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 15px;margin-bottom:15px;font-size:11px;display:grid;grid-template-columns:2fr 1fr 1fr;gap:20px;">
+      <div>SUPERVISOR NAME: <span style="display:inline-block;width:140px;border-bottom:1px solid #475569;margin-left:4px;">&nbsp;</span></div>
+      <div>BLOCK: <span style="display:inline-block;width:60px;border-bottom:1px solid #475569;margin-left:4px;">&nbsp;</span></div>
+      <div style="text-align:right;">TOTAL ROOMS: <strong style="font-size:12px;color:#0f172a;">${roomIds.length}</strong></div>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+
+    <table>
       <thead>
-        <tr style="background:#f1f5f9;">
-          ${hkStore.activeSupervisorCols.map(c => `<th style="border:1px solid #ccc;padding:5px;text-align:center;${c.width ? 'width:' + c.width : ''}">${c.label}</th>`).join('')}
+        <tr>
+          ${hkStore.activeSupervisorCols.map(c => `<th style="text-align:center;${c.width ? 'width:' + c.width : ''}">${c.label}</th>`).join('')}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
-    <div style="margin-top:20px;display:flex;justify-content:space-between;align-items:flex-start;">
-      <div>
-        <div style="font-weight:700;font-size:10px;margin-bottom:8px;">Side Duties</div>
-        ${['Pantry','Corridor','Elevator','Trolley'].map(d => `<div style="font-size:9px;margin-bottom:5px;">- ${d}: &nbsp; Good ☐ &nbsp; Bad ☐</div>`).join('')}
+
+    <div style="margin-top:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:20px;">
+      <div style="flex:1;border:1px solid #cbd5e1;border-radius:6px;padding:10px 15px;background:#f8fafc;">
+        <div style="font-weight:700;font-size:11px;margin-bottom:8px;color:#0f172a;text-transform:uppercase;">Side Duties (Công việc phụ)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px;">
+          ${['Pantry (Kho tủ)', 'Corridor (Hành lang)', 'Elevator (Thang máy)', 'Trolley (Xe đẩy)'].map(d => `
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span>- ${d}:</span>
+              <span style="font-weight:500;color:#475569;">Đạt ☐ / Chưa đạt ☐</span>
+            </div>
+          `).join('')}
+        </div>
       </div>
-      <div style="font-weight:700;font-size:10px;text-align:right;">
-        SUPERVISOR ASSIGN<br>
-        <div style="margin-top:30px;border-top:1px solid #000;width:180px;"></div>
+      <div style="width:250px;text-align:right;margin-top:10px;">
+        <div style="font-weight:700;font-size:11px;color:#0f172a;text-transform:uppercase;margin-bottom:40px;">SUPERVISOR SIGNATURE</div>
+        <div style="border-top:1px solid #475569;display:inline-block;width:180px;"></div>
       </div>
     </div>
-    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:3px;">${legendHtml}</div>
-    <div style="margin-top:10px;font-size:9px;color:#64748b;">Printed by: ${new Date().toLocaleString('vi-VN')}</div>
+
+    <div style="margin-top:20px;border-top:1px dashed #cbd5e1;padding-top:10px;">
+      <div style="font-size:9px;font-weight:700;color:#475569;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">BẢNG GIẢI THÍCH KÝ HIỆU / STATUS LEGEND:</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;">
+        ${legendHtml}
+      </div>
+    </div>
+
+    <div style="margin-top:15px;font-size:9px;color:#64748b;text-align:right;">Printed by: ${new Date().toLocaleString('vi-VN')}</div>
   </body></html>`
 
   const win = window.open('', '_blank', 'width=900,height=700')
