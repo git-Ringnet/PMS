@@ -97,6 +97,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadQrCode']);
     Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
 
+    // Shifts (ca làm việc - Định nghĩa khách sạn)
+    Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
+
     // Room configurations
     Route::get('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'index']);
     Route::post('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'store']);
@@ -180,6 +183,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.update');
     Route::patch('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.patch');
     Route::delete('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'destroy'])->name('housekeeping.outlets.destroy');
+
+    // HK Config: ký hiệu phòng + cột mẫu in
+    Route::get('/hk-config', [\App\Http\Controllers\Api\HkConfigController::class, 'index']);
+    Route::put('/hk-config/symbols', [\App\Http\Controllers\Api\HkConfigController::class, 'updateSymbols']);
+    Route::put('/hk-config/print-cols', [\App\Http\Controllers\Api\HkConfigController::class, 'updatePrintCols']);
+    Route::post('/hk-config/reset', [\App\Http\Controllers\Api\HkConfigController::class, 'reset']);
+
+
     Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive']);
     Route::get('/products/export', [\App\Http\Controllers\Api\ProductController::class, 'exportExcel']);
     Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);
@@ -384,6 +395,25 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
+
+    // =====================================================================
+    // HK — Phân Công Phòng (Housekeeping Room Assignment)
+    // =====================================================================
+    // Staff
+    Route::get('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffIndex']);
+    Route::post('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffStore']);
+    Route::put('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffUpdate']);
+    Route::delete('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffDestroy']);
+    // Assignment (ngày + ca)
+    Route::get('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'index']);
+    Route::post('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'store']);
+    // Groups
+    Route::post('/hk/assignments/{assignmentId}/groups', [\App\Http\Controllers\Api\HkAssignmentController::class, 'storeGroup']);
+    Route::put('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'updateGroup']);
+    Route::delete('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'destroyGroup']);
+    // Rooms in group
+    Route::post('/hk/assignments/groups/{groupId}/rooms', [\App\Http\Controllers\Api\HkAssignmentController::class, 'addRooms']);
+    Route::delete('/hk/assignments/groups/{groupId}/rooms/{roomId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'removeRoom']);
     Route::get('/availability/details', [\App\Http\Controllers\Api\AvailabilityController::class, 'details']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 });
