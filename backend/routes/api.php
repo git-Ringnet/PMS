@@ -194,6 +194,28 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);
     Route::apiResource('products', \App\Http\Controllers\Api\ProductController::class);
     Route::apiResource('inventories', \App\Http\Controllers\Api\InventoryController::class);
+
+    // ─── Quản lý Kho (Warehouses) ────────────────────────────────────
+    Route::get('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'index']);
+    Route::post('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'store']);
+    Route::put('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'update']);
+    Route::delete('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'destroy']);
+
+    // ─── Kiểm kê tồn kho định kỳ (Inventory Checks) ─────────────────
+    Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index']);
+    Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store']);
+    Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
+    Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
+    Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);
+    Route::get('/inventory/products-in-stock', [\App\Http\Controllers\Api\InventoryCheckController::class, 'productsInStock']);
+
+    // ─── Nhật ký nhập/xuất/chuyển kho từng ngày (Daily Logs) ─────────
+    Route::get('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'index']);
+    Route::put('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'upsert']);
+    Route::post('/inventory/get-bill', [\App\Http\Controllers\Api\InventoryLogController::class, 'getBill']);
+
+    // ─── Chuyển kho (Transfer) ────────────────────────────────────────
+    Route::post('/inventory/transfer', [\App\Http\Controllers\Api\InventoryTransferController::class, 'store']);
     Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature']);
     Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature']);
     Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);
@@ -202,6 +224,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
     Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
     Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
+    Route::get('/outlets/hk', [\App\Http\Controllers\Api\OutletController::class, 'listHK']); // HK outlets cho Get Bill
     Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
     Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
     Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
