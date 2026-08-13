@@ -973,6 +973,49 @@ class BookingBusinessRulesTest extends TestCase
     /**
      * TC-16: Inline service update (such as RM bypass and EB sync to booking_rooms)
      */
+    public function test_child_breakfast_sync_preserves_fit_owner_flag(): void
+    {
+        HotelConfig::create(['name' => 'Booking_BFChildSetServiceId', 'value' => 'BD']);
+        $booking = $this->createBooking();
+        $room = BookingRoom::create([
+            'id' => 'G-BF-FOLIO',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        $child = BookingChild::create([
+            'id' => 'BC-BF-FOLIO',
+            'booking_id' => $booking->id,
+            'booking_room_id' => $room->id,
+            'full_name' => 'Child FIT',
+            'age_group' => 'child',
+        ]);
+        $detail = BookingChildBreakfastDetail::create([
+            'booking_child_id' => $child->id,
+            'service_date' => '2026-08-07',
+            'breakfast' => true,
+            'is_free' => false,
+            'is_extra_charge' => true,
+            'is_room' => true,
+            'amount' => 90000,
+        ]);
+
+        $this->patchJson("/api/booking-children/{$child->id}/breakfast-details/{$detail->id}", [
+            'is_room' => true,
+            'amount' => 90000,
+        ])->assertSuccessful();
+
+        $service = BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', 'BD')
+            ->whereDate('service_date', '2026-08-07')
+            ->firstOrFail();
+        $this->assertSame(1, (int) $service->is_room);
+
+    }
+
     public function test_inline_service_update_bypasses_service_check_and_syncs_extra_bed(): void
     {
         // 1. Create a booking and booking_room

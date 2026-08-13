@@ -734,7 +734,7 @@ class NightAuditController extends Controller
                     'service_date'    => $date->toDateString(),
                 ],
                 [
-                    'service_name'           => 'Tiền phòng',
+                    'service_name'           => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Tiền phòng'),
                     'service_bill_id'        => $bill->Ma,
                     'service_bill_detail_no' => 1,
                     'quantity'               => 1,
@@ -767,7 +767,8 @@ class NightAuditController extends Controller
         $qty         = (float)$service->quantity;
         $rate        = (float)$service->rate;
         $totalAmount = $qty * $rate;
-        $description = $service->note ?: $foService->name;
+        $description = preg_replace('/\s+\(\d+\)$/u', '', trim((string) ($service->note ?: $foService->name)));
+        $isRoomFolio = (int) $service->is_room === 1;
 
         $bill = ServiceBill::create([
             'Date'               => Carbon::parse($service->service_date)->startOfDay()->toDateTimeString(),
@@ -789,8 +790,8 @@ class NightAuditController extends Controller
             'RentalRoomId1'      => $room->id,
             'CustomerId1'        => $guestId,
             'RegisterID2'        => $booking?->id,
-            'RentalRoomId2'      => $room->id,
-            'CustomerId2'        => $guestId,
+            'RentalRoomId2'      => $isRoomFolio ? $room->id : null,
+            'CustomerId2'        => $isRoomFolio ? $guestId : null,
             'CompanyId2'         => $booking?->company_id,
             'Username'           => $user,
             'Status'             => 1,
@@ -822,6 +823,7 @@ class NightAuditController extends Controller
         $service->update([
             'service_bill_id'        => $bill->Ma,
             'service_bill_detail_no' => 1,
+            'department'             => 'FO',
             'is_posted'              => 1,
             'posted_at'              => now(),
         ]);

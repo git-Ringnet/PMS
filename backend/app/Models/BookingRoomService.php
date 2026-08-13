@@ -97,6 +97,16 @@ class BookingRoomService extends Model
     const CODE_EXTRA_BED   = 'EB'; // Thêm giường
     const CODE_BF_CHILD    = 'BD'; // Phụ thu ăn sáng trẻ em
 
+    public static function catalogCode(string $code): string
+    {
+        return (string) (\App\Models\HotelService::where('code', $code)->value('code') ?: $code);
+    }
+
+    public static function catalogName(string $code, string $fallback = ''): string
+    {
+        return (string) (\App\Models\HotelService::where('code', $code)->value('name') ?: $fallback);
+    }
+
     public function bookingRoom()
     {
         return $this->belongsTo(BookingRoom::class);

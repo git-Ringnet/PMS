@@ -600,7 +600,7 @@ class GuestController extends Controller
             ->where('Status', '!=', 2)
             ->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id]);
         if ((bool) $room->booking?->is_master_room_rate) {
-            $unpaidQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+            $unpaidQuery->whereNotIn('ServiceId', ['RM', 'ER']);
         }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
@@ -697,7 +697,7 @@ class GuestController extends Controller
             ->where(function ($q) use ($booking, $checkedOutRoomIds) {
                 $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
                 if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
-                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'RMS']);
+                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'ER']);
             })
             ->exists();
     }
@@ -1281,7 +1281,7 @@ class GuestController extends Controller
                     'total_amount'    => $detail->amount,
                     'department'      => 'FO',
                     'folio'           => 1,
-                    'is_room'         => 0,
+                    'is_room'         => $detail->is_room ? 1 : 0,
                     'is_posted'       => 0,
                 ]
             );
