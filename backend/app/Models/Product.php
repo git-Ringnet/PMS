@@ -52,6 +52,24 @@ class Product extends Model
         'special_tax_amount' => 'decimal:2',
     ];
 
+    public function getUnitAttribute()
+    {
+        $catName = strtolower($this->category->name ?? '');
+        if (str_contains($catName, 'bia') || str_contains($catName, 'nước ngọt') || str_contains($catName, 'nước suối') || str_contains($catName, 'rượu')) {
+            if (str_contains(strtolower($this->name), 'bia') || str_contains(strtolower($this->name), 'lon')) {
+                return 'Lon';
+            }
+            return 'Chai';
+        }
+        if (str_contains($catName, 'dép')) {
+            return 'Đôi';
+        }
+        if (str_contains($catName, 'bánh') || str_contains($catName, 'trái cây') || str_contains($catName, 'trà')) {
+            return 'Gói';
+        }
+        return 'Cái';
+    }
+
     public function category()
     {
         return $this->belongsTo(ProductCategory::class, 'product_category_id');

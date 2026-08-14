@@ -1,10 +1,33 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Search, Plus, FileSpreadsheet, ClipboardList, ChevronLeft, ChevronRight, X, Trash2, Save, BarChart2, ChevronDown } from '@lucide/vue'
+import { Search, Plus, FileSpreadsheet, ClipboardList, ChevronLeft, ChevronRight, X, Trash2, Save, BarChart2, ChevronDown, BarChart3, AlertTriangle, CheckCircle2, TrendingUp } from '@lucide/vue'
 import http from '@/services/http'
+import { fetchSystemDate } from '@/services/booking-service'
+import { useAuthStore } from '@/stores/auth-store'
+import { useUiStore } from '@/stores/ui-store'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const route = useRoute()
+const authStore = useAuthStore()
+const uiStore = useUiStore()
+
+// ─── System Date ──────────────────────────────────────────────────
+const systemDate = ref('')
+function isSystemDate(day) {
+  if (!systemDate.value) return false
+  const dateStr = `${currentMonth.value}-${String(day).padStart(2, '0')}`
+  return dateStr === systemDate.value
+}
+
+// ─── Draggable Modal Positions ────────────────────────────────────
+const checkModalPos = ref({ x: 0, y: 0 })
+const addWhModalPos = ref({ x: 0, y: 0 })
+const editWhModalPos = ref({ x: 0, y: 0 })
+const prodModalPos = ref({ x: 0, y: 0 })
+const transferModalPos = ref({ x: 0, y: 0 })
+
+
 
 // ─── UI State ────────────────────────────────────────────────────
 const showAddModal         = ref(false)
@@ -14,6 +37,21 @@ const showProductSearch    = ref(false)
 const showAddProductCheckModal = ref(false)
 const showTransferModal    = ref(false)
 const showGroupDropdown    = ref(false)
+const showStatsModal       = ref(false)
+const statsType            = ref('check')
+const statsTitle           = ref('')
+const statsData            = ref({
+  total: 0,
+  normal: 0,
+  discrepancies: 0,
+  discrepancyList: [],
+  totalReceive: 0,
+  totalExport: 0,
+  totalTransfer: 0,
+  lowStockProducts: [],
+  highestActivityName: '',
+  highestActivityCount: 0
+})
 const isLoading            = ref(false)
 const isSaving             = ref(false)
 const isBillLoading        = ref(false)
@@ -44,7 +82,18 @@ const days = computed(() => {
 const currentCheck         = ref(null)    // phiếu kiểm kê tháng hiện tại
 const productsInStock      = ref([])      // sản phẩm isInStock=1 để chọn
 const selectedProductIds   = ref([])      // checkbox chọn SP để thêm vào phiếu
-const checkForm            = ref({ month: '', note: '' })
+const checkForm            = ref({ month: '', note: '', created_by: '' })
+const users                = ref([])
+
+watch(currentCheck, (val) => {
+  if (val) {
+    checkForm.value.month = val.month || currentMonth.value
+    checkForm.value.note = val.note || ''
+    checkForm.value.created_by = val.created_by || authStore.user?.id || ''
+  } else {
+    checkForm.value = { month: currentMonth.value, note: '', created_by: authStore.user?.id || '' }
+  }
+}, { immediate: true })
 
 // ─── Daily Logs ──────────────────────────────────────────────────
 // logsMap: { product_id: { 'YYYY-MM-DD': { receive, export, transfer } } }
@@ -99,12 +148,26 @@ watch(filterState, () => { triggerSearchLoading() }, { deep: true })
 async function loadInitialData() {
   isLoading.value = true
   try {
-    const [warehousesRes, outletsRes] = await Promise.all([
+    const localDate = new Date()
+    let sysDate = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`
+    try {
+      const dateRes = await fetchSystemDate()
+      sysDate = dateRes?.data?.data?.system_date || dateRes?.data?.system_date || sysDate
+    } catch (err) {
+      console.error('fetchSystemDate error', err)
+    }
+    systemDate.value = sysDate
+    currentMonth.value = sysDate.slice(0, 7)
+    transferForm.value.date = sysDate
+
+    const [warehousesRes, outletsRes, usersRes] = await Promise.all([
       http.get('/warehouses'),
       http.get('/outlets/hk'),
+      http.get('/users'),
     ])
     warehouses.value = warehousesRes.data.data || []
     hkOutlets.value  = outletsRes.data.data || []
+    users.value      = usersRes.data.data || usersRes.data || []
     if (warehouses.value.length > 0) {
       activeWarehouseId.value = warehouses.value[0].id
     }
@@ -155,8 +218,9 @@ async function addWarehouse() {
     if (!activeWarehouseId.value) activeWarehouseId.value = res.data.data.id
     showAddModal.value = false
     newWarehouse.value = { name: '', outlet_id: '' }
+    uiStore.showToast('Thêm kho mới thành công!', 'success')
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi thêm kho')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi thêm kho', 'error')
   } finally {
     isSaving.value = false
   }
@@ -177,15 +241,17 @@ async function updateWarehouse() {
     const idx = warehouses.value.findIndex(w => w.id === editWarehouse.value.id)
     if (idx !== -1) warehouses.value[idx] = res.data.data
     showEditModal.value = false
+    uiStore.showToast('Cập nhật thông tin kho thành công!', 'success')
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi cập nhật kho')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi cập nhật kho', 'error')
   } finally {
     isSaving.value = false
   }
 }
 
 async function deleteWarehouse() {
-  if (!confirm(`Xóa kho "${editWarehouse.value.name}"?`)) return
+  const confirmed = await uiStore.confirm({ message: `Xóa kho "${editWarehouse.value.name}"?` })
+  if (!confirmed) return
   try {
     await http.delete(`/warehouses/${editWarehouse.value.id}`)
     warehouses.value = warehouses.value.filter(w => w.id !== editWarehouse.value.id)
@@ -193,14 +259,19 @@ async function deleteWarehouse() {
       activeWarehouseId.value = warehouses.value[0]?.id || null
     }
     showEditModal.value = false
+    uiStore.showToast('Xóa kho thành công!', 'success')
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi xóa kho')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi xóa kho', 'error')
   }
 }
 
 // ─── Inventory Check ─────────────────────────────────────────────
 async function openCheckModal() {
-  checkForm.value = { month: currentMonth.value, note: '' }
+  checkForm.value = { 
+    month: currentMonth.value, 
+    note: currentCheck.value?.note || '', 
+    created_by: currentCheck.value?.created_by || authStore.user?.id || '' 
+  }
   showCheckModal.value = true // Open modal immediately
   await loadProductsInStock() // Load products in background
 }
@@ -208,17 +279,17 @@ async function openCheckModal() {
 async function createOrLoadCheck() {
   isSaving.value = true
   try {
-    if (!currentCheck.value) {
-      const res = await http.post('/inventory/checks', {
-        warehouse_id: activeWarehouseId.value,
-        month: checkForm.value.month,
-        note: checkForm.value.note,
-      })
-      currentCheck.value = res.data.data
-    }
+    const res = await http.post('/inventory/checks', {
+      warehouse_id: activeWarehouseId.value,
+      month: checkForm.value.month,
+      note: checkForm.value.note,
+      created_by: checkForm.value.created_by || null,
+    })
+    currentCheck.value = res.data.data
+    uiStore.showToast('Lưu phiếu kiểm kê thành công!', 'success')
   } catch (e) {
-    // Phiếu đã tồn tại thì reload
-    await loadCheckAndLogs()
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi lưu phiếu kiểm kê', 'error')
   } finally {
     isSaving.value = false
   }
@@ -235,38 +306,246 @@ async function addProductsToCheck() {
     currentCheck.value = res.data.data
     selectedProductIds.value = []
     showAddProductCheckModal.value = false
+    uiStore.showToast('Thêm sản phẩm thành công!', 'success')
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi thêm sản phẩm')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi thêm sản phẩm', 'error')
   } finally {
     isSaving.value = false
   }
 }
 
-async function updateCheckItem(itemId, field, value) {
+const updateTimeouts = {}
+const pendingFields = {}
+
+async function updateCheckItem(itemId, fields) {
   if (!currentCheck.value) return
-  try {
-    const payload = {}
-    payload[field] = parseFloat(value) || 0
-    const res = await http.put(
-      `/inventory/checks/${currentCheck.value.id}/items/${itemId}`,
-      payload
-    )
-    const idx = currentCheck.value.items.findIndex(i => i.id === itemId)
-    if (idx !== -1) currentCheck.value.items[idx] = res.data.data
-  } catch (e) {
-    console.error('updateCheckItem error', e)
+  
+  // Tích lũy các thay đổi locally
+  pendingFields[itemId] = { ...(pendingFields[itemId] || {}), ...fields }
+  
+  // Cập nhật giá trị UI hiển thị lập tức để không bị lag
+  const idx = currentCheck.value.items.findIndex(i => i.id === itemId)
+  if (idx !== -1) {
+    currentCheck.value.items[idx] = { ...currentCheck.value.items[idx], ...fields }
   }
+  
+  // Xóa timeout cũ nếu click liên tục
+  if (updateTimeouts[itemId]) {
+    clearTimeout(updateTimeouts[itemId])
+  }
+  
+  // Đặt timeout mới (500ms) để gom các lần click lại và gửi 1 request cuối cùng
+  updateTimeouts[itemId] = setTimeout(async () => {
+    const fieldsToSend = { ...pendingFields[itemId] }
+    delete pendingFields[itemId]
+    delete updateTimeouts[itemId]
+    
+    try {
+      const res = await http.put(
+        `/inventory/checks/${currentCheck.value.id}/items/${itemId}`,
+        fieldsToSend
+      )
+      // Chỉ cập nhật từ backend về nếu user không sửa tiếp trong lúc đang gửi request
+      if (!pendingFields[itemId]) {
+        const currentIdx = currentCheck.value.items.findIndex(i => i.id === itemId)
+        if (currentIdx !== -1) {
+          currentCheck.value.items[currentIdx] = { ...currentCheck.value.items[currentIdx], ...res.data.data }
+        }
+      }
+    } catch (e) {
+      console.error('updateCheckItem error', e)
+    }
+  }, 500)
+}
+
+function getInitialStock(item) {
+  if (!item) return 0
+  const well = parseFloat(item.well_balance) || 0
+  const stoke = parseFloat(item.stoke_take) || 0
+  return well > 0 ? well : stoke
+}
+
+function getInitialStockLabel(item) {
+  const val = getInitialStock(item)
+  return val > 0 ? val : ''
+}
+
+function onStokeTakeInput(item, val) {
+  const stokeTake = parseFloat(val) || 0
+  item.stoke_take = stokeTake
+  
+  const currentWell = parseFloat(item.well_balance) || 0
+  if (currentWell === 0) {
+    item.well_balance = stokeTake
+    item.different_qty = 0
+    updateCheckItem(item.id, { well_balance: stokeTake, stoke_take: stokeTake })
+  } else {
+    item.different_qty = stokeTake - currentWell
+    updateCheckItem(item.id, { stoke_take: stokeTake })
+  }
+}
+
+function onWellBalanceInput(item, val) {
+  const wellBalance = parseFloat(val) || 0
+  item.well_balance = wellBalance
+  
+  const currentStoke = parseFloat(item.stoke_take) || 0
+  if (currentStoke === 0) {
+    item.stoke_take = wellBalance
+    item.different_qty = 0
+    updateCheckItem(item.id, { well_balance: wellBalance, stoke_take: wellBalance })
+  } else {
+    item.different_qty = currentStoke - wellBalance
+    updateCheckItem(item.id, { well_balance: wellBalance })
+  }
+}
+
+function increaseQty(item, field) {
+  const currentVal = parseFloat(item[field]) || 0
+  const newVal = currentVal + 1
+  if (field === 'well_balance') {
+    onWellBalanceInput(item, newVal)
+  } else {
+    onStokeTakeInput(item, newVal)
+  }
+}
+
+function decreaseQty(item, field) {
+  const currentVal = parseFloat(item[field]) || 0
+  const newVal = Math.max(0, currentVal - 1)
+  if (field === 'well_balance') {
+    onWellBalanceInput(item, newVal)
+  } else {
+    onStokeTakeInput(item, newVal)
+  }
+}
+
+async function exportExcelCheck() {
+  if (!currentCheck.value) return
+  isSaving.value = true
+  try {
+    const res = await http.get(`/inventory/checks/${currentCheck.value.id}/export`, {
+      responseType: 'blob'
+    })
+    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const link = document.createElement('a')
+    link.href = window.URL.createObjectURL(blob)
+    link.download = `phieu_kiem_ke_${currentMonth.value}.xlsx`
+    link.click()
+    window.URL.revokeObjectURL(link.href)
+    uiStore.showToast('Xuất Excel thành công!', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast('Lỗi khi xuất file Excel', 'error')
+  } finally {
+    isSaving.value = false
+  }
+}
+
+function openStats() {
+  if (!currentCheck.value || !currentCheck.value.items?.length) {
+    uiStore.showToast('Không có dữ liệu để thống kê!', 'warning')
+    return
+  }
+  const items = currentCheck.value.items
+  const total = items.length
+  const discrepancyList = items.filter(i => parseFloat(i.different_qty) !== 0)
+  const discrepancies = discrepancyList.length
+  const normal = total - discrepancies
+
+  statsType.value = 'check'
+  statsTitle.value = 'THỐNG KÊ PHIẾU KIỂM KÊ'
+  statsData.value = {
+    total,
+    normal,
+    discrepancies,
+    discrepancyList,
+    totalReceive: 0,
+    totalExport: 0,
+    totalTransfer: 0,
+    lowStockProducts: [],
+    highestActivityName: '',
+    highestActivityCount: 0
+  }
+  showStatsModal.value = true
+}
+
+async function exportExcelLogs() {
+  if (!activeWarehouseId.value || !currentMonth.value) return
+  isLoading.value = true
+  try {
+    const res = await http.get('/inventory/logs/export', {
+      params: { warehouse_id: activeWarehouseId.value, month: currentMonth.value },
+      responseType: 'blob'
+    })
+    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const link = document.createElement('a')
+    link.href = window.URL.createObjectURL(blob)
+    const whName = activeWarehouse.value?.name || 'logs'
+    link.download = `nhat_ky_kho_${whName.toLowerCase().replace(/\s+/g, '_')}_${currentMonth.value}.xlsx`
+    link.click()
+    window.URL.revokeObjectURL(link.href)
+    uiStore.showToast('Xuất Excel thành công!', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast('Lỗi khi xuất file Excel', 'error')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function openMainStats() {
+  if (!tableItems.value.length) {
+    uiStore.showToast('Không có dữ liệu để thống kê!', 'warning')
+    return
+  }
+  const items = tableItems.value
+  const totalProducts = items.length
+  
+  const totalReceive = items.reduce((sum, i) => sum + (i.totalReceive || 0), 0)
+  const totalExport = items.reduce((sum, i) => sum + (i.totalExport || 0), 0)
+  const totalTransfer = items.reduce((sum, i) => sum + (i.totalTransfer || 0), 0)
+  
+  const lowStockProducts = items.filter(i => i.finalStock < 50)
+  const lowStockCount = lowStockProducts.length
+  
+  const highestActivityProd = [...items].sort((a, b) => {
+    const actA = (a.totalReceive || 0) + (a.totalExport || 0) + (a.totalTransfer || 0)
+    const actB = (b.totalReceive || 0) + (b.totalExport || 0) + (b.totalTransfer || 0)
+    return actB - actA
+  })[0]
+  
+  const highestActivityName = highestActivityProd ? highestActivityProd.product_name : ''
+  const highestActivityCount = highestActivityProd ? ((highestActivityProd.totalReceive || 0) + (highestActivityProd.totalExport || 0) + (highestActivityProd.totalTransfer || 0)) : 0
+  
+  statsType.value = 'main'
+  statsTitle.value = `THỐNG KÊ KHO THÁNG ${currentMonth.value}`
+  statsData.value = {
+    total: totalProducts,
+    normal: totalProducts - lowStockCount,
+    discrepancies: lowStockCount,
+    discrepancyList: [],
+    totalReceive,
+    totalExport,
+    totalTransfer,
+    lowStockProducts,
+    highestActivityName,
+    highestActivityCount
+  }
+  showStatsModal.value = true
 }
 
 async function deleteCheck() {
   if (!currentCheck.value) return
-  if (!confirm('Xóa phiếu kiểm kê tháng này?')) return
+  const confirmed = await uiStore.confirm({ message: 'Xóa phiếu kiểm kê tháng này?' })
+  if (!confirmed) return
   try {
     await http.delete(`/inventory/checks/${currentCheck.value.id}`)
     currentCheck.value = null
     showCheckModal.value = false
+    uiStore.showToast('Xóa phiếu kiểm kê thành công!', 'success')
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi xóa phiếu kiểm kê')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi xóa phiếu kiểm kê', 'error')
   }
 }
 
@@ -310,22 +589,26 @@ async function getBill(day) {
       warehouse_id: activeWarehouseId.value,
       date,
     })
-    alert(res.data.message)
+    uiStore.showToast(res.data.message, 'success')
     await loadCheckAndLogs()
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi lấy dữ liệu bill')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi lấy dữ liệu bill', 'error')
   } finally {
     isBillLoading.value = false
   }
 }
 
 // ─── Transfer ────────────────────────────────────────────────────
-function openTransferModal(item) {
+function openTransferModal(item, day = null) {
+  let selectedDate = systemDate.value
+  if (day !== null) {
+    selectedDate = `${currentMonth.value}-${String(day).padStart(2, '0')}`
+  }
   transferForm.value = {
     warehouse_id: activeWarehouseId.value,
     transfer_to_warehouse_id: null,
     product_id: item.product_id,
-    date: new Date().toISOString().slice(0, 10),
+    date: selectedDate,
     quantity: '',
   }
   transferProductLabel.value = item.product_name
@@ -339,11 +622,11 @@ async function submitTransfer() {
       ...transferForm.value,
       quantity: parseFloat(transferForm.value.quantity),
     })
-    alert(res.data.message)
+    uiStore.showToast(res.data.message, 'success')
     showTransferModal.value = false
     await loadCheckAndLogs()
   } catch (e) {
-    alert(e.response?.data?.message || 'Lỗi khi chuyển kho')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi chuyển kho', 'error')
   } finally {
     isSaving.value = false
   }
@@ -365,14 +648,15 @@ const tableItems = computed(() => {
     const totalReceive  = sumLogMonth(item.product_id, 'receive')
     const totalExport   = sumLogMonth(item.product_id, 'export')
     const totalTransfer = sumLogMonth(item.product_id, 'transfer')
-    const finalStock = Math.max(0, (item.well_balance || 0) + totalReceive - totalExport - totalTransfer)
+    const initialBalance = getInitialStock(item)
+    const finalStock = initialBalance + totalReceive - totalExport - totalTransfer
 
     return { ...item, totalReceive, totalExport, totalTransfer, finalStock }
   })
 
   // Warning only
   if (filterState.value.warningOnly) {
-    items = items.filter(i => i.finalStock < (i.well_balance * 0.2 || 100))
+    items = items.filter(i => i.finalStock < (getInitialStock(i) * 0.2 || 100))
   }
 
   // Activity filter
@@ -475,6 +759,57 @@ function toggleCategorySelect(cat, checked) {
   }
 }
 
+function createDragHandler(posRef) {
+  let dragStart = { x: 0, y: 0 }
+  let isDragging = false
+  let rafId = null
+
+  function onMouseMove(e) {
+    if (!isDragging) return
+    if (rafId) return
+    rafId = requestAnimationFrame(() => {
+      posRef.value.x = e.clientX - dragStart.x
+      posRef.value.y = e.clientY - dragStart.y
+      rafId = null
+    })
+  }
+
+  function onMouseUp() {
+    isDragging = false
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  return function startDrag(e) {
+    const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+    if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+    
+    isDragging = true
+    dragStart.x = e.clientX - posRef.value.x
+    dragStart.y = e.clientY - posRef.value.y
+    
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+}
+
+const startDragCheckModal = createDragHandler(checkModalPos)
+const startDragAddWhModal = createDragHandler(addWhModalPos)
+const startDragEditWhModal = createDragHandler(editWhModalPos)
+const startDragProdModal = createDragHandler(prodModalPos)
+const startDragTransferModal = createDragHandler(transferModalPos)
+
+// Reset modal positions when they close
+watch(showCheckModal, (v) => { if (!v) checkModalPos.value = { x: 0, y: 0 } })
+watch(showAddModal, (v) => { if (!v) addWhModalPos.value = { x: 0, y: 0 } })
+watch(showEditModal, (v) => { if (!v) editWhModalPos.value = { x: 0, y: 0 } })
+watch(showAddProductCheckModal, (v) => { if (!v) prodModalPos.value = { x: 0, y: 0 } })
+watch(showTransferModal, (v) => { if (!v) transferModalPos.value = { x: 0, y: 0 } })
+
 const otherWarehouses = computed(() =>
   warehouses.value.filter(w => w.id !== activeWarehouseId.value && w.is_active)
 )
@@ -511,7 +846,7 @@ const otherWarehouses = computed(() =>
           <!-- Placeholder nếu chưa có kho -->
           <span v-if="warehouses.length === 0" class="text-sm text-slate-400 italic pb-2">Chưa có kho nào</span>
         </div>
-        <button @click="showAddModal = true" class="btn-primary flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg shadow-sm cursor-pointer shrink-0">
+        <button @click="openAddWarehouseModal" class="btn-primary flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg shadow-sm cursor-pointer shrink-0">
           <Plus class="w-4 h-4" stroke-width="2.5" />
           Thêm Kho
         </button>
@@ -548,7 +883,11 @@ const otherWarehouses = computed(() =>
         </div>
 
         <div class="flex items-center gap-2">
-          <button class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer">
+          <button @click="openMainStats" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer" title="Xem thống kê kho cả tháng">
+            <BarChart2 class="w-4 h-4 text-indigo-500" />
+            Thống kê
+          </button>
+          <button @click="exportExcelLogs" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer" title="Xuất excel nhật ký kho cả tháng">
             <FileSpreadsheet class="w-4 h-4 text-emerald-600" />
             Xuất Excel
           </button>
@@ -597,11 +936,12 @@ const otherWarehouses = computed(() =>
                   </div>
                 </div>
               </th>
-              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 w-20 min-w-[80px] text-center align-middle sticky left-[256px] z-30 shadow-[1px_0_0_0_#e2e8f0] bg-slate-100">Tồn ĐK</th>
-              <th v-for="day in days" :key="day" colspan="3" class="py-2 px-2 text-center border-r border-slate-200" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.08)]' : 'bg-slate-50/50'">
+              <th rowspan="2" class="col-ton-dk py-3 px-4 bg-slate-100 text-center align-middle sticky left-[256px] z-30 text-slate-800 font-bold">Tồn ĐK</th>
+              <th v-for="day in days" :key="day" colspan="3" class="py-2 px-2 text-center border-r border-slate-200 transition-colors" :class="isSystemDate(day) ? 'col-today-header font-black' : (day % 2 === 0 ? 'col-alt-header text-slate-800' : 'bg-slate-50/50')">
                 <div class="flex flex-col items-center gap-0.5">
                   <span>{{ day }}</span>
                   <button
+                    v-if="isSystemDate(day)"
                     @click="getBill(day)"
                     :disabled="!activeWarehouse?.outlet_id || isBillLoading"
                     class="text-[9px] px-1 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
@@ -614,13 +954,13 @@ const otherWarehouses = computed(() =>
               <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle">SLN</th>
               <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle">SLX</th>
               <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle">SLC</th>
-              <th rowspan="2" class="py-3 px-4 border-l border-slate-200 bg-slate-100 text-center align-middle sticky right-0 shadow-[-1px_0_0_0_#e2e8f0] text-[var(--hk-primary-dark)] font-black">Tồn Cuối</th>
+              <th rowspan="2" class="col-ton-cuoi py-3 px-4 bg-slate-100 text-center align-middle sticky right-0 text-[var(--hk-primary-dark)] font-black">Tồn Cuối</th>
             </tr>
             <tr class="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-250 text-[10px] uppercase">
               <template v-for="day in days" :key="'sub'+day">
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.04)]' : 'bg-slate-50/20'">Nhập</th>
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.04)]' : 'bg-slate-50/20'">Xuất</th>
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.04)]' : 'bg-slate-50/20'">Chuyển</th>
+                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Nhập</th>
+                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Xuất</th>
+                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Chuyển</th>
               </template>
             </tr>
           </thead>
@@ -630,7 +970,7 @@ const otherWarehouses = computed(() =>
             <template v-if="isLoading">
               <tr v-for="i in 4" :key="'sk-'+i" class="animate-pulse">
                 <td class="py-2.5 px-4 border-r border-slate-200 sticky left-0 z-10 bg-white shadow-[1px_0_0_0_#e2e8f0]"><div class="h-4 w-40 bg-slate-200 rounded"></div></td>
-                <td class="py-2.5 px-2 border-r border-slate-200 sticky left-[256px] z-10 bg-white shadow-[1px_0_0_0_#e2e8f0]"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="col-ton-dk py-2.5 px-2 sticky left-[256px] bg-white"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
                 <template v-for="day in days" :key="'sk-day-'+day">
                   <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
                   <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
@@ -639,7 +979,7 @@ const otherWarehouses = computed(() =>
                 <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
                 <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
                 <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
-                <td class="py-2.5 px-4 border-l border-slate-200 sticky right-0 bg-white shadow-[-1px_0_0_0_#e2e8f0]"><div class="h-4 w-12 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="col-ton-cuoi py-2.5 px-4 sticky right-0 bg-white"><div class="h-4 w-12 bg-slate-200 rounded mx-auto"></div></td>
               </tr>
             </template>
 
@@ -695,37 +1035,41 @@ const otherWarehouses = computed(() =>
                 </div>
               </td>
               <!-- Tồn đầu kỳ -->
-              <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-700 font-semibold sticky left-[256px] z-10 bg-white group-hover:bg-slate-50 min-w-[80px] shadow-[1px_0_0_0_#e2e8f0]">
-                {{ item.well_balance || '' }}
+              <td class="col-ton-dk py-2 px-2 text-center text-slate-700 font-semibold bg-white group-hover:bg-slate-50 min-w-[80px]">
+                {{ getInitialStockLabel(item) }}
               </td>
               <!-- Nhật ký từng ngày (3 cột: nhập / xuất / chuyển) -->
               <template v-for="day in days" :key="'item-day-'+day">
-                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.02)]' : ''">
+                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
                   <input
                     type="number" min="0"
-                    :value="getLogVal(item.product_id, day, 'receive')"
+                    :value="getLogVal(item.product_id, day, 'receive') || ''"
                     @change="e => onLogInput(item.product_id, day, 'receive', e.target.value)"
                     class="w-12 text-center text-[11px] border border-transparent hover:border-slate-300 focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] rounded outline-none bg-transparent focus:bg-white transition-all py-1"
-                    placeholder="0"
+                    placeholder=""
                   />
                 </td>
-                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.02)]' : ''">
+                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
                   <input
                     type="number" min="0"
-                    :value="getLogVal(item.product_id, day, 'export')"
+                    :value="getLogVal(item.product_id, day, 'export') || ''"
                     @change="e => onLogInput(item.product_id, day, 'export', e.target.value)"
                     class="w-12 text-center text-[11px] border border-transparent hover:border-slate-300 focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] rounded outline-none bg-transparent focus:bg-white transition-all py-1"
-                    placeholder="0"
+                    placeholder=""
                   />
                 </td>
-                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center" :class="day % 2 === 0 ? 'bg-[rgba(151,213,255,0.02)]' : ''">
-                  <input
-                    type="number" min="0"
-                    :value="getLogVal(item.product_id, day, 'transfer')"
-                    @change="e => onLogInput(item.product_id, day, 'transfer', e.target.value)"
-                    class="w-12 text-center text-[11px] border border-transparent hover:border-slate-300 focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] rounded outline-none bg-transparent focus:bg-white transition-all py-1"
-                    placeholder="0"
-                  />
+                <td
+                  class="py-0.5 px-0.5 border-r border-slate-200 text-center cursor-pointer transition-colors select-none"
+                  :class="isSystemDate(day) ? 'col-today-body hover:bg-amber-100/30' : (day % 2 === 0 ? 'col-alt-body hover:bg-slate-100' : 'hover:bg-slate-100')"
+                  @click="openTransferModal(item, day)"
+                  title="Click để chuyển kho"
+                >
+                  <span
+                    class="text-[11px] font-semibold"
+                    :class="getLogVal(item.product_id, day, 'transfer') ? 'text-sky-600 font-bold' : 'text-slate-400'"
+                  >
+                    {{ getLogVal(item.product_id, day, 'transfer') || '' }}
+                  </span>
                 </td>
               </template>
               <!-- Tổng tháng -->
@@ -733,7 +1077,7 @@ const otherWarehouses = computed(() =>
               <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalExport || '' }}</td>
               <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalTransfer || '' }}</td>
               <!-- Tồn cuối -->
-              <td class="py-2 px-4 border-l border-slate-200 text-right font-black sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-1px_0_0_0_#e2e8f0] text-sm"
+              <td class="col-ton-cuoi py-2 px-4 text-right font-black sticky right-0 bg-white group-hover:bg-slate-50 text-sm"
                 :class="item.finalStock < 50 ? 'text-rose-600' : 'text-[var(--hk-primary-dark)]'"
               >
                 {{ item.finalStock?.toLocaleString() }}
@@ -755,9 +1099,9 @@ const otherWarehouses = computed(() =>
 
     <!-- Add Warehouse Modal -->
     <Transition name="hk-modal">
-      <div v-if="showAddModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-        <div class="bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden transform transition-all border border-slate-200">
-          <div class="px-5 py-3 flex items-center justify-between shadow-sm text-slate-800" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+      <div v-if="showAddModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
+        <div class="bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + addWhModalPos.x + 'px, ' + addWhModalPos.y + 'px)' }">
+          <div class="px-5 py-3 flex items-center justify-between shadow-sm text-slate-800 cursor-move select-none" @mousedown="startDragAddWhModal" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
             <h3 class="text-slate-800 font-bold text-[15px] uppercase tracking-wide">Thêm Kho Mới</h3>
             <button @click="showAddModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-5 h-5" /></button>
           </div>
@@ -787,9 +1131,9 @@ const otherWarehouses = computed(() =>
 
     <!-- Edit Warehouse Modal -->
     <Transition name="hk-modal">
-      <div v-if="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-        <div class="bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden transform transition-all border border-slate-200">
-          <div class="px-5 py-3 flex items-center justify-between shadow-sm text-slate-800" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+      <div v-if="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
+        <div class="bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + editWhModalPos.x + 'px, ' + editWhModalPos.y + 'px)' }">
+          <div class="px-5 py-3 flex items-center justify-between shadow-sm text-slate-800 cursor-move select-none" @mousedown="startDragEditWhModal" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
             <h3 class="text-slate-800 font-bold text-[15px] uppercase tracking-wide">Cập nhật Kho</h3>
             <button @click="showEditModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-5 h-5" /></button>
           </div>
@@ -821,50 +1165,59 @@ const otherWarehouses = computed(() =>
 
     <!-- Periodic Inventory Check Modal -->
     <Transition name="hk-modal">
-      <div v-if="showCheckModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-        <div class="bg-white rounded-xl shadow-2xl w-[1000px] flex flex-col overflow-hidden transform transition-all max-h-[90vh] border border-slate-200">
-          <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-slate-800" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+      <div v-if="showCheckModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
+        <div class="relative bg-white rounded-xl shadow-2xl w-[1100px] flex flex-col overflow-hidden max-h-[90vh] border border-slate-200" :style="{ transform: 'translate(' + checkModalPos.x + 'px, ' + checkModalPos.y + 'px)' }">
+          <LoadingOverlay :show="isSaving" />
+          <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-slate-800 cursor-move select-none" @mousedown="startDragCheckModal" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
             <h3 class="text-slate-800 font-bold text-[16px] uppercase tracking-wide">Kiểm Kê Tồn Kho Định Kỳ</h3>
             <button @click="showCheckModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-5 h-5" /></button>
           </div>
           <div class="p-5 flex flex-col gap-5 overflow-y-auto bg-slate-50 flex-1 hk-scroll">
             <!-- Header form -->
-            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-5 gap-4">
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Tháng / Năm</label>
                 <input type="month" v-model="checkForm.month" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all shadow-sm cursor-pointer bg-white" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Mã Phiếu</label>
-                <input type="text" :value="currentCheck?.id || 'Mới'" disabled class="w-full text-[13px] border border-slate-200 rounded-lg px-3 py-2 bg-slate-100 text-slate-500 cursor-not-allowed outline-none" />
+                <input type="text" :value="currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới'" disabled class="w-full text-[13px] border border-slate-200 rounded-lg px-3 py-2 bg-slate-100 text-slate-500 cursor-not-allowed outline-none" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Kho</label>
                 <input type="text" :value="activeWarehouse?.name || ''" disabled class="w-full text-[13px] border border-slate-200 rounded-lg px-3 py-2 bg-slate-100 text-slate-500 cursor-not-allowed outline-none" />
               </div>
               <div class="flex flex-col gap-1.5">
+                <label class="text-[12px] font-bold text-slate-700">Người Kiểm Kho</label>
+                <select v-model="checkForm.created_by" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all shadow-sm bg-white cursor-pointer">
+                  <option value="">-- Chọn người kiểm --</option>
+                  <option v-for="user in users" :key="user.id" :value="user.id">{{ user.name }}</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Ghi Chú</label>
                 <input type="text" v-model="checkForm.note" placeholder="Nhập ghi chú..." class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all shadow-sm bg-white" />
               </div>
             </div>
-
-            <!-- Items table -->
-            <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+ 
+            <!-- Items table with max-height & sticky header -->
+            <div class="border border-slate-200 rounded-xl overflow-auto bg-white shadow-sm max-h-[320px] hk-scroll">
               <table class="w-full text-left border-collapse text-[12px] whitespace-nowrap">
-                <thead class="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-600 font-bold">
+                <thead class="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-600 font-bold sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                   <tr>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-12">#</th>
+                    <th class="py-3 px-3 border-r border-slate-200 text-center w-28">Mã Kiểm Kê</th>
+                    <th class="py-3 px-3 border-r border-slate-200 text-center w-24">Mã SP</th>
                     <th class="py-3 px-4 border-r border-slate-200">Tên SP</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center">Đơn Vị</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-28">Tồn Đầu Kì</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-28">SL Thực Tế</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-24">Chênh Lệch</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-24">Đơn Vị</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-36">Tồn Đầu Kỳ</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-36">Số Lượng Thực Tế</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-28">Số Chênh Lệch</th>
                     <th class="py-3 px-4 text-center">Ghi Chú</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-[13px] text-slate-700">
                   <tr v-if="!currentCheck || !currentCheck.items?.length">
-                    <td colspan="7" class="py-12 text-center text-slate-400">
+                    <td colspan="8" class="py-12 text-center text-slate-400">
                       <div class="flex flex-col items-center gap-2">
                         <span class="text-3xl">📦</span>
                         <p class="font-semibold text-slate-600">Chưa có sản phẩm trong phiếu kiểm kê</p>
@@ -873,21 +1226,22 @@ const otherWarehouses = computed(() =>
                     </td>
                   </tr>
                   <tr v-else v-for="(item, idx) in currentCheck.items" :key="item.id" class="hover:bg-slate-50 transition-colors">
-                    <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-500 font-mono">{{ idx + 1 }}</td>
+                    <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-mono">KK-{{ currentCheck.id }}</td>
+                    <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-mono">{{ item.product_code }}</td>
                     <td class="py-2 px-4 border-r border-slate-200 font-semibold text-slate-800">{{ item.product_name }}</td>
                     <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-600">{{ item.unit || '—' }}</td>
                     <td class="py-2 px-2 border-r border-slate-200 text-center">
                       <input type="number" min="0"
                         :value="item.well_balance"
-                        @change="e => updateCheckItem(item.id, 'well_balance', e.target.value)"
-                        class="w-20 text-center text-[13px] border border-slate-300 rounded-md px-1 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
+                        @change="e => onWellBalanceInput(item, e.target.value)"
+                        class="w-20 text-center text-[13px] border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
                       />
                     </td>
                     <td class="py-2 px-2 border-r border-slate-200 text-center">
                       <input type="number" min="0"
                         :value="item.stoke_take"
-                        @change="e => updateCheckItem(item.id, 'stoke_take', e.target.value)"
-                        class="w-20 text-center text-[13px] border border-slate-300 rounded-md px-1 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
+                        @change="e => onStokeTakeInput(item, e.target.value)"
+                        class="w-20 text-center text-[13px] border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
                       />
                     </td>
                     <td class="py-2 px-2 border-r border-slate-200 text-center font-bold"
@@ -897,7 +1251,7 @@ const otherWarehouses = computed(() =>
                     </td>
                     <td class="py-2 px-3">
                       <input type="text" :value="item.note"
-                        @change="e => updateCheckItem(item.id, 'note', e.target.value)"
+                        @change="e => { item.note = e.target.value; updateCheckItem(item.id, { note: e.target.value }) }"
                         placeholder="..." class="w-full text-[13px] border border-slate-300 rounded-md px-2 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
                       />
                     </td>
@@ -906,17 +1260,26 @@ const otherWarehouses = computed(() =>
               </table>
             </div>
           </div>
-
+ 
           <!-- Footer -->
           <div class="px-5 py-4 border-t border-slate-200 bg-white flex items-center justify-end gap-3 shrink-0">
             <button @click="showAddProductCheckModal = true; loadProductsInStock()" class="px-5 py-2 flex items-center gap-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
-              <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm SP
+              <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm
             </button>
             <button @click="deleteCheck" v-if="currentCheck" class="px-5 py-2 flex items-center gap-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
-              <Trash2 class="w-4 h-4" /> Xóa Phiếu
+              <Trash2 class="w-4 h-4" /> Xóa
             </button>
             <button @click="createOrLoadCheck" :disabled="isSaving" class="px-5 py-2 flex items-center gap-1.5 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
-              <Save class="w-4 h-4" /> {{ isSaving ? 'Đang lưu...' : 'Lưu Phiếu' }}
+              <Save class="w-4 h-4" /> {{ isSaving ? 'Đang lưu...' : 'Lưu' }}
+            </button>
+            <button @click="exportExcelCheck" v-if="currentCheck" class="px-5 py-2 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
+              <FileSpreadsheet class="w-4 h-4" /> Xuất Excel
+            </button>
+            <button @click="openStats" v-if="currentCheck" class="px-5 py-2 flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
+              <BarChart2 class="w-4 h-4" /> Thống kê
+            </button>
+            <button @click="showCheckModal = false" class="px-5 py-2 flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[13px] font-bold transition-colors cursor-pointer">
+              <X class="w-4 h-4" /> Đóng
             </button>
           </div>
         </div>
@@ -925,9 +1288,10 @@ const otherWarehouses = computed(() =>
 
     <!-- Add Products Modal (Kiểm kê) -->
     <Transition name="hk-modal">
-      <div v-if="showAddProductCheckModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-        <div class="bg-white rounded-xl shadow-2xl w-[420px] flex flex-col overflow-hidden transform transition-all border border-slate-200">
-          <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-slate-800" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+      <div v-if="showAddProductCheckModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/25">
+        <div class="relative bg-white rounded-xl shadow-2xl w-[420px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + prodModalPos.x + 'px, ' + prodModalPos.y + 'px)' }">
+          <LoadingOverlay :show="isSaving" />
+          <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-slate-800 cursor-move select-none" @mousedown="startDragProdModal" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
             <h3 class="text-slate-800 font-bold text-[15px] uppercase tracking-wide">Chọn Sản Phẩm</h3>
             <button @click="showAddProductCheckModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-5 h-5" /></button>
           </div>
@@ -1003,9 +1367,10 @@ const otherWarehouses = computed(() =>
 
     <!-- Transfer Modal -->
     <Transition name="hk-modal">
-      <div v-if="showTransferModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-        <div class="bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden transform transition-all border border-slate-200">
-          <div class="px-5 py-3 flex items-center justify-between shadow-sm text-slate-800" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
+      <div v-if="showTransferModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
+        <div class="relative bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + transferModalPos.x + 'px, ' + transferModalPos.y + 'px)' }">
+          <LoadingOverlay :show="isSaving" />
+          <div class="px-5 py-3 flex items-center justify-between shadow-sm text-slate-800 cursor-move select-none" @mousedown="startDragTransferModal" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
             <h3 class="text-slate-800 font-bold text-[15px] uppercase tracking-wide">Chuyển Kho</h3>
             <button @click="showTransferModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-5 h-5" /></button>
           </div>
@@ -1048,6 +1413,144 @@ const otherWarehouses = computed(() =>
       </div>
     </Transition>
 
+    <!-- Beautiful Statistics Modal -->
+    <Transition name="hk-modal">
+      <div v-if="showStatsModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div class="relative bg-white rounded-2xl shadow-2xl w-[500px] max-h-[85vh] flex flex-col overflow-hidden border border-slate-200">
+          <!-- Header -->
+          <div class="px-6 py-4 flex items-center justify-between text-white shrink-0" style="background: linear-gradient(135deg, #4f46e5, #6366f1)">
+            <div class="flex items-center gap-2">
+              <BarChart3 class="w-5 h-5" />
+              <span class="font-bold text-[15px] tracking-wide">{{ statsTitle }}</span>
+            </div>
+            <button @click="showStatsModal = false" class="text-white/80 hover:text-white transition-colors cursor-pointer outline-none border-none bg-transparent">
+              <X class="w-5 h-5" />
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="p-6 overflow-y-auto flex-1 space-y-5 text-sm text-slate-650 bg-slate-50/50 hk-scroll">
+            
+            <!-- For Periodic Check Slip Statistics -->
+            <template v-if="statsType === 'check'">
+              <!-- Summary Badges Grid -->
+              <div class="grid grid-cols-3 gap-3">
+                <div class="bg-white p-3.5 rounded-xl border border-slate-100 flex flex-col items-center justify-center shadow-sm">
+                  <span class="text-xs font-semibold text-slate-400 uppercase">Tổng SP</span>
+                  <span class="text-2xl font-black text-slate-800 mt-1">{{ statsData.total }}</span>
+                </div>
+                <div class="bg-emerald-50 p-3.5 rounded-xl border border-emerald-100 flex flex-col items-center justify-center shadow-sm">
+                  <span class="text-xs font-semibold text-emerald-600 uppercase">Khớp</span>
+                  <span class="text-2xl font-black text-emerald-700 mt-1">{{ statsData.normal }}</span>
+                </div>
+                <div class="bg-rose-50 p-3.5 rounded-xl border border-rose-100 flex flex-col items-center justify-center shadow-sm">
+                  <span class="text-xs font-semibold text-rose-600 uppercase">Chênh lệch</span>
+                  <span class="text-2xl font-black text-rose-700 mt-1">{{ statsData.discrepancies }}</span>
+                </div>
+              </div>
+
+              <!-- Detailed Discrepancy List -->
+              <div v-if="statsData.discrepancyList && statsData.discrepancyList.length" class="space-y-2">
+                <h4 class="font-bold text-slate-700 flex items-center gap-1.5 text-xs uppercase tracking-wide">
+                  <AlertTriangle class="w-4 h-4 text-rose-500" />
+                  Danh sách hàng chênh lệch
+                </h4>
+                <div class="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-60 overflow-y-auto shadow-sm">
+                  <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-150">
+                        <th class="py-2.5 px-3">Sản phẩm</th>
+                        <th class="py-2.5 px-3 text-center">Sổ sách</th>
+                        <th class="py-2.5 px-3 text-center">Thực tế</th>
+                        <th class="py-2.5 px-3 text-right">Chênh lệch</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 font-medium">
+                      <tr v-for="item in statsData.discrepancyList" :key="item.id" class="hover:bg-slate-50 transition-colors">
+                        <td class="py-2 px-3 text-slate-700">{{ item.product_name }}</td>
+                        <td class="py-2 px-3 text-center text-slate-500">{{ item.well_balance }}</td>
+                        <td class="py-2 px-3 text-center text-slate-700">{{ item.stoke_take }}</td>
+                        <td class="py-2 px-3 text-right font-bold" :class="parseFloat(item.different_qty) > 0 ? 'text-emerald-600' : 'text-rose-600'">
+                          {{ parseFloat(item.different_qty) > 0 ? '+' : '' }}{{ item.different_qty }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              <div v-else class="flex flex-col items-center justify-center py-6 text-center text-slate-400 bg-white border border-slate-100 rounded-xl shadow-sm">
+                <CheckCircle2 class="w-8 h-8 text-emerald-500 mb-2" />
+                <span class="font-semibold text-slate-650">Tất cả sản phẩm đều khớp số liệu!</span>
+              </div>
+            </template>
+
+            <!-- For Main Monthly Logs Statistics -->
+            <template v-if="statsType === 'main'">
+              <div class="grid grid-cols-3 gap-3">
+                <div class="bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100 flex flex-col items-center justify-center shadow-sm">
+                  <span class="text-xs font-semibold text-indigo-600 uppercase">Tổng nhập</span>
+                  <span class="text-2xl font-black text-indigo-700 mt-1">{{ statsData.totalReceive }}</span>
+                </div>
+                <div class="bg-sky-50 p-3.5 rounded-xl border border-sky-100 flex flex-col items-center justify-center shadow-sm">
+                  <span class="text-xs font-semibold text-sky-600 uppercase">Tổng xuất</span>
+                  <span class="text-2xl font-black text-sky-700 mt-1">{{ statsData.totalExport }}</span>
+                </div>
+                <div class="bg-rose-50 p-3.5 rounded-xl border border-rose-100 flex flex-col items-center justify-center shadow-sm">
+                  <span class="text-xs font-semibold text-rose-600 uppercase">Tổng chuyển</span>
+                  <span class="text-2xl font-black text-rose-700 mt-1">{{ statsData.totalTransfer }}</span>
+                </div>
+              </div>
+
+              <!-- Low Stock Warnings -->
+              <div class="space-y-2">
+                <h4 class="font-bold text-slate-700 flex items-center gap-1.5 text-xs uppercase tracking-wide">
+                  <AlertTriangle class="w-4 h-4 text-amber-500" />
+                  Sản phẩm tồn thấp (&lt; 50)
+                </h4>
+                <div v-if="statsData.lowStockProducts && statsData.lowStockProducts.length" class="border border-slate-200 rounded-xl overflow-hidden bg-white max-h-40 overflow-y-auto shadow-sm">
+                  <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-150">
+                        <th class="py-2.5 px-3">Sản phẩm</th>
+                        <th class="py-2.5 px-3 text-right">Tồn cuối</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 font-medium">
+                      <tr v-for="item in statsData.lowStockProducts" :key="item.product_id" class="hover:bg-slate-50 transition-colors">
+                        <td class="py-2 px-3 text-slate-700">{{ item.product_name }}</td>
+                        <td class="py-2 px-3 text-right text-rose-600">{{ item.finalStock }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div v-else class="p-3 text-center text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-xl">
+                  Không có sản phẩm nào ở mức cảnh báo tồn thấp!
+                </div>
+              </div>
+
+              <!-- High Activity Info -->
+              <div v-if="statsData.highestActivityName" class="p-3.5 bg-slate-100/60 rounded-xl border border-slate-200 flex items-center gap-3">
+                <TrendingUp class="w-5 h-5 text-indigo-500 animate-pulse" />
+                <div>
+                  <div class="text-[11px] font-bold text-slate-400 uppercase">Hoạt động nhiều nhất</div>
+                  <div class="font-bold text-slate-750 text-xs">{{ statsData.highestActivityName }} ({{ statsData.highestActivityCount }} lượt phát sinh)</div>
+                </div>
+              </div>
+            </template>
+            
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0">
+            <button @click="showStatsModal = false" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[13px] font-bold transition-all shadow-md cursor-pointer outline-none border-none">
+              Đồng ý
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
@@ -1084,9 +1587,63 @@ const otherWarehouses = computed(() =>
 .row-fade-enter-active, .row-fade-leave-active { transition: all 0.2s ease; }
 .row-fade-enter-from, .row-fade-leave-to { opacity: 0; transform: translateY(-4px); }
 
-/* Input cells trong bảng */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button { opacity: 0; }
-input[type="number"]:hover::-webkit-inner-spin-button,
-input[type="number"]:hover::-webkit-outer-spin-button { opacity: 1; }
+/* Tách biệt rõ ràng cột Tồn cuối của bảng chính */
+.col-ton-cuoi {
+  position: sticky !important;
+  right: 0 !important;
+  border-left: 1px solid #cbd5e1 !important;
+  z-index: 5 !important;
+}
+.col-ton-cuoi::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: -12px !important;
+  width: 12px !important;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.16)) !important;
+  pointer-events: none !important;
+}
+
+/* Màu cột xen kẽ (ngày chẵn) dựa trên #0ea5e9 */
+.col-alt-header {
+  background-color: rgba(14, 165, 233, 0.14) !important;
+}
+.col-alt-subheader {
+  background-color: rgba(14, 165, 233, 0.07) !important;
+}
+.col-alt-body {
+  background-color: rgba(14, 165, 233, 0.04) !important;
+}
+
+/* Màu cột ngày hệ thống dựa trên #FFEB3B */
+.col-today-header {
+  background-color: rgba(255, 235, 59, 0.45) !important;
+  color: #78350f !important;
+  border-bottom: 2px solid #eab308 !important;
+}
+.col-today-subheader {
+  background-color: rgba(255, 235, 59, 0.28) !important;
+}
+.col-today-body {
+  background-color: rgba(255, 235, 59, 0.15) !important;
+}
+
+/* Cột Tồn đầu kỳ đổ bóng bên phải */
+.col-ton-dk {
+  position: sticky !important;
+  left: 256px !important;
+  border-right: 1px solid #cbd5e1 !important;
+  z-index: 10 !important;
+}
+.col-ton-dk::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  right: -12px !important;
+  width: 12px !important;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0)) !important;
+  pointer-events: none !important;
+}
 </style>
