@@ -21,6 +21,7 @@ const printCols = ref([])
 
 // Form thêm cột mới
 const newColName = ref('')
+const newColParentLabel = ref('')
 const newColWidth = ref('')
 
 const hkSymbolsList = computed(() => symbols.value.filter(s => s.group === 'hk'))
@@ -117,8 +118,10 @@ function addCol() {
   }
 
   const newCol = {
+    id: 'temp-' + Math.random().toString(36).substring(2, 9),
     template: activeTemplate.value,
     label: name,
+    parent_label: newColParentLabel.value.trim() || null,
     width: newColWidth.value.trim() || null,
     is_fixed: false,
     sort_order: currentTemplateCols.value.length + 1
@@ -126,8 +129,43 @@ function addCol() {
 
   printCols.value.push(newCol)
   newColName.value = ''
+  newColParentLabel.value = ''
   newColWidth.value = ''
   uiStore.showToast('Đã thêm cột mới vào danh sách nháp', 'success')
+}
+
+// Thêm cột con trực tiếp dưới một cột khác
+function addChildCol(index) {
+  const parentCol = currentTemplateCols.value[index]
+  if (!parentCol) return
+
+  let parentLabel = parentCol.parent_label
+  if (!parentLabel) {
+    parentLabel = parentCol.label || 'NHÓM MỚI'
+    parentCol.parent_label = parentLabel
+    parentCol.label = 'Cột 1'
+  }
+
+  const newCol = {
+    id: 'temp-' + Math.random().toString(36).substring(2, 9),
+    template: activeTemplate.value,
+    label: 'Cột mới',
+    parent_label: parentLabel,
+    width: parentCol.width || '',
+    is_fixed: false,
+    sort_order: parentCol.sort_order + 1
+  }
+
+  const otherTemplateCols = printCols.value.filter(c => c.template !== activeTemplate.value)
+  const templateCols = [...currentTemplateCols.value]
+  templateCols.splice(index + 1, 0, newCol)
+
+  templateCols.forEach((col, idx) => {
+    col.sort_order = idx + 1
+  })
+
+  printCols.value = [...otherTemplateCols, ...templateCols]
+  uiStore.showToast(`Đã thêm cột con dưới nhóm "${parentLabel}"`, 'success')
 }
 
 async function savePrintCols() {
@@ -405,6 +443,7 @@ async function confirmReset() {
                 <tr class="border-b border-slate-100 text-slate-400 font-bold text-[10px] uppercase">
                   <th class="pb-2 w-10 text-center">STT</th>
                   <th class="pb-2">Tên cột</th>
+                  <th class="pb-2">Cột cha / Nhóm</th>
                   <th class="pb-2 w-24">Độ rộng</th>
                   <th class="pb-2 w-28 text-center">Thuộc tính</th>
                   <th class="pb-2 text-center w-24">Thứ tự</th>
@@ -415,9 +454,28 @@ async function confirmReset() {
                 <tr v-for="(col, index) in currentTemplateCols" :key="col.id || col.label" class="hover:bg-slate-50/40">
                   <td class="py-2 text-center text-slate-400 font-bold">{{ index + 1 }}</td>
                   <td class="py-2 pr-2">
+                    <div class="flex flex-col gap-1">
+                      <input 
+                        v-model="col.label" 
+                        type="text" 
+                        :disabled="col.is_fixed"
+                        class="w-full border border-slate-200 rounded px-1.5 py-1 text-xs font-bold focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-500" 
+                      />
+                      <button 
+                        v-if="!col.is_fixed"
+                        @click="addChildCol(index)"
+                        class="self-start text-[9px] text-sky-600 hover:text-sky-800 font-bold flex items-center gap-0.5 border-0 bg-transparent p-0 cursor-pointer"
+                      >
+                        <Plus :size="10" />
+                        <span>Thêm cột con</span>
+                      </button>
+                    </div>
+                  </td>
+                  <td class="py-2 pr-2">
                     <input 
-                      v-model="col.label" 
+                      v-model="col.parent_label" 
                       type="text" 
+                      placeholder="Không có"
                       :disabled="col.is_fixed"
                       class="w-full border border-slate-200 rounded px-1.5 py-1 text-xs font-bold focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-500" 
                     />
@@ -493,6 +551,17 @@ async function confirmReset() {
                 class="border border-slate-200 rounded-md p-2 font-bold focus:outline-sky-500" 
               />
               <span class="text-[9px] text-slate-400">Có thể dùng dấu `\n` để xuống dòng trong tiêu đề in.</span>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="font-bold text-slate-600">Cột cha / Nhóm cột (Nếu có)</label>
+              <input 
+                v-model="newColParentLabel" 
+                type="text" 
+                placeholder="VD: GIỜ, DRAP, BỌC, KHĂN CÁC LOẠI..." 
+                class="border border-slate-200 rounded-md p-2 font-bold focus:outline-sky-500" 
+              />
+              <span class="text-[9px] text-slate-400">Để trống nếu cột không thuộc nhóm nào.</span>
             </div>
             
             <div class="flex flex-col gap-1">

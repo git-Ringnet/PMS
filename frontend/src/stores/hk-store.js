@@ -87,14 +87,24 @@ export const useHkStore = defineStore('hk', () => {
 
       if (printCols?.length) {
         worksheetColsDB.value = printCols
-          .filter(c => c.template === 'worksheet' && !c.is_fixed)
+          .filter(c => c.template === 'worksheet')
           .sort((a, b) => a.sort_order - b.sort_order)
-          .map(c => ({ label: c.label, width: c.width || '' }))
+          .map(c => ({
+            label: c.label,
+            parent_label: c.parent_label || null,
+            width: c.width || '',
+            is_fixed: !!c.is_fixed
+          }))
 
         supervisorColsDB.value = printCols
           .filter(c => c.template === 'supervisor')
           .sort((a, b) => a.sort_order - b.sort_order)
-          .map(c => ({ label: c.label, width: c.width || '', is_fixed: c.is_fixed }))
+          .map(c => ({
+            label: c.label,
+            parent_label: c.parent_label || null,
+            width: c.width || '',
+            is_fixed: !!c.is_fixed
+          }))
       }
     } catch (e) {
       console.warn('[hk-store] loadHkConfig fallback to hardcode', e)
