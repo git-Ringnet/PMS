@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryCheck;
+use App\Models\InventoryCheckItem;
 use App\Models\InventoryDailyLog;
 use App\Models\InventoryTransfer;
 use App\Models\Warehouse;
@@ -80,9 +82,10 @@ class InventoryLogController extends Controller
      * Body: { warehouse_id, date: YYYY-MM-DD }
      * Logic:
      *   1. Lấy outlet_id của kho (SP5409)
-     *   2. Query SP6000 (bill header) theo outlet + date + status != 0 (chưa xóa)
+     *   2. Query SP6000 (bill header) theo outlet + date + status != 2 (chưa xóa)
      *   3. JOIN SP6001 (chi tiết) lấy MaProduct + SUM(Quantity) — bỏ Deleted=1
-     *   4. Upsert vào inventory_daily_logs (cột export)
+     *   4. Filter chỉ lấy các sản phẩm có trong inventory_check_items của kho
+     *   5. Upsert vào inventory_daily_logs (cột export)
      */
     public function getBill(Request $request)
     {
@@ -100,15 +103,33 @@ class InventoryLogController extends Controller
             ], 422);
         }
 
-        // Query tổng số lượng bán theo sản phẩm từ HK bills (SP6000/SP6001)
-        // Bảng: housekeeping_service_bills (Ma, Outlet, Date, Status)
-        //        housekeeping_service_bill_details (BillId, MaProduct, Quantity, Deleted)
-        $billData = DB::table('housekeeping_service_bills as b')
+        // Lấy product_id được theo dõi trong kho (từ bất kỳ tháng nào)
+        // Nếu kho chưa có sản phẩm kiểm kê → vẫn lấy tất cả SP trong bill
+        $month = substr($validated['date'], 0, 7);
+        $check = InventoryCheck::where('warehouse_id', $validated['warehouse_id'])
+            ->where('month', $month)
+            ->first();
+
+        $allowedProductIds = $check
+            ? InventoryCheckItem::where('check_id', $check->id)->pluck('product_id')->toArray()
+            : [];
+
+        // Query tổng số lượng bán theo sản phẩm từ HK bills
+        // Status: 1 = active (chưa thanh toán), 2 = đã thanh toán
+        // → lấy cả 2 trạng thái, bỏ qua bill bị xóa vật lý khỏi DB
+        // Deleted=1 trong chi tiết = item bị gạch/xóa trong bill
+        $query = DB::table('housekeeping_service_bills as b')
             ->join('housekeeping_service_bill_details as i', 'i.BillId', '=', 'b.Ma')
             ->where('b.Outlet', $warehouse->outlet_id)
             ->whereDate('b.Date', $validated['date'])
-            ->where('b.Status', '!=', 0)   // bill chưa bị xóa
-            ->where('i.Deleted', 0)         // item chưa bị xóa
+            ->where('i.Deleted', 0);   // chỉ bỏ item đã bị xóa trong bill
+
+        // Nếu có danh sách sản phẩm kiểm kê → chỉ lấy sản phẩm thuộc kho
+        if (!empty($allowedProductIds)) {
+            $query->whereIn('i.MaProduct', $allowedProductIds);
+        }
+
+        $billData = $query
             ->groupBy('i.MaProduct')
             ->select('i.MaProduct as product_id', DB::raw('SUM(i.Quantity) as total_qty'))
             ->get();
@@ -116,7 +137,7 @@ class InventoryLogController extends Controller
         if ($billData->isEmpty()) {
             return response()->json([
                 'success' => true,
-                'message' => 'Không có dữ liệu hóa đơn cho ngày và kho này.',
+                'message' => "Không có dữ liệu hóa đơn nào tại outlet [{$warehouse->outlet_id}] ngày {$validated['date']}.",
                 'updated' => 0,
             ]);
         }
@@ -136,7 +157,7 @@ class InventoryLogController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Đã cập nhật xuất kho cho {$updated} sản phẩm từ hóa đơn.",
+            'message' => "Đã cập nhật xuất kho cho {$updated} sản phẩm từ hóa đơn outlet [{$warehouse->outlet_id}].",
             'updated' => $updated,
         ]);
     }

@@ -55,6 +55,7 @@ const statsData            = ref({
 const isLoading            = ref(false)
 const isSaving             = ref(false)
 const isBillLoading        = ref(false)
+const billDate             = ref('')  // ngày lấy bill, default = systemDate
 
 // ─── Warehouses ───────────────────────────────────────────────────
 const warehouses        = ref([])         // danh sách kho
@@ -598,6 +599,29 @@ async function getBill(day) {
   }
 }
 
+// Khi systemDate thay đổi, cập nhật billDate mặc định
+watch(systemDate, (val) => {
+  if (val && !billDate.value) billDate.value = val
+}, { immediate: true })
+
+function triggerGetBillByDate() {
+  const dateStr = billDate.value || systemDate.value
+  if (!dateStr) {
+    uiStore.showToast('Chưa có ngày để lấy bill!', 'warning')
+    return
+  }
+  if (!dateStr.startsWith(currentMonth.value)) {
+    uiStore.showToast(
+      `Ngày ${dateStr} không thuộc tháng đang xem (${currentMonth.value}).`,
+      'warning'
+    )
+    return
+  }
+  const parts = dateStr.split('-')
+  const day = parseInt(parts[2], 10)
+  getBill(day)
+}
+
 // ─── Transfer ────────────────────────────────────────────────────
 function openTransferModal(item, day = null) {
   let selectedDate = systemDate.value
@@ -890,6 +914,30 @@ const otherWarehouses = computed(() =>
             <BarChart2 class="w-4 h-4 text-indigo-500" />
             Thống kê
           </button>
+          <!-- Get Bill: chọn ngày + nút lấy -->
+          <div class="flex items-center gap-1 border border-slate-300 rounded-lg overflow-hidden shadow-sm bg-white">
+            <input
+              v-model="billDate"
+              type="date"
+              :min="currentMonth + '-01'"
+              :max="currentMonth + '-31'"
+              class="px-2 py-1.5 text-[12px] text-slate-700 bg-transparent outline-none border-none"
+              :disabled="isBillLoading"
+              title="Chọn ngày cần lấy bill"
+            />
+            <button 
+              @click="triggerGetBillByDate" 
+              :disabled="!activeWarehouse?.outlet_id || isBillLoading"
+              class="bg-sky-50 hover:bg-sky-100 border-l border-slate-300 text-slate-750 px-3 py-1.5 transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
+              title="Lấy dữ liệu xuất bán từ bill ngày đã chọn"
+            >
+              <svg class="w-4 h-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              <span v-if="isBillLoading">Đang lấy...</span>
+              <span v-else>Lấy Bill</span>
+            </button>
+          </div>
           <button @click="exportExcelLogs" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer" title="Xuất excel nhật ký kho cả tháng">
             <FileSpreadsheet class="w-4 h-4 text-emerald-600" />
             Xuất Excel
