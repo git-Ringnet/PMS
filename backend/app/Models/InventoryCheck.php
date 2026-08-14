@@ -25,6 +25,11 @@ class InventoryCheck extends Model
         return $this->hasMany(InventoryCheckItem::class, 'check_id');
     }
 
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     /**
      * Kiểm tra trong tháng đã có nhật ký nhập/xuất chưa
      * (nếu có thì không cho xóa phiếu kiểm kê)

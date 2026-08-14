@@ -212,10 +212,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
     Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
     Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);
+    Route::get('/inventory/checks/{id}/export', [\App\Http\Controllers\Api\InventoryCheckController::class, 'exportExcel']);
     Route::get('/inventory/products-in-stock', [\App\Http\Controllers\Api\InventoryCheckController::class, 'productsInStock']);
 
     // ─── Nhật ký nhập/xuất/chuyển kho từng ngày (Daily Logs) ─────────
     Route::get('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'index']);
+    Route::get('/inventory/logs/export', [\App\Http\Controllers\Api\InventoryLogController::class, 'exportExcel']);
     Route::put('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'upsert']);
     Route::post('/inventory/get-bill', [\App\Http\Controllers\Api\InventoryLogController::class, 'getBill']);
 
