@@ -856,6 +856,61 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertEquals('2026-08-21', $bRoom->arrival_date->toDateString());
     }
 
+    public function test_master_room_rate_flag_does_not_move_existing_room_charge_bills(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'is_master_room_rate' => false,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G0000099',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $roomBill = ServiceBill::create([
+            'Date' => '2026-08-21', 'OpenTime' => '12:00', 'Guest' => 'Room guest',
+            'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Amount' => 500000,
+            'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id,
+            'Edit' => 0, 'Status' => 1, 'Username' => $this->user->username,
+        ]);
+        $masterBill = ServiceBill::create([
+            'Date' => '2026-08-22', 'OpenTime' => '12:00', 'Guest' => $booking->booking_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Amount' => 500000,
+            'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => null,
+            'Edit' => 0, 'Status' => 1, 'Username' => $this->user->username,
+        ]);
+        $roomService = BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_bill_id' => $roomBill->Ma,
+            'service_code' => 'RM', 'service_date' => '2026-08-21',
+            'quantity' => 1, 'rate' => 500000, 'folio' => 1, 'is_room' => 1, 'is_posted' => 1,
+        ]);
+        $payload = [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+        ];
+
+        $this->putJson("/api/bookings/{$booking->id}", [...$payload, 'is_master_room_rate' => true])
+            ->assertSuccessful();
+        $this->putJson("/api/bookings/{$booking->id}", [...$payload, 'is_master_room_rate' => false])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $roomBill->Ma, 'RentalRoomId2' => $room->id]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $masterBill->Ma, 'RentalRoomId2' => null]);
+        $this->assertDatabaseHas('booking_room_services', ['id' => $roomService->id, 'service_bill_id' => $roomBill->Ma]);
+    }
+
     /**
      * TC-14: Dayuse is deducted from Room AV only when is_day_use = 1.
      */
@@ -1014,6 +1069,13 @@ class BookingBusinessRulesTest extends TestCase
             ->firstOrFail();
         $this->assertSame(1, (int) $service->is_room);
 
+        $this->patchJson("/api/booking-children/{$child->id}/breakfast-details/{$detail->id}", [
+            'is_room' => false,
+            'amount' => 90000,
+        ])->assertSuccessful()->assertJsonPath('data.is_room', false);
+
+        $this->assertDatabaseCount('booking_room_services', 1);
+        $this->assertSame(0, (int) $service->fresh()->is_room);
     }
 
     public function test_inline_service_update_bypasses_service_check_and_syncs_extra_bed(): void

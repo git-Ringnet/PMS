@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Auth;
 
 class BookingRoomService extends Model
 {
@@ -35,6 +37,7 @@ class BookingRoomService extends Model
         'is_room',
         'is_posted',
         'posted_at',
+        'posted_by_employee_code',
         'created_by',
         'updated_by',
         'deleted_at',
@@ -48,6 +51,10 @@ class BookingRoomService extends Model
         static::saving(function ($model) {
             if (!$model->preserveTotalAmount) {
                 $model->total_amount = floatval($model->quantity) * floatval($model->rate);
+            }
+
+            if ((int) $model->is_posted === 1 && !$model->posted_by_employee_code && Auth::user()) {
+                $model->posted_by_employee_code = Auth::user()->employee_code;
             }
         });
 
@@ -105,6 +112,28 @@ class BookingRoomService extends Model
     public static function catalogName(string $code, string $fallback = ''): string
     {
         return (string) (\App\Models\HotelService::where('code', $code)->value('name') ?: $fallback);
+    }
+
+    public static function updateOrCreateForDate(array $identity, $serviceDate, array $values): self
+    {
+        $date = Carbon::parse($serviceDate)->toDateString();
+        $query = static::query();
+
+        foreach ($identity as $column => $value) {
+            $query->where($column, $value);
+        }
+
+        $service = $query->whereDate('service_date', $date)->first();
+        if ($service) {
+            $service->fill($values)->save();
+            return $service;
+        }
+
+        return static::create([
+            ...$identity,
+            'service_date' => $date,
+            ...$values,
+        ]);
     }
 
     public function bookingRoom()

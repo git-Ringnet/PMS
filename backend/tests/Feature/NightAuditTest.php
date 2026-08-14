@@ -10,6 +10,9 @@ use App\Models\User;
 use App\Models\RegistrationStatus;
 use App\Models\SystemDateRoll;
 use App\Models\HotelSetting;
+use App\Models\HotelConfig;
+use App\Models\HotelService;
+use App\Models\Department;
 use App\Models\Room;
 use App\Models\RoomLock;
 use App\Models\ServiceBill;
@@ -33,6 +36,7 @@ class NightAuditTest extends TestCase
         parent::setUp();
         
         $this->artisan('db:seed', ['--class' => 'SystemConfigurationSeeder']);
+        $this->artisan('db:seed', ['--class' => 'DepartmentSeeder']);
         $this->artisan('db:seed', ['--class' => 'HotelDefinitionSeeder']);
         $this->artisan('db:seed', ['--class' => 'SpecialRequestSeeder']);
         $this->artisan('db:seed', ['--class' => 'SystemDateRollSeeder']);
@@ -130,6 +134,8 @@ class NightAuditTest extends TestCase
         // Kiểm tra đã post bill
         $this->assertDatabaseHas('service_bills', [
             'RentalRoomId1' => $bookingRoom->id,
+            'RegisterID2' => $booking->id,
+            'RentalRoomId2' => null,
             'ServiceId' => 'RM',
             'Amount' => 500000
         ]);
@@ -236,6 +242,32 @@ class NightAuditTest extends TestCase
             'status' => BookingRoom::STATUS_CHECKED_IN, // In house
             'rate' => 600000,
         ]);
+        $booking->update(['is_master_room_rate' => true]);
+
+        $department = Department::where('code', 'FO')->firstOrFail();
+        $childBreakfast = HotelService::updateOrCreate(
+            ['code' => 'BD'],
+            ['name' => 'Phụ thu ăn sáng trẻ em', 'price' => 90000, 'department_id' => $department->id]
+        );
+        $department->hotelServices()->syncWithoutDetaching([
+            $childBreakfast->id => ['description' => 'Phụ thu ăn sáng trẻ em'],
+        ]);
+        HotelConfig::updateOrCreate(
+            ['name' => 'Booking_BFChildSetServiceId'],
+            ['value' => 'BD']
+        );
+        $setupService = BookingRoomService::create([
+            'booking_room_id' => $bookingRoom->id,
+            'service_code' => 'BD',
+            'service_name' => 'Phụ thu ăn sáng trẻ em',
+            'service_date' => $sysDateStr,
+            'quantity' => 1,
+            'rate' => 90000,
+            'folio' => 1,
+            'is_room' => 1,
+            'is_posted' => 0,
+            'note' => 'Phụ thu ăn sáng trẻ em: Child 1',
+        ]);
 
         // Chạy sang ngày
         $response = $this->actingAs($this->user)->postJson('/api/night-audit/run', [
@@ -253,8 +285,22 @@ class NightAuditTest extends TestCase
         // Verify tiền phòng đã post
         $this->assertDatabaseHas('service_bills', [
             'RentalRoomId1' => $bookingRoom->id,
+            'RegisterID2' => $booking->id,
+            'RentalRoomId2' => null,
             'ServiceId' => 'RM',
             'Amount' => 600000
+        ]);
+
+        $setupService->refresh();
+        $this->assertDatabaseHas('service_bills', [
+            'Ma' => $setupService->service_bill_id,
+            'ServiceId' => 'BD',
+            'DescriptionServive' => 'Phụ thu ăn sáng trẻ em - Child 1',
+        ]);
+        $this->assertDatabaseHas('service_bill_details', [
+            'BillServiceId' => $setupService->service_bill_id,
+            'ServiceId' => 'BD',
+            'DescriptionServive' => 'Phụ thu ăn sáng trẻ em - Child 1',
         ]);
 
         // Verify room status changed to occupied_dirty (12)

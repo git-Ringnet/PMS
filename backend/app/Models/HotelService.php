@@ -46,4 +46,16 @@ class HotelService extends Model
             ->withPivot('description')
             ->withTimestamps();
     }
+
+    public function billDescription(?string $roomNumber = null, string $departmentCode = 'FO'): string
+    {
+        $department = $this->departments()
+            ->where('departments.code', $departmentCode)
+            ->first();
+        $description = trim((string) ($department?->pivot?->description ?: $this->name));
+
+        return $roomNumber
+            ? $description . ' - Phòng ' . $roomNumber
+            : $description;
+    }
 }

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { X, Plus, Info, Calendar } from '@lucide/vue'
 import { fetchFOServicesList, postFoServiceBill, postRoomCharge } from '@/services/booking-service'
 
@@ -28,6 +28,62 @@ const emit = defineEmits(['close', 'success'])
 const activeTab    = ref('service') // 'service' | 'room'
 const isSubmitting = ref(false)
 const errorMsg     = ref('')
+const modalRef     = ref(null)
+const modalPosition = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
+
+function clampModalPosition(x, y) {
+  const modal = modalRef.value
+  if (!modal) return { x, y }
+
+  const margin = 16
+  const width = modal.offsetWidth
+  const height = modal.offsetHeight
+  const baseLeft = (window.innerWidth - width) / 2
+  const baseTop = (window.innerHeight - height) / 2
+  const minX = margin - baseLeft
+  const maxX = window.innerWidth - margin - width - baseLeft
+  const minY = margin - baseTop
+  const maxY = window.innerHeight - margin - height - baseTop
+
+  return {
+    x: minX <= maxX ? Math.min(Math.max(x, minX), maxX) : 0,
+    y: minY <= maxY ? Math.min(Math.max(y, minY), maxY) : 0,
+  }
+}
+
+function beginModalDrag(event) {
+  if (event.button !== 0) return
+  isDraggingModal.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    left: modalPosition.value.x,
+    top: modalPosition.value.y,
+  }
+  window.addEventListener('pointermove', moveModal)
+  window.addEventListener('pointerup', endModalDrag)
+}
+
+function moveModal(event) {
+  if (!isDraggingModal.value) return
+  modalPosition.value = clampModalPosition(
+    dragStart.value.left + event.clientX - dragStart.value.x,
+    dragStart.value.top + event.clientY - dragStart.value.y,
+  )
+}
+
+function endModalDrag() {
+  isDraggingModal.value = false
+  window.removeEventListener('pointermove', moveModal)
+  window.removeEventListener('pointerup', endModalDrag)
+}
+
+function resetModalPosition() {
+  endModalDrag()
+  modalPosition.value = { x: 0, y: 0 }
+}
 
 // Ngày mặc định = YYYY-MM-DD
 function todayYmd() {
@@ -170,10 +226,17 @@ const roomPostMode = computed(() => {
 // ─────────────────────────────────────────────
 onMounted(() => {
   loadFoServices()
+  window.addEventListener('resize', resetModalPosition)
+})
+
+onUnmounted(() => {
+  endModalDrag()
+  window.removeEventListener('resize', resetModalPosition)
 })
 
 watch(() => props.show, (v) => {
   if (v) {
+    resetModalPosition()
     let initialDate = props.systemDate || todayYmd()
     if (bookingMinDate.value && initialDate < bookingMinDate.value) {
       initialDate = bookingMinDate.value
@@ -275,17 +338,20 @@ function handleClose() {
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
     <!-- Modal Dialog với width rộng hơn (max-w-xl) -->
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col text-sm border border-gray-100">
+    <div ref="modalRef"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col text-sm border border-gray-100"
+      :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`, transition: isDraggingModal ? 'none' : '' }">
 
       <!-- Header Navy Dark -->
-      <div class="bg-[#1e293b] text-white px-5 py-3.5 flex items-center justify-between">
+      <div class="bg-[#1e293b] text-white px-5 py-3.5 flex items-center justify-between cursor-move select-none touch-none"
+        @pointerdown="beginModalDrag">
         <div class="flex items-center gap-2.5">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <span class="font-semibold text-base">Thêm dịch vụ</span>
         </div>
-        <button @click="handleClose" class="text-gray-300 hover:text-white transition-colors p-1">
+        <button @pointerdown.stop @click="handleClose" class="text-gray-300 hover:text-white transition-colors p-1">
           <X class="w-4 h-4" />
         </button>
       </div>
@@ -356,7 +422,7 @@ function handleClose() {
                   class="w-full border border-gray-200 rounded-lg pl-3.5 pr-9 py-2.5 text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-800 font-medium appearance-none">
                   <option :value="null" disabled>{{ loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ' }}</option>
                   <option v-for="svc in foServices" :key="svc.code" :value="svc">
-                    {{ svc.name }} {{ Number(svc.price) > 0 ? `(${Number(svc.price).toLocaleString('vi-VN')} đ)` : '' }}
+                    {{ svc.name }}
                   </option>
                 </select>
 

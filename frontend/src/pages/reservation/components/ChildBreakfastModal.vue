@@ -576,7 +576,9 @@ async function loadData() {
             breakfast: !!d.breakfast,
             is_free,
             is_extra_charge,
-            is_room: is_extra_charge ? false : (!!d.is_room),
+            is_room: d.is_room !== undefined && d.is_room !== null
+              ? !!d.is_room
+              : !is_extra_charge,
             amount: isBaby ? 0 : (Number(d.amount) || 0)
           }
         })
