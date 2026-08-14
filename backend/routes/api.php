@@ -145,6 +145,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Hotel details configuration routes
     Route::apiResource('hotel-services', \App\Http\Controllers\Api\HotelServiceController::class);
+    Route::post('departments/{department}/services', [\App\Http\Controllers\Api\DepartmentController::class, 'attachService']);
+    Route::put('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'updateService']);
+    Route::delete('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'detachService']);
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
     Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);
@@ -169,6 +172,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
 
     // System Administration routes
+    Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase']);
+    Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase']);
     Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);

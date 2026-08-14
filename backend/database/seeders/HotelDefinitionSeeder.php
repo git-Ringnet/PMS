@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\HotelService;
+use App\Models\Department;
 use App\Models\Shift;
 use App\Models\HotelConfig;
 use App\Models\Branch;
@@ -44,14 +45,14 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Breakfast Child',
+                'short_name' => 'Ăn Sáng Trẻ Em',
                 'unit' => 'Người',
                 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
             ],
             [
                 'code' => 'BF',
-                'name' => 'Ăn sáng buffet người lớn',
+                'name' => 'Breakfast/Ăn Sáng Người Lớn',
                 'service_charge' => 5,
                 'tax' => 8,
                 'special_tax' => 0,
@@ -59,7 +60,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Ăn sáng buffet',
+                'short_name' => 'Ăn Sáng Người Lớn',
                 'unit' => 'Người',
                 'price' => 180000,
                 'department' => 'Reception/ Lê Tân'
@@ -89,7 +90,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Broken',
+                'short_name' => 'Phí Hư Hỏng',
                 'unit' => '',
                 'price' => 0,
                 'department' => 'House Keeping/Buồng Phòng'
@@ -119,7 +120,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Drop off',
+                'short_name' => 'Tiễn sân bay',
                 'unit' => '',
                 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
@@ -134,7 +135,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Extrabed',
+                'short_name' => 'Thêm Giường',
                 'unit' => '',
                 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
@@ -149,7 +150,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Early Checkin',
+                'short_name' => 'Phụ Thu Nhận Phòng Sớm',
                 'unit' => '',
                 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
@@ -164,7 +165,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Extra Person',
+                'short_name' => 'Phụ Thu Thêm Người',
                 'unit' => '',
                 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
@@ -179,7 +180,7 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'Extra RoomCharge',
+                'short_name' => 'Phụ thu tiền phòng',
                 'unit' => 'Dịch vụ',
                 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
@@ -194,15 +195,148 @@ class HotelDefinitionSeeder extends Seeder
                 'include_tax' => true,
                 'include_special_tax' => true,
                 'folio' => 1,
-                'short_name' => 'FB',
+                'short_name' => 'Dịch Vụ Ăn Uống',
                 'unit' => '',
                 'price' => 0,
                 'department' => 'Restaurant/Nhà Hàng'
+            ],
+            [
+                'code' => 'KC',
+                'name' => 'Kid Surcharge/ Phụ thu trẻ em',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Phụ thu trẻ em', 'unit' => 'Người', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'KE',
+                'name' => 'Key card/ Thu Phí Thẻ (mất/hỏng)',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Thu Phí Thẻ (mất/hỏng)', 'unit' => 'Thẻ', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'LA',
+                'name' => 'Laundry/Giặt Ủi',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Giặt Ủi', 'unit' => 'Dịch vụ', 'price' => 0,
+                'department' => 'House Keeping/Buồng Phòng'
+            ],
+            [
+                'code' => 'LO',
+                'name' => 'Late Checkout/Phụ Thu Trả Phòng Trễ',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Phụ Thu Trả Phòng Trễ', 'unit' => 'Lần', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'MB',
+                'name' => 'Minibar/Phí Minibar',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Phí Minibar', 'unit' => 'Dịch vụ', 'price' => 0,
+                'department' => 'House Keeping/Buồng Phòng'
+            ],
+            [
+                'code' => 'MR',
+                'name' => 'Meeting / Phòng họp',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Phòng họp', 'unit' => 'Lần', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'MS',
+                'name' => 'Other/Dịch Vụ Khác',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Dịch Vụ Khác', 'unit' => 'Dịch vụ', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'OT',
+                'name' => 'Other/ Dịch vụ khác (FB)',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Dịch vụ khác (FB)', 'unit' => 'Dịch vụ', 'price' => 0,
+                'department' => 'Restaurant/Nhà Hàng'
+            ],
+            [
+                'code' => 'PE',
+                'name' => 'Penalty/ Phí phạt',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Phí phạt', 'unit' => 'Lần', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'PU',
+                'name' => 'Pick up from the airport/ Đưa đón sân bay',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Đưa đón sân bay', 'unit' => 'Lần', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'RB',
+                'name' => 'Beverage/ Thức uống',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Thức uống', 'unit' => 'Dịch vụ', 'price' => 0,
+                'department' => 'Restaurant/Nhà Hàng'
+            ],
+            [
+                'code' => 'RF',
+                'name' => 'Food/ Thức ăn',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Thức ăn', 'unit' => 'Dịch vụ', 'price' => 0,
+                'department' => 'Restaurant/Nhà Hàng'
+            ],
+            [
+                'code' => 'RM',
+                'name' => 'Dịch vụ phòng nghỉ',
+                'service_charge' => 0, 'tax' => 0, 'special_tax' => 0,
+                'include_service_charge' => false, 'include_tax' => false, 'include_special_tax' => false,
+                'folio' => 1, 'short_name' => 'Dịch vụ phòng nghỉ', 'unit' => 'Đêm', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'TO',
+                'name' => 'Tour/ Vé Tham Quan',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Vé Tham Quan', 'unit' => 'Lần', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
+            ],
+            [
+                'code' => 'UP',
+                'name' => 'Upgrade/ Phí nâng hạng phòng',
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'folio' => 1, 'short_name' => 'Phí nâng hạng phòng', 'unit' => 'Lần', 'price' => 0,
+                'department' => 'Reception/ Lê Tân'
             ]
         ];
 
+        $departmentCodes = [
+            'Reception/ Lê Tân' => 'FO',
+            'House Keeping/Buồng Phòng' => 'HK',
+            'Restaurant/Nhà Hàng' => 'FB',
+            'SPA' => 'SP',
+            'Spa' => 'SP',
+        ];
+        $departmentIds = Department::pluck('id', 'code');
+
         foreach ($services as $s) {
-            HotelService::firstOrCreate(['name' => $s['name']], $s);
+            $departmentCode = $departmentCodes[$s['department']] ?? $s['department'];
+            unset($s['department']);
+            $s['department_id'] = $departmentIds[$departmentCode];
+            $service = HotelService::updateOrCreate(['code' => $s['code']], $s);
+            $service->departments()->syncWithoutDetaching([$s['department_id']]);
         }
 
         // 2. Seed Shifts

@@ -235,6 +235,7 @@ async function handleSubmit() {
         quantity:     parseFloat(quantity.value),
         rate:         parseFloat(unitPrice.value),
         folio:        parseInt(folio.value),
+        is_room:      1,
         description:  description.value,
         currency:     currency.value,
       })

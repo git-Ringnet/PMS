@@ -1,7 +1,8 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const uiStore = useUiStore()
 const loading = ref(false)
@@ -29,6 +30,19 @@ const rateForm = reactive({
   Disable: false,
   AllowChangeRate: false,
   IsChannelManager: false
+})
+
+watch(() => rateForm.BeginDate, (newVal) => {
+  if (newVal && rateForm.EndDate && rateForm.EndDate < newVal) {
+    rateForm.EndDate = newVal
+  }
+})
+
+watch(() => rateForm.EndDate, (newVal) => {
+  if (newVal && rateForm.BeginDate && newVal < rateForm.BeginDate) {
+    uiStore.showToast('Ngày kết thúc không được nhỏ hơn Ngày bắt đầu!', 'warning')
+    rateForm.EndDate = rateForm.BeginDate
+  }
 })
 
 const fetchRoomRateCodeData = async () => {
@@ -99,6 +113,10 @@ const openEditRate = (item) => {
 const saveRate = async () => {
   if (!rateForm.Ma) {
     uiStore.showToast('Vui lòng nhập mã giá phòng', 'warning')
+    return
+  }
+  if (rateForm.BeginDate && rateForm.EndDate && rateForm.EndDate < rateForm.BeginDate) {
+    uiStore.showToast('Ngày kết thúc phải lớn hơn hoặc bằng Ngày bắt đầu!', 'warning')
     return
   }
   loading.value = true
@@ -299,13 +317,11 @@ const totalRatePages = computed(() => Math.ceil(filteredRates.value.length / pag
           <div class="grid grid-cols-3 gap-4">
             <div class="flex flex-col gap-1">
               <label class="text-xs font-bold text-slate-500">Từ ngày</label>
-              <input type="date" v-model="rateForm.BeginDate"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold font-mono" />
+              <SingleDatePicker v-model="rateForm.BeginDate" placeholder="dd/mm/yyyy" />
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-bold text-slate-500">Đến ngày</label>
-              <input type="date" v-model="rateForm.EndDate"
-                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold font-mono" />
+              <SingleDatePicker v-model="rateForm.EndDate" :min-date="rateForm.BeginDate" placeholder="dd/mm/yyyy" />
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-bold text-slate-500">Tiền tệ</label>

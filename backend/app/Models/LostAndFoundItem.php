@@ -27,5 +27,6 @@ class LostAndFoundItem extends Model
         'date_reported',
         'status',
         'image',
+        'created_by',
     ];
 }

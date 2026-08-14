@@ -28,7 +28,9 @@ class HotelServiceResource extends JsonResource
             'short_name' => $this->short_name,
             'unit' => $this->unit,
             'price' => $this->price,
-            'department' => $this->department,
+            'department_id' => $this->department_id,
+            'department' => $this->department?->code,
+            'department_name' => $this->department?->name,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

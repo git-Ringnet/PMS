@@ -19,9 +19,9 @@ const loading = ref(false)
 const editing = ref(null)
 const draggedIndex = ref(null)
 const dragOverIndex = ref(null)
-const form = reactive({ code: '', name: '', group_key: '', service_code: '', is_active: true, order_index: 0 })
+const form = reactive({ code: '', name: '', service_code: '', is_active: true, order_index: 0 })
 
-const reset = () => Object.assign(form, { code: '', name: '', group_key: '', service_code: '', is_active: true, order_index: outlets.value.length + 1 })
+const reset = () => Object.assign(form, { code: '', name: '', service_code: '', is_active: true, order_index: outlets.value.length + 1 })
 const load = async () => {
   loading.value = true
   try { outlets.value = (await fetchHousekeepingOutlets()).data || [] }
@@ -30,7 +30,7 @@ const load = async () => {
 }
 const edit = (item) => { editing.value = item.id; Object.assign(form, item) }
 const save = async () => {
-  if (!form.code || !form.name || !form.group_key) return uiStore.showToast('Vui lòng nhập mã, tên và nhóm outlet', 'warning')
+  if (!form.code || !form.name) return uiStore.showToast('Vui lòng nhập mã và tên outlet', 'warning')
   try {
     if (editing.value) await updateHousekeepingOutlet(editing.value, { ...form })
     else await createHousekeepingOutlet({ ...form })
@@ -102,11 +102,11 @@ onMounted(() => { reset(); load() })
       <div class="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5 min-h-0 overflow-auto">
       <div class="border border-slate-200 rounded-xl overflow-auto bg-white">
         <table class="w-full text-xs border-collapse">
-          <thead class="bg-slate-50 text-slate-500 font-bold"><tr><th class="p-3 text-left">Thứ tự</th><th class="p-3 text-left">Mã</th><th class="p-3 text-left">Tên outlet</th><th class="p-3 text-left">Nhóm</th><th class="p-3 text-left">Mã dịch vụ</th><th class="p-3 text-left">Trạng thái</th><th class="p-3 text-right">Thao tác</th></tr></thead>
+          <thead class="bg-slate-50 text-slate-500 font-bold"><tr><th class="p-3 text-left">Thứ tự</th><th class="p-3 text-left">Mã</th><th class="p-3 text-left">Tên outlet</th><th class="p-3 text-left">Mã dịch vụ</th><th class="p-3 text-left">Trạng thái</th><th class="p-3 text-right">Thao tác</th></tr></thead>
           <tbody>
             <tr v-for="(item, index) in outlets" :key="item.id" draggable="true" @dblclick="edit(item)" @dragstart="startDrag(index)" @dragover.prevent="setDragOver(index)" @dragleave="dragOverIndex = null" @drop="dropOutlet(index)" class="border-t border-slate-100 hover:bg-slate-50 cursor-move relative" :class="[draggedIndex === index ? 'opacity-50' : '', dragOverIndex === index ? 'border-t-2 border-t-sky-500' : '']">
               <td class="p-3 whitespace-nowrap"><span class="inline-flex items-center gap-2 font-bold text-slate-600"><GripVertical class="w-4 h-4 text-slate-400" />{{ index + 1 }}</span></td>
-              <td class="p-3 font-bold">{{ item.code }}</td><td class="p-3 font-bold">{{ item.name }}</td><td class="p-3">{{ item.group_key }}</td><td class="p-3">{{ item.service_code || '-' }}</td>
+              <td class="p-3 font-bold">{{ item.code }}</td><td class="p-3 font-bold">{{ item.name }}</td><td class="p-3">{{ item.service_code || '-' }}</td>
               <td class="p-3" :class="item.is_active ? 'text-emerald-600' : 'text-slate-400'">{{ item.is_active ? 'Đang dùng' : 'Đã tắt' }}</td>
               <td class="p-3 text-right whitespace-nowrap"><button @click="edit(item)" title="Sửa outlet" class="inline-flex p-1.5 text-sky-600 hover:bg-sky-50 hover:scale-110 rounded transition-all duration-150"><Pencil class="w-4 h-4" /></button><button @click="remove(item)" title="Tắt outlet" class="inline-flex p-1.5 text-amber-600 hover:bg-amber-50 hover:scale-110 rounded transition-all duration-150"><Power class="w-4 h-4" /></button><button @click="forceRemove(item)" title="Xóa vĩnh viễn" class="inline-flex p-1.5 text-red-500 hover:bg-red-50 hover:scale-110 rounded transition-all duration-150"><Trash2 class="w-4 h-4" /></button></td>
             </tr>
@@ -119,7 +119,6 @@ onMounted(() => { reset(); load() })
         <h3 class="text-sm font-black text-slate-700">{{ editing ? 'Sửa outlet HK' : 'Thêm outlet HK' }}</h3>
         <input v-model="form.name" placeholder="Tên outlet" class="p-2 rounded border border-slate-200 text-xs" />
         <input v-model="form.code" placeholder="Mã outlet" class="p-2 rounded border border-slate-200 text-xs" />
-        <input v-model="form.group_key" placeholder="Nhóm dữ liệu, ví dụ: minibar" class="p-2 rounded border border-slate-200 text-xs" />
         <input v-model="form.service_code" placeholder="Mã dịch vụ" class="p-2 rounded border border-slate-200 text-xs" />
         <label class="text-xs font-bold"><input v-model="form.is_active" type="checkbox" class="mr-2" /> Đang hoạt động</label>
         <button @click="save" class="px-3 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold">Lưu cấu hình</button>

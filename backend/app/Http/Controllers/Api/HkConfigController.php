@@ -51,14 +51,19 @@ class HkConfigController extends Controller
             if (!empty($col['is_fixed'])) {
                 HkPrintCol::where('template', $template)
                     ->where('label', $col['label'])
-                    ->update(['sort_order' => $i + 1]);
+                    ->update([
+                        'sort_order'   => $i + 1,
+                        'parent_label' => $col['parent_label'] ?? null,
+                        'width'        => $col['width'] ?? null,
+                    ]);
             } else {
                 HkPrintCol::create([
-                    'template'   => $template,
-                    'label'      => $col['label'],
-                    'width'      => $col['width'] ?? '',
-                    'is_fixed'   => false,
-                    'sort_order' => $i + 1,
+                    'template'     => $template,
+                    'label'        => $col['label'],
+                    'parent_label' => $col['parent_label'] ?? null,
+                    'width'        => $col['width'] ?? '',
+                    'is_fixed'     => false,
+                    'sort_order'   => $i + 1,
                 ]);
             }
         }

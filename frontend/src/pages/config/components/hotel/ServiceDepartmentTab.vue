@@ -1,44 +1,20 @@
 <script setup>
-import { ref, reactive } from 'vue'
+import { computed, onMounted, ref, reactive } from 'vue'
+import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
 
-const departments = ref([
-  'Restaurant/Nhà Hàng',
-  'Reception/ Lê Tân',
-  'House Keeping/Buồng Phòng',
-  'Spa'
-])
-const activeDepartment = ref('Restaurant/Nhà Hàng')
-const departmentServices = ref({
-  'Restaurant/Nhà Hàng': [
-    { id: 1, name: 'Buffet sáng người lớn', description: 'Buffet sáng tiêu chuẩn cho người lớn' },
-    { id: 2, name: 'Buffet sáng trẻ em', description: 'Buffet sáng tiêu chuẩn cho trẻ em' },
-    { id: 3, name: 'Nước ngọt lon', description: 'Coca, Pepsi, Fanta các loại' },
-    { id: 4, name: 'Bia Heineken', description: 'Bia lon Heineken' }
-  ],
-  'Reception/ Lê Tân': [
-    { id: 5, name: 'Đưa đón sân bay', description: 'Xe đưa đón sân bay Cam Ranh 4-7 chỗ' },
-    { id: 6, name: 'Giặt ủi nhanh', description: 'Giặt ủi lấy liền trong 4 tiếng' },
-    { id: 7, name: 'Thuê xe máy', description: 'Cho thuê xe máy tay ga/xe số theo ngày' }
-  ],
-  'House Keeping/Buồng Phòng': [
-    { id: 8, name: 'Dọn phòng thêm giờ', description: 'Yêu cầu dọn dẹp phòng ngoài giờ định kỳ' },
-    { id: 9, name: 'Thêm gối phụ', description: 'Yêu cầu thêm gối nằm phụ' },
-    { id: 10, name: 'Thêm chăn/mền phụ', description: 'Yêu cầu thêm chăn mền phụ' }
-  ],
-  'Spa': [
-    { id: 11, name: 'Massage body đá nóng', description: 'Massage toàn thân bằng đá nóng 60 phút' },
-    { id: 12, name: 'Xông hơi tinh dầu', description: 'Xông hơi ướt/khô kết hợp tinh dầu sả chanh' }
-  ]
-})
+const departments = ref([])
+const hotelServices = ref([])
+const activeDepartmentId = ref(null)
+const activeDepartment = computed(() => departments.value.find(department => department.id === activeDepartmentId.value) || null)
+const departmentServices = computed(() => activeDepartment.value?.hotel_services || [])
 
 const isDeptServiceModalOpen = ref(false)
 const isEditDeptServiceMode = ref(false)
 const deptServiceFormState = reactive({
-  id: null,
-  name: '',
+  hotel_service_id: null,
   description: ''
 })
 const searchDeptServiceQuery = ref('')
@@ -46,8 +22,7 @@ const searchDeptServiceQuery = ref('')
 const openAddDeptServiceModal = () => {
   isEditDeptServiceMode.value = false
   Object.assign(deptServiceFormState, {
-    id: null,
-    name: '',
+    hotel_service_id: hotelServices.value[0]?.id || null,
     description: ''
   })
   isDeptServiceModalOpen.value = true
@@ -56,35 +31,43 @@ const openAddDeptServiceModal = () => {
 const openEditDeptServiceModal = (service) => {
   isEditDeptServiceMode.value = true
   Object.assign(deptServiceFormState, {
-    id: service.id,
-    name: service.name,
-    description: service.description
+    hotel_service_id: service.id,
+    description: service.pivot?.description || ''
   })
   isDeptServiceModalOpen.value = true
 }
 
-const saveDeptService = () => {
-  if (!deptServiceFormState.name) {
-    uiStore.showToast('Vui lòng nhập tên dịch vụ', 'warning')
+const fetchData = async () => {
+  const [departmentResponse, serviceResponse] = await Promise.all([
+    http.get('/departments'),
+    http.get('/hotel-services')
+  ])
+  departments.value = departmentResponse.data?.data || []
+  hotelServices.value = serviceResponse.data?.data || []
+  if (!activeDepartmentId.value) activeDepartmentId.value = departments.value[0]?.id || null
+}
+
+const saveDeptService = async () => {
+  if (!activeDepartment.value || !deptServiceFormState.hotel_service_id) {
+    uiStore.showToast('Vui lòng chọn dịch vụ', 'warning')
     return
   }
-  const activeList = departmentServices.value[activeDepartment.value] || []
-  if (isEditDeptServiceMode.value) {
-    const idx = activeList.findIndex(s => s.id === deptServiceFormState.id)
-    if (idx !== -1) {
-      activeList[idx] = { ...activeList[idx], name: deptServiceFormState.name, description: deptServiceFormState.description }
-    }
-    uiStore.showToast('Cập nhật dịch vụ bộ phận thành công!', 'success')
-  } else {
-    const newId = Date.now()
-    activeList.push({
-      id: newId,
-      name: deptServiceFormState.name,
+  try {
+    const payload = {
+      hotel_service_id: deptServiceFormState.hotel_service_id,
       description: deptServiceFormState.description
-    })
-    uiStore.showToast('Thêm dịch vụ vào bộ phận thành công!', 'success')
+    }
+    if (isEditDeptServiceMode.value) {
+      await http.put(`/departments/${activeDepartment.value.id}/services/${deptServiceFormState.hotel_service_id}`, payload)
+    } else {
+      await http.post(`/departments/${activeDepartment.value.id}/services`, payload)
+    }
+    await fetchData()
+    uiStore.showToast('Lưu dịch vụ bộ phận thành công!', 'success')
+    isDeptServiceModalOpen.value = false
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể lưu dịch vụ bộ phận', 'error')
   }
-  isDeptServiceModalOpen.value = false
 }
 
 const deleteDeptService = async (serviceId) => {
@@ -95,13 +78,12 @@ const deleteDeptService = async (serviceId) => {
     cancelText: 'Hủy'
   })
   if (!confirmed) return
-  const activeList = departmentServices.value[activeDepartment.value] || []
-  const idx = activeList.findIndex(s => s.id === serviceId)
-  if (idx !== -1) {
-    activeList.splice(idx, 1)
-    uiStore.showToast('Xóa dịch vụ thành công!', 'success')
-  }
+  await http.delete(`/departments/${activeDepartment.value.id}/services/${serviceId}`)
+  await fetchData()
+  uiStore.showToast('Xóa dịch vụ thành công!', 'success')
 }
+
+onMounted(fetchData)
 </script>
 
 <template>
@@ -111,10 +93,10 @@ const deleteDeptService = async (serviceId) => {
       <span
         class="text-xs font-black text-slate-400 uppercase tracking-widest px-2 pb-2 block border-b border-slate-200">Bộ
         phận</span>
-      <button v-for="dept in departments" :key="dept" @click="activeDepartment = dept"
+      <button v-for="dept in departments" :key="dept.id" @click="activeDepartmentId = dept.id"
         class="w-full text-left px-3 py-2 rounded-lg font-bold text-xs border-none bg-transparent cursor-pointer transition-colors"
-        :class="activeDepartment === dept ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100' : 'text-slate-600 hover:bg-slate-100'">
-        {{ dept }}
+        :class="activeDepartmentId === dept.id ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100' : 'text-slate-600 hover:bg-slate-100'">
+        {{ dept.code }} - {{ dept.name }}
       </button>
     </div>
 
@@ -122,7 +104,7 @@ const deleteDeptService = async (serviceId) => {
     <div class="flex-1 flex flex-col gap-4">
       <div class="flex justify-between items-center pb-2 border-b border-slate-100 flex-wrap gap-2">
         <span class="text-xs font-black text-slate-700 uppercase tracking-wider">
-          Dịch vụ thuộc bộ phận: {{ activeDepartment }}
+          Dịch vụ thuộc bộ phận: {{ activeDepartment?.name || '-' }}
         </span>
         <div class="flex gap-2">
           <button @click="openAddDeptServiceModal"
@@ -145,11 +127,11 @@ const deleteDeptService = async (serviceId) => {
           </thead>
           <tbody>
             <tr
-              v-for="s in (departmentServices[activeDepartment] || []).filter(item => !searchDeptServiceQuery || item.name.toLowerCase().includes(searchDeptServiceQuery.toLowerCase()))"
+              v-for="s in departmentServices.filter(item => !searchDeptServiceQuery || item.name.toLowerCase().includes(searchDeptServiceQuery.toLowerCase()))"
               :key="s.id" @click="openEditDeptServiceModal(s)"
               class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
               <td class="p-3 font-bold text-slate-800">{{ s.name }}</td>
-              <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed">{{ s.description || '-' }}</td>
+              <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed">{{ s.pivot?.description || '-' }}</td>
               <td class="p-3 text-right">
                 <div class="flex items-center justify-end gap-1">
                   <button @click.stop="deleteDeptService(s.id)"
@@ -163,7 +145,7 @@ const deleteDeptService = async (serviceId) => {
                 </div>
               </td>
             </tr>
-            <tr v-if="!(departmentServices[activeDepartment] || []).length">
+            <tr v-if="!departmentServices.length">
               <td colspan="3" class="p-6 text-center text-slate-400 italic">Chưa cấu hình dịch vụ bộ phận nào.</td>
             </tr>
           </tbody>
@@ -188,9 +170,13 @@ const deleteDeptService = async (serviceId) => {
         <!-- Modal Body Form -->
         <div class="p-6 flex flex-col gap-4 text-sm font-bold text-slate-600">
           <div class="flex flex-col gap-1.5">
-            <span>Tên dịch vụ bộ phận*</span>
-            <input type="text" v-model="deptServiceFormState.name" placeholder="Ví dụ: Buffet sáng, Massage..."
-              class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
+            <span>Dịch vụ*</span>
+            <select v-model="deptServiceFormState.hotel_service_id" :disabled="isEditDeptServiceMode"
+              class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm bg-white">
+              <option v-for="service in hotelServices" :key="service.id" :value="service.id">
+                {{ service.code }} - {{ service.name }}
+              </option>
+            </select>
           </div>
           <div class="flex flex-col gap-1.5">
             <span>Mô tả dịch vụ</span>

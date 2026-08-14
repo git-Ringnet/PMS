@@ -6,6 +6,7 @@ import { useUiStore } from '@/stores/ui-store'
 const uiStore = useUiStore()
 const loading = ref(false)
 const hotelServices = ref([])
+const departments = ref([])
 const searchServiceQuery = ref('')
 
 const isEditMode = ref(false)
@@ -24,8 +25,13 @@ const serviceFormState = reactive({
   short_name: '',
   unit: '',
   price: 0,
-  department: 'Reception/ Lê Tân'
+  department_id: null
 })
+
+const fetchDepartments = async () => {
+  const res = await http.get('/departments')
+  departments.value = res.data?.data || []
+}
 
 const fetchHotelServices = async () => {
   loading.value = true
@@ -57,7 +63,7 @@ const openAddServiceModal = () => {
     short_name: '',
     unit: '',
     price: 0,
-    department: 'Reception/ Lê Tân'
+    department_id: departments.value.find(department => department.code === 'FO')?.id || departments.value[0]?.id || null
   })
   isServiceModalOpen.value = true
 }
@@ -78,14 +84,14 @@ const openEditServiceModal = (service) => {
     short_name: service.short_name,
     unit: service.unit,
     price: service.price,
-    department: service.department
+    department_id: service.department_id
   })
   isServiceModalOpen.value = true
 }
 
 const saveService = async () => {
-  if (!serviceFormState.code || !serviceFormState.name) {
-    uiStore.showToast('Vui lòng điền mã và tên dịch vụ', 'warning')
+  if (!serviceFormState.code || !serviceFormState.name || !serviceFormState.department_id) {
+    uiStore.showToast('Vui lòng điền mã, tên dịch vụ và bộ phận', 'warning')
     return
   }
   loading.value = true
@@ -154,7 +160,7 @@ const formatCurrency = (val) => {
 }
 
 onMounted(() => {
-  fetchHotelServices()
+  Promise.all([fetchDepartments(), fetchHotelServices()])
 })
 </script>
 
@@ -239,7 +245,7 @@ onMounted(() => {
             <td class="p-3 text-slate-600 font-semibold">{{ s.short_name || '-' }}</td>
             <td class="p-3 text-slate-600 font-semibold">{{ s.unit || '-' }}</td>
             <td class="p-3 text-right font-extrabold text-sky-700">{{ formatCurrency(s.price) }}</td>
-            <td class="p-3 text-slate-500 font-semibold text-xs">{{ s.department || '-' }}</td>
+            <td class="p-3 text-slate-500 font-semibold text-xs">{{ s.department_name || '-' }}</td>
             <td class="p-3 text-right">
               <div class="flex items-center justify-end gap-1">
                 <button @click.stop="deleteService(s.id)"
@@ -302,12 +308,11 @@ onMounted(() => {
 
               <div class="flex flex-col gap-1.5">
                 <span>Bộ phận</span>
-                <select v-model="serviceFormState.department"
+                <select v-model="serviceFormState.department_id"
                   class="border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-sky-500 text-sm font-semibold">
-                  <option value="Reception/ Lê Tân">Reception/ Lê Tân</option>
-                  <option value="House Keeping/Buồng Phòng">House Keeping/Buồng Phòng</option>
-                  <option value="Restaurant/Nhà Hàng">Restaurant/Nhà Hàng</option>
-                  <option value="SPA">SPA</option>
+                  <option v-for="department in departments" :key="department.id" :value="department.id">
+                    {{ department.code }} - {{ department.name }}
+                  </option>
                 </select>
               </div>
             </div>

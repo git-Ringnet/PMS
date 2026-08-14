@@ -80,7 +80,7 @@
 
         <div class="info-field flex flex-col gap-1">
           <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Ngày</label>
-          <input type="date" v-model="form.date" class="h-8 px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] w-[135px] cursor-pointer" />
+          <input type="date" v-model="form.date" :max="systemDate" class="h-8 px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] w-[135px] cursor-pointer" />
         </div>
 
         <div class="info-field flex flex-col gap-1">
@@ -153,7 +153,7 @@
                 type="text" 
                 v-model="productSearchQuery" 
                 placeholder="Tìm sản phẩm..." 
-                class="w-full h-8 pl-8 pr-2.5 text-xs border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-[#1a6b8a] outline-none transition-colors" 
+                class="w-full h-8 pl-8 pr-2.5 text-xs border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-[#1a6b8a] outline-none transition-colors"
               />
             </div>
           </div>
@@ -236,11 +236,11 @@
           <!-- Table Body -->
           <div class="tbl-body flex-1 overflow-y-auto">
             <template v-if="cart.length > 0">
-              <template v-for="grpKey in ['minibar', 'giatui', 'dengbu']" :key="grpKey">
+              <template v-for="grpKey in tabKeys" :key="grpKey">
                 <template v-if="groupedCart[grpKey] && groupedCart[grpKey].length > 0">
                   <!-- Group Header -->
                   <div class="group-header px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5">
-                    <span class="group-dot w-1.75 h-1.75 rounded-full" :style="{ background: GROUP_COLORS[grpKey] }"></span>
+                    <span class="group-dot w-1.75 h-1.75 rounded-full" :style="{ background: GROUP_COLORS[grpKey] || '#64748b' }"></span>
                     <span>{{ GROUP_LABELS[grpKey] }}</span>
                   </div>
 
@@ -261,7 +261,7 @@
                         v-model.number="item.qty" 
                         min="1" 
                         @input="refreshCart"
-                        class="cell-input w-full h-7 border border-slate-300 rounded text-center text-xs text-slate-800 focus:border-[#1a6b8a] outline-none" 
+                        class="cell-input w-full h-7 border border-slate-300 rounded text-center text-xs text-slate-800 focus:border-[#1a6b8a] outline-none"
                       />
                     </div>
 
@@ -275,7 +275,7 @@
                         :disabled="form.isFree"
                         :placeholder="globalPct ? `${globalPct}` : '0'"
                         @input="refreshCart"
-                        class="cell-input w-full h-7 border border-slate-300 rounded text-center text-xs text-slate-800 focus:border-[#1a6b8a] outline-none pr-5 disabled:bg-slate-100 disabled:opacity-50" 
+                        class="cell-input w-full h-7 border border-slate-300 rounded text-center text-xs text-slate-800 focus:border-[#1a6b8a] outline-none pr-5 disabled:bg-slate-100 disabled:opacity-50"
                       />
                       <span class="pct-unit absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">%</span>
                     </div>
@@ -406,6 +406,7 @@ const form = ref({
   isFree: false,
   note: ''
 })
+const systemDate = ref(form.value.date)
 
 const handleClickOutside = (e) => {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target)) {
@@ -494,6 +495,7 @@ const loadSystemDate = async () => {
     const res = await fetchSystemDate()
     const sysDate = res.data?.data?.system_date || res.data?.system_date
     if (sysDate) {
+      systemDate.value = sysDate
       form.value.date = sysDate
     }
   } catch (err) {
@@ -599,11 +601,7 @@ watch(() => [props.initialRoomId, props.initialGuestId], () => {
   syncSelectedOption()
 })
 
-const dbProductsData = ref({
-  minibar: {},
-  giatui: {},
-  dengbu: {}
-})
+const dbProductsData = ref({})
 const housekeepingOutlets = ref([])
 
 const loadingProducts = ref(true)
@@ -618,29 +616,20 @@ const loadDbProducts = async () => {
     ])
 
     housekeepingOutlets.value = (resOutlets.data || []).filter(o => o.is_active && o.service_code)
+    if (!tabKeys.value.includes(currentTab.value)) currentTab.value = housekeepingOutlets.value[0]?.code || ''
 
     const categories = Array.isArray(resCats.data) ? resCats.data : (resCats.data?.data || [])
     const products = Array.isArray(resProds.data) ? resProds.data : (resProds.data?.data || [])
 
-    const tabMap = {
-      'Minibar': 'minibar',
-      'Giặt ủi': 'giatui',
-      'Hàng đền bù': 'dengbu',
-      'Amenity': 'minibar',
-      'minibar': 'minibar',
-      'giatui': 'giatui',
-      'dengbu': 'dengbu'
-    }
-
-    const newDbData = Object.fromEntries(housekeepingOutlets.value.map(o => [o.group_key, {}]))
+    const newDbData = Object.fromEntries(housekeepingOutlets.value.map(o => [o.code, {}]))
 
     categories.forEach(cat => {
       const configured = housekeepingOutlets.value.find(o =>
         String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase() ||
         String(o.name).toLowerCase() === String(cat.outlet || cat.name || '').toLowerCase() ||
-        String(o.group_key).toLowerCase() === String(cat.outlet || '').toLowerCase()
+        String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase()
       )
-      const tabKey = configured?.group_key || tabMap[cat.outlet] || tabMap[cat.name]
+      const tabKey = configured?.code
       if (!tabKey) return
       if (!newDbData[tabKey]) {
         newDbData[tabKey] = {}
@@ -654,6 +643,7 @@ const loadDbProducts = async () => {
         : products.filter(p => p.product_category_id === cat.id)
 
       catProducts.forEach(p => {
+        if (Number(p.open_key) !== 1) return
         if (p.is_active === 0 || p.is_active === false) return
         let basePrice = Number(p.price) || 0
         let svcPercent = Number(p.service_charge_percent) || 0
@@ -690,12 +680,12 @@ onMounted(() => {
   loadDbProducts()
 })
 
-const tabLabels = computed(() => Object.fromEntries(housekeepingOutlets.value.map(o => [o.group_key, o.name])))
+const tabLabels = computed(() => Object.fromEntries(housekeepingOutlets.value.map(o => [o.code, o.name])))
 const GROUP_LABELS = tabLabels
-const GROUP_COLORS = { minibar: '#2563eb', giatui: '#16a34a', dengbu: '#d97706' }
+const GROUP_COLORS = { MB: '#2563eb', LA: '#16a34a', BR: '#d97706', AM: '#7c3aed' }
 
-const currentTab = ref('minibar')
-const tabKeys = computed(() => housekeepingOutlets.value.map(o => o.group_key))
+const currentTab = ref('')
+const tabKeys = computed(() => housekeepingOutlets.value.map(o => o.code))
 const productSearchQuery = ref('')
 const discountMode = ref('gg') // 'gg' = Giảm giá | 'pt' = Phụ thu
 const globalPct = ref(0)
@@ -706,9 +696,10 @@ const productGroup = {}
 
 const adjustmentGroup = (serviceCode) => {
   const prefix = String(serviceCode || '').toUpperCase().split('_')[0]
-  if (prefix === 'LA' || prefix === 'GIATUI') return 'giatui'
-  if (prefix === 'BR' || prefix === 'DENGBU') return 'dengbu'
-  return 'minibar'
+  const outlet = housekeepingOutlets.value.find(item =>
+    String(item.code).toUpperCase() === prefix || String(item.service_code || '').toUpperCase() === prefix
+  )
+  return outlet?.code || housekeepingOutlets.value[0]?.code || ''
 }
 
 const loadInitialAdjustment = () => {
@@ -827,9 +818,9 @@ const calcRow = (item) => {
 }
 
 const groupedCart = computed(() => {
-  const map = { minibar: [], giatui: [], dengbu: [] }
+  const map = Object.fromEntries(tabKeys.value.map(key => [key, []]))
   cart.value.forEach(item => {
-    const grp = productGroup[item.product.id] || 'minibar'
+    const grp = productGroup[item.product.id] || currentTab.value
     if (!map[grp]) map[grp] = []
     map[grp].push(item)
   })
@@ -838,7 +829,7 @@ const groupedCart = computed(() => {
 
 const getItemIndex = (grpKey, idx) => {
   let count = 0
-  const keys = ['minibar', 'giatui', 'dengbu']
+  const keys = tabKeys.value
   for (const k of keys) {
     if (k === grpKey) {
       return count + idx + 1
@@ -877,7 +868,7 @@ const sendToRoom = async () => {
     const groupedBillsMap = {}
     cart.value.forEach(item => {
       const prod = item.product || item
-      const groupKey = (productGroup[prod.id] || currentTab.value || 'minibar').toLowerCase()
+      const groupKey = productGroup[prod.id] || currentTab.value
       if (!groupedBillsMap[groupKey]) {
         groupedBillsMap[groupKey] = []
       }

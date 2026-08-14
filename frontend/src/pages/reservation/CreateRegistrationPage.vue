@@ -117,6 +117,9 @@ const activeRoomRateCodes = computed(() => {
   return (roomRateCodes.value || []).filter(rc => !rc.Disable)
 })
 const hotelServicesList = ref([])
+const getHotelService = (code) => hotelServicesList.value.find(service => String(service.code).toUpperCase() === String(code).toUpperCase())
+const getHotelServiceCode = (code) => getHotelService(code)?.code || code
+const getHotelServiceName = (code, fallback = '') => getHotelService(code)?.name || fallback
 const selectedServiceFilter = ref('all')
 const diagnosticErrors = ref([])
 
@@ -724,7 +727,7 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
         service_date: cleanDate,
         quantity: svc.quantity || 1,
         rate: newRate,
-        is_room: isRoomCharge ? 1 : 0
+        is_room: isRoomCharge ? 1 : (svc.is_room ?? svc.isRoom ?? 1)
       }
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
@@ -747,7 +750,7 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
   const cleanDate = cleanDateStr(svc.service_date)
   const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
 
-  if (isRoomCharge) return
+  if (isRoomCharge || isChildBreakfastService(svc)) return
 
   svc.quantity = newQty
   if (svc.svc_ref) {
@@ -779,7 +782,7 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
         service_date: cleanDate,
         quantity: newQty,
         rate: svc.rate || 0,
-        is_room: 0
+        is_room: svc.is_room ?? svc.isRoom ?? 1
       }
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
@@ -796,6 +799,19 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
       uiStore.showToast('Không thể cập nhật số lượng vào hệ thống!', 'error')
     }
   }
+}
+
+function isChildBreakfastService(svc) {
+  const serviceName = String(svc?.service_name || '').toLowerCase()
+  const note = String(svc?.note || '').toLowerCase()
+  return svc?.service_code === 'BD'
+    || serviceName.startsWith('phụ thu ăn sáng trẻ em')
+    || note.startsWith('phụ thu ăn sáng trẻ em')
+}
+
+function getChildBreakfastDisplayName(svc) {
+  const name = svc?.service_name || getServiceNameFromCode(svc?.service_code)
+  return isChildBreakfastService(svc) ? name.replace(':', ' -') : name
 }
 
 async function handleInlineExtraBedQtyChange(room) {
@@ -860,12 +876,12 @@ async function handleInlineExtraBedQtyChange(room) {
       // 2.2 Cập nhật booking_room_services
       for (const d of dailyRates) {
         await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: 'EB',
-          service_name: 'Extra Bed',
+          service_code: getHotelServiceCode('EB'),
+          service_name: getHotelServiceName('EB', 'Extra Bed'),
           service_date: d.dateStr,
           quantity: d.quantity,
           rate: d.rate,
-          is_room: 0
+          is_room: d.isRoom ? 1 : 0
         })
       }
 
@@ -933,12 +949,12 @@ async function handleInlineExtraBedRateChange(room) {
       // 2.2 Cập nhật booking_room_services
       for (const d of dailyRates) {
         await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: 'EB',
-          service_name: 'Extra Bed',
+          service_code: getHotelServiceCode('EB'),
+          service_name: getHotelServiceName('EB', 'Extra Bed'),
           service_date: d.dateStr,
           quantity: d.quantity,
           rate: d.rate,
-          is_room: 0
+          is_room: d.isRoom ? 1 : 0
         })
       }
 
@@ -1051,8 +1067,8 @@ function getRoomDisplayServices(room) {
         list.push({
           id: `room-charge-${room.id}-${i}`,
           service_date: dStr,
-          service_name: 'Dịch vụ phòng nghỉ',
-          service_code: 'ROOM_CHARGE',
+          service_name: getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+          service_code: getHotelServiceCode('RM'),
           quantity: 1,
           rate: customRate,
           is_room: true
@@ -1072,8 +1088,8 @@ function getRoomDisplayServices(room) {
       list.push({
         id: `room-charge-${room.id}`,
         service_date: todayStr,
-        service_name: 'Dịch vụ phòng nghỉ',
-        service_code: 'ROOM_CHARGE',
+        service_name: getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+        service_code: getHotelServiceCode('RM'),
         quantity: 1,
         rate: customRate,
         is_room: true
@@ -1087,7 +1103,7 @@ function getRoomDisplayServices(room) {
       list.push({
         id: svc.id,
         service_date: parseApiDate(svc.service_date || ''),
-        service_name: svc.service_name || getServiceNameFromCode(svc.service_code),
+        service_name: getChildBreakfastDisplayName(svc),
         service_code: svc.service_code,
         quantity: svc.quantity || 1,
         rate: svc.rate || 0,
@@ -4387,8 +4403,8 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
         for (const d of dailyRates) {
           if (d.isPast) continue // Không lưu/sửa đêm quá khứ
           await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-            service_code: 'EB',
-            service_name: 'Extra Bed',
+            service_code: getHotelServiceCode('EB'),
+            service_name: getHotelServiceName('EB', 'Extra Bed'),
             service_date: d.dateStr,
             quantity: d.quantity || 0,
             rate: d.rate || 0,
@@ -5309,7 +5325,10 @@ defineExpose({
                                   </td>
                                   <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
-                                    <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[9px] font-bold uppercase select-none">FIT</span>
+                                    <span
+                                      class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
+                                      :class="Number(svc.is_room) === 1 ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'"
+                                    >{{ Number(svc.is_room) === 1 ? 'FIT' : 'GIT' }}</span>
                                   </td>
                                 </tr>
                               </tbody>
@@ -5879,7 +5898,7 @@ defineExpose({
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                         <td class="p-2 border-r border-slate-100 text-center text-slate-700">
                                           <input 
-                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM' && !isChildBreakfastService(svc)"
                                             type="number"
                                             :value="svc.quantity !== undefined && svc.quantity !== null ? parseFloat(svc.quantity) : 1"
                                             min="0"
@@ -5957,7 +5976,7 @@ defineExpose({
                     Tổng cộng: {{ roomsTotalSummary.count }}
                   </template>
                   <template v-else-if="col.key === 'price'">
-                    {{ formatCurrencyInput(roomsTotalSummary.priceSum) }}
+                    {{ formatCurrencyInput(roomsTotalSummary.total) }}
                   </template>
                   <template v-else-if="col.key === 'adults'">
                     {{ roomsTotalSummary.adults }}
