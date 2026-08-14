@@ -1046,21 +1046,29 @@ const servicesList = computed(() => {
     const qtyVal = Number(s.quantity) || Number(s.qty) || 1
     const totalVal = Number(s.total_amount) || (rateVal * qtyVal)
     const codeVal = s.service_code || (s.hotel_service && s.hotel_service.code) || (s.service_name === 'Tiền phòng' ? 'RM' : 'DV')
+    const isHousekeepingService = Boolean(s.housekeeping_service_bill_id || s.housekeepingServiceBillId)
+    const serviceNote = String(s.note || '')
+    const linkedBill = findLinkedBill(s, roomNo, s.booking_room_id || s.roomId)
+    const catalogServiceName = linkedBill?.hotel_service?.name || linkedBill?.hotelService?.name
 
-    let descVal = stripTrailingQuantitySuffix(s.note || s.description || defaultDesc)
+    let descVal = stripTrailingQuantitySuffix(
+      isHousekeepingService
+        ? (catalogServiceName || linkedBill?.DescriptionServive || s.service_name || s.name || defaultDesc)
+        : (s.note || s.description || defaultDesc)
+    )
     descVal = String(descVal).replace(/^Post bill\s+/i, '')
     if (codeVal === 'RM' || s.service_name === 'Tiền phòng') {
       const transferTrail = descVal.match(/\([^()]+=>[^()]+\)\s*$/)?.[0] || ''
       descVal = [`Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim(), transferTrail].filter(Boolean).join(' ')
     }
 
-    const linkedBill = findLinkedBill(s, roomNo, s.booking_room_id || s.roomId)
     const rawPayCode = s.payment_id || s.payment_code || s.PaymentID || s.PaymentId || s.service_bill?.PaymentID || s.service_bill?.PaymentId || s.serviceBill?.PaymentID || s.serviceBill?.PaymentId || linkedBill?.PaymentID || linkedBill?.PaymentId || linkedBill?.payment_id || ''
     const isItemPaid = Number(s.status || linkedBill?.Status || 1) === 2 || Boolean(rawPayCode)
     const statusVal = isItemPaid ? 2 : Number(s.status || linkedBill?.Status || 1)
     const payCode = isItemPaid ? rawPayCode : ''
     const invCode = s.invoice_code || s.service_bill?.InvoiceId || s.serviceBill?.InvoiceId || s.service_bill?.InvoiceID || s.serviceBill?.InvoiceID || linkedBill?.InvoiceId || linkedBill?.invoice_id || linkedBill?.InvoiceID || ''
     const effectiveFolio = linkedBill?.Folio ? Number(linkedBill.Folio) : Number(s.folio || 1)
+    const hasItemTaxProfile = isHousekeepingService
 
     return {
       id: s.id || `S${idx}`,
@@ -1073,6 +1081,7 @@ const servicesList = computed(() => {
       serviceBillId: s.service_bill_id || linkedBill?.Ma || null,
       serviceName: stripTrailingQuantitySuffix(s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng'),
       description: descVal,
+      note: serviceNote,
       department: s.department || '',
       amount: rateVal,
       quantity: qtyVal,
@@ -1082,8 +1091,8 @@ const servicesList = computed(() => {
       isPaid: isItemPaid,
       paymentCode: payCode ? String(payCode) : '',
       folio: effectiveFolio,
-      tax: linkedBill ? (Number(linkedBill.Tax) || 0) : (Number(s.tax) || 0),
-      serviceCharge: linkedBill ? (Number(linkedBill.ServiceCharge) || 0) : (Number(s.service_charge) || 0),
+      tax: hasItemTaxProfile ? (Number(s.tax) || 0) : (linkedBill ? (Number(linkedBill.Tax) || 0) : (Number(s.tax) || 0)),
+      serviceCharge: hasItemTaxProfile ? (Number(s.service_charge) || 0) : (linkedBill ? (Number(linkedBill.ServiceCharge) || 0) : (Number(s.service_charge) || 0)),
       invoiceCode: invCode ? String(invCode) : '',
       vatNo: s.vat_no || '',
       accounting: s.accounting || 'Đã ghi',
@@ -1345,8 +1354,15 @@ const serviceGroups = computed(() => {
     }
     group.totalAmount += Number(service.totalAmount) || 0
     group.quantity += Number(service.quantity) || 0
-    group.tax += Number(service.tax) || 0
-    group.serviceCharge += Number(service.serviceCharge) || 0
+    const tax = Number(service.tax) || 0
+    const serviceCharge = Number(service.serviceCharge) || 0
+    if (group.items.length === 1) {
+      group.tax = tax
+      group.serviceCharge = serviceCharge
+    } else {
+      if (group.tax !== tax) group.tax = 0
+      if (group.serviceCharge !== serviceCharge) group.serviceCharge = 0
+    }
   })
   return Array.from(groups.values())
 })
@@ -1370,6 +1386,13 @@ const invoiceItems = computed(() => {
   }
 
   return selectedServiceGroup.value?.items || []
+})
+const invoiceNote = computed(() => {
+  const notes = (selectedServiceGroup.value?.items || [])
+    .map(item => String(item.note || '').trim())
+    .filter(Boolean)
+
+  return [...new Set(notes)].join(' | ')
 })
 const invoiceTotalAmount = computed(() => invoiceItems.value.reduce((total, item) => total + (Number(item.totalAmount) || 0), 0))
 
@@ -1856,7 +1879,7 @@ const openServiceAdjustment = async () => {
     serviceBillId: targetBillId,
     serviceDate: item.serviceDate,
     folio: item.folio || group.folio || 1,
-    note: item.description || group.name,
+    note: item.note || '',
     isFree,
     items: adjustmentItems
   }
@@ -3242,6 +3265,9 @@ onUnmounted(() => {
               <div><span class="font-semibold">Phòng:</span> {{ roomNumber || selectedRoomItem?.roomNumber || '--' }}</div>
               <div><span class="font-semibold">Khu vực:</span> {{ selectedServiceGroup.code }}</div>
               <div><span class="font-semibold">Folio:</span> {{ selectedServiceGroup.folio }}</div>
+              <div v-if="invoiceNote" class="col-span-2 break-words">
+                <span class="font-semibold">Ghi chú:</span> {{ invoiceNote }}
+              </div>
             </section>
 
             <div class="flex-1 overflow-auto p-5">

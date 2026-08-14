@@ -245,9 +245,19 @@ class NightAuditTest extends TestCase
         $booking->update(['is_master_room_rate' => true]);
 
         $department = Department::where('code', 'FO')->firstOrFail();
+        HotelService::where('code', 'RM')->update([
+            'service_charge' => 5, 'special_tax' => 1, 'tax' => 8,
+        ]);
+        HotelService::where('code', 'BF')->update([
+            'service_charge' => 3, 'special_tax' => 2, 'tax' => 10,
+        ]);
         $childBreakfast = HotelService::updateOrCreate(
             ['code' => 'BD'],
-            ['name' => 'Phụ thu ăn sáng trẻ em', 'price' => 90000, 'department_id' => $department->id]
+            [
+                'name' => 'Phụ thu ăn sáng trẻ em', 'price' => 90000,
+                'service_charge' => 4, 'special_tax' => 2, 'tax' => 9,
+                'department_id' => $department->id,
+            ]
         );
         $department->hotelServices()->syncWithoutDetaching([
             $childBreakfast->id => ['description' => 'Phụ thu ăn sáng trẻ em'],
@@ -288,7 +298,15 @@ class NightAuditTest extends TestCase
             'RegisterID2' => $booking->id,
             'RentalRoomId2' => null,
             'ServiceId' => 'RM',
-            'Amount' => 600000
+            'Amount' => 600000,
+            'ServiceCharge' => 5,
+            'SpecialTax' => 1,
+            'Tax' => 8,
+        ]);
+        $roomBill = ServiceBill::where('RentalRoomId1', $bookingRoom->id)->where('ServiceId', 'RM')->firstOrFail();
+        $this->assertDatabaseHas('service_bill_details', [
+            'BillServiceId' => $roomBill->Ma, 'ServiceId' => 'RM',
+            'ServiceCharge' => 5, 'SpecialTax' => 1, 'Tax' => 8,
         ]);
 
         $setupService->refresh();
@@ -296,11 +314,17 @@ class NightAuditTest extends TestCase
             'Ma' => $setupService->service_bill_id,
             'ServiceId' => 'BD',
             'DescriptionServive' => 'Phụ thu ăn sáng trẻ em - Child 1',
+            'ServiceCharge' => 4,
+            'SpecialTax' => 2,
+            'Tax' => 9,
         ]);
         $this->assertDatabaseHas('service_bill_details', [
             'BillServiceId' => $setupService->service_bill_id,
             'ServiceId' => 'BD',
             'DescriptionServive' => 'Phụ thu ăn sáng trẻ em - Child 1',
+            'ServiceCharge' => 4,
+            'SpecialTax' => 2,
+            'Tax' => 9,
         ]);
 
         // Verify room status changed to occupied_dirty (12)

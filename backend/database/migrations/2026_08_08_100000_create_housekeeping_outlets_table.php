@@ -15,15 +15,16 @@ return new class extends Migration
             $table->string('name', 100);
             $table->string('service_code', 30)->nullable();
             $table->boolean('is_active')->default(true);
+            $table->boolean('show_in_add_service')->default(true);
             $table->unsignedInteger('order_index')->default(0);
             $table->timestamps();
         });
 
         DB::table('housekeeping_outlets')->insert([
-            ['code' => 'MB', 'name' => 'Minibar', 'service_code' => 'MB', 'is_active' => true, 'order_index' => 1, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'LA', 'name' => 'Giặt ủi', 'service_code' => 'LA', 'is_active' => true, 'order_index' => 2, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'BR', 'name' => 'Hàng đền bù', 'service_code' => 'BR', 'is_active' => true, 'order_index' => 3, 'created_at' => now(), 'updated_at' => now()],
-            ['code' => 'AM', 'name' => 'Amenity', 'service_code' => 'AM', 'is_active' => true, 'order_index' => 4, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'MB', 'name' => 'Minibar', 'service_code' => 'MB', 'is_active' => true, 'show_in_add_service' => true, 'order_index' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'LA', 'name' => 'Giặt ủi', 'service_code' => 'LA', 'is_active' => true, 'show_in_add_service' => true, 'order_index' => 2, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'BR', 'name' => 'Hàng đền bù', 'service_code' => 'BR', 'is_active' => true, 'show_in_add_service' => true, 'order_index' => 3, 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'AM', 'name' => 'Amenity', 'service_code' => 'AM', 'is_active' => true, 'show_in_add_service' => true, 'order_index' => 4, 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         $legacyOutletMap = [

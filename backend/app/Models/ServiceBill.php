@@ -36,4 +36,9 @@ class ServiceBill extends Model
     {
         return $this->belongsTo(User::class, 'Username', 'username');
     }
+
+    public function hotelService()
+    {
+        return $this->belongsTo(HotelService::class, 'ServiceId', 'code');
+    }
 }
