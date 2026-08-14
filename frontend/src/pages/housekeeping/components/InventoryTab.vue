@@ -656,7 +656,10 @@ const tableItems = computed(() => {
 
   // Warning only
   if (filterState.value.warningOnly) {
-    items = items.filter(i => i.finalStock < (getInitialStock(i) * 0.2 || 100))
+    items = items.filter(i => {
+      const init = getInitialStock(i)
+      return init > 0 && i.finalStock < 50
+    })
   }
 
   // Activity filter
