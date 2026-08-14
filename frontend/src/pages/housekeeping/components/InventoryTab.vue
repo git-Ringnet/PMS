@@ -598,6 +598,24 @@ async function getBill(day) {
   }
 }
 
+function triggerGetBillToday() {
+  if (!systemDate.value) {
+    uiStore.showToast('Không lấy được ngày hệ thống để chạy get bill!', 'warning')
+    return
+  }
+  // systemDate phải thuộc tháng đang xem
+  if (!systemDate.value.startsWith(currentMonth.value)) {
+    uiStore.showToast(
+      `Ngày hệ thống (${systemDate.value}) không thuộc tháng đang xem (${currentMonth.value}). Không thể lấy bill.`,
+      'warning'
+    )
+    return
+  }
+  const parts = systemDate.value.split('-')
+  const day = parseInt(parts[2], 10)
+  getBill(day)
+}
+
 // ─── Transfer ────────────────────────────────────────────────────
 function openTransferModal(item, day = null) {
   let selectedDate = systemDate.value
@@ -889,6 +907,17 @@ const otherWarehouses = computed(() =>
           <button @click="openMainStats" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer" title="Xem thống kê kho cả tháng">
             <BarChart2 class="w-4 h-4 text-indigo-500" />
             Thống kê
+          </button>
+          <button 
+            @click="triggerGetBillToday" 
+            :disabled="!activeWarehouse?.outlet_id || isBillLoading"
+            class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
+            title="Lấy dữ liệu xuất bán từ bill hôm nay"
+          >
+            <svg class="w-4 h-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            Lấy dữ liệu Bill
           </button>
           <button @click="exportExcelLogs" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer" title="Xuất excel nhật ký kho cả tháng">
             <FileSpreadsheet class="w-4 h-4 text-emerald-600" />
