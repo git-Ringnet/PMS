@@ -24,6 +24,7 @@ class HousekeepingOutletController extends Controller
             'name' => 'required|string|max:100',
             'service_code' => 'nullable|string|max:30',
             'is_active' => 'boolean',
+            'show_in_add_service' => 'boolean',
             'order_index' => 'nullable|integer|min:0',
         ]);
 
@@ -42,6 +43,7 @@ class HousekeepingOutletController extends Controller
             'name' => 'required|string|max:100',
             'service_code' => 'nullable|string|max:30',
             'is_active' => 'boolean',
+            'show_in_add_service' => 'boolean',
             'order_index' => 'nullable|integer|min:0',
         ]);
 

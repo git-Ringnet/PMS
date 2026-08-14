@@ -544,7 +544,8 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->actingAs($user)
             ->getJson('/api/bookings?with_billing=true')
             ->assertSuccessful()
-            ->assertJsonFragment(['employee_code' => 'NV001', 'name' => 'Test User']);
+            ->assertJsonFragment(['employee_code' => 'NV001', 'name' => 'Test User'])
+            ->assertJsonFragment(['code' => 'MB', 'name' => 'Minibar']);
     }
 
     public function test_quick_transfer_from_master_keeps_the_negative_audit_line(): void

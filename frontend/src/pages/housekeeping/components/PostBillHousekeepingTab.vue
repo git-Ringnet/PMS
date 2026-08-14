@@ -615,7 +615,7 @@ const loadDbProducts = async () => {
       fetchHousekeepingOutlets()
     ])
 
-    housekeepingOutlets.value = (resOutlets.data || []).filter(o => o.is_active && o.service_code)
+    housekeepingOutlets.value = (resOutlets.data || []).filter(o => o.is_active && o.show_in_add_service && o.service_code)
     if (!tabKeys.value.includes(currentTab.value)) currentTab.value = housekeepingOutlets.value[0]?.code || ''
 
     const categories = Array.isArray(resCats.data) ? resCats.data : (resCats.data?.data || [])
