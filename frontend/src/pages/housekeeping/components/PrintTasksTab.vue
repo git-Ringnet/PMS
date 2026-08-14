@@ -110,7 +110,9 @@ const allRooms = computed(() => {
         const arrStr = r.arrival_date ? r.arrival_date.substring(0, 10) : ''
         const depStr = r.departure_date ? r.departure_date.substring(0, 10) : ''
         
-        if (depStr === dateStr) {
+        if (r.booking_status === 'occupied') {
+          displayBookingStatus = 'occupied'
+        } else if (depStr === dateStr) {
           displayBookingStatus = 'checkout'
         } else if (arrStr === dateStr) {
           displayBookingStatus = 'reserved'
@@ -578,16 +580,78 @@ function printByGroup() {
       const isDirty = String(r.room_status_snapshot).includes('dirty')
       const roomNumColor = isDirty ? '#b91c1c' : '#0f172a'
 
-      return `<tr style="height: 30px;">
-        <td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#64748b;">${i + 1}</td>
-        <td style="text-align:center;font-weight:800;font-size:12px;color:${roomNumColor};border:1px solid #1e293b;padding:4px;font-family:monospace;">${r.room_number}</td>
-        <td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#334155;">${r.room_class_name || ''}</td>
-        <td style="text-align:center;font-weight:700;font-size:9.5px;border:1px solid #1e293b;padding:4px;color:#0f172a;">${code}</td>
-        ${COLS.map(() => '<td style="border:1px solid #1e293b;padding:4px;"></td>').join('')}
-      </tr>`
+      const cellHtml = COLS.map(c => {
+        if (c.is_fixed) {
+          const lbl = String(c.label).toUpperCase()
+          if (lbl === 'STT') {
+            return `<td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#64748b;width:${c.width || 'auto'};">${i + 1}</td>`
+          } else if (lbl === 'PHÒNG') {
+            return `<td style="text-align:center;font-weight:800;font-size:12px;color:${roomNumColor};border:1px solid #1e293b;padding:4px;font-family:monospace;width:${c.width || 'auto'};">${r.room_number}</td>`
+          } else if (lbl === 'LOẠI') {
+            return `<td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#334155;width:${c.width || 'auto'};">${r.room_class_name || ''}</td>`
+          } else if (lbl === 'TÌNH TRẠNG' || lbl === 'TRẠNG THÁI') {
+            return `<td style="text-align:center;font-weight:700;font-size:9.5px;border:1px solid #1e293b;padding:4px;color:#0f172a;width:${c.width || 'auto'};">${code}</td>`
+          }
+        }
+        return `<td style="border:1px solid #1e293b;padding:4px;width:${c.width || 'auto'};"></td>`
+      }).join('')
+
+      return `<tr style="height: 30px;">${cellHtml}</tr>`
     }).join('')
 
-    const headerCols = COLS.map(c => `<th style="font-size:7.5px;padding:6px 2px;text-align:center;border:1px solid #1e293b;white-space:pre-line;word-break:break-all;width:${c.width || 'auto'}">${c.label}</th>`).join('')
+    const hasGroups = COLS.some(c => c.parent_label)
+    const row1Cells = []
+    const row2Cells = []
+    const processedIndices = new Set()
+
+    for (let idx = 0; idx < COLS.length; idx++) {
+      if (processedIndices.has(idx)) continue
+      const col = COLS[idx]
+
+      if (!hasGroups) {
+        row1Cells.push(`<th style="font-size:8px;padding:6px 4px;text-align:center;border:1px solid #1e293b;font-weight:700;width:${col.width || 'auto'};">${col.label}</th>`)
+        processedIndices.add(idx)
+      } else {
+        if (!col.parent_label) {
+          row1Cells.push(`<th rowspan="2" style="font-size:8px;padding:6px 4px;text-align:center;border:1px solid #1e293b;font-weight:700;width:${col.width || 'auto'};">${col.label}</th>`)
+          processedIndices.add(idx)
+        } else {
+          let count = 0
+          let totalWidth = 0
+          let hasWidth = false
+          const groupCols = []
+
+          for (let j = idx; j < COLS.length; j++) {
+            if (COLS[j].parent_label === col.parent_label) {
+              count++
+              groupCols.push(COLS[j])
+              processedIndices.add(j)
+              const wVal = parseInt(COLS[j].width)
+              if (!isNaN(wVal)) {
+                totalWidth += wVal
+                hasWidth = true
+              }
+            } else {
+              break
+            }
+          }
+
+          const groupWidthStr = hasWidth ? `width:${totalWidth}px;` : ''
+          row1Cells.push(`<th colspan="${count}" style="font-size:8px;padding:4px 2px;text-align:center;border:1px solid #1e293b;font-weight:700;${groupWidthStr}">${col.parent_label}</th>`)
+
+          groupCols.forEach(gc => {
+            row2Cells.push(`<th style="font-size:7.5px;padding:4px 2px;text-align:center;border:1px solid #1e293b;font-weight:700;white-space:pre-line;word-break:break-all;width:${gc.width || 'auto'};">${gc.label}</th>`)
+          })
+        }
+      }
+    }
+
+    const headerHtml = `
+      <tr style="background:#f1f5f9;border-bottom:1px solid #1e293b;">
+        ${row1Cells.join('')}
+      </tr>
+      ${hasGroups && row2Cells.length ? `<tr style="background:#f1f5f9;border-bottom:2px solid #1e293b;">${row2Cells.join('')}</tr>` : ''}
+    `
 
     const legendHtml = legend.map(l => {
       const parts = l.split(':')
@@ -617,13 +681,7 @@ function printByGroup() {
 
       <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid #1e293b;">
         <thead>
-          <tr style="background:#f1f5f9;border-bottom:2px solid #1e293b;">
-            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:30px;font-weight:700;">STT</th>
-            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:55px;font-weight:700;">PHÒNG</th>
-            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:70px;font-weight:700;">LOẠI</th>
-            <th style="border:1px solid #1e293b;font-size:8px;padding:6px 4px;text-align:center;width:85px;font-weight:700;">TRẠNG THÁI</th>
-            ${headerCols}
-          </tr>
+          ${headerHtml}
         </thead>
         <tbody>${rows}</tbody>
       </table>

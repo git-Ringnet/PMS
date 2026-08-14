@@ -30,6 +30,7 @@ return new class extends Migration
             $table->id();
             $table->string('template', 20);       // worksheet | supervisor
             $table->string('label', 100);
+            $table->string('parent_label', 100)->nullable();
             $table->string('width', 20)->nullable();
             $table->boolean('is_fixed')->default(false);
             $table->unsignedInteger('sort_order')->default(0);
