@@ -1061,6 +1061,7 @@ const servicesList = computed(() => {
     const payCode = isItemPaid ? rawPayCode : ''
     const invCode = s.invoice_code || s.service_bill?.InvoiceId || s.serviceBill?.InvoiceId || s.service_bill?.InvoiceID || s.serviceBill?.InvoiceID || linkedBill?.InvoiceId || linkedBill?.invoice_id || linkedBill?.InvoiceID || ''
     const effectiveFolio = linkedBill?.Folio ? Number(linkedBill.Folio) : Number(s.folio || 1)
+    const hasItemTaxProfile = Boolean(s.housekeeping_service_bill_id || s.housekeepingServiceBillId)
 
     return {
       id: s.id || `S${idx}`,
@@ -1082,8 +1083,8 @@ const servicesList = computed(() => {
       isPaid: isItemPaid,
       paymentCode: payCode ? String(payCode) : '',
       folio: effectiveFolio,
-      tax: linkedBill ? (Number(linkedBill.Tax) || 0) : (Number(s.tax) || 0),
-      serviceCharge: linkedBill ? (Number(linkedBill.ServiceCharge) || 0) : (Number(s.service_charge) || 0),
+      tax: hasItemTaxProfile ? (Number(s.tax) || 0) : (linkedBill ? (Number(linkedBill.Tax) || 0) : (Number(s.tax) || 0)),
+      serviceCharge: hasItemTaxProfile ? (Number(s.service_charge) || 0) : (linkedBill ? (Number(linkedBill.ServiceCharge) || 0) : (Number(s.service_charge) || 0)),
       invoiceCode: invCode ? String(invCode) : '',
       vatNo: s.vat_no || '',
       accounting: s.accounting || 'Đã ghi',
@@ -1345,8 +1346,15 @@ const serviceGroups = computed(() => {
     }
     group.totalAmount += Number(service.totalAmount) || 0
     group.quantity += Number(service.quantity) || 0
-    group.tax += Number(service.tax) || 0
-    group.serviceCharge += Number(service.serviceCharge) || 0
+    const tax = Number(service.tax) || 0
+    const serviceCharge = Number(service.serviceCharge) || 0
+    if (group.items.length === 1) {
+      group.tax = tax
+      group.serviceCharge = serviceCharge
+    } else {
+      if (group.tax !== tax) group.tax = 0
+      if (group.serviceCharge !== serviceCharge) group.serviceCharge = 0
+    }
   })
   return Array.from(groups.values())
 })

@@ -605,6 +605,8 @@ class NightAuditController extends Controller
 
         $roomService = HotelService::where('code', 'RM')->first();
         $breakfastService = HotelService::where('code', 'BF')->first();
+        $roomTaxProfile = HotelService::taxProfile($roomService);
+        $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
         $description = $roomService
             ? $roomService->billDescription($room->room_number, 'FO')
             : 'Dịch vụ phòng nghỉ' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
@@ -623,9 +625,9 @@ class NightAuditController extends Controller
             'DescriptionServive' => $finalReason,
             'Quantity'           => 1,
             'Amount'             => $totalAmount,
-            'ServiceCharge'      => 0,
-            'SpecialTax'         => 0,
-            'Tax'                => 0,
+            'ServiceCharge'      => $roomTaxProfile['service_charge'],
+            'SpecialTax'         => $roomTaxProfile['special_tax'],
+            'Tax'                => $roomTaxProfile['tax'],
             'Currency'           => 'VND',
             'Exchange'           => 1,
             'Edit'               => 0,
@@ -661,6 +663,9 @@ class NightAuditController extends Controller
                 'ServiceId'                => 'RM',
                 'DescriptionServive'       => $reason ?: $description,
                 'OriginalRate'             => $rate,
+                'ServiceCharge'            => $roomTaxProfile['service_charge'],
+                'SpecialTax'               => $roomTaxProfile['special_tax'],
+                'Tax'                      => $roomTaxProfile['tax'],
                 'Amount'                   => $totalAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,
@@ -675,6 +680,9 @@ class NightAuditController extends Controller
                 'ServiceId'                => 'BF',
                 'DescriptionServive'       => $breakfastDescription,
                 'OriginalRate'             => $breakfastAmount,
+                'ServiceCharge'            => $breakfastTaxProfile['service_charge'],
+                'SpecialTax'               => $breakfastTaxProfile['special_tax'],
+                'Tax'                      => $breakfastTaxProfile['tax'],
                 'Amount'                   => $breakfastAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,
@@ -689,6 +697,9 @@ class NightAuditController extends Controller
                 'ServiceId'                => 'RM',
                 'DescriptionServive'       => 'Trừ ' . $breakfastDescription,
                 'OriginalRate'             => -$breakfastAmount,
+                'ServiceCharge'            => $roomTaxProfile['service_charge'],
+                'SpecialTax'               => $roomTaxProfile['special_tax'],
+                'Tax'                      => $roomTaxProfile['tax'],
                 'Amount'                   => -$breakfastAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,
@@ -702,6 +713,9 @@ class NightAuditController extends Controller
                 'ServiceId'                => 'RM',
                 'DescriptionServive'       => $reason ?: $description,
                 'OriginalRate'             => $rate,
+                'ServiceCharge'            => $roomTaxProfile['service_charge'],
+                'SpecialTax'               => $roomTaxProfile['special_tax'],
+                'Tax'                      => $roomTaxProfile['tax'],
                 'Amount'                   => $totalAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,
@@ -747,6 +761,8 @@ class NightAuditController extends Controller
                     'total_amount'           => $totalAmount,
                     'department'             => 'FO',
                     'note'                   => $reason ?: $description,
+                    'tax'                    => $roomTaxProfile['tax'],
+                    'service_charge'         => $roomTaxProfile['service_charge'],
                     'is_posted'              => 1,
                     'posted_at'              => now(),
                     'created_by'             => $user,
@@ -785,7 +801,7 @@ class NightAuditController extends Controller
             'Quantity'           => $qty,
             'Amount'             => $totalAmount,
             'ServiceCharge'      => (float)($foService->service_charge ?? 0),
-            'SpecialTax'         => 0,
+            'SpecialTax'         => (float)($foService->special_tax ?? 0),
             'Tax'                => (float)($foService->tax ?? 0),
             'Currency'           => 'VND',
             'Exchange'           => 1,
@@ -817,7 +833,7 @@ class NightAuditController extends Controller
             'DescriptionServive'       => $description,
             'OriginalRate'             => $rate,
             'ServiceCharge'            => (float)($foService->service_charge ?? 0),
-            'SpecialTax'               => 0,
+            'SpecialTax'               => (float)($foService->special_tax ?? 0),
             'Tax'                      => (float)($foService->tax ?? 0),
             'Amount'                   => $totalAmount,
             'Currency'                 => 'VND',
@@ -829,6 +845,8 @@ class NightAuditController extends Controller
             'service_bill_id'        => $bill->Ma,
             'service_bill_detail_no' => 1,
             'department'             => 'FO',
+            'tax'                    => (float)($foService->tax ?? 0),
+            'service_charge'         => (float)($foService->service_charge ?? 0),
             'is_posted'              => 1,
             'posted_at'              => now(),
         ]);

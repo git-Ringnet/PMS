@@ -14,6 +14,7 @@ use App\Models\HousekeepingServiceBillDetail;
 use App\Models\HousekeepingOutlet;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
+use App\Models\Product;
 use App\Models\RoomNightBill;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
@@ -993,6 +994,9 @@ class BookingRoomServiceController extends Controller
             'bills'           => 'required|array',
             'bills.*.group'   => 'required|string',
             'bills.*.items'   => 'required|array',
+            'bills.*.items.*.tax' => 'nullable|numeric|min:0|max:100',
+            'bills.*.items.*.special_tax' => 'nullable|numeric|min:0|max:100',
+            'bills.*.items.*.service_charge' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $room = BookingRoom::find($request->booking_room_id);
@@ -1064,6 +1068,14 @@ class BookingRoomServiceController extends Controller
                 if (!isset($groupMeta[$groupKey])) continue;
                 $meta = $groupMeta[$groupKey];
                 $groupTitle = $meta['label'];
+                $products = Product::whereIn('id', collect($items)->pluck('id')->filter()->all())
+                    ->get()
+                    ->keyBy('id');
+                $itemTaxProfiles = collect($items)->map(fn ($item) => $this->housekeepingItemTaxProfile(
+                    $item,
+                    $products->get($item['id'] ?? null)
+                ));
+                $billTaxProfile = $this->commonTaxProfile($itemTaxProfiles);
                 $effectiveFolio = $isFree ? 3 : $folio;
                 $originalAmount = collect($items)->sum(fn ($item) => (float)($item['original_rate'] ?? $item['price'] ?? 0) * (float)($item['qty'] ?? 1));
                 $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
@@ -1080,6 +1092,9 @@ class BookingRoomServiceController extends Controller
                         'DescriptionServive' => $groupTitle,
                         'Quantity' => 1,
                         'Amount' => $billAmount,
+                        'ServiceCharge' => $billTaxProfile['service_charge'],
+                        'SpecialTax' => $billTaxProfile['special_tax'],
+                        'Tax' => $billTaxProfile['tax'],
                         'Folio' => (string)$effectiveFolio,
                         'Status' => $isFree ? 2 : $serviceBill->Status,
                         'UpdatedDate' => now(),
@@ -1093,6 +1108,9 @@ class BookingRoomServiceController extends Controller
                             'BillOriginalAmount' => $originalAmount,
                         'BillDiscountAmount' => $isFree ? $originalAmount : $discountAmount,
                             'BillAmount' => $billAmount,
+                            'BillServicesCharge' => $billTaxProfile['service_charge'],
+                            'BillSpecialTax' => $billTaxProfile['special_tax'],
+                            'BillTax' => $billTaxProfile['tax'],
                             'BillDiscount' => $originalAmount > 0 ? (($isFree ? $originalAmount : $discountAmount) / $originalAmount) * 100 : 0,
                             'BillNote' => $request->note,
                             'Date' => $serviceDateCarbon->startOfDay(),
@@ -1106,6 +1124,7 @@ class BookingRoomServiceController extends Controller
                             'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
                             'BillDiscountAmount' => $isFree ? $originalAmount : $discountAmount, 'BillAmount' => $billAmount,
                             'BillDiscount' => $originalAmount > 0 ? (($isFree ? $originalAmount : $discountAmount) / $originalAmount) * 100 : 0,
+                            'BillServicesCharge' => $billTaxProfile['service_charge'], 'BillSpecialTax' => $billTaxProfile['special_tax'], 'BillTax' => $billTaxProfile['tax'],
                             'BillNote' => $request->note, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                             'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
                             'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
@@ -1121,6 +1140,7 @@ class BookingRoomServiceController extends Controller
                         'Date' => $serviceDateCarbon->startOfDay(), 'OpenTime' => now()->format('H:i'),
                         'Guest' => $guestName, 'DepartmentId' => $department, 'ServiceId' => $meta['service'],
                         'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
+                        'ServiceCharge' => $billTaxProfile['service_charge'], 'SpecialTax' => $billTaxProfile['special_tax'], 'Tax' => $billTaxProfile['tax'],
                         'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$effectiveFolio,
                         'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
                         'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
@@ -1132,6 +1152,7 @@ class BookingRoomServiceController extends Controller
                         'BookingId' => $booking?->id, 'GuestId' => $guestId, 'BillOriginalAmount' => $originalAmount,
                         'BillDiscountAmount' => $isFree ? $originalAmount : $discountAmount, 'BillAmount' => $billAmount,
                         'BillDiscount' => $originalAmount > 0 ? (($isFree ? $originalAmount : $discountAmount) / $originalAmount) * 100 : 0,
+                        'BillServicesCharge' => $billTaxProfile['service_charge'], 'BillSpecialTax' => $billTaxProfile['special_tax'], 'BillTax' => $billTaxProfile['tax'],
                         'BillNote' => $request->note, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                         'Date' => $serviceDateCarbon->startOfDay(), 'Department' => $department,
                         'RoomNo' => $room->room_number, 'BillServiceId' => $serviceBill->Ma,
@@ -1163,8 +1184,10 @@ class BookingRoomServiceController extends Controller
                     $uniqueSuffix = substr(md5(uniqid(microtime(), true)), 0, 6);
                     $serviceCode  = strtoupper(substr($meta['service'] . '_' . $prodCode . '_' . $uniqueSuffix, 0, 30));
 
-                    $taxAmt       = floatval($item['tax'] ?? 0);
-                    $svcChargeAmt = floatval($item['service_charge'] ?? 0);
+                    $itemTaxProfile = $this->housekeepingItemTaxProfile($item, $products->get($item['id'] ?? null));
+                    $taxAmt       = $itemTaxProfile['tax'];
+                    $specialTaxAmt = $itemTaxProfile['special_tax'];
+                    $svcChargeAmt = $itemTaxProfile['service_charge'];
 
                     $created = BookingRoomService::create([
                         'booking_room_id' => $room->id,
@@ -1206,6 +1229,7 @@ class BookingRoomServiceController extends Controller
                         'BillServiceId' => $serviceBill->Ma, 'Ma' => $index + 1,
                         'DepartmentId' => $department, 'ServiceId' => $meta['service'],
                         'DescriptionServive' => $pName, 'OriginalRate' => $item['original_rate'] ?? $item['price'] ?? 0, 'Quantity' => $qty,
+                        'ServiceCharge' => $svcChargeAmt, 'SpecialTax' => $specialTaxAmt, 'Tax' => $taxAmt,
                         'Amount' => $item['total_amount'] ?? $item['net_price'] ?? 0, 'Currency' => 'VND', 'Exchange' => 1,
                         'DetailBillOriginalAmount' => (float)($item['original_rate'] ?? $item['price'] ?? 0) * $qty,
                         'DiscountAmount' => $item['discount_amount'] ?? 0, 'IncreaseAmount' => $item['increase_amount'] ?? 0,
@@ -1461,7 +1485,7 @@ class BookingRoomServiceController extends Controller
                     'Quantity'           => $qty,
                     'Amount'             => $totalAmount,
                     'ServiceCharge'      => (float)($foService->service_charge ?? 0),
-                    'SpecialTax'         => 0,
+                    'SpecialTax'         => (float)($foService->special_tax ?? 0),
                     'Tax'                => (float)($foService->tax ?? 0),
                     'Currency'           => $currency,
                     'Exchange'           => 1,
@@ -1493,7 +1517,7 @@ class BookingRoomServiceController extends Controller
                     'DescriptionServive'       => $description,
                     'OriginalRate'             => $rate,
                     'ServiceCharge'            => (float)($foService->service_charge ?? 0),
-                    'SpecialTax'               => 0,
+                    'SpecialTax'               => (float)($foService->special_tax ?? 0),
                     'Tax'                      => (float)($foService->tax ?? 0),
                     'Amount'                   => $totalAmount,
                     'Currency'                 => $currency,
@@ -1523,6 +1547,8 @@ class BookingRoomServiceController extends Controller
                             'rate'                   => $rate,
                             'total_amount'           => $totalAmount,
                             'folio'                  => $folio,
+                            'tax'                    => (float)($foService->tax ?? 0),
+                            'service_charge'         => (float)($foService->service_charge ?? 0),
                             'is_posted'              => 1,
                             'posted_at'              => now(),
                             'note'         => $description,
@@ -1604,24 +1630,26 @@ class BookingRoomServiceController extends Controller
                 ServiceBillDetail::where('BillServiceId', $original->Ma)->delete(); BookingRoomService::where('service_bill_id', $original->Ma)->delete(); RoomNightBill::where('bill_id', $original->Ma)->delete();
             }
             $roomService = HotelService::where('code', 'RM')->first();
+            $roomTaxProfile = HotelService::taxProfile($roomService);
             $baseDescription = $roomService
                 ? $roomService->billDescription($room->room_number ?: $room->id, 'FO')
                 : 'Dịch vụ phòng nghỉ - Phòng ' . ($room->room_number ?: $room->id);
-            $bill = ServiceBill::create(['Date' => $date->toDateTimeString(), 'OpenTime' => now()->format('H:i'), 'Guest' => $atMaster ? $booking->booking_name : ($guest?->guest?->full_name ?: $booking->booking_name), 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $baseDescription, 'Quantity' => 1, 'Amount' => $rate, 'ServiceCharge' => 0, 'SpecialTax' => 0, 'Tax' => 0, 'Currency' => $original?->Currency ?: 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => $original?->Folio ?: '1', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'CustomerId1' => $guest?->guest_id, 'CompanyId1' => $booking->company_id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => $atMaster ? null : $room->id, 'CustomerId2' => $atMaster ? null : $guest?->guest_id, 'CompanyId2' => $booking->company_id, 'Username' => $user, 'Status' => 1, 'Outlet' => 'FO', 'Year' => $date->year, 'Month' => $date->month, 'Day' => $date->day, 'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'), 'AdjustmentBillId' => $original?->Ma, 'IsAdjustment' => true]);
+            $bill = ServiceBill::create(['Date' => $date->toDateTimeString(), 'OpenTime' => now()->format('H:i'), 'Guest' => $atMaster ? $booking->booking_name : ($guest?->guest?->full_name ?: $booking->booking_name), 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $baseDescription, 'Quantity' => 1, 'Amount' => $rate, 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'Currency' => $original?->Currency ?: 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => $original?->Folio ?: '1', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'CustomerId1' => $guest?->guest_id, 'CompanyId1' => $booking->company_id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => $atMaster ? null : $room->id, 'CustomerId2' => $atMaster ? null : $guest?->guest_id, 'CompanyId2' => $booking->company_id, 'Username' => $user, 'Status' => 1, 'Outlet' => 'FO', 'Year' => $date->year, 'Month' => $date->month, 'Day' => $date->day, 'CreatedUser' => $user, 'CreatedDate' => now(), 'CreatedHour' => now()->format('H:i'), 'AdjustmentBillId' => $original?->Ma, 'IsAdjustment' => true]);
             $adults = max(1, (int) $room->adults);
             $breakfastRate = (float) (HotelSetting::first()?->breakfast_adult_rate ?? 0);
             $breakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
             $breakfastService = HotelService::where('code', 'BF')->first();
+            $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
             $breakfastDescription = $breakfastService
                 ? $breakfastService->billDescription($room->room_number ?: $room->id, 'FO')
                 : 'Tiền ăn sáng người lớn - Phòng ' . ($room->room_number ?: $room->id);
             ServiceBillDetail::insert([
-                ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $bill->DescriptionServive, 'OriginalRate' => $rate, 'Amount' => $rate, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rate],
-                ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $breakfastAmount, 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $breakfastAmount],
-                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ' . $breakfastDescription, 'OriginalRate' => -$breakfastAmount, 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => -$breakfastAmount],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $bill->DescriptionServive, 'OriginalRate' => $rate, 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'Amount' => $rate, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rate],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $breakfastAmount, 'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'], 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $breakfastAmount],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ' . $breakfastDescription, 'OriginalRate' => -$breakfastAmount, 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => -$breakfastAmount],
             ]);
             RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => 1, 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $room->breakfast ? $adults : 0, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
-            if (!$atMaster) BookingRoomService::updateOrCreate(['booking_room_id' => $room->id, 'service_code' => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM), 'service_date' => $date->toDateString()], ['guest_id' => $guest?->guest_id, 'service_bill_id' => $bill->Ma, 'service_bill_detail_no' => 1, 'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Tiền phòng'), 'quantity' => 1, 'rate' => $rate, 'total_amount' => $rate, 'department' => 'FO', 'note' => $bill->DescriptionServive, 'unit' => 'Đêm', 'folio' => $bill->Folio, 'is_room' => 1, 'is_posted' => 1, 'posted_at' => now(), 'created_by' => $user]);
+            if (!$atMaster) BookingRoomService::updateOrCreate(['booking_room_id' => $room->id, 'service_code' => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM), 'service_date' => $date->toDateString()], ['guest_id' => $guest?->guest_id, 'service_bill_id' => $bill->Ma, 'service_bill_detail_no' => 1, 'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Tiền phòng'), 'quantity' => 1, 'rate' => $rate, 'total_amount' => $rate, 'department' => 'FO', 'note' => $bill->DescriptionServive, 'tax' => $roomTaxProfile['tax'], 'service_charge' => $roomTaxProfile['service_charge'], 'unit' => 'Đêm', 'folio' => $bill->Folio, 'is_room' => 1, 'is_posted' => 1, 'posted_at' => now(), 'created_by' => $user]);
             if ((bool) ($data['update_room_rate'] ?? false)) {
                 if (($data['update_room_rate_scope'] ?? 'room') === 'booking') {
                     $booking->bookingRooms()->update(['rate' => $rate]);
@@ -1725,6 +1753,9 @@ class BookingRoomServiceController extends Controller
         $roomService = HotelService::where('code', 'RM')->first();
         $surchargeService = HotelService::where('code', BookingRoomService::catalogCode('ER'))->first();
         $breakfastService = HotelService::where('code', 'BF')->first();
+        $roomTaxProfile = HotelService::taxProfile($roomService);
+        $surchargeTaxProfile = HotelService::taxProfile($surchargeService);
+        $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
 
         $setting = HotelSetting::first();
         $createdBills = [];
@@ -1735,6 +1766,7 @@ class BookingRoomServiceController extends Controller
             $roomsToPost, $booking, $setting, $isBookingPost,
             $dateFrom, $dateTo, $folio, $currency, $mode,
             $request, $selectedGuest, $user, $roomService, $surchargeService, $breakfastService,
+            $roomTaxProfile, $surchargeTaxProfile, $breakfastTaxProfile,
             $chargePercent, &$createdBills,
             &$postedRooms, &$skippedRooms
         ) {
@@ -1816,6 +1848,7 @@ class BookingRoomServiceController extends Controller
                     $serviceCode = $isSurcharge ? BookingRoomService::catalogCode('ER') : 'RM';
                     $serviceName = $isSurcharge ? BookingRoomService::catalogName('ER', 'Phụ thu tiền phòng') : BookingRoomService::catalogName('RM', 'Dịch vụ phòng nghỉ');
                     $descriptionService = $isSurcharge ? $surchargeService : $roomService;
+                    $serviceTaxProfile = $isSurcharge ? $surchargeTaxProfile : $roomTaxProfile;
                     $targetDesc = $descriptionService
                         ? $descriptionService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
                         : trim($serviceName . ' - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id));
@@ -1854,6 +1887,9 @@ class BookingRoomServiceController extends Controller
                             $existingBill->update([
                                 'Amount'             => $totalAmount,
                                 'DescriptionServive' => $targetDesc,
+                                'ServiceCharge'      => $serviceTaxProfile['service_charge'],
+                                'SpecialTax'         => $serviceTaxProfile['special_tax'],
+                                'Tax'                => $serviceTaxProfile['tax'],
                                 'Folio'              => (string)$folio,
                                 'Username'           => $user,
                             ]);
@@ -1868,9 +1904,9 @@ class BookingRoomServiceController extends Controller
                                 'DescriptionServive' => $targetDesc,
                                 'Quantity'           => 1,
                                 'Amount'             => $totalAmount,
-                                'ServiceCharge'      => 0,
-                                'SpecialTax'         => 0,
-                                'Tax'                => 0,
+                                'ServiceCharge'      => $serviceTaxProfile['service_charge'],
+                                'SpecialTax'         => $serviceTaxProfile['special_tax'],
+                                'Tax'                => $serviceTaxProfile['tax'],
                                 'Currency'           => $currency,
                                 'Exchange'           => 1,
                                 'Edit'               => 0,
@@ -1904,9 +1940,9 @@ class BookingRoomServiceController extends Controller
                             'DescriptionServive' => $targetDesc,
                             'Quantity'           => 1,
                             'Amount'             => $totalAmount,
-                            'ServiceCharge'      => 0,
-                            'SpecialTax'         => 0,
-                            'Tax'                => 0,
+                            'ServiceCharge'      => $serviceTaxProfile['service_charge'],
+                            'SpecialTax'         => $serviceTaxProfile['special_tax'],
+                            'Tax'                => $serviceTaxProfile['tax'],
                             'Currency'           => $currency,
                             'Exchange'           => 1,
                             'Edit'               => 0,
@@ -1946,9 +1982,9 @@ class BookingRoomServiceController extends Controller
                         'ServiceId'                => $serviceCode,
                         'DescriptionServive'       => $targetDesc,
                         'OriginalRate'             => $rate,
-                        'ServiceCharge'            => 0,
-                        'SpecialTax'               => 0,
-                        'Tax'                      => 0,
+                        'ServiceCharge'            => $serviceTaxProfile['service_charge'],
+                        'SpecialTax'               => $serviceTaxProfile['special_tax'],
+                        'Tax'                      => $serviceTaxProfile['tax'],
                         'Amount'                   => $totalAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
@@ -1965,9 +2001,9 @@ class BookingRoomServiceController extends Controller
                         'ServiceId'                => 'BF',
                         'DescriptionServive'       => $breakfastDesc,
                         'OriginalRate'             => $breakfastAmount,
-                        'ServiceCharge'            => 0,
-                        'SpecialTax'               => 0,
-                        'Tax'                      => 0,
+                        'ServiceCharge'            => $breakfastTaxProfile['service_charge'],
+                        'SpecialTax'               => $breakfastTaxProfile['special_tax'],
+                        'Tax'                      => $breakfastTaxProfile['tax'],
                         'Amount'                   => $breakfastAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
@@ -1984,9 +2020,9 @@ class BookingRoomServiceController extends Controller
                         'ServiceId'                => 'RM',
                         'DescriptionServive'       => 'Trừ ' . $breakfastDesc,
                         'OriginalRate'             => -$breakfastAmount,
-                        'ServiceCharge'            => 0,
-                        'SpecialTax'               => 0,
-                        'Tax'                      => 0,
+                        'ServiceCharge'            => $roomTaxProfile['service_charge'],
+                        'SpecialTax'               => $roomTaxProfile['special_tax'],
+                        'Tax'                      => $roomTaxProfile['tax'],
                         'Amount'                   => -$breakfastAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
@@ -2003,9 +2039,9 @@ class BookingRoomServiceController extends Controller
                         'ServiceId'                => $serviceCode,
                         'DescriptionServive'       => $targetDesc,
                         'OriginalRate'             => $rate,
-                        'ServiceCharge'            => 0,
-                        'SpecialTax'               => 0,
-                        'Tax'                      => 0,
+                        'ServiceCharge'            => $serviceTaxProfile['service_charge'],
+                        'SpecialTax'               => $serviceTaxProfile['special_tax'],
+                        'Tax'                      => $serviceTaxProfile['tax'],
                         'Amount'                   => $totalAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
@@ -2057,6 +2093,8 @@ class BookingRoomServiceController extends Controller
                         'total_amount'    => $totalAmount,
                         'department'      => 'FO',
                         'note'            => $targetDesc,
+                        'tax'             => $serviceTaxProfile['tax'],
+                        'service_charge'  => $serviceTaxProfile['service_charge'],
                         'unit'            => 'Lần',
                         'folio'           => $folio,
                         'is_room'         => 0,
@@ -2082,8 +2120,8 @@ class BookingRoomServiceController extends Controller
                             'total_amount'   => $totalAmount,
                             'department'     => 'FO',
                             'note'           => $targetDesc,
-                            'tax'            => 0,
-                            'service_charge' => 0,
+                            'tax'            => $roomTaxProfile['tax'],
+                            'service_charge' => $roomTaxProfile['service_charge'],
                             'unit'           => 'Đêm',
                             'folio'          => $folio,
                             'is_room'        => 1,
@@ -2171,7 +2209,7 @@ class BookingRoomServiceController extends Controller
                 'Quantity'           => $quantity,
                 'Amount'             => $totalAmount,
                 'ServiceCharge'      => (float) ($foService->service_charge ?? 0),
-                'SpecialTax'         => 0,
+                'SpecialTax'         => (float) ($foService->special_tax ?? 0),
                 'Tax'                => (float) ($foService->tax ?? 0),
                 'Currency'           => 'VND',
                 'Exchange'           => 1,
@@ -2204,7 +2242,7 @@ class BookingRoomServiceController extends Controller
                 'DescriptionServive'       => $description,
                 'OriginalRate'             => $rate,
                 'ServiceCharge'            => (float) ($foService->service_charge ?? 0),
-                'SpecialTax'               => 0,
+                'SpecialTax'               => (float) ($foService->special_tax ?? 0),
                 'Tax'                      => (float) ($foService->tax ?? 0),
                 'Amount'                   => $totalAmount,
                 'Currency'                 => 'VND',
@@ -2212,11 +2250,13 @@ class BookingRoomServiceController extends Controller
                 'DetailBillOriginalAmount' => $totalAmount,
             ]);
 
-            $service->update([
-                'service_bill_id'        => $bill->Ma,
-                'service_bill_detail_no' => 1,
-                'department'             => 'FO',
-                'is_posted'              => 1,
+        $service->update([
+            'service_bill_id'        => $bill->Ma,
+            'service_bill_detail_no' => 1,
+            'department'             => 'FO',
+            'tax'                    => (float)($foService->tax ?? 0),
+            'service_charge'         => (float)($foService->service_charge ?? 0),
+            'is_posted'              => 1,
                 'posted_at'              => now(),
                 'updated_by'             => $user,
             ]);
@@ -2225,6 +2265,30 @@ class BookingRoomServiceController extends Controller
         }
 
         return $createdBillIds;
+    }
+
+    private function housekeepingItemTaxProfile(array $item, ?Product $product): array
+    {
+        return [
+            'service_charge' => (float) ($product?->service_charge_percent ?? $item['service_charge'] ?? 0),
+            'special_tax' => (float) ($product?->special_tax_percent ?? $item['special_tax'] ?? 0),
+            'tax' => (float) ($product?->tax_percent ?? $item['tax'] ?? 0),
+        ];
+    }
+
+    private function commonTaxProfile($profiles): array
+    {
+        $commonValue = static function (string $key) use ($profiles): float {
+            $values = $profiles->pluck($key)->map(fn ($value) => round((float) $value, 6))->unique()->values();
+
+            return $values->count() === 1 ? (float) $values->first() : 0;
+        };
+
+        return [
+            'service_charge' => $commonValue('service_charge'),
+            'special_tax' => $commonValue('special_tax'),
+            'tax' => $commonValue('tax'),
+        ];
     }
 
     private function setupServiceBillDescription(
@@ -2307,8 +2371,9 @@ class BookingRoomServiceController extends Controller
         if (!$primaryGuest) {
             $primaryGuest = $room->guests()->first();
         }
+        $roomTaxProfile = HotelService::taxProfile(HotelService::where('code', 'RM')->first());
 
-        $result = DB::transaction(function () use ($booking, $room, $totalAmount, $dateFrom, $dateTo, $numDays, $primaryGuest, $user, $request) {
+        $result = DB::transaction(function () use ($booking, $room, $totalAmount, $dateFrom, $dateTo, $numDays, $primaryGuest, $user, $request, $roomTaxProfile) {
             // 1. Tạo ServiceBill (SP3000)
             $bill = ServiceBill::create([
                 'Date'               => $dateFrom->toDateString(),
@@ -2319,9 +2384,9 @@ class BookingRoomServiceController extends Controller
                 'DescriptionServive' => $request->description,
                 'Quantity'           => 1,
                 'Amount'             => $totalAmount,
-                'ServiceCharge'      => 0,
-                'SpecialTax'         => 0,
-                'Tax'                => 0,
+                'ServiceCharge'      => $roomTaxProfile['service_charge'],
+                'SpecialTax'         => $roomTaxProfile['special_tax'],
+                'Tax'                => $roomTaxProfile['tax'],
                 'Currency'           => 'VND',
                 'Exchange'           => 1,
                 'Edit'               => 0,
@@ -2359,9 +2424,9 @@ class BookingRoomServiceController extends Controller
                 'ServiceId'                => 'RM',
                 'DescriptionServive'       => $request->description,
                 'OriginalRate'             => $totalAmount,
-                'ServiceCharge'            => 0,
-                'SpecialTax'               => 0,
-                'Tax'                      => 0,
+                'ServiceCharge'            => $roomTaxProfile['service_charge'],
+                'SpecialTax'               => $roomTaxProfile['special_tax'],
+                'Tax'                      => $roomTaxProfile['tax'],
                 'Amount'                   => $totalAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,

@@ -12,6 +12,8 @@ use App\Models\HousekeepingServiceBill;
 use App\Models\HotelService;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
+use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
@@ -249,7 +251,10 @@ class BookingRoomServiceFolioTest extends TestCase
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $primary->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'is_primary' => false, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
         $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
-        $service = HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id]);
+        $service = HotelService::create([
+            'code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000,
+            'service_charge' => 5, 'special_tax' => 2, 'tax' => 10, 'department_id' => $department->id,
+        ]);
         $department->hotelServices()->attach($service->id, ['description' => 'Dịch vụ minibar']);
 
         $this->actingAs($user)
@@ -264,9 +269,15 @@ class BookingRoomServiceFolioTest extends TestCase
             'RentalRoomId1' => $room->id, 'RentalRoomId2' => $room->id,
             'CustomerId1' => $secondary->id, 'CustomerId2' => $secondary->id,
             'DescriptionServive' => 'Dịch vụ minibar - Phòng 105',
+            'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
+        ]);
+        $bill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'MB')->firstOrFail();
+        $this->assertDatabaseHas('service_bill_details', [
+            'BillServiceId' => $bill->Ma, 'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
         ]);
         $this->assertDatabaseHas('booking_room_services', [
             'booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'service_code' => 'MB',
+            'service_charge' => 5, 'tax' => 10,
         ]);
     }
 
@@ -283,6 +294,12 @@ class BookingRoomServiceFolioTest extends TestCase
         $secondary = Guest::create(['full_name' => 'Khach phu']);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $primary->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
         BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'is_primary' => false, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create([
+            'code' => 'ER', 'name' => 'Phụ thu tiền phòng',
+            'service_charge' => 6, 'special_tax' => 3, 'tax' => 9,
+            'department_id' => $department->id,
+        ]);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-room-charge', [
@@ -294,6 +311,7 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseHas('service_bills', [
             'RentalRoomId1' => $room->id, 'RentalRoomId2' => $room->id,
             'CustomerId1' => $secondary->id, 'CustomerId2' => $secondary->id,
+            'ServiceCharge' => 6, 'SpecialTax' => 3, 'Tax' => 9,
         ]);
         $this->assertDatabaseHas('booking_room_services', [
             'booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'service_code' => 'ER',
@@ -409,6 +427,12 @@ class BookingRoomServiceFolioTest extends TestCase
             $reservedRoom->update(['room_number' => '102', 'status' => BookingRoom::STATUS_BOOKED, 'rate' => 500000]);
             $unassignedRoom->update(['status' => BookingRoom::STATUS_CHECKED_IN, 'rate' => 500000]);
         });
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create([
+            'code' => 'RM', 'name' => 'Dịch vụ phòng nghỉ',
+            'service_charge' => 5, 'special_tax' => 1, 'tax' => 8,
+            'department_id' => $department->id,
+        ]);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-room-charge', [
@@ -427,6 +451,9 @@ class BookingRoomServiceFolioTest extends TestCase
             'RentalRoomId2' => null,
             'CustomerId2' => null,
             'ServiceId' => 'RM',
+            'ServiceCharge' => 5,
+            'SpecialTax' => 1,
+            'Tax' => 8,
             'Edit' => 0,
         ]);
         $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $reservedRoom->id, 'ServiceId' => 'RM', 'Edit' => 0]);
@@ -658,6 +685,67 @@ class BookingRoomServiceFolioTest extends TestCase
             ->assertJsonFragment(['code' => 'FO-SVC'])
             ->assertJsonFragment(['code' => 'SHARED'])
             ->assertJsonMissing(['code' => 'FB-SVC']);
+    }
+
+    public function test_housekeeping_bill_uses_each_product_tax_profile_from_database(): void
+    {
+        $user = User::factory()->create();
+        SystemDateRoll::create([
+            'system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username,
+        ]);
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-HK');
+        $category = ProductCategory::create(['name' => 'Minibar', 'outlet' => 'MB']);
+        $product = Product::create([
+            'product_category_id' => $category->id,
+            'name' => 'Nước suối',
+            'price' => 100000,
+            'service_charge_percent' => 5,
+            'special_tax_percent' => 2,
+            'tax_percent' => 10,
+            'open_key' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-housekeeping-bill', [
+                'booking_room_id' => $room->id,
+                'posting_source' => 'HK',
+                'service_date' => '2026-08-06',
+                'folio' => 1,
+                'bills' => [[
+                    'group' => 'MB',
+                    'items' => [[
+                        'id' => $product->id,
+                        'name' => $product->name,
+                        'qty' => 1,
+                        'price' => 100000,
+                        'original_rate' => 100000,
+                        'net_price' => 100000,
+                        'total_amount' => 100000,
+                        'service_charge' => 0,
+                        'special_tax' => 0,
+                        'tax' => 0,
+                    ]],
+                ]],
+            ])
+            ->assertSuccessful();
+
+        $bill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'MB')->firstOrFail();
+        $this->assertDatabaseHas('service_bills', [
+            'Ma' => $bill->Ma, 'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
+        ]);
+        $this->assertDatabaseHas('service_bill_details', [
+            'BillServiceId' => $bill->Ma, 'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
+        ]);
+        $this->assertDatabaseHas('housekeeping_service_bills', [
+            'BillServiceId' => $bill->Ma, 'BillServicesCharge' => 5, 'BillSpecialTax' => 2, 'BillTax' => 10,
+        ]);
+        $this->assertDatabaseHas('booking_room_services', [
+            'service_bill_id' => $bill->Ma, 'service_charge' => 5, 'tax' => 10,
+        ]);
     }
 
     private function makeRoom(Booking $booking, string $id): BookingRoom
