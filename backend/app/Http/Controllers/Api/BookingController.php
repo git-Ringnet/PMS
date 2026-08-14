@@ -92,10 +92,14 @@ class BookingController extends Controller
         ];
 
         if ($request->boolean('with_billing') || $request->input('with_billing') === 'true') {
-            $relations[] = 'serviceBills';
-            $relations[] = 'bookingRooms.serviceBills';
-            $relations[] = 'bookingRooms.currentServiceBills';
-            $relations[] = 'masterServiceBills';
+            $relations[] = 'serviceBills.employeeOperator:id,employee_code,name';
+            $relations[] = 'serviceBills.usernameOperator:id,username,name';
+            $relations[] = 'bookingRooms.serviceBills.employeeOperator:id,employee_code,name';
+            $relations[] = 'bookingRooms.serviceBills.usernameOperator:id,username,name';
+            $relations[] = 'bookingRooms.currentServiceBills.employeeOperator:id,employee_code,name';
+            $relations[] = 'bookingRooms.currentServiceBills.usernameOperator:id,username,name';
+            $relations[] = 'masterServiceBills.employeeOperator:id,employee_code,name';
+            $relations[] = 'masterServiceBills.usernameOperator:id,username,name';
             $relations[] = 'payments.paymentMethod';
         }
 
@@ -679,11 +683,6 @@ class BookingController extends Controller
 
         try {
             \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request) {
-                $wasMasterRoomRate = (bool) $booking->is_master_room_rate;
-                $willMasterRoomRate = array_key_exists('is_master_room_rate', $validated)
-                    ? (bool) $validated['is_master_room_rate']
-                    : $wasMasterRoomRate;
-                
                 // Đồng bộ ngày của phòng theo cấu hình SyncRoomDateByBookingDate
                 $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';
                 if ($syncRoomDates) {
@@ -706,32 +705,6 @@ class BookingController extends Controller
                 }
 
                 $booking->update($validated);
-
-                // Chỉ khi bật gom tiền phòng mới chuyển các bill RM/ER đã post về Master.
-                // Tắt cờ không chuyển ngược các bill cũ đang thuộc Master về phòng.
-                if (!$wasMasterRoomRate && $willMasterRoomRate) {
-                    $roomRateBillIds = \App\Models\ServiceBill::where('RegisterId1', $booking->id)
-                        ->whereIn('ServiceId', ['RM', 'ER'])
-                        ->where('Edit', 0)
-                        ->where(function ($q) {
-                            $q->whereNotNull('RentalRoomId2')->where('RentalRoomId2', '!=', '')->where('RentalRoomId2', '!=', '0')
-                              ->orWhere(function ($q2) {
-                                  $q2->whereNotNull('CustomerId2')->where('CustomerId2', '!=', '')->where('CustomerId2', '!=', '0');
-                              });
-                        })
-                        ->pluck('Ma');
-
-                    if ($roomRateBillIds->isNotEmpty()) {
-                        \App\Models\ServiceBill::whereIn('Ma', $roomRateBillIds)->update([
-                            'RentalRoomId2' => null,
-                            'CustomerId2' => null,
-                            'CompanyId2' => $booking->company_id,
-                        ]);
-                        \App\Models\BookingRoomService::whereIn('service_bill_id', $roomRateBillIds)
-                            ->whereIn('service_code', ['RM', 'ER'])
-                            ->delete();
-                    }
-                }
 
                 // Đồng bộ room_allocations (từ UI gửi lên) - xử lý thông minh để cập nhật thay vì xóa/tạo lại
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
@@ -1722,13 +1695,13 @@ class BookingController extends Controller
         $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
 
         if ($shouldHaveService) {
-            \App\Models\BookingRoomService::updateOrCreate(
+            \App\Models\BookingRoomService::updateOrCreateForDate(
                 [
                     'booking_room_id' => $child->booking_room_id,
                     'service_code'    => $serviceCode,
-                    'service_date'    => $detail->service_date->toDateString(),
                     'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
                 ],
+                $detail->service_date,
                 [
                     'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
                     'quantity'        => 1,

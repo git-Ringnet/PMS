@@ -599,9 +599,6 @@ class GuestController extends Controller
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
             ->where('Status', '!=', 2)
             ->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id]);
-        if ((bool) $room->booking?->is_master_room_rate) {
-            $unpaidQuery->whereNotIn('ServiceId', ['RM', 'ER']);
-        }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
         if ($this->hasUnpaidDebt($room->booking_id, $masterScope ? null : $room->id)) {
@@ -697,7 +694,6 @@ class GuestController extends Controller
             ->where(function ($q) use ($booking, $checkedOutRoomIds) {
                 $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
                 if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
-                if ((bool) $booking->is_master_room_rate) $q->orWhereIn('ServiceId', ['RM', 'ER']);
             })
             ->exists();
     }
@@ -1267,13 +1263,13 @@ class GuestController extends Controller
         $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
 
         if ($shouldHaveService) {
-            \App\Models\BookingRoomService::updateOrCreate(
+            \App\Models\BookingRoomService::updateOrCreateForDate(
                 [
                     'booking_room_id' => $child->booking_room_id,
                     'service_code'    => $serviceCode,
-                    'service_date'    => $detail->service_date->toDateString(),
                     'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
                 ],
+                $detail->service_date,
                 [
                     'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
                     'quantity'        => 1,

@@ -1452,13 +1452,13 @@ class BookingRoomController extends Controller
         $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
 
         if ($shouldHaveService) {
-            \App\Models\BookingRoomService::updateOrCreate(
+            \App\Models\BookingRoomService::updateOrCreateForDate(
                 [
                     'booking_room_id' => $child->booking_room_id,
                     'service_code'    => $serviceCode,
-                    'service_date'    => $detail->service_date->toDateString(),
                     'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
                 ],
+                $detail->service_date,
                 [
                     'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
                     'quantity'        => 1,

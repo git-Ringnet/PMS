@@ -18,6 +18,7 @@ use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
 use App\Models\RoomNightBill;
 use App\Models\BookingRoomService;
+use App\Models\HotelConfig;
 use App\Models\HotelService;
 use App\Events\NightAuditUpdated;
 use App\Events\RoomStatusUpdated;
@@ -164,7 +165,7 @@ class NightAuditController extends Controller
                 // Post dịch vụ bổ sung từ booking_room_services khi all_charged (chỉ tính ngày đến)
                 if ($chargeOption === 'all_charged') {
                     $extraServices = BookingRoomService::where('booking_room_id', $room->id)
-                        ->where('service_date', $systemDate->toDateString())
+                        ->whereDate('service_date', $systemDate->toDateString())
                         ->where('service_code', '!=', 'RM')
                         ->where('is_posted', 0)
                         ->get();
@@ -287,7 +288,7 @@ class NightAuditController extends Controller
                     // Post dịch vụ bổ sung (extra bed, phụ thu...) cho từng đêm khi all_charged
                     if ($chargeOption === 'all_charged') {
                         $extraServices = BookingRoomService::where('booking_room_id', $room->id)
-                            ->where('service_date', $nightDate->toDateString())
+                            ->whereDate('service_date', $nightDate->toDateString())
                             ->where('service_code', '!=', 'RM')
                             ->where('is_posted', 0)
                             ->get();
@@ -375,7 +376,7 @@ class NightAuditController extends Controller
 
                     // Post các dịch vụ tự động đã set-up sẵn trong booking cho đêm nay (is_posted = 0)
                     $autoServices = BookingRoomService::where('booking_room_id', $targetRoom->id)
-                        ->where('service_date', $systemDate->toDateString())
+                        ->whereDate('service_date', $systemDate->toDateString())
                         ->where('is_posted', 0)
                         ->where('service_code', '!=', 'RM')
                         ->get();
@@ -560,7 +561,7 @@ class NightAuditController extends Controller
         $rate = 0;
         $rmService = BookingRoomService::where('booking_room_id', $room->id)
             ->where('service_code', BookingRoomService::CODE_ROOM ?? 'RM')
-            ->where('service_date', $date->toDateString())
+            ->whereDate('service_date', $date->toDateString())
             ->first();
 
         if ($rmService && (float)$rmService->rate > 0) {
@@ -602,11 +603,15 @@ class NightAuditController extends Controller
             $breakfastAmount = $breakfastRate * max(1, (int)$room->adults);
         }
 
-        $description = 'Dịch vụ phòng nghỉ' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
-        $finalReason = $reason ?: $description;
-        if ($reason && $room->room_number) {
-            $finalReason .= ' - Phòng ' . $room->room_number;
-        }
+        $roomService = HotelService::where('code', 'RM')->first();
+        $breakfastService = HotelService::where('code', 'BF')->first();
+        $description = $roomService
+            ? $roomService->billDescription($room->room_number, 'FO')
+            : 'Dịch vụ phòng nghỉ' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
+        $breakfastDescription = $breakfastService
+            ? $breakfastService->billDescription($room->room_number, 'FO')
+            : 'Tiền ăn sáng người lớn' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
+        $finalReason = $description;
 
         // 3. Tạo ServiceBill
         $bill = ServiceBill::create([
@@ -668,7 +673,7 @@ class NightAuditController extends Controller
                 'Ma'                       => 2,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'BF',
-                'DescriptionServive'       => 'Tiền ăn sáng',
+                'DescriptionServive'       => $breakfastDescription,
                 'OriginalRate'             => $breakfastAmount,
                 'Amount'                   => $breakfastAmount,
                 'Currency'                 => 'VND',
@@ -682,7 +687,7 @@ class NightAuditController extends Controller
                 'Ma'                       => 3,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'RM',
-                'DescriptionServive'       => 'Trừ tiền ăn sáng',
+                'DescriptionServive'       => 'Trừ ' . $breakfastDescription,
                 'OriginalRate'             => -$breakfastAmount,
                 'Amount'                   => -$breakfastAmount,
                 'Currency'                 => 'VND',
@@ -767,7 +772,7 @@ class NightAuditController extends Controller
         $qty         = (float)$service->quantity;
         $rate        = (float)$service->rate;
         $totalAmount = $qty * $rate;
-        $description = preg_replace('/\s+\(\d+\)$/u', '', trim((string) ($service->note ?: $foService->name)));
+        $description = $this->setupServiceBillDescription($service, $foService, $room->room_number);
         $isRoomFolio = (int) $service->is_room === 1;
 
         $bill = ServiceBill::create([
@@ -827,5 +832,25 @@ class NightAuditController extends Controller
             'is_posted'              => 1,
             'posted_at'              => now(),
         ]);
+    }
+
+    private function setupServiceBillDescription(
+        BookingRoomService $service,
+        HotelService $hotelService,
+        ?string $roomNumber
+    ): string {
+        $childBreakfastCode = (string) (HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value')
+            ?: BookingRoomService::CODE_BF_CHILD);
+        $note = trim((string) $service->note);
+
+        if (strcasecmp((string) $service->service_code, $childBreakfastCode) === 0 && $note !== '') {
+            return preg_replace(
+                '/^Phụ thu ăn sáng trẻ em\s*:\s*/iu',
+                'Phụ thu ăn sáng trẻ em - ',
+                $note
+            ) ?: $note;
+        }
+
+        return $hotelService->billDescription($roomNumber, 'FO');
     }
 }
