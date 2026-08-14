@@ -615,7 +615,7 @@ const loadDbProducts = async () => {
       fetchHousekeepingOutlets()
     ])
 
-    housekeepingOutlets.value = (resOutlets.data || []).filter(o => o.is_active && o.service_code)
+    housekeepingOutlets.value = (resOutlets.data || []).filter(o => o.is_active && o.show_in_add_service && o.service_code)
     if (!tabKeys.value.includes(currentTab.value)) currentTab.value = housekeepingOutlets.value[0]?.code || ''
 
     const categories = Array.isArray(resCats.data) ? resCats.data : (resCats.data?.data || [])
@@ -657,7 +657,10 @@ const loadDbProducts = async () => {
           price: finalPrice || basePrice,
           image: p.image ? `http://localhost:8000/storage/${p.image}` : null,
           icon: p.image ? null : '📦',
-          product_code: p.product_code
+          product_code: p.product_code,
+          service_charge_percent: svcPercent,
+          special_tax_percent: spcTaxPercent,
+          tax_percent: taxPercent
           ,product_category_id: p.product_category_id
           ,product_group_id: p.product_group_id
         })
@@ -875,8 +878,9 @@ const sendToRoom = async () => {
       const unitPrice = Number(prod.price) || 0
       const rowCalc = calcRow(item)
       const qtyVal = Number(item.qty) || 1
-      const itemTax = Number(prod.tax) || Number(prod.tax_amount) || 0
-      const itemSvcCharge = Number(prod.service_charge) || Number(prod.service_charge_amount) || 0
+      const itemTax = Number(prod.tax_percent ?? prod.tax) || 0
+      const itemSpecialTax = Number(prod.special_tax_percent ?? prod.special_tax) || 0
+      const itemSvcCharge = Number(prod.service_charge_percent ?? prod.service_charge) || 0
       groupedBillsMap[groupKey].push({
         id: prod.id,
         code: prod.product_code || prod.code || prod.id,
@@ -886,6 +890,7 @@ const sendToRoom = async () => {
         discPct: item.discPct || 0,
         net_price: qtyVal ? (rowCalc.net / qtyVal) : unitPrice,
         tax: itemTax,
+        special_tax: itemSpecialTax,
         service_charge: itemSvcCharge,
         unit: prod.unit || prod.unit_name || prod.dvt || 'Cái'
         ,original_rate: unitPrice

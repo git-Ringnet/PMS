@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $this->call([
+            ModuleSeeder::class,
             BookingStatusSeeder::class,
             SystemConfigurationSeeder::class,
             DepartmentSeeder::class,

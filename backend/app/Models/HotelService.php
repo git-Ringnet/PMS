@@ -46,4 +46,25 @@ class HotelService extends Model
             ->withPivot('description')
             ->withTimestamps();
     }
+
+    public static function taxProfile(?self $service): array
+    {
+        return [
+            'service_charge' => (float) ($service?->service_charge ?? 0),
+            'special_tax' => (float) ($service?->special_tax ?? 0),
+            'tax' => (float) ($service?->tax ?? 0),
+        ];
+    }
+
+    public function billDescription(?string $roomNumber = null, string $departmentCode = 'FO'): string
+    {
+        $department = $this->departments()
+            ->where('departments.code', $departmentCode)
+            ->first();
+        $description = trim((string) ($department?->pivot?->description ?: $this->name));
+
+        return $roomNumber
+            ? $description . ' - Phòng ' . $roomNumber
+            : $description;
+    }
 }

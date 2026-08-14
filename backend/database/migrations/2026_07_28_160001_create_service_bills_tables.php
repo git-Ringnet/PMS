@@ -36,6 +36,7 @@ return new class extends Migration
             $table->string('CustomerId2', 50)->nullable();
             $table->unsignedBigInteger('CompanyId2')->nullable();
             $table->string('Username', 50);
+            $table->string('employee_code', 50)->nullable()->index();
             $table->string('Ca', 1)->nullable();
             $table->unsignedSmallInteger('Status')->default(1);
             $table->unsignedBigInteger('InvoiceId')->nullable();
@@ -66,6 +67,7 @@ return new class extends Migration
             $table->string('ServiceId', 2);
             $table->string('DescriptionServive', 400)->nullable();
             $table->decimal('OriginalRate', 15, 2)->nullable();
+            $table->decimal('Quantity', 20, 6)->default(1);
             $table->float('ServiceCharge')->default(0);
             $table->float('SpecialTax')->default(0);
             $table->float('Tax')->default(0);

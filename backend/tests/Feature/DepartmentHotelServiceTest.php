@@ -94,4 +94,19 @@ class DepartmentHotelServiceTest extends TestCase
             ->assertJsonPath('data.0.code', 'FO-SVC')
             ->assertJsonMissing(['code' => 'HK-SVC']);
     }
+
+    public function test_bill_description_uses_department_configuration_and_appends_room_number(): void
+    {
+        $department = Department::create(['code' => 'FO', 'name' => 'Front Office']);
+        $service = HotelService::create([
+            'code' => 'EB',
+            'name' => 'Extra Bed',
+            'department_id' => $department->id,
+        ]);
+        $department->hotelServices()->attach($service->id, [
+            'description' => 'Phụ thu thêm giường',
+        ]);
+
+        $this->assertSame('Phụ thu thêm giường - Phòng 106', $service->billDescription('106'));
+    }
 }

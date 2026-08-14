@@ -16,12 +16,11 @@ const collapsedGroups = ref({})
 
 watch(() => props.show, visible => { if (visible) { selectedBillIds.value = []; collapsedGroups.value = {} } })
 const money = value => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(Number(value) || 0)
-const groupLabels = { MB: 'Minibar/Phí Minibar', LA: 'Laundry/Giặt ủi', BR: 'Broken/Phí Hư Hỏng', RM: 'Dịch vụ phòng nghỉ' }
 const groupedCandidates = computed(() => {
   const groups = new Map()
   props.candidates.forEach(item => {
-    const key = item.category || 'DV'
-    if (!groups.has(key)) groups.set(key, { key, label: groupLabels[key] || item.description || 'Dịch vụ khác', items: [] })
+    const key = String(item.category || 'DV').toUpperCase()
+    if (!groups.has(key)) groups.set(key, { key, label: item.category_label || key, items: [] })
     groups.get(key).items.push(item)
   })
   return [...groups.values()]

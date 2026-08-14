@@ -66,6 +66,7 @@ return new class extends Migration
             // 1 = Đã post sang Folio
             $table->unsignedTinyInteger('is_posted')->default(0);
             $table->dateTime('posted_at')->nullable(); // Thời điểm đã post
+            $table->string('posted_by_employee_code', 50)->nullable();
 
             // =========================================
             // NGƯỜI TẠO
@@ -86,6 +87,7 @@ return new class extends Migration
             $table->index('service_date');
             $table->index('service_code');
             $table->index('is_posted'); // Query batch job auto-post
+            $table->index('posted_by_employee_code');
             $table->index(['booking_room_id', 'folio']);
             // Một dịch vụ có thể được tách thành nhiều dòng trong cùng Folio.
         });

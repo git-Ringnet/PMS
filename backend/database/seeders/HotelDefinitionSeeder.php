@@ -330,13 +330,44 @@ class HotelDefinitionSeeder extends Seeder
             'Spa' => 'SP',
         ];
         $departmentIds = Department::pluck('id', 'code');
+        $serviceDescriptions = [
+            'BC' => 'Phụ thu ăn sáng buffet trẻ em',
+            'BD' => 'Phụ thu ăn sáng trẻ em',
+            'BF' => 'Tiền ăn sáng người lớn',
+            'BK' => 'Phí đổ vỡ',
+            'BR' => 'Phí hư hỏng',
+            'DN' => 'Tiền ăn tối',
+            'DO' => 'Phí tiễn sân bay',
+            'EB' => 'Phụ thu thêm giường',
+            'EI' => 'Phụ thu nhận phòng sớm',
+            'EP' => 'Phụ thu thêm người',
+            'ER' => 'Phụ thu tiền phòng',
+            'FB' => 'Dịch vụ ăn uống',
+            'KC' => 'Phụ thu trẻ em',
+            'KE' => 'Phí thẻ phòng mất/hỏng',
+            'LA' => 'Dịch vụ giặt ủi',
+            'LO' => 'Phụ thu trả phòng trễ',
+            'MB' => 'Dịch vụ minibar',
+            'MR' => 'Dịch vụ phòng họp',
+            'MS' => 'Dịch vụ khác',
+            'OT' => 'Dịch vụ khác nhà hàng',
+            'PE' => 'Phí phạt',
+            'PU' => 'Dịch vụ đưa đón sân bay',
+            'RB' => 'Dịch vụ thức uống',
+            'RF' => 'Dịch vụ thức ăn',
+            'RM' => 'Dịch vụ phòng nghỉ',
+            'TO' => 'Vé tham quan',
+            'UP' => 'Phí nâng hạng phòng',
+        ];
 
         foreach ($services as $s) {
             $departmentCode = $departmentCodes[$s['department']] ?? $s['department'];
             unset($s['department']);
             $s['department_id'] = $departmentIds[$departmentCode];
             $service = HotelService::updateOrCreate(['code' => $s['code']], $s);
-            $service->departments()->syncWithoutDetaching([$s['department_id']]);
+            $service->departments()->syncWithoutDetaching([
+                $s['department_id'] => ['description' => $serviceDescriptions[$s['code']] ?? $s['name']],
+            ]);
         }
 
         // 2. Seed Shifts
