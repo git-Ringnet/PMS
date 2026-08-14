@@ -22,7 +22,7 @@ class InventoryCheckController extends Controller
             'month'        => 'required|string|size:7', // YYYY-MM
         ]);
 
-        $check = InventoryCheck::with(['items.product'])
+        $check = InventoryCheck::with(['items.product.category', 'creator'])
             ->where('warehouse_id', $request->warehouse_id)
             ->where('month', $request->month)
             ->first();
@@ -43,28 +43,31 @@ class InventoryCheckController extends Controller
             'warehouse_id' => 'required|integer|exists:warehouses,id',
             'month'        => 'required|string|size:7',
             'note'         => 'nullable|string',
+            'created_by'   => 'nullable|integer|exists:users,id',
         ]);
 
-        // Kiểm tra đã có phiếu chưa
+        // Kiểm tra đã có phiếu chưa - nếu có trả về phiếu hiện tại và cập nhật note/created_by
         $existing = InventoryCheck::where('warehouse_id', $validated['warehouse_id'])
             ->where('month', $validated['month'])
             ->first();
 
         if ($existing) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Đã tồn tại phiếu kiểm kê cho kho và tháng này.',
-            ], 422);
+            $existing->update([
+                'note' => $validated['note'] ?? $existing->note,
+                'created_by' => $validated['created_by'] ?? $existing->created_by,
+            ]);
+            $existing->load(['items.product.category', 'creator']);
+            return response()->json(['success' => true, 'data' => $this->formatCheck($existing)], 200);
         }
 
         $check = InventoryCheck::create([
             'warehouse_id' => $validated['warehouse_id'],
             'month'        => $validated['month'],
             'note'         => $validated['note'] ?? null,
-            'created_by'   => auth()->id(),
+            'created_by'   => $validated['created_by'] ?? auth()->id(),
         ]);
 
-        $check->load(['items.product']);
+        $check->load(['items.product.category', 'creator']);
 
         return response()->json(['success' => true, 'data' => $this->formatCheck($check)], 201);
     }
@@ -96,7 +99,7 @@ class InventoryCheckController extends Controller
             $added++;
         }
 
-        $check->load(['items.product']);
+        $check->load(['items.product.category', 'creator']);
 
         return response()->json([
             'success' => true,
@@ -125,13 +128,34 @@ class InventoryCheckController extends Controller
         $item->fill($validated);
 
         // final_balance ban đầu = well_balance (sẽ được tính lại từ logs ở frontend)
-        if (isset($validated['well_balance']) && !request('keep_final')) {
+        if (isset($validated['well_balance'])) {
             $item->final_balance = $validated['well_balance'];
+            if (($item->stoke_take == 0 || $item->stoke_take === null) && !isset($validated['stoke_take'])) {
+                $item->stoke_take = $validated['well_balance'];
+            }
+        } elseif (isset($validated['stoke_take']) && ($item->well_balance == 0 || $item->well_balance === null)) {
+            $item->well_balance = $validated['stoke_take'];
+            $item->final_balance = $validated['stoke_take'];
         }
 
         $item->save();
+        $item->load(['product.category']);
 
-        return response()->json(['success' => true, 'data' => $item]);
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id'           => $item->id,
+                'product_id'   => $item->product_id,
+                'product_code' => $item->product?->product_code ?: $item->product_id,
+                'product_name' => $item->product?->name,
+                'unit'         => $item->unit ?: ($item->product?->unit ?: 'Cái'),
+                'well_balance' => $item->well_balance,
+                'stoke_take'   => $item->stoke_take,
+                'different_qty'=> $item->different_qty,
+                'final_balance'=> $item->final_balance,
+                'note'         => $item->note,
+            ]
+        ]);
     }
 
     /**
@@ -161,7 +185,12 @@ class InventoryCheckController extends Controller
             ->get();
 
         $categories = \App\Models\ProductCategory::with(['products' => function($q) {
-            $q->where('is_active', true)->orderBy('name');
+            $q->where('is_active', true)
+              ->where(function($sub) {
+                  $sub->where('is_in_stock', true)
+                      ->orWhere('track_stock', true);
+              })
+              ->orderBy('name');
         }])->get();
 
         $tree = [];
@@ -230,6 +259,71 @@ class InventoryCheckController extends Controller
 
     // ─── Helpers ─────────────────────────────────────────────
 
+    public function exportExcel($id)
+    {
+        $check = InventoryCheck::with(['items.product.category', 'warehouse', 'creator'])->findOrFail($id);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Title
+        $sheet->setCellValue('A1', 'PHIẾU KIỂM KÊ TỒN KHO ĐỊNH KỲ');
+        $sheet->mergeCells('A1:I1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+
+        // Metadata
+        $sheet->setCellValue('A3', 'Mã kiểm kê:');
+        $sheet->setCellValue('B3', 'KK-' . $check->id);
+        $sheet->setCellValue('A4', 'Tháng/Năm:');
+        $sheet->setCellValue('B4', $check->month);
+        $sheet->setCellValue('D3', 'Kho:');
+        $sheet->setCellValue('E3', $check->warehouse?->name);
+        $sheet->setCellValue('D4', 'Người kiểm kho:');
+        $sheet->setCellValue('E4', $check->creator?->name ?: '—');
+        $sheet->setCellValue('G3', 'Ghi chú:');
+        $sheet->setCellValue('H3', $check->note ?: '—');
+
+        // Headers
+        $headers = [
+            'STT', 'Mã kiểm kê', 'Mã SP', 'Tên SP', 'Đơn Vị', 'Tồn Đầu Kỳ', 'Số Lượng Thực Tế', 'Số Chênh Lệch', 'Ghi Chú'
+        ];
+        $sheet->fromArray($headers, null, 'A6');
+        $sheet->getStyle('A6:I6')->getFont()->setBold(true);
+
+        // Data
+        $row = 7;
+        $stt = 1;
+        foreach ($check->items as $item) {
+            $sheet->fromArray([
+                $stt++,
+                'KK-' . $check->id,
+                $item->product?->product_code ?: $item->product_id,
+                $item->product?->name,
+                $item->unit ?: ($item->product?->unit ?: 'Cái'),
+                $item->well_balance,
+                $item->stoke_take,
+                $item->different_qty,
+                $item->note ?: ''
+            ], null, 'A' . $row);
+            $row++;
+        }
+
+        // Auto size columns
+        foreach (range('A', 'I') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $fileName = 'phieu_kiem_ke_' . $check->month . '.xlsx';
+        $tempFile = tempnam(sys_get_temp_dir(), $fileName);
+        $writer->save($tempFile);
+
+        return response()->download($tempFile, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
+
     private function formatCheck(InventoryCheck $check): array
     {
         return [
@@ -237,12 +331,15 @@ class InventoryCheckController extends Controller
             'warehouse_id' => $check->warehouse_id,
             'month'        => $check->month,
             'note'         => $check->note,
+            'created_by'   => $check->created_by,
+            'creator_name' => $check->creator?->name,
             'created_at'   => $check->created_at?->toDateTimeString(),
             'items'        => $check->items->map(fn($item) => [
                 'id'           => $item->id,
                 'product_id'   => $item->product_id,
+                'product_code' => $item->product?->product_code ?: $item->product_id,
                 'product_name' => $item->product?->name,
-                'unit'         => $item->unit,
+                'unit'         => $item->unit ?: ($item->product?->unit ?: 'Cái'),
                 'well_balance' => $item->well_balance,
                 'stoke_take'   => $item->stoke_take,
                 'different_qty'=> $item->different_qty,
