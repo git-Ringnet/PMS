@@ -16,6 +16,9 @@ return new class extends Migration
             $table->string('service_code', 30)->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('show_in_add_service')->default(true);
+            $table->decimal('default_service_charge_percent', 5, 2)->default(0);
+            $table->decimal('default_tax_percent', 5, 2)->default(0);
+            $table->decimal('default_special_tax_percent', 5, 2)->default(0);
             $table->unsignedInteger('order_index')->default(0);
             $table->timestamps();
         });

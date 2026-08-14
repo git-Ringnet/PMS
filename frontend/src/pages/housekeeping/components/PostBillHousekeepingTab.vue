@@ -127,18 +127,18 @@
         </div>
       </div>
 
-      <!-- MAIN BODY GRID (260px Left | 1fr Right) -->
-      <div class="modal-body flex-1 grid grid-cols-1 md:grid-cols-[260px_1fr] overflow-hidden">
+      <!-- MAIN BODY GRID (330px Left | 1fr Right) -->
+      <div class="modal-body flex-1 grid grid-cols-1 md:grid-cols-[330px_1fr] overflow-hidden">
         
         <!-- LEFT: PRODUCTS LIST -->
         <div class="col-products border-r border-slate-200 flex flex-col overflow-hidden bg-white">
           <!-- Tab Bar -->
-          <div class="tab-bar flex border-b-2 border-slate-200 bg-slate-100 shrink-0">
+          <div class="tab-bar flex h-10 border-b-2 border-slate-200 bg-slate-100 shrink-0">
             <button 
               v-for="tKey in tabKeys"
               :key="tKey"
               @click="switchTab(tKey)"
-              class="tab flex-1 py-2 px-1 text-xs font-medium text-slate-400 text-center border-b-2 transition-all cursor-pointer bg-none border-transparent -mb-[2px]"
+              class="tab flex-1 h-10 px-1 text-xs font-medium text-slate-400 text-center border-b-2 transition-all cursor-pointer bg-none border-transparent -mb-[2px]"
               :class="[currentTab === tKey ? 'text-slate-800 font-bold border-b-[#1a6b8a]' : 'hover:text-slate-600']"
             >
               {{ tabLabels[tKey] }}
