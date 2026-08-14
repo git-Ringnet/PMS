@@ -25,6 +25,9 @@ class HousekeepingOutletController extends Controller
             'service_code' => 'nullable|string|max:30',
             'is_active' => 'boolean',
             'show_in_add_service' => 'boolean',
+            'default_service_charge_percent' => 'nullable|numeric|min:0|max:100',
+            'default_tax_percent' => 'nullable|numeric|min:0|max:100',
+            'default_special_tax_percent' => 'nullable|numeric|min:0|max:100',
             'order_index' => 'nullable|integer|min:0',
         ]);
 
@@ -44,6 +47,9 @@ class HousekeepingOutletController extends Controller
             'service_code' => 'nullable|string|max:30',
             'is_active' => 'boolean',
             'show_in_add_service' => 'boolean',
+            'default_service_charge_percent' => 'nullable|numeric|min:0|max:100',
+            'default_tax_percent' => 'nullable|numeric|min:0|max:100',
+            'default_special_tax_percent' => 'nullable|numeric|min:0|max:100',
             'order_index' => 'nullable|integer|min:0',
         ]);
 

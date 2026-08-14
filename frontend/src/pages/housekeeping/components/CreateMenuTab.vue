@@ -297,7 +297,8 @@
 
                 <div class="flex flex-col gap-1.5">
                   <label class="font-bold text-slate-700 text-[12px]">Nhóm sản phẩm</label>
-                  <div class="relative">
+                  <input v-if="!newProduct.id" type="text" :value="selectedProductGroupName" disabled class="w-full border border-slate-200 rounded-lg bg-slate-100 px-3 py-2 text-slate-600 cursor-not-allowed text-[13px] shadow-sm font-medium" />
+                  <div v-else class="relative">
                     <select v-model="newProduct.groupId" class="w-full border border-slate-300 rounded-lg bg-white px-3 py-2 outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all text-[13px] shadow-sm font-medium">
                       <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
                     </select>
@@ -349,7 +350,7 @@
 
                   <div class="flex flex-col gap-1.5">
                     <label class="font-bold text-sky-700 text-[12px]">Giá bán cuối cùng (VNĐ)</label>
-                    <input type="text" :value="formattedFinalPrice" disabled class="w-full border border-sky-300 rounded-lg bg-sky-50 px-3 py-2 outline-none font-bold text-sky-700 text-[14px] shadow-sm cursor-not-allowed" />
+                    <input type="text" v-model="displayFinalPrice" placeholder="0" class="w-full border border-sky-300 rounded-lg bg-sky-50 px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 font-bold text-sky-700 text-[14px] shadow-sm" />
                   </div>
 
                   <div class="flex flex-col gap-1.5">
@@ -357,7 +358,7 @@
                       <span>Phí phục vụ (%)</span>
                       <span v-if="scAmount > 0" class="text-sky-600 font-semibold">(+ {{ new Intl.NumberFormat('vi-VN').format(scAmount) }}đ)</span>
                     </label>
-                    <input type="number" v-model="newProduct.service_charge_percent" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
+                    <input type="number" v-model="newProduct.service_charge_percent" @input="recalculateFromBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
                   </div>
 
                   <div class="flex flex-col gap-1.5">
@@ -365,7 +366,7 @@
                       <span>Thuế VAT (%)</span>
                       <span v-if="vatAmount > 0" class="text-sky-600 font-semibold">(+ {{ new Intl.NumberFormat('vi-VN').format(vatAmount) }}đ)</span>
                     </label>
-                    <input type="number" v-model="newProduct.tax_percent" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
+                    <input type="number" v-model="newProduct.tax_percent" @input="recalculateFromBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
                   </div>
 
                   <div class="flex flex-col gap-1.5 col-span-2">
@@ -373,7 +374,7 @@
                       <span>Thuế đặc biệt (%)</span>
                       <span v-if="specialAmount > 0" class="text-sky-600 font-semibold">(+ {{ new Intl.NumberFormat('vi-VN').format(specialAmount) }}đ)</span>
                     </label>
-                    <input type="number" v-model="newProduct.special_tax_percent" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
+                    <input type="number" v-model="newProduct.special_tax_percent" @input="recalculateFromBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
                   </div>
 
                 </div>
@@ -479,6 +480,7 @@ const uiStore = useUiStore()
 
 const tabs = ref([])
 const activeTab = ref('')
+const housekeepingOutlets = ref([])
 const showProductModal = ref(false)
 const showGroupModal = ref(false)
 const newGroupName = ref('')
@@ -581,14 +583,14 @@ const fetchGroupsAndProducts = async () => {
       http.get('/products')
     ])
 
-    const housekeepingOutlets = (resOutlets.data || []).filter(outlet => outlet.is_active)
-    tabs.value = housekeepingOutlets.map(outlet => outlet.code)
+    housekeepingOutlets.value = (resOutlets.data || []).filter(outlet => outlet.is_active)
+    tabs.value = housekeepingOutlets.value.map(outlet => outlet.code)
     if (!tabs.value.includes(activeTab.value)) activeTab.value = tabs.value[0] || ''
     const categories = Array.isArray(resCategories.data) ? resCategories.data : (resCategories.data?.data || [])
     const products = Array.isArray(resProducts.data) ? resProducts.data : (resProducts.data?.data || [])
     const resolveOutletName = (value) => {
       const normalized = String(value || '').toLowerCase()
-    const outlet = housekeepingOutlets.find(item =>
+    const outlet = housekeepingOutlets.value.find(item =>
         String(item.code).toLowerCase() === normalized ||
         String(item.name).toLowerCase() === normalized
     )
@@ -603,15 +605,22 @@ const fetchGroupsAndProducts = async () => {
       isEditing: false,
       outlet: resolveOutletName(cat.outlet),
       products: products.filter(p => p.product_category_id === cat.id).map(p => {
-        let basePrice = Number(p.price) || 0;
+        const hasStoredBasePrice = p.original_amount !== null && p.original_amount !== undefined
+        let basePrice = Number(hasStoredBasePrice ? p.original_amount : p.price) || 0;
         let svcPercent = Number(p.service_charge_percent) || 0;
         let taxPercent = Number(p.tax_percent) || 0;
         let spcTaxPercent = Number(p.special_tax_percent) || 0;
-        let finalPrice = basePrice + (basePrice * svcPercent / 100) + (basePrice * taxPercent / 100) + (basePrice * spcTaxPercent / 100);
+        const svcAmount = Math.round(basePrice * svcPercent / 100)
+        const afterServiceCharge = basePrice + svcAmount
+        const specialTaxAmount = Math.round(afterServiceCharge * spcTaxPercent / 100)
+        const afterSpecialTax = afterServiceCharge + specialTaxAmount
+        const taxAmount = Math.round(afterSpecialTax * taxPercent / 100)
+        const finalPrice = hasStoredBasePrice ? Number(p.price) || 0 : afterSpecialTax + taxAmount
 
         return {
           ...p,
-          priceNum: basePrice,
+          basePriceNum: basePrice,
+          priceNum: finalPrice,
           price: new Intl.NumberFormat('vi-VN').format(finalPrice),
         checked: false,
         isActive: !!p.is_active,
@@ -687,6 +696,7 @@ const filteredGroups = computed(() => {
 const newProduct = ref({
   name: '',
   price: 0,
+  original_amount: 0,
   currency: '',
   groupId: null,
   isActive: true,
@@ -695,52 +705,102 @@ const newProduct = ref({
   flexiblePrice: false,
   inventory_id: '',
   service_charge_percent: 0,
+  service_charge_amount: 0,
   tax_percent: 0,
+  tax_amount: 0,
   special_tax_percent: 0,
+  special_tax_amount: 0,
   note: '',
   imageFile: null
 })
 
-const finalPrice = computed(() => {
-    let base = Number(newProduct.value.price) || 0
-    let sc = (base * (newProduct.value.service_charge_percent || 0)) / 100
-    let vat = (base * (newProduct.value.tax_percent || 0)) / 100
-    let special = (base * (newProduct.value.special_tax_percent || 0)) / 100
-    return base + sc + vat + special
-})
+const calculatePriceBreakdown = (baseAmount) => {
+  const base = Math.round(Number(baseAmount) || 0)
+  const serviceCharge = Math.round(base * (Number(newProduct.value.service_charge_percent) || 0) / 100)
+  const afterServiceCharge = base + serviceCharge
+  const specialTax = Math.round(afterServiceCharge * (Number(newProduct.value.special_tax_percent) || 0) / 100)
+  const afterSpecialTax = afterServiceCharge + specialTax
+  const tax = Math.round(afterSpecialTax * (Number(newProduct.value.tax_percent) || 0) / 100)
 
-const formattedFinalPrice = computed(() => {
-    return new Intl.NumberFormat('vi-VN').format(finalPrice.value)
-})
+  return {
+    base,
+    serviceCharge,
+    specialTax,
+    tax,
+    finalPrice: afterSpecialTax + tax
+  }
+}
+
+const applyPriceBreakdown = (breakdown, keepFinalPrice = false) => {
+  newProduct.value.original_amount = breakdown.base
+  newProduct.value.service_charge_amount = breakdown.serviceCharge
+  newProduct.value.special_tax_amount = breakdown.specialTax
+  newProduct.value.tax_amount = breakdown.tax
+  if (!keepFinalPrice) newProduct.value.price = breakdown.finalPrice
+}
+
+const recalculateFromBase = () => {
+  applyPriceBreakdown(calculatePriceBreakdown(newProduct.value.original_amount))
+}
 
 const displayBasePrice = computed({
   get() {
-    return newProduct.value.price ? new Intl.NumberFormat('vi-VN').format(newProduct.value.price) : ''
+    return newProduct.value.original_amount ? new Intl.NumberFormat('vi-VN').format(newProduct.value.original_amount) : ''
   },
   set(val) {
     const num = val.replace(/\D/g, '')
-    newProduct.value.price = num ? parseInt(num, 10) : 0
+    newProduct.value.original_amount = num ? parseInt(num, 10) : 0
+    recalculateFromBase()
   }
 })
 
 const scAmount = computed(() => {
-    let base = Number(newProduct.value.price) || 0
-    return (base * (newProduct.value.service_charge_percent || 0)) / 100
+    return Number(newProduct.value.service_charge_amount) || 0
 })
 const vatAmount = computed(() => {
-    let base = Number(newProduct.value.price) || 0
-    return (base * (newProduct.value.tax_percent || 0)) / 100
+    return Number(newProduct.value.tax_amount) || 0
 })
 const specialAmount = computed(() => {
-    let base = Number(newProduct.value.price) || 0
-    return (base * (newProduct.value.special_tax_percent || 0)) / 100
+    return Number(newProduct.value.special_tax_amount) || 0
 })
 
+const displayFinalPrice = computed({
+  get() {
+    return newProduct.value.price ? new Intl.NumberFormat('vi-VN').format(newProduct.value.price) : ''
+  },
+  set(val) {
+    const total = Number(String(val).replace(/\D/g, '')) || 0
+    const multiplier = (1 + (Number(newProduct.value.service_charge_percent) || 0) / 100)
+      * (1 + (Number(newProduct.value.special_tax_percent) || 0) / 100)
+      * (1 + (Number(newProduct.value.tax_percent) || 0) / 100)
+    const base = multiplier > 0 ? Math.round(total / multiplier) : 0
+
+    newProduct.value.price = total
+    applyPriceBreakdown(calculatePriceBreakdown(base), true)
+  }
+})
+
+const selectedProductGroupName = computed(() => {
+  return groups.value.find(group => String(group.id) === String(newProduct.value.groupId))?.name || ''
+})
+
+const activeOutletTaxDefaults = () => {
+  const outlet = housekeepingOutlets.value.find(item => String(item.code) === String(activeTab.value))
+
+  return {
+    service_charge_percent: Number(outlet?.default_service_charge_percent) || 0,
+    tax_percent: Number(outlet?.default_tax_percent) || 0,
+    special_tax_percent: Number(outlet?.default_special_tax_percent) || 0
+  }
+}
+
 const openCreateProduct = (groupId) => {
+  const taxDefaults = activeOutletTaxDefaults()
   newProduct.value = {
     id: null,
     name: '',
     price: 0,
+    original_amount: 0,
     currency: units.value.length > 0 ? units.value[0].code : '',
     groupId: groupId,
     isActive: true,
@@ -748,9 +808,12 @@ const openCreateProduct = (groupId) => {
     trackStock: false,
     flexiblePrice: false,
     inventory_id: inventories.value.length > 0 ? inventories.value[0].id : '',
-    service_charge_percent: 0,
-    tax_percent: 0,
-    special_tax_percent: 0,
+    service_charge_percent: taxDefaults.service_charge_percent,
+    service_charge_amount: 0,
+    tax_percent: taxDefaults.tax_percent,
+    tax_amount: 0,
+    special_tax_percent: taxDefaults.special_tax_percent,
+    special_tax_amount: 0,
     note: '',
     imageFile: null,
     imageUrl: null,
@@ -760,10 +823,15 @@ const openCreateProduct = (groupId) => {
 }
 
 const editProduct = (product) => {
+  const hasStoredBasePrice = product.original_amount !== null && product.original_amount !== undefined
+  const storedBasePrice = hasStoredBasePrice ? Number(product.original_amount) || 0 : Number(product.basePriceNum) || 0
+  const storedFinalPrice = hasStoredBasePrice ? Number(product.priceNum) || 0 : Number(product.priceNum) || 0
+
   newProduct.value = {
     id: product.id,
     name: product.name,
-    price: product.priceNum || 0,
+    price: storedFinalPrice,
+    original_amount: storedBasePrice,
     currency: product.currency || (units.value.length > 0 ? units.value[0].code : ''),
     groupId: product.product_category_id,
     isActive: product.isActive,
@@ -772,13 +840,17 @@ const editProduct = (product) => {
     flexiblePrice: product.flexiblePrice,
     inventory_id: product.inventory_id || '',
     service_charge_percent: product.service_charge_percent || 0,
+    service_charge_amount: product.service_charge_amount || 0,
     tax_percent: product.tax_percent || 0,
+    tax_amount: product.tax_amount || 0,
     special_tax_percent: product.special_tax_percent || 0,
+    special_tax_amount: product.special_tax_amount || 0,
     note: product.note || '',
     imageFile: null,
     imageUrl: product.imageUrl || null,
     product_code: product.product_code || ''
   }
+  applyPriceBreakdown(calculatePriceBreakdown(storedBasePrice), true)
   showProductModal.value = true
 }
 
@@ -789,6 +861,7 @@ const saveProduct = async () => {
   formData.append('product_category_id', newProduct.value.groupId)
   formData.append('name', newProduct.value.name)
   formData.append('price', newProduct.value.price)
+  formData.append('original_amount', newProduct.value.original_amount)
   formData.append('currency', newProduct.value.currency || '')
   formData.append('is_active', newProduct.value.isActive ? 1 : 0)
   formData.append('open_key', newProduct.value.openKey ? 1 : 0)
@@ -796,8 +869,11 @@ const saveProduct = async () => {
   formData.append('flexible_price', newProduct.value.flexiblePrice ? 1 : 0)
   formData.append('inventory_id', newProduct.value.trackStock ? newProduct.value.inventory_id : '')
   formData.append('service_charge_percent', newProduct.value.service_charge_percent || 0)
+  formData.append('service_charge_amount', newProduct.value.service_charge_amount || 0)
   formData.append('tax_percent', newProduct.value.tax_percent || 0)
+  formData.append('tax_amount', newProduct.value.tax_amount || 0)
   formData.append('special_tax_percent', newProduct.value.special_tax_percent || 0)
+  formData.append('special_tax_amount', newProduct.value.special_tax_amount || 0)
   formData.append('note', newProduct.value.note || '')
 
   if (newProduct.value.imageFile) {
