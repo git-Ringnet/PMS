@@ -209,6 +209,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ─── Kiểm kê tồn kho định kỳ (Inventory Checks) ─────────────────
     Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index']);
     Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store']);
+    Route::post('/inventory/checks/sync-previous-month', [\App\Http\Controllers\Api\InventoryCheckController::class, 'syncPreviousMonth']);
     Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
     Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
     Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);

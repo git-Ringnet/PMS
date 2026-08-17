@@ -63,11 +63,11 @@ const activeWarehouseId = ref(null)       // kho đang xem
 const activeWarehouse   = computed(() => warehouses.value.find(w => w.id === activeWarehouseId.value))
 
 // Thêm kho form
-const newWarehouse = ref({ name: '', outlet_id: '' })
+const newWarehouse = ref({ name: '', outlet_ids: [] })
 const hkOutlets    = ref([])   // danh sách outlet của HK department
 
 // Sửa kho
-const editWarehouse = ref({ id: null, name: '', outlet_id: '' })
+const editWarehouse = ref({ id: null, name: '', outlet_ids: [] })
 
 // ─── Month / Calendar ─────────────────────────────────────────────
 const currentMonth = ref(new Date().toISOString().slice(0, 7)) // YYYY-MM
@@ -210,15 +210,23 @@ async function loadProductsInStock() {
 }
 
 // ─── Warehouse CRUD ───────────────────────────────────────────────
+function openAddWarehouseModal() {
+  newWarehouse.value = { name: '', outlet_ids: [] }
+  showAddModal.value = true
+}
+
 async function addWarehouse() {
   if (!newWarehouse.value.name.trim()) return
   isSaving.value = true
   try {
-    const res = await http.post('/warehouses', newWarehouse.value)
+    const res = await http.post('/warehouses', {
+      name: newWarehouse.value.name,
+      outlet_ids: newWarehouse.value.outlet_ids,
+    })
     warehouses.value.push(res.data.data)
     if (!activeWarehouseId.value) activeWarehouseId.value = res.data.data.id
     showAddModal.value = false
-    newWarehouse.value = { name: '', outlet_id: '' }
+    newWarehouse.value = { name: '', outlet_ids: [] }
     uiStore.showToast('Thêm kho mới thành công!', 'success')
   } catch (e) {
     uiStore.showToast(e.response?.data?.message || 'Lỗi khi thêm kho', 'error')
@@ -228,7 +236,13 @@ async function addWarehouse() {
 }
 
 function openEditModal(warehouse) {
-  editWarehouse.value = { id: warehouse.id, name: warehouse.name, outlet_id: warehouse.outlet_id || '' }
+  let ids = []
+  if (Array.isArray(warehouse.outlet_ids)) {
+    ids = [...warehouse.outlet_ids]
+  } else if (warehouse.outlet_id) {
+    ids = warehouse.outlet_id.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  editWarehouse.value = { id: warehouse.id, name: warehouse.name, outlet_ids: ids }
   showEditModal.value = true
 }
 
@@ -237,7 +251,7 @@ async function updateWarehouse() {
   try {
     const res = await http.put(`/warehouses/${editWarehouse.value.id}`, {
       name: editWarehouse.value.name,
-      outlet_id: editWarehouse.value.outlet_id,
+      outlet_ids: editWarehouse.value.outlet_ids,
     })
     const idx = warehouses.value.findIndex(w => w.id === editWarehouse.value.id)
     if (idx !== -1) warehouses.value[idx] = res.data.data
@@ -277,6 +291,42 @@ async function openCheckModal() {
   await loadProductsInStock() // Load products in background
 }
 
+async function onCheckMonthChange(newMonth) {
+  if (!activeWarehouseId.value || !newMonth) return
+  isSaving.value = true
+  try {
+    const res = await http.get('/inventory/checks', {
+      params: { warehouse_id: activeWarehouseId.value, month: newMonth }
+    })
+    currentCheck.value = res.data.data
+  } catch (e) {
+    console.error('onCheckMonthChange error', e)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function syncPreviousMonth() {
+  if (!activeWarehouseId.value || !checkForm.value.month) return
+  isSaving.value = true
+  try {
+    const res = await http.post('/inventory/checks/sync-previous-month', {
+      warehouse_id: activeWarehouseId.value,
+      month: checkForm.value.month,
+    })
+    currentCheck.value = res.data.data
+    // Nếu tháng trong modal trùng với tháng đang xem ngoài bảng thì reload bảng
+    if (checkForm.value.month === currentMonth.value) {
+      await loadCheckAndLogs()
+    }
+    uiStore.showToast(res.data.message, 'success')
+  } catch (e) {
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi lấy số liệu tháng trước', 'error')
+  } finally {
+    isSaving.value = false
+  }
+}
+
 async function createOrLoadCheck() {
   isSaving.value = true
   try {
@@ -287,6 +337,9 @@ async function createOrLoadCheck() {
       created_by: checkForm.value.created_by || null,
     })
     currentCheck.value = res.data.data
+    if (checkForm.value.month === currentMonth.value) {
+      await loadCheckAndLogs()
+    }
     uiStore.showToast('Lưu phiếu kiểm kê thành công!', 'success')
   } catch (e) {
     console.error(e)
@@ -361,14 +414,16 @@ async function updateCheckItem(itemId, fields) {
 
 function getInitialStock(item) {
   if (!item) return 0
-  const well = parseFloat(item.well_balance) || 0
-  const stoke = parseFloat(item.stoke_take) || 0
-  return well > 0 ? well : stoke
+  if (item.stoke_take !== null && item.stoke_take !== undefined && item.stoke_take !== '') {
+    return parseFloat(item.stoke_take) || 0
+  }
+  return parseFloat(item.well_balance) || 0
 }
 
 function getInitialStockLabel(item) {
+  if (!item) return ''
   const val = getInitialStock(item)
-  return val > 0 ? val : ''
+  return val > 0 ? val : (item.well_balance > 0 || item.stoke_take > 0 ? '0' : '')
 }
 
 function onStokeTakeInput(item, val) {
@@ -599,27 +654,21 @@ async function getBill(day) {
   }
 }
 
-// Khi systemDate thay đổi, cập nhật billDate mặc định
-watch(systemDate, (val) => {
-  if (val && !billDate.value) billDate.value = val
-}, { immediate: true })
-
-function triggerGetBillByDate() {
-  const dateStr = billDate.value || systemDate.value
-  if (!dateStr) {
-    uiStore.showToast('Chưa có ngày để lấy bill!', 'warning')
-    return
+async function getBillMonth() {
+  if (!activeWarehouseId.value || !currentMonth.value) return
+  isBillLoading.value = true
+  try {
+    const res = await http.post('/inventory/get-bill', {
+      warehouse_id: activeWarehouseId.value,
+      month: currentMonth.value,
+    })
+    uiStore.showToast(res.data.message, 'success')
+    await loadCheckAndLogs()
+  } catch (e) {
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi lấy dữ liệu bill cả tháng', 'error')
+  } finally {
+    isBillLoading.value = false
   }
-  if (!dateStr.startsWith(currentMonth.value)) {
-    uiStore.showToast(
-      `Ngày ${dateStr} không thuộc tháng đang xem (${currentMonth.value}).`,
-      'warning'
-    )
-    return
-  }
-  const parts = dateStr.split('-')
-  const day = parseInt(parts[2], 10)
-  getBill(day)
 }
 
 // ─── Transfer ────────────────────────────────────────────────────
@@ -703,6 +752,13 @@ const tableItems = computed(() => {
   })
 
   return items
+})
+
+const modalCheckItems = computed(() => {
+  if (!currentCheck.value?.items) return []
+  return [...currentCheck.value.items].sort((a, b) => {
+    return (a.product_name || '').localeCompare(b.product_name || '', 'vi', { sensitivity: 'base' })
+  })
 })
 
 // Tính tổng log cả tháng cho 1 sản phẩm
@@ -914,30 +970,22 @@ const otherWarehouses = computed(() =>
             <BarChart2 class="w-4 h-4 text-indigo-500" />
             Thống kê
           </button>
-          <!-- Get Bill: chọn ngày + nút lấy -->
-          <div class="flex items-center gap-1 border border-slate-300 rounded-lg overflow-hidden shadow-sm bg-white">
-            <input
-              v-model="billDate"
-              type="date"
-              :min="currentMonth + '-01'"
-              :max="currentMonth + '-31'"
-              class="px-2 py-1.5 text-[12px] text-slate-700 bg-transparent outline-none border-none"
-              :disabled="isBillLoading"
-              title="Chọn ngày cần lấy bill"
-            />
-            <button 
-              @click="triggerGetBillByDate" 
-              :disabled="!activeWarehouse?.outlet_id || isBillLoading"
-              class="bg-sky-50 hover:bg-sky-100 border-l border-slate-300 text-slate-750 px-3 py-1.5 transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
-              title="Lấy dữ liệu xuất bán từ bill ngày đã chọn"
-            >
-              <svg class="w-4 h-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              <span v-if="isBillLoading">Đang lấy...</span>
-              <span v-else>Lấy Bill</span>
-            </button>
-          </div>
+          <!-- Nút Lấy Bill cả tháng -->
+          <button 
+            @click="getBillMonth" 
+            :disabled="!activeWarehouse?.outlet_id || isBillLoading"
+            class="bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 px-3.5 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm" 
+            :title="`Tự động quét và lấy toàn bộ hóa đơn xuất kho trong tháng ${currentMonth}`"
+          >
+            <svg class="w-4 h-4 text-sky-600 animate-spin" v-if="isBillLoading" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <svg v-else class="w-4 h-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            <span>{{ isBillLoading ? 'Đang lấy bill...' : 'Lấy Bill Tháng' }}</span>
+          </button>
           <button @click="exportExcelLogs" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-4 py-2 rounded-lg transition-all text-xs font-bold flex items-center gap-2 shadow-sm cursor-pointer" title="Xuất excel nhật ký kho cả tháng">
             <FileSpreadsheet class="w-4 h-4 text-emerald-600" />
             Xuất Excel
@@ -988,15 +1036,15 @@ const otherWarehouses = computed(() =>
                 </div>
               </th>
               <th rowspan="2" class="col-ton-dk py-3 px-4 bg-slate-100 text-center align-middle sticky left-[256px] z-30 text-slate-800 font-bold">Tồn ĐK</th>
-              <th v-for="day in days" :key="day" colspan="3" class="py-2 px-2 text-center border-r border-slate-200 transition-colors" :class="isSystemDate(day) ? 'col-today-header font-black' : (day % 2 === 0 ? 'col-alt-header text-slate-800' : 'bg-slate-50/50')">
+              <th v-for="day in days" :key="day" colspan="3" class="py-1.5 px-1 text-center border-r border-slate-200 transition-colors group/day" :class="isSystemDate(day) ? 'col-today-header font-black' : (day % 2 === 0 ? 'col-alt-header text-slate-800' : 'bg-slate-50/50')">
                 <div class="flex flex-col items-center gap-0.5">
                   <span>{{ day }}</span>
                   <button
-                    v-if="isSystemDate(day)"
                     @click="getBill(day)"
                     :disabled="!activeWarehouse?.outlet_id || isBillLoading"
-                    class="text-[9px] px-1 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-700 font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                    title="Lấy dữ liệu xuất từ bill"
+                    class="text-[9px] px-1 py-0.5 rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                    :class="isSystemDate(day) ? 'bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold' : 'bg-sky-100/80 hover:bg-sky-200 text-sky-700 font-semibold'"
+                    :title="`Lấy dữ liệu xuất bill ngày ${day}`"
                   >
                     📋 Bill
                   </button>
@@ -1162,12 +1210,26 @@ const otherWarehouses = computed(() =>
               <input type="text" v-model="newWarehouse.name" placeholder="VD: Kho Minibar Tầng 1..." class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all bg-white shadow-sm" />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[12px] font-bold text-slate-700">Outlet (để lấy Bill)</label>
-              <select v-model="newWarehouse.outlet_id" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all bg-white shadow-sm">
-                <option value="">-- Chọn outlet --</option>
-                <option v-for="ol in hkOutlets" :key="ol.OutletId" :value="ol.OutletId">{{ ol.Name }}</option>
-              </select>
-              <p class="text-[11px] text-slate-500">Gán outlet để sử dụng tính năng "Get Bill" tự động</p>
+              <div class="flex items-center justify-between">
+                <label class="text-[12px] font-bold text-slate-700">Outlet (để lấy Bill)</label>
+                <span class="text-[11px] text-slate-400">Chọn nhiều</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                <label
+                  v-for="ol in hkOutlets" :key="ol.id || ol.code"
+                  class="flex items-center gap-2 p-2 rounded-md border cursor-pointer select-none transition-all text-xs"
+                  :class="newWarehouse.outlet_ids.includes(ol.code) ? 'bg-sky-50 border-sky-300 font-bold text-sky-800 shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'"
+                >
+                  <input
+                    type="checkbox"
+                    :value="ol.code"
+                    v-model="newWarehouse.outlet_ids"
+                    class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer"
+                  />
+                  <span>{{ ol.name }} <span class="text-slate-400 font-normal">({{ ol.code }})</span></span>
+                </label>
+              </div>
+              <p class="text-[11px] text-slate-500">Gán các outlet để tính năng "Get Bill" tự động gom hóa đơn xuất kho</p>
             </div>
           </div>
           <div class="px-5 py-4 border-t border-slate-200 bg-white flex justify-end gap-3 font-semibold">
@@ -1194,11 +1256,25 @@ const otherWarehouses = computed(() =>
               <input type="text" v-model="editWarehouse.name" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all bg-white shadow-sm" />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[12px] font-bold text-slate-700">Outlet (để lấy Bill)</label>
-              <select v-model="editWarehouse.outlet_id" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all bg-white shadow-sm">
-                <option value="">-- Không gán --</option>
-                <option v-for="ol in hkOutlets" :key="ol.OutletId" :value="ol.OutletId">{{ ol.Name }}</option>
-              </select>
+              <div class="flex items-center justify-between">
+                <label class="text-[12px] font-bold text-slate-700">Outlet (để lấy Bill)</label>
+                <span class="text-[11px] text-slate-400">Chọn nhiều</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                <label
+                  v-for="ol in hkOutlets" :key="ol.id || ol.code"
+                  class="flex items-center gap-2 p-2 rounded-md border cursor-pointer select-none transition-all text-xs"
+                  :class="editWarehouse.outlet_ids.includes(ol.code) ? 'bg-sky-50 border-sky-300 font-bold text-sky-800 shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'"
+                >
+                  <input
+                    type="checkbox"
+                    :value="ol.code"
+                    v-model="editWarehouse.outlet_ids"
+                    class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer"
+                  />
+                  <span>{{ ol.name }} <span class="text-slate-400 font-normal">({{ ol.code }})</span></span>
+                </label>
+              </div>
             </div>
           </div>
           <div class="px-5 py-4 border-t border-slate-200 bg-white flex justify-end gap-3">
@@ -1228,7 +1304,7 @@ const otherWarehouses = computed(() =>
             <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-5 gap-4">
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Tháng / Năm</label>
-                <input type="month" v-model="checkForm.month" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all shadow-sm cursor-pointer bg-white" />
+                <input type="month" v-model="checkForm.month" @change="e => onCheckMonthChange(e.target.value)" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all shadow-sm cursor-pointer bg-white" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Mã Phiếu</label>
@@ -1267,7 +1343,7 @@ const otherWarehouses = computed(() =>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-[13px] text-slate-700">
-                  <tr v-if="!currentCheck || !currentCheck.items?.length">
+                  <tr v-if="!currentCheck || !modalCheckItems.length">
                     <td colspan="8" class="py-12 text-center text-slate-400">
                       <div class="flex flex-col items-center gap-2">
                         <span class="text-3xl">📦</span>
@@ -1276,7 +1352,7 @@ const otherWarehouses = computed(() =>
                       </div>
                     </td>
                   </tr>
-                  <tr v-else v-for="(item, idx) in currentCheck.items" :key="item.id" class="hover:bg-slate-50 transition-colors">
+                  <tr v-else v-for="(item, idx) in modalCheckItems" :key="item.id" class="hover:bg-slate-50 transition-colors">
                     <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-mono">KK-{{ currentCheck.id }}</td>
                     <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-mono">{{ item.product_code }}</td>
                     <td class="py-2 px-4 border-r border-slate-200 font-semibold text-slate-800">{{ item.product_name }}</td>
@@ -1326,8 +1402,8 @@ const otherWarehouses = computed(() =>
             <button @click="exportExcelCheck" v-if="currentCheck" class="px-5 py-2 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
               <FileSpreadsheet class="w-4 h-4" /> Xuất Excel
             </button>
-            <button @click="openStats" v-if="currentCheck" class="px-5 py-2 flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer">
-              <BarChart2 class="w-4 h-4" /> Thống kê
+            <button @click="syncPreviousMonth" :disabled="isSaving" class="px-5 py-2 flex items-center gap-1.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white rounded-lg text-[13px] font-bold transition-colors shadow-sm cursor-pointer" title="Lấy danh sách sản phẩm và tồn cuối tháng trước điền vào Tồn đầu kỳ & Thực tế">
+              <BarChart2 class="w-4 h-4" /> {{ isSaving ? 'Đang lấy...' : 'Thống kê' }}
             </button>
             <button @click="showCheckModal = false" class="px-5 py-2 flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[13px] font-bold transition-colors cursor-pointer">
               <X class="w-4 h-4" /> Đóng

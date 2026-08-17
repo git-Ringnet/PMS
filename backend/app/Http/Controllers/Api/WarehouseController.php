@@ -22,9 +22,17 @@ class WarehouseController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'      => 'required|string|max:100',
-            'outlet_id' => 'nullable|string|max:20',
+            'name'       => 'required|string|max:100',
+            'outlet_id'  => 'nullable',
+            'outlet_ids' => 'nullable|array',
         ]);
+
+        if ($request->has('outlet_ids')) {
+            $ids = is_array($request->outlet_ids) ? $request->outlet_ids : explode(',', (string) $request->outlet_ids);
+            $validated['outlet_id'] = implode(',', array_values(array_filter(array_map('trim', $ids))));
+        } elseif ($request->has('outlet_id') && is_array($request->outlet_id)) {
+            $validated['outlet_id'] = implode(',', array_values(array_filter(array_map('trim', $request->outlet_id))));
+        }
 
         $warehouse = Warehouse::create($validated);
 
@@ -37,10 +45,18 @@ class WarehouseController extends Controller
         $warehouse = Warehouse::findOrFail($id);
 
         $validated = $request->validate([
-            'name'      => 'sometimes|string|max:100',
-            'outlet_id' => 'nullable|string|max:20',
-            'is_active' => 'sometimes|boolean',
+            'name'       => 'sometimes|string|max:100',
+            'outlet_id'  => 'nullable',
+            'outlet_ids' => 'nullable|array',
+            'is_active'  => 'sometimes|boolean',
         ]);
+
+        if ($request->has('outlet_ids')) {
+            $ids = is_array($request->outlet_ids) ? $request->outlet_ids : explode(',', (string) $request->outlet_ids);
+            $validated['outlet_id'] = implode(',', array_values(array_filter(array_map('trim', $ids))));
+        } elseif ($request->has('outlet_id') && is_array($request->outlet_id)) {
+            $validated['outlet_id'] = implode(',', array_values(array_filter(array_map('trim', $request->outlet_id))));
+        }
 
         $warehouse->update($validated);
 

@@ -5,12 +5,118 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryCheck;
 use App\Models\InventoryCheckItem;
+use App\Models\InventoryDailyLog;
 use App\Models\Product;
 use App\Models\Warehouse;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class InventoryCheckController extends Controller
 {
+    /**
+     * POST /api/inventory/checks/sync-previous-month
+     * Lấy danh sách sản phẩm và Tồn cuối của tháng trước điền vào Tồn đầu kỳ & Thực tế của tháng mới
+     */
+    public function syncPreviousMonth(Request $request)
+    {
+        $validated = $request->validate([
+            'warehouse_id' => 'required|integer|exists:warehouses,id',
+            'month'        => 'required|string|size:7', // YYYY-MM
+        ]);
+
+        $currentCarbon = Carbon::createFromFormat('Y-m', $validated['month']);
+        $prevMonthStr  = $currentCarbon->copy()->subMonth()->format('Y-m');
+
+        // 1. Tìm phiếu kiểm kê của tháng trước
+        $prevCheck = InventoryCheck::with('items.product')
+            ->where('warehouse_id', $validated['warehouse_id'])
+            ->where('month', $prevMonthStr)
+            ->first();
+
+        // 2. Lấy nhật ký phát sinh (Nhập / Xuất / Chuyển) của tháng trước
+        $prevLogs = InventoryDailyLog::where('warehouse_id', $validated['warehouse_id'])
+            ->where('date', 'like', $prevMonthStr . '%')
+            ->get()
+            ->groupBy('product_id');
+
+        // 3. Gom danh sách product_id từ tháng trước
+        $productIds = [];
+        if ($prevCheck) {
+            $productIds = $prevCheck->items->pluck('product_id')->toArray();
+        }
+        foreach ($prevLogs->keys() as $pId) {
+            $productIds[] = (int)$pId;
+        }
+        $productIds = array_values(array_unique(array_filter($productIds)));
+
+        if (empty($productIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Không tìm thấy dữ liệu tồn kho nào từ tháng trước ({$prevMonthStr}).",
+            ], 422);
+        }
+
+        // 4. Tìm hoặc tạo phiếu kiểm kê cho tháng hiện tại
+        $check = InventoryCheck::withTrashed()
+            ->where('warehouse_id', $validated['warehouse_id'])
+            ->where('month', $validated['month'])
+            ->first();
+
+        if ($check) {
+            if ($check->trashed()) {
+                $check->restore();
+            }
+        } else {
+            $check = InventoryCheck::create([
+                'warehouse_id' => $validated['warehouse_id'],
+                'month'        => $validated['month'],
+                'created_by'   => auth()->id(),
+            ]);
+        }
+
+        $prevItemsMap = $prevCheck ? $prevCheck->items->keyBy('product_id') : collect();
+
+        $syncedCount = 0;
+        foreach ($productIds as $pId) {
+            $prevItem = $prevItemsMap->get($pId);
+            $initialStock = 0;
+            if ($prevItem) {
+                $initialStock = (float)($prevItem->stoke_take !== null && $prevItem->stoke_take !== '' ? $prevItem->stoke_take : $prevItem->well_balance);
+            }
+
+            $prodLogs = $prevLogs->get($pId, collect());
+            $totalReceive  = (float)$prodLogs->sum('receive');
+            $totalExport   = (float)$prodLogs->sum('export');
+            $totalTransfer = (float)$prodLogs->sum('transfer');
+
+            // Tồn cuối tháng trước
+            $finalBalancePrev = $initialStock + $totalReceive - $totalExport - $totalTransfer;
+
+            $checkItem = InventoryCheckItem::firstOrNew([
+                'check_id'   => $check->id,
+                'product_id' => $pId,
+            ]);
+
+            $checkItem->well_balance  = $finalBalancePrev;
+            $checkItem->stoke_take    = $finalBalancePrev;
+            $checkItem->different_qty = 0;
+            $checkItem->final_balance = $finalBalancePrev;
+            if ($prevItem && $prevItem->unit) {
+                $checkItem->unit = $prevItem->unit;
+            }
+            $checkItem->save();
+            $syncedCount++;
+        }
+
+        $check->load(['items.product.category', 'creator']);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Đã lấy số liệu tồn cuối từ tháng {$prevMonthStr} sang tháng {$validated['month']} cho {$syncedCount} sản phẩm.",
+            'data'    => $this->formatCheck($check),
+        ]);
+    }
+
     /**
      * GET /api/inventory/checks?warehouse_id=&month=YYYY-MM
      * Lấy phiếu kiểm kê + chi tiết sản phẩm
@@ -46,12 +152,16 @@ class InventoryCheckController extends Controller
             'created_by'   => 'nullable|integer|exists:users,id',
         ]);
 
-        // Kiểm tra đã có phiếu chưa - nếu có trả về phiếu hiện tại và cập nhật note/created_by
-        $existing = InventoryCheck::where('warehouse_id', $validated['warehouse_id'])
+        // Kiểm tra đã có phiếu chưa (bao gồm cả phiếu đã xóa tạm)
+        $existing = InventoryCheck::withTrashed()
+            ->where('warehouse_id', $validated['warehouse_id'])
             ->where('month', $validated['month'])
             ->first();
 
         if ($existing) {
+            if ($existing->trashed()) {
+                $existing->restore();
+            }
             $existing->update([
                 'note' => $validated['note'] ?? $existing->note,
                 'created_by' => $validated['created_by'] ?? $existing->created_by,
@@ -173,7 +283,8 @@ class InventoryCheckController extends Controller
             ], 422);
         }
 
-        $check->delete();
+        $check->items()->delete();
+        $check->forceDelete();
 
         return response()->json(['success' => true]);
     }
@@ -326,6 +437,19 @@ class InventoryCheckController extends Controller
 
     private function formatCheck(InventoryCheck $check): array
     {
+        $items = $check->items->map(fn($item) => [
+            'id'           => $item->id,
+            'product_id'   => $item->product_id,
+            'product_code' => $item->product?->product_code ?: $item->product_id,
+            'product_name' => $item->product?->name ?? '',
+            'unit'         => $item->unit ?: ($item->product?->unit ?: 'Cái'),
+            'well_balance' => $item->well_balance,
+            'stoke_take'   => $item->stoke_take,
+            'different_qty'=> $item->different_qty,
+            'final_balance'=> $item->final_balance,
+            'note'         => $item->note,
+        ])->sortBy('product_name', SORT_NATURAL | SORT_FLAG_CASE)->values();
+
         return [
             'id'           => $check->id,
             'warehouse_id' => $check->warehouse_id,
@@ -334,18 +458,7 @@ class InventoryCheckController extends Controller
             'created_by'   => $check->created_by,
             'creator_name' => $check->creator?->name,
             'created_at'   => $check->created_at?->toDateTimeString(),
-            'items'        => $check->items->map(fn($item) => [
-                'id'           => $item->id,
-                'product_id'   => $item->product_id,
-                'product_code' => $item->product?->product_code ?: $item->product_id,
-                'product_name' => $item->product?->name,
-                'unit'         => $item->unit ?: ($item->product?->unit ?: 'Cái'),
-                'well_balance' => $item->well_balance,
-                'stoke_take'   => $item->stoke_take,
-                'different_qty'=> $item->different_qty,
-                'final_balance'=> $item->final_balance,
-                'note'         => $item->note,
-            ])->values(),
+            'items'        => $items,
         ];
     }
 }

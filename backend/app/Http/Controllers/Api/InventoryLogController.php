@@ -91,8 +91,16 @@ class InventoryLogController extends Controller
     {
         $validated = $request->validate([
             'warehouse_id' => 'required|integer|exists:warehouses,id',
-            'date'         => 'required|date',
+            'date'         => 'nullable|date',
+            'month'        => 'nullable|string|size:7',
         ]);
+
+        if (empty($validated['date']) && empty($validated['month'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vui lòng cung cấp ngày hoặc tháng cần lấy bill.',
+            ], 422);
+        }
 
         $warehouse = Warehouse::findOrFail($validated['warehouse_id']);
 
@@ -103,62 +111,125 @@ class InventoryLogController extends Controller
             ], 422);
         }
 
-        // Lấy product_id được theo dõi trong kho (từ bất kỳ tháng nào)
-        // Nếu kho chưa có sản phẩm kiểm kê → vẫn lấy tất cả SP trong bill
-        $month = substr($validated['date'], 0, 7);
-        $check = InventoryCheck::where('warehouse_id', $validated['warehouse_id'])
+        // Xác định danh sách tất cả Outlet gán cho kho để query chính xác
+        $rawOutletList = $warehouse->outlet_ids;
+        if (empty($rawOutletList)) {
+            $rawOutletList = explode(',', (string) $warehouse->outlet_id);
+        }
+        $rawOutletList = array_values(array_filter(array_map('trim', $rawOutletList)));
+
+        $hkOutlets = \App\Models\HousekeepingOutlet::whereIn('code', $rawOutletList)
+            ->orWhereIn('id', $rawOutletList)
+            ->orWhereIn('name', $rawOutletList)
+            ->get();
+
+        $outletKeys = [];
+        foreach ($rawOutletList as $raw) {
+            $outletKeys[] = $raw;
+            $outletKeys[] = strtoupper($raw);
+            $outletKeys[] = strtolower($raw);
+        }
+        foreach ($hkOutlets as $hk) {
+            $outletKeys[] = $hk->code;
+            $outletKeys[] = (string) $hk->id;
+            $outletKeys[] = $hk->name;
+            $outletKeys[] = $hk->service_code;
+        }
+        $outletKeys = array_values(array_unique(array_filter($outletKeys)));
+
+        $month = $validated['month'] ?? substr($validated['date'], 0, 7);
+
+        // Tìm hoặc tạo phiếu kiểm kê cho tháng này để đảm bảo sản phẩm hiển thị trên bảng
+        $check = InventoryCheck::withTrashed()
+            ->where('warehouse_id', $validated['warehouse_id'])
             ->where('month', $month)
             ->first();
 
-        $allowedProductIds = $check
-            ? InventoryCheckItem::where('check_id', $check->id)->pluck('product_id')->toArray()
-            : [];
-
-        // Query tổng số lượng bán theo sản phẩm từ HK bills
-        // Status: 1 = active (chưa thanh toán), 2 = đã thanh toán
-        // → lấy cả 2 trạng thái, bỏ qua bill bị xóa vật lý khỏi DB
-        // Deleted=1 trong chi tiết = item bị gạch/xóa trong bill
-        $query = DB::table('housekeeping_service_bills as b')
-            ->join('housekeeping_service_bill_details as i', 'i.BillId', '=', 'b.Ma')
-            ->where('b.Outlet', $warehouse->outlet_id)
-            ->whereDate('b.Date', $validated['date'])
-            ->where('i.Deleted', 0);   // chỉ bỏ item đã bị xóa trong bill
-
-        // Nếu có danh sách sản phẩm kiểm kê → chỉ lấy sản phẩm thuộc kho
-        if (!empty($allowedProductIds)) {
-            $query->whereIn('i.MaProduct', $allowedProductIds);
+        if ($check) {
+            if ($check->trashed()) {
+                $check->restore();
+            }
+        } else {
+            $check = InventoryCheck::create([
+                'warehouse_id' => $validated['warehouse_id'],
+                'month'        => $month,
+                'created_by'   => auth()->id(),
+            ]);
         }
 
-        $billData = $query
-            ->groupBy('i.MaProduct')
-            ->select('i.MaProduct as product_id', DB::raw('SUM(i.Quantity) as total_qty'))
-            ->get();
+        // Query tổng số lượng bán theo sản phẩm từ HK bills
+        // Status: 1 = active (chưa thanh toán), 2 = đã thanh toán (bỏ Status 3/4 là bill đã hủy)
+        // BillEdit = 0 (bỏ bill audit âm/sửa)
+        // Deleted = 0 (bỏ item bị xóa khỏi bill)
+        $query = DB::table('housekeeping_service_bills as b')
+            ->join('housekeeping_service_bill_details as i', 'i.BillId', '=', 'b.Ma')
+            ->whereIn('b.Outlet', $outletKeys)
+            ->where('b.BillEdit', 0)
+            ->whereIn('b.Status', [1, 2])
+            ->where('i.Deleted', 0)
+            ->whereNotNull('i.MaProduct');
+
+        $isSingleDay = !empty($validated['date']);
+
+        if ($isSingleDay) {
+            $query->whereDate('b.Date', $validated['date']);
+            $billData = $query
+                ->groupBy('i.MaProduct', DB::raw('DATE(b.Date)'))
+                ->select(
+                    DB::raw('DATE(b.Date) as bill_date'),
+                    'i.MaProduct as product_id',
+                    DB::raw('SUM(i.Quantity) as total_qty')
+                )
+                ->get();
+        } else {
+            $query->where('b.Date', 'like', $month . '%');
+            $billData = $query
+                ->groupBy('i.MaProduct', DB::raw('DATE(b.Date)'))
+                ->select(
+                    DB::raw('DATE(b.Date) as bill_date'),
+                    'i.MaProduct as product_id',
+                    DB::raw('SUM(i.Quantity) as total_qty')
+                )
+                ->get();
+        }
+
+        $outletDisplayName = $hkOutlets->isNotEmpty()
+            ? $hkOutlets->map(fn($o) => "{$o->name} ({$o->code})")->join(', ')
+            : implode(', ', $rawOutletList);
 
         if ($billData->isEmpty()) {
+            $timeLabel = $isSingleDay ? "ngày {$validated['date']}" : "tháng {$month}";
             return response()->json([
                 'success' => true,
-                'message' => "Không có dữ liệu hóa đơn nào tại outlet [{$warehouse->outlet_id}] ngày {$validated['date']}.",
+                'message' => "Không có dữ liệu hóa đơn nào tại outlet [{$outletDisplayName}] {$timeLabel}.",
                 'updated' => 0,
             ]);
         }
 
-        $updated = 0;
+        $updatedCount = 0;
         foreach ($billData as $row) {
+            // Tự động gắn sản phẩm vào phiếu kiểm kê nếu chưa có
+            InventoryCheckItem::firstOrCreate(
+                ['check_id' => $check->id, 'product_id' => $row->product_id],
+                ['well_balance' => 0, 'stoke_take' => 0, 'different_qty' => 0, 'final_balance' => 0]
+            );
+
             InventoryDailyLog::updateOrCreate(
                 [
                     'warehouse_id' => $validated['warehouse_id'],
-                    'date'         => $validated['date'],
+                    'date'         => $row->bill_date,
                     'product_id'   => $row->product_id,
                 ],
                 ['export' => $row->total_qty]
             );
-            $updated++;
+            $updatedCount++;
         }
 
+        $timeLabel = $isSingleDay ? "ngày {$validated['date']}" : "tháng {$month}";
         return response()->json([
             'success' => true,
-            'message' => "Đã cập nhật xuất kho cho {$updated} sản phẩm từ hóa đơn outlet [{$warehouse->outlet_id}].",
-            'updated' => $updated,
+            'message' => "Đã đồng bộ xuất kho cho {$updatedCount} lượt sản phẩm từ hóa đơn {$timeLabel} [{$outletDisplayName}].",
+            'updated' => $updatedCount,
         ]);
     }
 
@@ -307,7 +378,7 @@ class InventoryLogController extends Controller
                     $totalTransfer += $dayLog['transfer'] ?? 0;
                 }
                 
-                $initialBalance = $item->well_balance;
+                $initialBalance = $item->stoke_take !== null && $item->stoke_take !== '' ? $item->stoke_take : $item->well_balance;
                 $finalStock = $initialBalance + $totalReceive - $totalExport - $totalTransfer;
 
                 // Write static cols
