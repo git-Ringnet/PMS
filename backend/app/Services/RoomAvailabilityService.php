@@ -225,11 +225,7 @@ class RoomAvailabilityService
     {
         $roll = SystemDateRoll::latest('id')->first();
         if ($roll) {
-            $date = Carbon::parse($roll->system_date)->startOfDay();
-            if ($date->diffInDays(now()) > 30) {
-                return now()->startOfDay();
-            }
-            return $date;
+            return Carbon::parse($roll->system_date)->startOfDay();
         }
         return now()->startOfDay();
     }

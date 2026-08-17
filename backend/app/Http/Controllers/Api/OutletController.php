@@ -25,19 +25,19 @@ class OutletController extends Controller
 
     /**
      * GET /api/outlets/hk
-     * Danh sách outlets của bộ phận HK (department_code = 'HK')
-     * Dùng cho dropdown chọn outlet khi tạo kho (để Get Bill)
+     * Danh sách outlets của bộ phận HK (bảng housekeeping_outlets)
+     * Dùng cho dropdown chọn outlet khi tạo/sửa kho (để Get Bill)
      */
     public function listHK()
     {
         try {
-            if (!\Illuminate\Support\Facades\Schema::hasTable('outlets')) {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('housekeeping_outlets')) {
                 return response()->json(['success' => true, 'data' => []]);
             }
-            $outlets = Outlet::where('department_code', 'HK')
-                ->where('is_active', true)
+            $outlets = \App\Models\HousekeepingOutlet::where('is_active', true)
                 ->orderBy('order_index')
-                ->get(['id', 'code', 'name', 'department_code']);
+                ->orderBy('id')
+                ->get(['id', 'code', 'name', 'service_code']);
             return response()->json(['success' => true, 'data' => $outlets]);
         } catch (\Throwable $e) {
             return response()->json(['success' => true, 'data' => []]);
