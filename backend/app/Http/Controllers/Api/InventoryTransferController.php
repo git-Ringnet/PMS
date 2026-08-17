@@ -100,10 +100,10 @@ class InventoryTransferController extends Controller
             ->where('c.month', '<=', $month)
             ->whereNull('c.deleted_at')
             ->orderByDesc('c.month')
-            ->select('ci.final_balance', 'c.month')
+            ->select('ci.stoke_take', 'ci.well_balance', 'ci.final_balance', 'c.month')
             ->first();
 
-        $openBalance  = $checkItem?->final_balance ?? 0;
+        $openBalance  = $checkItem ? (float)($checkItem->stoke_take ?? $checkItem->well_balance ?? $checkItem->final_balance ?? 0) : 0;
         $checkMonth   = $checkItem?->month ?? $month; // Tính từ tháng kiểm kê
 
         // Tổng nhật ký từ đầu checkMonth đến ngày $date

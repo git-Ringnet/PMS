@@ -5,8 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         Schema::create('housekeeping_outlets', function (Blueprint $table) {
@@ -51,7 +50,7 @@ return new class extends Migration
 
         $outletValues = DB::table('housekeeping_outlets')
             ->get(['code', 'name'])
-            ->flatMap(fn ($outlet) => [$outlet->code, $outlet->name])
+            ->flatMap(fn($outlet) => [$outlet->code, $outlet->name])
             ->filter()
             ->unique()
             ->values()
