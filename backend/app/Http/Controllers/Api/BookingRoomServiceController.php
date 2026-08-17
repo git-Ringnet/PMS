@@ -1294,6 +1294,7 @@ class BookingRoomServiceController extends Controller
             $items = ($details->get($bill->Ma) ?? collect())->map(fn ($item) => [
                 'name' => $item->Product,
                 'quantity' => (float) $item->Quantity,
+                'rate' => (float) $item->Rate,
                 'amount' => (float) $item->TotalAmount,
             ])->values();
 
@@ -1301,6 +1302,7 @@ class BookingRoomServiceController extends Controller
             return [
                 'id' => $bill->Ma,
                 'booking_code' => $bookingCode,
+                'guest_name' => $serviceBill?->Guest ?: ($booking?->booking_name ?? ''),
                 'room_no' => $bill->RoomNo,
                 'date' => $billDate ? Carbon::parse($billDate)->format('Y-m-d') : null,
                 'time' => $serviceBill?->OpenTime ?: ($billDate ? Carbon::parse($billDate)->format('H:i') : null),
@@ -1308,12 +1310,16 @@ class BookingRoomServiceController extends Controller
                 'products' => $items,
                 'is_free' => $serviceBill?->PaymentId && $freePaymentIds->has((string) $serviceBill->PaymentId),
                 'amount' => (float) $bill->BillAmount,
+                'note' => $bill->BillNote,
                 'payment_id' => $serviceBill?->PaymentId,
                 'manual_invoice_code' => $serviceBill?->InvoiceId,
                 'department' => $bill->Department,
                 'username' => $bill->BillUsername,
                 'is_deleted' => (bool) $bill->BillEdit,
-                'can_cancel' => !$bill->BillEdit && $bill->Department === 'HK' && empty($serviceBill?->PaymentId),
+                'can_cancel' => !$bill->BillEdit
+                    && $bill->Department === 'HK'
+                    && empty($serviceBill?->PaymentId)
+                    && empty($serviceBill?->VatNumber),
             ];
         })->filter()->values();
 
@@ -1328,7 +1334,7 @@ class BookingRoomServiceController extends Controller
         DB::transaction(function () use ($billId, $validated) {
             $bill = HousekeepingServiceBill::whereKey($billId)->lockForUpdate()->firstOrFail();
             $serviceBill = ServiceBill::whereKey($bill->BillServiceId)->lockForUpdate()->firstOrFail();
-            if ($bill->Department !== 'HK' || $bill->BillEdit || !empty($serviceBill->PaymentId)) {
+            if ($bill->Department !== 'HK' || $bill->BillEdit || !empty($serviceBill->PaymentId) || !empty($serviceBill->VatNumber)) {
                 abort(422, 'Chỉ được xóa hóa đơn Buồng phòng chưa thanh toán.');
             }
             if ((int) $serviceBill->Status !== 1 || (int) $serviceBill->Edit === 1) {
