@@ -262,7 +262,8 @@
             <tr 
               v-for="inv in filteredInvoices" 
               :key="inv.id"
-              class="hover:bg-slate-50/80 transition-colors text-slate-700 font-medium"
+              class="hover:bg-slate-50/80 transition-colors text-slate-700 font-medium cursor-pointer"
+              @click="openInvoiceDetail(inv)"
             >
               <td class="py-2.5 px-4 font-bold text-sky-800 border-r border-slate-100 text-center">{{ inv.id }}</td>
               <td class="py-2.5 px-4 font-mono text-center border-r border-slate-100">{{ inv.regCode }}</td>
@@ -325,6 +326,65 @@
       </div>
     </Transition>
   </div>
+    <Transition name="hk-drawer">
+      <div v-if="detailTarget" class="fixed inset-0 z-[110] bg-slate-900/25" @click.self="closeInvoiceDetail">
+        <div class="fixed right-0 top-0 flex h-full w-full max-w-[560px] flex-col overflow-hidden bg-white shadow-2xl">
+          <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+            <h3 class="text-sm font-black text-slate-800">Hóa đơn</h3>
+            <button type="button" class="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" @click="closeInvoiceDetail"><X class="h-5 w-5" /></button>
+          </div>
+          <div class="flex-1 overflow-auto p-5">
+            <div class="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
+              <div><span class="font-bold text-slate-500">Mã hóa đơn:</span> {{ detailTarget.id }}</div>
+              <div><span class="font-bold text-slate-500">Phòng:</span> {{ detailTarget.room || '—' }}</div>
+              <div><span class="font-bold text-slate-500">Mã ĐK:</span> {{ detailTarget.regCode || '—' }}</div>
+              <div><span class="font-bold text-slate-500">Tên khách:</span> {{ detailTarget.guestName || '—' }}</div>
+              <div><span class="font-bold text-slate-500">Ngày giờ:</span> {{ detailTarget.time || '—' }}</div>
+              <div><span class="font-bold text-slate-500">Bộ phận:</span> {{ detailTarget.dept || '—' }}</div>
+              <div class="sm:col-span-2"><span class="font-bold text-slate-500">Ghi chú:</span> {{ detailTarget.note || '—' }}</div>
+              <div><span class="font-bold text-slate-500">Miễn phí:</span> {{ detailTarget.isFree ? 'Có' : 'Không' }}</div>
+            </div>
+            <div class="mt-5 overflow-hidden rounded-lg border border-slate-200">
+              <table class="w-full border-collapse text-xs">
+                <thead class="bg-slate-100 text-slate-700">
+                  <tr><th class="border-r border-slate-200 px-3 py-2 text-left">STT</th><th class="border-r border-slate-200 px-3 py-2 text-left">Sản phẩm</th><th class="border-r border-slate-200 px-3 py-2 text-right">Số lượng</th><th class="border-r border-slate-200 px-3 py-2 text-right">Đơn giá</th><th class="px-3 py-2 text-right">Số tiền</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(item, index) in detailTarget.products" :key="`${detailTarget.id}-${index}`" class="border-t border-slate-200">
+                    <td class="border-r border-slate-200 px-3 py-2">{{ index + 1 }}</td>
+                    <td class="border-r border-slate-200 px-3 py-2">{{ item.name || '—' }}</td>
+                    <td class="border-r border-slate-200 px-3 py-2 text-right">{{ item.quantity || 0 }}</td>
+                    <td class="border-r border-slate-200 px-3 py-2 text-right">{{ formatCurrency(item.rate || 0) }}</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(item.amount || 0) }}</td>
+                  </tr>
+                  <tr v-if="!detailTarget.products.length" class="border-t border-slate-200"><td colspan="5" class="px-3 py-6 text-center text-slate-400">Không có chi tiết sản phẩm</td></tr>
+                  <tr class="border-t border-slate-200 font-bold"><td colspan="4" class="px-3 py-2 text-left">Tổng tiền</td><td class="px-3 py-2 text-right">{{ formatCurrency(detailTarget.price) }}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 border-t border-slate-200 p-4">
+            <button type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="printInvoice(detailTarget)">In</button>
+            <button v-if="detailTarget.canCancel" type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="openCancelModal(detailTarget)">Hủy hóa đơn</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="hk-modal">
+      <div v-if="cancelTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <div class="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 p-5">
+          <h3 class="text-sm font-black text-slate-800">Xác nhận xóa hóa đơn</h3>
+          <p class="mt-2 text-xs text-slate-600">Hóa đơn #{{ cancelTarget.id }} sẽ được ghi nhận bằng dòng âm audit.</p>
+          <label class="mt-4 block text-[11px] font-bold text-slate-600">Lý do xóa</label>
+          <input v-model="cancelReason" type="text" maxlength="255" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-sky-200" placeholder="Nhập lý do" />
+          <div class="mt-4 flex justify-end gap-2">
+            <button type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" @click="closeCancelModal">Đóng</button>
+            <button type="button" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50" :disabled="isCancelling || !cancelReason.trim()" @click="cancelInvoice">{{ isCancelling ? 'Đang xử lý...' : 'Xác nhận xóa' }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 </template>
 
 <script setup>
@@ -333,8 +393,10 @@ import { useRoute } from 'vue-router'
 import { Calendar, Plus, Inbox, ChevronDown, CheckCircle2, X, HelpCircle } from '@lucide/vue'
 import PostBillHousekeepingTab from './PostBillHousekeepingTab.vue'
 import http from '@/services/http'
+import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
+const uiStore = useUiStore()
 
 // Mock Invoice data
 const mockInvoices = ref([
@@ -346,6 +408,10 @@ const mockInvoices = ref([
 ])
 
 const invoicesList = ref([])
+const detailTarget = ref(null)
+const cancelTarget = ref(null)
+const cancelReason = ref('')
+const isCancelling = ref(false)
 
 const filterOptions = computed(() => ({
   rooms: [...new Set(invoicesList.value.map(item => item.room).filter(Boolean))].sort(),
@@ -380,11 +446,11 @@ const triggerSearch = async () => {
       status: filterState.value.status
     } })
     invoicesList.value = (data.data || []).map(item => ({
-      id: item.id, regCode: item.booking_code || '', room: item.room_no || '',
+      id: item.id, regCode: item.booking_code || '', guestName: item.guest_name || '', room: item.room_no || '', products: item.products || [], note: item.note || '',
       time: item.date ? `${item.date.split('-').reverse().join('-')} ${item.time || ''}` : '',
       isFree: item.is_free, price: item.amount, payCode: item.payment_id || '',
       manualCode: item.manual_invoice_code || '', user: item.username || '',
-      isDeleted: item.is_deleted, dept: item.department || '', zone: item.outlet || ''
+      isDeleted: item.is_deleted, canCancel: item.can_cancel === true, dept: item.department || '', zone: item.outlet || ''
     }))
   } finally {
     isSearching.value = false
@@ -635,6 +701,55 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('vi-VN').format(value)
 }
 
+const openCancelModal = (invoice) => {
+  cancelTarget.value = invoice
+  cancelReason.value = ''
+}
+
+const openInvoiceDetail = (invoice) => {
+  detailTarget.value = invoice
+}
+
+const closeInvoiceDetail = () => {
+  if (!cancelTarget.value) detailTarget.value = null
+}
+
+const closeCancelModal = () => {
+  if (isCancelling.value) return
+  cancelTarget.value = null
+  cancelReason.value = ''
+}
+
+const cancelInvoice = async () => {
+  if (!cancelTarget.value || !cancelReason.value.trim()) return
+  isCancelling.value = true
+  try {
+    await http.post(`/housekeeping/service-bills/${cancelTarget.value.id}/cancel`, { reason: cancelReason.value.trim() })
+    uiStore.showToast('Đã xóa hóa đơn và tạo dòng âm đối trừ.', 'success')
+    cancelTarget.value = null
+    cancelReason.value = ''
+    detailTarget.value = null
+    await triggerSearch()
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể xóa hóa đơn.', 'error')
+  } finally {
+    isCancelling.value = false
+  }
+}
+
+const printInvoice = (invoice) => {
+  const rows = invoice.products.map(item => `<tr><td>${item.name || ''}</td><td>${item.quantity || 0}</td><td>${formatCurrency(item.amount || 0)}</td></tr>`).join('')
+  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=800,height=600')
+  if (!printWindow) {
+    uiStore.showToast('Trình duyệt đã chặn cửa sổ in.', 'warning')
+    return
+  }
+  printWindow.document.write(`<html><head><title>Hóa đơn #${invoice.id}</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:right}</style></head><body><h2>HÓA ĐƠN DỊCH VỤ BUỒNG PHÒNG</h2><p>Mã HĐ: ${invoice.id} | Mã ĐK: ${invoice.regCode} | Phòng: ${invoice.room}</p><p>Ngày giờ: ${invoice.time} | Bộ phận: ${invoice.dept} | Outlet: ${invoice.zone}</p><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Thành tiền</th></tr></thead><tbody>${rows}</tbody></table><h3>Tổng tiền: ${formatCurrency(invoice.price)}</h3></body></html>`)
+  printWindow.document.close()
+  printWindow.focus()
+  printWindow.print()
+}
+
 onMounted(() => {
   document.addEventListener('click', closeClickOutside)
 })
@@ -667,6 +782,22 @@ onUnmounted(() => {
 }
 .hk-modal-leave-active {
   animation: hkModalOut 0.2s ease-in forwards;
+}
+.hk-drawer-enter-active,
+.hk-drawer-leave-active {
+  transition: opacity 0.25s ease;
+}
+.hk-drawer-enter-active > div:last-child,
+.hk-drawer-leave-active > div:last-child {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hk-drawer-enter-from,
+.hk-drawer-leave-to {
+  opacity: 0;
+}
+.hk-drawer-enter-from > div:last-child,
+.hk-drawer-leave-to > div:last-child {
+  transform: translateX(100%);
 }
 @keyframes hkModalIn {
   from {

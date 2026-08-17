@@ -14,8 +14,8 @@ class SystemDateRollSeeder extends Seeder
     {
         $rolls = [
             [
-                'system_date' => '2026-07-16 00:00:00',
-                'actual_date' => '2026-07-16 00:00:00',
+                'system_date' => '2026-08-09 00:00:00',
+                'actual_date' => '2026-08-09 00:00:00',
                 'shift' => '1',
                 'username' => 'admin',
             ],
