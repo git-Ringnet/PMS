@@ -67,7 +67,7 @@
                   >
                     <span class="font-bold text-slate-800 shrink-0">{{ opt.roomNumber }}</span>
                     <span class="text-slate-300">·</span>
-                    <span class="text-slate-700 truncate font-normal">{{ opt.guestName }}</span>
+                    <span class="text-slate-700 truncate" :class="opt.isPrimary ? 'font-bold' : 'font-normal'">{{ opt.guestName }}</span>
                   </div>
                 </div>
               </template>
@@ -506,7 +506,10 @@ const loadSystemDate = async () => {
 const loadBookingRooms = async () => {
   loadingRooms.value = true
   try {
-    const res = await fetchBookings({ status: '0,1' })
+    // Từ menu HK chỉ hiển thị khách/phòng đang Inhouse; khi mở từ Room Map
+    // vẫn giữ được phòng Reservation được truyền vào để đối chiếu đúng luồng legacy.
+    const fromRoomMap = Boolean(props.initialRoomId)
+    const res = await fetchBookings({ status: fromRoomMap ? '0,1' : '1' })
     const list = res.data?.data || res.data || []
     const allOptions = []
     const groups = []
@@ -526,7 +529,10 @@ const loadBookingRooms = async () => {
       )
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
-        const activeRooms = b.booking_rooms.filter(r => Number(r.status) === 1 || Number(r.status) === 0)
+        const activeRooms = b.booking_rooms.filter(r => fromRoomMap
+          ? (Number(r.status) === 1 || Number(r.status) === 0)
+          : Number(r.status) === 1
+        )
         if (activeRooms.length > 0) {
           const groupItems = []
           activeRooms.forEach(r => {
@@ -550,6 +556,7 @@ const loadBookingRooms = async () => {
                   code: code,
                   roomNumber: roomNoDisplay,
                   guestName: g.name,
+                  isPrimary: g.isPrimary,
                   label: `${code} · ${roomNoDisplay} · ${g.name}`
                 }
                 allOptions.push(opt)
@@ -566,6 +573,7 @@ const loadBookingRooms = async () => {
                 code: code,
                 roomNumber: roomNoDisplay,
                 guestName: fallbackGuest,
+                isPrimary: true,
                 label: `${code} · ${roomNoDisplay} · ${fallbackGuest}`
               }
               allOptions.push(opt)
