@@ -84,9 +84,18 @@ function shiftDate(dateInput, days) {
 function isMasterBillRecord(sb, booking) {
   if (Number(sb.Edit) === 1) return false
   const bookingId = booking?.id
+  const hasCurrentRoom = sb.RentalRoomId2 !== undefined
+    && sb.RentalRoomId2 !== null
+    && String(sb.RentalRoomId2) !== ''
+    && String(sb.RentalRoomId2) !== '0'
+  const hasCurrentGuest = sb.CustomerId2 !== undefined
+    && sb.CustomerId2 !== null
+    && String(sb.CustomerId2) !== ''
+    && String(sb.CustomerId2) !== '0'
   const isCurrentMasterOwner = bookingId !== undefined && bookingId !== null
     && String(sb.RegisterID2) === String(bookingId)
-    && (!sb.RentalRoomId2 || String(sb.RentalRoomId2) === '0')
+    && !hasCurrentRoom
+    && !hasCurrentGuest
   const isOriginalMasterBill = !sb.RegisterID2 && String(sb.RegisterId1) === String(bookingId) && !sb.RentalRoomId1
   return isCurrentMasterOwner || isOriginalMasterBill
 }
@@ -94,9 +103,15 @@ function isMasterBillRecord(sb, booking) {
 function isMasterOwnedBill(sb, booking) {
   const billId = sb?.Ma ?? sb?.id
   const masterBills = booking?.master_service_bills || []
-  const hasRoomFolio = sb?.RentalRoomId2 !== undefined && sb?.RentalRoomId2 !== null
-    && String(sb.RentalRoomId2) !== '' && String(sb.RentalRoomId2) !== '0'
-  if (!hasRoomFolio && billId !== undefined && billId !== null && masterBills.some(masterBill => String(masterBill?.Ma ?? masterBill?.id) === String(billId))) {
+  const hasCurrentRoom = sb?.RentalRoomId2 !== undefined
+    && sb?.RentalRoomId2 !== null
+    && String(sb.RentalRoomId2) !== ''
+    && String(sb.RentalRoomId2) !== '0'
+  const hasCurrentGuest = sb?.CustomerId2 !== undefined
+    && sb?.CustomerId2 !== null
+    && String(sb.CustomerId2) !== ''
+    && String(sb.CustomerId2) !== '0'
+  if (!hasCurrentRoom && !hasCurrentGuest && billId !== undefined && billId !== null && masterBills.some(masterBill => String(masterBill?.Ma ?? masterBill?.id) === String(billId))) {
     return true
   }
   return isMasterBillRecord(sb, booking)
@@ -114,7 +129,11 @@ function billBelongsToCurrentRoom(sb, roomOrId) {
   const matches = value => candidates.some(candidate => String(value) === String(candidate))
   const description = String(sb.DescriptionServive || sb.DescriptionService || '')
   const descriptionMatches = candidates.some(candidate => description.includes(`Phòng ${candidate}`) || description.includes(`phòng ${candidate}`))
-  if (matches(sb.RentalRoomId2)) return true
+  const hasCurrentRoom = sb.RentalRoomId2 !== undefined
+    && sb.RentalRoomId2 !== null
+    && String(sb.RentalRoomId2) !== ''
+    && String(sb.RentalRoomId2) !== '0'
+  if (hasCurrentRoom) return matches(sb.RentalRoomId2)
   const hasCurrentOwner = sb.RegisterID2 !== undefined && sb.RegisterID2 !== null && sb.RegisterID2 !== ''
   if (hasCurrentOwner) return false
   if (matches(sb.RentalRoomId1)) return true
@@ -2517,7 +2536,13 @@ const selectCheckoutBookingFromRoute = () => {
   const booking = allBookingsList.value.find(item => (
     String(item.code) === bookingCode || String(item.bookingId) === bookingCode
   ))
-  if (booking) selectBookingFromSearch(booking)
+  if (booking) {
+    const roomId = String(route.query.roomId || '').trim()
+    const room = roomId
+      ? booking.roomItems.find(item => String(item.roomId) === roomId || String(item.id) === roomId)
+      : null
+    selectBookingFromSearch(booking, room)
+  }
 }
 
 const handleClickOutside = (e) => {
@@ -2546,7 +2571,7 @@ onMounted(async () => {
   }
 })
 
-watch(() => route.query.bookingCode, async () => {
+watch(() => [route.query.bookingCode, route.query.roomId], async () => {
   await loadCheckoutBookings()
   selectCheckoutBookingFromRoute()
 })

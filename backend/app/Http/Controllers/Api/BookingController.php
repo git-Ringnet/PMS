@@ -111,18 +111,46 @@ class BookingController extends Controller
 
         // Filter theo ngày đến
         if ($request->arrival_date) {
-            $arrivalRoomFilter = function ($roomQuery) use ($request) {
-                $roomQuery->where(function ($dateQuery) use ($request) {
-                    $dateQuery
-                        ->where(function ($bookedQuery) use ($request) {
+            $pmsDate = Carbon::parse($request->arrival_date, 'Asia/Ho_Chi_Minh')->startOfDay();
+            $pmsDateStartUtc = $pmsDate->copy()->utc();
+            $pmsDateEndUtc = $pmsDate->copy()->addDay()->utc();
+
+            $arrivalRoomFilter = function ($roomQuery) use ($request, $pmsDateStartUtc, $pmsDateEndUtc) {
+                $statusValue = $request->input('status', '0,1');
+                $statuses = is_array($statusValue)
+                    ? array_map('intval', $statusValue)
+                    : array_map('intval', explode(',', (string) $statusValue));
+                $isDepartureView = $request->input('list_mode') === 'departures';
+
+                $roomQuery->where(function ($dateQuery) use ($request, $statuses, $isDepartureView, $pmsDateStartUtc, $pmsDateEndUtc) {
+                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses) {
+                        if (in_array(BookingRoom::STATUS_BOOKED, $statuses, true)) {
                             $bookedQuery->where('status', BookingRoom::STATUS_BOOKED)
                                 ->whereDate('arrival_date', $request->arrival_date);
-                        })
-                        ->orWhere(function ($inhouseQuery) use ($request) {
-                            $inhouseQuery->where('status', BookingRoom::STATUS_CHECKED_IN)
-                                ->whereDate('arrival_date', '<=', $request->arrival_date)
-                                ->whereDate('departure_date', '>=', $request->arrival_date);
-                        });
+                        } else {
+                            $bookedQuery->whereRaw('1 = 0');
+                        }
+                    })->orWhere(function ($inhouseQuery) use ($request, $statuses, $isDepartureView, $pmsDateEndUtc) {
+                        if (in_array(BookingRoom::STATUS_CHECKED_IN, $statuses, true)) {
+                            $inhouseQuery->where('status', BookingRoom::STATUS_CHECKED_IN);
+                            if ($isDepartureView) {
+                                $inhouseQuery->where('departure_date', '<', $pmsDateEndUtc);
+                            } else {
+                                $inhouseQuery->whereDate('arrival_date', '<=', $request->arrival_date)
+                                    ->whereDate('departure_date', '>=', $request->arrival_date);
+                            }
+                        } else {
+                            $inhouseQuery->whereRaw('1 = 0');
+                        }
+                    })->orWhere(function ($checkedOutQuery) use ($request, $statuses, $pmsDateStartUtc, $pmsDateEndUtc) {
+                        if (in_array(BookingRoom::STATUS_CHECKED_OUT, $statuses, true)) {
+                            $checkedOutQuery->where('status', BookingRoom::STATUS_CHECKED_OUT)
+                                ->where('departure_date', '>=', $pmsDateStartUtc)
+                                ->where('departure_date', '<', $pmsDateEndUtc);
+                        } else {
+                            $checkedOutQuery->whereRaw('1 = 0');
+                        }
+                    });
                 });
             };
 

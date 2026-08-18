@@ -63,6 +63,7 @@ const isLoaded = ref(false)
 const isInitialLoad = ref(true)
 let pollingInterval = null
 const isRoomPlanLoading = ref(false)
+const checkInDisplayMode = ref('')
 
 watch(currentTab, (newTab) => {
   if (newTab === 'room-plan') {
@@ -74,11 +75,19 @@ watch(currentTab, (newTab) => {
 
 function handleMetricClick(status) {
   filterByStatus(status)
+  checkInDisplayMode.value = status === ROOM_STATUSES.RESERVED
+    ? 'arrivals'
+    : status === ROOM_STATUSES.CHECKOUT
+      ? 'departures'
+      : status === ROOM_STATUSES.OCCUPIED
+        ? 'occupied'
+        : ''
   isGridMode.value = false
 }
 
 function handleCurrentClick() {
   resetAllFilters()
+  checkInDisplayMode.value = ''
   isGridMode.value = true
 }
 
@@ -231,6 +240,12 @@ const rawDate = ref(new Date().toISOString().split('T')[0])
 
 // Bottom toggle state: isGridMode (true = Bảng, false = Lưới)
 const isGridMode = ref(true)
+
+watch(moduleContext, () => {
+  resetAllFilters()
+  checkInDisplayMode.value = ''
+  isGridMode.value = true
+}, { immediate: true })
 
 // Auto scale / zoom layout state
 const autoScale = ref(true)
@@ -2097,8 +2112,8 @@ const uniqueFloors = computed(() => {
               <div v-else class="flex-1 flex flex-col gap-4 min-h-0">
 
                 <!-- Check-in Page view when filtering by RESERVED (Đã đến) -->
-                <div v-if="activeFilter === ROOM_STATUSES.RESERVED" class="flex-1 flex flex-col min-h-0">
-                  <CheckInPage :initial-date="rawDate" :current-module="moduleContext" />
+                <div v-if="checkInDisplayMode" class="flex-1 flex flex-col min-h-0">
+                  <CheckInPage :initial-date="rawDate" :current-module="moduleContext" :display-mode="checkInDisplayMode" />
                 </div>
 
                 <!-- Loading State -->
