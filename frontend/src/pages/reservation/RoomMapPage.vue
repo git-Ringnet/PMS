@@ -20,6 +20,7 @@ import LostAndFound from '@/pages/housekeeping/components/LostAndFound.vue'
 import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import CheckInPage from './CheckInPage.vue'
 import ResidenceDeclarationPage from './ResidenceDeclarationPage.vue'
+import BreakfastPage from '@/pages/frontdesk/BreakfastPage.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
@@ -1525,6 +1526,12 @@ const uniqueFloors = computed(() => {
               <div v-else-if="currentTab === 'residence-declaration' || currentTab === 'customers'"
                 class="h-full overflow-y-auto">
                 <ResidenceDeclarationPage />
+              </div>
+
+              <!-- Tab In phiếu ăn sáng BreakfastPage -->
+              <div v-else-if="currentTab === 'print-breakfast' || currentTab === 'breakfast'"
+                class="h-full overflow-y-auto">
+                <BreakfastPage />
               </div>
 
               <!-- Tab 8: ALLOTMENT Tab -->

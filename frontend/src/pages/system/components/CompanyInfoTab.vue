@@ -118,9 +118,15 @@ const handleLogoUpload = async (e) => {
   formData.append('logo', file)
   
   try {
-    await uploadBusinessLogo(formData)
+    const res = await uploadBusinessLogo(formData)
     uiStore.showToast('Tải lên logo thành công!', 'success')
-    loadData()
+    if (res.data?.data) {
+      const d = res.data.data
+      form.value.logo_url = d.logo_url ? `${d.logo_url}?t=${Date.now()}` : null
+      form.value.logo_path = d.logo_path || null
+    } else {
+      await loadData()
+    }
   } catch (err) {
     console.error(err)
     const msg = err.response?.data?.message || err.message || 'Lỗi khi tải logo lên'

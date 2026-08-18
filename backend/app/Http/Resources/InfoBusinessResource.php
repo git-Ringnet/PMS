@@ -25,7 +25,7 @@ class InfoBusinessResource extends JsonResource
             'address' => $this->address,
             'system_branch_id' => $this->system_branch_id ? (int) $this->system_branch_id : null,
             'chief_accountant' => $this->chief_accountant,
-            'logo_url' => $this->logo_url ? url($this->logo_url) : null,
+            'logo_url' => $this->logo_url ? (str_starts_with($this->logo_url, 'http') ? $this->logo_url : '/' . ltrim($this->logo_url, '/')) : null,
             'logo_path' => $this->logo_url,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

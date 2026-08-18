@@ -445,6 +445,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/hk/assignments/groups/{groupId}/rooms/{roomId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'removeRoom']);
     Route::get('/availability/details', [\App\Http\Controllers\Api\AvailabilityController::class, 'details']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
+
+    // =====================================================================
+    // IN PHIẾU ĂN SÁNG (Breakfast Coupon - sp_035)
+    // =====================================================================
+    Route::get('/breakfast/list', [\App\Http\Controllers\Api\BreakfastController::class, 'list']);
 });
 
 Route::post('/test-log', function (Illuminate\Http\Request $request) {
