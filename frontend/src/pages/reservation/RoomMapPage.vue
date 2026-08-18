@@ -21,6 +21,7 @@ import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import CheckInPage from './CheckInPage.vue'
 import ResidenceDeclarationPage from './ResidenceDeclarationPage.vue'
 import BreakfastPage from '@/pages/frontdesk/BreakfastPage.vue'
+import QuickAssignModal from './components/QuickAssignModal.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
@@ -316,9 +317,23 @@ const showQuickCheckinModal = ref(false)
 const quickCheckinRoom = ref(null)
 const quickCheckinLoading = ref(false)
 
+const showQuickAssignModal = ref(false)
+const quickAssignTargetRoom = ref(null)
+
+async function onQuickAssignSuccess() {
+  await roomStore.fetchRooms({ silent: true })
+  await roomStore.fetchStats()
+}
+
 // Methods
 function handleRoomClick(room) {
-  // Chuột trái không mở popup nữa (chỉ click chuột phải mới mở menu ngữ cảnh)
+  if (!room) return
+  // Nếu click vào phòng trống (không có booking) -> Mở modal Giao phòng nhanh / Nhận phòng nhanh
+  const hasBooking = !!room.booking_code || room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'
+  if (!hasBooking) {
+    quickAssignTargetRoom.value = room
+    showQuickAssignModal.value = true
+  }
 }
 
 async function handleQuickCheckIn() {
@@ -810,7 +825,14 @@ function triggerMenuItem(actionName) {
     return
   }
 
-  if (['Giao phòng nhanh', 'Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'Giao phòng nhanh') {
+    quickAssignTargetRoom.value = contextMenu.value.room
+    showQuickAssignModal.value = true
+    closeContextMenu()
+    return
+  }
+
+  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
     const room = contextMenu.value.room
     if (room && room.booking_code) {
       router.push({
@@ -2251,6 +2273,16 @@ const uniqueFloors = computed(() => {
       <!-- Booking Detail Modal -->
       <BookingDetailModal v-if="showBookingDetailModal && selectedBookingRoom" :room="selectedBookingRoom"
         @close="closeBookingDetailModal" @refresh="refreshRoomMapAfterGuestChange" />
+
+      <!-- Quick Assign / Check-In Modal -->
+      <QuickAssignModal
+        v-if="showQuickAssignModal"
+        :show="showQuickAssignModal"
+        :room="quickAssignTargetRoom"
+        :initial-date="rawDate"
+        @close="showQuickAssignModal = false"
+        @success="onQuickAssignSuccess"
+      />
 
       <!-- Hover Tooltip -->
       <Teleport to="body">
