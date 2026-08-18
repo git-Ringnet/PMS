@@ -111,7 +111,23 @@ class BookingController extends Controller
 
         // Filter theo ngày đến
         if ($request->arrival_date) {
-            $query->whereDate('arrival_date', $request->arrival_date);
+            $arrivalRoomFilter = function ($roomQuery) use ($request) {
+                $roomQuery->where(function ($dateQuery) use ($request) {
+                    $dateQuery
+                        ->where(function ($bookedQuery) use ($request) {
+                            $bookedQuery->where('status', BookingRoom::STATUS_BOOKED)
+                                ->whereDate('arrival_date', $request->arrival_date);
+                        })
+                        ->orWhere(function ($inhouseQuery) use ($request) {
+                            $inhouseQuery->where('status', BookingRoom::STATUS_CHECKED_IN)
+                                ->whereDate('arrival_date', '<=', $request->arrival_date)
+                                ->whereDate('departure_date', '>=', $request->arrival_date);
+                        });
+                });
+            };
+
+            $query->whereHas('bookingRooms', $arrivalRoomFilter);
+            $query->with(['bookingRooms' => $arrivalRoomFilter]);
         }
 
         // Filter theo khoảng ngày
@@ -144,7 +160,7 @@ class BookingController extends Controller
         }
 
         // Filter theo tình trạng phòng/booking
-        if ($request->has('status')) {
+        if ($request->has('status') && !$request->arrival_date) {
             $statusVal = $request->status;
             if (is_array($statusVal)) {
                 $query->whereIn('status', $statusVal);

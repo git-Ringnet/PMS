@@ -44,6 +44,8 @@ const moduleContext = computed(() => {
   return 'reservation'
 })
 const canChangeRoomStatus = ref(false)
+const canCancelCheckIn = ref(false)
+const systemDate = ref('')
 
 const createRegRef = ref(null)
 const showDetailModal = ref(false)
@@ -84,14 +86,17 @@ const showSearch = ref(false)
 async function loadRoomStatusPermission() {
   if (moduleContext.value === 'reservation') {
     canChangeRoomStatus.value = false
+    canCancelCheckIn.value = false
     return
   }
 
   try {
     const response = await roomService.getRoomStatusPermission(moduleContext.value)
     canChangeRoomStatus.value = response?.data?.can_change_room_status === true
+    canCancelCheckIn.value = response?.data?.can_cancel_checkin === true
   } catch (error) {
     canChangeRoomStatus.value = moduleContext.value === 'housekeeping'
+    canCancelCheckIn.value = false
     console.error('Khong the tai quyen doi trang thai phong:', error)
   }
 }
@@ -412,7 +417,7 @@ function isRoomNumberRed(room) {
   const checkinStr = String(checkinDate).split('T')[0]
   const currentStr = String(rawDate.value).split('T')[0]
 
-  return checkinStr === currentStr
+  return moduleContext.value === 'frontdesk' && canCancelCheckIn.value && checkinStr === String(systemDate.value).split('T')[0]
 }
 
 function isArrivingTomorrow(room) {
@@ -456,7 +461,10 @@ async function executeUndoCheckin(mode = 'clean') {
   try {
     const bookingId = room.booking_id || room.booking?.id
     const roomId = room.booking_room_id || room.id
-    const res = await undoCheckInRoom(bookingId, roomId)
+    const res = await undoCheckInRoom(bookingId, roomId, {
+      current_module: 'frontdesk',
+      room_status_code: mode === 'dirty' ? ROOM_STATUS_CODES.VACANT_DIRTY : ROOM_STATUS_CODES.VACANT_CLEAN,
+    })
     if (res.data && res.data.success !== false) {
       if (mode === 'dirty') {
         // Chuyển tình trạng phòng bẩn (VACANT_DIRTY)
@@ -598,6 +606,34 @@ function getGuestCount(room) {
       || Number(room.max_guests || 0)
   }
   return 0
+}
+
+function handleRoomDoubleClick(room) {
+  if (moduleContext.value === 'housekeeping') return
+  const bookingCode = room?.booking_code || room?.booking?.booking_code
+  if (!bookingCode) return
+
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+  hoverTooltip.value.show = false
+  closeContextMenu()
+
+  router.push({
+    path: moduleContext.value === 'frontdesk' ? '/frontdesk' : '/reservation',
+    query: {
+      ...route.query,
+      tab: 'create-res',
+      bookingCode,
+    },
+  })
+
+  nextTick(() => {
+    if (createRegRef.value && typeof createRegRef.value.openBookingModalByCode === 'function') {
+      createRegRef.value.openBookingModalByCode(bookingCode)
+    }
+  })
 }
 
 function hasExtraBed(room) {
@@ -1156,7 +1192,8 @@ onMounted(async () => {
   try {
     const dateRes = await fetchSystemDate()
     if (dateRes?.data?.success && dateRes?.data?.data?.system_date) {
-      rawDate.value = dateRes.data.data.system_date
+      systemDate.value = dateRes.data.data.system_date
+      rawDate.value = systemDate.value
     }
   } catch (err) {
     console.error('Lỗi khi tải ngày hệ thống cho sơ đồ phòng:', err)
@@ -1699,7 +1736,7 @@ const uniqueFloors = computed(() => {
 
               <!-- Tab Checkin: Nhận phòng (Đến / Đã đến) -->
               <div v-else-if="currentTab === 'checkin'" class="h-full overflow-hidden">
-                <CheckInPage :initial-date="rawDate" />
+                <CheckInPage :initial-date="rawDate" :current-module="moduleContext" />
               </div>
 
               <!-- Tab Khai báo lưu trú ResidenceDeclarationPage -->
@@ -2061,7 +2098,7 @@ const uniqueFloors = computed(() => {
 
                 <!-- Check-in Page view when filtering by RESERVED (Đã đến) -->
                 <div v-if="activeFilter === ROOM_STATUSES.RESERVED" class="flex-1 flex flex-col min-h-0">
-                  <CheckInPage :initial-date="rawDate" />
+                  <CheckInPage :initial-date="rawDate" :current-module="moduleContext" />
                 </div>
 
                 <!-- Loading State -->
@@ -2117,7 +2154,7 @@ const uniqueFloors = computed(() => {
                         :class="[
                           isInitialLoad ? 'room-card-animate' : '',
                           (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : ''
-                        ]" :style="getRoomCardStyle(room, floorIdx, roomIdx)" @click="handleRoomClick(room)"
+                      ]" :style="getRoomCardStyle(room, floorIdx, roomIdx)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)"
                         @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
                         @mousemove="showTooltip($event, room)" @mouseleave="hideTooltip">
                         <!-- Status Indicator Dot (Top Left - Check-in Today) -->
@@ -2243,7 +2280,7 @@ const uniqueFloors = computed(() => {
                       <tr v-for="room in roomStore.filteredRooms" :key="room.id"
                         class="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none h-9"
                         :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#97d5ff]/40 hover:bg-[#97d5ff]/60' : 'bg-white'"
-                        @click="handleRoomClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
+                        @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
                         <!-- TTDK (Status Dot) -->
                         <td class="p-2 border-r border-slate-200 text-center">
                           <div class="flex items-center justify-center gap-1">

@@ -15,6 +15,7 @@ class RoomController extends Controller
             'success' => true,
             'data' => [
                 'can_change_room_status' => app(\App\Services\RoomStatusPermissionService::class)->canChange($request),
+                'can_cancel_checkin' => app(\App\Services\RoomStatusPermissionService::class)->canCancelCheckIn($request),
             ],
         ]);
     }

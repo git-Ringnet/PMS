@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
-import { ROOM_STATUS_ICON_MAP } from '@/services/room-service'
+import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { t } from '@/utils/i18n'
@@ -20,8 +21,19 @@ const props = defineProps({
   initialDate: {
     type: String,
     default: ''
+  },
+  currentModule: {
+    type: String,
+    default: 'reservation'
   }
 })
+
+const router = useRouter()
+const isFrontDesk = computed(() => props.currentModule === 'frontdesk')
+const isReservation = computed(() => props.currentModule === 'reservation')
+const systemDate = ref('')
+const canCancelCheckIn = ref(false)
+const canUndoForDate = computed(() => isFrontDesk.value && canCancelCheckIn.value && searchDate.value === systemDate.value)
 
 // State
 const bookings = ref([])
@@ -39,18 +51,40 @@ watch(() => props.initialDate, (newVal) => {
 const selectedRooms = ref([]) // Holds ids of selected rooms
 const collapsedBookings = ref({}) // Booking ID -> collapsed status
 
+const normalizeDate = (value) => {
+  if (!value) return ''
+  const valueString = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(valueString)) return valueString
+
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear()
+    const month = String(parsed.getMonth() + 1).padStart(2, '0')
+    const day = String(parsed.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const match = valueString.match(/\d{4}-\d{2}-\d{2}/)
+  return match ? match[0] : ''
+}
+
+const isRoomInhouseOnDate = (room, date) => {
+  const selected = normalizeDate(date)
+  const arrival = normalizeDate(room?.arrival_date)
+  const departure = normalizeDate(room?.departure_date)
+  return Boolean(selected && arrival && departure && arrival <= selected && departure >= selected)
+}
+
 // Fetch system date on mount if initialDate not provided
 const fetchSysDate = async () => {
-  if (props.initialDate) {
-    searchDate.value = props.initialDate
-    return
-  }
   try {
     const res = await fetchSystemDate()
-    if (res.data?.data?.system_date) {
-      searchDate.value = res.data.data.system_date
-    } else if (res.data?.system_date) {
-      searchDate.value = res.data.system_date
+    const resolvedDate = res.data?.data?.system_date || res.data?.system_date || ''
+    systemDate.value = resolvedDate
+    if (props.initialDate) {
+      searchDate.value = props.initialDate
+    } else if (resolvedDate) {
+      searchDate.value = resolvedDate
     }
   } catch (err) {
     console.error('fetchSystemDate error:', err)
@@ -58,29 +92,13 @@ const fetchSysDate = async () => {
 }
 
 
-const isBeforeOrSameDay = (dateStr1, dateStr2) => {
-  if (!dateStr1 || !dateStr2) return false
-  const d1 = new Date(dateStr1)
-  const d2 = new Date(dateStr2)
-  d1.setHours(0,0,0,0)
-  d2.setHours(0,0,0,0)
-  return d1 <= d2
-}
-
-const getPastDateString = (dateStr, daysAgo) => {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().split('T')[0]
-}
-
 // Fetch bookings from database
 const loadBookings = async () => {
   loading.value = true
   selectedRooms.value = [] // Reset selection on reload
   try {
     const res = await fetchBookings({
-      from_date: getPastDateString(searchDate.value, 30),
-      to_date: searchDate.value,
+      arrival_date: searchDate.value,
       status: '0,1'
     })
     if (res.data && res.data.success !== false) {
@@ -147,8 +165,7 @@ const filteredBookings = computed(() => {
 const chuaDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
     const pendingRooms = (booking.booking_rooms || []).filter(room => 
-      room.status === 0 && 
-      isBeforeOrSameDay(room.arrival_date, searchDate.value)
+      Number(room.status) === 0 && normalizeDate(room.arrival_date) === normalizeDate(searchDate.value)
     )
     if (pendingRooms.length === 0) return null
     return {
@@ -166,7 +183,7 @@ const chuaDenRoomsCount = computed(() => {
 const daDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
     const checkedInRooms = (booking.booking_rooms || []).filter(room => 
-      room.status === 1
+      Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
     )
     if (checkedInRooms.length === 0) return null
     return {
@@ -273,6 +290,7 @@ const checkedInSelectedCount = computed(() => {
 
 // Check-in action (Nhận phòng)
 const handleCheckIn = async () => {
+  if (!isFrontDesk.value) return
   if (pendingSelectedCount.value === 0) return
 
   const selectedRoomsToProcess = []
@@ -335,6 +353,7 @@ const handleCheckIn = async () => {
 
 // Cancel Check-in action (Hủy nhận phòng)
 const handleUndoCheckIn = async () => {
+  if (!canUndoForDate.value) return
   if (checkedInSelectedCount.value === 0) return
 
   const selectedRoomsToProcess = []
@@ -360,7 +379,7 @@ const handleUndoCheckIn = async () => {
 
   for (const item of selectedRoomsToProcess) {
     try {
-      const res = await undoCheckInRoom(item.bookingId, item.roomId)
+    const res = await undoCheckInRoom(item.bookingId, item.roomId, { current_module: 'frontdesk', room_status_code: 'vacant_clean' })
       if (res.data && res.data.success !== false) {
         successCount++
       } else {
@@ -416,7 +435,7 @@ const handleCancelSelected = async () => {
 
   for (const item of selectedRoomsToProcess) {
     try {
-      const res = await cancelBookingRoom(item.bookingId, item.roomId)
+      const res = await cancelBookingRoom(item.bookingId, item.roomId, { current_module: 'reservation' })
       if (res.data && res.data.success !== false) {
         successCount++
       } else {
@@ -476,15 +495,39 @@ function getRoomGuestName(room, booking) {
   return '-'
 }
 
+function openBooking(booking) {
+  if (!booking?.booking_code || props.currentModule === 'housekeeping') return
+  router.push({
+    path: props.currentModule === 'frontdesk' ? '/frontdesk' : '/reservation',
+    query: { tab: 'create-res', bookingCode: booking.booking_code }
+  })
+}
+
 // Lifecycle hooks
 onMounted(async () => {
   await fetchSysDate()
+  await loadPermissions()
   if (roomStore.rooms.length === 0) {
     await roomStore.fetchRooms({ silent: true })
   }
   await roomStore.fetchStats(searchDate.value)
   await loadBookings()
 })
+
+async function loadPermissions() {
+  if (!isFrontDesk.value) {
+    canCancelCheckIn.value = false
+    return
+  }
+  try {
+    const response = await roomService.getRoomStatusPermission('frontdesk')
+    canCancelCheckIn.value = response?.data?.can_cancel_checkin === true
+  } catch {
+    canCancelCheckIn.value = false
+  }
+}
+
+watch(() => props.currentModule, loadPermissions)
 
 watch(searchDate, async () => {
   await roomStore.fetchStats(searchDate.value)
@@ -561,7 +604,7 @@ watch(searchDate, async () => {
             </span>
           </div>
           <div class="flex items-center gap-2">
-            <button
+            <button v-if="isFrontDesk"
               @click="handleCheckIn"
               :disabled="pendingSelectedCount === 0"
               class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border-none"
@@ -574,7 +617,7 @@ watch(searchDate, async () => {
               </svg>
               Nhận phòng
             </button>
-            <button
+            <button v-if="isReservation"
               @click="handleCancelSelected"
               :disabled="pendingSelectedCount === 0"
               class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border border-red-200 bg-white"
@@ -642,7 +685,8 @@ watch(searchDate, async () => {
                     >
                       <span class="text-[10px] transform transition-transform" :class="collapsedBookings[booking.id] ? '-rotate-90' : ''">▼</span>
                     </button>
-                    <span>{{ booking.booking_code }}</span>
+                    <span v-if="props.currentModule !== 'housekeeping'" class="cursor-pointer hover:text-sky-700" title="Double-click để mở booking" @dblclick.stop="openBooking(booking)">{{ booking.booking_code }}</span>
+                    <span v-else>{{ booking.booking_code }}</span>
                   </td>
                   <td class="p-2.5 text-slate-500">{{ booking.external_booking_code || '-' }}</td>
                   <td class="p-2.5 text-slate-800 font-bold uppercase truncate">{{ booking.booking_name }}</td>
@@ -708,7 +752,7 @@ watch(searchDate, async () => {
               {{ daDenRoomsCount }} PHÒNG
             </span>
           </div>
-          <button
+          <button v-if="canUndoForDate"
             @click="handleUndoCheckIn"
             :disabled="checkedInSelectedCount === 0"
             class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border border-red-200 bg-white"
@@ -775,7 +819,8 @@ watch(searchDate, async () => {
                     >
                       <span class="text-[10px] transform transition-transform" :class="collapsedBookings[booking.id] ? '-rotate-90' : ''">▼</span>
                     </button>
-                    <span>{{ booking.booking_code }}</span>
+                    <span v-if="props.currentModule !== 'housekeeping'" class="cursor-pointer hover:text-sky-700" title="Double-click để mở booking" @dblclick.stop="openBooking(booking)">{{ booking.booking_code }}</span>
+                    <span v-else>{{ booking.booking_code }}</span>
                   </td>
                   <td class="p-2.5 text-slate-500">{{ booking.external_booking_code || '-' }}</td>
                   <td class="p-2.5 text-slate-800 font-bold uppercase truncate">{{ booking.booking_name }}</td>
