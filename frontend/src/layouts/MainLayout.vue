@@ -397,7 +397,18 @@ const menuItems = computed(() => {
   if (route.path.startsWith('/frontdesk')) {
     //trang lễ tân frontdesk
     return [
-      { name: t('menu.checkIn'), route: '/frontdesk' },
+      { 
+        name: t('menu.checkIn'), 
+        route: '/frontdesk',
+        dropdown: [
+          { name: 'SƠ ĐỒ PHÒNG', tab: 'room-map' },
+          { name: 'NHẬN PHÒNG NHANH', tab: 'room-map', action: 'quick-checkin' },
+          { name: 'TẠO ĐĂNG KÝ', tab: 'create-res', action: 'new' },
+          { name: 'ĐẶT CỌC', tab: 'create-res', modal: 'deposit' },
+          { name: 'TẠO THẺ KHÓA PHÒNG', tab: 'create-res', modal: 'keycard' },
+          { name: 'IN PHIẾU ĂN SÁNG', tab: 'print-breakfast' },
+        ]
+      },
       { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
       {
         name: t('menu.invoiceManage'),
@@ -742,7 +753,10 @@ function handleDropdownClick(sub) {
     router.push(sub.route)
   } else if (sub.tab) {
     const basePath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
-    router.push({ path: basePath, query: { tab: sub.tab } })
+    const query = { tab: sub.tab }
+    if (sub.action) query.action = sub.action
+    if (sub.modal) query.modal = sub.modal
+    router.push({ path: basePath, query })
   }
 }
 
@@ -817,7 +831,7 @@ function toggleSidebar() {
           <!-- Dropdown Menu -->
           <div
             v-if="item.dropdown"
-            class="absolute left-1/2 -translate-x-1/2 mt-1 min-w-[150px] w-max max-w-[220px] bg-white border border-slate-200/90 rounded-lg shadow-xl p-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
+            class="absolute left-1/2 -translate-x-1/2 mt-1 min-w-[175px] w-max max-w-[240px] bg-white border border-slate-200/90 rounded-lg shadow-xl p-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
           >
             <!-- Tip decoration arrow -->
             <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"></div>
@@ -1267,14 +1281,6 @@ function toggleSidebar() {
         <svg v-else class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /></svg>
         
         <span>{{ item.name }}</span>
-
-        <!-- Notification Badge specifically for "D.S Công Việc" -->
-        <span
-          v-if="item.tab === 'shift-work'"
-          class="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold border border-white"
-        >
-          2
-        </span>
       </button>
     </div>
 
