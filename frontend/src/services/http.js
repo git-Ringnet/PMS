@@ -21,6 +21,11 @@ http.interceptors.request.use(
     const lang = localStorage.getItem('pms_lang') || 'vi'
     config.headers['Accept-Language'] = lang
     config.headers['X-Language'] = lang
+
+    // Nếu data là FormData, xóa Content-Type để trình duyệt / Axios tự tạo header multipart kèm boundary chuẩn
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type']
+    }
     
     return config
   },

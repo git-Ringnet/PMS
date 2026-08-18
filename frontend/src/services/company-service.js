@@ -45,15 +45,11 @@ export const deleteUser = (id) => http.delete(`/users/${id}`)
 // ==================== COMPANY INFO / BUSINESS INFO (THÔNG TIN CÔNG TY) ====================
 export const fetchBusinessInfo = () => http.get('/info-business')
 export const updateBusinessInfo = (data) => http.put('/info-business', data)
-export const uploadBusinessLogo = (formData) => http.post('/info-business/logo', formData, {
-  headers: { 'Content-Type': 'multipart/form-data' }
-})
+export const uploadBusinessLogo = (formData) => http.post('/info-business/logo', formData)
 export const deleteBusinessLogo = () => http.delete('/info-business/logo')
 
 // ==================== SYSTEM USERS / EMPLOYEES (NHÂN VIÊN HỆ THỐNG) SIGNATURE ====================
-export const uploadUserSignature = (id, formData) => http.post(`/users/${id}/signature`, formData, {
-  headers: { 'Content-Type': 'multipart/form-data' }
-})
+export const uploadUserSignature = (id, formData) => http.post(`/users/${id}/signature`, formData)
 export const deleteUserSignature = (id) => http.delete(`/users/${id}/signature`)
 
 export const syncCompanies = () => http.post('/companies/sync')
