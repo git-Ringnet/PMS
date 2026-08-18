@@ -450,6 +450,19 @@ Route::middleware('auth:sanctum')->group(function () {
     // IN PHIẾU ĂN SÁNG (Breakfast Coupon - sp_035)
     // =====================================================================
     Route::get('/breakfast/list', [\App\Http\Controllers\Api\BreakfastController::class, 'list']);
+
+    // =====================================================================
+    // DANH SÁCH CÔNG VIỆC (Shift Work / Frontdesk Work)
+    // =====================================================================
+    Route::prefix('shift-work')->group(function () {
+        Route::get('/arrivals', [\App\Http\Controllers\Api\ShiftWorkController::class, 'arrivals']);
+        Route::get('/departures', [\App\Http\Controllers\Api\ShiftWorkController::class, 'departures']);
+        Route::get('/pending', [\App\Http\Controllers\Api\ShiftWorkController::class, 'pending']);
+        Route::put('/pending/{bookingId}/note', [\App\Http\Controllers\Api\ShiftWorkController::class, 'updatePendingNote']);
+        Route::get('/shuttle', [\App\Http\Controllers\Api\ShiftWorkController::class, 'shuttle']);
+        Route::get('/noshow', [\App\Http\Controllers\Api\ShiftWorkController::class, 'noshow']);
+        Route::get('/birthdays', [\App\Http\Controllers\Api\ShiftWorkController::class, 'birthdays']);
+    });
 });
 
 Route::post('/test-log', function (Illuminate\Http\Request $request) {
