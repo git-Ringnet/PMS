@@ -1281,14 +1281,6 @@ function toggleSidebar() {
         <svg v-else class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /></svg>
         
         <span>{{ item.name }}</span>
-
-        <!-- Notification Badge specifically for "D.S Công Việc" -->
-        <span
-          v-if="item.tab === 'shift-work'"
-          class="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-bold border border-white"
-        >
-          2
-        </span>
       </button>
     </div>
 
