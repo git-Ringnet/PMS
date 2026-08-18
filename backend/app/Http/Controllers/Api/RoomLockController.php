@@ -171,6 +171,10 @@ class RoomLockController extends Controller
      */
     public function bulkLock(Request $request)
     {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền khóa/đổi trạng thái phòng tại module này.'], 403);
+        }
+
         $inputLocks = $request->input('locks');
         $rawLocks = [];
 

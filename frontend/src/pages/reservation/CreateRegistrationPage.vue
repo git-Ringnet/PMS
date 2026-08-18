@@ -436,6 +436,18 @@ function openDepositModal() {
   isDepositModalOpen.value = true
 }
 
+async function openDepositFromQuery() {
+  if (route.query.action !== 'deposit' || !activeTab.value) return
+
+  await nextTick()
+  await openEditModal()
+  await nextTick()
+  openDepositModal()
+
+  const { action, ...query } = route.query
+  await router.replace({ query })
+}
+
 // ==================== TABLE UI STATES ====================
 const isEditing = ref(false)
 const searchQuery = ref('')
@@ -1539,6 +1551,7 @@ onMounted(async () => {
     
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
+      await openDepositFromQuery()
     } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
       await handleAddTabClick()
     }
@@ -1564,6 +1577,7 @@ onBeforeUnmount(() => {
 watch(() => route.query, async (newQuery) => {
   if (newQuery.bookingCode) {
     await openBookingModalByCode(newQuery.bookingCode)
+    await openDepositFromQuery()
   } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
     await handleAddTabClick()
   }

@@ -9,6 +9,16 @@ use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
+    public function permissions(Request $request)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'can_change_room_status' => app(\App\Services\RoomStatusPermissionService::class)->canChange($request),
+            ],
+        ]);
+    }
+
     /**
      * Display a listing of the rooms.
      */
@@ -297,6 +307,10 @@ class RoomController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
         $room = Room::find($id);
         if (!$room) {
             return response()->json(['message' => 'Room not found'], 404);

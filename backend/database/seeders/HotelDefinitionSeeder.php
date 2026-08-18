@@ -384,6 +384,7 @@ class HotelDefinitionSeeder extends Seeder
         // 3. Seed Configs
         $configs = [
             ['name' => 'AllowChangeRoomStatusAtReception', 'value' => '1', 'description' => 'AllowChangeRoomStatusAtReception', 'is_visible' => false],
+            ['name' => 'RoleUserAllowChangeRoomStatusAtReception', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc doi trang thai phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
             ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow', 'is_visible' => true],
             ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra/dirty (0: không cho phép, 1: cho phép)', 'is_visible' => true],
             ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow', 'is_visible' => false],

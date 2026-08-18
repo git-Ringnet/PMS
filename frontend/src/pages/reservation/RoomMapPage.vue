@@ -5,12 +5,13 @@ import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom } from '@/services/booking-service'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
 import RoomMoveModal from '@/components/RoomMoveModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
+import DepositModal from './components/DepositModal.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
 import ShiftWorkPage from './ShiftWorkPage.vue'
@@ -37,6 +38,12 @@ const getQueryParam = (name) => {
 }
 
 const currentTab = computed(() => route.query.tab || getQueryParam('tab') || 'room-map')
+const moduleContext = computed(() => {
+  if (route.path === '/housekeeping') return 'housekeeping'
+  if (route.path === '/frontdesk') return 'frontdesk'
+  return 'reservation'
+})
+const canChangeRoomStatus = ref(false)
 
 const createRegRef = ref(null)
 const showDetailModal = ref(false)
@@ -45,6 +52,10 @@ const selectedBookingRoom = ref(null)
 const showRoomMoveModal = ref(false)
 const roomMoveBookingId = ref('')
 const roomMoveBookingRoomId = ref('')
+const showDepositModal = ref(false)
+const depositBooking = ref({ id: null, name: '', code: '', rooms: [], deposits: [] })
+const depositPaymentMethods = ref([])
+const depositCurrencies = ref([])
 const showStatsModal = ref(false)
 const isLoaded = ref(false)
 const isInitialLoad = ref(true)
@@ -68,7 +79,25 @@ function handleCurrentClick() {
   resetAllFilters()
   isGridMode.value = true
 }
+
 const showSearch = ref(false)
+async function loadRoomStatusPermission() {
+  if (moduleContext.value === 'reservation') {
+    canChangeRoomStatus.value = false
+    return
+  }
+
+  try {
+    const response = await roomService.getRoomStatusPermission(moduleContext.value)
+    canChangeRoomStatus.value = response?.data?.can_change_room_status === true
+  } catch (error) {
+    canChangeRoomStatus.value = moduleContext.value === 'housekeeping'
+    console.error('Khong the tai quyen doi trang thai phong:', error)
+  }
+}
+
+watch(moduleContext, loadRoomStatusPermission, { immediate: true })
+
 const showFilters = ref(false)
 const showSettings = ref(false)
 
@@ -431,7 +460,7 @@ async function executeUndoCheckin(mode = 'clean') {
     if (res.data && res.data.success !== false) {
       if (mode === 'dirty') {
         // Chuyển tình trạng phòng bẩn (VACANT_DIRTY)
-        await roomStore.updateRoomStatus(room.id, ROOM_STATUS_CODES.VACANT_DIRTY)
+        await roomStore.updateRoomStatus(room.id, ROOM_STATUS_CODES.VACANT_DIRTY, moduleContext.value)
         uiStore.showToast(`Hủy nhận phòng ${room.room_number} và chuyển sang phòng bẩn thành công!`, 'success')
       } else {
         uiStore.showToast(`Hủy nhận phòng ${room.room_number} thành công!`, 'success')
@@ -753,6 +782,11 @@ function handleContextMenu(event, room) {
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   hoverTooltip.value.show = false
 
+  if (moduleContext.value === 'reservation' && !room?.booking_code) {
+    closeContextMenu()
+    return
+  }
+
   const menuWidth = 220
   const submenuWidth = 240
   const margin = 8
@@ -853,8 +887,63 @@ async function handleRoomMoveSuccess() {
   await roomStore.fetchRooms({ date: rawDate.value, silent: true })
 }
 
+async function openDepositForRoom(room) {
+  if (!room?.booking_id) {
+    uiStore.showToast('Không tìm thấy booking của phòng để mở đặt cọc.', 'warning')
+    return
+  }
+
+  try {
+    const [bookingResponse, paymentResponse, currencyResponse] = await Promise.all([
+      fetchBooking(room.booking_id),
+      fetchPaymentMethods(),
+      fetchCurrencies(),
+    ])
+    const booking = bookingResponse.data?.data || bookingResponse.data
+    const bookingRooms = (booking?.booking_rooms || []).map((bookingRoom) => ({
+      id: bookingRoom.id,
+      booking_room_id: bookingRoom.id,
+      room_number: bookingRoom.room?.room_number || bookingRoom.room_number || '',
+    }))
+    const deposits = (booking?.payments || []).map((payment) => ({
+      id: payment.id,
+      date: payment.date ? String(payment.date).slice(0, 10).split('-').reverse().join('/') : '',
+      time: payment.open_time ? String(payment.open_time).slice(0, 5) : '',
+      paymentMethodId: payment.payment_method_id,
+      note: payment.description || '',
+      amount: Number(payment.amount) || 0,
+      currency: payment.currency || 'VND',
+      recipient: payment.created_by || 'Admin',
+      images: payment.image_path ? [payment.image_path] : [],
+      status: payment.status,
+      edit_flag: payment.edit_flag,
+      pack2: payment.pack2,
+      bookingRoomId: payment.booking_room_id || null,
+    }))
+
+    depositBooking.value = {
+      id: Number(booking.id),
+      name: booking.booking_name || room.booking_name || '',
+      code: booking.booking_code || room.booking_code || '',
+      rooms: bookingRooms.length > 0 ? bookingRooms : [room],
+      deposits,
+    }
+    depositPaymentMethods.value = paymentResponse.data?.data || paymentResponse.data || []
+    depositCurrencies.value = currencyResponse.data?.data || currencyResponse.data || []
+    showDepositModal.value = true
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể tải thông tin booking để đặt cọc.', 'error')
+  }
+}
+
 // Trigger context menu action and link pages/features
 function triggerMenuItem(actionName) {
+  if (actionName?.toLowerCase().includes('đặt cọc')) {
+    openDepositForRoom(contextMenu.value.room)
+    closeContextMenu()
+    return
+  }
+
   if (actionName === 'Thêm dịch vụ buồng phòng') {
     const room = contextMenu.value.room
     router.push({
@@ -970,6 +1059,11 @@ async function unlockRoomMove(room) {
 // Change room status directly from context menu
 // roomStatusCode: giá trị từ ROOM_STATUS_CODES (vacant_ready, dirty, ooo, ...)
 async function changeRoomStatus(room, roomStatusCode) {
+  if (!canChangeRoomStatus.value) {
+    uiStore.showToast('User không có quyền đổi trạng thái phòng tại module này.', 'warning')
+    return
+  }
+
   if (!room || roomStatusCode === room.room_status_code) return
 
   // Lấy tên tình trạng để hiển thị confirm
@@ -1008,7 +1102,8 @@ async function changeRoomStatus(room, roomStatusCode) {
         end_date: `${sysDateStr} 23:59:59`,
         lock_type: lockType || 'OOO',
         reason: 'Khóa phòng từ sơ đồ phòng',
-        force: force
+        force: force,
+        current_module: moduleContext.value,
       }
 
       try {
@@ -1048,7 +1143,7 @@ async function changeRoomStatus(room, roomStatusCode) {
 
   if (confirmed) {
     try {
-      await roomStore.updateRoomStatus(room.id, roomStatusCode)
+      await roomStore.updateRoomStatus(room.id, roomStatusCode, moduleContext.value)
       uiStore.showToast(t('roomMap.changeStatusSuccess', { room: room.room_number, status: statusLabel }), 'success')
     } catch (err) {
       uiStore.showToast(t('roomMap.changeStatusError'), 'error')
@@ -2442,12 +2537,12 @@ const uniqueFloors = computed(() => {
       <Teleport to="body">
         <div v-if="contextMenu.show && contextMenu.room"
           class="fixed z-[99999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
-          :class="TEXT_THEME.menuItem" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" ref="contextMenuRef" @click.stop>
+          :class="['room-map-context-menu', TEXT_THEME.menuItem]" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" ref="contextMenuRef" @click.stop>
           <!-- CASE 1: PHÒNG ĐÃ ĐĂNG KÝ NHƯNG CHƯA NHẬN PHÒNG (Ảnh 2 trong hình đính kèm) -->
           <template
             v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
             <!-- Đăng ký -->
-            <button @click="triggerMenuItem('Đăng ký')"
+            <button v-if="moduleContext !== 'housekeeping'" @click="triggerMenuItem('Đăng ký')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -2462,7 +2557,7 @@ const uniqueFloors = computed(() => {
             <div class="h-px bg-slate-300 my-1"></div>
 
             <!-- Nhận phòng -->
-            <button @click="handleQuickCheckinFromMenu()"
+            <button v-if="moduleContext === 'frontdesk'" @click="handleQuickCheckinFromMenu()"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2472,7 +2567,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- In phiếu ăn sáng -->
-            <button @click="triggerMenuItem('In phiếu ăn sáng')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('In phiếu ăn sáng')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2486,7 +2581,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- In mẫu đăng ký -->
-            <button @click="triggerMenuItem('In mẫu đăng ký')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('In mẫu đăng ký')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2498,7 +2593,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam ở dưới cùng - Ảnh 2) -->
-            <div class="relative group mt-1 px-1.5 pb-1">
+            <div v-if="canChangeRoomStatus" class="relative group mt-1 px-1.5 pb-1">
               <div
                 class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
                 :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
@@ -2548,7 +2643,7 @@ const uniqueFloors = computed(() => {
           <!-- CASE 2: PHÒNG TRỐNG KHÔNG CÓ GÌ CẢ (Ảnh 1 trong hình đính kèm) -->
           <template v-else-if="!contextMenu.room.booking_code">
             <!-- Giao phòng nhanh -->
-            <button @click="triggerMenuItem('Giao phòng nhanh')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('Giao phòng nhanh')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2562,7 +2657,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam) -->
-            <div class="relative group mt-1 px-1.5 pb-1">
+            <div v-if="canChangeRoomStatus" class="relative group mt-1 px-1.5 pb-1">
               <div
                 class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
                 :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
@@ -2622,7 +2717,7 @@ const uniqueFloors = computed(() => {
           <!-- CASE 3: PHÒNG ĐÃ NHẬN / IN-HOUSE (Ảnh 3) -->
           <template v-else>
             <!-- Thông tin -->
-            <button @click="showRoomInfo(contextMenu.room)"
+            <button v-if="moduleContext === 'frontdesk'" @click="showRoomInfo(contextMenu.room)"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -2634,7 +2729,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Đăng ký -->
-            <button @click="triggerMenuItem('Đăng ký')"
+            <button v-if="moduleContext !== 'housekeeping'" @click="triggerMenuItem('Đăng ký')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -2646,8 +2741,18 @@ const uniqueFloors = computed(() => {
               <span>Đăng ký</span>
             </button>
 
+            <button v-if="moduleContext === 'reservation'" @click="triggerMenuItem('Đặt cọc')"
+              class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
+              <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7h18M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                <path d="M7 12h4M7 16h7" />
+              </svg>
+              <span>Đặt cọc</span>
+            </button>
+
             <!-- Hóa đơn -->
-            <button @click="triggerMenuItem('Hóa đơn')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('Hóa đơn')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2660,7 +2765,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Nhóm hóa đơn -->
-            <button @click="triggerMenuItem('Nhóm hóa đơn')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('Nhóm hóa đơn')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2681,11 +2786,11 @@ const uniqueFloors = computed(() => {
                 <path d="M12 5v14M5 12h14" />
                 <rect x="4" y="4" width="16" height="16" rx="2" />
               </svg>
-              <span>Thêm dịch vụ buồng phòng</span>
+              <span>Tạo hóa đơn HK</span>
             </button>
 
             <!-- Chuyển Phòng -->
-            <button @click="triggerMenuItem('Chuyển Phòng')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('Chuyển Phòng')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2695,7 +2800,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Thông báo -->
-            <button @click="triggerMenuItem('Thông báo')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('Thông báo')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2706,7 +2811,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Nhận phòng -->
-            <button @click="handleQuickCheckinFromMenu()"
+            <button v-if="moduleContext === 'frontdesk'" @click="handleQuickCheckinFromMenu()"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2716,7 +2821,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- In phiếu ăn sáng -->
-            <button @click="triggerMenuItem('In phiếu ăn sáng')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('In phiếu ăn sáng')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2730,7 +2835,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- In mẫu đăng ký -->
-            <button @click="triggerMenuItem('In mẫu đăng ký')"
+            <button v-if="moduleContext === 'frontdesk'" @click="triggerMenuItem('In mẫu đăng ký')"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2742,7 +2847,7 @@ const uniqueFloors = computed(() => {
             </button>
 
             <!-- Huỷ nhận phòng (Button dạng pill xanh lam Ảnh 3 - chỉ phòng mới checkin trong ngày) -->
-            <div v-if="isRoomNumberRed(contextMenu.room)" class="px-1.5 pt-1">
+            <div v-if="moduleContext === 'frontdesk' && isRoomNumberRed(contextMenu.room)" class="px-1.5 pt-1">
               <button @click="handleUndoCheckinFromMenu()"
                 class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold transition-all cursor-pointer select-none text-white rounded-xl shadow-xs border-none"
                 :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
@@ -2759,7 +2864,7 @@ const uniqueFloors = computed(() => {
             </div>
 
             <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam Ảnh 3) -->
-            <div class="relative group mt-1 px-1.5 pb-1">
+            <div v-if="canChangeRoomStatus" class="relative group mt-1 px-1.5 pb-1">
               <div
                 class="flex items-center justify-between px-3 py-2 text-xs font-bold transition-colors cursor-pointer select-none text-white rounded-xl shadow-xs"
                 :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
@@ -3243,6 +3348,18 @@ const uniqueFloors = computed(() => {
         </div>
       </Transition>
     </Teleport>
+    <Teleport to="body">
+      <DepositModal
+        v-model:show="showDepositModal"
+        :booking-id="depositBooking.id"
+        :booking-name="depositBooking.name"
+        :booking-code="depositBooking.code"
+        :payment-methods="depositPaymentMethods"
+        :currencies-list="depositCurrencies"
+        :rooms="depositBooking.rooms"
+        v-model:deposits="depositBooking.deposits"
+      />
+    </Teleport>
     <!-- Room Move Modal -->
     <RoomMoveModal v-if="showRoomMoveModal" :show="showRoomMoveModal" :booking-id="roomMoveBookingId"
       :room-id="roomMoveBookingRoomId" @close="showRoomMoveModal = false" @success="handleRoomMoveSuccess" />
@@ -3251,6 +3368,16 @@ const uniqueFloors = computed(() => {
 </template>
 
 <style scoped>
+.room-map-context-menu button:hover {
+  background: #dbeafe !important;
+  color: #0369a1 !important;
+}
+
+.room-map-context-menu .group:hover > div:first-child {
+  background: #38bdf8 !important;
+  color: #ffffff !important;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
