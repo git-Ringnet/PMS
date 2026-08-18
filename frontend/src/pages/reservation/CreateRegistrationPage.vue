@@ -521,7 +521,6 @@ const columns = ref([
   { key: 'isPreassigned', label: 'Đặt trước', visible: true, width: 'w-[80px]', center: true },
   { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
   { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
-  { key: 'roomStatus', label: 'Trạng thái phòng', visible: true, width: 'w-[120px]', center: true },
   { key: 'allotmentCode', label: 'Mã ALM', visible: true, width: 'w-[100px]' },
   { key: 'roomCode', label: 'Mã phòng', visible: true, width: 'w-[100px]' },
 ])
@@ -4929,7 +4928,7 @@ defineExpose({
                               :key="vRoom.room_number" 
                               :value="vRoom.room_number"
                             >
-                              {{ vRoom.room_number }} ({{ vRoom.status }})
+                              {{ vRoom.room_number }}
                             </option>
                           </select>
                           <span v-else>{{ room.roomNumber || '-' }}</span>
@@ -5494,7 +5493,7 @@ defineExpose({
                                       :key="vRoom.room_number" 
                                       :value="vRoom.room_number"
                                     >
-                                      {{ vRoom.room_number }} ({{ vRoom.status }})
+                                      {{ vRoom.room_number }}
                                     </option>
                                   </select>
                                   <span v-else>{{ room.roomNumber || '-' }}</span>
