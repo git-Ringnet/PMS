@@ -701,7 +701,9 @@ const contextMenu = ref({
   y: 0,
   room: null,
   isLeft: false,
+  submenuUp: false,
 })
+const contextMenuRef = ref(null)
 
 const statusItems = [
   { key: ROOM_STATUSES.AVAILABLE, label: 'Sẵn sàng' },
@@ -718,33 +720,61 @@ function handleContextMenu(event, room) {
   hoverTooltip.value.show = false
 
   const menuWidth = 220
-  const menuHeight = 340 // Safe height estimation of context menu
+  const submenuWidth = 240
+  const margin = 8
+  const targetRect = event.currentTarget?.getBoundingClientRect?.()
+  const anchor = targetRect
+    ? {
+        top: targetRect.top,
+        right: targetRect.right,
+        bottom: targetRect.bottom,
+        left: targetRect.left,
+      }
+    : {
+        top: event.clientY,
+        right: event.clientX,
+        bottom: event.clientY,
+        left: event.clientX,
+      }
+  const canOpenRight = anchor.right + menuWidth + submenuWidth + margin <= window.innerWidth
+  const canOpenLeft = anchor.left - menuWidth - submenuWidth - margin >= margin
+  const isLeft = !canOpenRight && canOpenLeft
+  const initialX = isLeft ? anchor.left - menuWidth - margin : anchor.right + margin
+  const initialY = anchor.top
 
-  let x = event.clientX
-  let y = event.clientY
-  let isBottom = false
-
-  // Shift left if menu would overflow the right edge
-  if (x + menuWidth > window.innerWidth) {
-    x = window.innerWidth - menuWidth - 8
-  }
-
-  // Shift up if menu would overflow the bottom edge
-  if (y + menuHeight > window.innerHeight) {
-    y = event.clientY - menuHeight
-    if (y < 8) y = 8
-    isBottom = true
-  }
-
-  const isLeft = event.clientX > window.innerWidth - 460
   contextMenu.value = {
     show: true,
-    x: x,
-    y: y,
+    x: Math.min(Math.max(initialX, margin), window.innerWidth - menuWidth - margin),
+    y: Math.max(initialY, margin),
     room: room,
     isLeft: isLeft,
-    isBottom: isBottom,
+    submenuUp: anchor.top + 260 + margin > window.innerHeight,
   }
+
+  nextTick(() => {
+    const menu = contextMenuRef.value
+    if (!menu) return
+
+    const rect = menu.getBoundingClientRect()
+    const maxX = Math.max(margin, window.innerWidth - rect.width - margin)
+    const maxY = Math.max(margin, window.innerHeight - rect.height - margin)
+    const canPlaceRight = anchor.right + rect.width + margin <= window.innerWidth
+    const canPlaceLeft = anchor.left - rect.width - margin >= margin
+    const placeLeft = !canPlaceRight && canPlaceLeft
+    const x = placeLeft
+      ? anchor.left - rect.width - margin
+      : canPlaceRight
+        ? anchor.right + margin
+        : Math.min(Math.max(anchor.left, margin), maxX)
+    const y = anchor.top + rect.height + margin <= window.innerHeight
+      ? anchor.top
+      : anchor.bottom - rect.height
+
+    contextMenu.value.x = x
+    contextMenu.value.y = Math.min(Math.max(y, margin), maxY)
+    contextMenu.value.isLeft = placeLeft
+    contextMenu.value.submenuUp = anchor.top + 260 + margin > window.innerHeight
+  })
 }
 
 function closeContextMenu() {
@@ -2347,7 +2377,7 @@ const uniqueFloors = computed(() => {
       <Teleport to="body">
         <div v-if="contextMenu.show && contextMenu.room"
           class="fixed z-[99999] bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-[220px] select-none animate-[fadeIn_0.15s_ease-out]"
-          :class="TEXT_THEME.menuItem" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
+          :class="TEXT_THEME.menuItem" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" ref="contextMenuRef" @click.stop>
           <!-- CASE 1: PHÒNG ĐÃ ĐĂNG KÝ NHƯNG CHƯA NHẬN PHÒNG (Ảnh 2 trong hình đính kèm) -->
           <template
             v-if="contextMenu.room.booking_code && contextMenu.room.booking_status !== 'occupied' && contextMenu.room.booking_status !== 'checkout'">
@@ -2419,7 +2449,7 @@ const uniqueFloors = computed(() => {
                 class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
                 :class="[
                   contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
-                  'bottom-0'
+                  contextMenu.submenuUp ? 'bottom-0' : 'top-0'
                 ]">
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
@@ -2483,7 +2513,7 @@ const uniqueFloors = computed(() => {
                 class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
                 :class="[
                   contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
-                  'bottom-0'
+                  contextMenu.submenuUp ? 'bottom-0' : 'top-0'
                 ]">
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
@@ -2680,7 +2710,7 @@ const uniqueFloors = computed(() => {
                 class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
                 :class="[
                   contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
-                  'bottom-0'
+                  contextMenu.submenuUp ? 'bottom-0' : 'top-0'
                 ]">
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
