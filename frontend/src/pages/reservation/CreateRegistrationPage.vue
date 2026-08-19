@@ -67,6 +67,11 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const currentBookingModule = computed(() => {
+  if (route.path === '/frontdesk') return 'FO'
+  if (route.path === '/housekeeping') return 'HK'
+  return 'SALE'
+})
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -3333,8 +3338,8 @@ async function handleSaveNewBooking() {
       shuttle_info:           modalForm.value.shuttleInfo || [],
       room_allocations:       syncRoomsToAllocations(modalForm.value),
       deposit_details:        modalForm.value.deposits || [],
-      module:                 'reservation',
-      created_module:         'reservation',
+      module:                 currentBookingModule.value,
+      created_module:         currentBookingModule.value,
     }
     if (isEditModal.value && modalForm.value.dbId) {
       const res = await updateBooking(modalForm.value.dbId, payload)
@@ -3513,6 +3518,34 @@ function handleSelectAllInGroup(rooms, checked) {
   }
 }
 
+function restoreTabFromBackup(tab) {
+  if (!tab?._backup) return false
+  const restored = JSON.parse(JSON.stringify(tab._backup))
+  delete restored._backup
+  Object.assign(tab, restored)
+  delete tab._backup
+  return true
+}
+
+function validateRoomDatesAgainstBooking(tab) {
+  if (!tab) return null
+  const bookingArrival = parseApiDate(tab.checkIn)
+  const bookingDeparture = parseApiDate(tab.checkOut)
+  if (!bookingArrival || !bookingDeparture || bookingArrival > bookingDeparture) {
+    return 'Ngày đến/ngày đi của đăng ký không hợp lệ.'
+  }
+
+  const invalidRoom = (tab.rooms || []).find(room => {
+    const roomArrival = parseApiDate(room.checkIn)
+    const roomDeparture = parseApiDate(room.checkOut)
+    return !roomArrival || !roomDeparture || roomArrival < bookingArrival || roomDeparture > bookingDeparture || roomArrival > roomDeparture
+  })
+
+  return invalidRoom
+    ? `Ngày của phòng phải nằm trong giai đoạn của đăng ký (${formatDateVi(bookingArrival)} đến ${formatDateVi(bookingDeparture)}).`
+    : null
+}
+
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
     isEditing.value = true
@@ -3538,11 +3571,7 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Quay lại') {
     isEditing.value = false
     const tab = activeTab.value
-    if (tab && tab._backup) {
-      const restored = JSON.parse(JSON.stringify(tab._backup))
-      delete restored._backup
-      Object.assign(tab, restored)
-    }
+    restoreTabFromBackup(tab)
   } else if (actionName === 'Lưu') {
     const tab = activeTab.value
     if (tab) {
@@ -3552,6 +3581,11 @@ async function triggerAction(actionName) {
         return
       }
     }
+    const dateError = validateRoomDatesAgainstBooking(tab)
+    if (dateError) {
+      uiStore.showToast(dateError, 'error')
+      return
+    }
     uiStore.confirm({
       title: 'Xác nhận lưu đăng ký',
       message: `Bạn có chắc chắn muốn lưu các thông tin thay đổi cho đăng ký "${tab?.bookingName || ''}"?`,
@@ -3559,8 +3593,8 @@ async function triggerAction(actionName) {
       cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (!confirmed) return
+      const backup = tab?._backup
       isEditing.value = false
-      if (tab) delete tab._backup
       if (tab && tab.dbId) {
         try {
           const payload = {
@@ -3592,9 +3626,12 @@ async function triggerAction(actionName) {
           const res = await updateBooking(tab.dbId, payload)
           await loadBookings()
           notifyRoomUpdates()
+          if (tab) delete tab._backup
           uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
         } catch (err) {
           console.error(err)
+          if (tab && backup) tab._backup = backup
+          restoreTabFromBackup(tab)
           const errMsg = err.response?.data?.message || 'Không thể lưu thông tin đăng ký!'
           uiStore.showToast(errMsg, 'error')
         }
@@ -4201,7 +4238,7 @@ async function handleConfirmCancelReason(payload) {
       const res = await deleteBooking(tab.dbId, {
         cancel_reason_id: payload.cancel_reason_id,
         note: payload.note,
-        current_module: 'reservation'
+        current_module: currentBookingModule.value
       })
       if (res.data?.success) {
         const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
@@ -4233,7 +4270,7 @@ async function handleConfirmCancelReason(payload) {
           const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
             cancel_reason_id: payload.cancel_reason_id,
             note: payload.note,
-            current_module: 'reservation'
+            current_module: currentBookingModule.value
           })
           if (res.data?.success) {
             successCount++
@@ -5360,30 +5397,30 @@ defineExpose({
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr 
                       class="border-b font-bold h-8 cursor-pointer select-none"
-                      :class="statusGroup.statusOrder === 3 ? 'bg-red-100 border-red-300 text-red-900 font-extrabold' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300 text-pink-900 font-extrabold' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300 text-slate-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
-                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
-                          :class="statusGroup.statusOrder === 3 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-pink-600 hover:bg-pink-700' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <input 
                           type="checkbox" 
                           :checked="statusGroup.typeGroups.flatMap(g => g.rooms).length > 0 && statusGroup.typeGroups.flatMap(g => g.rooms).every(r => selectedRows.includes(r.id))" 
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-900 font-black' : 'text-blue-900'">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] text-pink-900 font-black' : statusGroup.statusOrder === 1 ? 'bg-blue-200 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] text-slate-800' : 'bg-[#dbeafe]/60 text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-200' : 'bg-[#bfdbfe]'"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-[#f7c9e4]' : statusGroup.statusOrder === 1 ? 'bg-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#cfd6e0]' : 'bg-[#bfdbfe]' "></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->

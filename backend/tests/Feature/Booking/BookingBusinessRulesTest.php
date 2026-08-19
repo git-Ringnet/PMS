@@ -463,6 +463,8 @@ class BookingBusinessRulesTest extends TestCase
         // 3. Assert room status and cascade updates
         $bRoom->refresh();
         $this->assertEquals(BookingRoom::STATUS_CANCELLED, $bRoom->status);
+        $booking->refresh();
+        $this->assertNotEquals(Booking::STATUS_DELETED, $booking->status);
 
         // Guests cascaded to status 3
         $guestPivot->refresh();

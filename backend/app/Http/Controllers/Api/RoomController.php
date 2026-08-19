@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\RoomResource;
 use App\Models\Room;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RoomController extends Controller
 {
@@ -91,6 +92,7 @@ class RoomController extends Controller
                 'services' => fn($q) => $q->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
                     ->whereDate('service_date', $sysDateStr),
                 'specialRequests.specialRequest',
+                'lateCheckins',
             ])
             ->get();
 
@@ -164,6 +166,7 @@ class RoomController extends Controller
                     ->values()
                     ->toArray();
                 $room->extra_bed_qty = (int) $br->services->sum(fn($service) => (float) $service->quantity);
+                $room->late_checkin = $br->lateCheckins->contains(fn($late) => (int) $late->status === 1);
                 
                 $room->external_booking_code = $br->booking?->external_booking_code ?? '';
                 $room->registration_status = $br->booking?->registrationStatus?->name ?? '';
@@ -369,6 +372,53 @@ class RoomController extends Controller
     }
 
     /**
+     * Update the status of multiple rooms in one request.
+     */
+    public function bulkUpdateStatus(Request $request)
+    {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
+        $validCodes = [
+            'vacant_ready', 'vacant_dirty', 'vacant_clean',
+            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
+        ];
+
+        $validated = $request->validate([
+            'room_ids' => 'required|array|min:1',
+            'room_ids.*' => 'integer|distinct|exists:rooms,id',
+            'room_status_code' => 'required|string|in:' . implode(',', $validCodes),
+        ]);
+
+        $newCode = $validated['room_status_code'];
+        $rooms = Room::whereIn('id', $validated['room_ids'])->get();
+
+        DB::transaction(function () use ($rooms, $newCode) {
+            $rooms->each(function (Room $room) use ($newCode) {
+                $room->update(['room_status_code' => $newCode]);
+
+                if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
+                    $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
+                    \App\Models\RoomLock::where('room_number', $room->room_number)
+                        ->where('is_active', 1)
+                        ->update([
+                            'is_active' => 2,
+                            'unlock_username' => $currentUser,
+                            'unlocked_at' => now(),
+                        ]);
+                }
+            });
+        });
+
+        return response()->json([
+            'success' => true,
+            'updated_count' => $rooms->count(),
+        ]);
+    }
+
+    /**
      * Get room occupancy statistics.
      */
     public function stats(Request $request)
@@ -396,18 +446,23 @@ class RoomController extends Controller
         // Bổ sung thống kê phòng đến (bao gồm cả phòng đã gán và chưa gán số phòng)
         $avService = app(\App\Services\RoomAvailabilityService::class);
         $sysDateStr = $request->date ? \Carbon\Carbon::parse($request->date)->toDateString() : $avService->getSystemDate()->toDateString();
+        $availabilityBookingRoom = fn ($query) => $query->whereHas('booking.registrationStatus', fn ($statusQuery) => $statusQuery->where('is_availability', 1));
 
         // 1. Số phòng đang ở tại thời điểm hiện tại (Checked In)
-        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)->count();
+        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->tap($availabilityBookingRoom)
+            ->count();
 
         // 2. Những phòng chưa check-in hôm nay hoặc trước đó (chưa in hôm nay)
         $pendingArrivals = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_BOOKED)
             ->whereDate('arrival_date', '<=', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         // 3. Những phòng đi hôm nay hoặc trước đó nhưng chưa check-out (out hôm nay nhưng chưa out)
         $pendingDepartures = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
             ->whereDate('departure_date', '<=', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         // 4. Số dự kiến cuối ngày
@@ -416,6 +471,7 @@ class RoomController extends Controller
         // 5. Thống kê Đã đến (Arrivals)
         $arrivalsCheckedIn = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
             ->whereDate('arrival_date', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         $stats['arrivals_checked_in'] = $arrivalsCheckedIn;
@@ -429,6 +485,7 @@ class RoomController extends Controller
         // 7. Thống kê Đã đi (Departures)
         $departuresCheckedOut = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_OUT)
             ->whereDate('departure_date', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         $stats['departures_checked_out'] = $departuresCheckedOut;
