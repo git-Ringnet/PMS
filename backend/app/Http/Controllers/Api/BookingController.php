@@ -94,17 +94,22 @@ class BookingController extends Controller
         if ($request->boolean('with_billing') || $request->input('with_billing') === 'true') {
             $relations[] = 'serviceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'serviceBills.usernameOperator:id,username,name';
+            $relations[] = 'serviceBills.user:id,name,username';
             $relations[] = 'serviceBills.hotelService:id,code,name';
             $relations[] = 'bookingRooms.serviceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'bookingRooms.serviceBills.usernameOperator:id,username,name';
+            $relations[] = 'bookingRooms.serviceBills.user:id,name,username';
             $relations[] = 'bookingRooms.serviceBills.hotelService:id,code,name';
             $relations[] = 'bookingRooms.currentServiceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'bookingRooms.currentServiceBills.usernameOperator:id,username,name';
+            $relations[] = 'bookingRooms.currentServiceBills.user:id,name,username';
             $relations[] = 'bookingRooms.currentServiceBills.hotelService:id,code,name';
             $relations[] = 'masterServiceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'masterServiceBills.usernameOperator:id,username,name';
+            $relations[] = 'masterServiceBills.user:id,name,username';
             $relations[] = 'masterServiceBills.hotelService:id,code,name';
             $relations[] = 'payments.paymentMethod';
+            $relations[] = 'payments.user';
         }
 
         $query = Booking::with($relations);
@@ -568,6 +573,7 @@ class BookingController extends Controller
             'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
+            'payments.user',
         ]);
 
         return response()->json([
@@ -601,6 +607,7 @@ class BookingController extends Controller
             'bookingRooms.services',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
+            'payments.user',
         ])->find($id);
 
         if (!$booking) {
@@ -1438,7 +1445,7 @@ class BookingController extends Controller
 
         return response()->json([
             'success'        => true,
-            'data'           => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass', 'payments.paymentMethod']),
+            'data'           => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass', 'payments.paymentMethod', 'payments.user']),
             'rooms_restored' => $roomRestored,
             'message'        => 'Khôi phục booking thành công!' . (
                 !$roomRestored

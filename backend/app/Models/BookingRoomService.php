@@ -39,6 +39,7 @@ class BookingRoomService extends Model
         'posted_at',
         'posted_by_employee_code',
         'created_by',
+        'user_id',
         'updated_by',
         'deleted_at',
     ];
@@ -49,6 +50,7 @@ class BookingRoomService extends Model
 
         // Tự động tính total_amount = quantity * rate khi tạo/cập nhật
         static::saving(function ($model) {
+            $model->user_id ??= Auth::id();
             if (!$model->preserveTotalAmount) {
                 $model->total_amount = floatval($model->quantity) * floatval($model->rate);
             }

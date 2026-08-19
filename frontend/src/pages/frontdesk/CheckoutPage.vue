@@ -2263,7 +2263,7 @@ const paymentsList = computed(() => {
         isDeleted: p.deleted_at ? 'Có' : '',
         vatNo: p.vat_no || '',
         accounting: p.accounting || 'Đã thu',
-        userName: p.user_name || 'Admin',
+         userName: p.user?.name || p.user?.username || p.user_name || p.created_by || p.username || 'Admin',
         rawPayment: p
       })
     })
