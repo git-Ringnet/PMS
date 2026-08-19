@@ -3942,7 +3942,7 @@ function getRoomStatusIconName(item) {
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
-                  ? 'bg-amber-500 text-white border-amber-700 shadow-[inset_0_-2px_0_#b45309]'
+                  ? 'bg-[#fff7cc] text-amber-900 border-[#facc15] shadow-[inset_0_-2px_0_#facc15]'
                   : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700'))
               ]"
               @dragenter.prevent="handleGlobalDragOver($event)"
@@ -3988,7 +3988,7 @@ function getRoomStatusIconName(item) {
               <td 
                 class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden transition-colors"
                 :class="[
-                  dragSourceRoom === item.room ? '!bg-amber-500 !text-white shadow-[inset_-1px_0_0_#b45309]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
+                  dragSourceRoom === item.room ? '!bg-[#fff7cc] !text-amber-900 shadow-[inset_-1px_0_0_#facc15]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
                 ]"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
@@ -4032,7 +4032,7 @@ function getRoomStatusIconName(item) {
                   isCellSelected(item.room, day.fullDate)
                     ? `ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm ${isSelectionGroupStart(item.room, day.fullDate) ? '!border-l-4 !border-l-white' : ''} ${isSelectionGroupTop(item.room, day.fullDate) ? '!border-t-4 !border-t-white' : ''}`
                     : (dragSourceStartIdx !== null && dayIdx >= dragSourceStartIdx && dayIdx < dragSourceEndIdx
-                        ? 'bg-amber-100/60 shadow-xs'
+                        ? 'bg-[#fff7cc]/80 shadow-xs'
                         : (item.isVirtual
                             ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
                             : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white'))))
@@ -4185,7 +4185,7 @@ function getRoomStatusIconName(item) {
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
-                  ? 'bg-amber-200 shadow-[inset_-1px_-1px_0_#d97706]'
+                  ? 'bg-[#fff7cc] shadow-[inset_-1px_-1px_0_#facc15]'
                   : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]')
               ]"
               :title="'Danh sách phòng bận ngày ' + day.dateStr + ':\n' + (dynamicStats.occRooms[idx]?.join(', ') || 'Không có')"
