@@ -5365,30 +5365,30 @@ defineExpose({
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr 
                       class="border-b font-bold h-8 cursor-pointer select-none"
-                      :class="statusGroup.statusOrder === 3 ? 'bg-red-100 border-red-300 text-red-900 font-extrabold' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300 text-pink-900 font-extrabold' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300 text-slate-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
-                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
-                          :class="statusGroup.statusOrder === 3 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-pink-600 hover:bg-pink-700' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <input 
                           type="checkbox" 
                           :checked="statusGroup.typeGroups.flatMap(g => g.rooms).length > 0 && statusGroup.typeGroups.flatMap(g => g.rooms).every(r => selectedRows.includes(r.id))" 
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-900 font-black' : 'text-blue-900'">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] text-pink-900 font-black' : statusGroup.statusOrder === 1 ? 'bg-blue-200 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] text-slate-800' : 'bg-[#dbeafe]/60 text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-200' : 'bg-[#bfdbfe]'"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-[#f7c9e4]' : statusGroup.statusOrder === 1 ? 'bg-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#cfd6e0]' : 'bg-[#bfdbfe]' "></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
