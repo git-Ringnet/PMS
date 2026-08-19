@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { useHkStore, GROUP_COLORS, getRoomDisplayCode } from '@/stores/hk-store'
 import { useRoomStore } from '@/stores/room-store'
 import {
@@ -13,9 +14,21 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { fetchSystemDate } from '@/services/booking-service'
 import echo from '@/services/echo'
 
+const props = defineProps({
+  initialRoomIds: {
+    type: Array,
+    default: () => [],
+  },
+  initialDate: {
+    type: String,
+    default: '',
+  },
+})
+
 const hkStore = useHkStore()
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
+const route = useRoute()
 
 // Filter panel click-outside
 const filterWrapRef = ref(null)
@@ -121,7 +134,7 @@ const allRooms = computed(() => {
         }
       }
       return {
-        id: r.id,
+        id: Number(r.id),
         room_number: r.room_number,
         floor: r.floor,
         room_type: r.room_class?.name || r.room_type || '',
@@ -183,11 +196,16 @@ onMounted(async () => {
   try {
     const res = await fetchSystemDate()
     const sysDate = res.data?.data?.system_date || res.data?.system_date
-    if (sysDate) {
+    if (sysDate && !route.query.date && !props.initialDate) {
       workDate.value = sysDate
     }
   } catch (err) {
     console.error('Lỗi khi tải ngày hệ thống:', err)
+  }
+  if (route.query.date) {
+    workDate.value = String(route.query.date)
+  } else if (props.initialDate) {
+    workDate.value = props.initialDate
   }
 
   await Promise.all([
@@ -200,6 +218,17 @@ onMounted(async () => {
     selectedShiftId.value = hkStore.shifts[0].id
     // Load assignment ngay sau khi có cả ngày + ca
     await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
+  }
+
+  const preselectedRoomIds = props.initialRoomIds.length
+    ? props.initialRoomIds.map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
+    : String(route.query.roomIds || '')
+      .split(',')
+      .map(id => Number(id))
+      .filter(id => Number.isInteger(id) && id > 0)
+  if (preselectedRoomIds.length) {
+    const availableIds = new Set(allRooms.value.map(room => Number(room.id)))
+    selectedRoomIds.value = new Set(preselectedRoomIds.filter(id => availableIds.has(id)))
   }
 
   // Lắng nghe sự kiện realtime qua Laravel Echo để đồng bộ trạng thái phòng

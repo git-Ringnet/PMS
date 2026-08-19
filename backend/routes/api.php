@@ -123,6 +123,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/rooms/permissions', [\App\Http\Controllers\Api\RoomController::class, 'permissions']);
     Route::get('/rooms/vacant', [\App\Http\Controllers\Api\RoomController::class, 'vacant']);
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
+    Route::post('/rooms/bulk-status', [\App\Http\Controllers\Api\RoomController::class, 'bulkUpdateStatus']);
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 

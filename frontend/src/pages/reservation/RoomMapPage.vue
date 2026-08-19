@@ -22,6 +22,7 @@ import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import CheckInPage from './CheckInPage.vue'
 import ResidenceDeclarationPage from './ResidenceDeclarationPage.vue'
 import BreakfastPage from '@/pages/frontdesk/BreakfastPage.vue'
+import PrintTasksTab from '@/pages/housekeeping/components/PrintTasksTab.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
@@ -60,6 +61,8 @@ const depositBooking = ref({ id: null, name: '', code: '', rooms: [], deposits: 
 const depositPaymentMethods = ref([])
 const depositCurrencies = ref([])
 const showStatsModal = ref(false)
+const showPrintTasksModal = ref(false)
+const printTaskRoomIds = ref([])
 const isLoaded = ref(false)
 const isInitialLoad = ref(true)
 let pollingInterval = null
@@ -115,6 +118,19 @@ watch(moduleContext, loadRoomStatusPermission, { immediate: true })
 
 const showFilters = ref(false)
 const showSettings = ref(false)
+const selectedRoomIds = ref([])
+const bulkRoomStatus = ref('')
+const isBulkUpdating = ref(false)
+const showBulkStatusMenu = ref(false)
+const bulkStatusOptions = [
+  { code: 'vacant_ready', label: 'Sẵn sàng', icon: 'available', iconClass: 'text-sky-500' },
+  { code: 'vacant_dirty', label: 'Phòng bẩn', icon: 'dirty', iconClass: 'text-sky-500' },
+  { code: 'turndown', label: 'Lau dọn', icon: 'checkout', iconClass: 'text-sky-500' },
+  { code: 'ooo', label: 'Phòng OOO', icon: 'ooo', iconClass: 'text-amber-500' },
+  { code: 'oos', label: 'Phòng OOS', icon: 'oos', iconClass: 'text-sky-500' },
+  { code: 'vacant_priority', label: 'Phòng ưu tiên', icon: 'priority', iconClass: 'text-sky-500' },
+  { code: 'dnd', label: 'Phòng không làm phiền', icon: 'dnd', iconClass: 'text-sky-500' },
+]
 
 const settings = ref({
   iconSizes: {
@@ -599,6 +615,91 @@ function resetAllFilters() {
   roomStore.resetFilters()
 }
 
+const visibleGridRooms = computed(() => sortedFloors.value.flatMap(floor => roomStore.roomsByFloor[floor] || []))
+const allVisibleRoomsSelected = computed(() => visibleGridRooms.value.length > 0 && visibleGridRooms.value.every(room => selectedRoomIds.value.includes(room.id)))
+
+function toggleRoomSelection(room) {
+  selectedRoomIds.value = selectedRoomIds.value.includes(room.id)
+    ? selectedRoomIds.value.filter(id => id !== room.id)
+    : [...selectedRoomIds.value, room.id]
+}
+
+function toggleSelectVisibleRooms() {
+  if (allVisibleRoomsSelected.value) {
+    const visibleIds = new Set(visibleGridRooms.value.map(room => room.id))
+    selectedRoomIds.value = selectedRoomIds.value.filter(id => !visibleIds.has(id))
+  } else {
+    selectedRoomIds.value = [...new Set([...selectedRoomIds.value, ...visibleGridRooms.value.map(room => room.id)])]
+  }
+}
+
+function clearRoomSelection() {
+  selectedRoomIds.value = []
+}
+
+function toggleBulkStatusMenu() {
+  if (!canChangeRoomStatus.value) {
+    uiStore.showToast('Bạn không có quyền thay đổi trạng thái phòng.', 'warning')
+    return
+  }
+  if (!selectedRoomIds.value.length) {
+    uiStore.showToast('Vui lòng chọn phòng cần cập nhật.', 'warning')
+    return
+  }
+  showBulkStatusMenu.value = !showBulkStatusMenu.value
+}
+
+async function applyBulkStatusFromMenu(status) {
+  showBulkStatusMenu.value = false
+  bulkRoomStatus.value = status
+  await bulkUpdateRoomStatus()
+}
+
+async function bulkUpdateRoomStatus() {
+  if (!bulkRoomStatus.value || selectedRoomIds.value.length === 0 || !canChangeRoomStatus.value) return
+  isBulkUpdating.value = true
+  try {
+    const selectedRooms = roomStore.rooms.filter(room => selectedRoomIds.value.includes(room.id))
+    if (['ooo', 'oos'].includes(bulkRoomStatus.value)) {
+      const now = new Date()
+      const date = String(rawDate.value || new Date().toISOString()).substring(0, 10)
+      const time = now.toTimeString().substring(0, 8)
+      await roomService.bulkLockRooms({
+        room_numbers: selectedRooms.map(room => room.room_number),
+        start_date: `${date} ${time}`,
+        end_date: `${date} 23:59:59`,
+        lock_type: bulkRoomStatus.value.toUpperCase(),
+        reason: 'Cập nhật trạng thái phòng hàng loạt từ sơ đồ phòng',
+        force: false,
+        current_module: moduleContext.value,
+      })
+      await roomStore.fetchRooms({ date: rawDate.value })
+      await roomStore.fetchStats(rawDate.value)
+    } else {
+      await roomService.bulkUpdateRoomStatus(
+        selectedRooms.map(room => room.id),
+        bulkRoomStatus.value,
+        moduleContext.value,
+      )
+      await roomStore.fetchRooms({ date: rawDate.value })
+      await roomStore.fetchStats(rawDate.value)
+    }
+    uiStore.showToast(`Đã cập nhật ${selectedRooms.length} phòng.`, 'success')
+    clearRoomSelection()
+  } catch (err) {
+    uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật trạng thái phòng hàng loạt.', 'error')
+  } finally {
+    isBulkUpdating.value = false
+  }
+}
+
+function printSelectedRooms() {
+  const selectedRooms = roomStore.rooms.filter(room => selectedRoomIds.value.includes(room.id))
+  if (!selectedRooms.length) return uiStore.showToast('Vui lòng chọn phòng cần in Worksheet.', 'warning')
+  printTaskRoomIds.value = selectedRooms.map(room => room.id)
+  showPrintTasksModal.value = true
+}
+
 // Show Warning toast for features under development
 function showDevelopmentToast(featureName) {
   const isEn = t('roomMap.filterTitle') === 'Filters'
@@ -775,7 +876,7 @@ function getRoomCardStyle(room, floorIdx, roomIdx) {
 
 // Guest names list matching image 2
 function getMockGuestName(room) {
-  return room.guest_name || ''
+  return room.guest_name || room.primary_guest_name || room.guest_details?.[0] || ''
 }
 
 // Booking ID generator
@@ -786,6 +887,23 @@ function getMockRegId(room) {
 // Booking details/registration name matching image 2
 function getMockRegName(room) {
   return room.booking_name || ''
+}
+
+function getListSpecialRequests(room) {
+  if (room.special_requests) return room.special_requests
+  return Array.isArray(room.special_request_types) ? room.special_request_types.map(item => item.name || item.code).filter(Boolean).join(', ') : ''
+}
+
+function getListLateCheckin(room) {
+  return room.late_checkin || room.is_late_checkin || room.late_arrival ? 'Có' : '-'
+}
+
+function getListRowStyle(room) {
+  if (room.booking_color) return { backgroundColor: room.booking_color }
+  if (room.status === ROOM_STATUSES.OCCUPIED || room.booking_status === 'occupied' || room.booking_status === 'checkout') {
+    return { backgroundColor: '#dff3ff' }
+  }
+  return { backgroundColor: '#ffffff' }
 }
 
 // Company list matching image 2
@@ -1279,6 +1397,8 @@ const uniqueFloors = computed(() => {
   const floors = new Set(roomStore.rooms.map(r => r.floor).filter(Boolean))
   return [...floors].sort((a, b) => a - b)
 })
+
+const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.map(room => room.registration_status).filter(Boolean))].sort())
 </script>
 
 <template>
@@ -1445,6 +1565,28 @@ const uniqueFloors = computed(() => {
 
           <!-- View Mode & Zoom switchers -->
           <div class="flex items-center gap-2.5 shrink-0">
+            <div v-if="!isGridMode" class="relative flex items-center gap-1">
+              <button type="button" class="flex h-8 w-8 items-center justify-center rounded-md border text-white shadow-sm transition disabled:cursor-not-allowed" :class="selectedRoomIds.length && canChangeRoomStatus && !isBulkUpdating ? 'border-emerald-700 bg-emerald-600 hover:bg-emerald-700' : 'border-slate-200 bg-slate-200 text-slate-400'" :disabled="!selectedRoomIds.length || !canChangeRoomStatus || isBulkUpdating" title="Cập nhật tình trạng phòng" @click="toggleBulkStatusMenu">
+                <svg v-if="isBulkUpdating" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4Z" />
+                </svg>
+                <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M20 11a8.1 8.1 0 0 0-14.8-4M4 5V2m0 3h3M4 13a8.1 8.1 0 0 0 14.8 4M20 19v3m0-3h-3" />
+                </svg>
+              </button>
+              <div v-if="showBulkStatusMenu" class="absolute right-0 top-full z-50 mt-2 w-60 rounded-xl border border-slate-300 bg-slate-100 p-1.5 shadow-lg">
+                <button v-for="option in bulkStatusOptions" :key="option.code" type="button" class="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-xs text-slate-700 hover:bg-white" @click="applyBulkStatusFromMenu(option.code)">
+                  <RoomIcon :name="option.icon" :monochrome="false" :class="option.iconClass" class="h-5 w-5" />
+                  <span>{{ option.label }}</span>
+                </button>
+              </div>
+              <button type="button" class="flex h-8 w-8 items-center justify-center rounded-md border text-white shadow-sm transition disabled:cursor-not-allowed" :class="selectedRoomIds.length ? 'border-sky-400 bg-sky-400 hover:bg-sky-500' : 'border-slate-200 bg-slate-200 text-slate-400'" :disabled="!selectedRoomIds.length" title="In Worksheet" @click="printSelectedRooms">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V4h12v5M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v6H6z" />
+                </svg>
+              </button>
+            </div>
             <!-- Help / Guide Trigger -->
             <HelpGuidePopover />
 
@@ -2148,8 +2290,8 @@ const uniqueFloors = computed(() => {
                 <!-- Room Grid view (Lưới sơ đồ) -->
                 <!-- Room Grid view (Lưới sơ đồ) -->
                 <div v-else-if="isGridMode"
-                  class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
-                  :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
+                   class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
+                   :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
                   <div v-for="(floor, floorIdx) in sortedFloors" :key="floor" :class="[
                     settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2',
                     isInitialLoad ? 'floor-row-animate' : ''
@@ -2177,7 +2319,7 @@ const uniqueFloors = computed(() => {
                           isInitialLoad ? 'room-card-animate' : '',
                           (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : ''
                       ]" :style="getRoomCardStyle(room, floorIdx, roomIdx)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)"
-                        @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
+                       @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
                         @mousemove="showTooltip($event, room)" @mouseleave="hideTooltip">
                         <!-- Status Indicator Dot (Top Left - Check-in Today) -->
                         <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
@@ -2266,11 +2408,63 @@ const uniqueFloors = computed(() => {
 
                 <!-- Room List Table view (Bảng danh sách) -->
                 <div v-else
-                  class="bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto min-h-[300px] ml-1">
-                  <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1400px]">
+                  class="relative bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto min-h-[300px] ml-1">
+                  <LoadingOverlay :show="isBulkUpdating" />
+                  <div class="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
+                    <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                      <input type="checkbox" :checked="allVisibleRoomsSelected" @change="toggleSelectVisibleRooms" />
+                      Chọn danh sách đang hiển thị
+                    </label>
+                    <span class="text-xs text-slate-500">Đã chọn: {{ selectedRoomIds.length }}</span>
+                    <button type="button" v-if="selectedRoomIds.length" @click="clearRoomSelection" class="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600">Bỏ chọn</button>
+                  </div>
+                  <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1700px]">
+                    <thead>
+                      <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap" :class="TEXT_THEME.tableHeader">
+                        <th class="p-2 border-r border-slate-200 text-center w-[42px]"><input type="checkbox" :checked="allVisibleRoomsSelected" @change="toggleSelectVisibleRooms" /></th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[90px]">TTĐK</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[85px]">TT phòng</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[55px]">Tầng</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[80px]">Phòng</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[90px]">Loại phòng</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[100px]">Dạng phòng</th>
+                        <th class="p-2 border-r border-slate-200 w-[180px]">Tên khách</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[100px]">Mã ĐK</th>
+                        <th class="p-2 border-r border-slate-200 w-[220px]">Tên ĐK</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[105px]">Ngày đến</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[105px]">Ngày đi</th>
+                        <th class="p-2 border-r border-slate-200 w-[200px]">Công ty</th>
+                        <th class="p-2 border-r border-slate-200 text-center w-[85px]">Thêm giường</th>
+                        <th class="p-2 border-r border-slate-200 w-[220px]">YCĐB</th>
+                        <th class="p-2 text-center w-[105px]">Nhận phòng trễ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="room in roomStore.filteredRooms" :key="`list-${room.id}`" class="border-b border-slate-200 hover:brightness-95 transition-colors cursor-pointer select-none h-9" :style="getListRowStyle(room)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
+                        <td class="p-2 border-r border-slate-200 text-center" @click.stop><input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" aria-label="Chọn phòng" /></td>
+                        <td class="p-2 border-r border-slate-200 text-center"><span v-if="hasArrivalToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1" title="Đến hôm nay"></span><span v-if="hasDepartureToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="Đi hôm nay"></span><span v-if="!hasArrivalToday(room) && !hasDepartureToday(room)">-</span></td>
+                        <td class="p-2 border-r border-slate-200 text-center"><RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" /><span v-else>-</span></td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ room.floor }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center font-bold">{{ room.room_number }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ room.room_type || room.room_class?.code || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ getRoomTypeShape(room) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 truncate">{{ getMockGuestName(room) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ getMockRegId(room) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 truncate">{{ getMockRegName(room) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ formatDateShort(room.check_in) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ formatDateShort(room.check_out) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 truncate">{{ getMockCompany(room) || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center">{{ room.extra_bed_qty || '-' }}</td>
+                        <td class="p-2 border-r border-slate-200 truncate">{{ getListSpecialRequests(room) || '-' }}</td>
+                        <td class="p-2 text-center">{{ getListLateCheckin(room) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <table v-if="false" class="w-full text-left border-collapse text-xs table-fixed min-w-[1400px]">
                     <thead>
                       <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap"
                         :class="TEXT_THEME.tableHeader">
+                        <th class="p-2 border-r border-slate-200 text-center w-[60px]"><input type="checkbox" :checked="allVisibleRoomsSelected" @change="toggleSelectVisibleRooms" /></th>
                         <th class="p-2 border-r border-slate-200 text-center w-[60px]">{{ t('roomMap.status') }}</th>
                         <th class="p-2 border-r border-slate-200 text-center w-[85px] leading-tight text-[10px]">{{
                           t('roomMap.lateIn')
@@ -2303,6 +2497,7 @@ const uniqueFloors = computed(() => {
                         class="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none h-9"
                         :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#97d5ff]/40 hover:bg-[#97d5ff]/60' : 'bg-white'"
                         @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
+                        <td class="p-2 border-r border-slate-200 text-center" @click.stop><input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" aria-label="Chọn phòng" /></td>
                         <!-- TTDK (Status Dot) -->
                         <td class="p-2 border-r border-slate-200 text-center">
                           <div class="flex items-center justify-center gap-1">
@@ -2445,6 +2640,24 @@ const uniqueFloors = computed(() => {
                       :class="TEXT_THEME.sidebarLabel">
                       <option :value="null">{{ t('roomMap.all') }}</option>
                       <option v-for="type in uniqueRoomTypes" :key="type" :value="type">{{ type }}</option>
+                    </select>
+                  </div>
+
+                  <div class="flex flex-col gap-1.5">
+                    <span :class="TEXT_THEME.sidebarLabel">Mã đăng ký</span>
+                    <input v-model.trim="roomStore.filters.bookingCode" type="text" placeholder="Nhập mã đăng ký" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" />
+                  </div>
+
+                  <div class="flex flex-col gap-1.5">
+                    <span :class="TEXT_THEME.sidebarLabel">Tên khách</span>
+                    <input v-model.trim="roomStore.filters.guestName" type="text" placeholder="Nhập tên khách" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white" />
+                  </div>
+
+                  <div class="flex flex-col gap-1.5">
+                    <span :class="TEXT_THEME.sidebarLabel">Trạng thái đăng ký</span>
+                    <select v-model="roomStore.filters.registrationStatus" class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white">
+                      <option :value="null">{{ t('roomMap.all') }}</option>
+                      <option v-for="status in uniqueRegistrationStatuses" :key="status" :value="status">{{ status }}</option>
                     </select>
                   </div>
 
@@ -3422,6 +3635,17 @@ const uniqueFloors = computed(() => {
     <!-- Room Move Modal -->
     <RoomMoveModal v-if="showRoomMoveModal" :show="showRoomMoveModal" :booking-id="roomMoveBookingId"
       :room-id="roomMoveBookingRoomId" @close="showRoomMoveModal = false" @success="handleRoomMoveSuccess" />
+
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showPrintTasksModal" class="fixed inset-0 z-[1000000] flex items-center justify-center bg-slate-900/50 p-3 backdrop-blur-sm">
+          <div class="relative h-[94vh] w-[97vw] overflow-hidden rounded-xl bg-white shadow-2xl">
+            <button type="button" class="absolute right-3 top-3 z-50 flex h-8 w-8 items-center justify-center rounded-lg bg-slate-700/80 text-xl text-white hover:bg-slate-900" title="Đóng" @click="showPrintTasksModal = false">×</button>
+            <PrintTasksTab :initial-room-ids="printTaskRoomIds" :initial-date="rawDate" />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
   </div>
 </template>
