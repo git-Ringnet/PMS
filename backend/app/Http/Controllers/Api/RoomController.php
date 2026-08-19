@@ -281,6 +281,7 @@ class RoomController extends Controller
             'room_status_code' => 'required|string|in:' . implode(',', $validCodes),
         ]);
 
+        $oldCode = $room->getOriginal('room_status_code');
         $newCode = $validated['room_status_code'];
         $room->update(['room_status_code' => $newCode]);
 
@@ -295,6 +296,23 @@ class RoomController extends Controller
                     'unlocked_at' => now(),
                 ]);
         }
+
+        try {
+            $statusLabels = [
+                'vacant_ready' => 'Phòng sẵn sàng',
+                'vacant_clean' => 'Phòng sạch',
+                'vacant_dirty' => 'Phòng bẩn',
+                'occupied_ready' => 'Có khách (sẵn sàng)',
+                'occupied_clean' => 'Có khách (sạch)',
+                'occupied_dirty' => 'Có khách (bẩn)',
+                'ooo' => 'Hỏng (OOO)',
+                'oos' => 'Ngừng bán (OOS)',
+                'maintenance' => 'Bảo trì',
+            ];
+            $oldLabel = $statusLabels[$oldCode] ?? $oldCode;
+            $newLabel = $statusLabels[$newCode] ?? $newCode;
+            \App\Services\ActivityLogService::logRoomStatusChanged($room->room_number, $oldLabel, $newLabel, $request);
+        } catch (\Throwable $e) {}
 
         $room->load(['roomForm', 'roomClass']);
 

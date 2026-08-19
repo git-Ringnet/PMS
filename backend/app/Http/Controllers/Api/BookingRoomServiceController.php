@@ -188,6 +188,18 @@ class BookingRoomServiceController extends Controller
             $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
         }
 
+        try {
+            \App\Services\ActivityLogService::logServiceAction(
+                'create',
+                $room->room_number,
+                $room->booking?->booking_code ?? ('GAL' . $room->booking_id),
+                $service->service_name ?: $service->service_code,
+                $service->quantity ?? 1,
+                $service->rate ?? 0,
+                $request
+            );
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'data'    => $service,
@@ -1237,6 +1249,15 @@ class BookingRoomServiceController extends Controller
                 }
             }
         });
+
+        try {
+            $firstRecord = reset($createdRecords);
+            $roomNumber = $firstRecord ? $firstRecord->bookingRoom?->room_number : null;
+            $bCode = $firstRecord ? ($firstRecord->bookingRoom?->booking?->booking_code ?? ('GAL' . $firstRecord->bookingRoom?->booking_id)) : null;
+            $itemsCount = count($createdRecords);
+            $summaryName = $itemsCount > 0 ? ($firstRecord->service_name . ($itemsCount > 1 ? " (+ " . ($itemsCount - 1) . " món)" : "")) : 'Dịch vụ buồng phòng';
+            \App\Services\ActivityLogService::logServiceAction('create', $roomNumber, $bCode, $summaryName, $itemsCount, 0, $request);
+        } catch (\Throwable $e) {}
 
         return response()->json([
             'success' => true,

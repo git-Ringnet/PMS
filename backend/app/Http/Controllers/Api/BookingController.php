@@ -526,6 +526,12 @@ class BookingController extends Controller
             'payments.paymentMethod',
         ]);
 
+        try {
+            \App\Services\ActivityLogService::logBookingCreated($booking, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log Booking create error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success'               => true,
             'data'                  => $booking,
@@ -1030,6 +1036,28 @@ class BookingController extends Controller
             'payments.paymentMethod',
         ]);
 
+        try {
+            $changes = [];
+            if ($booking->wasChanged('registration_status_id')) {
+                $statusName = $booking->registrationStatus?->name ?? 'Mới';
+                $changes[] = "-Trạng thái: {$statusName}";
+            }
+            if ($booking->wasChanged('arrival_date') || $booking->wasChanged('departure_date')) {
+                $arr = $booking->arrival_date ? \Carbon\Carbon::parse($booking->arrival_date)->format('d/m/Y') : '';
+                $dep = $booking->departure_date ? \Carbon\Carbon::parse($booking->departure_date)->format('d/m/Y') : '';
+                $changes[] = "-Ngày ở: {$arr} ~ {$dep}";
+            }
+            if ($booking->wasChanged('note')) {
+                $changes[] = "-Ghi chú: {$booking->note}";
+            }
+            if ($booking->wasChanged('company_id')) {
+                $changes[] = "-Công ty: " . ($booking->company?->name ?? '');
+            }
+            \App\Services\ActivityLogService::logBookingUpdated($booking, $changes, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log Booking update error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $booking,
@@ -1162,6 +1190,19 @@ class BookingController extends Controller
                 'updated_by'             => $currentUsername,
             ]);
         });
+
+        try {
+            $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
+            \App\Services\ActivityLogService::logBusiness([
+                'action' => 'Cancel',
+                'module' => 'reservation',
+                'component' => 'CreateRegistrationPage',
+                'description' => "* Hủy đăng ký {$bCode}" . ($reasonText ? ". Lý do: {$reasonText}" : ""),
+                'target_type' => 'Booking',
+                'target_id' => (string) $booking->id,
+                'target_label' => $bCode,
+            ], $request);
+        } catch (\Throwable $e) {}
 
         return response()->json([
             'success' => true,

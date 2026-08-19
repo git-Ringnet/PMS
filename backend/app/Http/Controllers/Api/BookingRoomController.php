@@ -747,6 +747,11 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
         }
 
+        try {
+            $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
+            \App\Services\ActivityLogService::logCheckIn($bCode, $bookingRoom->room_number, $request);
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom->fresh()->load(['roomClass', 'room']),
@@ -1915,6 +1920,12 @@ class BookingRoomController extends Controller
 
                     DB::commit();
 
+                    try {
+                        $guestIdsStr = implode(',', $movedGuestIds ?? []);
+                        $bCode = $bookingRoom->booking?->booking_code ?? ('GAL' . $bookingId);
+                        \App\Services\ActivityLogService::logRoomMove($bCode, $bookingRoom->room_number, $targetRoomNumber, $reason, $guestIdsStr, $request);
+                    } catch (\Throwable $e) {}
+
                     return response()->json([
                         'success' => true,
                         'message' => "Chuyển phòng {$bookingRoom->room_number} sang phòng {$targetRoomNumber} thành công!",
@@ -1938,6 +1949,11 @@ class BookingRoomController extends Controller
                     $bookingRoom->update($updateData);
 
                     DB::commit();
+
+                    try {
+                        $bCode = $bookingRoom->booking?->booking_code ?? ('GAL' . $bookingId);
+                        \App\Services\ActivityLogService::logRoomMove($bCode, $oldNumber, $targetRoomNumber, $reason, null, $request);
+                    } catch (\Throwable $e) {}
 
                     return response()->json([
                         'success' => true,

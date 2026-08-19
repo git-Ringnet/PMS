@@ -362,6 +362,21 @@ class PaymentController extends Controller
             return $payment;
         });
 
+        try {
+            $bkRoom = $payment->booking_room_id ? \App\Models\BookingRoom::find($payment->booking_room_id) : null;
+            $roomNumber = $bkRoom?->room_number;
+            $bCode = $booking->booking_code ?? ('GAL' . $bookingId);
+            \App\Services\ActivityLogService::logPaymentAction(
+                $request->pack4 === 'AP' ? 'payment' : 'deposit',
+                $bCode,
+                $roomNumber,
+                $payment->amount,
+                $method->name,
+                $payment->description,
+                $request
+            );
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'data'    => $payment->load('paymentMethod'),
