@@ -25,6 +25,7 @@ return new class extends Migration
             $table->string('short_name')->nullable();
             $table->string('unit')->nullable();
             $table->decimal('price', 15, 2)->default(0.00);
+            $table->boolean('is_active')->default(true);
             $table->foreignId('department_id')->constrained('departments');
             $table->timestamps();
         });

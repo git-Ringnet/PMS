@@ -25,6 +25,7 @@ const serviceFormState = reactive({
   short_name: '',
   unit: '',
   price: 0,
+  is_active: true,
   department_id: null
 })
 
@@ -63,6 +64,7 @@ const openAddServiceModal = () => {
     short_name: '',
     unit: '',
     price: 0,
+    is_active: true,
     department_id: departments.value.find(department => department.code === 'FO')?.id || departments.value[0]?.id || null
   })
   isServiceModalOpen.value = true
@@ -84,6 +86,7 @@ const openEditServiceModal = (service) => {
     short_name: service.short_name,
     unit: service.unit,
     price: service.price,
+    is_active: service.is_active !== false,
     department_id: service.department_id
   })
   isServiceModalOpen.value = true
@@ -198,6 +201,7 @@ onMounted(() => {
           <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
             <th class="p-3 whitespace-nowrap">Mã</th>
             <th class="p-3 min-w-[200px]">Tên dịch vụ đầy đủ</th>
+            <th class="p-3 text-center whitespace-nowrap">Trạng thái</th>
             <th class="p-3 text-center whitespace-nowrap">Thuế (%)</th>
             <th class="p-3 text-center whitespace-nowrap">Thuế đặc biệt (%)</th>
             <th class="p-3 text-center whitespace-nowrap">Phí phục vụ (%)</th>
@@ -219,6 +223,13 @@ onMounted(() => {
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
             <td class="p-3 font-bold text-slate-800">{{ s.code }}</td>
             <td class="p-3 font-bold text-slate-700">{{ s.name }}</td>
+            <td class="p-3 text-center">
+              <label @click.stop class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" :checked="s.is_active" @change="toggleServiceFlag(s, 'is_active')"
+                  class="sr-only peer" />
+                <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500"></div>
+              </label>
+            </td>
             <td class="p-3 text-center font-bold text-slate-600">{{ s.tax }}</td>
             <td class="p-3 text-center font-bold text-slate-600">{{ s.special_tax }}</td>
             <td class="p-3 text-center font-bold text-slate-600">{{ s.service_charge }}</td>
@@ -267,7 +278,7 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="hotelServices.length === 0">
-            <td colspan="14" class="p-6 text-center text-slate-400 italic">Không tìm thấy dịch vụ nào.</td>
+            <td colspan="15" class="p-6 text-center text-slate-400 italic">Không tìm thấy dịch vụ nào.</td>
           </tr>
         </tbody>
       </table>
@@ -323,6 +334,11 @@ onMounted(() => {
                   </option>
                 </select>
               </div>
+
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" v-model="serviceFormState.is_active" class="rounded border-slate-300 text-emerald-500" />
+                <span>Hiển thị khi post bill</span>
+              </label>
             </div>
 
             <!-- Right Column -->

@@ -22,6 +22,7 @@ class HotelService extends Model
         'short_name',
         'unit',
         'price',
+        'is_active',
         'department_id',
     ];
 
@@ -30,6 +31,7 @@ class HotelService extends Model
         'include_tax' => 'boolean',
         'include_special_tax' => 'boolean',
         'price' => 'float',
+        'is_active' => 'boolean',
         'service_charge' => 'float',
         'tax' => 'float',
         'special_tax' => 'float',

@@ -157,10 +157,10 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
-  async function updateRoomStatus(roomId, roomStatusCode) {
+  async function updateRoomStatus(roomId, roomStatusCode, currentModule = 'frontdesk') {
     error.value = null
     try {
-      await roomService.updateRoomStatus(roomId, roomStatusCode)
+      await roomService.updateRoomStatus(roomId, roomStatusCode, currentModule)
       // Cập nhật local state ngay lập tức để UI phản hồi nhanh
       const room = rooms.value.find(r => r.id === roomId)
       if (room) {

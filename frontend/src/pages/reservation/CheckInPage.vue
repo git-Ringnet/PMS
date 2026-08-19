@@ -1,11 +1,11 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
-import { ROOM_STATUS_ICON_MAP } from '@/services/room-service'
+import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { t } from '@/utils/i18n'
-import RoomIcon from '@/components/RoomIcon.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
@@ -20,8 +20,27 @@ const props = defineProps({
   initialDate: {
     type: String,
     default: ''
+  },
+  currentModule: {
+    type: String,
+    default: 'reservation'
+  },
+  displayMode: {
+    type: String,
+    default: 'arrivals'
   }
 })
+
+const router = useRouter()
+const isFrontDesk = computed(() => props.currentModule === 'frontdesk')
+const isReservation = computed(() => props.currentModule === 'reservation')
+const isReadOnlyModule = computed(() => isReservation.value || props.currentModule === 'housekeeping')
+const isArrivalMode = computed(() => props.displayMode === 'arrivals')
+const isDepartureMode = computed(() => props.displayMode === 'departures')
+const isOccupiedMode = computed(() => props.displayMode === 'occupied')
+const systemDate = ref('')
+const canCancelCheckIn = ref(false)
+const canUndoForDate = computed(() => isArrivalMode.value && isFrontDesk.value && canCancelCheckIn.value && searchDate.value === systemDate.value)
 
 // State
 const bookings = ref([])
@@ -39,18 +58,45 @@ watch(() => props.initialDate, (newVal) => {
 const selectedRooms = ref([]) // Holds ids of selected rooms
 const collapsedBookings = ref({}) // Booking ID -> collapsed status
 
+const normalizeDate = (value) => {
+  if (!value) return ''
+  const valueString = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(valueString)) return valueString
+
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    const pmsDate = /Z$/i.test(valueString)
+      ? new Date(parsed.getTime() + (7 * 60 * 60 * 1000))
+      : parsed
+    const year = /Z$/i.test(valueString) ? pmsDate.getUTCFullYear() : pmsDate.getFullYear()
+    const monthValue = /Z$/i.test(valueString) ? pmsDate.getUTCMonth() + 1 : pmsDate.getMonth() + 1
+    const dayValue = /Z$/i.test(valueString) ? pmsDate.getUTCDate() : pmsDate.getDate()
+    const month = String(monthValue).padStart(2, '0')
+    const day = String(dayValue).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const match = valueString.match(/\d{4}-\d{2}-\d{2}/)
+  return match ? match[0] : ''
+}
+
+const isRoomInhouseOnDate = (room, date) => {
+  const selected = normalizeDate(date)
+  const arrival = normalizeDate(room?.arrival_date)
+  const departure = normalizeDate(room?.departure_date)
+  return Boolean(selected && arrival && departure && arrival <= selected && departure >= selected)
+}
+
 // Fetch system date on mount if initialDate not provided
 const fetchSysDate = async () => {
-  if (props.initialDate) {
-    searchDate.value = props.initialDate
-    return
-  }
   try {
     const res = await fetchSystemDate()
-    if (res.data?.data?.system_date) {
-      searchDate.value = res.data.data.system_date
-    } else if (res.data?.system_date) {
-      searchDate.value = res.data.system_date
+    const resolvedDate = res.data?.data?.system_date || res.data?.system_date || ''
+    systemDate.value = resolvedDate
+    if (props.initialDate) {
+      searchDate.value = props.initialDate
+    } else if (resolvedDate) {
+      searchDate.value = resolvedDate
     }
   } catch (err) {
     console.error('fetchSystemDate error:', err)
@@ -58,30 +104,16 @@ const fetchSysDate = async () => {
 }
 
 
-const isBeforeOrSameDay = (dateStr1, dateStr2) => {
-  if (!dateStr1 || !dateStr2) return false
-  const d1 = new Date(dateStr1)
-  const d2 = new Date(dateStr2)
-  d1.setHours(0,0,0,0)
-  d2.setHours(0,0,0,0)
-  return d1 <= d2
-}
-
-const getPastDateString = (dateStr, daysAgo) => {
-  const d = new Date(dateStr)
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().split('T')[0]
-}
-
 // Fetch bookings from database
 const loadBookings = async () => {
   loading.value = true
   selectedRooms.value = [] // Reset selection on reload
   try {
     const res = await fetchBookings({
-      from_date: getPastDateString(searchDate.value, 30),
-      to_date: searchDate.value,
-      status: '0,1'
+      arrival_date: isDepartureMode.value ? (systemDate.value || searchDate.value) : searchDate.value,
+      status: isDepartureMode.value ? '1,2' : isOccupiedMode.value ? '1' : '0,1',
+      ...(isDepartureMode.value ? { list_mode: 'departures' } : {}),
+      with_billing: true
     })
     if (res.data && res.data.success !== false) {
       bookings.value = res.data.data || []
@@ -146,10 +178,13 @@ const filteredBookings = computed(() => {
 // Section 1: PHÒNG CHƯA ĐẾN (booking_room status === 0)
 const chuaDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
-    const pendingRooms = (booking.booking_rooms || []).filter(room => 
-      room.status === 0 && 
-      isBeforeOrSameDay(room.arrival_date, searchDate.value)
-    )
+    const pendingRooms = (booking.booking_rooms || []).filter(room => {
+      if (isDepartureMode.value) {
+        return Number(room.status) === 1 && normalizeDate(room.departure_date) <= normalizeDate(systemDate.value || searchDate.value)
+      }
+      if (!isArrivalMode.value) return false
+      return Number(room.status) === 0 && normalizeDate(room.arrival_date) === normalizeDate(searchDate.value)
+    })
     if (pendingRooms.length === 0) return null
     return {
       ...booking,
@@ -166,7 +201,9 @@ const chuaDenRoomsCount = computed(() => {
 const daDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
     const checkedInRooms = (booking.booking_rooms || []).filter(room => 
-      room.status === 1
+      isDepartureMode.value
+        ? Number(room.status) === 2 && normalizeDate(room.departure_date) === normalizeDate(searchDate.value)
+        : Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
     )
     if (checkedInRooms.length === 0) return null
     return {
@@ -179,6 +216,10 @@ const daDenBookings = computed(() => {
 const daDenRoomsCount = computed(() => {
   return daDenBookings.value.reduce((sum, b) => sum + b.booking_rooms.length, 0)
 })
+
+const pendingInvoiceSelectionCount = computed(() => chuaDenBookings.value.reduce((sum, booking) => (
+  sum + booking.booking_rooms.filter(room => selectedRooms.value.includes(room.id)).length
+), 0))
 
 // Collapsible logic
 function toggleCollapse(bookingId) {
@@ -273,6 +314,7 @@ const checkedInSelectedCount = computed(() => {
 
 // Check-in action (Nhận phòng)
 const handleCheckIn = async () => {
+  if (!isFrontDesk.value) return
   if (pendingSelectedCount.value === 0) return
 
   const selectedRoomsToProcess = []
@@ -335,6 +377,7 @@ const handleCheckIn = async () => {
 
 // Cancel Check-in action (Hủy nhận phòng)
 const handleUndoCheckIn = async () => {
+  if (!canUndoForDate.value) return
   if (checkedInSelectedCount.value === 0) return
 
   const selectedRoomsToProcess = []
@@ -360,7 +403,7 @@ const handleUndoCheckIn = async () => {
 
   for (const item of selectedRoomsToProcess) {
     try {
-      const res = await undoCheckInRoom(item.bookingId, item.roomId)
+    const res = await undoCheckInRoom(item.bookingId, item.roomId, { current_module: 'frontdesk', room_status_code: 'vacant_clean' })
       if (res.data && res.data.success !== false) {
         successCount++
       } else {
@@ -416,7 +459,7 @@ const handleCancelSelected = async () => {
 
   for (const item of selectedRoomsToProcess) {
     try {
-      const res = await cancelBookingRoom(item.bookingId, item.roomId)
+      const res = await cancelBookingRoom(item.bookingId, item.roomId, { current_module: 'reservation' })
       if (res.data && res.data.success !== false) {
         successCount++
       } else {
@@ -476,9 +519,139 @@ function getRoomGuestName(room, booking) {
   return '-'
 }
 
+const activeBill = bill => Number(bill?.Edit ?? bill?.edit) !== 1 && ![3, 4].includes(Number(bill?.Status ?? bill?.status))
+
+const billBelongsToFinancialRoom = (bill, roomId) => {
+  const targetRoomId = bill?.RentalRoomId2 ?? bill?.rental_room_id2
+  const hasTargetRoom = targetRoomId !== undefined
+    && targetRoomId !== null
+    && String(targetRoomId) !== ''
+    && String(targetRoomId) !== '0'
+
+  if (hasTargetRoom) return String(targetRoomId) === String(roomId)
+
+  const sourceRoomId = bill?.RentalRoomId1 ?? bill?.rental_room_id1
+  return sourceRoomId !== undefined
+    && sourceRoomId !== null
+    && String(sourceRoomId) !== ''
+    && String(sourceRoomId) !== '0'
+    && String(sourceRoomId) === String(roomId)
+}
+
+const roomFinancialSummary = (booking, room) => {
+  const roomId = String(room?.id || '')
+  const roomBills = [
+    ...(room?.service_bills || room?.serviceBills || []),
+    ...(room?.current_service_bills || room?.currentServiceBills || []),
+    ...(booking?.master_service_bills || []).filter(bill => billBelongsToFinancialRoom(bill, roomId))
+  ].filter((bill, index, bills) => (
+    activeBill(bill)
+    && billBelongsToFinancialRoom(bill, roomId)
+    && !isMasterOwnedFinancialBill(bill, booking)
+    && bills.findIndex(item => String(item.Ma || item.id) === String(bill.Ma || bill.id)) === index
+  ))
+
+  const linkedBillIds = new Set(roomBills.map(bill => String(bill.Ma || bill.id)))
+  const postedServices = (room?.services || []).filter(service => (
+    Number(service.is_posted ?? service.isPosted) === 1
+    && (!service.service_bill_id || !linkedBillIds.has(String(service.service_bill_id)))
+  ))
+  const total = roomBills.reduce((sum, bill) => sum + (Number(bill.Amount ?? bill.amount) || 0), 0)
+    + postedServices.reduce((sum, service) => sum + (Number(service.total_amount ?? service.totalAmount) || (Number(service.quantity || 1) * Number(service.rate || 0))), 0)
+  const roomPayments = (booking?.payments || []).filter(payment => (
+    Number(payment.edit_flag) === 0
+    && !payment.deleted_at
+    && String(payment.booking_room_id || '') === roomId
+  ))
+  const paidByPayments = roomPayments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+  const paidByBills = roomBills.filter(bill => Number(bill.Status ?? bill.status) === 2 || bill.PaymentID || bill.PaymentId || bill.payment_id)
+    .reduce((sum, bill) => sum + (Number(bill.Amount ?? bill.amount) || 0), 0)
+  const paid = Math.min(total, Math.max(paidByPayments, paidByBills))
+  return { total, paid, unpaid: Math.max(0, total - paid) }
+}
+
+const bookingFinancialSummary = booking => {
+  const masterBills = [
+    ...(booking?.master_service_bills || []),
+    ...(booking?.service_bills || [])
+  ].filter((bill, index, bills) => (
+    activeBill(bill)
+    && isMasterOwnedFinancialBill(bill, booking)
+    && bills.findIndex(item => String(item.Ma || item.id) === String(bill.Ma || bill.id)) === index
+  ))
+  const masterTotal = masterBills.reduce((sum, bill) => sum + (Number(bill.Amount ?? bill.amount) || 0), 0)
+  const masterPaidByBills = masterBills
+    .filter(bill => Number(bill.Status ?? bill.status) === 2 || bill.PaymentID || bill.PaymentId || bill.payment_id)
+    .reduce((sum, bill) => sum + (Number(bill.Amount ?? bill.amount) || 0), 0)
+  const masterPaidByPayments = (booking?.payments || [])
+    .filter(payment => (
+      Number(payment.edit_flag) === 0
+      && !payment.deleted_at
+      && !payment.booking_room_id
+    ))
+    .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
+  const masterPaid = Math.min(masterTotal, Math.max(masterPaidByPayments, masterPaidByBills))
+
+  return {
+    total: masterTotal,
+    paid: masterPaid,
+    unpaid: Math.max(0, masterTotal - masterPaid),
+  }
+}
+
+const formatMoney = value => new Intl.NumberFormat('vi-VN').format(Math.round(Number(value) || 0))
+
+const isMasterOwnedFinancialBill = (bill, booking) => {
+  const billId = bill?.Ma ?? bill?.id
+  const hasCurrentRoomFolio = bill?.RentalRoomId2 !== undefined
+    && bill?.RentalRoomId2 !== null
+    && String(bill.RentalRoomId2) !== ''
+    && String(bill.RentalRoomId2) !== '0'
+  const masterBills = booking?.master_service_bills || []
+  const existsInMasterFolio = billId !== undefined
+    && billId !== null
+    && masterBills.some(masterBill => String(masterBill?.Ma ?? masterBill?.id) === String(billId))
+
+  if (existsInMasterFolio && !hasCurrentRoomFolio) return true
+
+  return !hasCurrentRoomFolio
+    && booking?.id !== undefined
+    && booking?.id !== null
+    && String(bill?.RegisterID2 ?? bill?.RegisterId2 ?? '') === String(booking.id)
+}
+
+function openBooking(booking) {
+  if (!booking?.booking_code || props.currentModule === 'housekeeping') return
+  router.push({
+    path: props.currentModule === 'frontdesk' ? '/frontdesk' : '/reservation',
+    query: { tab: 'create-res', bookingCode: booking.booking_code }
+  })
+}
+
+function openInvoiceFromPending() {
+  if (!isFrontDesk.value || !isDepartureMode.value || pendingInvoiceSelectionCount.value === 0) return
+
+  const selectedBooking = chuaDenBookings.value.find(booking => (
+    booking.booking_rooms.some(room => selectedRooms.value.includes(room.id))
+  ))
+  if (!selectedBooking?.booking_code) return
+
+  const selectedRoomsInBooking = selectedBooking.booking_rooms.filter(room => selectedRooms.value.includes(room.id))
+  const isWholeBookingSelected = selectedRoomsInBooking.length === selectedBooking.booking_rooms.length
+  router.push({
+    path: '/frontdesk',
+    query: {
+      tab: 'checkout',
+      bookingCode: selectedBooking.booking_code,
+      ...(isWholeBookingSelected ? {} : { roomId: selectedRoomsInBooking[0]?.id })
+    }
+  })
+}
+
 // Lifecycle hooks
 onMounted(async () => {
   await fetchSysDate()
+  await loadPermissions()
   if (roomStore.rooms.length === 0) {
     await roomStore.fetchRooms({ silent: true })
   }
@@ -486,8 +659,27 @@ onMounted(async () => {
   await loadBookings()
 })
 
+async function loadPermissions() {
+  if (!isFrontDesk.value) {
+    canCancelCheckIn.value = false
+    return
+  }
+  try {
+    const response = await roomService.getRoomStatusPermission('frontdesk')
+    canCancelCheckIn.value = response?.data?.can_cancel_checkin === true
+  } catch {
+    canCancelCheckIn.value = false
+  }
+}
+
+watch(() => props.currentModule, loadPermissions)
+
 watch(searchDate, async () => {
   await roomStore.fetchStats(searchDate.value)
+  await loadBookings()
+})
+
+watch(() => props.displayMode, async () => {
   await loadBookings()
 })
 </script>
@@ -552,16 +744,18 @@ watch(searchDate, async () => {
     <div class="flex-1 p-6 overflow-y-auto flex flex-col gap-6">
       
       <!-- SECTION 1: PHÒNG CHƯA ĐẾN -->
-      <div class="flex flex-col gap-3">
+      <div v-if="isArrivalMode || isDepartureMode" class="flex flex-col gap-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <h2 class="text-sm font-black text-slate-900 tracking-wide uppercase">Phòng chưa đến</h2>
+            <h2 class="text-sm font-black text-slate-900 tracking-wide uppercase">
+              {{ isDepartureMode ? 'Phòng chưa trả' : 'Phòng chưa đến' }}
+            </h2>
             <span class="bg-amber-100 text-amber-800 rounded px-2 py-0.5 text-[11px] font-black leading-none shadow-2xs">
               {{ chuaDenRoomsCount }} PHÒNG
             </span>
           </div>
           <div class="flex items-center gap-2">
-            <button
+            <button v-if="isFrontDesk && isArrivalMode"
               @click="handleCheckIn"
               :disabled="pendingSelectedCount === 0"
               class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border-none"
@@ -574,18 +768,18 @@ watch(searchDate, async () => {
               </svg>
               Nhận phòng
             </button>
-            <button
-              @click="handleCancelSelected"
-              :disabled="pendingSelectedCount === 0"
-              class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border border-red-200 bg-white"
-              :class="pendingSelectedCount > 0 
-                ? 'text-red-600 hover:bg-red-50 hover:border-red-300 cursor-pointer active:scale-97' 
-                : 'text-slate-300 border-slate-200 cursor-not-allowed'"
+            <button v-if="isFrontDesk && isDepartureMode"
+              @click="openInvoiceFromPending"
+              :disabled="pendingInvoiceSelectionCount === 0"
+              class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border-none"
+              :class="pendingInvoiceSelectionCount > 0
+                ? 'bg-[#006bdb] hover:bg-[#005bb8] text-white cursor-pointer active:scale-97'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'"
             >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 2h12v20H6zM9 6h6M9 10h6M9 14h4" />
               </svg>
-              Hủy đặt phòng
+              Hóa đơn
             </button>
           </div>
         </div>
@@ -597,6 +791,7 @@ watch(searchDate, async () => {
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
                 <th class="p-2.5 text-center w-10">
                   <input
+                    v-if="!isReadOnlyModule"
                     type="checkbox"
                     :checked="isSectionAllSelected(chuaDenBookings)"
                     @change="toggleSelectSection(chuaDenBookings)"
@@ -611,13 +806,16 @@ watch(searchDate, async () => {
                 <th class="p-2.5 text-center w-[100px]">Ngày đến</th>
                 <th class="p-2.5 text-center w-[100px]">Ngày đi</th>
                 <th class="p-2.5 text-center w-[80px]">Phòng</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Tổng cộng</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Đã thanh toán</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Chưa thanh toán</th>
                 <th class="p-2.5 pl-4">Ghi chú</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
               <template v-if="chuaDenBookings.length === 0">
                 <tr>
-                  <td colspan="10" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                  <td :colspan="isDepartureMode ? 13 : 10" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
                     Không có phòng nào chưa đến trong ngày hôm nay.
                   </td>
                 </tr>
@@ -628,6 +826,7 @@ watch(searchDate, async () => {
                 <tr class="hover:bg-slate-50/50 transition-colors h-10 font-semibold bg-slate-50/20">
                   <td class="p-2.5 text-center">
                     <input
+                      v-if="!isReadOnlyModule"
                       type="checkbox"
                       :checked="isBookingAllSelected(booking, chuaDenBookings)"
                       :indeterminate="isBookingPartiallySelected(booking, chuaDenBookings)"
@@ -642,7 +841,8 @@ watch(searchDate, async () => {
                     >
                       <span class="text-[10px] transform transition-transform" :class="collapsedBookings[booking.id] ? '-rotate-90' : ''">▼</span>
                     </button>
-                    <span>{{ booking.booking_code }}</span>
+                    <span v-if="props.currentModule !== 'housekeeping'" class="cursor-pointer hover:text-sky-700" title="Double-click để mở booking" @dblclick.stop="openBooking(booking)">{{ booking.booking_code }}</span>
+                    <span v-else>{{ booking.booking_code }}</span>
                   </td>
                   <td class="p-2.5 text-slate-500">{{ booking.external_booking_code || '-' }}</td>
                   <td class="p-2.5 text-slate-800 font-bold uppercase truncate">{{ booking.booking_name }}</td>
@@ -655,6 +855,9 @@ watch(searchDate, async () => {
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
                   <td class="p-2.5 pl-4 text-slate-500 italic truncate max-w-[200px]" :title="booking.note">{{ booking.note || '-' }}</td>
                 </tr>
 
@@ -667,6 +870,7 @@ watch(searchDate, async () => {
                 >
                   <td class="p-2.5 text-center bg-slate-50/5">
                     <input
+                      v-if="!isReadOnlyModule"
                       type="checkbox"
                       :checked="isRoomSelected(room.id)"
                       @change="toggleSelectRoom(room.id)"
@@ -675,11 +879,6 @@ watch(searchDate, async () => {
                   </td>
                   <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
                     <span>{{ room.room_number || '--' }}</span>
-                    <RoomIcon
-                      v-if="getRoomStatusIcon(room)"
-                      :name="getRoomStatusIcon(room)"
-                      class="w-4 h-4 shrink-0 inline-flex items-center"
-                    />
                   </td>
                   <td class="p-2.5"></td>
                   <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
@@ -691,6 +890,9 @@ watch(searchDate, async () => {
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.departure_date) }}</td>
                   <td class="p-2.5 text-center"></td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
                   <td class="p-2.5 pl-4 text-slate-400 text-[11px] truncate">{{ room.note || '-' }}</td>
                 </tr>
               </template>
@@ -703,12 +905,14 @@ watch(searchDate, async () => {
       <div class="flex flex-col gap-3">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <h2 class="text-sm font-black text-slate-900 tracking-wide uppercase">Phòng đã đến</h2>
+            <h2 class="text-sm font-black text-slate-900 tracking-wide uppercase">
+              {{ isDepartureMode ? 'Phòng đã trả' : isOccupiedMode ? 'Phòng đang ở' : 'Phòng đã đến' }}
+            </h2>
             <span class="bg-emerald-100 text-emerald-800 rounded px-2 py-0.5 text-[11px] font-black leading-none shadow-2xs">
               {{ daDenRoomsCount }} PHÒNG
             </span>
           </div>
-          <button
+          <button v-if="canUndoForDate"
             @click="handleUndoCheckIn"
             :disabled="checkedInSelectedCount === 0"
             class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm border border-red-200 bg-white"
@@ -730,6 +934,7 @@ watch(searchDate, async () => {
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
                 <th class="p-2.5 text-center w-10">
                   <input
+                    v-if="!isReadOnlyModule"
                     type="checkbox"
                     :checked="isSectionAllSelected(daDenBookings)"
                     @change="toggleSelectSection(daDenBookings)"
@@ -744,13 +949,16 @@ watch(searchDate, async () => {
                 <th class="p-2.5 text-center w-[100px]">Ngày đến</th>
                 <th class="p-2.5 text-center w-[100px]">Ngày đi</th>
                 <th class="p-2.5 text-center w-[80px]">Phòng</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Tổng cộng</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Đã thanh toán</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Chưa thanh toán</th>
                 <th class="p-2.5 pl-4">Ghi chú</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
               <template v-if="daDenBookings.length === 0">
                 <tr>
-                  <td colspan="10" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                  <td :colspan="isDepartureMode ? 13 : 10" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
                     Không có phòng nào đã đến trong ngày hôm nay.
                   </td>
                 </tr>
@@ -761,6 +969,7 @@ watch(searchDate, async () => {
                 <tr class="hover:bg-slate-50/50 transition-colors h-10 font-semibold bg-slate-50/20">
                   <td class="p-2.5 text-center">
                     <input
+                      v-if="!isReadOnlyModule"
                       type="checkbox"
                       :checked="isBookingAllSelected(booking, daDenBookings)"
                       :indeterminate="isBookingPartiallySelected(booking, daDenBookings)"
@@ -775,7 +984,8 @@ watch(searchDate, async () => {
                     >
                       <span class="text-[10px] transform transition-transform" :class="collapsedBookings[booking.id] ? '-rotate-90' : ''">▼</span>
                     </button>
-                    <span>{{ booking.booking_code }}</span>
+                    <span v-if="props.currentModule !== 'housekeeping'" class="cursor-pointer hover:text-sky-700" title="Double-click để mở booking" @dblclick.stop="openBooking(booking)">{{ booking.booking_code }}</span>
+                    <span v-else>{{ booking.booking_code }}</span>
                   </td>
                   <td class="p-2.5 text-slate-500">{{ booking.external_booking_code || '-' }}</td>
                   <td class="p-2.5 text-slate-800 font-bold uppercase truncate">{{ booking.booking_name }}</td>
@@ -788,6 +998,9 @@ watch(searchDate, async () => {
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
                   <td class="p-2.5 pl-4 text-slate-500 italic truncate max-w-[200px]" :title="booking.note">{{ booking.note || '-' }}</td>
                 </tr>
 
@@ -800,6 +1013,7 @@ watch(searchDate, async () => {
                 >
                   <td class="p-2.5 text-center bg-slate-50/5">
                     <input
+                      v-if="!isReadOnlyModule"
                       type="checkbox"
                       :checked="isRoomSelected(room.id)"
                       @change="toggleSelectRoom(room.id)"
@@ -808,11 +1022,6 @@ watch(searchDate, async () => {
                   </td>
                   <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
                     <span>{{ room.room_number || '--' }}</span>
-                    <RoomIcon
-                      v-if="getRoomStatusIcon(room)"
-                      :name="getRoomStatusIcon(room)"
-                      class="w-4 h-4 shrink-0 inline-flex items-center"
-                    />
                   </td>
                   <td class="p-2.5"></td>
                   <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
@@ -824,6 +1033,9 @@ watch(searchDate, async () => {
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.departure_date) }}</td>
                   <td class="p-2.5 text-center"></td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
                   <td class="p-2.5 pl-4 text-slate-400 text-[11px] truncate">{{ room.note || '-' }}</td>
                 </tr>
               </template>

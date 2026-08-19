@@ -95,6 +95,25 @@ class DepartmentHotelServiceTest extends TestCase
             ->assertJsonMissing(['code' => 'HK-SVC']);
     }
 
+    public function test_inactive_fo_service_is_hidden_from_add_service_list(): void
+    {
+        $user = User::factory()->create();
+        $frontOffice = Department::create(['code' => 'FO', 'name' => 'Front Office']);
+        $service = HotelService::create([
+            'code' => 'FO-OFF',
+            'name' => 'Inactive FO Service',
+            'department_id' => $frontOffice->id,
+            'is_active' => false,
+        ]);
+
+        $frontOffice->hotelServices()->attach($service->id);
+
+        $this->actingAs($user)
+            ->getJson('/api/booking-services/fo-list')
+            ->assertSuccessful()
+            ->assertJsonMissing(['code' => 'FO-OFF']);
+    }
+
     public function test_bill_description_uses_department_configuration_and_appends_room_number(): void
     {
         $department = Department::create(['code' => 'FO', 'name' => 'Front Office']);

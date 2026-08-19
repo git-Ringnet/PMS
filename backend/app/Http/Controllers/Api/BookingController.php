@@ -94,24 +94,73 @@ class BookingController extends Controller
         if ($request->boolean('with_billing') || $request->input('with_billing') === 'true') {
             $relations[] = 'serviceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'serviceBills.usernameOperator:id,username,name';
+            $relations[] = 'serviceBills.user:id,name,username';
             $relations[] = 'serviceBills.hotelService:id,code,name';
             $relations[] = 'bookingRooms.serviceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'bookingRooms.serviceBills.usernameOperator:id,username,name';
+            $relations[] = 'bookingRooms.serviceBills.user:id,name,username';
             $relations[] = 'bookingRooms.serviceBills.hotelService:id,code,name';
             $relations[] = 'bookingRooms.currentServiceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'bookingRooms.currentServiceBills.usernameOperator:id,username,name';
+            $relations[] = 'bookingRooms.currentServiceBills.user:id,name,username';
             $relations[] = 'bookingRooms.currentServiceBills.hotelService:id,code,name';
             $relations[] = 'masterServiceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'masterServiceBills.usernameOperator:id,username,name';
+            $relations[] = 'masterServiceBills.user:id,name,username';
             $relations[] = 'masterServiceBills.hotelService:id,code,name';
             $relations[] = 'payments.paymentMethod';
+            $relations[] = 'payments.user';
         }
 
         $query = Booking::with($relations);
 
         // Filter theo ngày đến
         if ($request->arrival_date) {
-            $query->whereDate('arrival_date', $request->arrival_date);
+            $pmsDate = Carbon::parse($request->arrival_date, 'Asia/Ho_Chi_Minh')->startOfDay();
+            $pmsDateStartUtc = $pmsDate->copy()->utc();
+            $pmsDateEndUtc = $pmsDate->copy()->addDay()->utc();
+
+            $arrivalRoomFilter = function ($roomQuery) use ($request, $pmsDateStartUtc, $pmsDateEndUtc) {
+                $statusValue = $request->input('status', '0,1');
+                $statuses = is_array($statusValue)
+                    ? array_map('intval', $statusValue)
+                    : array_map('intval', explode(',', (string) $statusValue));
+                $isDepartureView = $request->input('list_mode') === 'departures';
+
+                $roomQuery->where(function ($dateQuery) use ($request, $statuses, $isDepartureView, $pmsDateStartUtc, $pmsDateEndUtc) {
+                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses) {
+                        if (in_array(BookingRoom::STATUS_BOOKED, $statuses, true)) {
+                            $bookedQuery->where('status', BookingRoom::STATUS_BOOKED)
+                                ->whereDate('arrival_date', $request->arrival_date);
+                        } else {
+                            $bookedQuery->whereRaw('1 = 0');
+                        }
+                    })->orWhere(function ($inhouseQuery) use ($request, $statuses, $isDepartureView, $pmsDateEndUtc) {
+                        if (in_array(BookingRoom::STATUS_CHECKED_IN, $statuses, true)) {
+                            $inhouseQuery->where('status', BookingRoom::STATUS_CHECKED_IN);
+                            if ($isDepartureView) {
+                                $inhouseQuery->where('departure_date', '<', $pmsDateEndUtc);
+                            } else {
+                                $inhouseQuery->whereDate('arrival_date', '<=', $request->arrival_date)
+                                    ->whereDate('departure_date', '>=', $request->arrival_date);
+                            }
+                        } else {
+                            $inhouseQuery->whereRaw('1 = 0');
+                        }
+                    })->orWhere(function ($checkedOutQuery) use ($request, $statuses, $pmsDateStartUtc, $pmsDateEndUtc) {
+                        if (in_array(BookingRoom::STATUS_CHECKED_OUT, $statuses, true)) {
+                            $checkedOutQuery->where('status', BookingRoom::STATUS_CHECKED_OUT)
+                                ->where('departure_date', '>=', $pmsDateStartUtc)
+                                ->where('departure_date', '<', $pmsDateEndUtc);
+                        } else {
+                            $checkedOutQuery->whereRaw('1 = 0');
+                        }
+                    });
+                });
+            };
+
+            $query->whereHas('bookingRooms', $arrivalRoomFilter);
+            $query->with(['bookingRooms' => $arrivalRoomFilter]);
         }
 
         // Filter theo khoảng ngày
@@ -144,7 +193,7 @@ class BookingController extends Controller
         }
 
         // Filter theo tình trạng phòng/booking
-        if ($request->has('status')) {
+        if ($request->has('status') && !$request->arrival_date) {
             $statusVal = $request->status;
             if (is_array($statusVal)) {
                 $query->whereIn('status', $statusVal);
@@ -524,6 +573,7 @@ class BookingController extends Controller
             'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
+            'payments.user',
         ]);
 
         return response()->json([
@@ -557,6 +607,7 @@ class BookingController extends Controller
             'bookingRooms.services',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
+            'payments.user',
         ])->find($id);
 
         if (!$booking) {
@@ -1394,7 +1445,7 @@ class BookingController extends Controller
 
         return response()->json([
             'success'        => true,
-            'data'           => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass', 'payments.paymentMethod']),
+            'data'           => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass', 'payments.paymentMethod', 'payments.user']),
             'rooms_restored' => $roomRestored,
             'message'        => 'Khôi phục booking thành công!' . (
                 !$roomRestored

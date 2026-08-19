@@ -613,7 +613,9 @@ const legends = [
   { name: 'InHouse', class: 'bg-[#c9eeff] text-[#0369a1] border-[#7dd3fc]' },
   { name: 'Reservation', class: 'bg-[#fef3c7] text-[#b45309] border-[#fde68a]' },
   { name: 'Late Checkout', class: 'bg-[#fef9c3] text-[#854d0e] border-[#fef08a]' },
-  { name: 'Guaranteed', class: 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]' }
+  { name: 'Guaranteed', class: 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]' },
+  { name: 'Waiting', class: 'bg-[#fee2e2] text-[#b91c1c] border-[#fca5a5]' },
+  { name: 'Allotment', class: 'bg-[#ffedd5] text-[#c2410c] border-[#fed7aa]' }
 ]
 
 // Generate columns for the timeline based on startDate -> endDate range
@@ -1270,6 +1272,9 @@ async function loadBookings() {
           if (!roomVal) return
           const roomAmounts = calculateRoomAmounts(br)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
+          const registrationStatus = b.registration_status || {}
+          const registrationStatusName = registrationStatus.name || ''
+          const normalizedRegistrationStatus = registrationStatusName.toLowerCase()
 
           // Map status values to matching UI classes
           let type = 'Reservation'
@@ -1289,6 +1294,18 @@ async function loadBookings() {
               type = 'Late Checkout'
             } else {
               type = 'Reservation'
+            }
+          }
+
+          if (Number(br.status) === 0) {
+            if (normalizedRegistrationStatus.includes('waiting') || normalizedRegistrationStatus.includes('chờ')) {
+              type = 'Waiting'
+            } else if (normalizedRegistrationStatus.includes('guaranteed') || normalizedRegistrationStatus.includes('đảm bảo')) {
+              type = 'Guaranteed'
+            } else if (normalizedRegistrationStatus.includes('allotment')) {
+              type = 'Allotment'
+            } else if (normalizedRegistrationStatus.includes('late') || normalizedRegistrationStatus.includes('trễ')) {
+              type = 'Late Checkout'
             }
           }
 
@@ -1317,7 +1334,12 @@ async function loadBookings() {
             name: b.booking_name,
             company: b.company?.company_name || 'Khách lẻ',
             guestName,
-            registrationStatusName: b.registration_status?.name || '',
+            registrationStatusId: registrationStatus.id || b.registration_status_id || null,
+            registrationStatusName,
+            registrationStatusColor: registrationStatus.color || registrationStatus.booking_status_color || '',
+            isAvailability: registrationStatus.is_availability === undefined
+              ? true
+              : Boolean(registrationStatus.is_availability),
             nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
@@ -2009,7 +2031,7 @@ const dynamicStats = computed(() => {
   // Keep them out of the room grid and do not alter AV/OOO calculations.
   const unassignedOccByDay = Array(numDays).fill(null).map(() => [])
   bookings.value.forEach(item => {
-    if (!item.isVirtual || item.type === 'OOO' || item.type === 'OOS') return
+    if (!item.isVirtual || !item.isAvailability || item.type === 'OOO' || item.type === 'OOS') return
 
     const itemCheckIn = parseDateTime(item.checkIn)
     const itemCheckOut = parseDateTime(item.checkOut)
@@ -2034,7 +2056,7 @@ const dynamicStats = computed(() => {
       const items = processedBookings.value[roomNo] || []
       
       const hasGuest = items.some(item => {
-        if (item.type === 'OOO' || item.type === 'OOS') return false
+        if (!item.isAvailability || item.type === 'OOO' || item.type === 'OOS') return false
         return idx >= item.startIndex && idx < item.endIndex
       })
 
@@ -2185,14 +2207,18 @@ function getBookingClass(type) {
   if (type === 'CheckedOut') return 'bg-slate-200 text-black border-slate-300'
   if (type === 'Guaranteed') return 'bg-[#dcfce7] text-black border-[#bbf7d0]'
   if (type === 'Allotment') return 'bg-[#ffedd5] text-black border-[#fed7aa]'
+  if (type === 'Waiting') return 'bg-[#fee2e2] text-black border-[#fca5a5]'
   if (type === 'OOO') return 'bg-[repeating-linear-gradient(45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-black border-blue-400'
   if (type === 'OOS') return 'bg-[repeating-linear-gradient(45deg,#94a3b8,#94a3b8_5px,#cbd5e1_5px,#cbd5e1_10px)] text-black border-slate-400'
   return 'bg-[#1e293b] text-black border-slate-700'
 }
 
-function getBookingStyle(type) {
+function getBookingStyle(type, registrationColor = '') {
   if (type === 'CheckedOut') {
     return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#000000' }
+  }
+  if (registrationColor && type !== 'OOO' && type !== 'OOS') {
+    return { backgroundColor: registrationColor, borderColor: registrationColor, color: '#000000' }
   }
   if (!hotelSettings.value) return { color: '#000000' }
   
@@ -2208,6 +2234,15 @@ function getBookingStyle(type) {
     const color = hotelSettings.value.RoomPlan_ColorRoomLateCheckout || '#FCF55F'
     return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
+  if (type === 'Waiting') {
+    return { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', color: '#000000' }
+  }
+  if (type === 'Guaranteed') {
+    return { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0', color: '#000000' }
+  }
+  if (type === 'Allotment') {
+    return { backgroundColor: '#FFEDD5', borderColor: '#FED7AA', color: '#000000' }
+  }
   if (type === 'OOO') {
     const color = hotelSettings.value.RoomPlan_ColorOOO || '#107eeb'
     return { backgroundColor: color, borderColor: color, color: '#000000' }
@@ -2217,6 +2252,10 @@ function getBookingStyle(type) {
     return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   return { color: '#000000' }
+}
+
+function getBookingStatusColor(booking) {
+  return getBookingStyle(booking.type, booking.registrationStatusColor).backgroundColor || '#94a3b8'
 }
 
 function getLegendStyle(name) {
@@ -4068,8 +4107,9 @@ function getRoomStatusIconName(item) {
                     <div 
                       v-if="bk.type !== 'OOO' && bk.type !== 'OOS'"
                       class="absolute bottom-0 left-0 h-[3px]"
-                      :class="isBookingMatched(bk) ? 'bg-[#22c55e]' : 'bg-slate-300'"
+                      :class="isBookingMatched(bk) ? '' : 'bg-slate-300'"
                       :style="{
+                        backgroundColor: isBookingMatched(bk) ? getBookingStatusColor(bk) : undefined,
                         right: bk.showCheckOutIndicator ? `${(0.5 / bk.span) * 100}%` : '0px'
                       }"
                     ></div>
@@ -4230,7 +4270,10 @@ function getRoomStatusIconName(item) {
           <!-- Row 1: Mã ĐK -->
           <div class="flex justify-between items-center border-b border-slate-100 pb-1.5">
             <span class="font-extrabold text-slate-900 text-xs">Mã ĐK: {{ hoveredBooking.code }}</span>
-            <span class="text-[9px] text-slate-400 font-bold uppercase">{{ hoveredBooking.type }}</span>
+            <span
+              class="text-[9px] font-bold uppercase"
+              :style="{ color: getBookingStatusColor(hoveredBooking) }"
+            >{{ hoveredBooking.registrationStatusName || hoveredBooking.type }}</span>
           </div>
 
           <!-- Row 2: Ngày đến ~ Ngày đi -->
