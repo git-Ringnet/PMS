@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import CheckoutPage from './CheckoutPage.vue'
 import DayClosePage from './DayClosePage.vue'
 import RoomMapPage from '@/pages/reservation/RoomMapPage.vue'
+import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 
 const route = useRoute()
 const currentTab = computed(() => route.query.tab || 'room-map')
@@ -12,6 +13,7 @@ const currentTab = computed(() => route.query.tab || 'room-map')
 <template>
   <CheckoutPage v-if="currentTab === 'checkout'" />
   <DayClosePage v-else-if="currentTab === 'day-close'" />
+  <ActivityLogTab v-else-if="currentTab === 'history'" />
   <RoomMapPage v-else />
 </template>
 

@@ -386,6 +386,13 @@ class GuestController extends Controller
             }
             $booking->refresh();
             $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
+
+            try {
+                $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
+                $roomsList = $rooms->pluck('room_number')->filter()->implode(', ');
+                \App\Services\ActivityLogService::logCheckOut($bCode, $roomsList, $request);
+            } catch (\Throwable $e) {}
+
             return response()->json(['success' => true, 'message' => 'Đã checkout toàn bộ Master.']);
         });
     }
