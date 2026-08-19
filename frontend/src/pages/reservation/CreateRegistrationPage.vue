@@ -436,6 +436,18 @@ function openDepositModal() {
   isDepositModalOpen.value = true
 }
 
+async function openDepositFromQuery() {
+  if (route.query.action !== 'deposit' || !activeTab.value) return
+
+  await nextTick()
+  await openEditModal()
+  await nextTick()
+  openDepositModal()
+
+  const { action, ...query } = route.query
+  await router.replace({ query })
+}
+
 // ==================== TABLE UI STATES ====================
 const isEditing = ref(false)
 const searchQuery = ref('')
@@ -509,7 +521,6 @@ const columns = ref([
   { key: 'isPreassigned', label: 'Đặt trước', visible: true, width: 'w-[80px]', center: true },
   { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
   { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
-  { key: 'roomStatus', label: 'Trạng thái phòng', visible: true, width: 'w-[120px]', center: true },
   { key: 'allotmentCode', label: 'Mã ALM', visible: true, width: 'w-[100px]' },
   { key: 'roomCode', label: 'Mã phòng', visible: true, width: 'w-[100px]' },
 ])
@@ -1539,6 +1550,7 @@ onMounted(async () => {
     
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
+      await openDepositFromQuery()
     } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
       await handleAddTabClick()
     }
@@ -1564,6 +1576,7 @@ onBeforeUnmount(() => {
 watch(() => route.query, async (newQuery) => {
   if (newQuery.bookingCode) {
     await openBookingModalByCode(newQuery.bookingCode)
+    await openDepositFromQuery()
   } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
     await handleAddTabClick()
   }
@@ -4915,7 +4928,7 @@ defineExpose({
                               :key="vRoom.room_number" 
                               :value="vRoom.room_number"
                             >
-                              {{ vRoom.room_number }} ({{ vRoom.status }})
+                              {{ vRoom.room_number }}
                             </option>
                           </select>
                           <span v-else>{{ room.roomNumber || '-' }}</span>
@@ -5480,7 +5493,7 @@ defineExpose({
                                       :key="vRoom.room_number" 
                                       :value="vRoom.room_number"
                                     >
-                                      {{ vRoom.room_number }} ({{ vRoom.status }})
+                                      {{ vRoom.room_number }}
                                     </option>
                                   </select>
                                   <span v-else>{{ room.roomNumber || '-' }}</span>

@@ -299,8 +299,9 @@ class HotelDefinitionSeeder extends Seeder
             [
                 'code' => 'RM',
                 'name' => 'Dịch vụ phòng nghỉ',
-                'service_charge' => 0, 'tax' => 0, 'special_tax' => 0,
-                'include_service_charge' => false, 'include_tax' => false, 'include_special_tax' => false,
+                'service_charge' => 5, 'tax' => 8, 'special_tax' => 0,
+                'include_service_charge' => true, 'include_tax' => true, 'include_special_tax' => true,
+                'is_active' => true,
                 'folio' => 1, 'short_name' => 'Dịch vụ phòng nghỉ', 'unit' => 'Đêm', 'price' => 0,
                 'department' => 'Reception/ Lê Tân'
             ],
@@ -364,6 +365,11 @@ class HotelDefinitionSeeder extends Seeder
             $departmentCode = $departmentCodes[$s['department']] ?? $s['department'];
             unset($s['department']);
             $s['department_id'] = $departmentIds[$departmentCode];
+            $s['service_charge'] = $s['service_charge'] ?? 5;
+            $s['tax'] = $s['tax'] ?? 8;
+            $s['special_tax'] = $s['special_tax'] ?? 0;
+            // Seed lại danh mục phải đưa dịch vụ về trạng thái hoạt động mặc định.
+            $s['is_active'] = true;
             $service = HotelService::updateOrCreate(['code' => $s['code']], $s);
             $service->departments()->syncWithoutDetaching([
                 $s['department_id'] => ['description' => $serviceDescriptions[$s['code']] ?? $s['name']],
@@ -384,6 +390,8 @@ class HotelDefinitionSeeder extends Seeder
         // 3. Seed Configs
         $configs = [
             ['name' => 'AllowChangeRoomStatusAtReception', 'value' => '1', 'description' => 'AllowChangeRoomStatusAtReception', 'is_visible' => false],
+            ['name' => 'RoleUserAllowChangeRoomStatusAtReception', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc doi trang thai phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
+            ['name' => 'RoleUserCancelCheckIn', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc huy nhan phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
             ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow', 'is_visible' => true],
             ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra/dirty (0: không cho phép, 1: cho phép)', 'is_visible' => true],
             ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow', 'is_visible' => false],

@@ -765,8 +765,17 @@ class BookingRoomController extends Controller
     // =========================================
     public function undoCheckIn(Request $request, $bookingId, $roomId)
     {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canCancelCheckIn($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền hủy nhận phòng tại module này.'], 403);
+        }
+
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->with('booking')->findOrFail($roomId);
         $booking     = $bookingRoom->booking;
+
+        $systemDate = $this->avService->getSystemDate()->toDateString();
+        if ($bookingRoom->arrival_date->toDateString() !== $systemDate) {
+            return response()->json(['success' => false, 'message' => 'Chỉ được hủy nhận phòng trong ngày hệ thống.'], 422);
+        }
 
         // Chỉ cho phép hủy check-in nếu phòng đang Checked In (status = 1)
         if ($bookingRoom->status !== BookingRoom::STATUS_CHECKED_IN) {
@@ -782,7 +791,7 @@ class BookingRoomController extends Controller
 
             if ($bookingRoom->room_number) {
                 \App\Models\Room::where('room_number', $bookingRoom->room_number)->update([
-                    'room_status_code' => 'vacant_ready'
+                    'room_status_code' => $request->input('room_status_code', 'vacant_ready')
                 ]);
             }
 
@@ -792,7 +801,11 @@ class BookingRoomController extends Controller
             ]);
 
             // Cập nhật booking status về STATUS_RESERVATION (0) nếu trước đó là STATUS_CHECKIN (1)
-            if ($booking->status === Booking::STATUS_CHECKIN) {
+            $hasOtherInhouse = $booking->bookingRooms()
+                ->where('id', '!=', $bookingRoom->getKey())
+                ->where('status', BookingRoom::STATUS_CHECKED_IN)
+                ->exists();
+            if ($booking->status === Booking::STATUS_CHECKIN && !$hasOtherInhouse) {
                 $booking->update(['status' => Booking::STATUS_RESERVATION]);
             }
 

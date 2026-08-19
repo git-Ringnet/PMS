@@ -354,6 +354,7 @@ const saveModalPlan = async () => {
     }
   } catch (e) {
     console.error(e);
+    uiStore.showToast(e.response?.data?.message || 'Không thể lưu loại giá.', 'error');
   }
 }
 
@@ -796,6 +797,9 @@ const handleSave = async () => {
         await http.post(`/room-rate-codes/${savedMa}/plans`, {
           Code: 'DEFAULT',
           Period: rateMatrix
+        });
+        await http.post(`/room-rate-codes/${savedMa}/daily-mappings`, {
+          mappings: []
         });
       } else {
         // Save Daily Mappings

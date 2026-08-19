@@ -13,6 +13,7 @@ class PaymentDebtSettlement extends Model
         'payment_id', 'payment_date', 'payment_time', 'payment_method_id',
         'amount', 'currency', 'description', 'edit_flag', 'created_by',
         'updated_by', 'deleted_by', 'deleted_at',
+        'user_id',
     ];
 
     protected $casts = [
@@ -23,6 +24,13 @@ class PaymentDebtSettlement extends Model
         'deleted_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $settlement) {
+            $settlement->user_id ??= auth()->id();
+        });
+    }
+
     public function payment()
     {
         return $this->belongsTo(Payment::class);
@@ -31,5 +39,10 @@ class PaymentDebtSettlement extends Model
     public function paymentMethod()
     {
         return $this->belongsTo(PaymentMethod::class, 'payment_method_id', 'code');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 }

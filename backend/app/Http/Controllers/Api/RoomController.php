@@ -9,11 +9,26 @@ use Illuminate\Http\Request;
 
 class RoomController extends Controller
 {
+    public function permissions(Request $request)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'can_change_room_status' => app(\App\Services\RoomStatusPermissionService::class)->canChange($request),
+                'can_cancel_checkin' => app(\App\Services\RoomStatusPermissionService::class)->canCancelCheckIn($request),
+            ],
+        ]);
+    }
+
     /**
      * Display a listing of the rooms.
      */
     public function index(Request $request)
     {
+        $request->validate([
+            'date' => 'nullable|date',
+        ]);
+
         $query = Room::with(['roomForm', 'roomClass', 'activeLock', 'allActiveLocks'])
             ->orderBy('orders', 'asc')
             ->orderBy('room_number', 'asc');
@@ -49,7 +64,9 @@ class RoomController extends Controller
         $rooms = $query->get();
 
         $avService = app(\App\Services\RoomAvailabilityService::class);
-        $systemDate = $avService->getSystemDate();
+        $systemDate = $request->filled('date')
+            ? \Carbon\Carbon::parse($request->date)
+            : $avService->getSystemDate();
         $sysDateStr = $systemDate->toDateString();
 
         // Tải các phòng đang được đặt/đang ở hôm nay
@@ -65,7 +82,16 @@ class RoomController extends Controller
                 })->orWhere('arrival_date', $sysDateStr)
                   ->orWhere('departure_date', $sysDateStr);
             })
-            ->with(['booking.company', 'booking.registrationStatus', 'booking.paymentMethod', 'guests.guest', 'children'])
+            ->with([
+                'booking.company',
+                'booking.registrationStatus',
+                'booking.paymentMethod',
+                'guests.guest',
+                'children',
+                'services' => fn($q) => $q->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+                    ->whereDate('service_date', $sysDateStr),
+                'specialRequests.specialRequest',
+            ])
             ->get();
 
         /** @var Room $room */
@@ -105,8 +131,8 @@ class RoomController extends Controller
                     }
                 }
 
-                $primaryGuest = $br->guests->where('pivot.is_primary', 1)->first() ?? $br->guests->first();
-                $room->guest_name = $primaryGuest?->full_name ?? '';
+                $primaryGuest = $br->guests->firstWhere('is_primary', true) ?? $br->guests->first();
+                $room->guest_name = $primaryGuest?->guest?->full_name ?? '';
                 $room->booking_code = $br->booking?->booking_code ?? '';
                 $room->booking_name = $br->booking?->booking_name ?? '';
                 $room->company_name = $br->booking?->company?->name ?? '';
@@ -115,13 +141,29 @@ class RoomController extends Controller
                 $room->departure_date = $br->departure_date ? $br->departure_date->toDateString() : '';
                 $room->nights = $br->arrival_date && $br->departure_date ? $br->arrival_date->diffInDays($br->departure_date) : 1;
                 $room->adults = $br->adults ?? 2;
-                $room->children = $br->children ? $br->children->where('age_group', 'child')->count() : 0;
-                $room->babies = $br->children ? $br->children->where('age_group', 'baby')->count() : 0;
+                $room->children = (int) ($br->children_qty ?: ($br->children ? $br->children->where('age_group', 'child')->count() : 0));
+                $room->babies = (int) ($br->babies ?: ($br->children ? $br->children->where('age_group', 'baby')->count() : 0));
+                $room->guest_count = (int) $room->adults + $room->children + $room->babies;
                 $room->arrival_time = $br->arrival_time ?? '14:00';
                 $room->rate = $br->rate ?? 0;
                 $room->booking_note = $br->booking?->note ?? '';
                 $room->special_requests = $br->booking?->special_requests ?? '';
-                $room->guest_details = $br->guests->map(fn($g) => $g->full_name)->toArray();
+                $room->special_request_types = $br->specialRequests
+                    ->map(fn($item) => [
+                        'code' => $item->specialRequest?->code,
+                        'name' => $item->specialRequest?->name,
+                    ])
+                    ->filter(fn($item) => !empty($item['code']))
+                    ->values()
+                    ->toArray();
+                $room->has_birthday_today = $br->guests
+                    ->contains(fn($guestLink) => $guestLink->guest?->dob?->format('m-d') === $systemDate->format('m-d'));
+                $room->guest_details = $br->guests
+                    ->map(fn($g) => $g->guest?->full_name)
+                    ->filter()
+                    ->values()
+                    ->toArray();
+                $room->extra_bed_qty = (int) $br->services->sum(fn($service) => (float) $service->quantity);
                 
                 $room->external_booking_code = $br->booking?->external_booking_code ?? '';
                 $room->registration_status = $br->booking?->registrationStatus?->name ?? '';
@@ -266,6 +308,10 @@ class RoomController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
         $room = Room::find($id);
         if (!$room) {
             return response()->json(['message' => 'Room not found'], 404);
@@ -448,4 +494,3 @@ class RoomController extends Controller
         ]);
     }
 }
-

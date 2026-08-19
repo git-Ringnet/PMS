@@ -101,7 +101,7 @@ class PaymentController extends Controller
 
         $payments = Payment::withTrashed()
             ->where('booking_id', $bookingId)
-            ->with(['paymentMethod', 'bookingRoom.room'])
+            ->with(['paymentMethod', 'bookingRoom.room', 'user'])
             ->orderBy('date')
             ->orderBy('id')
             ->get();

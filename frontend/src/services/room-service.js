@@ -175,7 +175,7 @@ export const roomService = {
   /**
    * Cập nhật trạng thái phòng
    */
-  async updateRoomStatus(roomId, roomStatusCode) {
+  async updateRoomStatus(roomId, roomStatusCode, currentModule = 'frontdesk') {
     if (USE_MOCK_ONLY) {
       const rooms = getMockRooms()
       const room = rooms.find(r => r.id === parseInt(roomId))
@@ -184,7 +184,10 @@ export const roomService = {
     }
 
     try {
-      const response = await http.put(`/rooms/${roomId}/status`, { room_status_code: roomStatusCode })
+      const response = await http.put(`/rooms/${roomId}/status`, {
+        room_status_code: roomStatusCode,
+        current_module: currentModule,
+      })
       return response.data
     } catch (error) {
       console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
@@ -193,6 +196,11 @@ export const roomService = {
       if (room) room.room_status_code = roomStatusCode
       return { success: true, data: room }
     }
+  },
+
+  async getRoomStatusPermission(currentModule = 'frontdesk') {
+    const response = await http.get('/rooms/permissions', { params: { current_module: currentModule } })
+    return response.data
   },
 
   /**

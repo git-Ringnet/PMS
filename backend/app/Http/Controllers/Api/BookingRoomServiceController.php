@@ -69,7 +69,8 @@ class BookingRoomServiceController extends Controller
     // =========================================
     public function foServiceList()
     {
-        $services = HotelService::whereHas('departments', function ($query) {
+        $services = HotelService::where('is_active', true)
+            ->whereHas('departments', function ($query) {
                 $query->where('code', 'FO');
             })
             ->orderBy('name')

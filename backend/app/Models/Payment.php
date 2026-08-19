@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Model Payment — Đặt cọc & Thanh toán
@@ -18,6 +19,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Payment extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $payment) {
+            $payment->user_id ??= Auth::id();
+        });
+    }
 
     // Trạng thái cọc
     const STATUS_PENDING  = 1; // Chưa thanh toán
@@ -57,6 +65,7 @@ class Payment extends Model
         'username',
         'shift',
         'created_by',
+        'user_id',
         'updated_by',
         'image_path',
     ];
@@ -86,6 +95,11 @@ class Payment extends Model
     public function paymentMethod()
     {
         return $this->belongsTo(PaymentMethod::class, 'payment_method_id', 'code');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function guest()

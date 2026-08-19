@@ -39,6 +39,7 @@ class HotelServiceController extends Controller
             'short_name' => 'nullable|string|max:255',
             'unit' => 'nullable|string|max:50',
             'price' => 'nullable|numeric|min:0',
+            'is_active' => 'nullable|boolean',
             'department_id' => 'required|integer|exists:departments,id',
         ]);
 
@@ -90,6 +91,7 @@ class HotelServiceController extends Controller
             'short_name' => 'nullable|string|max:255',
             'unit' => 'nullable|string|max:50',
             'price' => 'nullable|numeric|min:0',
+            'is_active' => 'nullable|boolean',
             'department_id' => 'required|integer|exists:departments,id',
         ]);
 
