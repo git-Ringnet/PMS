@@ -428,18 +428,23 @@ class RoomController extends Controller
         // Bổ sung thống kê phòng đến (bao gồm cả phòng đã gán và chưa gán số phòng)
         $avService = app(\App\Services\RoomAvailabilityService::class);
         $sysDateStr = $request->date ? \Carbon\Carbon::parse($request->date)->toDateString() : $avService->getSystemDate()->toDateString();
+        $availabilityBookingRoom = fn ($query) => $query->whereHas('booking.registrationStatus', fn ($statusQuery) => $statusQuery->where('is_availability', 1));
 
         // 1. Số phòng đang ở tại thời điểm hiện tại (Checked In)
-        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)->count();
+        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->tap($availabilityBookingRoom)
+            ->count();
 
         // 2. Những phòng chưa check-in hôm nay hoặc trước đó (chưa in hôm nay)
         $pendingArrivals = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_BOOKED)
             ->whereDate('arrival_date', '<=', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         // 3. Những phòng đi hôm nay hoặc trước đó nhưng chưa check-out (out hôm nay nhưng chưa out)
         $pendingDepartures = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
             ->whereDate('departure_date', '<=', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         // 4. Số dự kiến cuối ngày
@@ -448,6 +453,7 @@ class RoomController extends Controller
         // 5. Thống kê Đã đến (Arrivals)
         $arrivalsCheckedIn = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
             ->whereDate('arrival_date', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         $stats['arrivals_checked_in'] = $arrivalsCheckedIn;
@@ -461,6 +467,7 @@ class RoomController extends Controller
         // 7. Thống kê Đã đi (Departures)
         $departuresCheckedOut = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_OUT)
             ->whereDate('departure_date', $sysDateStr)
+            ->tap($availabilityBookingRoom)
             ->count();
 
         $stats['departures_checked_out'] = $departuresCheckedOut;

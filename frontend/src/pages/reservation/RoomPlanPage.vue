@@ -1348,6 +1348,7 @@ async function loadBookings() {
             isAvailability: registrationStatus.is_availability === undefined
               ? true
               : Boolean(registrationStatus.is_availability),
+            isDayUse: Boolean(br.is_day_use ?? b.is_day_use),
             nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
@@ -2036,7 +2037,7 @@ const dynamicStats = computed(() => {
   const avRooms = Array(numDays).fill(null).map(() => [])
 
   // Include booking rooms that do not have a physical room number in OCC.
-  // Keep them out of the room grid and do not alter AV/OOO calculations.
+  // Keep them out of the room grid, but subtract them from AV like the legacy availability rule.
   const unassignedOccByDay = Array(numDays).fill(null).map(() => [])
   bookings.value.forEach(item => {
     if (!item.isVirtual || !item.isAvailability || item.type === 'OOO' || item.type === 'OOS') return
@@ -2049,7 +2050,8 @@ const dynamicStats = computed(() => {
     for (let idx = 0; idx < numDays; idx++) {
       const dayDate = new Date(days.value[idx].fullDate)
       dayDate.setHours(0, 0, 0, 0)
-      if (dayDate >= itemCheckIn && dayDate < itemCheckOut) {
+      const isDayUse = item.isDayUse && formatDateStr(itemCheckIn) === formatDateStr(itemCheckOut)
+      if (isDayUse ? dayDate.getTime() === itemCheckIn.getTime() : (dayDate >= itemCheckIn && dayDate < itemCheckOut)) {
         unassignedOccByDay[idx].push(item.code || `BookingRoom ${item.bookingRoomId}`)
       }
     }
@@ -2065,7 +2067,9 @@ const dynamicStats = computed(() => {
       
       const hasGuest = items.some(item => {
         if (!item.isAvailability || item.type === 'OOO' || item.type === 'OOS') return false
-        return idx >= item.startIndex && idx < item.endIndex
+        return item.isDayUse
+          ? idx === item.startIndex
+          : idx >= item.startIndex && idx < item.endIndex
       })
 
       const hasLock = items.some(item => {
@@ -2088,7 +2092,7 @@ const dynamicStats = computed(() => {
     occCounts[idx] = occ + unassignedOccByDay[idx].length
     occRooms[idx].push(...unassignedOccByDay[idx].map(code => `${code} (chưa gán)`))
     oooCounts[idx] = ooo
-    avCounts[idx] = Math.max(0, totalRooms - occ - ooo)
+    avCounts[idx] = Math.max(0, totalRooms - occCounts[idx] - ooo)
   }
 
   const totalOccSum = occCounts.reduce((a, b) => a + b, 0)
@@ -2908,7 +2912,7 @@ function handleDragStart(bk, event) {
   lastGhostTop = null
   dragBoundsCache = null
   requestAnimationFrame(() => {
-    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 2
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 122
   })
 
   if (event && event.currentTarget) {
@@ -3010,9 +3014,9 @@ function handleGlobalDragOver(event) {
 
   const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
   const clientY = event.clientY
-
+  const topScrollBoundary = headerBottom + 120
   // If mouse is inside or above header, clamp ghost card strictly below header!
-  if (clientY <= headerBottom) {
+  if (clientY <= topScrollBoundary) {
     setDragGhostTop(minTop)
   } else if (clientY >= occTop) {
     setDragGhostTop(maxTop)
@@ -3021,8 +3025,8 @@ function handleGlobalDragOver(event) {
   let scrollY = 0
 
   // Keep the current scroll area; extend it upward only after crossing the top boundary.
-  if (clientY < headerBottom) {
-    const overflow = Math.max(0, headerBottom - clientY)
+  if (clientY < topScrollBoundary) {
+    const overflow = Math.max(0, topScrollBoundary - clientY)
     // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as the pointer moves further up.
     const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
     scrollY = -speed
@@ -3049,9 +3053,7 @@ function handleWindowDragOver(event) {
   if (!draggedBooking.value) return
   event.preventDefault()
   if (!scrollContainer) getDragVerticalBounds()
-
-  const { headerBottom } = getDragVerticalBounds()
-  if (event.clientY < headerBottom) handleGlobalDragOver(event)
+  handleGlobalDragOver(event)
 }
 
 function allowRoomPlanDrop(event) {
@@ -3943,8 +3945,8 @@ function getRoomStatusIconName(item) {
                   ? 'bg-amber-500 text-white border-amber-700 shadow-[inset_0_-2px_0_#b45309]'
                   : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700'))
               ]"
-              @dragenter.prevent="allowRoomPlanDrop"
-              @dragover.prevent="allowRoomPlanDrop"
+              @dragenter.prevent="handleGlobalDragOver($event)"
+              @dragover.prevent="handleGlobalDragOver($event)"
             >
               <div class="flex flex-col items-center justify-center leading-tight py-0.5">
                 <span class="text-[11px] font-extrabold uppercase">{{ day.dow }}</span>
