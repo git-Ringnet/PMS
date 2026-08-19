@@ -15,7 +15,7 @@ import SearchInvoiceTab from './components/SearchInvoiceTab.vue'
 import InventoryTab from './components/InventoryTab.vue'
 import CreateMenuTab from './components/CreateMenuTab.vue'
 import LostAndFound from './components/LostAndFound.vue'
-import OperationHistoryTab from './components/OperationHistoryTab.vue'
+import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 
 // Cross-module pages (reused via defineAsyncComponent to avoid circular import loops)
 const RoomMapPage = defineAsyncComponent(() => import('@/pages/reservation/RoomMapPage.vue'))
@@ -53,7 +53,7 @@ const tabs = computed(() => [
   { key: 'inventory', label: t('submenu.inventory'), icon: Warehouse, component: InventoryTab, group: 'kho' },
   { key: 'create-menu', label: t('submenu.createMenu'), icon: UtensilsCrossed, component: CreateMenuTab, group: 'kho' },
   { key: 'lost-found', label: t('submenu.lostFound'), icon: PackageSearch, component: LostAndFound, group: 'other' },
-  { key: 'history', label: t('submenu.actionHistory'), icon: History, component: OperationHistoryTab, group: 'other' },
+  { key: 'history', label: t('submenu.actionHistory'), icon: History, component: ActivityLogTab, group: 'other' },
   { key: 'reports', label: t('submenu.reports'), icon: BarChart3, component: ReportsPage, group: 'report' },
 ])
 

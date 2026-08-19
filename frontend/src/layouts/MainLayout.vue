@@ -426,6 +426,7 @@ const menuItems = computed(() => {
         ]
       },
       { name: t('menu.dayClose'), route: '/frontdesk?tab=day-close' },
+      { name: 'LỊCH SỬ THAO TÁC', route: '/frontdesk?tab=history' },
       { name: t('menu.reports'), route: '/reports' },
       { name: t('menu.channelManager'), route: '/config' },
     ]

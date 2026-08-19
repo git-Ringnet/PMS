@@ -57,6 +57,14 @@ Route::middleware('auth:sanctum')->group(function () {
             'username' => auth()->user() ? auth()->user()->username : 'admin',
         ]);
 
+        try {
+            \App\Services\ActivityLogService::logDayClose(
+                $currentSystemDate->toDateString(),
+                $nextSystemDate->toDateString(),
+                $request
+            );
+        } catch (\Throwable $e) {}
+
         return response()->json([
             'success' => true,
             'message' => 'Rolled system date successfully to ' . $nextSystemDate->toDateString(),

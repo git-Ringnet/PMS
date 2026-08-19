@@ -43,18 +43,20 @@ class ActivityLogController extends Controller
 
         // Lọc theo mã đăng ký
         if ($request->filled('registration_code')) {
-            $regCode = $request->registration_code;
+            $regCode = trim($request->registration_code);
             $query->where(function ($q) use ($regCode) {
                 $q->where('target_label', 'like', "%{$regCode}%")
+                  ->orWhere('target_id', 'like', "%{$regCode}%")
                   ->orWhere('description', 'like', "%{$regCode}%");
             });
         }
 
         // Lọc theo mã phòng
         if ($request->filled('room_code')) {
-            $roomCode = $request->room_code;
+            $roomCode = trim($request->room_code);
             $query->where(function ($q) use ($roomCode) {
-                $q->where('target_label', 'like', "%{$roomCode}%")
+                $q->where('target_id', 'like', "%{$roomCode}%")
+                  ->orWhere('target_label', 'like', "%{$roomCode}%")
                   ->orWhere('description', 'like', "%{$roomCode}%");
             });
         }

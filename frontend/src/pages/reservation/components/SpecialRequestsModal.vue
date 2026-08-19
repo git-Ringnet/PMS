@@ -207,7 +207,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {
   fetchSpecialRequestsCatalog,
   createSpecialRequestMaster,
@@ -221,7 +221,7 @@ const props = defineProps({
   room: Object
 })
 
-const emit = defineEmits(['update:show', 'saved'])
+const emit = defineEmits(['update:show', 'saved', 'close', 'save'])
 
 const uiStore = useUiStore()
 
@@ -281,15 +281,17 @@ const newRequestForm = ref({
 
 // Load master catalog and currently assigned room special requests
 async function loadData() {
-  if (!props.room) return
   isLoading.value = true
   try {
     const catalogRes = await fetchSpecialRequestsCatalog()
     catalog.value = catalogRes.data?.data || []
 
     // Extract already assigned special requests
-    if (props.room.specialRequests) {
-      selectedIds.value = props.room.specialRequests.map(r => r.special_request_id || r.specialRequest?.id)
+    if (props.room?.specialRequests && Array.isArray(props.room.specialRequests)) {
+      selectedIds.value = props.room.specialRequests.map(r => {
+        if (typeof r === 'number') return r
+        return r.special_request_id || r.specialRequest?.id || r.id
+      }).filter(Boolean)
     } else {
       selectedIds.value = []
     }
@@ -301,6 +303,12 @@ async function loadData() {
   }
 }
 
+onMounted(() => {
+  if (props.show) {
+    loadData()
+  }
+})
+
 watch(() => props.show, (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
@@ -309,7 +317,7 @@ watch(() => props.show, (newVal) => {
     searchQuery.value = ''
     clearCreateForm()
   }
-})
+}, { immediate: true })
 
 const filteredCatalog = computed(() => {
   if (!searchQuery.value) return catalog.value
@@ -354,13 +362,17 @@ async function submitCreate() {
   if (!newRequestForm.value.name.trim()) return
   isCreatingMaster.value = true
   try {
-    await createSpecialRequestMaster({
+    const res = await createSpecialRequestMaster({
       name: newRequestForm.value.name.trim(),
       code: newRequestForm.value.code.trim().toUpperCase()
     })
     uiStore.showToast('Tạo mới yêu cầu đặc biệt thành công!', 'success')
     clearCreateForm()
     showCreateModal.value = false
+    const createdItem = res.data?.data
+    if (createdItem?.id && !selectedIds.value.includes(createdItem.id)) {
+      selectedIds.value.push(createdItem.id)
+    }
     await loadData()
   } catch (err) {
     console.error(err)
@@ -389,28 +401,34 @@ async function deleteMasterRequest(item) {
 
 // Sync selections and Save
 async function save() {
-  if (!props.room || !props.room.bookingRoomId) {
-    uiStore.showToast('Phòng chưa được thiết lập đặt phòng hợp lệ!', 'warning')
-    return
-  }
-  isSaving.value = true
-  try {
-    const res = await syncBookingRoomSpecialRequests(props.room.bookingRoomId, {
-      special_request_ids: selectedIds.value
-    })
-    const updatedSpecialRequests = res.data?.data || []
-    emit('saved', updatedSpecialRequests)
-    uiStore.showToast('Đã cập nhật yêu cầu đặc biệt thành công!', 'success')
+  if (props.room && props.room.bookingRoomId) {
+    isSaving.value = true
+    try {
+      const res = await syncBookingRoomSpecialRequests(props.room.bookingRoomId, {
+        special_request_ids: selectedIds.value
+      })
+      const updatedSpecialRequests = res.data?.data || []
+      emit('saved', updatedSpecialRequests)
+      emit('save', updatedSpecialRequests)
+      uiStore.showToast('Đã cập nhật yêu cầu đặc biệt thành công!', 'success')
+      close()
+    } catch (err) {
+      console.error(err)
+      uiStore.showToast('Lỗi khi lưu yêu cầu đặc biệt!', 'error')
+    } finally {
+      isSaving.value = false
+    }
+  } else {
+    // Với phòng mới chưa tạo đặt phòng (ví dụ Nhận phòng nhanh / Tạo mới booking)
+    const selectedObjects = catalog.value.filter(item => selectedIds.value.includes(item.id))
+    emit('saved', selectedObjects)
+    emit('save', selectedObjects)
     close()
-  } catch (err) {
-    console.error(err)
-    uiStore.showToast('Lỗi khi lưu yêu cầu đặc biệt!', 'error')
-  } finally {
-    isSaving.value = false
   }
 }
 
 function close() {
   emit('update:show', false)
+  emit('close')
 }
 </script>
