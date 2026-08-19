@@ -67,6 +67,11 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const currentBookingModule = computed(() => {
+  if (route.path === '/frontdesk') return 'FO'
+  if (route.path === '/housekeeping') return 'HK'
+  return 'SALE'
+})
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -3333,8 +3338,8 @@ async function handleSaveNewBooking() {
       shuttle_info:           modalForm.value.shuttleInfo || [],
       room_allocations:       syncRoomsToAllocations(modalForm.value),
       deposit_details:        modalForm.value.deposits || [],
-      module:                 'reservation',
-      created_module:         'reservation',
+      module:                 currentBookingModule.value,
+      created_module:         currentBookingModule.value,
     }
     if (isEditModal.value && modalForm.value.dbId) {
       const res = await updateBooking(modalForm.value.dbId, payload)
@@ -4201,7 +4206,7 @@ async function handleConfirmCancelReason(payload) {
       const res = await deleteBooking(tab.dbId, {
         cancel_reason_id: payload.cancel_reason_id,
         note: payload.note,
-        current_module: 'reservation'
+        current_module: currentBookingModule.value
       })
       if (res.data?.success) {
         const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
@@ -4233,7 +4238,7 @@ async function handleConfirmCancelReason(payload) {
           const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
             cancel_reason_id: payload.cancel_reason_id,
             note: payload.note,
-            current_module: 'reservation'
+            current_module: currentBookingModule.value
           })
           if (res.data?.success) {
             successCount++

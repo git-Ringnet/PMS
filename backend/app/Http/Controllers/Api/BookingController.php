@@ -17,6 +17,7 @@ use App\Models\SystemDateRoll;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use App\Support\ModuleCode;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -340,9 +341,9 @@ class BookingController extends Controller
 
         // Người tạo
         $validated['created_by'] = Auth::user()?->username ?? 'system';
-        if (empty($validated['module'])) {
-            $validated['module'] = $request->input('created_module', 'reservation');
-        }
+        $validated['module'] = ModuleCode::normalize(
+            $validated['module'] ?? $request->input('created_module', ModuleCode::RESERVATION)
+        );
 
         // Tình trạng mặc định = Reservation
         $validated['status'] = $validated['status'] ?? Booking::STATUS_RESERVATION;
@@ -1106,16 +1107,16 @@ class BookingController extends Controller
             ->value('value');
 
         if ($checkModuleConfig === '1' || $checkModuleConfig === 1) {
-            $currentModule = strtolower($request->input('current_module', 'reservation'));
-            $bookingModule = strtolower($booking->module ?? 'reservation');
+            $currentModule = ModuleCode::normalize($request->input('current_module', ModuleCode::RESERVATION));
+            $bookingModule = ModuleCode::normalize($booking->module, ModuleCode::RESERVATION);
 
-            if ($bookingModule === 'reservation' && $currentModule === 'reception') {
+            if ($bookingModule === ModuleCode::RESERVATION && $currentModule === ModuleCode::FRONTDESK) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Đăng ký được tạo bởi bộ phận đặt phòng. Bạn không có quyền được hủy.'
                 ], 403);
             }
-            if ($bookingModule === 'reception' && $currentModule === 'reservation') {
+            if ($bookingModule === ModuleCode::FRONTDESK && $currentModule === ModuleCode::RESERVATION) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Đăng ký được tạo bởi bộ phận lễ tân. Bạn không có quyền được hủy.'
@@ -1204,12 +1205,14 @@ class BookingController extends Controller
                 ]);
             }
 
-            // Tự chuyển booking_status về bk_definite = 4 (nếu có)
-            $cancelledStatus = RegistrationStatus::where('bk_definite', 4)->first();
+            $configuredStatusId = HotelConfig::where('name', 'RegistrationStatusId_BookingCancel')->value('value');
+            $configuredStatus = is_numeric($configuredStatusId)
+                ? RegistrationStatus::find((int) $configuredStatusId)
+                : null;
 
             $booking->update([
                 'status'                 => Booking::STATUS_DELETED,
-                'registration_status_id' => $cancelledStatus?->id ?? $booking->registration_status_id,
+                'registration_status_id' => $configuredStatus?->id ?? $booking->registration_status_id,
                 'updated_by'             => $currentUsername,
             ]);
         });

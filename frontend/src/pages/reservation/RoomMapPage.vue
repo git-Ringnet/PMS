@@ -1565,7 +1565,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
           <!-- View Mode & Zoom switchers -->
           <div class="flex items-center gap-2.5 shrink-0">
-            <div v-if="!isGridMode" class="relative flex items-center gap-1">
+            <div v-if="!isGridMode && moduleContext !== 'reservation'" class="relative flex items-center gap-1">
               <button type="button" class="flex h-8 w-8 items-center justify-center rounded-md border text-white shadow-sm transition disabled:cursor-not-allowed" :class="selectedRoomIds.length && canChangeRoomStatus && !isBulkUpdating ? 'border-emerald-700 bg-emerald-600 hover:bg-emerald-700' : 'border-slate-200 bg-slate-200 text-slate-400'" :disabled="!selectedRoomIds.length || !canChangeRoomStatus || isBulkUpdating" title="Cập nhật tình trạng phòng" @click="toggleBulkStatusMenu">
                 <svg v-if="isBulkUpdating" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                   <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" />

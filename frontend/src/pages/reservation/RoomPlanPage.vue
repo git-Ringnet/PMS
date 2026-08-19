@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -14,6 +15,13 @@ import echo from '@/services/echo'
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
 const authStore = useAuthStore()
+const route = useRoute()
+
+const currentBookingModule = computed(() => {
+  if (route.path === '/frontdesk') return 'FO'
+  if (route.path === '/housekeeping') return 'HK'
+  return 'SALE'
+})
 
 const isAdmin = computed(() => {
   const u = authStore.user
@@ -3384,8 +3392,8 @@ async function saveQuickBooking() {
       contact_phone: '',
       note: '',
       room_allocations: room_allocations,
-      module: 'reception',
-      created_module: 'reception'
+      module: currentBookingModule.value,
+      created_module: currentBookingModule.value
     }
 
     await createBooking(payload)
@@ -3580,7 +3588,7 @@ async function handleConfirmCancelRoomPlan(payload) {
     const res = await cancelBookingRoom(booking.bookingId, booking.bookingRoomId, {
       cancel_reason_id: payload.cancel_reason_id,
       note: payload.note,
-      current_module: 'reception'
+      current_module: currentBookingModule.value
     })
     if (res && res.data && res.data.success) {
       uiStore.showToast('Đã hủy phòng thành công!', 'success')
