@@ -3518,6 +3518,34 @@ function handleSelectAllInGroup(rooms, checked) {
   }
 }
 
+function restoreTabFromBackup(tab) {
+  if (!tab?._backup) return false
+  const restored = JSON.parse(JSON.stringify(tab._backup))
+  delete restored._backup
+  Object.assign(tab, restored)
+  delete tab._backup
+  return true
+}
+
+function validateRoomDatesAgainstBooking(tab) {
+  if (!tab) return null
+  const bookingArrival = parseApiDate(tab.checkIn)
+  const bookingDeparture = parseApiDate(tab.checkOut)
+  if (!bookingArrival || !bookingDeparture || bookingArrival > bookingDeparture) {
+    return 'Ngày đến/ngày đi của đăng ký không hợp lệ.'
+  }
+
+  const invalidRoom = (tab.rooms || []).find(room => {
+    const roomArrival = parseApiDate(room.checkIn)
+    const roomDeparture = parseApiDate(room.checkOut)
+    return !roomArrival || !roomDeparture || roomArrival < bookingArrival || roomDeparture > bookingDeparture || roomArrival > roomDeparture
+  })
+
+  return invalidRoom
+    ? `Ngày của phòng phải nằm trong giai đoạn của đăng ký (${formatDateVi(bookingArrival)} đến ${formatDateVi(bookingDeparture)}).`
+    : null
+}
+
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
     isEditing.value = true
@@ -3543,11 +3571,7 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Quay lại') {
     isEditing.value = false
     const tab = activeTab.value
-    if (tab && tab._backup) {
-      const restored = JSON.parse(JSON.stringify(tab._backup))
-      delete restored._backup
-      Object.assign(tab, restored)
-    }
+    restoreTabFromBackup(tab)
   } else if (actionName === 'Lưu') {
     const tab = activeTab.value
     if (tab) {
@@ -3557,6 +3581,11 @@ async function triggerAction(actionName) {
         return
       }
     }
+    const dateError = validateRoomDatesAgainstBooking(tab)
+    if (dateError) {
+      uiStore.showToast(dateError, 'error')
+      return
+    }
     uiStore.confirm({
       title: 'Xác nhận lưu đăng ký',
       message: `Bạn có chắc chắn muốn lưu các thông tin thay đổi cho đăng ký "${tab?.bookingName || ''}"?`,
@@ -3564,8 +3593,8 @@ async function triggerAction(actionName) {
       cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (!confirmed) return
+      const backup = tab?._backup
       isEditing.value = false
-      if (tab) delete tab._backup
       if (tab && tab.dbId) {
         try {
           const payload = {
@@ -3597,9 +3626,12 @@ async function triggerAction(actionName) {
           const res = await updateBooking(tab.dbId, payload)
           await loadBookings()
           notifyRoomUpdates()
+          if (tab) delete tab._backup
           uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
         } catch (err) {
           console.error(err)
+          if (tab && backup) tab._backup = backup
+          restoreTabFromBackup(tab)
           const errMsg = err.response?.data?.message || 'Không thể lưu thông tin đăng ký!'
           uiStore.showToast(errMsg, 'error')
         }
