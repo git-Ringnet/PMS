@@ -133,10 +133,12 @@ class ResetMultiDbCommand extends Command
             $this->line("  🌱 Đang chạy seeder cho {$name}...");
 
             if ($type === 'system') {
+                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'SystemBranchSeeder', '--force' => true]);
+                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'InfoBusinessSeeder', '--force' => true]);
                 Artisan::call('db:seed', ['--database' => $conn, '--class' => 'RolePermissionSeeder', '--force' => true]);
                 Artisan::call('db:seed', ['--database' => $conn, '--class' => 'ModuleSeeder', '--force' => true]);
                 Artisan::call('db:seed', ['--database' => $conn, '--class' => 'DepartmentSeeder', '--force' => true]);
-                $this->info("  ✓ Seeded roles, permissions, modules, departments thành công cho System!");
+                $this->info("  ✓ Seeded branches, info_business, roles, permissions, modules, departments thành công cho System!");
             } else {
                 $seedCode = Artisan::call('db:seed', [
                     '--database' => $conn,

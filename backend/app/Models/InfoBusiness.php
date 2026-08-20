@@ -10,6 +10,7 @@ class InfoBusiness extends Model
 {
     use HasFactory;
 
+    protected $connection = 'mysql_system';
     protected $table = 'info_businesses';
 
     protected $fillable = [
