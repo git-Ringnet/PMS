@@ -9,6 +9,8 @@ class UserSetting extends Model
 {
     use HasFactory;
 
+    protected $connection = 'mysql_system';
+
     protected $fillable = [
         'user_id',
         'sort_option',

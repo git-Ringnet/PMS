@@ -6,12 +6,14 @@ import CompanyInfoTab from './components/CompanyInfoTab.vue'
 import BranchManageTab from './components/BranchManageTab.vue'
 import EmployeeTab from './components/EmployeeTab.vue'
 import ActivityLogTab from './components/ActivityLogTab.vue'
+import OrgStructureTab from './components/OrgStructureTab.vue'
+import RoleManageTab from './components/RoleManageTab.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 
-const activeTab = ref('company') // 'company', 'branch', 'employee', 'activity_log'
+const activeTab = ref('company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log'
 const isDropdownOpen = ref(false)
 
 // Collapsible states for sidebar groups
@@ -179,10 +181,24 @@ onMounted(() => {
 
               <!-- Cơ cấu tổ chức -->
               <button 
-                disabled
-                class="w-full text-left px-4 py-2 border-none bg-transparent text-slate-400 cursor-not-allowed text-xs font-semibold opacity-60"
+                @click="selectTab('org_structure')"
+                class="w-full text-left px-4 py-2 border-none bg-transparent cursor-pointer transition-colors text-xs font-semibold"
+                :class="activeTab === 'org_structure' 
+                  ? 'bg-sky-100 text-sky-700 font-bold border-l-2 border-sky-500' 
+                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'"
               >
                 - Cơ cấu tổ chức
+              </button>
+
+              <!-- Vai trò & Phân quyền -->
+              <button 
+                @click="selectTab('roles')"
+                class="w-full text-left px-4 py-2 border-none bg-transparent cursor-pointer transition-colors text-xs font-semibold"
+                :class="activeTab === 'roles' 
+                  ? 'bg-sky-100 text-sky-700 font-bold border-l-2 border-sky-500' 
+                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'"
+              >
+                - Vai trò & Phân quyền
               </button>
               
               <!-- Nhân viên -->
@@ -195,8 +211,6 @@ onMounted(() => {
               >
                 - Nhân viên
               </button>
-
-
 
               <!-- Lịch sử thao tác -->
               <button 
@@ -281,6 +295,8 @@ onMounted(() => {
         <transition name="fade" mode="out-in">
           <CompanyInfoTab v-if="activeTab === 'company'" />
           <BranchManageTab v-else-if="activeTab === 'branch'" />
+          <OrgStructureTab v-else-if="activeTab === 'org_structure'" />
+          <RoleManageTab v-else-if="activeTab === 'roles'" />
           <EmployeeTab v-else-if="activeTab === 'employee'" />
           <ActivityLogTab v-else-if="activeTab === 'activity_log'" />
         </transition>
