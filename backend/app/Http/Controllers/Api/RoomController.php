@@ -148,6 +148,7 @@ class RoomController extends Controller
                 $room->guest_count = (int) $room->adults + $room->children + $room->babies;
                 $room->arrival_time = $br->arrival_time ?? '14:00';
                 $room->rate = $br->rate ?? 0;
+                $room->rate_code = $br->rate_code ?? null;
                 $room->booking_note = $br->booking?->note ?? '';
                 $room->special_requests = $br->booking?->special_requests ?? '';
                 $room->special_request_types = $br->specialRequests

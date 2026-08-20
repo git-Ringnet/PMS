@@ -21,6 +21,7 @@ import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequests
 import ChildBreakfastModal from '@/pages/reservation/components/ChildBreakfastModal.vue'
 import ExtraBedModal from '@/pages/reservation/components/ExtraBedModal.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
+import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -115,7 +116,7 @@ const stayInfo = ref({
 
 const pricingInfo = ref({
   rate: '0',
-  rate_code: 'RACK...',
+  rate_code: '',
   discount_type: 'Tăng/Giảm giá',
   extra_bed: 'Không thêm',
   extra_bed_price: '0',
@@ -153,7 +154,13 @@ function onRateCodeChange() {
   const selectedCode = pricingInfo.value.rate_code
   const found = rateCodes.value.find(rc => (rc.code || rc.Ma) === selectedCode)
   if (found) {
-    const newPrice = found.price || found.price_default || found.GiaPhuong
+    const date = formatDateForInput(props.room.arrival_date || props.room.arrivalDate)
+    const newPrice = resolveRateCodePrice([found], {
+      rateCode: selectedCode,
+      date,
+      roomClassId: props.room.room_class_id || props.room.roomClassId,
+      roomClassCode: props.room.room_type || props.room.room_type_code,
+    })
     if (newPrice) {
       pricingInfo.value.rate = formatNumber(newPrice)
     }
@@ -361,7 +368,7 @@ watch(() => props.room, (newRoom) => {
 
     pricingInfo.value = {
       rate: formatNumber(newRoom.rate) || '0',
-      rate_code: newRoom.rate_code || 'RACK...',
+      rate_code: newRoom.rate_code || '',
       discount_type: 'Tăng/Giảm giá',
       extra_bed_qty: newRoom.extra_bed_qty ?? (newRoom.extra_bed && newRoom.extra_bed !== 'Không thêm' ? 1 : 0),
       extra_bed_price: formatNumber(newRoom.extra_bed_rate || newRoom.extra_bed_price || 0),
@@ -609,6 +616,7 @@ async function handleSave() {
       departure_date: stayInfo.value.departure_date,
       departure_time: stayInfo.value.departure_time,
       rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
+      rate_code: pricingInfo.value.rate_code || null,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
       extra_bed_rate: pricingInfo.value.extra_bed_price ? Number(String(pricingInfo.value.extra_bed_price).replace(/\D/g, '')) : 0,
     }

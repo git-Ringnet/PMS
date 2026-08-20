@@ -10,6 +10,9 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\CancelReason;
 use App\Models\Guest;
+use App\Models\BookingRoomService;
+use App\Models\RoomRateCode;
+use App\Models\StandardRate;
 use App\Models\RoomLock;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -790,6 +793,7 @@ class GuestController extends Controller
             'occupation'        => 'nullable|string|max:200',
             'note'              => 'nullable|string',
             'avatar'            => 'nullable|string|max:255',
+            'rate_code'         => 'nullable|string|max:100',
         ]);
 
         $guest->update($request->only([
@@ -821,14 +825,79 @@ class GuestController extends Controller
             if ($request->has('arrival_time'))   $roomData['arrival_time']   = $request->arrival_time;
             if ($request->has('departure_time')) $roomData['departure_time'] = $request->departure_time;
             if ($request->has('rate'))           $roomData['rate']           = $request->rate;
+            if ($request->has('rate_code'))     $roomData['rate_code']     = filled($request->rate_code) ? trim($request->rate_code) : null;
             if ($request->has('extra_bed_qty'))  $roomData['extra_bed_qty']  = $request->extra_bed_qty;
             if ($request->has('extra_bed_rate')) $roomData['extra_bed_rate'] = $request->extra_bed_rate;
             if (!empty($roomData)) {
                 $room->update($roomData);
             }
+
+            if ($request->has('rate_code')) {
+                $this->syncRateCodeRoomCharges($room->fresh(), $request->has('rate') ? (float) $request->rate : null);
+            }
         }
 
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
+    }
+
+    private function syncRateCodeRoomCharges(BookingRoom $room, ?float $fallbackRate = null): void
+    {
+        $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
+        $arrival = Carbon::parse($room->arrival_date)->startOfDay();
+        $departure = Carbon::parse($room->departure_date)->startOfDay();
+        $start = $arrival->greaterThan($systemDate) ? $arrival : $systemDate;
+        if ($start->greaterThanOrEqualTo($departure)) return;
+
+        $rateCode = $room->rate_code ? RoomRateCode::with(['ratePlans', 'dailyMappings'])->find($room->rate_code) : null;
+        $standardRate = !$rateCode && $room->room_class_id
+            ? (float) (StandardRate::where('room_class_id', $room->room_class_id)->value('room_price') ?? 0)
+            : 0;
+        $firstRate = null;
+
+        for ($date = $start->copy(); $date->lt($departure); $date->addDay()) {
+            $rate = $this->resolveRateCodePrice($rateCode, $room->room_class_id, $date) ?: ($standardRate ?: (float) ($fallbackRate ?? 0));
+            if ($rate <= 0) continue;
+            $firstRate ??= $rate;
+
+            $service = BookingRoomService::withTrashed()
+                ->where('booking_room_id', $room->id)
+                ->where('service_code', BookingRoomService::CODE_ROOM)
+                ->whereDate('service_date', $date->toDateString())
+                ->first();
+            if ($service && (int) $service->is_posted === 1) continue;
+
+            BookingRoomService::withTrashed()->updateOrCreate(
+                ['booking_room_id' => $room->id, 'service_code' => BookingRoomService::CODE_ROOM, 'service_date' => $date->toDateString()],
+                [
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
+                    'quantity' => 1,
+                    'rate' => $rate,
+                    'department' => 'FO',
+                    'is_room' => 1,
+                    'is_posted' => 0,
+                    'deleted_at' => null,
+                    'created_by' => Auth::user()?->username ?? 'system',
+                ]
+            );
+        }
+
+        if ($firstRate !== null) $room->update(['rate' => $firstRate]);
+    }
+
+    private function resolveRateCodePrice(?RoomRateCode $rateCode, $roomClassId, Carbon $date): float
+    {
+        if (!$rateCode) return 0;
+        $mapping = $rateCode->dailyMappings->first(fn ($item) => Carbon::parse($item->Date)->toDateString() === $date->toDateString());
+        $plan = $mapping ? $rateCode->ratePlans->firstWhere('Code', $mapping->Code) : $rateCode->ratePlans->first();
+        if (!$plan) return 0;
+        $period = is_string($plan->Period) ? json_decode($plan->Period, true) : $plan->Period;
+        if (!is_array($period)) return 0;
+        $idPrice = $period[(string) $roomClassId] ?? null;
+        if (is_numeric($idPrice)) return (float) $idPrice;
+        foreach ($period as $key => $value) {
+            if (str_contains((string) $key, '_' . (string) $roomClassId . '_') && is_numeric($value)) return (float) $value;
+        }
+        return 0;
     }
 
     // DELETE /booking-rooms/{roomId}/guests/{guestId}

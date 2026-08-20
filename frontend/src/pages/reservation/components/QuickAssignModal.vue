@@ -343,6 +343,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
+import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import { useRoomStore } from '@/stores/room-store'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
@@ -595,8 +596,14 @@ function onRoomKindChange() {
 
 function onRateCodeChange() {
   const rc = rateCodesList.value.find(c => (c.Ma || c.id) === selectedRateCode.value)
-  if (rc && rc.Value) {
-    roomRate.value = Number(rc.Value) || 0
+  if (rc) {
+    const price = resolveRateCodePrice(rateCodesList.value, {
+      rateCode: selectedRateCode.value,
+      date: arrivalDate.value,
+      roomClassId: selectedRoomClassId.value,
+      roomClassCode: roomClasses.value.find(c => c.id === selectedRoomClassId.value)?.code,
+    })
+    if (price !== null) roomRate.value = Number(price) || 0
   }
 }
 
