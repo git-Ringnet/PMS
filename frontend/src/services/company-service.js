@@ -58,3 +58,21 @@ export const importCompaniesExcel = (formData) => http.post('/companies/import',
   headers: { 'Content-Type': 'multipart/form-data' }
 })
 export const companyTemplateExcel = () => http.get('/companies/template', { responseType: 'blob' })
+
+// ==================== ROLES & PERMISSIONS ====================
+export const fetchRoles = () => http.get('/roles')
+export const createRole = (data) => http.post('/roles', data)
+export const updateRole = (id, data) => http.put(/roles/, data)
+export const deleteRole = (id) => http.delete(/roles/)
+export const fetchAllPermissions = () => http.get('/permissions')
+export const syncRolePermissions = (roleId, data) => http.post(/roles//permissions/sync, data)
+
+// ==================== USER PERMISSIONS ====================
+export const fetchUserPermissions = (userId) => http.get(/users//permissions)
+export const syncUserBranches = (userId, data) => http.post(/users//branches/sync, data)
+export const syncUserRoles = (userId, data) => http.post(/users//roles/sync, data)
+// ==================== DEPARTMENTS & MODULES ====================
+export const fetchDepartments = () => http.get('/departments')
+export const createDepartment = (data) => http.post('/departments', data)
+export const fetchModules = () => http.get('/modules')
+export const fetchSystemBranchesList = () => http.get('/system-branches/list')

@@ -1,8 +1,10 @@
 <script setup>
-import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount, watch } from 'vue'
 import { 
   fetchUsers, createUser, updateUser, deleteUser,
-  uploadUserSignature, deleteUserSignature 
+  uploadUserSignature, deleteUserSignature,
+  fetchUserPermissions, syncUserBranches, syncUserRoles,
+  fetchSystemBranchesList, fetchRoles,
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -43,6 +45,99 @@ const jobsMap = {
 
 // Modal tab state
 const activeModalTab = ref('info') // 'info' hoặc 'permission'
+
+// Permission tab state
+const permLoading = ref(false)
+const allBranches = ref([])
+const allRoles = ref([])
+const userPermData = ref(null) // { branches, roles, all_permissions }
+
+// Selected branches & roles trong permission tab
+const selectedBranches = ref([]) // [{branch_id, is_primary}]
+const selectedRoles = ref([]) // [{role_id, system_branch_id}]
+
+const loadPermissionData = async (userId) => {
+  if (!userId) return
+  permLoading.value = true
+  try {
+    const [permRes, branchRes, roleRes] = await Promise.all([
+      fetchUserPermissions(userId),
+      fetchSystemBranchesList(),
+      fetchRoles(),
+    ])
+    userPermData.value = permRes.data.data
+    allBranches.value = branchRes.data.data || []
+    allRoles.value = roleRes.data.data || []
+
+    // Pre-fill selections from existing data
+    selectedBranches.value = (userPermData.value?.branches || []).map(b => ({
+      branch_id: b.id,
+      is_primary: b.is_primary,
+    }))
+    selectedRoles.value = (userPermData.value?.roles || []).map(r => ({
+      role_id: r.role_id,
+      system_branch_id: r.system_branch_id,
+    }))
+  } catch (e) {
+    console.error('Lỗi load permissions:', e)
+  } finally {
+    permLoading.value = false
+  }
+}
+
+const isBranchSelected = (branchId) => selectedBranches.value.some(b => b.branch_id === branchId)
+const toggleBranch = (branch) => {
+  const idx = selectedBranches.value.findIndex(b => b.branch_id === branch.id)
+  if (idx === -1) {
+    selectedBranches.value.push({ branch_id: branch.id, is_primary: selectedBranches.value.length === 0 })
+  } else {
+    selectedBranches.value.splice(idx, 1)
+    // Nếu xóa primary → set primary cho cái đầu
+    if (selectedBranches.value.length > 0 && !selectedBranches.value.some(b => b.is_primary)) {
+      selectedBranches.value[0].is_primary = true
+    }
+  }
+}
+const setPrimary = (branchId) => {
+  selectedBranches.value.forEach(b => b.is_primary = b.branch_id === branchId)
+}
+
+const getBranchRoleForBranch = (branchId) => {
+  return selectedRoles.value.find(r => r.system_branch_id === branchId)?.role_id || null
+}
+const setRoleForBranch = (branchId, roleId) => {
+  const idx = selectedRoles.value.findIndex(r => r.system_branch_id === branchId)
+  if (roleId) {
+    if (idx === -1) selectedRoles.value.push({ role_id: parseInt(roleId), system_branch_id: branchId })
+    else selectedRoles.value[idx].role_id = parseInt(roleId)
+  } else {
+    if (idx !== -1) selectedRoles.value.splice(idx, 1)
+  }
+}
+
+const savePermissions = async () => {
+  if (!currentId.value) return
+  permLoading.value = true
+  try {
+    await Promise.all([
+      syncUserBranches(currentId.value, { branches: selectedBranches.value }),
+      syncUserRoles(currentId.value, { roles: selectedRoles.value }),
+    ])
+    uiStore.showToast('Đã cập nhật phân quyền thành công!', 'success')
+    await loadPermissionData(currentId.value)
+  } catch (e) {
+    uiStore.showToast('Lỗi khi lưu phân quyền', 'error')
+  } finally {
+    permLoading.value = false
+  }
+}
+
+const DEPT_COLORS = {
+  FO: 'bg-blue-100 text-blue-700',
+  HK: 'bg-green-100 text-green-700',
+  FB: 'bg-orange-100 text-orange-700',
+  MGMT: 'bg-purple-100 text-purple-700',
+}
 
 // Signature upload states
 const signatureInput = ref(null)
@@ -205,8 +300,16 @@ const openEditModal = (item) => {
   activeModalTab.value = 'info'
   tempSignatureFile.value = null
   signaturePreviewUrl.value = null
+  userPermData.value = null
   isModalOpen.value = true
 }
+
+// Khi chuyển sang tab permission và đang edit mode → load data
+watch(activeModalTab, async (tab) => {
+  if (tab === 'permission' && isEditMode.value && currentId.value) {
+    await loadPermissionData(currentId.value)
+  }
+})
 
 const saveItem = async () => {
   if (!form.value.name) {
@@ -854,11 +957,90 @@ const changePage = (page) => {
         </div>
 
         <!-- Tab Content: Permissions -->
-        <div v-else class="p-6 text-xs text-slate-500 max-h-[60vh] overflow-y-auto flex flex-col items-center justify-center gap-2 h-72">
-          <svg class="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-          </svg>
-          <span class="font-semibold text-slate-400">Tính năng phân quyền đặc thù đang được phát triển...</span>
+        <div v-else class="p-4 max-h-[60vh] overflow-y-auto">
+          <!-- Loading -->
+          <div v-if="permLoading" class="flex items-center justify-center h-40">
+            <div class="w-5 h-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+
+          <!-- Chưa mở edit mode -->
+          <div v-else-if="!isEditMode" class="flex flex-col items-center justify-center h-32 gap-2 text-slate-400">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+            </svg>
+            <span class="text-xs font-semibold">Lưu thông tin nhân viên trước để phân quyền</span>
+          </div>
+
+          <!-- Content -->
+          <div v-else class="space-y-4">
+            <!-- Section 1: Chi nhánh -->
+            <div>
+              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Chi Nhánh Được Phép Truy Cập</div>
+              <div class="grid grid-cols-2 gap-2">
+                <label v-for="branch in allBranches" :key="branch.id"
+                  class="flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all"
+                  :class="isBranchSelected(branch.id) ? 'border-sky-400 bg-sky-50' : 'border-slate-200 hover:border-slate-300'">
+                  <input type="checkbox" :checked="isBranchSelected(branch.id)" @change="toggleBranch(branch)"
+                    class="w-3.5 h-3.5 accent-sky-500 shrink-0"/>
+                  <div class="flex-1 min-w-0">
+                    <div class="font-bold text-slate-800 text-[11px]">{{ branch.code }}</div>
+                    <div class="text-[10px] text-slate-500 truncate">{{ branch.name }}</div>
+                  </div>
+                  <!-- Primary badge -->
+                  <button v-if="isBranchSelected(branch.id)"
+                    @click.prevent="setPrimary(branch.id)"
+                    :class="['text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 transition-colors',
+                      selectedBranches.find(b => b.branch_id === branch.id)?.is_primary
+                        ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-sky-100']">
+                    Primary
+                  </button>
+                </label>
+              </div>
+            </div>
+
+            <!-- Section 2: Vai trò theo chi nhánh -->
+            <div v-if="selectedBranches.length > 0">
+              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Vai Trò Theo Chi Nhánh</div>
+              <div class="space-y-2">
+                <div v-for="sb in selectedBranches" :key="sb.branch_id"
+                  class="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                  <div class="text-xs font-black text-slate-600 w-16 shrink-0">
+                    {{ allBranches.find(b => b.id === sb.branch_id)?.code || '?' }}
+                  </div>
+                  <select
+                    :value="getBranchRoleForBranch(sb.branch_id)"
+                    @change="e => setRoleForBranch(sb.branch_id, e.target.value)"
+                    class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-sky-400">
+                    <option value="">-- Chọn vai trò --</option>
+                    <option v-for="role in allRoles" :key="role.id" :value="role.id">
+                      {{ role.name }} ({{ role.department_scope || 'All' }})
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Section 3: Tổng hợp quyền hiện tại (readonly) -->
+            <div v-if="userPermData?.all_permissions?.length > 0">
+              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                Quyền Hiện Tại ({{ userPermData.all_permissions.length }} quyền)
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <span v-for="perm in userPermData.all_permissions" :key="perm"
+                  class="text-[9px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                  {{ perm }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Save button -->
+            <div class="flex justify-end pt-2">
+              <button @click="savePermissions"
+                class="px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-lg transition-colors">
+                Lưu Phân Quyền
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Footer -->

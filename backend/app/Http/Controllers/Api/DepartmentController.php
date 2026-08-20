@@ -22,6 +22,26 @@ class DepartmentController extends Controller
         ]);
     }
 
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:10|unique:departments,code',
+            'name' => 'required|string|max:100',
+            'phone' => 'nullable|string|max:50',
+        ]);
+
+        $department = Department::create([
+            ...$validated,
+            'show' => 1
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $department,
+            'message' => 'Tạo phòng ban thành công!'
+        ], 201);
+    }
+
     public function attachService(Request $request, Department $department)
     {
         $validated = $request->validate([
