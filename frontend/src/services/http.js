@@ -12,7 +12,7 @@ const http = axios.create({
 // Request interceptor
 http.interceptors.request.use(
   (config) => {
-    const token = sessionStorage.getItem('pms_token')
+    const token = localStorage.getItem('pms_token') || sessionStorage.getItem('pms_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -21,6 +21,12 @@ http.interceptors.request.use(
     const lang = localStorage.getItem('pms_lang') || 'vi'
     config.headers['Accept-Language'] = lang
     config.headers['X-Language'] = lang
+
+    // Đính kèm chi nhánh hiện tại để backend chuyển connection DB tương ứng
+    const branchCode = localStorage.getItem('selected_branch_code') || 'HKT1'
+    const branchId = localStorage.getItem('selected_branch_id') || '1'
+    config.headers['X-Branch-Code'] = branchCode
+    config.headers['X-Branch-Id'] = branchId
 
     // Nếu data là FormData, xóa Content-Type để trình duyệt / Axios tự tạo header multipart kèm boundary chuẩn
     if (config.data instanceof FormData) {
@@ -47,7 +53,12 @@ http.interceptors.response.use(
       if ((status === 401 || status === 419) && !_isRedirectingToLogin) {
         _isRedirectingToLogin = true
 
-        // Xóa sạch toàn bộ auth state ở sessionStorage
+        // Xóa sạch toàn bộ auth state ở localStorage và sessionStorage
+        localStorage.removeItem('pms_token')
+        localStorage.removeItem('pms_permissions')
+        localStorage.removeItem('pms_branches')
+        localStorage.removeItem('pms_active_branch')
+        localStorage.removeItem('pms_roles')
         sessionStorage.removeItem('pms_token')
         sessionStorage.removeItem('pms_user')
         localStorage.removeItem('pms_lang')

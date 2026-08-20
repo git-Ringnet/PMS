@@ -36,9 +36,32 @@ class AuthController extends Controller
         $token = $user->createToken('auth_token')->plainTextToken;
         \App\Services\ActivityLogService::logLogin($request, $user, true);
 
+        // Load branches & permissions cho frontend
+        $user->load(['branches', 'userRoles.role', 'userRoles.branch']);
+        $branches = $user->branches->map(fn($b) => [
+            'id'         => $b->id,
+            'code'       => $b->code,
+            'name'       => $b->name,
+            'address'    => $b->address,
+            'is_primary' => (bool) $b->pivot->is_primary,
+            'db_connection' => $b->db_connection,
+        ]);
+        $activeBranch = $branches->firstWhere('is_primary', true) ?? $branches->first();
+        $branchId     = $activeBranch ? $activeBranch['id'] : null;
+        $permissions  = $user->allPermissions($branchId)->values();
+        $roles        = $user->userRoles->map(fn($ur) => [
+            'role_code'        => $ur->role?->code,
+            'role_name'        => $ur->role?->name,
+            'system_branch_id' => $ur->system_branch_id,
+        ]);
+
         return response()->json([
-            'token' => $token,
-            'user' => $user
+            'token'         => $token,
+            'user'          => $user,
+            'permissions'   => $permissions,
+            'branches'      => $branches,
+            'active_branch' => $activeBranch,
+            'roles'         => $roles,
         ]);
     }
 

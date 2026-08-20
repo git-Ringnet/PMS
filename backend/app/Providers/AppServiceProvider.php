@@ -17,6 +17,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Sử dụng PersonalAccessToken model trên mysql_system để token hợp lệ xuyên suốt các chi nhánh
+        \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
+
         if ($this->app->environment('production') || true) {
             URL::forceScheme('https');
         }
