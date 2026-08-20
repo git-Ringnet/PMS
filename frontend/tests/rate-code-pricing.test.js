@@ -1,7 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { resolveRateCodePrice } from '../src/utils/rate-code-pricing.js'
+import {
+  buildRateCodeDailyPrices,
+  normalizeRateDate,
+  resolveRateCodePrice,
+} from '../src/utils/rate-code-pricing.js'
 
 test('resolves a configured price by room class id', () => {
   const price = resolveRateCodePrice([{
@@ -51,4 +55,38 @@ test('returns null when neither a class price nor fallback exists', () => {
   }], { rateCode: 'BAR', roomClassCode: 'JST', date: '2026-08-20' })
 
   assert.equal(price, null)
+})
+
+test('normalizes UTC rate mappings to the hotel business date', () => {
+  assert.equal(normalizeRateDate('2026-08-09T17:00:00.000000Z'), '2026-08-10')
+})
+
+test('builds a separate configured price for every stay night', () => {
+  const prices = buildRateCodeDailyPrices([{
+    Ma: 'TEST1',
+    rate_plans: [
+      { Code: 'TEST1', Period: { TEST1_SUPD_Double: 1 } },
+      { Code: 'TEST2', Period: { TEST2_SUPD_Double: 11 } },
+    ],
+    daily_mappings: [
+      { Date: '2026-08-08T17:00:00.000000Z', Code: 'TEST1' },
+      { Date: '2026-08-09T17:00:00.000000Z', Code: 'TEST2' },
+      { Date: '2026-08-10T17:00:00.000000Z', Code: 'TEST2' },
+      { Date: '2026-08-11T17:00:00.000000Z', Code: 'TEST1' },
+      { Date: '2026-08-12T17:00:00.000000Z', Code: 'TEST1' },
+    ],
+  }], {
+    rateCode: 'TEST1',
+    roomClassCode: 'SUPD',
+    arrivalDate: '2026-08-09',
+    departureDate: '2026-08-14',
+  })
+
+  assert.deepEqual(prices, {
+    '2026-08-09': 1,
+    '2026-08-10': 11,
+    '2026-08-11': 11,
+    '2026-08-12': 1,
+    '2026-08-13': 1,
+  })
 })

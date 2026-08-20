@@ -16,6 +16,32 @@ function parsePeriod(period) {
   }
 }
 
+export function normalizeRateDate(value) {
+  if (!value) return ''
+
+  const raw = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw.slice(0, 10)
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed)
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function addDays(dateKey, days) {
+  const [year, month, day] = String(dateKey).split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day + days))
+  return date.toISOString().slice(0, 10)
+}
+
 export function resolveRateCodePrice(rateCodes, {
   rateCode,
   roomClassCode,
@@ -33,9 +59,9 @@ export function resolveRateCodePrice(rateCodes, {
   if (!Array.isArray(plans) || plans.length === 0) return fallbackPrice
 
   const mappings = rateCodeData.dailyMappings || rateCodeData.daily_mappings || []
-  const normalizedDate = date ? String(date).slice(0, 10) : ''
+  const normalizedDate = normalizeRateDate(date)
   const mapping = normalizedDate && Array.isArray(mappings)
-    ? mappings.find(item => String(item.Date || '').slice(0, 10) === normalizedDate)
+    ? mappings.find(item => normalizeRateDate(item.Date) === normalizedDate)
     : null
   const activePlanCode = String(mapping?.Code || 'DEFAULT')
 
@@ -73,4 +99,34 @@ export function resolveRateCodePrice(rateCodes, {
   }
 
   return fallbackPrice
+}
+
+export function buildRateCodeDailyPrices(rateCodes, {
+  rateCode,
+  roomClassCode,
+  arrivalDate,
+  departureDate,
+  roomClassId,
+}) {
+  const start = normalizeRateDate(arrivalDate)
+  const end = normalizeRateDate(departureDate)
+  if (!start || !end || start >= end) return {}
+
+  const prices = {}
+  let current = start
+  let guard = 0
+
+  while (current < end && guard < 3660) {
+    const price = resolveRateCodePrice(rateCodes, {
+      rateCode,
+      roomClassCode,
+      date: current,
+      roomClassId,
+    })
+    if (price !== null) prices[current] = price
+    current = addDays(current, 1)
+    guard += 1
+  }
+
+  return prices
 }

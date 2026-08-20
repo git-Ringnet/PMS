@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
-import { resolveRateCodePrice } from '@/utils/rate-code-pricing'
+import { buildRateCodeDailyPrices, resolveRateCodePrice } from '@/utils/rate-code-pricing'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
 import CopyModal from './components/CopyModal.vue'
@@ -1553,6 +1553,7 @@ onMounted(async () => {
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
+    hydrateLoadedRateCodePrices()
     
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
@@ -2158,6 +2159,9 @@ function handleRateCodeChange(row) {
     row.breakfastIncluded = getDefaultBreakfastSetting()
   }
   syncAllocationToRooms(row, { forceRate: true })
+  if (row.rateCode) {
+    applyAllocationRateCodeDailyPrices(row)
+  }
 }
 
 function handleRoomRateCodeChange(room) {
@@ -2185,17 +2189,22 @@ function handleRoomRateCodeChange(room) {
       
       room.breakfast = !!rcObj.IncludeBF
       
-      const roomClass = roomClasses.value.find(item => item.id === Number(room.roomClassId))
-      const price = getRateCodePrice(
-        room.rateCode,
-        room.roomClassCode || roomClass?.code,
-        room.checkIn,
-        room.roomClassId
-      )
-      if (price !== null) {
-        room.price = price
-        room.basePrice = price
-        room.total = calculateRoomTotal(room)
+      const appliedDailyPrices = applyRateCodeDailyPricesToRoom(room)
+      if (!appliedDailyPrices) {
+        const roomClass = roomClasses.value.find(item => item.id === Number(room.roomClassId))
+        const price = getRateCodePrice(
+          room.rateCode,
+          room.roomClassCode || roomClass?.code,
+          room.checkIn,
+          room.roomClassId
+        )
+        if (price !== null) {
+          room.price = price
+          room.basePrice = price
+          room.total = calculateRoomTotal(room)
+          room._preserveAgreedRate = false
+        }
+      } else {
         room._preserveAgreedRate = false
       }
 
@@ -2437,6 +2446,74 @@ function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId) {
     roomClassCode,
     date: dateStr,
     roomClassId,
+  })
+}
+
+function applyRateCodeDailyPricesToRoom(room) {
+  if (!room?.rateCode || room.rateCode === 'Vui lòng chọn giá phòng') return false
+
+  const roomClass = roomClasses.value.find(item => item.id === Number(room.roomClassId))
+  const configuredPrices = buildRateCodeDailyPrices(roomRateCodes.value, {
+    rateCode: room.rateCode,
+    roomClassCode: room.roomClassCode || roomClass?.code,
+    roomClassId: room.roomClassId,
+    arrivalDate: room.checkIn,
+    departureDate: room.checkOut,
+  })
+  const dates = Object.keys(configuredPrices).sort()
+  if (dates.length === 0) return false
+
+  const dailyPrices = {}
+  dates.forEach(date => {
+    const existingRoomCharge = (room.services || []).find(service =>
+      (service.service_code === 'RM' || service.service_code === 'ROOM_CHARGE')
+      && cleanDateStr(service.service_date) === date
+    )
+    const isLocked = existingRoomCharge?.is_posted || !isServiceRateEditable(date)
+
+    if (isLocked) {
+      dailyPrices[date] = room.dailyRoomPrices?.[date]
+        ?? (existingRoomCharge ? Number(existingRoomCharge.rate) || 0 : Number(room.price) || 0)
+      return
+    }
+
+    dailyPrices[date] = configuredPrices[date]
+    if (existingRoomCharge) {
+      existingRoomCharge.rate = configuredPrices[date]
+      existingRoomCharge.total = configuredPrices[date] * Number(existingRoomCharge.quantity || 1)
+    }
+  })
+
+  room.dailyRoomPrices = dailyPrices
+  const representativeDate = dates.find(date => isServiceRateEditable(date)) || dates[0]
+  room.price = Number(dailyPrices[representativeDate]) || 0
+  room.basePrice = room.price
+  room.total = calculateRoomTotal(room)
+  return true
+}
+
+function applyAllocationRateCodeDailyPrices(row) {
+  if (!modalForm.value.rooms) return
+
+  modalForm.value.rooms.forEach(room => {
+    const matchesAllocation = String(room.roomClassId) === String(row.roomClassId)
+      || room.type === row.roomClassName
+      || room.shape === row.roomClassCode
+    if (!matchesAllocation) return
+
+    room.rateCode = row.rateCode
+    applyRateCodeDailyPricesToRoom(room)
+  })
+}
+
+function hydrateLoadedRateCodePrices() {
+  tabs.value.forEach(tab => {
+    const rooms = tab.rooms || []
+    rooms.forEach(room => {
+      if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+        applyRateCodeDailyPricesToRoom(room)
+      }
+    })
   })
 }
 
@@ -2771,6 +2848,10 @@ function updateAllocatedRooms(row) {
       return true
     })
   }
+
+  if (row.rateCode) {
+    applyAllocationRateCodeDailyPrices(row)
+  }
 }
 
 watch(() => modalForm.value.roomAllocations, (newAllocations) => {
@@ -2868,6 +2949,7 @@ async function handleDateChange() {
             return s.service_date < modalForm.value.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
     }
     
@@ -2918,6 +3000,7 @@ async function handleMainDateChange() {
             return s.service_date < tab.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
     }
     handleConfirmDateCalculation()
@@ -2960,6 +3043,7 @@ async function handleMainNightsChange() {
             return s.service_date < tab.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
     }
     await updateRoomAvailability()
@@ -2992,6 +3076,9 @@ async function handleRowDateChange(row) {
       })
     }
     syncAllocationToRooms(row)
+    if (row.rateCode) {
+      applyAllocationRateCodeDailyPrices(row)
+    }
 
     try {
       const res = await checkAvailability({
@@ -3058,6 +3145,7 @@ async function handleRowDateChangeInline(room) {
       
       const diffTime = new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()
       room.nights = Math.max(room.hourly ? 0 : 1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
+      applyRateCodeDailyPricesToRoom(room)
       room.total = calculateRoomTotal(room)
 
       // Đồng bộ ngược lại allocation của tab hiện tại để khi lưu sẽ update đúng
@@ -3083,6 +3171,7 @@ async function handleRowNightsChangeInline(room) {
       const co = new Date(ci)
       co.setDate(ci.getDate() + Number(room.nights))
       room.checkOut = co.toISOString().split('T')[0]
+      applyRateCodeDailyPricesToRoom(room)
       room.total = calculateRoomTotal(room)
 
       // Đồng bộ ngược lại allocation của tab hiện tại
@@ -4568,6 +4657,11 @@ async function openBookingModalByCode(bookingCode) {
         const bItem = list.find(b => String(b.booking_code) === String(bookingCode) || String(b.id) === String(bookingCode)) || list[0]
         removeClosedTabId(bItem.id)
         const tabObj = bookingToTab(bItem)
+        tabObj.rooms.forEach(room => {
+          if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+            applyRateCodeDailyPricesToRoom(room)
+          }
+        })
         const existingIdx = tabs.value.findIndex(t => t.id === tabObj.id)
         if (existingIdx > -1) {
           tabs.value[existingIdx] = tabObj

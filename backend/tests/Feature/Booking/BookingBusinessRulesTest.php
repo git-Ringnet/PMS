@@ -939,6 +939,72 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertEquals(700000, $room2->rate);
     }
 
+    public function test_booking_create_persists_rate_code_prices_for_each_stay_night(): void
+    {
+        $response = $this->postJson('/api/bookings', [
+            'booking_name' => 'Daily rate code prices',
+            'arrival_date' => '2026-08-09',
+            'departure_date' => '2026-08-14',
+            'num_of_days' => 5,
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'price' => 1,
+                'basePrice' => 1,
+                'rateCode' => 'TEST1',
+                'rooms' => [[
+                    'roomNumber' => null,
+                    'guestName' => 'Daily Rate Guest',
+                    'arrivalDate' => '2026-08-09',
+                    'departureDate' => '2026-08-14',
+                    'price' => 1,
+                    'basePrice' => 1,
+                    'rateCode' => 'TEST1',
+                    'dailyRoomPrices' => [
+                        '2026-08-09' => 1,
+                        '2026-08-10' => 11,
+                        '2026-08-11' => 11,
+                        '2026-08-12' => 1,
+                        '2026-08-13' => 1,
+                    ],
+                ]],
+            ]],
+        ]);
+
+        $response->assertSuccessful();
+        $room = BookingRoom::latest('created_at')->firstOrFail();
+
+        $this->assertEquals('TEST1', $room->rate_code);
+        $this->assertEquals(1, $room->rate);
+        $this->assertDatabaseCount('booking_room_services', 5);
+
+        foreach ([
+            '2026-08-09' => 1,
+            '2026-08-10' => 11,
+            '2026-08-11' => 11,
+            '2026-08-12' => 1,
+            '2026-08-13' => 1,
+        ] as $date => $rate) {
+            $this->assertDatabaseHas('booking_room_services', [
+                'booking_room_id' => $room->id,
+                'service_code' => BookingRoomService::CODE_ROOM,
+                'service_date' => $date . ' 00:00:00',
+                'rate' => $rate,
+                'is_posted' => 0,
+            ]);
+        }
+
+        $this->assertDatabaseMissing('booking_room_services', [
+            'booking_room_id' => $room->id,
+            'service_code' => BookingRoomService::CODE_ROOM,
+            'service_date' => '2026-08-14 00:00:00',
+        ]);
+    }
+
     public function test_master_room_rate_flag_does_not_move_existing_room_charge_bills(): void
     {
         $booking = $this->createBooking([

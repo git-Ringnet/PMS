@@ -422,14 +422,16 @@ class BookingController extends Controller
                                 'departure_date' => $roomDeparture,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
-                                'rate' => $alloc['price'] ?? 0,
-                                'rate_code' => $alloc['rateCode'] ?? null,
-                                'breakfast' => !empty($alloc['breakfastIncluded']),
+                                'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
+                                'rate_code' => array_key_exists('rateCode', $detail)
+                                    ? (filled($detail['rateCode']) ? $detail['rateCode'] : null)
+                                    : ($alloc['rateCode'] ?? null),
+                                'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
                                 'discount' => $alloc['discount'] ?? null,
                                 'discount_type' => $alloc['discountType'] ?? null,
                                 'discount_value' => $alloc['discountValue'] ?? 0,
                                 'discount_unit' => $alloc['discountUnit'] ?? null,
-                                'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
+                                'base_price' => $detail['basePrice'] ?? $alloc['basePrice'] ?? $detail['price'] ?? $alloc['price'] ?? 0,
                                 'adults' => $detail['adults'] ?? 2,
                                 'babies' => $detail['babies'] ?? 0,
                                 'children_qty' => $detail['children'] ?? 0,
@@ -437,6 +439,7 @@ class BookingController extends Controller
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
                             ]);
+                            $this->upsertRoomChargeServices($bRoom, $detail);
                             // Thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
                             if (empty($roomGuestName)) {
