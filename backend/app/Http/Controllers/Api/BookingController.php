@@ -892,7 +892,9 @@ class BookingController extends Controller
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
-                                'rate_code' => $detail['rateCode'] ?? $alloc['rateCode'] ?? null,
+                                'rate_code' => array_key_exists('rateCode', $detail)
+                                    ? (filled($detail['rateCode']) ? $detail['rateCode'] : null)
+                                    : ($alloc['rateCode'] ?? null),
                                 'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
                                 'is_day_use' => filter_var($detail['hourly'] ?? false, FILTER_VALIDATE_BOOLEAN),
                                 'discount' => $detail['discount'] ?? $alloc['discount'] ?? null,

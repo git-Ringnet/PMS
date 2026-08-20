@@ -858,6 +858,87 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertEquals('2026-08-21', $bRoom->arrival_date->toDateString());
     }
 
+    public function test_booking_update_can_clear_one_room_rate_code_without_affecting_sibling_room(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+        ]);
+        $room1 = BookingRoom::create([
+            'id' => 'G-RATE-01',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'rate' => 900000,
+            'base_price' => 900000,
+            'rate_code' => 'BAR',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $room2 = BookingRoom::create([
+            'id' => 'G-RATE-02',
+            'booking_id' => $booking->id,
+            'room_number' => '102',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'rate' => 700000,
+            'base_price' => 700000,
+            'rate_code' => 'CORP',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $response = $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => 'Clear one room rate code',
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'price' => 900000,
+                'basePrice' => 900000,
+                'rateCode' => 'BAR',
+                'rooms' => [
+                    [
+                        'bookingRoomId' => $room1->id,
+                        'roomNumber' => '101',
+                        'arrivalDate' => '2026-08-21',
+                        'departureDate' => '2026-08-25',
+                        'price' => 500000,
+                        'basePrice' => 500000,
+                        'rateCode' => null,
+                    ],
+                    [
+                        'bookingRoomId' => $room2->id,
+                        'roomNumber' => '102',
+                        'arrivalDate' => '2026-08-21',
+                        'departureDate' => '2026-08-25',
+                        'price' => 700000,
+                        'basePrice' => 700000,
+                        'rateCode' => 'CORP',
+                    ],
+                ],
+            ]],
+        ]);
+
+        $response->assertSuccessful();
+        $room1->refresh();
+        $room2->refresh();
+
+        $this->assertNull($room1->rate_code);
+        $this->assertEquals(500000, $room1->rate);
+        $this->assertEquals(500000, $room1->base_price);
+        $this->assertEquals('CORP', $room2->rate_code);
+        $this->assertEquals(700000, $room2->rate);
+    }
+
     public function test_master_room_rate_flag_does_not_move_existing_room_charge_bills(): void
     {
         $booking = $this->createBooking([

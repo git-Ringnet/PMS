@@ -3,6 +3,7 @@ import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { normalizeRateMatrix } from '@/utils/rate-matrix'
 
 const uiStore = useUiStore()
 
@@ -84,10 +85,9 @@ const fetchSystemDate = async () => {
   }
 }
 
-onMounted(() => {
-  fetchRoomData()
-  fetchSystemDate()
-  fetchRateCodes()
+onMounted(async () => {
+  await Promise.all([fetchRoomData(), fetchSystemDate()])
+  await fetchRateCodes()
 })
 
 // Selected Rate Code Form Fields
@@ -288,12 +288,9 @@ const selectModalPlan = async (plan) => {
   if (plan.Period) {
     try {
       const parsed = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period;
-      for (const k in parsed) {
-        let newKey = k;
-        if (k.startsWith(selectedRateCode.value.Ma + '_')) {
-          newKey = plan.Code + '_' + k.substring(selectedRateCode.value.Ma.length + 1);
-        }
-        modalRateMatrix[newKey] = parsed[k];
+      const normalized = normalizeRateMatrix(parsed, plan.Code, roomTypes.value, occupanciesList.value);
+      for (const key in normalized) {
+        modalRateMatrix[key] = normalized[key];
       }
     } catch (e) { }
   }
@@ -332,9 +329,15 @@ const saveModalPlan = async () => {
   }
 
   try {
+    const normalizedPeriod = normalizeRateMatrix(
+      modalRateMatrix,
+      modalFormState.Code,
+      roomTypes.value,
+      occupanciesList.value
+    );
     const res = await http.post(`/room-rate-codes/${selectedRateCode.value.Ma}/plans`, {
       ...modalFormState,
-      Period: modalRateMatrix
+      Period: normalizedPeriod
     });
     if (res.status === 200 || res.status === 201) {
       uiStore.showToast('Lưu loại giá thành công!', 'success');
@@ -389,12 +392,9 @@ const loadRateMatrixFromPlans = (rateCodeMa, plans) => {
     if (!plan.Period) return;
     try {
       const parsed = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period;
-      for (const k in parsed) {
-        let newKey = k;
-        if (k.startsWith(rateCodeMa + '_')) {
-          newKey = plan.Code + '_' + k.substring(rateCodeMa.length + 1);
-        }
-        rateMatrix[newKey] = parsed[k];
+      const normalized = normalizeRateMatrix(parsed, plan.Code, roomTypes.value, occupanciesList.value);
+      for (const key in normalized) {
+        rateMatrix[key] = normalized[key];
       }
     } catch (e) { }
   });
@@ -794,9 +794,15 @@ const handleSave = async () => {
     if (res.status === 200 || res.status === 201) {
       // Save Matrix
       if (!rateFormState.IsDaily) {
+        const normalizedDefaultMatrix = normalizeRateMatrix(
+          rateMatrix,
+          'DEFAULT',
+          roomTypes.value,
+          occupanciesList.value
+        );
         await http.post(`/room-rate-codes/${savedMa}/plans`, {
           Code: 'DEFAULT',
-          Period: rateMatrix
+          Period: normalizedDefaultMatrix
         });
         await http.post(`/room-rate-codes/${savedMa}/daily-mappings`, {
           mappings: []
