@@ -793,7 +793,14 @@ class GuestController extends Controller
             'occupation'        => 'nullable|string|max:200',
             'note'              => 'nullable|string',
             'avatar'            => 'nullable|string|max:255',
-            'rate_code'         => 'nullable|string|max:100',
+            'arrival_date'      => 'nullable|date',
+            'arrival_time'      => 'nullable|date_format:H:i',
+            'departure_date'    => 'nullable|date',
+            'departure_time'    => 'nullable|date_format:H:i',
+            'rate'              => 'nullable|numeric|min:0',
+            'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'extra_bed_qty'     => 'nullable|integer|min:0',
+            'extra_bed_rate'    => 'nullable|numeric|min:0',
         ]);
 
         $guest->update($request->only([
@@ -819,25 +826,30 @@ class GuestController extends Controller
         // Cập nhật các trường thông tin lưu trú của BookingRoom lên MySQL CSDL
         $room = BookingRoom::find($roomId);
         if ($room) {
-            $roomData = [];
-            if ($request->has('arrival_date'))   $roomData['arrival_date']   = $request->arrival_date;
-            if ($request->has('departure_date')) $roomData['departure_date'] = $request->departure_date;
-            if ($request->has('arrival_time'))   $roomData['arrival_time']   = $request->arrival_time;
-            if ($request->has('departure_time')) $roomData['departure_time'] = $request->departure_time;
-            if ($request->has('rate'))           $roomData['rate']           = $request->rate;
-            if ($request->has('rate_code'))     $roomData['rate_code']     = filled($request->rate_code) ? trim($request->rate_code) : null;
-            if ($request->has('extra_bed_qty'))  $roomData['extra_bed_qty']  = $request->extra_bed_qty;
-            if ($request->has('extra_bed_rate')) $roomData['extra_bed_rate'] = $request->extra_bed_rate;
-            if (!empty($roomData)) {
-                $room->update($roomData);
-            }
-
-            if ($request->has('rate_code')) {
-                $this->syncRateCodeRoomCharges($room->fresh(), $request->has('rate') ? (float) $request->rate : null);
-            }
+            $this->updateBookingRoomFromGuestRequest($request, $room);
         }
 
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
+    }
+
+    private function updateBookingRoomFromGuestRequest(Request $request, BookingRoom $room): void
+    {
+        $roomData = [];
+        if ($request->has('arrival_date'))   $roomData['arrival_date']   = $request->arrival_date;
+        if ($request->has('departure_date')) $roomData['departure_date'] = $request->departure_date;
+        if ($request->has('arrival_time'))   $roomData['arrival_time']   = $request->arrival_time;
+        if ($request->has('departure_time')) $roomData['departure_time'] = $request->departure_time;
+        if ($request->has('rate'))           $roomData['rate']           = $request->rate;
+        if ($request->has('rate_code'))      $roomData['rate_code']      = filled($request->rate_code) ? trim($request->rate_code) : null;
+        if ($request->has('extra_bed_qty'))  $roomData['extra_bed_qty']  = $request->extra_bed_qty;
+        if ($request->has('extra_bed_rate')) $roomData['extra_bed_rate'] = $request->extra_bed_rate;
+
+        DB::transaction(function () use ($request, $room, $roomData) {
+            if ($roomData) $room->update($roomData);
+            if ($request->has('rate_code')) {
+                $this->syncRateCodeRoomCharges($room->fresh(), $request->has('rate') ? (float) $request->rate : null);
+            }
+        });
     }
 
     private function syncRateCodeRoomCharges(BookingRoom $room, ?float $fallbackRate = null): void
@@ -850,13 +862,17 @@ class GuestController extends Controller
 
         $rateCode = $room->rate_code ? RoomRateCode::with(['ratePlans', 'dailyMappings'])->find($room->rate_code) : null;
         $standardRate = !$rateCode && $room->room_class_id
-            ? (float) (StandardRate::where('room_class_id', $room->room_class_id)->value('room_price') ?? 0)
+            ? (float) (StandardRate::where('room_class_id', $room->room_class_id)
+                ->when($room->RoomKind, fn ($query) => $query->where('room_form_id', $room->RoomKind))
+                ->value('room_price') ?? 0)
             : 0;
         $firstRate = null;
+        $room->loadMissing('roomClass');
+        $roomForm = $room->RoomKind ? \App\Models\RoomForm::find($room->RoomKind)?->name : null;
 
         for ($date = $start->copy(); $date->lt($departure); $date->addDay()) {
-            $rate = $this->resolveRateCodePrice($rateCode, $room->room_class_id, $date) ?: ($standardRate ?: (float) ($fallbackRate ?? 0));
-            if ($rate <= 0) continue;
+            $resolvedRate = $this->resolveRateCodePrice($rateCode, $room->room_class_id, $room->roomClass?->code, $roomForm, $date);
+            $rate = $rateCode ? $resolvedRate : ($standardRate ?: (float) ($fallbackRate ?? 0));
             $firstRate ??= $rate;
 
             $service = BookingRoomService::withTrashed()
@@ -884,18 +900,26 @@ class GuestController extends Controller
         if ($firstRate !== null) $room->update(['rate' => $firstRate]);
     }
 
-    private function resolveRateCodePrice(?RoomRateCode $rateCode, $roomClassId, Carbon $date): float
+    private function resolveRateCodePrice(?RoomRateCode $rateCode, $roomClassId, ?string $roomClassCode, ?string $roomForm, Carbon $date): float
     {
         if (!$rateCode) return 0;
-        $mapping = $rateCode->dailyMappings->first(fn ($item) => Carbon::parse($item->Date)->toDateString() === $date->toDateString());
-        $plan = $mapping ? $rateCode->ratePlans->firstWhere('Code', $mapping->Code) : $rateCode->ratePlans->first();
+        $mapping = $rateCode->IsDaily
+            ? $rateCode->dailyMappings->first(fn ($item) => Carbon::parse($item->Date)->toDateString() === $date->toDateString())
+            : null;
+        if ($rateCode->IsDaily && !$mapping) return 0;
+        $plan = $rateCode->IsDaily
+            ? $rateCode->ratePlans->firstWhere('Code', $mapping->Code)
+            : ($rateCode->ratePlans->firstWhere('Code', 'DEFAULT') ?? $rateCode->ratePlans->first());
         if (!$plan) return 0;
         $period = is_string($plan->Period) ? json_decode($plan->Period, true) : $plan->Period;
         if (!is_array($period)) return 0;
-        $idPrice = $period[(string) $roomClassId] ?? null;
-        if (is_numeric($idPrice)) return (float) $idPrice;
-        foreach ($period as $key => $value) {
-            if (str_contains((string) $key, '_' . (string) $roomClassId . '_') && is_numeric($value)) return (float) $value;
+        if (!$roomClassCode || !$roomForm) return 0;
+        $planCode = (string) ($plan->Code ?: 'DEFAULT');
+        foreach ([
+            $planCode . '_' . $roomClassCode . '_' . $roomForm,
+            $rateCode->Ma . '_' . $roomClassCode . '_' . $roomForm,
+        ] as $key) {
+            if (array_key_exists($key, $period) && is_numeric($period[$key])) return (float) $period[$key];
         }
         return 0;
     }
@@ -1009,9 +1033,22 @@ class GuestController extends Controller
             'dob'              => 'nullable|date',
             'nationality_code' => 'nullable|string|max:5',
             'age_group'        => 'nullable|in:baby,child',
+            'arrival_date'     => 'nullable|date',
+            'arrival_time'     => 'nullable|date_format:H:i',
+            'departure_date'   => 'nullable|date',
+            'departure_time'   => 'nullable|date_format:H:i',
+            'rate'             => 'nullable|numeric|min:0',
+            'rate_code'        => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'extra_bed_qty'    => 'nullable|integer|min:0',
+            'extra_bed_rate'   => 'nullable|numeric|min:0',
         ]);
 
         $child->update($request->only(['full_name', 'title', 'dob', 'nationality_code', 'age_group']));
+
+        if ($child->booking_room_id) {
+            $room = BookingRoom::find($child->booking_room_id);
+            if ($room) $this->updateBookingRoomFromGuestRequest($request, $room);
+        }
 
         return response()->json(['success' => true, 'data' => $child, 'message' => 'Cập nhật thông tin trẻ em thành công.']);
     }

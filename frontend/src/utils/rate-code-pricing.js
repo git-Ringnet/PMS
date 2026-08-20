@@ -45,6 +45,7 @@ function addDays(dateKey, days) {
 export function resolveRateCodePrice(rateCodes, {
   rateCode,
   roomClassCode,
+  roomForm,
   date,
   roomClassId,
 }) {
@@ -60,10 +61,17 @@ export function resolveRateCodePrice(rateCodes, {
 
   const mappings = rateCodeData.dailyMappings || rateCodeData.daily_mappings || []
   const normalizedDate = normalizeRateDate(date)
-  const mapping = normalizedDate && Array.isArray(mappings)
+  const hasExplicitDailyFlag = rateCodeData.IsDaily !== undefined && rateCodeData.IsDaily !== null
+  const isDaily = hasExplicitDailyFlag
+    ? rateCodeData.IsDaily === true || rateCodeData.IsDaily === 1 || rateCodeData.IsDaily === '1'
+    : Array.isArray(mappings) && mappings.length > 0
+  const mapping = isDaily && normalizedDate && Array.isArray(mappings)
     ? mappings.find(item => normalizeRateDate(item.Date) === normalizedDate)
     : null
-  const activePlanCode = String(mapping?.Code || 'DEFAULT')
+  if (isDaily && !mapping) {
+    return roomClassId !== undefined && roomClassId !== null && roomClassId !== '' ? 0 : fallbackPrice
+  }
+  const activePlanCode = String(isDaily ? mapping.Code : 'DEFAULT')
 
   const plan = plans.find(item => String(item.Code) === activePlanCode)
     || plans.find(item => String(item.Code) === 'DEFAULT')
@@ -71,24 +79,29 @@ export function resolveRateCodePrice(rateCodes, {
   const period = parsePeriod(plan?.Period)
   if (!period || typeof period !== 'object') return fallbackPrice
 
-  if (roomClassId !== undefined && roomClassId !== null && roomClassId !== '') {
+  const normalizedRoomClassCode = String(roomClassCode || '').trim()
+  const normalizedRoomForm = String(roomForm || '').trim()
+
+  if (!normalizedRoomForm && roomClassId !== undefined && roomClassId !== null && roomClassId !== '') {
     const idPrice = toPrice(period[String(roomClassId)])
     if (idPrice !== null) return idPrice
   }
 
-  const normalizedRoomClassCode = String(roomClassCode || '').trim()
-  if (normalizedRoomClassCode) {
+  if (normalizedRoomClassCode && normalizedRoomForm) {
     const planCode = String(plan?.Code || 'DEFAULT')
-    const preferredKeys = [
-      `${planCode}_${normalizedRoomClassCode}_Double`,
-      `${normalizedRateCode}_${normalizedRoomClassCode}_Double`,
+    const exactKeys = [
+      `${planCode}_${normalizedRoomClassCode}_${normalizedRoomForm}`,
+      `${normalizedRateCode}_${normalizedRoomClassCode}_${normalizedRoomForm}`,
     ]
-
-    for (const key of preferredKeys) {
+    for (const key of exactKeys) {
       const price = toPrice(period[key])
       if (price !== null) return price
     }
+    return 0
+  }
 
+  if (normalizedRoomClassCode) {
+    const planCode = String(plan?.Code || 'DEFAULT')
     const compatibleKey = Object.keys(period).find(key =>
       key.startsWith(`${planCode}_${normalizedRoomClassCode}_`)
       || key.startsWith(`${normalizedRateCode}_${normalizedRoomClassCode}_`)
@@ -104,6 +117,7 @@ export function resolveRateCodePrice(rateCodes, {
 export function buildRateCodeDailyPrices(rateCodes, {
   rateCode,
   roomClassCode,
+  roomForm,
   arrivalDate,
   departureDate,
   roomClassId,
@@ -120,6 +134,7 @@ export function buildRateCodeDailyPrices(rateCodes, {
     const price = resolveRateCodePrice(rateCodes, {
       rateCode,
       roomClassCode,
+      roomForm,
       date: current,
       roomClassId,
     })

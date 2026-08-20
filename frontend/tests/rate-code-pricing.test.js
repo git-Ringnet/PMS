@@ -48,6 +48,62 @@ test('supports legacy keys prefixed by the rate code', () => {
   assert.equal(price, 1100000)
 })
 
+test('uses the exact room form price for a room class', () => {
+  const price = resolveRateCodePrice([{
+    Ma: 'test',
+    rate_plans: [{
+      Code: 'tt',
+      Period: { tt_FAM_Family: 1, tt_FAM_Triple: 1000000 },
+    }],
+    daily_mappings: [{ Date: '2026-08-09', Code: 'tt' }],
+  }], {
+    rateCode: 'test',
+    roomClassId: 8,
+    roomClassCode: 'FAM',
+    roomForm: 'Family',
+    date: '2026-08-09',
+  })
+
+  assert.equal(price, 1)
+})
+
+test('uses DEFAULT and ignores daily mappings when IsDaily is disabled', () => {
+  const price = resolveRateCodePrice([{
+    Ma: 'BAR',
+    IsDaily: false,
+    rate_plans: [
+      { Code: 'DEFAULT', Period: { DEFAULT_FAM_Family: 321000 } },
+      { Code: 'WEEKEND', Period: { WEEKEND_FAM_Family: 999000 } },
+    ],
+    daily_mappings: [{ Date: '2026-08-09', Code: 'WEEKEND' }],
+  }], {
+    rateCode: 'BAR',
+    roomClassId: 8,
+    roomClassCode: 'FAM',
+    roomForm: 'Family',
+    date: '2026-08-09',
+  })
+
+  assert.equal(price, 321000)
+})
+
+test('returns zero for an unmapped date when IsDaily is enabled', () => {
+  const price = resolveRateCodePrice([{
+    Ma: 'DAILY',
+    IsDaily: true,
+    rate_plans: [{ Code: 'DEFAULT', Period: { DEFAULT_FAM_Family: 321000 } }],
+    daily_mappings: [],
+  }], {
+    rateCode: 'DAILY',
+    roomClassId: 8,
+    roomClassCode: 'FAM',
+    roomForm: 'Family',
+    date: '2026-08-09',
+  })
+
+  assert.equal(price, 0)
+})
+
 test('returns null when neither a class price nor fallback exists', () => {
   const price = resolveRateCodePrice([{
     Ma: 'BAR',

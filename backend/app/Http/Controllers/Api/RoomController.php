@@ -30,7 +30,7 @@ class RoomController extends Controller
             'date' => 'nullable|date',
         ]);
 
-        $query = Room::with(['roomForm', 'roomClass', 'activeLock', 'allActiveLocks'])
+        $query = Room::with(['roomForm', 'roomClass.standardRates.roomForm', 'activeLock', 'allActiveLocks'])
             ->orderBy('orders', 'asc')
             ->orderBy('room_number', 'asc');
 
@@ -87,6 +87,7 @@ class RoomController extends Controller
                 'booking.company',
                 'booking.registrationStatus',
                 'booking.paymentMethod',
+                'roomClass.standardRates.roomForm',
                 'guests.guest',
                 'children',
                 'services' => fn($q) => $q->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
@@ -149,6 +150,8 @@ class RoomController extends Controller
                 $room->arrival_time = $br->arrival_time ?? '14:00';
                 $room->rate = $br->rate ?? 0;
                 $room->rate_code = $br->rate_code ?? null;
+                $room->standard_rate = (float) ($br->roomClass?->standardRates
+                    ?->firstWhere('room_form_id', (int) $br->RoomKind)?->room_price ?? 0);
                 $room->booking_note = $br->booking?->note ?? '';
                 $room->special_requests = $br->booking?->special_requests ?? '';
                 $room->special_request_types = $br->specialRequests

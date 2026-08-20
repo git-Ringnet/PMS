@@ -36,7 +36,6 @@ import {
   fetchRegistrationStatuses,
   fetchBookingInitDropdowns,
   fetchRoomClasses,
-  fetchRoomRateCodes,
   fetchHotelSettings,
   fetchSystemTime,
   fetchSystemDate,
@@ -1633,6 +1632,20 @@ async function loadDropdowns() {
   }
 }
 
+async function refreshRoomRateCodes() {
+  try {
+    const res = await http.get('/room-rate-codes', {
+      params: { _refresh: Date.now() },
+    })
+    roomRateCodes.value = res.data?.data || res.data || []
+    return true
+  } catch (err) {
+    console.error('Không thể tải lại Rate Code:', err)
+    uiStore.showToast('Không thể tải lại dữ liệu Mã giá phòng.', 'error')
+    return false
+  }
+}
+
 async function loadBookings() {
   isLoadingBookings.value = true
   try {
@@ -2017,6 +2030,23 @@ function getDefaultBreakfastSetting() {
   return true
 }
 
+function resolveRoomFormName(roomClassId, fallback = '') {
+  const fallbackValue = String(fallback || '').trim()
+  const matchedFallback = fallbackValue
+    ? roomForms.value.find(form =>
+      String(form.name || '').toLowerCase() === fallbackValue.toLowerCase()
+      || (form.code && String(form.code).toLowerCase() === fallbackValue.toLowerCase())
+    )
+    : null
+  if (matchedFallback?.name) return matchedFallback.name
+
+  const roomClass = roomClasses.value.find(item => Number(item.id) === Number(roomClassId))
+  if (!roomClass) return fallbackValue
+
+  const matchedForm = roomForms.value.find(form => Number(form.id) === Number(roomClass.room_form_id))
+  return roomClass.room_form_name || matchedForm?.name || fallbackValue
+}
+
 function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
   const isBreakfastChecked = getDefaultBreakfastSetting()
 
@@ -2036,6 +2066,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
         roomClassId: rc.id,
         roomClassCode: rc.code,
         roomClassName: rc.name,
+        shape: resolveRoomFormName(rc.id, found.shape),
         arrivalDate: found.arrivalDate || checkInDate,
         departureDate: found.departureDate || checkOutDate,
         availableRooms: found.availableRooms !== undefined ? found.availableRooms : defaultAvail,
@@ -2061,6 +2092,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
       roomClassId: rc.id,
       roomClassCode: rc.code,
       roomClassName: rc.name,
+      shape: resolveRoomFormName(rc.id),
       arrivalDate: checkInDate,
       departureDate: checkOutDate,
       availableRooms: defaultAvail,
@@ -2115,10 +2147,15 @@ function syncRoomToAllocation(room) {
   }
 }
 
-function handleRateCodeChange(row) {
+async function handleRateCodeChange(row, selectedValue = row?.rateCode) {
   if (!row) return
-  if (row.rateCode) {
-    const rcObj = roomRateCodes.value.find(rc => rc.Ma === row.rateCode)
+  const selectedRateCode = String(selectedValue || '').trim()
+  row.rateCode = selectedRateCode
+  if (selectedRateCode) {
+    await refreshRoomRateCodes()
+    row.rateCode = selectedRateCode
+    row.shape = resolveRoomFormName(row.roomClassId, row.shape)
+    const rcObj = roomRateCodes.value.find(rc => String(rc.Ma || '').trim() === selectedRateCode)
     if (rcObj) {
       // 1. Check expiration dates
       if (rcObj.BeginDate || rcObj.EndDate) {
@@ -2142,7 +2179,13 @@ function handleRateCodeChange(row) {
 
       row.breakfastIncluded = !!rcObj.IncludeBF
       
-      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId)
+      const price = resolveRateCodePrice([rcObj], {
+        rateCode: selectedRateCode,
+        roomClassCode: row.roomClassCode,
+        roomForm: row.shape,
+        date: row.arrivalDate,
+        roomClassId: row.roomClassId,
+      })
       if (price !== null) {
         row.price = price
         row.basePrice = price
@@ -2164,8 +2207,10 @@ function handleRateCodeChange(row) {
   }
 }
 
-function handleRoomRateCodeChange(room) {
+async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
+  room.rateCode = String(selectedValue || '').trim()
   if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+    await refreshRoomRateCodes()
     const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
     if (rcObj) {
       // Check expiration dates
@@ -2196,7 +2241,8 @@ function handleRoomRateCodeChange(room) {
           room.rateCode,
           room.roomClassCode || roomClass?.code,
           room.checkIn,
-          room.roomClassId
+          room.roomClassId,
+          resolveRoomFormName(room.roomClassId, room.shape)
         )
         if (price !== null) {
           room.price = price
@@ -2440,10 +2486,11 @@ function getOccupancyCount(row) {
   ).length
 }
 
-function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId) {
+function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId, roomForm = '') {
   return resolveRateCodePrice(roomRateCodes.value, {
     rateCode: rateCodeMa,
     roomClassCode,
+    roomForm,
     date: dateStr,
     roomClassId,
   })
@@ -2456,6 +2503,7 @@ function applyRateCodeDailyPricesToRoom(room) {
   const configuredPrices = buildRateCodeDailyPrices(roomRateCodes.value, {
     rateCode: room.rateCode,
     roomClassCode: room.roomClassCode || roomClass?.code,
+    roomForm: resolveRoomFormName(room.roomClassId, room.shape),
     roomClassId: room.roomClassId,
     arrivalDate: room.checkIn,
     departureDate: room.checkOut,
@@ -2518,6 +2566,7 @@ function hydrateLoadedRateCodePrices() {
 }
 
 async function handleAddTabClick() {
+  await refreshRoomRateCodes()
   isEditModal.value = false
   modalPos.value = { x: 0, y: 0 }
   isColorChanged.value = false
@@ -2548,6 +2597,7 @@ async function handleAddTabClick() {
 }
 
 async function openEditModal() {
+  await refreshRoomRateCodes()
   const tab = activeTab.value
   if (!tab) return
   modalPos.value = { x: 0, y: 0 }
@@ -2587,6 +2637,7 @@ async function openEditModal() {
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])).map(r => ({
       ...r,
+      shape: resolveRoomFormName(r.roomClassId, r.shape),
       initialType: r.initialType || r.type,
       initialRoomClassId: r.initialRoomClassId || r.roomClassId
     })),
@@ -2806,7 +2857,7 @@ function updateAllocatedRooms(row) {
         roomClassName: row.roomClassName,
         type: row.roomClassName,
         initialType: row.roomClassName,
-        shape: row.roomClassCode,
+        shape: resolveRoomFormName(row.roomClassId, row.shape),
         roomNumber: '',
         checkIn: row.arrivalDate || modalForm.value.checkIn,
         checkOut: row.departureDate || modalForm.value.checkOut,
@@ -3058,7 +3109,7 @@ async function handleRowDateChange(row) {
     row.nights = diff > 0 ? diff : 1
     
     if (row.rateCode) {
-      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId)
+      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId, resolveRoomFormName(row.roomClassId, row.shape))
       if (price !== null) {
         row.price = price
         row.basePrice = price
@@ -3270,7 +3321,7 @@ function handleRoomClassChange(room, oldClassId) {
     room.type = newClass.name
     room.roomClassName = newClass.name
     room.roomClassCode = newClass.code
-    room.shape = newClass.room_form_name || newClass.code
+    room.shape = resolveRoomFormName(newClass.id, newClass.room_form_name || newClass.code)
     room.roomNumber = '' // reset số phòng cũ
     room._preserveAgreedRate = true
   }
@@ -3285,6 +3336,7 @@ function handleRoomClassChange(room, oldClassId) {
       roomClassId: newClass.id,
       roomClassCode: newClass.code,
       roomClassName: newClass.name,
+      shape: resolveRoomFormName(newClass.id, newClass.room_form_name),
       arrivalDate: room.checkIn || tab.checkIn,
       departureDate: room.checkOut || tab.checkOut,
       quantity: 0,
@@ -4644,6 +4696,7 @@ async function handleServicesSaved() {
 
 async function openBookingModalByCode(bookingCode) {
   if (!bookingCode) return
+  await refreshRoomRateCodes()
   let foundTab = tabs.value.find(t => String(t.id) === String(bookingCode) || String(t.dbId) === String(bookingCode))
   
   if (foundTab) {
@@ -5136,7 +5189,7 @@ defineExpose({
                           <select 
                             v-if="isEditing" 
                             v-model="room.rateCode" 
-                            @change="handleRoomRateCodeChange(room)"
+                            @change="handleRoomRateCodeChange(room, $event.target.value)"
                             class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] w-full font-semibold focus:outline-none truncate"
                           >
                             <option value="">Chọn giá phòng</option>
@@ -5705,7 +5758,7 @@ defineExpose({
                                   <select 
                                     v-if="isEditing" 
                                     v-model="room.rateCode" 
-                                    @change="handleRoomRateCodeChange(room)"
+                                    @change="handleRoomRateCodeChange(room, $event.target.value)"
                                     class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] w-full font-semibold focus:outline-none truncate"
                                   >
                                     <option value="">Chọn giá phòng</option>
@@ -7109,7 +7162,7 @@ defineExpose({
                       <td v-if="visibleColumns.rateCode" class="py-2 px-2">
                         <select 
                           v-model="row.rateCode" 
-                          @change="handleRateCodeChange(row)"
+                          @change="handleRateCodeChange(row, $event.target.value)"
                           class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm bg-white text-[11px]"
                         >
                           <option value="">— Chọn giá phòng —</option>

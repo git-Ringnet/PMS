@@ -227,7 +227,7 @@
               <label class="text-[11px] font-bold text-slate-600">Mã giá phòng</label>
               <select
                 v-model="selectedRateCode"
-                @change="onRateCodeChange"
+                @change="onRateCodeChange($event.target.value)"
                 class="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-800 text-xs focus:outline-none focus:ring-1 focus:ring-sky-400 truncate"
               >
                 <option value="">Vui lòng chọn giá phòng</option>
@@ -594,7 +594,17 @@ function onRoomKindChange() {
   }
 }
 
-function onRateCodeChange() {
+function onRateCodeChange(selectedValue = selectedRateCode.value) {
+  selectedRateCode.value = String(selectedValue || '')
+  if (!selectedRateCode.value) {
+    onRoomKindChange()
+    if (!roomRate.value) {
+      const roomClass = roomClasses.value.find(c => c.id === selectedRoomClassId.value)
+      roomRate.value = Number(roomClass?.room_price || 0)
+    }
+    return
+  }
+
   const rc = rateCodesList.value.find(c => (c.Ma || c.id) === selectedRateCode.value)
   if (rc) {
     const price = resolveRateCodePrice(rateCodesList.value, {
@@ -602,6 +612,7 @@ function onRateCodeChange() {
       date: arrivalDate.value,
       roomClassId: selectedRoomClassId.value,
       roomClassCode: roomClasses.value.find(c => c.id === selectedRoomClassId.value)?.code,
+      roomForm: selectedRoomKind.value,
     })
     if (price !== null) roomRate.value = Number(price) || 0
   }

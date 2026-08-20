@@ -77,6 +77,7 @@ class RoomResource extends JsonResource
             'arrival_time' => $this->arrival_time,
             'rate' => $this->rate,
             'rate_code' => $this->rate_code,
+            'standard_rate' => (float) ($this->standard_rate ?? 0),
             'booking_note' => $this->booking_note,
             'special_requests' => $this->special_requests,
             'special_request_types' => $this->special_request_types ?? [],

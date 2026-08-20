@@ -150,18 +150,28 @@ async function loadRateCodes() {
   }
 }
 
-function onRateCodeChange() {
+function onRateCodeChange(selectedValue = pricingInfo.value.rate_code) {
+  pricingInfo.value.rate_code = String(selectedValue || '')
   const selectedCode = pricingInfo.value.rate_code
+  if (!selectedCode) {
+    const standardRate = Number(props.room.standard_rate || 0)
+    const roomClassRate = Number(props.room.room_class?.room_price || 0)
+    pricingInfo.value.rate = formatNumber(standardRate > 0 ? standardRate : roomClassRate)
+    return
+  }
+
   const found = rateCodes.value.find(rc => (rc.code || rc.Ma) === selectedCode)
   if (found) {
-    const date = formatDateForInput(props.room.arrival_date || props.room.arrivalDate)
+    const arrivalDate = formatDateForInput(props.room.arrival_date || props.room.arrivalDate)
+    const date = systemDate.value && systemDate.value > arrivalDate ? systemDate.value : arrivalDate
     const newPrice = resolveRateCodePrice([found], {
       rateCode: selectedCode,
       date,
       roomClassId: props.room.room_class_id || props.room.roomClassId,
-      roomClassCode: props.room.room_type || props.room.room_type_code,
+      roomClassCode: props.room.room_class?.code || props.room.room_type || props.room.room_type_code,
+      roomForm: props.room.room_form?.name || props.room.room_class?.room_form_name || props.room.shape,
     })
-    if (newPrice) {
+    if (newPrice !== null) {
       pricingInfo.value.rate = formatNumber(newPrice)
     }
   }
@@ -1076,7 +1086,7 @@ function parseNumber(val) {
                 </div>
                 <div class="f">
                   <label>Rate code</label>
-                  <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange">
+                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)">
                     <option value="" disabled>-- Chọn Mã Giá --</option>
                     <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
                       {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
