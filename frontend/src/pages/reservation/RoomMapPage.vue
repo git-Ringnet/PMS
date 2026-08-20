@@ -606,7 +606,14 @@ function closeBookingDetailModal() {
 }
 
 async function refreshRoomMapAfterGuestChange() {
+  const selectedBookingRoomId = selectedBookingRoom.value?.booking_room_id
+  const selectedPhysicalRoomId = selectedBookingRoom.value?.id
   await roomStore.fetchRooms({ date: rawDate.value, silent: true })
+  const refreshedRoom = roomStore.rooms.find(room =>
+    (selectedBookingRoomId && String(room.booking_room_id) === String(selectedBookingRoomId))
+    || (!selectedBookingRoomId && selectedPhysicalRoomId && String(room.id) === String(selectedPhysicalRoomId))
+  )
+  if (refreshedRoom) selectedBookingRoom.value = refreshedRoom
 }
 
 // Checkbox helper for filters

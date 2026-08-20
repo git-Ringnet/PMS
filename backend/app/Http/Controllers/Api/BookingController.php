@@ -13,6 +13,8 @@ use App\Models\HotelConfig;
 use App\Models\HotelSetting;
 use App\Models\Payment;
 use App\Models\RegistrationStatus;
+use App\Models\RoomRateCode;
+use App\Models\StandardRate;
 use App\Models\SystemDateRoll;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
@@ -23,6 +25,9 @@ use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
 {
+    private array $rateCodePricingCache = [];
+    private array $roomClassPricingContextCache = [];
+
     /**
      * Lấy tất cả dữ liệu dropdown cần thiết cho màn tạo/sửa booking trong 1 request duy nhất.
      */
@@ -412,6 +417,12 @@ class BookingController extends Controller
 
                             $roomArrival = $parseDate($roomArrival);
                             $roomDeparture = $parseDate($roomDeparture);
+                            $detail = $this->applyConfiguredRateCodePricing(
+                                $detail,
+                                $alloc,
+                                $roomArrival,
+                                $roomDeparture
+                            );
 
                             $bRoom = \App\Models\BookingRoom::create([
                                 'booking_id' => $booking->id,
@@ -422,14 +433,16 @@ class BookingController extends Controller
                                 'departure_date' => $roomDeparture,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
-                                'rate' => $alloc['price'] ?? 0,
-                                'rate_code' => $alloc['rateCode'] ?? null,
-                                'breakfast' => !empty($alloc['breakfastIncluded']),
+                                'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
+                                'rate_code' => array_key_exists('rateCode', $detail)
+                                    ? (filled($detail['rateCode']) ? $detail['rateCode'] : null)
+                                    : ($alloc['rateCode'] ?? null),
+                                'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
                                 'discount' => $alloc['discount'] ?? null,
                                 'discount_type' => $alloc['discountType'] ?? null,
                                 'discount_value' => $alloc['discountValue'] ?? 0,
                                 'discount_unit' => $alloc['discountUnit'] ?? null,
-                                'base_price' => $alloc['basePrice'] ?? ($alloc['price'] ?? 0),
+                                'base_price' => $detail['basePrice'] ?? $alloc['basePrice'] ?? $detail['price'] ?? $alloc['price'] ?? 0,
                                 'adults' => $detail['adults'] ?? 2,
                                 'babies' => $detail['babies'] ?? 0,
                                 'children_qty' => $detail['children'] ?? 0,
@@ -437,6 +450,7 @@ class BookingController extends Controller
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
                             ]);
+                            $this->upsertRoomChargeServices($bRoom, $detail);
                             // Thêm khách chính (guestName)
                             $roomGuestName = trim($detail['guestName'] ?? '');
                             if (empty($roomGuestName)) {
@@ -881,6 +895,13 @@ class BookingController extends Controller
                                 }
                             }
 
+                            $detail = $this->applyConfiguredRateCodePricing(
+                                $detail,
+                                $alloc,
+                                $roomArrival,
+                                $roomDeparture
+                            );
+
                             $roomData = [
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
@@ -892,7 +913,9 @@ class BookingController extends Controller
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
-                                'rate_code' => $detail['rateCode'] ?? $alloc['rateCode'] ?? null,
+                                'rate_code' => array_key_exists('rateCode', $detail)
+                                    ? (filled($detail['rateCode']) ? $detail['rateCode'] : null)
+                                    : ($alloc['rateCode'] ?? null),
                                 'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
                                 'is_day_use' => filter_var($detail['hourly'] ?? false, FILTER_VALIDATE_BOOLEAN),
                                 'discount' => $detail['discount'] ?? $alloc['discount'] ?? null,
@@ -2069,6 +2092,115 @@ class BookingController extends Controller
                 ]
             );
         }
+    }
+
+    /**
+     * Resolve an existing Rate Code from persisted setup instead of trusting prices sent by the browser.
+     */
+    private function applyConfiguredRateCodePricing(
+        array $detail,
+        array $allocation,
+        ?string $arrivalDate,
+        ?string $departureDate
+    ): array {
+        $rateCodeValue = array_key_exists('rateCode', $detail)
+            ? $detail['rateCode']
+            : ($allocation['rateCode'] ?? null);
+        $rateCode = trim((string) ($rateCodeValue ?? ''));
+        $roomClassId = $allocation['roomClassId'] ?? null;
+
+        if ($rateCode === '' || !$roomClassId || !$arrivalDate || !$departureDate) {
+            return $detail;
+        }
+
+        if (!array_key_exists($rateCode, $this->rateCodePricingCache)) {
+            $this->rateCodePricingCache[$rateCode] = RoomRateCode::with(['ratePlans', 'dailyMappings'])
+                ->find($rateCode);
+        }
+        /** @var RoomRateCode|null $configuredRateCode */
+        $configuredRateCode = $this->rateCodePricingCache[$rateCode];
+        if (!$configuredRateCode) {
+            return $detail;
+        }
+
+        if (!array_key_exists((string) $roomClassId, $this->roomClassPricingContextCache)) {
+            $standardRate = StandardRate::with(['roomClass', 'roomForm'])
+                ->where('room_class_id', $roomClassId)
+                ->first();
+            $this->roomClassPricingContextCache[(string) $roomClassId] = [
+                'class_code' => $standardRate?->roomClass?->code,
+                'form_name' => $standardRate?->roomForm?->name,
+            ];
+        }
+        $roomContext = $this->roomClassPricingContextCache[(string) $roomClassId];
+        if (empty($roomContext['class_code']) || empty($roomContext['form_name'])) {
+            return $detail;
+        }
+
+        $arrival = Carbon::parse($arrivalDate)->startOfDay();
+        $departure = Carbon::parse($departureDate)->startOfDay();
+        $dailyPrices = [];
+
+        for ($date = $arrival->copy(); $date->lt($departure); $date->addDay()) {
+            $dailyPrices[$date->toDateString()] = $this->resolvePersistedRateCodePrice(
+                $configuredRateCode,
+                $roomContext['class_code'],
+                $roomContext['form_name'],
+                $date
+            );
+        }
+
+        if (empty($dailyPrices)) {
+            return $detail;
+        }
+
+        $firstRate = (float) reset($dailyPrices);
+        $detail['rateCode'] = $rateCode;
+        $detail['price'] = $firstRate;
+        $detail['basePrice'] = $firstRate;
+        $detail['dailyRoomPrices'] = $dailyPrices;
+
+        return $detail;
+    }
+
+    private function resolvePersistedRateCodePrice(
+        RoomRateCode $rateCode,
+        string $roomClassCode,
+        string $roomFormName,
+        Carbon $date
+    ): float {
+        $plan = null;
+
+        if ($rateCode->IsDaily) {
+            $mapping = $rateCode->dailyMappings->first(
+                fn ($item) => Carbon::parse($item->Date)->toDateString() === $date->toDateString()
+            );
+            if ($mapping) {
+                $plan = $rateCode->ratePlans->firstWhere('Code', $mapping->Code);
+            }
+        } else {
+            $plan = $rateCode->ratePlans->firstWhere('Code', 'DEFAULT');
+        }
+
+        if (!$plan) {
+            return 0;
+        }
+
+        $period = is_string($plan->Period) ? json_decode($plan->Period, true) : $plan->Period;
+        if (!is_array($period)) {
+            return 0;
+        }
+
+        foreach ([
+            $plan->Code . '_' . $roomClassCode . '_' . $roomFormName,
+            $rateCode->Ma . '_' . $roomClassCode . '_' . $roomFormName,
+        ] as $key) {
+            if (array_key_exists($key, $period) && is_numeric($period[$key])) {
+                return (float) $period[$key];
+            }
+        }
+
+        return 0;
     }
 
     /**

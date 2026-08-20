@@ -21,6 +21,7 @@ import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequests
 import ChildBreakfastModal from '@/pages/reservation/components/ChildBreakfastModal.vue'
 import ExtraBedModal from '@/pages/reservation/components/ExtraBedModal.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
+import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -115,7 +116,7 @@ const stayInfo = ref({
 
 const pricingInfo = ref({
   rate: '0',
-  rate_code: 'RACK...',
+  rate_code: '',
   discount_type: 'Tăng/Giảm giá',
   extra_bed: 'Không thêm',
   extra_bed_price: '0',
@@ -149,12 +150,28 @@ async function loadRateCodes() {
   }
 }
 
-function onRateCodeChange() {
+function onRateCodeChange(selectedValue = pricingInfo.value.rate_code) {
+  pricingInfo.value.rate_code = String(selectedValue || '')
   const selectedCode = pricingInfo.value.rate_code
+  if (!selectedCode) {
+    const standardRate = Number(props.room.standard_rate || 0)
+    const roomClassRate = Number(props.room.room_class?.room_price || 0)
+    pricingInfo.value.rate = formatNumber(standardRate > 0 ? standardRate : roomClassRate)
+    return
+  }
+
   const found = rateCodes.value.find(rc => (rc.code || rc.Ma) === selectedCode)
   if (found) {
-    const newPrice = found.price || found.price_default || found.GiaPhuong
-    if (newPrice) {
+    const arrivalDate = formatDateForInput(props.room.arrival_date || props.room.arrivalDate)
+    const date = systemDate.value && systemDate.value > arrivalDate ? systemDate.value : arrivalDate
+    const newPrice = resolveRateCodePrice([found], {
+      rateCode: selectedCode,
+      date,
+      roomClassId: props.room.room_class_id || props.room.roomClassId,
+      roomClassCode: props.room.room_class?.code || props.room.room_type || props.room.room_type_code,
+      roomForm: props.room.room_form?.name || props.room.room_class?.room_form_name || props.room.shape,
+    })
+    if (newPrice !== null) {
       pricingInfo.value.rate = formatNumber(newPrice)
     }
   }
@@ -361,7 +378,7 @@ watch(() => props.room, (newRoom) => {
 
     pricingInfo.value = {
       rate: formatNumber(newRoom.rate) || '0',
-      rate_code: newRoom.rate_code || 'RACK...',
+      rate_code: newRoom.rate_code || '',
       discount_type: 'Tăng/Giảm giá',
       extra_bed_qty: newRoom.extra_bed_qty ?? (newRoom.extra_bed && newRoom.extra_bed !== 'Không thêm' ? 1 : 0),
       extra_bed_price: formatNumber(newRoom.extra_bed_rate || newRoom.extra_bed_price || 0),
@@ -609,6 +626,7 @@ async function handleSave() {
       departure_date: stayInfo.value.departure_date,
       departure_time: stayInfo.value.departure_time,
       rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
+      rate_code: pricingInfo.value.rate_code || null,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
       extra_bed_rate: pricingInfo.value.extra_bed_price ? Number(String(pricingInfo.value.extra_bed_price).replace(/\D/g, '')) : 0,
     }
@@ -1068,7 +1086,7 @@ function parseNumber(val) {
                 </div>
                 <div class="f">
                   <label>Rate code</label>
-                  <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange">
+                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)">
                     <option value="" disabled>-- Chọn Mã Giá --</option>
                     <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
                       {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}

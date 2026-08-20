@@ -16,7 +16,11 @@ use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\RoomLock;
+use App\Models\RoomRateCode;
+use App\Models\RoomRateDailyMapping;
+use App\Models\RoomRatePlan;
 use App\Models\ServiceBill;
+use App\Models\StandardRate;
 use App\Models\SystemDateRoll;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -856,6 +860,279 @@ class BookingBusinessRulesTest extends TestCase
         $bRoom->refresh();
         // Room (Checked In) arrival date MUST remain 21
         $this->assertEquals('2026-08-21', $bRoom->arrival_date->toDateString());
+    }
+
+    public function test_booking_update_can_clear_one_room_rate_code_without_affecting_sibling_room(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+        ]);
+        $room1 = BookingRoom::create([
+            'id' => 'G-RATE-01',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'rate' => 900000,
+            'base_price' => 900000,
+            'rate_code' => 'BAR',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $room2 = BookingRoom::create([
+            'id' => 'G-RATE-02',
+            'booking_id' => $booking->id,
+            'room_number' => '102',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'rate' => 700000,
+            'base_price' => 700000,
+            'rate_code' => 'CORP',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $response = $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => 'Clear one room rate code',
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-25',
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'price' => 900000,
+                'basePrice' => 900000,
+                'rateCode' => 'BAR',
+                'rooms' => [
+                    [
+                        'bookingRoomId' => $room1->id,
+                        'roomNumber' => '101',
+                        'arrivalDate' => '2026-08-21',
+                        'departureDate' => '2026-08-25',
+                        'price' => 500000,
+                        'basePrice' => 500000,
+                        'rateCode' => null,
+                    ],
+                    [
+                        'bookingRoomId' => $room2->id,
+                        'roomNumber' => '102',
+                        'arrivalDate' => '2026-08-21',
+                        'departureDate' => '2026-08-25',
+                        'price' => 700000,
+                        'basePrice' => 700000,
+                        'rateCode' => 'CORP',
+                    ],
+                ],
+            ]],
+        ]);
+
+        $response->assertSuccessful();
+        $room1->refresh();
+        $room2->refresh();
+
+        $this->assertNull($room1->rate_code);
+        $this->assertEquals(500000, $room1->rate);
+        $this->assertEquals(500000, $room1->base_price);
+        $this->assertEquals('CORP', $room2->rate_code);
+        $this->assertEquals(700000, $room2->rate);
+    }
+
+    public function test_booking_create_persists_rate_code_prices_for_each_stay_night(): void
+    {
+        StandardRate::create([
+            'room_class_id' => $this->roomClass->id,
+            'room_form_id' => $this->roomForm->id,
+            'room_price' => 900000,
+        ]);
+        RoomRateCode::create(['Ma' => 'TEST1', 'IsDaily' => true]);
+        RoomRatePlan::create([
+            'RateCode' => 'TEST1',
+            'Code' => 'TEST1',
+            'Period' => ['TEST1_STD_Standard Form' => 1],
+        ]);
+        RoomRatePlan::create([
+            'RateCode' => 'TEST1',
+            'Code' => 'TEST2',
+            'Period' => ['TEST2_STD_Standard Form' => 11],
+        ]);
+        foreach ([
+            '2026-08-09' => 'TEST1',
+            '2026-08-10' => 'TEST2',
+            '2026-08-11' => 'TEST2',
+            '2026-08-12' => 'TEST1',
+            '2026-08-13' => 'TEST1',
+        ] as $date => $code) {
+            RoomRateDailyMapping::create(['RateCode' => 'TEST1', 'Date' => $date, 'Code' => $code]);
+        }
+
+        $response = $this->postJson('/api/bookings', [
+            'booking_name' => 'Daily rate code prices',
+            'arrival_date' => '2026-08-09',
+            'departure_date' => '2026-08-14',
+            'num_of_days' => 5,
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'price' => 999,
+                'basePrice' => 999,
+                'rateCode' => 'TEST1',
+                'rooms' => [[
+                    'roomNumber' => null,
+                    'guestName' => 'Daily Rate Guest',
+                    'arrivalDate' => '2026-08-09',
+                    'departureDate' => '2026-08-14',
+                    'price' => 999,
+                    'basePrice' => 999,
+                    'rateCode' => 'TEST1',
+                    'dailyRoomPrices' => [
+                        '2026-08-09' => 999,
+                        '2026-08-10' => 999,
+                        '2026-08-11' => 999,
+                        '2026-08-12' => 999,
+                        '2026-08-13' => 999,
+                    ],
+                ]],
+            ]],
+        ]);
+
+        $response->assertSuccessful();
+        $room = BookingRoom::latest('created_at')->firstOrFail();
+
+        $this->assertEquals('TEST1', $room->rate_code);
+        $this->assertEquals(1, $room->rate);
+        $this->assertDatabaseCount('booking_room_services', 5);
+
+        foreach ([
+            '2026-08-09' => 1,
+            '2026-08-10' => 11,
+            '2026-08-11' => 11,
+            '2026-08-12' => 1,
+            '2026-08-13' => 1,
+        ] as $date => $rate) {
+            $this->assertDatabaseHas('booking_room_services', [
+                'booking_room_id' => $room->id,
+                'service_code' => BookingRoomService::CODE_ROOM,
+                'service_date' => $date . ' 00:00:00',
+                'rate' => $rate,
+                'is_posted' => 0,
+            ]);
+        }
+
+        $this->assertDatabaseMissing('booking_room_services', [
+            'booking_room_id' => $room->id,
+            'service_code' => BookingRoomService::CODE_ROOM,
+            'service_date' => '2026-08-14 00:00:00',
+        ]);
+
+        $updateResponse = $this->putJson("/api/bookings/{$room->booking_id}", [
+            'booking_name' => 'Daily rate code prices updated',
+            'arrival_date' => '2026-08-09',
+            'departure_date' => '2026-08-14',
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'rateCode' => 'TEST1',
+                'rooms' => [[
+                    'bookingRoomId' => $room->id,
+                    'arrivalDate' => '2026-08-09',
+                    'departureDate' => '2026-08-14',
+                    'price' => 777,
+                    'basePrice' => 777,
+                    'rateCode' => 'TEST1',
+                    'dailyRoomPrices' => array_fill_keys([
+                        '2026-08-09',
+                        '2026-08-10',
+                        '2026-08-11',
+                        '2026-08-12',
+                        '2026-08-13',
+                    ], 777),
+                ]],
+            ]],
+        ]);
+
+        $updateResponse->assertSuccessful();
+        $room->refresh();
+        $this->assertEquals(1, $room->rate);
+        $this->assertEquals(1, $room->base_price);
+        $this->assertDatabaseHas('booking_room_services', [
+            'booking_room_id' => $room->id,
+            'service_code' => BookingRoomService::CODE_ROOM,
+            'service_date' => '2026-08-10 00:00:00',
+            'rate' => 11,
+        ]);
+    }
+
+    public function test_booking_create_uses_default_plan_for_non_daily_rate_code(): void
+    {
+        StandardRate::create([
+            'room_class_id' => $this->roomClass->id,
+            'room_form_id' => $this->roomForm->id,
+            'room_price' => 900000,
+        ]);
+        RoomRateCode::create(['Ma' => 'BAR', 'IsDaily' => false]);
+        RoomRatePlan::create([
+            'RateCode' => 'BAR',
+            'Code' => 'DEFAULT',
+            'Period' => ['DEFAULT_STD_Standard Form' => 321000],
+        ]);
+
+        $response = $this->postJson('/api/bookings', [
+            'booking_name' => 'Default rate code price',
+            'arrival_date' => '2026-08-09',
+            'departure_date' => '2026-08-11',
+            'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'price' => 999,
+                'basePrice' => 999,
+                'rateCode' => 'BAR',
+                'rooms' => [[
+                    'arrivalDate' => '2026-08-09',
+                    'departureDate' => '2026-08-11',
+                    'price' => 999,
+                    'basePrice' => 999,
+                    'rateCode' => 'BAR',
+                    'dailyRoomPrices' => [
+                        '2026-08-09' => 999,
+                        '2026-08-10' => 999,
+                    ],
+                ]],
+            ]],
+        ]);
+
+        $response->assertSuccessful();
+        $room = BookingRoom::latest('created_at')->firstOrFail();
+        $this->assertEquals('BAR', $room->rate_code);
+        $this->assertEquals(321000, $room->rate);
+        $this->assertEquals(321000, $room->base_price);
+        $this->assertDatabaseCount('booking_room_services', 2);
+        foreach (['2026-08-09', '2026-08-10'] as $date) {
+            $this->assertDatabaseHas('booking_room_services', [
+                'booking_room_id' => $room->id,
+                'service_code' => BookingRoomService::CODE_ROOM,
+                'service_date' => $date . ' 00:00:00',
+                'rate' => 321000,
+            ]);
+        }
     }
 
     public function test_master_room_rate_flag_does_not_move_existing_room_charge_bills(): void

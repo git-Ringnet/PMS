@@ -3,6 +3,7 @@ import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { normalizeRateMatrix } from '@/utils/rate-matrix'
 
 const uiStore = useUiStore()
 
@@ -84,10 +85,9 @@ const fetchSystemDate = async () => {
   }
 }
 
-onMounted(() => {
-  fetchRoomData()
-  fetchSystemDate()
-  fetchRateCodes()
+onMounted(async () => {
+  await Promise.all([fetchRoomData(), fetchSystemDate()])
+  await fetchRateCodes()
 })
 
 // Selected Rate Code Form Fields
@@ -154,6 +154,48 @@ const batchDaysOfWeek = reactive({
   0: true  // Chủ nhật
 })
 const dailyMappingsList = ref([])
+const isSavingDailyMappings = ref(false)
+
+const markDailyMappingsPersisted = () => {
+  try {
+    const initial = JSON.parse(initialRateStateString.value || '{}')
+    initial.daily = JSON.parse(JSON.stringify(dailyMappingsList.value))
+    initialRateStateString.value = JSON.stringify(initial)
+  } catch {
+    // The full save flow will reset the dirty-state snapshot.
+  }
+}
+
+const persistDailyMappingChanges = async ({ mappings = [], deleteDates = [], mode = 'merge' } = {}) => {
+  if (!rateFormState.Ma || !rateCodes.value.some(rateCode => rateCode.Ma === rateFormState.Ma)) {
+    uiStore.showToast('Vui lòng lưu Mã giá phòng trước khi thiết lập giá theo ngày.', 'warning')
+    return false
+  }
+
+  isSavingDailyMappings.value = true
+  try {
+    const res = await http.post(`/room-rate-codes/${rateFormState.Ma}/daily-mappings`, {
+      mode,
+      mappings,
+      delete_dates: deleteDates,
+    })
+    dailyMappingsList.value = JSON.parse(JSON.stringify(res.data?.data || []))
+
+    const savedRateCode = rateCodes.value.find(rateCode => rateCode.Ma === rateFormState.Ma)
+    if (savedRateCode) savedRateCode.daily_mappings = JSON.parse(JSON.stringify(dailyMappingsList.value))
+    if (selectedRateCode.value?.Ma === rateFormState.Ma) {
+      selectedRateCode.value.daily_mappings = JSON.parse(JSON.stringify(dailyMappingsList.value))
+    }
+    markDailyMappingsPersisted()
+    return true
+  } catch (error) {
+    console.error(error)
+    uiStore.showToast(error.response?.data?.message || 'Không thể lưu giá theo ngày.', 'error')
+    return false
+  } finally {
+    isSavingDailyMappings.value = false
+  }
+}
 
 const occupancies = ref([])
 const defaultOccupancies = ['Double', 'Twin', 'Triple', 'Family', 'King']
@@ -288,12 +330,9 @@ const selectModalPlan = async (plan) => {
   if (plan.Period) {
     try {
       const parsed = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period;
-      for (const k in parsed) {
-        let newKey = k;
-        if (k.startsWith(selectedRateCode.value.Ma + '_')) {
-          newKey = plan.Code + '_' + k.substring(selectedRateCode.value.Ma.length + 1);
-        }
-        modalRateMatrix[newKey] = parsed[k];
+      const normalized = normalizeRateMatrix(parsed, plan.Code, roomTypes.value, occupanciesList.value);
+      for (const key in normalized) {
+        modalRateMatrix[key] = normalized[key];
       }
     } catch (e) { }
   }
@@ -332,9 +371,15 @@ const saveModalPlan = async () => {
   }
 
   try {
+    const normalizedPeriod = normalizeRateMatrix(
+      modalRateMatrix,
+      modalFormState.Code,
+      roomTypes.value,
+      occupanciesList.value
+    );
     const res = await http.post(`/room-rate-codes/${selectedRateCode.value.Ma}/plans`, {
       ...modalFormState,
-      Period: modalRateMatrix
+      Period: normalizedPeriod
     });
     if (res.status === 200 || res.status === 201) {
       uiStore.showToast('Lưu loại giá thành công!', 'success');
@@ -389,12 +434,9 @@ const loadRateMatrixFromPlans = (rateCodeMa, plans) => {
     if (!plan.Period) return;
     try {
       const parsed = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period;
-      for (const k in parsed) {
-        let newKey = k;
-        if (k.startsWith(rateCodeMa + '_')) {
-          newKey = plan.Code + '_' + k.substring(rateCodeMa.length + 1);
-        }
-        rateMatrix[newKey] = parsed[k];
+      const normalized = normalizeRateMatrix(parsed, plan.Code, roomTypes.value, occupanciesList.value);
+      for (const key in normalized) {
+        rateMatrix[key] = normalized[key];
       }
     } catch (e) { }
   });
@@ -514,7 +556,8 @@ const applyBatchUpdate = async () => {
   const confirmed = await uiStore.confirm({ message: 'Bạn có chắc chắn muốn áp dụng thông tin giá theo ngày không?' });
   if (!confirmed) return;
 
-  let appliedCount = 0;
+  const previousMappings = JSON.parse(JSON.stringify(dailyMappingsList.value));
+  const changedMappings = [];
   let currentDate = new Date(from);
   while (currentDate <= to) {
     const year = currentDate.getFullYear();
@@ -531,14 +574,26 @@ const applyBatchUpdate = async () => {
       } else {
         dailyMappingsList.value.push({ Date: dateStr, Code: batchRateType.value });
       }
-      appliedCount++;
+      changedMappings.push({ Date: dateStr, Code: batchRateType.value });
     }
     currentDate.setDate(currentDate.getDate() + 1);
   }
 
   dailyMappingsList.value.sort((a, b) => a.Date.localeCompare(b.Date));
   dailyMappingsList.value = dailyMappingsList.value.map(m => ({ ...m }));
-  uiStore.showToast('Áp dụng loại giá thành công!', 'success');
+
+  if (changedMappings.length === 0) {
+    uiStore.showToast('Không có ngày nào phù hợp để áp dụng.', 'warning');
+    return;
+  }
+
+  const saved = await persistDailyMappingChanges({ mappings: changedMappings, mode: 'merge' });
+  if (!saved) {
+    dailyMappingsList.value = previousMappings;
+    return;
+  }
+
+  uiStore.showToast('Áp dụng và lưu loại giá theo ngày thành công!', 'success');
 
   if (batchFromDate.value) {
     scrollToDailyDate(batchFromDate.value);
@@ -680,7 +735,9 @@ watch(() => batchFromDate.value, (newVal) => {
   }
 })
 
-const updateSingleMapping = (dateStr, newCode) => {
+const updateSingleMapping = async (dateStr, newCode) => {
+  if (isSavingDailyMappings.value) return;
+  const previousMappings = JSON.parse(JSON.stringify(dailyMappingsList.value));
   const existingIdx = dailyMappingsList.value.findIndex(m => m.Date === dateStr);
   if (newCode === '-' || !newCode) {
     if (existingIdx !== -1) {
@@ -695,6 +752,17 @@ const updateSingleMapping = (dateStr, newCode) => {
   }
   dailyMappingsList.value.sort((a, b) => a.Date.localeCompare(b.Date));
   dailyMappingsList.value = [...dailyMappingsList.value];
+
+  const saved = await persistDailyMappingChanges({
+    mappings: newCode === '-' || !newCode ? [] : [{ Date: dateStr, Code: newCode }],
+    deleteDates: newCode === '-' || !newCode ? [dateStr] : [],
+    mode: 'merge',
+  });
+  if (!saved) {
+    dailyMappingsList.value = previousMappings;
+    return;
+  }
+  uiStore.showToast('Đã lưu loại giá cho ngày đã chọn.', 'success');
 };
 
 const initialRateStateString = ref('');
@@ -794,9 +862,15 @@ const handleSave = async () => {
     if (res.status === 200 || res.status === 201) {
       // Save Matrix
       if (!rateFormState.IsDaily) {
+        const normalizedDefaultMatrix = normalizeRateMatrix(
+          rateMatrix,
+          'DEFAULT',
+          roomTypes.value,
+          occupanciesList.value
+        );
         await http.post(`/room-rate-codes/${savedMa}/plans`, {
           Code: 'DEFAULT',
-          Period: rateMatrix
+          Period: normalizedDefaultMatrix
         });
         await http.post(`/room-rate-codes/${savedMa}/daily-mappings`, {
           mappings: []
@@ -1106,8 +1180,8 @@ const selectPackage = (pkg) => {
                       title="Quản lý các loại giá">+</button>
                   </div>
 
-                  <button @click="applyBatchUpdate"
-                    class="ml-auto px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer shadow-sm">
+                  <button @click="applyBatchUpdate" :disabled="isSavingDailyMappings"
+                    class="ml-auto px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                     Áp dụng
                   </button>
                 </div>
@@ -1205,7 +1279,7 @@ const selectPackage = (pkg) => {
                     {{ getDayLabel(getDayOfWeekFromDate(mapping.Date)) }}
                   </td>
                   <td class="p-1.5 border border-slate-100 text-center">
-                    <select :key="mapping.Date + '-' + mapping.Code" :value="mapping.Code" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
+                    <select :key="mapping.Date + '-' + mapping.Code" :value="mapping.Code" :disabled="isSavingDailyMappings" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
                       class="border px-1 py-0.5 rounded text-xs focus:outline-sky-400 bg-white"
                       :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-bold border-red-200' : 'text-gray-900 font-semibold border-slate-200']">
                       <option value="-">-</option>
