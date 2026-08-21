@@ -2,14 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UsesSystemConnection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class UserSetting extends Model
 {
-    use HasFactory;
-
-    protected $connection = 'mysql_system';
+    use HasFactory, UsesSystemConnection;
 
     protected $fillable = [
         'user_id',

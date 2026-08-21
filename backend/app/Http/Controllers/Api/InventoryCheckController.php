@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\Warehouse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class InventoryCheckController extends Controller
 {
@@ -149,7 +150,7 @@ class InventoryCheckController extends Controller
             'warehouse_id' => 'required|integer|exists:warehouses,id',
             'month'        => 'required|string|size:7',
             'note'         => 'nullable|string',
-            'created_by'   => 'nullable|integer|exists:users,id',
+            'created_by'   => ['nullable', 'integer', Rule::exists('mysql_system.users', 'id')],
         ]);
 
         // Kiểm tra đã có phiếu chưa (bao gồm cả phiếu đã xóa tạm)

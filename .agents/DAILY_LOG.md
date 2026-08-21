@@ -23,8 +23,9 @@
       - Tự động đăng ký Dynamic Connection vào Runtime Configuration của Laravel (`mysql_{code}`).
       - Tự động chạy toàn bộ migrations khởi tạo schema bảng cho chi nhánh mới.
       - Tự động seed dữ liệu mẫu vận hành chuẩn ban đầu (`DatabaseSeeder`).
-      - Bỏ ràng buộc Foreign Key `activity_logs.user_id` liên database để `activity_logs` ghi nhận log trơn tru trên mọi database chi nhánh mà không bị xung đột với `pms_system.users`.
-      - Migration [`2026_08_21_103000_drop_user_foreign_from_activity_logs.php`](file:///d:/PMS/backend/database/migrations/2026_08_21_103000_drop_user_foreign_from_activity_logs.php).
+      - Sửa lỗi `500 Server Error` khi tạo chi nhánh trên server:
+        - [`SystemBranchController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/SystemBranchController.php): Chỉ định `Rule::unique(SystemBranch::class)` thay vì table thô, giúp kiểm tra trùng mã/tên chi nhánh đúng trên kết nối `mysql_system` thay vì bị lỗi bảng không tồn tại trên tenant DB (`mysql_hkt1`).
+        - [`TenantDatabaseService.php`](file:///d:/PMS/backend/app/Services/TenantDatabaseService.php): Đọc credentials qua `Config::get()` thay vì gọi trực tiếp `env()`, tương thích hoàn toàn khi server chạy `config:cache`.
   - **Đồng bộ Ngày Hệ Thống PMS (System Date)**:
     - [`BreakfastPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue): Sửa logic lấy ngày từ `res.data.data.system_date`, chuẩn hóa lấy đúng ngày nghiệp vụ khách sạn (09/08/2026).
     - [`ActivityLogTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue): Đồng bộ ngày nghiệp vụ từ `/system-date` và mặc định xem "Tất cả".

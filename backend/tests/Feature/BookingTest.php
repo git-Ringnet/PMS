@@ -21,6 +21,7 @@ class BookingTest extends TestCase
         
         // Seed standard statuses/definitions if required
         $this->artisan('db:seed', ['--class' => 'SystemConfigurationSeeder']);
+        $this->artisan('db:seed', ['--class' => 'DepartmentSeeder']);
         $this->artisan('db:seed', ['--class' => 'HotelDefinitionSeeder']);
         $this->artisan('db:seed', ['--class' => 'SpecialRequestSeeder']);
         $this->artisan('db:seed', ['--class' => 'SystemDateRollSeeder']);
@@ -74,6 +75,8 @@ class BookingTest extends TestCase
         $booking = Booking::first();
         $this->assertNotNull($booking);
         $this->assertEquals('NGUYEN VAN A', $booking->booking_name);
+        $this->assertEquals($user->id, $booking->created_by_user_id);
+        $this->assertEquals($user->username, $booking->created_by);
 
         // Assert booking_room was created with string ID starting with "G"
         $bookingRoom = BookingRoom::first();

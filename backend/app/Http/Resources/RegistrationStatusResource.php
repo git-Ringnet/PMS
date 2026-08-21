@@ -12,8 +12,11 @@ class RegistrationStatusResource extends JsonResource
         $cutoff = (int)($this->cut_off_day ?? 0);
         return [
             'id' => $this->id,
-            'booking_status_id' => $this->booking_status_id ?? $this->id,
-            'BookingStatusId' => $this->booking_status_id ?? $this->id,
+            // `id` is the new registration_statuses primary key.
+            // `booking_status_id` is the legacy SP1311 status code; never
+            // fallback to `id`, otherwise the two identifiers become mixed.
+            'booking_status_id' => $this->booking_status_id,
+            'BookingStatusId' => $this->booking_status_id,
             'name' => $this->name,
             'booking_status_name' => $this->name,
             'BookingStatusName' => $this->name,

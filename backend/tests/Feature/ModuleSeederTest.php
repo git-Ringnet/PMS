@@ -15,12 +15,9 @@ class ModuleSeederTest extends TestCase
         $this->seed(ModuleSeeder::class);
         $this->seed(ModuleSeeder::class);
 
-        $this->assertDatabaseCount('modules', 6);
-        $this->assertDatabaseHas('modules', ['code' => 'SALE', 'portal_key' => 'reservation', 'route' => '/reservation']);
-        $this->assertDatabaseHas('modules', ['code' => 'FO', 'portal_key' => 'frontdesk', 'route' => '/frontdesk']);
-        $this->assertDatabaseHas('modules', ['code' => 'HK', 'portal_key' => 'housekeeping', 'route' => '/housekeeping']);
-        $this->assertDatabaseHas('modules', ['code' => 'RPPMS', 'portal_key' => 'reports', 'route' => '/reports']);
-        $this->assertDatabaseHas('modules', ['code' => 'ST', 'portal_key' => 'config', 'route' => '/config']);
-        $this->assertDatabaseHas('modules', ['code' => 'FB&SK', 'portal_key' => 'fnb', 'route' => '/fnb']);
+        $this->assertDatabaseCount('modules', 3);
+        $this->assertDatabaseHas('modules', ['code' => 'PMS', 'portal_key' => 'pms', 'route' => '/frontdesk']);
+        $this->assertDatabaseHas('modules', ['code' => 'POS', 'portal_key' => 'fnb', 'route' => '/fnb']);
+        $this->assertDatabaseHas('modules', ['code' => 'SYS', 'portal_key' => 'system', 'route' => '/system']);
     }
 }
