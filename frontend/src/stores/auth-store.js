@@ -13,14 +13,35 @@ const cleanOldLocalConfigs = () => {
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
-    token: sessionStorage.getItem('pms_token') || null,
+    token: localStorage.getItem('pms_token') || sessionStorage.getItem('pms_token') || null,
     settings: {},
     loading: false,
     error: null,
+    // ── Permission & Branch state ──────────────────────────────
+    permissions: JSON.parse(localStorage.getItem('pms_permissions') || '[]'),
+    branches: JSON.parse(localStorage.getItem('pms_branches') || '[]'),
+    activeBranch: JSON.parse(localStorage.getItem('pms_active_branch') || 'null'),
+    roles: JSON.parse(localStorage.getItem('pms_roles') || '[]'),
   }),
 
   getters: {
     isAuthenticated: (state) => !!state.token,
+
+    /** Kiểm tra user có quyền cụ thể không */
+    hasPermission: (state) => (code) => {
+      // Super admin có tất cả quyền
+      if (state.roles.some(r => r.role_code === 'super_admin')) return true
+      return state.permissions.includes(code)
+    },
+
+    /** Kiểm tra user có bất kỳ quyền nào trong danh sách */
+    canAny: (state) => (codes) => {
+      if (state.roles.some(r => r.role_code === 'super_admin')) return true
+      return codes.some(c => state.permissions.includes(c))
+    },
+
+    isSuperAdmin: (state) => state.roles.some(r => r.role_code === 'super_admin'),
+    isAdmin: (state) => state.roles.some(r => ['super_admin', 'branch_admin'].includes(r.role_code)),
   },
 
   actions: {
@@ -30,7 +51,6 @@ export const useAuthStore = defineStore('auth', {
           this.loading = true
           const response = await http.get('/me')
           this.user = response.data
-          // Đồng bộ settings của user nếu có
           this.settings = response.data.setting?.settings || {}
           cleanOldLocalConfigs()
         } catch (err) {
@@ -47,16 +67,24 @@ export const useAuthStore = defineStore('auth', {
         this.loading = true
         this.error = null
         const response = await http.post('/login', { username, password })
-        const { token, user } = response.data
-        
+        const { token, user, permissions, branches, active_branch, roles } = response.data
+
         this.token = token
         this.user = user
-        sessionStorage.setItem('pms_token', token)
-        
-        // Đồng bộ settings của user nếu có
+        this.permissions = permissions || []
+        this.branches = branches || []
+        this.activeBranch = active_branch || null
+        this.roles = roles || []
+
+        localStorage.setItem('pms_token', token)
+        localStorage.setItem('pms_permissions', JSON.stringify(this.permissions))
+        localStorage.setItem('pms_branches', JSON.stringify(this.branches))
+        localStorage.setItem('pms_active_branch', JSON.stringify(this.activeBranch))
+        localStorage.setItem('pms_roles', JSON.stringify(this.roles))
+
         this.settings = user.setting?.settings || {}
         cleanOldLocalConfigs()
-        
+
         return user
       } catch (err) {
         this.error = err.response?.data?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại.'
@@ -66,7 +94,13 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-
+    /** Chuyển chi nhánh đang active */
+    switchBranch(branch) {
+      this.activeBranch = branch
+      localStorage.setItem('pms_active_branch', JSON.stringify(branch))
+      localStorage.setItem('selected_branch_id', branch.id)
+      localStorage.setItem('selected_branch_code', branch.code)
+    },
 
     async logout() {
       try {
@@ -79,6 +113,15 @@ export const useAuthStore = defineStore('auth', {
         this.token = null
         this.user = null
         this.settings = {}
+        this.permissions = []
+        this.branches = []
+        this.activeBranch = null
+        this.roles = []
+        localStorage.removeItem('pms_token')
+        localStorage.removeItem('pms_permissions')
+        localStorage.removeItem('pms_branches')
+        localStorage.removeItem('pms_active_branch')
+        localStorage.removeItem('pms_roles')
         sessionStorage.removeItem('pms_token')
       }
     },

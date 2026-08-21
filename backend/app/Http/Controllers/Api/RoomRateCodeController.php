@@ -8,6 +8,7 @@ use App\Models\RoomRatePlan;
 use App\Models\RoomRateDailyMapping;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class RoomRateCodeController extends Controller
 {
@@ -107,26 +108,62 @@ class RoomRateCodeController extends Controller
             'mappings' => 'present|array',
             'mappings.*.Date' => 'required|date',
             'mappings.*.Code' => 'required|string',
+            'mode' => 'nullable|in:replace,merge',
+            'delete_dates' => 'nullable|array',
+            'delete_dates.*' => 'required|date',
         ]);
 
-        DB::beginTransaction();
-        try {
-            // Delete all existing daily mappings for this RateCode first
-            RoomRateDailyMapping::where('RateCode', $ma)->delete();
+        $mode = $request->input('mode', 'replace');
+        $mappings = collect($request->input('mappings', []))
+            ->map(fn ($mapping) => [
+                'Date' => \Carbon\Carbon::parse($mapping['Date'])->toDateString(),
+                'Code' => trim((string) $mapping['Code']),
+            ])
+            ->keyBy('Date')
+            ->values();
+        $deleteDates = collect($request->input('delete_dates', []))
+            ->map(fn ($date) => \Carbon\Carbon::parse($date)->toDateString())
+            ->unique()
+            ->values();
 
-            // Insert new daily mappings
-            foreach ($request->mappings as $mapping) {
-                RoomRateDailyMapping::create([
-                    'RateCode' => $ma,
-                    'Date' => $mapping['Date'],
-                    'Code' => $mapping['Code']
+        $savedMappings = DB::transaction(function () use ($ma, $mode, $mappings, $deleteDates) {
+            $rateCode = RoomRateCode::where('Ma', $ma)->lockForUpdate()->firstOrFail();
+            $availablePlanCodes = RoomRatePlan::where('RateCode', $ma)->pluck('Code');
+            $unknownPlanCodes = $mappings->pluck('Code')->unique()->diff($availablePlanCodes)->values();
+
+            if ($unknownPlanCodes->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'mappings' => 'Loại giá không tồn tại trong Rate Code: ' . $unknownPlanCodes->implode(', '),
                 ]);
             }
-            DB::commit();
-            return response()->json(['message' => 'Daily mappings saved']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Error saving daily mappings', 'error' => $e->getMessage()], 500);
-        }
+
+            if ($mode === 'replace') {
+                RoomRateDailyMapping::where('RateCode', $ma)->delete();
+            } elseif ($deleteDates->isNotEmpty()) {
+                RoomRateDailyMapping::where('RateCode', $ma)
+                    ->whereIn('Date', $deleteDates->all())
+                    ->delete();
+            }
+
+            foreach ($mappings as $mapping) {
+                DB::table('room_rate_daily_mappings')->updateOrInsert(
+                    ['RateCode' => $ma, 'Date' => $mapping['Date']],
+                    ['Code' => $mapping['Code']]
+                );
+            }
+
+            if ($mappings->isNotEmpty() && !$rateCode->IsDaily) {
+                $rateCode->update(['IsDaily' => true]);
+            }
+
+            return RoomRateDailyMapping::where('RateCode', $ma)
+                ->orderBy('Date')
+                ->get();
+        });
+
+        return response()->json([
+            'message' => 'Daily mappings saved',
+            'data' => $savedMappings,
+        ]);
     }
 }

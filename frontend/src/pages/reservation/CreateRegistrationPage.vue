@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
+import { buildRateCodeDailyPrices, resolveRateCodePrice } from '@/utils/rate-code-pricing'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
 import CopyModal from './components/CopyModal.vue'
@@ -35,7 +36,6 @@ import {
   fetchRegistrationStatuses,
   fetchBookingInitDropdowns,
   fetchRoomClasses,
-  fetchRoomRateCodes,
   fetchHotelSettings,
   fetchSystemTime,
   fetchSystemDate,
@@ -67,6 +67,11 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const currentBookingModule = computed(() => {
+  if (route.path === '/frontdesk') return 'FO'
+  if (route.path === '/housekeeping') return 'HK'
+  return 'SALE'
+})
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -1493,7 +1498,7 @@ function syncRoomsToAllocations(tab) {
     const matchingRooms = tab.rooms.filter(r => r.roomClassId === alloc.roomClassId)
     const roomsDetail = matchingRooms.map(r => ({
       roomNumber: r.roomNumber || '',
-      rateCode: (r.rateCode && r.rateCode !== 'Vui lòng chọn giá phòng') ? r.rateCode : (alloc.rateCode || ''),
+      rateCode: (r.rateCode && r.rateCode !== 'Vui lòng chọn giá phòng') ? r.rateCode : null,
       guestName: r.guestName || '',
       adults: Number(r.adults) || 2,
       babies: Number(r.babies) || 0,
@@ -1512,8 +1517,8 @@ function syncRoomsToAllocations(tab) {
       roomCode: r.roomCode || '',
       bookingRoomId: r.bookingRoomId || null,
       total: Number(r.total) || 0,
-      price: r.price || alloc.price || 0,
-      basePrice: r.basePrice || alloc.basePrice || alloc.price || 0,
+      price: r.price ?? alloc.price ?? 0,
+      basePrice: r.basePrice ?? alloc.basePrice ?? alloc.price ?? 0,
       discountType: r.discountType || alloc.discountType || 'down',
       discountValue: r.discountValue !== undefined ? r.discountValue : (alloc.discountValue || 0),
       discountUnit: r.discountUnit || alloc.discountUnit || 'percent',
@@ -1547,6 +1552,7 @@ onMounted(async () => {
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
+    hydrateLoadedRateCodePrices()
     
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
@@ -1623,6 +1629,20 @@ async function loadDropdowns() {
   } catch (err) {
     console.error('Error loading dropdowns:', err)
     diagnosticErrors.value.push(`Uncaught loadDropdowns error: ${err.message}`)
+  }
+}
+
+async function refreshRoomRateCodes() {
+  try {
+    const res = await http.get('/room-rate-codes', {
+      params: { _refresh: Date.now() },
+    })
+    roomRateCodes.value = res.data?.data || res.data || []
+    return true
+  } catch (err) {
+    console.error('Không thể tải lại Rate Code:', err)
+    uiStore.showToast('Không thể tải lại dữ liệu Mã giá phòng.', 'error')
+    return false
   }
 }
 
@@ -1722,6 +1742,7 @@ function bookingToTab(b) {
         type: rc.name || 'Unknown Class',
         initialType: rc.name || 'Unknown Class',
         initialRoomClassId: br.room_class_id,
+        roomClassCode: rc.code || '',
         shape: (() => {
           const matched = roomClasses.value.find(c => c.id === br.room_class_id)
           return matched ? (matched.room_form_name || matched.code) : (rc.code || '')
@@ -1795,13 +1816,14 @@ function bookingToTab(b) {
           type: typeName,
           initialType: typeName,
           initialRoomClassId: alloc.roomClassId,
+          roomClassCode: alloc.roomClassCode || rc?.code || '',
           shape: shapeName,
           roomNumber: roomDetail.roomNumber || '',
           checkIn: parseApiDate(alloc.arrivalDate || b.arrival_date),
           checkOut: parseApiDate(alloc.departureDate || b.departure_date),
           nights: nightsCount,
           price: priceNum,
-          rateCode: roomDetail.rateCode || alloc.ratePlanCode || 'Vui lòng chọn giá phòng',
+          rateCode: roomDetail.rateCode || alloc.rateCode || alloc.ratePlanCode || 'Vui lòng chọn giá phòng',
           guestName: roomDetail.guestName || '',
           adults: Number(roomDetail.adults || alloc.adults) || (rc?.code?.toLowerCase().includes('tr') || rc?.code?.toLowerCase().includes('t') ? 3 : 2),
           babies: Number(roomDetail.babies || alloc.babies) || 0,
@@ -2008,6 +2030,23 @@ function getDefaultBreakfastSetting() {
   return true
 }
 
+function resolveRoomFormName(roomClassId, fallback = '') {
+  const fallbackValue = String(fallback || '').trim()
+  const matchedFallback = fallbackValue
+    ? roomForms.value.find(form =>
+      String(form.name || '').toLowerCase() === fallbackValue.toLowerCase()
+      || (form.code && String(form.code).toLowerCase() === fallbackValue.toLowerCase())
+    )
+    : null
+  if (matchedFallback?.name) return matchedFallback.name
+
+  const roomClass = roomClasses.value.find(item => Number(item.id) === Number(roomClassId))
+  if (!roomClass) return fallbackValue
+
+  const matchedForm = roomForms.value.find(form => Number(form.id) === Number(roomClass.room_form_id))
+  return roomClass.room_form_name || matchedForm?.name || fallbackValue
+}
+
 function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
   const isBreakfastChecked = getDefaultBreakfastSetting()
 
@@ -2027,6 +2066,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
         roomClassId: rc.id,
         roomClassCode: rc.code,
         roomClassName: rc.name,
+        shape: resolveRoomFormName(rc.id, found.shape),
         arrivalDate: found.arrivalDate || checkInDate,
         departureDate: found.departureDate || checkOutDate,
         availableRooms: found.availableRooms !== undefined ? found.availableRooms : defaultAvail,
@@ -2052,6 +2092,7 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
       roomClassId: rc.id,
       roomClassCode: rc.code,
       roomClassName: rc.name,
+      shape: resolveRoomFormName(rc.id),
       arrivalDate: checkInDate,
       departureDate: checkOutDate,
       availableRooms: defaultAvail,
@@ -2074,13 +2115,15 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
   })
 }
 
-function syncAllocationToRooms(row) {
+function syncAllocationToRooms(row, { forceRate = false } = {}) {
   if (!modalForm.value.rooms) return
   modalForm.value.rooms.forEach(r => {
     if (r.roomClassId === row.roomClassId || r.type === row.roomClassName || r.shape === row.roomClassCode) {
-      r.price = Number(row.price) || 0
-      r.basePrice = Number(row.basePrice || row.price) || 0
-      r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
+      if (forceRate || !r._preserveAgreedRate) {
+        r.price = Number(row.price) || 0
+        r.basePrice = Number(row.basePrice ?? row.price) || 0
+        r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
+      }
       r.adults = Number(row.adults) || 2
       r.babies = Number(row.babies) || 0
       r.children = Number(row.children) || 0
@@ -2104,10 +2147,15 @@ function syncRoomToAllocation(room) {
   }
 }
 
-function handleRateCodeChange(row) {
+async function handleRateCodeChange(row, selectedValue = row?.rateCode) {
   if (!row) return
-  if (row.rateCode) {
-    const rcObj = roomRateCodes.value.find(rc => rc.Ma === row.rateCode)
+  const selectedRateCode = String(selectedValue || '').trim()
+  row.rateCode = selectedRateCode
+  if (selectedRateCode) {
+    await refreshRoomRateCodes()
+    row.rateCode = selectedRateCode
+    row.shape = resolveRoomFormName(row.roomClassId, row.shape)
+    const rcObj = roomRateCodes.value.find(rc => String(rc.Ma || '').trim() === selectedRateCode)
     if (rcObj) {
       // 1. Check expiration dates
       if (rcObj.BeginDate || rcObj.EndDate) {
@@ -2124,15 +2172,21 @@ function handleRateCodeChange(row) {
         if ((begin && arr < begin) || (end && dep > end)) {
           uiStore.showToast(`Mã giá phòng ${row.rateCode} đã hết hạn hoặc không áp dụng trong thời gian lưu trú này!`, 'error')
           row.rateCode = ''
-          syncAllocationToRooms(row)
+          syncAllocationToRooms(row, { forceRate: true })
           return
         }
       }
 
       row.breakfastIncluded = !!rcObj.IncludeBF
       
-      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId)
-      if (price > 0) {
+      const price = resolveRateCodePrice([rcObj], {
+        rateCode: selectedRateCode,
+        roomClassCode: row.roomClassCode,
+        roomForm: row.shape,
+        date: row.arrivalDate,
+        roomClassId: row.roomClassId,
+      })
+      if (price !== null) {
         row.price = price
         row.basePrice = price
       }
@@ -2147,11 +2201,16 @@ function handleRateCodeChange(row) {
     }
     row.breakfastIncluded = getDefaultBreakfastSetting()
   }
-  syncAllocationToRooms(row)
+  syncAllocationToRooms(row, { forceRate: true })
+  if (row.rateCode) {
+    applyAllocationRateCodeDailyPrices(row)
+  }
 }
 
-function handleRoomRateCodeChange(room) {
+async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
+  room.rateCode = String(selectedValue || '').trim()
   if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+    await refreshRoomRateCodes()
     const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
     if (rcObj) {
       // Check expiration dates
@@ -2175,11 +2234,24 @@ function handleRoomRateCodeChange(room) {
       
       room.breakfast = !!rcObj.IncludeBF
       
-      const price = getRateCodePrice(room.rateCode, room.roomClassCode, room.checkIn)
-      if (price > 0) {
-        room.price = price
-        room.basePrice = price
-        room.total = calculateRoomTotal(room)
+      const appliedDailyPrices = applyRateCodeDailyPricesToRoom(room)
+      if (!appliedDailyPrices) {
+        const roomClass = roomClasses.value.find(item => item.id === Number(room.roomClassId))
+        const price = getRateCodePrice(
+          room.rateCode,
+          room.roomClassCode || roomClass?.code,
+          room.checkIn,
+          room.roomClassId,
+          resolveRoomFormName(room.roomClassId, room.shape)
+        )
+        if (price !== null) {
+          room.price = price
+          room.basePrice = price
+          room.total = calculateRoomTotal(room)
+          room._preserveAgreedRate = false
+        }
+      } else {
+        room._preserveAgreedRate = false
       }
 
       // Sync back to allocation row
@@ -2194,10 +2266,69 @@ function handleRoomRateCodeChange(room) {
       }
     }
   } else {
+    const matchedClass = roomClasses.value.find(item =>
+      item.id === Number(room.roomClassId) || item.code === room.roomClassCode
+    )
+    const defaultPrice = Number(
+      matchedClass?.price
+      ?? matchedClass?.room_price
+      ?? matchedClass?.standard_rate
+      ?? 0
+    )
+
+    room.rateCode = ''
+    room.price = defaultPrice
+    room.basePrice = defaultPrice
     room.breakfast = getDefaultBreakfastSetting()
+    room._preserveAgreedRate = false
+
+    const existingDailyPrices = room.dailyRoomPrices && Object.keys(room.dailyRoomPrices).length > 0
+    const hasRoomChargeServices = Array.isArray(room.services) && room.services.some(service =>
+      service.service_code === 'RM' || service.service_code === 'ROOM_CHARGE'
+    )
+    if (existingDailyPrices || hasRoomChargeServices) {
+      const dailyPrices = {}
+      const nights = Math.max(Number(room.nights) || 0, 1)
+      const arrival = new Date(`${room.checkIn}T00:00:00`)
+      if (!Number.isNaN(arrival.getTime())) {
+        for (let offset = 0; offset < nights; offset++) {
+          const date = new Date(arrival)
+          date.setDate(arrival.getDate() + offset)
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          dailyPrices[`${year}-${month}-${day}`] = defaultPrice
+        }
+      }
+      room.dailyRoomPrices = Object.keys(dailyPrices).length ? dailyPrices : null
+
+      if (Array.isArray(room.services)) {
+        room.services.forEach(service => {
+          const isRoomCharge = service.service_code === 'RM' || service.service_code === 'ROOM_CHARGE'
+          const serviceDate = cleanDateStr(service.service_date)
+          if (isRoomCharge && !service.is_posted && dailyPrices[serviceDate] !== undefined && isServiceRateEditable(serviceDate)) {
+            service.rate = defaultPrice
+            service.total = defaultPrice * Number(service.quantity || 1)
+          }
+        })
+      }
+    } else {
+      room.dailyRoomPrices = null
+    }
+    room.total = calculateRoomTotal(room)
+
     if (modalForm.value.roomAllocations) {
       const alloc = modalForm.value.roomAllocations.find(a => a.roomClassId === room.roomClassId)
-      if (alloc) {
+      const siblingsWithRateCode = (modalForm.value.rooms || []).some(other =>
+        other !== room
+        && other.roomClassId === room.roomClassId
+        && other.rateCode
+        && other.rateCode !== 'Vui lòng chọn giá phòng'
+      )
+      if (alloc && !siblingsWithRateCode) {
+        alloc.rateCode = ''
+        alloc.price = defaultPrice
+        alloc.basePrice = defaultPrice
         alloc.breakfastIncluded = room.breakfast
       }
     }
@@ -2355,71 +2486,87 @@ function getOccupancyCount(row) {
   ).length
 }
 
-function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId) {
-  const rcObj = roomRateCodes.value.find(rc => rc.Ma === rateCodeMa || rc.code === rateCodeMa)
-  if (!rcObj) return 0
-  
-  const plans = rcObj.ratePlans || rcObj.rate_plans || []
-  if (!plans || plans.length === 0) return 0
+function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId, roomForm = '') {
+  return resolveRateCodePrice(roomRateCodes.value, {
+    rateCode: rateCodeMa,
+    roomClassCode,
+    roomForm,
+    date: dateStr,
+    roomClassId,
+  })
+}
 
-  // 1. Find active plan code for the date (dateStr) from daily_mappings
-  let activePlanCode = 'DEFAULT'
-  if (dateStr && rcObj.daily_mappings && Array.isArray(rcObj.daily_mappings)) {
-    const mapping = rcObj.daily_mappings.find(m => m.Date === dateStr)
-    if (mapping) {
-      activePlanCode = mapping.Code
-    }
-  }
+function applyRateCodeDailyPricesToRoom(room) {
+  if (!room?.rateCode || room.rateCode === 'Vui lòng chọn giá phòng') return false
 
-  // 2. Find the plan corresponding to activePlanCode
-  let plan = plans.find(p => p.Code === activePlanCode)
-  if (!plan) {
-    plan = plans.find(p => p.Code === 'DEFAULT') || plans[0]
-  }
-  
-  if (!plan || !plan.Period) return 0
-  
-  const period = typeof plan.Period === 'string' ? JSON.parse(plan.Period) : plan.Period
-  if (!period) return 0
+  const roomClass = roomClasses.value.find(item => item.id === Number(room.roomClassId))
+  const configuredPrices = buildRateCodeDailyPrices(roomRateCodes.value, {
+    rateCode: room.rateCode,
+    roomClassCode: room.roomClassCode || roomClass?.code,
+    roomForm: resolveRoomFormName(room.roomClassId, room.shape),
+    roomClassId: room.roomClassId,
+    arrivalDate: room.checkIn,
+    departureDate: room.checkOut,
+  })
+  const dates = Object.keys(configuredPrices).sort()
+  if (dates.length === 0) return false
 
-  const planCode = plan.Code || 'DEFAULT'
-
-  // 3. Tra cứu theo roomClassId (VD: "9" cho JST)
-  if (roomClassId && period[roomClassId] !== undefined) {
-    const val = Number(period[roomClassId])
-    if (!isNaN(val) && val > 0) return val
-  }
-  if (roomClassId && period[String(roomClassId)] !== undefined) {
-    const val = Number(period[String(roomClassId)])
-    if (!isNaN(val) && val > 0) return val
-  }
-
-  // 4. Tra cứu theo key ${planCode}_${roomClassCode}_Double hoặc ${planCode}_${roomClassCode}_...
-  const key = `${planCode}_${roomClassCode}_Double`
-  if (period[key] !== undefined) {
-    return Number(period[key]) || 0
-  }
-  
-  const legacyKey = `${rateCodeMa}_${roomClassCode}_Double`
-  if (period[legacyKey] !== undefined) {
-    return Number(period[legacyKey]) || 0
-  }
-  
-  if (period) {
-    const matchingKey = Object.keys(period).find(k => 
-      k.startsWith(`${planCode}_${roomClassCode}_`) || 
-      k.startsWith(`${rateCodeMa}_${roomClassCode}_`) ||
-      k.includes(`_${roomClassCode}_`)
+  const dailyPrices = {}
+  dates.forEach(date => {
+    const existingRoomCharge = (room.services || []).find(service =>
+      (service.service_code === 'RM' || service.service_code === 'ROOM_CHARGE')
+      && cleanDateStr(service.service_date) === date
     )
-    if (matchingKey && period[matchingKey] !== undefined) {
-      return Number(period[matchingKey]) || 0
-    }
-  }
+    const isLocked = existingRoomCharge?.is_posted || !isServiceRateEditable(date)
 
-  return Number(rcObj.Value || rcObj.Gia || rcObj.price || 0)
+    if (isLocked) {
+      dailyPrices[date] = room.dailyRoomPrices?.[date]
+        ?? (existingRoomCharge ? Number(existingRoomCharge.rate) || 0 : Number(room.price) || 0)
+      return
+    }
+
+    dailyPrices[date] = configuredPrices[date]
+    if (existingRoomCharge) {
+      existingRoomCharge.rate = configuredPrices[date]
+      existingRoomCharge.total = configuredPrices[date] * Number(existingRoomCharge.quantity || 1)
+    }
+  })
+
+  room.dailyRoomPrices = dailyPrices
+  const representativeDate = dates.find(date => isServiceRateEditable(date)) || dates[0]
+  room.price = Number(dailyPrices[representativeDate]) || 0
+  room.basePrice = room.price
+  room.total = calculateRoomTotal(room)
+  return true
+}
+
+function applyAllocationRateCodeDailyPrices(row) {
+  if (!modalForm.value.rooms) return
+
+  modalForm.value.rooms.forEach(room => {
+    const matchesAllocation = String(room.roomClassId) === String(row.roomClassId)
+      || room.type === row.roomClassName
+      || room.shape === row.roomClassCode
+    if (!matchesAllocation) return
+
+    room.rateCode = row.rateCode
+    applyRateCodeDailyPricesToRoom(room)
+  })
+}
+
+function hydrateLoadedRateCodePrices() {
+  tabs.value.forEach(tab => {
+    const rooms = tab.rooms || []
+    rooms.forEach(room => {
+      if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+        applyRateCodeDailyPricesToRoom(room)
+      }
+    })
+  })
 }
 
 async function handleAddTabClick() {
+  await refreshRoomRateCodes()
   isEditModal.value = false
   modalPos.value = { x: 0, y: 0 }
   isColorChanged.value = false
@@ -2450,6 +2597,7 @@ async function handleAddTabClick() {
 }
 
 async function openEditModal() {
+  await refreshRoomRateCodes()
   const tab = activeTab.value
   if (!tab) return
   modalPos.value = { x: 0, y: 0 }
@@ -2489,6 +2637,7 @@ async function openEditModal() {
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: JSON.parse(JSON.stringify(tab.rooms || [])).map(r => ({
       ...r,
+      shape: resolveRoomFormName(r.roomClassId, r.shape),
       initialType: r.initialType || r.type,
       initialRoomClassId: r.initialRoomClassId || r.roomClassId
     })),
@@ -2704,16 +2853,17 @@ function updateAllocatedRooms(row) {
         id: Date.now() + Math.random(),
         roomClassId: row.roomClassId,
         initialRoomClassId: row.roomClassId,
+        roomClassCode: row.roomClassCode,
         roomClassName: row.roomClassName,
         type: row.roomClassName,
         initialType: row.roomClassName,
-        shape: row.roomClassCode,
+        shape: resolveRoomFormName(row.roomClassId, row.shape),
         roomNumber: '',
         checkIn: row.arrivalDate || modalForm.value.checkIn,
         checkOut: row.departureDate || modalForm.value.checkOut,
         nights: row.nights || modalForm.value.nights,
         price: row.price || 0,
-        rateCode: row.ratePlanCode || 'Vui lòng chọn giá phòng',
+        rateCode: row.rateCode || row.ratePlanCode || 'Vui lòng chọn giá phòng',
         guestName: '',
         adults: row.adults || 2,
         babies: row.babies || 0,
@@ -2749,6 +2899,10 @@ function updateAllocatedRooms(row) {
       return true
     })
   }
+
+  if (row.rateCode) {
+    applyAllocationRateCodeDailyPrices(row)
+  }
 }
 
 watch(() => modalForm.value.roomAllocations, (newAllocations) => {
@@ -2756,7 +2910,7 @@ watch(() => modalForm.value.roomAllocations, (newAllocations) => {
   newAllocations.forEach(alloc => {
     modalForm.value.rooms.forEach(r => {
       if (r.roomClassId === alloc.roomClassId && !r.bookingRoomId) {
-        if (r.price !== alloc.price) {
+        if (!r._preserveAgreedRate && r.price !== alloc.price) {
           r.price = alloc.price
           r.total = (alloc.price || 0) * (r.nights || 1)
         }
@@ -2846,6 +3000,7 @@ async function handleDateChange() {
             return s.service_date < modalForm.value.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
     }
     
@@ -2896,6 +3051,7 @@ async function handleMainDateChange() {
             return s.service_date < tab.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
     }
     handleConfirmDateCalculation()
@@ -2938,6 +3094,7 @@ async function handleMainNightsChange() {
             return s.service_date < tab.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
     }
     await updateRoomAvailability()
@@ -2952,9 +3109,10 @@ async function handleRowDateChange(row) {
     row.nights = diff > 0 ? diff : 1
     
     if (row.rateCode) {
-      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate)
-      if (price > 0) {
+      const price = getRateCodePrice(row.rateCode, row.roomClassCode, row.arrivalDate, row.roomClassId, resolveRoomFormName(row.roomClassId, row.shape))
+      if (price !== null) {
         row.price = price
+        row.basePrice = price
       }
     }
 
@@ -2969,6 +3127,9 @@ async function handleRowDateChange(row) {
       })
     }
     syncAllocationToRooms(row)
+    if (row.rateCode) {
+      applyAllocationRateCodeDailyPrices(row)
+    }
 
     try {
       const res = await checkAvailability({
@@ -3035,6 +3196,7 @@ async function handleRowDateChangeInline(room) {
       
       const diffTime = new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()
       room.nights = Math.max(room.hourly ? 0 : 1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
+      applyRateCodeDailyPricesToRoom(room)
       room.total = calculateRoomTotal(room)
 
       // Đồng bộ ngược lại allocation của tab hiện tại để khi lưu sẽ update đúng
@@ -3060,6 +3222,7 @@ async function handleRowNightsChangeInline(room) {
       const co = new Date(ci)
       co.setDate(ci.getDate() + Number(room.nights))
       room.checkOut = co.toISOString().split('T')[0]
+      applyRateCodeDailyPricesToRoom(room)
       room.total = calculateRoomTotal(room)
 
       // Đồng bộ ngược lại allocation của tab hiện tại
@@ -3156,8 +3319,11 @@ function handleRoomClassChange(room, oldClassId) {
   const newClass = roomClasses.value.find(c => c.id === Number(room.roomClassId))
   if (newClass) {
     room.type = newClass.name
-    room.shape = newClass.room_form_name || newClass.code
+    room.roomClassName = newClass.name
+    room.roomClassCode = newClass.code
+    room.shape = resolveRoomFormName(newClass.id, newClass.room_form_name || newClass.code)
     room.roomNumber = '' // reset số phòng cũ
+    room._preserveAgreedRate = true
   }
   
   const tab = activeTab.value
@@ -3170,16 +3336,17 @@ function handleRoomClassChange(room, oldClassId) {
       roomClassId: newClass.id,
       roomClassCode: newClass.code,
       roomClassName: newClass.name,
+      shape: resolveRoomFormName(newClass.id, newClass.room_form_name),
       arrivalDate: room.checkIn || tab.checkIn,
       departureDate: room.checkOut || tab.checkOut,
       quantity: 0,
-      price: Number(newClass.price) || Number(room.price) || 0,
-      rateCode: '',
+      price: Number(room.price) || 0,
+      rateCode: room.rateCode === 'Vui lòng chọn giá phòng' ? '' : (room.rateCode || ''),
       discount: 'Tăng/Giảm giá',
       discountType: 'down',
       discountValue: 0,
       discountUnit: 'percent',
-      basePrice: Number(newClass.price) || Number(room.price) || 0,
+      basePrice: Number(room.basePrice ?? room.price) || 0,
       upgradeClassId: null,
       adults: newClass.max_adults || 2,
       babies: 0,
@@ -3333,8 +3500,8 @@ async function handleSaveNewBooking() {
       shuttle_info:           modalForm.value.shuttleInfo || [],
       room_allocations:       syncRoomsToAllocations(modalForm.value),
       deposit_details:        modalForm.value.deposits || [],
-      module:                 'reservation',
-      created_module:         'reservation',
+      module:                 currentBookingModule.value,
+      created_module:         currentBookingModule.value,
     }
     if (isEditModal.value && modalForm.value.dbId) {
       const res = await updateBooking(modalForm.value.dbId, payload)
@@ -3513,6 +3680,34 @@ function handleSelectAllInGroup(rooms, checked) {
   }
 }
 
+function restoreTabFromBackup(tab) {
+  if (!tab?._backup) return false
+  const restored = JSON.parse(JSON.stringify(tab._backup))
+  delete restored._backup
+  Object.assign(tab, restored)
+  delete tab._backup
+  return true
+}
+
+function validateRoomDatesAgainstBooking(tab) {
+  if (!tab) return null
+  const bookingArrival = parseApiDate(tab.checkIn)
+  const bookingDeparture = parseApiDate(tab.checkOut)
+  if (!bookingArrival || !bookingDeparture || bookingArrival > bookingDeparture) {
+    return 'Ngày đến/ngày đi của đăng ký không hợp lệ.'
+  }
+
+  const invalidRoom = (tab.rooms || []).find(room => {
+    const roomArrival = parseApiDate(room.checkIn)
+    const roomDeparture = parseApiDate(room.checkOut)
+    return !roomArrival || !roomDeparture || roomArrival < bookingArrival || roomDeparture > bookingDeparture || roomArrival > roomDeparture
+  })
+
+  return invalidRoom
+    ? `Ngày của phòng phải nằm trong giai đoạn của đăng ký (${formatDateVi(bookingArrival)} đến ${formatDateVi(bookingDeparture)}).`
+    : null
+}
+
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
     isEditing.value = true
@@ -3538,11 +3733,7 @@ async function triggerAction(actionName) {
   } else if (actionName === 'Quay lại') {
     isEditing.value = false
     const tab = activeTab.value
-    if (tab && tab._backup) {
-      const restored = JSON.parse(JSON.stringify(tab._backup))
-      delete restored._backup
-      Object.assign(tab, restored)
-    }
+    restoreTabFromBackup(tab)
   } else if (actionName === 'Lưu') {
     const tab = activeTab.value
     if (tab) {
@@ -3552,6 +3743,11 @@ async function triggerAction(actionName) {
         return
       }
     }
+    const dateError = validateRoomDatesAgainstBooking(tab)
+    if (dateError) {
+      uiStore.showToast(dateError, 'error')
+      return
+    }
     uiStore.confirm({
       title: 'Xác nhận lưu đăng ký',
       message: `Bạn có chắc chắn muốn lưu các thông tin thay đổi cho đăng ký "${tab?.bookingName || ''}"?`,
@@ -3559,8 +3755,8 @@ async function triggerAction(actionName) {
       cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (!confirmed) return
+      const backup = tab?._backup
       isEditing.value = false
-      if (tab) delete tab._backup
       if (tab && tab.dbId) {
         try {
           const payload = {
@@ -3592,9 +3788,12 @@ async function triggerAction(actionName) {
           const res = await updateBooking(tab.dbId, payload)
           await loadBookings()
           notifyRoomUpdates()
+          if (tab) delete tab._backup
           uiStore.showToast('Lưu thông tin đăng ký thành công!', 'success')
         } catch (err) {
           console.error(err)
+          if (tab && backup) tab._backup = backup
+          restoreTabFromBackup(tab)
           const errMsg = err.response?.data?.message || 'Không thể lưu thông tin đăng ký!'
           uiStore.showToast(errMsg, 'error')
         }
@@ -4201,7 +4400,7 @@ async function handleConfirmCancelReason(payload) {
       const res = await deleteBooking(tab.dbId, {
         cancel_reason_id: payload.cancel_reason_id,
         note: payload.note,
-        current_module: 'reservation'
+        current_module: currentBookingModule.value
       })
       if (res.data?.success) {
         const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
@@ -4233,7 +4432,7 @@ async function handleConfirmCancelReason(payload) {
           const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
             cancel_reason_id: payload.cancel_reason_id,
             note: payload.note,
-            current_module: 'reservation'
+            current_module: currentBookingModule.value
           })
           if (res.data?.success) {
             successCount++
@@ -4497,6 +4696,7 @@ async function handleServicesSaved() {
 
 async function openBookingModalByCode(bookingCode) {
   if (!bookingCode) return
+  await refreshRoomRateCodes()
   let foundTab = tabs.value.find(t => String(t.id) === String(bookingCode) || String(t.dbId) === String(bookingCode))
   
   if (foundTab) {
@@ -4510,6 +4710,11 @@ async function openBookingModalByCode(bookingCode) {
         const bItem = list.find(b => String(b.booking_code) === String(bookingCode) || String(b.id) === String(bookingCode)) || list[0]
         removeClosedTabId(bItem.id)
         const tabObj = bookingToTab(bItem)
+        tabObj.rooms.forEach(room => {
+          if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+            applyRateCodeDailyPricesToRoom(room)
+          }
+        })
         const existingIdx = tabs.value.findIndex(t => t.id === tabObj.id)
         if (existingIdx > -1) {
           tabs.value[existingIdx] = tabObj
@@ -4984,10 +5189,10 @@ defineExpose({
                           <select 
                             v-if="isEditing" 
                             v-model="room.rateCode" 
-                            @change="handleRoomRateCodeChange(room)"
+                            @change="handleRoomRateCodeChange(room, $event.target.value)"
                             class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] w-full font-semibold focus:outline-none truncate"
                           >
-                            <option value="Vui lòng chọn giá phòng" disabled>Chọn giá phòng</option>
+                            <option value="">Chọn giá phòng</option>
                             <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
                           </select>
                           <span v-else class="text-slate-400 font-semibold truncate block w-full" :title="room.rateCode">
@@ -5360,30 +5565,30 @@ defineExpose({
                     <!-- Status Section Header (e.g. "Đang ở", "Đã đặt") -->
                     <tr 
                       class="border-b font-bold h-8 cursor-pointer select-none"
-                      :class="statusGroup.statusOrder === 3 ? 'bg-red-100 border-red-300 text-red-900 font-extrabold' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
+                      :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300 text-pink-900 font-extrabold' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300 text-slate-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
-                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
-                          :class="statusGroup.statusOrder === 3 ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-400 hover:bg-blue-500'"
+                          :class="statusGroup.statusOrder === 3 ? 'bg-pink-600 hover:bg-pink-700' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-400 hover:bg-blue-500'"
                           style="font-size: 13px; line-height: 1;"
                         >
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r border-blue-200 text-center" @click.stop>
+                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <input 
                           type="checkbox" 
                           :checked="statusGroup.typeGroups.flatMap(g => g.rooms).length > 0 && statusGroup.typeGroups.flatMap(g => g.rooms).every(r => selectedRows.includes(r.id))" 
                           @change="e => handleSelectAllInGroup(statusGroup.typeGroups.flatMap(g => g.rooms), e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'text-red-900 font-black' : 'text-blue-900'">
+                      <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] text-pink-900 font-black' : statusGroup.statusOrder === 1 ? 'bg-blue-200 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] text-slate-800' : 'bg-[#dbeafe]/60 text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-red-200' : 'bg-[#bfdbfe]'"></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-[#f7c9e4]' : statusGroup.statusOrder === 1 ? 'bg-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#cfd6e0]' : 'bg-[#bfdbfe]' "></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
@@ -5553,10 +5758,10 @@ defineExpose({
                                   <select 
                                     v-if="isEditing" 
                                     v-model="room.rateCode" 
-                                    @change="handleRoomRateCodeChange(room)"
+                                    @change="handleRoomRateCodeChange(room, $event.target.value)"
                                     class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[11px] w-full font-semibold focus:outline-none truncate"
                                   >
-                                    <option value="Vui lòng chọn giá phòng" disabled>Chọn giá phòng</option>
+                                    <option value="">Chọn giá phòng</option>
                                     <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
                                   </select>
                                   <span v-else class="text-slate-400 font-semibold truncate block w-full" :title="room.rateCode">
@@ -6957,7 +7162,7 @@ defineExpose({
                       <td v-if="visibleColumns.rateCode" class="py-2 px-2">
                         <select 
                           v-model="row.rateCode" 
-                          @change="handleRateCodeChange(row)"
+                          @change="handleRateCodeChange(row, $event.target.value)"
                           class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm bg-white text-[11px]"
                         >
                           <option value="">— Chọn giá phòng —</option>

@@ -146,8 +146,16 @@ class AvailabilityController extends Controller
                 BookingRoom::STATUS_CHECKED_OUT,
                 BookingRoom::STATUS_CANCELLED,
             ])
-            ->where('arrival_date', '<', $endStr)
-            ->where('departure_date', '>', $startStr)
+            ->where(function ($query) use ($startStr, $endStr) {
+                $query->where(function ($overnight) use ($startStr, $endStr) {
+                    $overnight->where('arrival_date', '<', $endStr)
+                        ->where('departure_date', '>', $startStr);
+                })->orWhere(function ($dayUse) use ($startStr, $endStr) {
+                    $dayUse->where('is_day_use', true)
+                        ->where('arrival_date', '>=', $startStr)
+                        ->where('arrival_date', '<', $endStr);
+                });
+            })
             ->whereHas('booking.registrationStatus', function ($query) {
                 $query->where('is_availability', 1);
             })
@@ -211,7 +219,7 @@ class AvailabilityController extends Controller
             );
 
             // Dayuse booking rule
-            $isDayUse = ($arrDate === $depDate && $parentBooking && $parentBooking->is_day_use);
+            $isDayUse = ($arrDate === $depDate && (($br->is_day_use ?? false) || ($parentBooking && $parentBooking->is_day_use)));
 
             if ($isOccupied && !$isAllotment && !$isCancelled && !$isNoShow && $isAvailableStatus) {
                 $occBookings[$classCode][] = [

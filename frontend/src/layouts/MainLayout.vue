@@ -238,10 +238,12 @@ const loadBranches = async () => {
     const savedBranchId = localStorage.getItem('selected_branch_id')
     if (savedBranchId && branchesList.value.some(b => b.id === Number(savedBranchId))) {
       selectedBranch.value = branchesList.value.find(b => b.id === Number(savedBranchId))
+      localStorage.setItem('selected_branch_code', selectedBranch.value.code)
     } else if (branchesList.value.length > 0) {
       const defaultBranch = branchesList.value.find(b => b.code === 'HKT1') || branchesList.value[0]
       selectedBranch.value = defaultBranch
       localStorage.setItem('selected_branch_id', defaultBranch.id)
+      localStorage.setItem('selected_branch_code', defaultBranch.code)
     }
   } catch (err) {
     console.error('Lỗi khi tải danh sách chi nhánh:', err)
@@ -251,6 +253,9 @@ const loadBranches = async () => {
 function handleSelectBranch(branch) {
   selectedBranch.value = branch
   localStorage.setItem('selected_branch_id', branch.id)
+  localStorage.setItem('selected_branch_code', branch.code)
+  sessionStorage.setItem('pms_active_branch', JSON.stringify(branch))
+  authStore.switchBranch(branch)
   isBranchDropdownOpen.value = false
   
   sessionStorage.setItem('switching_branch', 'true')

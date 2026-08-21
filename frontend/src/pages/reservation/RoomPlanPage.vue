@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -14,6 +15,13 @@ import echo from '@/services/echo'
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
 const authStore = useAuthStore()
+const route = useRoute()
+
+const currentBookingModule = computed(() => {
+  if (route.path === '/frontdesk') return 'FO'
+  if (route.path === '/housekeeping') return 'HK'
+  return 'SALE'
+})
 
 const isAdmin = computed(() => {
   const u = authStore.user
@@ -1340,6 +1348,7 @@ async function loadBookings() {
             isAvailability: registrationStatus.is_availability === undefined
               ? true
               : Boolean(registrationStatus.is_availability),
+            isDayUse: Boolean(br.is_day_use ?? b.is_day_use),
             nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
@@ -2028,7 +2037,7 @@ const dynamicStats = computed(() => {
   const avRooms = Array(numDays).fill(null).map(() => [])
 
   // Include booking rooms that do not have a physical room number in OCC.
-  // Keep them out of the room grid and do not alter AV/OOO calculations.
+  // Keep them out of the room grid, but subtract them from AV like the legacy availability rule.
   const unassignedOccByDay = Array(numDays).fill(null).map(() => [])
   bookings.value.forEach(item => {
     if (!item.isVirtual || !item.isAvailability || item.type === 'OOO' || item.type === 'OOS') return
@@ -2041,7 +2050,8 @@ const dynamicStats = computed(() => {
     for (let idx = 0; idx < numDays; idx++) {
       const dayDate = new Date(days.value[idx].fullDate)
       dayDate.setHours(0, 0, 0, 0)
-      if (dayDate >= itemCheckIn && dayDate < itemCheckOut) {
+      const isDayUse = item.isDayUse && formatDateStr(itemCheckIn) === formatDateStr(itemCheckOut)
+      if (isDayUse ? dayDate.getTime() === itemCheckIn.getTime() : (dayDate >= itemCheckIn && dayDate < itemCheckOut)) {
         unassignedOccByDay[idx].push(item.code || `BookingRoom ${item.bookingRoomId}`)
       }
     }
@@ -2057,7 +2067,9 @@ const dynamicStats = computed(() => {
       
       const hasGuest = items.some(item => {
         if (!item.isAvailability || item.type === 'OOO' || item.type === 'OOS') return false
-        return idx >= item.startIndex && idx < item.endIndex
+        return item.isDayUse
+          ? idx === item.startIndex
+          : idx >= item.startIndex && idx < item.endIndex
       })
 
       const hasLock = items.some(item => {
@@ -2080,7 +2092,7 @@ const dynamicStats = computed(() => {
     occCounts[idx] = occ + unassignedOccByDay[idx].length
     occRooms[idx].push(...unassignedOccByDay[idx].map(code => `${code} (chưa gán)`))
     oooCounts[idx] = ooo
-    avCounts[idx] = Math.max(0, totalRooms - occ - ooo)
+    avCounts[idx] = Math.max(0, totalRooms - occCounts[idx] - ooo)
   }
 
   const totalOccSum = occCounts.reduce((a, b) => a + b, 0)
@@ -2900,7 +2912,7 @@ function handleDragStart(bk, event) {
   lastGhostTop = null
   dragBoundsCache = null
   requestAnimationFrame(() => {
-    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 2
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 122
   })
 
   if (event && event.currentTarget) {
@@ -3002,9 +3014,9 @@ function handleGlobalDragOver(event) {
 
   const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
   const clientY = event.clientY
-
+  const topScrollBoundary = headerBottom + 120
   // If mouse is inside or above header, clamp ghost card strictly below header!
-  if (clientY <= headerBottom) {
+  if (clientY <= topScrollBoundary) {
     setDragGhostTop(minTop)
   } else if (clientY >= occTop) {
     setDragGhostTop(maxTop)
@@ -3013,8 +3025,8 @@ function handleGlobalDragOver(event) {
   let scrollY = 0
 
   // Keep the current scroll area; extend it upward only after crossing the top boundary.
-  if (clientY < headerBottom) {
-    const overflow = Math.max(0, headerBottom - clientY)
+  if (clientY < topScrollBoundary) {
+    const overflow = Math.max(0, topScrollBoundary - clientY)
     // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as the pointer moves further up.
     const speed = Math.min(12, Math.round(2 + (overflow / 10) * 2))
     scrollY = -speed
@@ -3041,9 +3053,7 @@ function handleWindowDragOver(event) {
   if (!draggedBooking.value) return
   event.preventDefault()
   if (!scrollContainer) getDragVerticalBounds()
-
-  const { headerBottom } = getDragVerticalBounds()
-  if (event.clientY < headerBottom) handleGlobalDragOver(event)
+  handleGlobalDragOver(event)
 }
 
 function allowRoomPlanDrop(event) {
@@ -3384,8 +3394,8 @@ async function saveQuickBooking() {
       contact_phone: '',
       note: '',
       room_allocations: room_allocations,
-      module: 'reception',
-      created_module: 'reception'
+      module: currentBookingModule.value,
+      created_module: currentBookingModule.value
     }
 
     await createBooking(payload)
@@ -3580,7 +3590,7 @@ async function handleConfirmCancelRoomPlan(payload) {
     const res = await cancelBookingRoom(booking.bookingId, booking.bookingRoomId, {
       cancel_reason_id: payload.cancel_reason_id,
       note: payload.note,
-      current_module: 'reception'
+      current_module: currentBookingModule.value
     })
     if (res && res.data && res.data.success) {
       uiStore.showToast('Đã hủy phòng thành công!', 'success')
@@ -3932,11 +3942,11 @@ function getRoomStatusIconName(item) {
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
-                  ? 'bg-amber-500 text-white border-amber-700 shadow-[inset_0_-2px_0_#b45309]'
+                  ? 'bg-[#fff7cc] text-amber-900 border-[#facc15] shadow-[inset_0_-2px_0_#facc15]'
                   : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700'))
               ]"
-              @dragenter.prevent="allowRoomPlanDrop"
-              @dragover.prevent="allowRoomPlanDrop"
+              @dragenter.prevent="handleGlobalDragOver($event)"
+              @dragover.prevent="handleGlobalDragOver($event)"
             >
               <div class="flex flex-col items-center justify-center leading-tight py-0.5">
                 <span class="text-[11px] font-extrabold uppercase">{{ day.dow }}</span>
@@ -3978,7 +3988,7 @@ function getRoomStatusIconName(item) {
               <td 
                 class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden transition-colors"
                 :class="[
-                  dragSourceRoom === item.room ? '!bg-amber-500 !text-white shadow-[inset_-1px_0_0_#b45309]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
+                  dragSourceRoom === item.room ? '!bg-[#fff7cc] !text-amber-900 shadow-[inset_-1px_0_0_#facc15]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
                 ]"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
@@ -4022,7 +4032,7 @@ function getRoomStatusIconName(item) {
                   isCellSelected(item.room, day.fullDate)
                     ? `ring-2 ring-blue-400 bg-[#72b5f7]/60 z-20 shadow-sm ${isSelectionGroupStart(item.room, day.fullDate) ? '!border-l-4 !border-l-white' : ''} ${isSelectionGroupTop(item.room, day.fullDate) ? '!border-t-4 !border-t-white' : ''}`
                     : (dragSourceStartIdx !== null && dayIdx >= dragSourceStartIdx && dayIdx < dragSourceEndIdx
-                        ? 'bg-amber-100/60 shadow-xs'
+                        ? 'bg-[#fff7cc]/80 shadow-xs'
                         : (item.isVirtual
                             ? (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/15' : (day.isWeekend ? 'bg-[#72b5f7]/20' : 'bg-[#fdf6e2]'))
                             : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white'))))
@@ -4175,7 +4185,7 @@ function getRoomStatusIconName(item) {
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
-                  ? 'bg-amber-200 shadow-[inset_-1px_-1px_0_#d97706]'
+                  ? 'bg-[#fff7cc] shadow-[inset_-1px_-1px_0_#facc15]'
                   : (isTodayDate(day.fullDate) ? 'bg-[#ff7043]/30 shadow-[inset_-1px_-1px_0_#ff8a65]' : 'bg-[#e0f2fe]')
               ]"
               :title="'Danh sách phòng bận ngày ' + day.dateStr + ':\n' + (dynamicStats.occRooms[idx]?.join(', ') || 'Không có')"

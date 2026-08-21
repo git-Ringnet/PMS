@@ -12,11 +12,11 @@ use App\Models\RoomDoNotMoveLock;
 use App\Models\BookingRoomGuest;
 use App\Models\Guest;
 use App\Models\BookingChild;
-use App\Models\RegistrationStatus;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Support\ModuleCode;
 use Illuminate\Support\Facades\DB;
 
 class BookingRoomController extends Controller
@@ -878,16 +878,16 @@ class BookingRoomController extends Controller
                 ->value('value');
 
             if ($checkModuleConfig === '1' || $checkModuleConfig === 1) {
-                $currentModule = strtolower($request->input('current_module', 'reservation'));
-                $bookingModule = strtolower($booking->module ?? 'reservation');
+                $currentModule = ModuleCode::normalize($request->input('current_module', ModuleCode::RESERVATION));
+                $bookingModule = ModuleCode::normalize($booking->module, ModuleCode::RESERVATION);
 
-                if ($bookingModule === 'reservation' && $currentModule === 'reception') {
+                if ($bookingModule === ModuleCode::RESERVATION && $currentModule === ModuleCode::FRONTDESK) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Đăng ký được tạo bởi bộ phận đặt phòng. Bạn không có quyền được hủy.'
                     ], 403);
                 }
-                if ($bookingModule === 'reception' && $currentModule === 'reservation') {
+                if ($bookingModule === ModuleCode::FRONTDESK && $currentModule === ModuleCode::RESERVATION) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Đăng ký được tạo bởi bộ phận lễ tân. Bạn không có quyền được hủy.'
@@ -907,8 +907,6 @@ class BookingRoomController extends Controller
             $bookingRoom->guests()->update(['status' => 3]);
             // Cascade: hủy children gắn với phòng này
             $bookingRoom->children()->update(['child_status' => 3]);
-            // Cascade: hủy/xóa các dịch vụ tự động của phòng này
-            \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)->delete();
             $reasonText = $request->note;
             if ($request->cancel_reason_id && empty($reasonText)) {
                 $cReason = \App\Models\CancelReason::find($request->cancel_reason_id);
@@ -933,31 +931,6 @@ class BookingRoomController extends Controller
                 'cancelled_by_username'  => Auth::user()?->username ?? 'system',
                 'cancelled_at'           => now(),
             ]);
-
-            // Nếu toàn bộ phòng của booking đều đã hủy → hủy cả booking header
-            $booking = Booking::findOrFail($bookingId);
-            $anyActive = $booking->bookingRooms()
-                ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
-                ->exists();
-
-            if (!$anyActive) {
-                // Tự chuyển booking_status về bk_definite = 4
-                $cancelledRegStatus = \App\Models\RegistrationStatus::where('bk_definite', 4)->first();
-
-                $booking->update([
-                    'status'                 => Booking::STATUS_DELETED,
-                    'registration_status_id' => $cancelledRegStatus?->id ?? $booking->registration_status_id,
-                ]);
-                BookingCancelLog::create([
-                    'cancel_type'           => 'booking',
-                    'booking_id'            => $bookingId,
-                    'cancel_reason_id'      => $request->cancel_reason_id,
-                    'note'                  => 'Tự động hủy booking khi tất cả phòng đã bị hủy.',
-                    'cancelled_by_user_id'  => Auth::id() ?? 0,
-                    'cancelled_by_username' => Auth::user()?->username ?? 'system',
-                    'cancelled_at'          => now(),
-                ]);
-            }
 
             DB::commit();
         } catch (\Exception $e) {

@@ -10,6 +10,8 @@ class SystemBranch extends Model
 {
     use HasFactory;
 
+    protected $connection = 'mysql_system';
+
     protected $table = 'system_branches';
 
     protected $fillable = [
@@ -21,6 +23,8 @@ class SystemBranch extends Model
         'address',
         'accounting_month',
         'accounting_year',
+        'organization_type',
+        'db_connection',
         'is_active',
     ];
 

@@ -24,46 +24,41 @@ const perPage = ref(30)
 const totalItems = ref(0)
 const lastPage = ref(1)
 
+import http from '@/services/http'
+
+const pmsSystemDate = ref('')
+
 const getTodayString = (offsetDays = 0) => {
-  const d = new Date()
+  const base = pmsSystemDate.value ? new Date(pmsSystemDate.value) : new Date()
   if (offsetDays !== 0) {
-    d.setDate(d.getDate() + offsetDays)
+    base.setDate(base.getDate() + offsetDays)
   }
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
-  const parts = formatter.formatToParts(d)
-  const month = parts.find(p => p.type === 'month').value
-  const day = parts.find(p => p.type === 'day').value
-  const year = parts.find(p => p.type === 'year').value
+  const year = base.getFullYear()
+  const month = String(base.getMonth() + 1).padStart(2, '0')
+  const day = String(base.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
 const getMonthStartString = () => {
-  const d = new Date()
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const base = pmsSystemDate.value ? new Date(pmsSystemDate.value) : new Date()
+  const year = base.getFullYear()
+  const month = String(base.getMonth() + 1).padStart(2, '0')
   return `${year}-${month}-01`
 }
 
-const todayStr = getTodayString()
-
-// Quick filter chips
-const quickDateFilter = ref('today')
+// Quick filter chips (Mặc định chọn Tất cả để thấy ngay mọi log)
+const quickDateFilter = ref('all')
 const quickFilters = [
+  { label: 'Tất cả', value: 'all', icon: '📋' },
   { label: 'Hôm nay', value: 'today', icon: '📅' },
   { label: 'Hôm qua', value: 'yesterday', icon: '⏮️' },
   { label: '7 ngày qua', value: 'last7days', icon: '📆' },
   { label: 'Tháng này', value: 'this_month', icon: '📊' },
-  { label: 'Tất cả', value: 'all', icon: '📋' },
 ]
 
 // Filters input states
-const filterDateFrom = ref(todayStr)
-const filterDateTo = ref(todayStr)
+const filterDateFrom = ref('')
+const filterDateTo = ref('')
 const filterRegCode = ref('')
 const filterRoomCode = ref('')
 const filterUserId = ref('')
@@ -73,8 +68,8 @@ const filterSearch = ref('')
 
 // Active filter states used for queries
 const queryParams = ref({
-  date_from: todayStr,
-  date_to: todayStr,
+  date_from: '',
+  date_to: '',
   registration_code: '',
   room_code: '',
   user_id: '',
@@ -94,7 +89,15 @@ const selectedLog = ref(null)
 // Debounce timer
 let searchTimeout = null
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const res = await http.get('/system-date')
+    if (res.data?.data?.system_date) {
+      pmsSystemDate.value = res.data.data.system_date
+    }
+  } catch (e) {
+    // fallback
+  }
   loadStats()
   handleSearch()
 })

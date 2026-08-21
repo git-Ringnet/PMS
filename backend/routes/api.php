@@ -131,6 +131,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/rooms/permissions', [\App\Http\Controllers\Api\RoomController::class, 'permissions']);
     Route::get('/rooms/vacant', [\App\Http\Controllers\Api\RoomController::class, 'vacant']);
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
+    Route::post('/rooms/bulk-status', [\App\Http\Controllers\Api\RoomController::class, 'bulkUpdateStatus']);
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 
@@ -183,6 +184,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // System Administration routes
     Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase']);
     Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase']);
+    Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision']);
     Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
@@ -471,6 +473,33 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/shuttle', [\App\Http\Controllers\Api\ShiftWorkController::class, 'shuttle']);
         Route::get('/noshow', [\App\Http\Controllers\Api\ShiftWorkController::class, 'noshow']);
         Route::get('/birthdays', [\App\Http\Controllers\Api\ShiftWorkController::class, 'birthdays']);
+    });
+
+    // ── Roles & Permissions ─────────────────────────────────────
+    Route::prefix('roles')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\RoleController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\RoleController::class, 'store']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\RoleController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\RoleController::class, 'destroy']);
+        Route::get('/{id}/permissions', [\App\Http\Controllers\Api\RoleController::class, 'getPermissions']);
+        Route::post('/{id}/permissions/sync', [\App\Http\Controllers\Api\RoleController::class, 'syncPermissions']);
+    });
+    Route::get('/permissions', [\App\Http\Controllers\Api\RoleController::class, 'allPermissions']);
+
+    // ── User Permissions & Branches ─────────────────────────────
+    Route::get('/system-branches/list', [\App\Http\Controllers\Api\UserPermissionController::class, 'listBranches']);
+    Route::prefix('users/{userId}')->group(function () {
+        Route::get('/permissions', [\App\Http\Controllers\Api\UserPermissionController::class, 'getUserPermissions']);
+        Route::post('/branches/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncBranches']);
+        Route::post('/roles/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncRoles']);
+    });
+
+    // ── Departments & Modules (Cơ cấu tổ chức & Ứng dụng) ───────
+    Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
+    Route::post('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'store']);
+    Route::get('/modules', function () {
+        $modules = \App\Models\Module::where('is_active', true)->orderBy('sort_order')->get();
+        return response()->json(['success' => true, 'data' => $modules]);
     });
 });
 

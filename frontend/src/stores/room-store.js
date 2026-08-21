@@ -13,6 +13,9 @@ export const useRoomStore = defineStore('room', () => {
     floor: null,
     status: null,
     roomType: null,
+    registrationStatus: null,
+    guestName: '',
+    bookingCode: '',
     search: '',
   })
 
@@ -48,10 +51,21 @@ export const useRoomStore = defineStore('room', () => {
     if (filters.value.roomType) {
       result = result.filter(r => r.room_type === filters.value.roomType)
     }
+    if (filters.value.registrationStatus) {
+      result = result.filter(r => String(r.registration_status || r.registration_status_code || '').toLowerCase() === String(filters.value.registrationStatus).toLowerCase())
+    }
+    if (filters.value.guestName) {
+      const guestSearch = String(filters.value.guestName).toLowerCase()
+      result = result.filter(r => String(r.guest_name || r.booking_name || r.primary_guest_name || r.guest_details?.join(' ') || '').toLowerCase().includes(guestSearch))
+    }
+    if (filters.value.bookingCode) {
+      const bookingSearch = String(filters.value.bookingCode).toLowerCase()
+      result = result.filter(r => String(r.booking_code || r.bookingCode || '').toLowerCase().includes(bookingSearch))
+    }
     if (filters.value.search) {
       const search = filters.value.search.toLowerCase()
       result = result.filter(r =>
-        r.room_number.includes(search) ||
+        String(r.room_number || '').toLowerCase().includes(search) ||
         (r.room_type || r.room_class?.code || '').toLowerCase().includes(search)
       )
     }
@@ -194,6 +208,9 @@ export const useRoomStore = defineStore('room', () => {
       floor: null,
       status: null,
       roomType: null,
+      registrationStatus: null,
+      guestName: '',
+      bookingCode: '',
       search: '',
     }
   }
