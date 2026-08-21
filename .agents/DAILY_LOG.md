@@ -23,9 +23,11 @@
       - Tự động đăng ký Dynamic Connection vào Runtime Configuration của Laravel (`mysql_{code}`).
       - Tự động chạy toàn bộ migrations khởi tạo schema bảng cho chi nhánh mới.
       - Tự động seed dữ liệu mẫu vận hành chuẩn ban đầu (`DatabaseSeeder`).
-      - Sửa lỗi `500 Server Error` khi tạo chi nhánh trên server:
-        - [`SystemBranchController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/SystemBranchController.php): Chỉ định `Rule::unique(SystemBranch::class)` thay vì table thô, giúp kiểm tra trùng mã/tên chi nhánh đúng trên kết nối `mysql_system` thay vì bị lỗi bảng không tồn tại trên tenant DB (`mysql_hkt1`).
-        - [`TenantDatabaseService.php`](file:///d:/PMS/backend/app/Services/TenantDatabaseService.php): Đọc credentials qua `Config::get()` thay vì gọi trực tiếp `env()`, tương thích hoàn toàn khi server chạy `config:cache`.
+      - Tối ưu tải dữ liệu Cơ Cấu Tổ Chức ([`OrgStructureTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/OrgStructureTab.vue)):
+        - Chuyển `Promise.all` sang `Promise.allSettled` giúp giao diện không bị treo/trắng khi có request chậm hoặc timeout.
+        - Giảm `per_page` của users từ 200 xuống 100 giúp giảm tải thời gian query từ Backend.
+        - Bổ sung Error State kèm nút **"🔄 Thử lại"** khi rớt mạng hoặc timeout để người dùng có thể tải lại ngay lập tức mà không cần F5.
+      - Ẩn giây ở thanh Header Topbar ([`MainLayout.vue`](file:///d:/PMS/frontend/src/layouts/MainLayout.vue)): Chuẩn hóa định dạng thời gian thành `[Ngày] [Giờ]:[Phút] [CH/SA]` (ví dụ: `09/08/2026 3:18 CH`).
   - **Đồng bộ Ngày Hệ Thống PMS (System Date)**:
     - [`BreakfastPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue): Sửa logic lấy ngày từ `res.data.data.system_date`, chuẩn hóa lấy đúng ngày nghiệp vụ khách sạn (09/08/2026).
     - [`ActivityLogTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue): Đồng bộ ngày nghiệp vụ từ `/system-date` và mặc định xem "Tất cả".
