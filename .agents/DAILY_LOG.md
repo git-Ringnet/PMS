@@ -23,7 +23,11 @@
       - Tự động đăng ký Dynamic Connection vào Runtime Configuration của Laravel (`mysql_{code}`).
       - Tự động chạy toàn bộ migrations khởi tạo schema bảng cho chi nhánh mới.
       - Tự động seed dữ liệu mẫu vận hành chuẩn ban đầu (`DatabaseSeeder`).
-      - Tự động cấp quyền truy cập chi nhánh mới này cho tất cả tài khoản Super Admin (`user_branches`).
+      - Bỏ ràng buộc Foreign Key `activity_logs.user_id` liên database để `activity_logs` ghi nhận log trơn tru trên mọi database chi nhánh mà không bị xung đột với `pms_system.users`.
+      - Migration [`2026_08_21_103000_drop_user_foreign_from_activity_logs.php`](file:///d:/PMS/backend/database/migrations/2026_08_21_103000_drop_user_foreign_from_activity_logs.php).
+  - **Đồng bộ Ngày Hệ Thống PMS (System Date)**:
+    - [`BreakfastPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue): Sửa logic lấy ngày từ `res.data.data.system_date`, chuẩn hóa lấy đúng ngày nghiệp vụ khách sạn (09/08/2026).
+    - [`ActivityLogTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue): Đồng bộ ngày nghiệp vụ từ `/system-date` và mặc định xem "Tất cả".
   - **Dynamic Connection Switching**:
     - Cập nhật [`SwitchBranchDatabase.php`](file:///d:/PMS/backend/app/Http/Middleware/SwitchBranchDatabase.php): Hỗ trợ phân giải và thiết lập kết nối động theo mã chi nhánh bất kỳ mà **không cần dev phải khai báo tĩnh trong `config/database.php` hay `.env`**.
   - **System Branch Management Controller**:

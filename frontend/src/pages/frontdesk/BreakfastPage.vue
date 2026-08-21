@@ -83,8 +83,9 @@ async function initDates() {
   let today = new Date().toISOString().slice(0, 10)
   try {
     const res = await fetchSystemDate()
-    if (res.data?.system_date) {
-      today = res.data.system_date
+    const sysDate = res.data?.data?.system_date || res.data?.system_date
+    if (sysDate) {
+      today = sysDate
     }
   } catch (err) {
     console.warn('Cannot fetch system date, fallback to client date:', err)

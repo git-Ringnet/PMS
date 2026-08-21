@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('activity_logs', function (Blueprint $table) {
             $table->id();
 
-            // User snapshot (nullable cho login thất bại)
-            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            // User snapshot (nullable cho login thất bại hoặc multi-database)
+            $table->unsignedBigInteger('user_id')->nullable();
             $table->string('user_name')->default('');
             $table->string('employee_code')->nullable();
 
