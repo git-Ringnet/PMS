@@ -23,8 +23,16 @@
       - Tự động đăng ký Dynamic Connection vào Runtime Configuration của Laravel (`mysql_{code}`).
       - Tự động chạy toàn bộ migrations khởi tạo schema bảng cho chi nhánh mới.
       - Tự động seed dữ liệu mẫu vận hành chuẩn ban đầu (`DatabaseSeeder`).
-      - Bỏ ràng buộc Foreign Key `activity_logs.user_id` liên database để `activity_logs` ghi nhận log trơn tru trên mọi database chi nhánh mà không bị xung đột với `pms_system.users`.
-      - Migration [`2026_08_21_103000_drop_user_foreign_from_activity_logs.php`](file:///d:/PMS/backend/database/migrations/2026_08_21_103000_drop_user_foreign_from_activity_logs.php).
+      - Tối ưu tải dữ liệu Cơ Cấu Tổ Chức ([`OrgStructureTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/OrgStructureTab.vue)):
+        - Chuyển `Promise.all` sang `Promise.allSettled` giúp giao diện không bị treo/trắng khi có request chậm hoặc timeout.
+      - Nâng cấp tính năng Xóa Chi Nhánh ([`BranchManageTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/BranchManageTab.vue) & [`SystemBranchController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/SystemBranchController.php)):
+        - Bổ sung Popup modal xác nhận phương thức xóa:
+          1. **Chỉ xóa thông tin chi nhánh**: Xóa khỏi bảng quản trị, giữ lại MySQL Database để lưu trữ dữ liệu cũ.
+          2. **Xóa chi nhánh & Xóa toàn bộ Database**: Tự động thực thi `DROP DATABASE` xóa sạch cơ sở dữ liệu chi nhánh trên MySQL server.
+      - Nâng cấp lệnh `php artisan db:reset-all`:
+        - Tự động quét toàn bộ cơ sở dữ liệu `pms_*` có trên máy chủ MySQL (`SHOW DATABASES LIKE 'pms_%'`) và bảng `system_branches` thay vì chỉ reset cứng 5 DB cũ.
+        - Đăng ký kết nối động (`Dynamic Connection`) cho mọi database chi nhánh phát hiện được (ví dụ `pms_dai_luc`, `pms_hkt5`, `pms_gkt6`...) để thực hiện `migrate:fresh` và `db:seed`.
+        - Bổ sung tùy chọn `--drop-extra` để dọn dẹp các database thử nghiệm rác không có trong danh sách chi nhánh quản lý.
   - **Đồng bộ Ngày Hệ Thống PMS (System Date)**:
     - [`BreakfastPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue): Sửa logic lấy ngày từ `res.data.data.system_date`, chuẩn hóa lấy đúng ngày nghiệp vụ khách sạn (09/08/2026).
     - [`ActivityLogTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue): Đồng bộ ngày nghiệp vụ từ `/system-date` và mặc định xem "Tất cả".

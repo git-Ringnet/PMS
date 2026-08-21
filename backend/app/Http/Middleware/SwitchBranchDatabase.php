@@ -30,20 +30,37 @@ class SwitchBranchDatabase
             return $next($request);
         }
 
-        $resolvedCode = $branchCode ? strtoupper(trim((string) $branchCode)) : null;
-
-        if (!$resolvedCode && $branchId) {
-            $resolvedCode = 'HKT' . (int) $branchId;
+        $branch = null;
+        if ($branchId) {
+            $branch = \App\Models\SystemBranch::find($branchId);
+        }
+        if (!$branch && $branchCode) {
+            $branch = \App\Models\SystemBranch::where('code', $branchCode)
+                ->orWhere('code', trim((string) $branchCode))
+                ->first();
         }
 
-        $resolvedCode ??= $defaultCode;
-        $targetConnection = $connections[$resolvedCode] ?? null;
+        if ($branch) {
+            $resolvedCode = $branch->code;
+            $request->attributes->set('_branch_id', $branch->id);
+            $request->attributes->set('_branch_code', $branch->code);
+        } else {
+            $resolvedCode = $branchCode ? trim((string) $branchCode) : $defaultCode;
+            $request->attributes->set('_branch_code', $resolvedCode);
+        }
 
+        $upperCode = strtoupper($resolvedCode);
+        $targetConnection = $connections[$upperCode] ?? $connections[$resolvedCode] ?? null;
+
+        // Nếu chưa khai báo tĩnh trong config, tự động phân giải và đăng ký Dynamic Connection
         if (!$targetConnection) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Chi nhánh không hợp lệ.',
-            ], 422);
+            $candidateConn = \App\Services\TenantDatabaseService::getConnectionName($resolvedCode);
+            $dbName = \App\Services\TenantDatabaseService::getDatabaseName($resolvedCode);
+
+            if (!config("database.connections.{$candidateConn}")) {
+                \App\Services\TenantDatabaseService::registerDynamicConnection($candidateConn, $dbName);
+            }
+            $targetConnection = $candidateConn;
         }
 
         // Do not purge the in-memory SQLite connection used by feature tests

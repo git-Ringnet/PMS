@@ -7,6 +7,8 @@ use App\Http\Resources\SystemBranchResource;
 use App\Models\SystemBranch;
 use Illuminate\Http\Request;
 
+use Illuminate\Validation\Rule;
+
 class SystemBranchController extends Controller
 {
     /**
@@ -38,8 +40,18 @@ class SystemBranchController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'code' => 'required|string|max:100|unique:system_branches,code',
-            'name' => 'required|string|max:255|unique:system_branches,name',
+            'code' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique(SystemBranch::class, 'code'),
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique(SystemBranch::class, 'name'),
+            ],
             'tax_code' => 'nullable|string|max:100',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
@@ -89,8 +101,18 @@ class SystemBranchController extends Controller
         }
 
         $validated = $request->validate([
-            'code' => 'required|string|max:100|unique:system_branches,code,' . $id,
-            'name' => 'required|string|max:255|unique:system_branches,name,' . $id,
+            'code' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique(SystemBranch::class, 'code')->ignore($branch->id),
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique(SystemBranch::class, 'name')->ignore($branch->id),
+            ],
             'tax_code' => 'nullable|string|max:100',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
@@ -111,18 +133,33 @@ class SystemBranchController extends Controller
     /**
      * Remove the specified system branch.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $branch = SystemBranch::find($id);
         if (!$branch) {
             return response()->json(['message' => 'System branch not found'], 404);
         }
 
+        $dropDatabase = $request->boolean('drop_database', false);
+        $dbName = \App\Services\TenantDatabaseService::getDatabaseName($branch->code);
+
+        // Xóa liên kết user - chi nhánh
+        \App\Models\UserBranch::where('system_branch_id', $branch->id)->delete();
+
+        // Nếu người dùng chọn xóa kèm Database vật lý
+        $dbDropped = false;
+        if ($dropDatabase) {
+            $dbDropped = \App\Services\TenantDatabaseService::dropBranchDatabase($branch->code);
+        }
+
         $branch->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'System branch deleted successfully',
+            'message' => $dropDatabase && $dbDropped 
+                ? "Đã xóa chi nhánh và cơ sở dữ liệu ({$dbName}) thành công!"
+                : "Đã xóa chi nhánh thành công!",
+            'dropped_database' => $dbDropped,
         ]);
     }
 
