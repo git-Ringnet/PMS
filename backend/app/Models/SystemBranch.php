@@ -2,15 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UsesSystemConnection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SystemBranch extends Model
 {
-    use HasFactory;
-
-    protected $connection = 'mysql_system';
+    use HasFactory, UsesSystemConnection;
 
     protected $table = 'system_branches';
 
