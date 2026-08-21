@@ -91,7 +91,7 @@ input[type="number"] {
 }
 .booking-tab {
   background: var(--navy-2);
-  color: #8fa6c4 !important;
+  color: var(--pms-custom-theme-text, #ffffff) !important;
   font-weight: 600;
   font-size: 12.5px;
   padding: 8px 14px;
@@ -104,15 +104,15 @@ input[type="number"] {
 }
 .booking-tab.active {
   background: var(--navy-3) !important;
-  color: #fff !important;
+  color: var(--pms-custom-theme-text, #ffffff) !important;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 .booking-tab:hover {
   background: var(--navy-3);
-  color: #fff !important;
+  color: var(--pms-custom-theme-text, #ffffff) !important;
 }
 .booking-tab .x {
-  color: #9db3d1;
+  color: var(--pms-custom-theme-text, #ffffff);
   font-size: 13px;
   cursor: pointer;
 }

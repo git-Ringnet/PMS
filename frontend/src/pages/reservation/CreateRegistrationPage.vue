@@ -229,14 +229,7 @@ function handleTableScroll() {
 function handleGlobalSearchResultClick(booking) {
   // Khi mở lại booking, xóa khỏi danh sách tab đã đóng để F5 hiện lại
   removeClosedTabId(booking.id)
-  const existing = tabs.value.find(t => t.dbId === booking.id)
-  if (existing) {
-    activeTabId.value = existing.id
-  } else {
-    const newTab = { ...bookingToTab(booking) }
-    tabs.value.push(newTab)
-    activeTabId.value = newTab.id
-  }
+  replaceBookingTab(booking)
 }
 
 function openGlobalSearch() {
@@ -1649,7 +1642,6 @@ async function refreshRoomRateCodes() {
 async function loadBookings() {
   isLoadingBookings.value = true
   try {
-    const prevActiveId = activeTabId.value
     const res = await fetchBookings({ status: '0,1' })
     const allList = res.data?.data || res.data || []
 
@@ -1661,18 +1653,24 @@ async function loadBookings() {
       const latestBooking = allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
       // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
       localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
-      tabs.value = [bookingToTab(latestBooking)]
-      activeTabId.value = tabs.value[0].id
+      replaceBookingTab(latestBooking)
     } else {
       // Các lần sau: lọc theo closedIds đã lưu
       const closedIds = getClosedTabIds()
       const list = allList.filter(b => !closedIds.includes(String(b.id)))
-      tabs.value = list.map(b => bookingToTab(b))
+      const currentTab = tabs.value[0]
+      const currentBooking = currentTab?.dbId
+        ? list.find(b => String(b.id) === String(currentTab.dbId))
+        : null
+      const nextBooking = currentBooking || (currentTab?.id === 'NEW_BOOKING'
+        ? null
+        : list.reduce((max, b) => !max || b.id > max.id ? b : max, null))
 
-      if (tabs.value.some(t => t.id === prevActiveId)) {
-        activeTabId.value = prevActiveId
-      } else if (tabs.value.length > 0) {
-        activeTabId.value = tabs.value[0].id
+      if (nextBooking) {
+        replaceBookingTab(nextBooking)
+      } else if (currentTab?.id === 'NEW_BOOKING') {
+        tabs.value = [currentTab]
+        activeTabId.value = currentTab.id
       } else {
         // Không còn tab nào → empty state, KHÔNG tạo blank tab
         tabs.value = []
@@ -2004,6 +2002,13 @@ function makeBlankTab() {
 
 // ==================== TAB HANDLERS ====================
 function handleTabClick(tabId) { activeTabId.value = tabId }
+
+function replaceBookingTab(booking) {
+  const nextTab = { ...bookingToTab(booking) }
+  tabs.value = [nextTab]
+  activeTabId.value = nextTab.id
+  return nextTab
+}
 
 function handleCloseTab(tabId, event) {
   event.stopPropagation()
@@ -3514,8 +3519,7 @@ async function handleSaveNewBooking() {
       const res = await createBooking(payload)
       const created = res.data?.data || res.data
       await loadBookings()
-      const idx = tabs.value.findIndex(t => t.dbId === created.id)
-      if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
+      await openBookingModalByCode(created.booking_code || created.id)
       uiStore.showToast(`Tạo đăng ký ${created.booking_code} thành công!`, 'success')
     }
     closeModal()
@@ -4496,11 +4500,9 @@ async function openCopyModal() {
 
 function handleCopied(newBooking) {
   if (newBooking) {
-    const newTab = bookingToTab(newBooking)
     // Xóa khỏi closed list nếu trước đây đã bị đóng
     removeClosedTabId(newBooking.id)
-    tabs.value.push(newTab)
-    activeTabId.value = newTab.id
+    replaceBookingTab(newBooking)
   }
   loadBookings()
 }
@@ -4715,13 +4717,7 @@ async function openBookingModalByCode(bookingCode) {
             applyRateCodeDailyPricesToRoom(room)
           }
         })
-        const existingIdx = tabs.value.findIndex(t => t.id === tabObj.id)
-        if (existingIdx > -1) {
-          tabs.value[existingIdx] = tabObj
-        } else {
-          tabs.value.push(tabObj)
-        }
-        activeTabId.value = tabObj.id
+        replaceBookingTab(bItem)
       }
     } catch (err) {
       console.error('Lỗi khi mở booking theo mã:', err)
@@ -4758,7 +4754,7 @@ defineExpose({
           :key="tab.id"
           @click="handleTabClick(tab.id)"
           class="booking-tab cursor-pointer whitespace-nowrap shrink-0"
-          :style="tab.id === activeTabId ? 'background: var(--navy-3); border: 1px solid rgba(255,255,255,0.15)' : 'background: rgba(255,255,255,0.06); color: #c7d2e0'"
+          :style="tab.id === activeTabId ? 'background: var(--navy-3); border: 1px solid rgba(255,255,255,0.15)' : 'background: rgba(255,255,255,0.06)'"
         >
           <span>{{ tab.title }}</span>
           <span

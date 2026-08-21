@@ -78,7 +78,7 @@ function updateCssVariables(colorVal) {
       }
     }
     
-    document.documentElement.style.setProperty('--pms-custom-theme-text', isDark ? '#ffffff' : '#003d66')
+    document.documentElement.style.setProperty('--pms-custom-theme-text', isDark ? '#ffffff' : '#000000')
     document.documentElement.style.setProperty('--pms-custom-theme-border', 'transparent')
   }
 }
