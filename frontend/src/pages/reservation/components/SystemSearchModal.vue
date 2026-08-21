@@ -1,12 +1,12 @@
 <template>
   <div 
     v-if="show" 
-    class="fixed inset-0 bg-slate-900/20 flex justify-center items-start pt-16 z-[99999]"
+    class="fixed inset-0 bg-slate-900/20 z-[99999] pointer-events-none"
     @click="close"
   >
     <div 
-      class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-visible border border-slate-200"
-      :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
+      class="absolute pointer-events-auto bg-white rounded-2xl shadow-2xl w-[min(730px,calc(100vw-12px))] flex flex-col overflow-visible border border-slate-200"
+      :style="{ top: `${position.top}px`, right: `${position.right}px`, transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       @click.stop
     >
       <!-- DÒNG 1: INPUT SEARCH HEADER -->
@@ -15,23 +15,15 @@
         @mousedown="startDragModal"
       >
         <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm mr-3"></i>
-        <input 
-          type="text" 
-          id="gsInput"
-          v-model="globalSearchQuery" 
-          placeholder="Tìm kiếm" 
-          class="flex-1 text-sm text-slate-800 placeholder-slate-400 outline-none bg-transparent font-medium" 
+        <input
+          v-if="showSearchInput"
+          v-model="globalSearchQuery"
+          type="text"
           autofocus
+          placeholder="Tìm kiếm Booking..."
+          class="flex-1 text-sm text-slate-800 placeholder-slate-400 outline-none bg-transparent font-medium"
         />
-        <!-- NÚT XÓA TỪ KHÓA TÌM KIẾM -->
-        <button
-          v-if="globalSearchQuery"
-          @click="clearQuery"
-          class="text-slate-300 hover:text-slate-500 mr-3 border-none bg-transparent cursor-pointer p-1 text-sm leading-none transition"
-          title="Xóa từ khóa"
-        >
-          <i class="fa-solid fa-circle-xmark"></i>
-        </button>
+        <span v-else class="flex-1 text-sm text-slate-600 font-semibold">Kết quả tìm kiếm Booking</span>
         <button 
           @click="close" 
           class="text-slate-400 hover:text-slate-700 transition border-none bg-transparent cursor-pointer p-1 rounded-md text-base leading-none"
@@ -189,7 +181,7 @@
 
                 <!-- NGÀY ĐẾN -->
                 <td class="p-2.5 text-center font-semibold text-slate-700 text-xs">
-                  {{ formatDateDisplay(b.arrival_date || b.check_in) }}
+                  {{ formatDateDisplay(getMatchingArrivalDate(b)) }}
                 </td>
 
                 <!-- TRẠNG THÁI (LẤY THEO STATUS 0,1,2,3,4) -->
@@ -227,12 +219,20 @@ import { fetchBookings } from '@/services/booking-service'
 
 const props = defineProps({
   show: Boolean,
+  query: { type: String, default: '' },
+  position: { type: Object, default: () => ({ top: 120, right: 16 }) },
+  showSearchInput: { type: Boolean, default: false },
   registrationStatuses: Array,
   activeTab: Object,
   systemDate: String
 })
 
-const emit = defineEmits(['update:show', 'select-booking'])
+const emit = defineEmits(['update:show', 'update:query', 'select-booking'])
+
+const globalSearchQuery = computed({
+  get: () => props.query,
+  set: value => emit('update:query', value)
+})
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
@@ -296,7 +296,6 @@ function openToDatePicker() {
   }
 }
 
-const globalSearchQuery = ref('')
 const globalSearchResults = ref([])
 const filterByArrivalDate = ref(false)
 const isLoading = ref(false)
@@ -368,11 +367,39 @@ function getStatusBadgeStyle(status) {
 
 function formatDateDisplay(dateStr) {
   if (!dateStr) return '-'
-  const onlyDate = dateStr.trim().substring(0, 10)
+  const onlyDate = normalizePmsDate(dateStr)
   if (onlyDate.includes('/')) return onlyDate
   const parts = onlyDate.split('-')
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`
   return onlyDate
+}
+
+function normalizePmsDate(dateStr) {
+  const raw = String(dateStr).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(parsed)
+  }
+
+  return raw.substring(0, 10)
+}
+
+function getMatchingArrivalDate(booking) {
+  const rooms = booking.booking_rooms || booking.bookingRooms || []
+  const matchingRoom = rooms.find((room) => {
+    if (!filterByArrivalDate.value) return true
+    const roomDate = normalizePmsDate(room.arrival_date || room.check_in)
+    return roomDate >= searchFromDate.value && roomDate <= searchToDate.value
+  })
+
+  return matchingRoom?.arrival_date || matchingRoom?.check_in || booking.arrival_date || booking.check_in
 }
 
 function parseInputDate(displayStr) {
@@ -412,7 +439,6 @@ function applyStatusFilter() {
 watch(() => props.show, (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
-    globalSearchQuery.value = ''
     filterByArrivalDate.value = false
     isStatusDropdownOpen.value = false
     selectedStatuses.value = [0, 1, 2, 3, 4]
@@ -426,11 +452,11 @@ watch(() => props.show, (newVal) => {
 
     executeGlobalSearch()
 
-    setTimeout(() => {
-      const el = document.getElementById('gsInput')
-      if (el) el.focus()
-    }, 50)
   }
+})
+
+watch(() => props.query, () => {
+  if (props.show) executeGlobalSearch()
 })
 
 async function executeGlobalSearch() {
@@ -444,6 +470,7 @@ async function executeGlobalSearch() {
   if (filterByArrivalDate.value) {
     if (searchFromDate.value) params.from_date = searchFromDate.value
     if (searchToDate.value) params.to_date = searchToDate.value
+    params.date_type = 'arrival'
   }
 
   // Nếu người dùng bỏ chọn tất cả status
@@ -475,12 +502,6 @@ async function executeGlobalSearch() {
 watch(globalSearchQuery, () => {
   executeGlobalSearch()
 })
-
-function clearQuery() {
-  globalSearchQuery.value = ''
-  const el = document.getElementById('gsInput')
-  if (el) el.focus()
-}
 
 function close() {
   emit('update:show', false)

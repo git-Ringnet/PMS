@@ -26,6 +26,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Services\RegistrationStatusMapper;
 
 class NightAuditController extends Controller
 {
@@ -220,7 +221,7 @@ class NightAuditController extends Controller
             // Cập nhật khách và trẻ em gán vào phòng
             BookingRoomGuest::where('booking_room_id', $room->id)->update(['status' => 4]);
             $guestIds = BookingRoomGuest::where('booking_room_id', $room->id)->pluck('guest_id');
-            Guest::whereIn('id', $guestIds)->update(['guest_status' => 4]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
             BookingChild::where('booking_room_id', $room->id)->update(['child_status' => 4]);
 
             // 2. Giải phóng phòng vật lý
@@ -243,8 +244,7 @@ class NightAuditController extends Controller
 
             $allNoShow = $booking->bookingRooms()->where('status', '!=', 4)->count() === 0;
             if ($allNoShow) {
-                $noshowRegStatus = \App\Models\RegistrationStatus::where('booking_status_id', 25)->first();
-                $noshowRegStatusId = $noshowRegStatus ? $noshowRegStatus->id : null;
+                $noshowRegStatusId = RegistrationStatusMapper::idFromLegacyCode(25);
 
                 if ($chargeOption === 'no_charge') {
                     $booking->update([

@@ -17,6 +17,19 @@ class BookingRoomGuest extends Model
     const STATUS_CHECKED_OUT = 2; // Đã checkout lẻ (checkout sớm/muộn)
     const STATUS_CANCELLED   = 3; // Đã hủy (cascade từ hủy phòng)
 
+    const STATUS_NOSHOW = 4;
+
+    protected static function booted(): void
+    {
+        static::saved(function (self $pivot) {
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuest($pivot->guest_id);
+        });
+
+        static::deleted(function (self $pivot) {
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuest($pivot->guest_id);
+        });
+    }
+
     protected $fillable = [
         'booking_room_id',
         'guest_id',
