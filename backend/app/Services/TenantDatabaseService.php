@@ -40,18 +40,18 @@ class TenantDatabaseService
      */
     public static function registerDynamicConnection(string $connName, string $dbName): array
     {
-        $base = Config::get('database.connections.mysql') 
-            ?? Config::get('database.connections.mysql_system') 
+        $base = Config::get('database.connections.mysql_system') 
+            ?? Config::get('database.connections.mysql') 
             ?? [
                 'driver' => 'mysql',
-                'host' => env('DB_HOST', '127.0.0.1'),
-                'port' => env('DB_PORT', '3306'),
-                'username' => env('DB_USERNAME', 'root'),
-                'password' => env('DB_PASSWORD', ''),
+                'host' => config('database.connections.mysql.host', '127.0.0.1'),
+                'port' => config('database.connections.mysql.port', '3306'),
+                'username' => config('database.connections.mysql.username', 'root'),
+                'password' => config('database.connections.mysql.password', ''),
                 'charset' => 'utf8mb4',
                 'collation' => 'utf8mb4_unicode_ci',
                 'prefix' => '',
-                'strict' => true,
+                'strict' => false,
                 'engine' => null,
             ];
 
@@ -69,12 +69,26 @@ class TenantDatabaseService
      */
     public static function createDatabaseIfNotExists(string $dbName): bool
     {
+        // 1. Thử tạo qua kết nối mysql_system hoặc mysql hiện tại
+        foreach (['mysql_system', 'mysql'] as $conn) {
+            try {
+                if (Config::has("database.connections.{$conn}")) {
+                    DB::connection($conn)->statement("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                Log::warning("TenantDatabaseService: Thử tạo database {$dbName} qua connection '{$conn}' không thành công: " . $e->getMessage());
+            }
+        }
+
+        // 2. Fallback qua PDO đọc từ config đã load
         try {
-            $host = env('DB_HOST', '127.0.0.1');
-            $port = env('DB_PORT', '3306');
-            $username = env('DB_USERNAME', 'root');
-            $password = env('DB_PASSWORD', '');
-            $socket = env('DB_SOCKET', '');
+            $baseConfig = Config::get('database.connections.mysql_system') ?? Config::get('database.connections.mysql') ?? [];
+            $host = $baseConfig['host'] ?? config('database.connections.mysql.host', '127.0.0.1');
+            $port = $baseConfig['port'] ?? config('database.connections.mysql.port', '3306');
+            $username = $baseConfig['username'] ?? config('database.connections.mysql.username', 'root');
+            $password = $baseConfig['password'] ?? config('database.connections.mysql.password', '');
+            $socket = $baseConfig['unix_socket'] ?? config('database.connections.mysql.unix_socket', '');
 
             $dsn = $socket
                 ? "mysql:unix_socket={$socket}"
@@ -87,15 +101,8 @@ class TenantDatabaseService
             $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
             return true;
         } catch (\Throwable $e) {
-            Log::warning("TenantDatabaseService: Không thể tự tạo database {$dbName} qua PDO: " . $e->getMessage());
-            // Fallback qua DB connection hiện tại
-            try {
-                DB::connection('mysql_system')->statement("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
-                return true;
-            } catch (\Throwable $e2) {
-                Log::error("TenantDatabaseService fallback error: " . $e2->getMessage());
-                return false;
-            }
+            Log::error("TenantDatabaseService: Tạo database {$dbName} qua PDO thất bại: " . $e->getMessage());
+            return false;
         }
     }
 
