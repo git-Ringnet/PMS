@@ -1239,7 +1239,9 @@ class BookingController extends Controller
             // 2. Cascade: Hủy và ghi log cho từng phòng trong booking (SP8052)
             $allRooms = $booking->bookingRooms;
             foreach ($allRooms as $bRoom) {
+                $guestIds = $bRoom->guests()->pluck('guest_id');
                 $bRoom->guests()->update(['status' => 3]);
+                app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
                 $bRoom->children()->update(['child_status' => 3]);
                 $bRoom->update([
                     'status' => BookingRoom::STATUS_CANCELLED,
@@ -1503,6 +1505,7 @@ class BookingController extends Controller
                         $bRoom->update(['status' => BookingRoom::STATUS_BOOKED]);
                         // Khôi phục guests
                         $bRoom->guests()->update(['status' => 0]);
+                        app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bRoom->guests()->pluck('guest_id'));
                         // Khôi phục children
                         $bRoom->children()->update(['child_status' => 0]);
                     }
@@ -2330,14 +2333,11 @@ class BookingController extends Controller
                     ]);
 
                     // Khôi phục guests
+                    $guestIds = BookingRoomGuest::where('booking_room_id', $bRoom->id)->pluck('guest_id');
                     BookingRoomGuest::where('booking_room_id', $bRoom->id)
                         ->where('status', 4)
                         ->update(['status' => 0]);
-
-                    $guestIds = BookingRoomGuest::where('booking_room_id', $bRoom->id)->pluck('guest_id');
-                    Guest::whereIn('id', $guestIds)
-                        ->where('guest_status', 4)
-                        ->update(['guest_status' => 0]);
+                    app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
 
                     // Khôi phục children
                     BookingChild::where('booking_room_id', $bRoom->id)

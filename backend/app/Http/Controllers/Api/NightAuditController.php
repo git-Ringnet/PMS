@@ -221,7 +221,7 @@ class NightAuditController extends Controller
             // Cập nhật khách và trẻ em gán vào phòng
             BookingRoomGuest::where('booking_room_id', $room->id)->update(['status' => 4]);
             $guestIds = BookingRoomGuest::where('booking_room_id', $room->id)->pluck('guest_id');
-            Guest::whereIn('id', $guestIds)->update(['guest_status' => 4]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
             BookingChild::where('booking_room_id', $room->id)->update(['child_status' => 4]);
 
             // 2. Giải phóng phòng vật lý

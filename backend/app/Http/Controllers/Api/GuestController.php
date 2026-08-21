@@ -456,6 +456,7 @@ class GuestController extends Controller
                 'actual_checkout_time' => null,
                 'checkout_by' => null,
             ]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($restoredGuests->pluck('guest_id'));
             $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_IN]);
             $room->update([
                 'status' => BookingRoom::STATUS_CHECKED_IN,
