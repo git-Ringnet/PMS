@@ -144,6 +144,18 @@ const openEditModal = (item) => {
   isModalOpen.value = true
 }
 
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
+
+// State popup xác nhận chi tiết
+const isConfirmModalOpen = ref(false)
+
+const getExpectedDbName = (code) => {
+  if (!code) return 'pms_...'
+  let str = code.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd')
+  str = str.replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+  return 'pms_' + (str || 'branch')
+}
+
 const saveItem = async () => {
   if (!form.value.code) {
     uiStore.showToast('Vui lòng nhập mã chi nhánh', 'warning')
@@ -154,20 +166,37 @@ const saveItem = async () => {
     return
   }
   
-  loading.value = true
-  try {
-    if (isEditMode.value) {
+  if (isEditMode.value) {
+    loading.value = true
+    try {
       await updateSystemBranch(currentId.value, form.value)
       uiStore.showToast('Cập nhật chi nhánh thành công!', 'success')
-    } else {
-      await createSystemBranch(form.value)
-      uiStore.showToast('Thêm chi nhánh mới thành công!', 'success')
+      isModalOpen.value = false
+      loadData()
+    } catch (err) {
+      console.error(err)
+      const msg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu chi nhánh'
+      uiStore.showToast(msg, 'error')
+    } finally {
+      loading.value = false
     }
+  } else {
+    // Mở popup xác nhận chi tiết thông tin khởi tạo Database
+    isConfirmModalOpen.value = true
+  }
+}
+
+const handleConfirmCreate = async () => {
+  isConfirmModalOpen.value = false
+  loading.value = true
+  try {
+    await createSystemBranch(form.value)
+    uiStore.showToast('Thêm chi nhánh và khởi tạo Database thành công!', 'success')
     isModalOpen.value = false
     loadData()
   } catch (err) {
     console.error(err)
-    const msg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu chi nhánh'
+    const msg = err.response?.data?.message || 'Có lỗi xảy ra khi tạo chi nhánh mới'
     uiStore.showToast(msg, 'error')
   } finally {
     loading.value = false
@@ -479,8 +508,79 @@ const handleDelete = async (item) => {
             </button>
           </div>
         </div>
+        <LoadingOverlay :show="loading" />
       </div>
     </div>
+
+    <!-- Modal Xác Nhận Tạo Chi Nhánh & Khởi Tạo Database (Đồng bộ phong cách dự án) -->
+    <div 
+      v-if="isConfirmModalOpen" 
+      class="fixed inset-0 z-55 flex items-center justify-center bg-black/55 backdrop-blur-xs"
+    >
+      <div class="bg-white rounded-lg w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in select-none">
+        <!-- Header -->
+        <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white border-b border-slate-200">
+          <h2 class="text-sm font-bold tracking-wide">
+            Xác Nhận Khởi Tạo Chi Nhánh & Database
+          </h2>
+          <button @click="isConfirmModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-5 flex flex-col gap-3 text-xs text-slate-700">
+          <p class="leading-relaxed">
+            Bạn có chắc chắn muốn thêm chi nhánh <strong class="text-sky-700 font-bold">{{ form.name }}</strong> vào hệ thống?
+          </p>
+
+          <!-- Tóm tắt thông tin chi nhánh & Database -->
+          <div class="bg-slate-50 border border-slate-200 rounded-md p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500 font-semibold">Tên chi nhánh:</span>
+              <span class="font-bold text-slate-800">{{ form.name }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500 font-semibold">Mã chi nhánh:</span>
+              <span class="px-2 py-0.5 bg-white border border-slate-300 rounded font-mono font-bold text-slate-800">{{ form.code }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500 font-semibold">Cơ sở dữ liệu (Database mới):</span>
+              <span class="px-2 py-0.5 bg-sky-50 border border-sky-300 rounded font-mono font-bold text-sky-700">{{ getExpectedDbName(form.code) }}</span>
+            </div>
+          </div>
+
+          <!-- Thông báo các bước tự động -->
+          <div class="bg-[#fffbeb] border border-amber-200 rounded-md p-3 text-slate-700 leading-relaxed">
+            <div class="font-bold text-amber-800 mb-1">⚙️ Hệ thống sẽ tự động thực hiện:</div>
+            <ul class="list-disc pl-4 space-y-0.5 text-[11px] text-slate-600">
+              <li>Tạo mới Database MySQL <span class="font-mono font-bold text-sky-800">{{ getExpectedDbName(form.code) }}</span>.</li>
+              <li>Khởi tạo toàn bộ cấu trúc bảng (Phòng, Đặt phòng, Thu ngân, Buồng phòng...).</li>
+              <li>Nạp dữ liệu mẫu ban đầu và tự động cấp quyền truy cập cho Super Admin.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-slate-50 px-5 py-3.5 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button 
+            type="button"
+            @click="isConfirmModalOpen = false" 
+            class="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs cursor-pointer border-none transition-colors"
+          >
+            Hủy Bỏ
+          </button>
+          <button 
+            type="button"
+            @click="handleConfirmCreate"
+            class="px-5 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none shadow-xs transition-colors"
+          >
+            Tạo Chi Nhánh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Standard system LoadingOverlay for whole tab -->
+    <LoadingOverlay :show="loading" />
   </div>
 </template>
 

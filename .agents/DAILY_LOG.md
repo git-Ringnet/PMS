@@ -23,8 +23,7 @@
       - Tự động đăng ký Dynamic Connection vào Runtime Configuration của Laravel (`mysql_{code}`).
       - Tự động chạy toàn bộ migrations khởi tạo schema bảng cho chi nhánh mới.
       - Tự động seed dữ liệu mẫu vận hành chuẩn ban đầu (`DatabaseSeeder`).
-      - Bỏ ràng buộc Foreign Key `activity_logs.user_id` liên database để `activity_logs` ghi nhận log trơn tru trên mọi database chi nhánh mà không bị xung đột với `pms_system.users`.
-      - Migration [`2026_08_21_103000_drop_user_foreign_from_activity_logs.php`](file:///d:/PMS/backend/database/migrations/2026_08_21_103000_drop_user_foreign_from_activity_logs.php).
+      - Tích hợp Popup Xác Nhận hiển thị chi tiết thông tin Tên chi nhánh, Mã chi nhánh, Tên Database dự kiến (`pms_[slug]`) và cấu trúc bảng sẽ khởi tạo, kết hợp hiệu ứng `LoadingOverlay.vue` 3 vòng xoay chuẩn của dự án trong [`BranchManageTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/BranchManageTab.vue).
   - **Đồng bộ Ngày Hệ Thống PMS (System Date)**:
     - [`BreakfastPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue): Sửa logic lấy ngày từ `res.data.data.system_date`, chuẩn hóa lấy đúng ngày nghiệp vụ khách sạn (09/08/2026).
     - [`ActivityLogTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue): Đồng bộ ngày nghiệp vụ từ `/system-date` và mặc định xem "Tất cả".

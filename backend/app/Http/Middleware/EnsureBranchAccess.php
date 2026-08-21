@@ -21,10 +21,17 @@ class EnsureBranchAccess
             ], 403);
         }
 
-        $branch = SystemBranch::query()
-            ->where('code', $branchCode)
-            ->where('is_active', true)
-            ->first();
+        $branch = null;
+        $branchId = $request->attributes->get('_branch_id') ?? $request->header('X-Branch-Id');
+        if ($branchId) {
+            $branch = SystemBranch::query()->where('id', $branchId)->where('is_active', true)->first();
+        }
+        if (!$branch && $branchCode) {
+            $branch = SystemBranch::query()
+                ->where('code', $branchCode)
+                ->where('is_active', true)
+                ->first();
+        }
 
         if (!$branch) {
             if (app()->environment('testing') && !$request->hasHeader('X-Branch-Code')) {
@@ -35,14 +42,6 @@ class EnsureBranchAccess
                 'success' => false,
                 'message' => 'Chi nhánh không tồn tại hoặc đã ngừng hoạt động.',
             ], 403);
-        }
-
-        $headerBranchId = $request->header('X-Branch-Id');
-        if ($headerBranchId !== null && (int) $headerBranchId !== (int) $branch->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Mã chi nhánh và ID chi nhánh không khớp.',
-            ], 422);
         }
 
         if (!$user->isSuperAdmin()) {

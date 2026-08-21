@@ -15,22 +15,24 @@ class TenantDatabaseService
 {
     /**
      * Sinh tên Database theo mã chi nhánh.
-     * Ví dụ: HKT5 -> pms_hkt5, CANTHO -> pms_cantho
+     * Ví dụ: HKT5 -> pms_hkt5, CANTHO -> pms_cantho, 'Đại Lục' -> pms_dai_luc
      */
     public static function getDatabaseName(string $branchCode): string
     {
-        $clean = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', $branchCode));
-        return 'pms_' . $clean;
+        $clean = str_replace('-', '_', \Illuminate\Support\Str::slug($branchCode, '_'));
+        $clean = preg_replace('/[^a-zA-Z0-9_]/', '', $clean);
+        return 'pms_' . strtolower($clean ?: 'branch');
     }
 
     /**
      * Sinh tên Connection theo mã chi nhánh.
-     * Ví dụ: HKT5 -> mysql_hkt5
+     * Ví dụ: HKT5 -> mysql_hkt5, 'Đại Lục' -> mysql_dai_luc
      */
     public static function getConnectionName(string $branchCode): string
     {
-        $clean = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', $branchCode));
-        return 'mysql_' . $clean;
+        $clean = str_replace('-', '_', \Illuminate\Support\Str::slug($branchCode, '_'));
+        $clean = preg_replace('/[^a-zA-Z0-9_]/', '', $clean);
+        return 'mysql_' . strtolower($clean ?: 'branch');
     }
 
     /**
