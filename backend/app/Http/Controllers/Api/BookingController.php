@@ -346,6 +346,7 @@ class BookingController extends Controller
 
         // Người tạo
         $validated['created_by'] = Auth::user()?->username ?? 'system';
+        $validated['created_by_user_id'] = Auth::id();
         $validated['module'] = ModuleCode::normalize(
             $validated['module'] ?? $request->input('created_module', ModuleCode::RESERVATION)
         );
@@ -712,6 +713,7 @@ class BookingController extends Controller
         $validated['edit_count']  = $booking->edit_count + 1;
         $validated['edit_date']   = now();
         $validated['updated_by']  = Auth::user()?->username ?? 'system';
+        $validated['updated_by_user_id'] = Auth::id();
         
         // Tiền phòng gửi về master luôn luôn bật (is_git = 1)
         $validated['is_git'] = true;

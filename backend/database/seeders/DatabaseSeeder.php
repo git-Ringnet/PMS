@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,41 +14,16 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $connection = \Illuminate\Support\Facades\DB::getDefaultConnection();
 
-        User::updateOrCreate(
-            ['email' => 'test@example.com'],
-            [
-                'name' => 'Test User',
-                'username' => 'testuser',
-                'password' => \Illuminate\Support\Facades\Hash::make('PmsPass@123'),
-                'email_verified_at' => now(),
-            ]
-        );
+        if ($connection === config('database_domains.system_connection', 'mysql_system')) {
+            foreach (config('database_domains.system_seeders', []) as $seeder) {
+                $this->call($seeder);
+            }
 
-        $this->call([
-            ModuleSeeder::class,
-            BookingStatusSeeder::class,
-            SystemConfigurationSeeder::class,
-            DepartmentSeeder::class,
-            HotelDefinitionSeeder::class,
-            TemplateContentSeeder::class,
-            SystemDefinitionSeeder::class,
-            CompanyAndPartnerSeeder::class,
-            SystemDateRollSeeder::class,
-            SystemBranchSeeder::class,
-            InfoBusinessSeeder::class,
-            EmployeeSeeder::class,
-            MenuProductSeeder::class,
-            FnbComprehensiveSeeder::class,
-            HkStaffSeeder::class,
-            HkConfigSeeder::class,
-            WarehouseSeeder::class,
-            // ---- Module đặt phòng ----
-            CancelReasonSeeder::class,
-            NationalitySeeder::class,
-            // ---- Phân quyền ----
-            RolePermissionSeeder::class,
-        ]);
+            return;
+        }
+
+        $this->call(BranchDatabaseSeeder::class);
     }
 }

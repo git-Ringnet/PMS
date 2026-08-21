@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use PDO;
 use Exception;
+use Illuminate\Support\Facades\File;
 
 class ResetMultiDbCommand extends Command
 {
@@ -117,8 +118,11 @@ class ResetMultiDbCommand extends Command
     {
         $this->line("⏳ [{$conn}] Bắt đầu migrate:fresh trên {$name}...");
 
+        $migrationPaths = $this->migrationPaths($type);
+
         $exitCode = Artisan::call('migrate:fresh', [
             '--database' => $conn,
+            '--path'     => $migrationPaths,
             '--force'    => true,
         ]);
 
@@ -132,25 +136,39 @@ class ResetMultiDbCommand extends Command
         if ($shouldSeed) {
             $this->line("  🌱 Đang chạy seeder cho {$name}...");
 
-            if ($type === 'system') {
-                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'SystemBranchSeeder', '--force' => true]);
-                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'InfoBusinessSeeder', '--force' => true]);
-                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'RolePermissionSeeder', '--force' => true]);
-                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'ModuleSeeder', '--force' => true]);
-                Artisan::call('db:seed', ['--database' => $conn, '--class' => 'DepartmentSeeder', '--force' => true]);
-                $this->info("  ✓ Seeded branches, info_business, roles, permissions, modules, departments thành công cho System!");
-            } else {
-                $seedCode = Artisan::call('db:seed', [
-                    '--database' => $conn,
-                    '--force'    => true,
-                ]);
+            $seedCode = Artisan::call('db:seed', [
+                '--database' => $conn,
+                '--class'    => \Database\Seeders\DatabaseSeeder::class,
+                '--force'    => true,
+            ]);
 
-                if ($seedCode === 0) {
-                    $this->info("  ✓ Seeded operational data thành công: {$name}");
-                } else {
-                    $this->warn("  ! Thông báo seed {$name}: " . Artisan::output());
-                }
+            if ($seedCode === 0) {
+                $this->info("  ✓ Seeded đúng domain {$type}: {$name}");
+            } else {
+                $this->warn("  ! Thông báo seed {$name}: " . Artisan::output());
             }
         }
+    }
+
+    /**
+     * Keep existing migration filenames stable while selecting only the domain
+     * that belongs to the target database.
+     */
+    protected function migrationPaths(string $type): array
+    {
+        $systemMigrations = config('database_domains.system_migrations', []);
+        $allMigrations = collect(File::files(database_path('migrations')))
+            ->map(fn ($file) => $file->getFilename())
+            ->filter(fn ($file) => str_ends_with($file, '.php'));
+
+        $selected = $type === 'system'
+            ? $allMigrations->filter(fn ($file) => in_array($file, $systemMigrations, true))
+            : $allMigrations->reject(fn ($file) => in_array($file, $systemMigrations, true));
+
+        return $selected
+            ->sort()
+            ->map(fn ($file) => 'database/migrations/' . $file)
+            ->values()
+            ->all();
     }
 }

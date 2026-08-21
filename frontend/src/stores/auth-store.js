@@ -81,6 +81,10 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem('pms_branches', JSON.stringify(this.branches))
         localStorage.setItem('pms_active_branch', JSON.stringify(this.activeBranch))
         localStorage.setItem('pms_roles', JSON.stringify(this.roles))
+        if (this.activeBranch) {
+          localStorage.setItem('selected_branch_id', this.activeBranch.id)
+          localStorage.setItem('selected_branch_code', this.activeBranch.code)
+        }
 
         this.settings = user.setting?.settings || {}
         cleanOldLocalConfigs()
@@ -122,6 +126,8 @@ export const useAuthStore = defineStore('auth', {
         localStorage.removeItem('pms_branches')
         localStorage.removeItem('pms_active_branch')
         localStorage.removeItem('pms_roles')
+        localStorage.removeItem('selected_branch_id')
+        localStorage.removeItem('selected_branch_code')
         sessionStorage.removeItem('pms_token')
       }
     },
