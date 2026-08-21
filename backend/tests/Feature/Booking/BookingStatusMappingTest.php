@@ -5,6 +5,7 @@ namespace Tests\Feature\Booking;
 use App\Http\Resources\RegistrationStatusResource;
 use App\Models\Booking;
 use App\Models\RegistrationStatus;
+use App\Services\RegistrationStatusMapper;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -56,7 +57,9 @@ class BookingStatusMappingTest extends TestCase
         ]);
 
         $legacyStatusCode = 24;
-        $mappedStatus = RegistrationStatus::where('booking_status_id', $legacyStatusCode)->firstOrFail();
+        $mappedStatusId = RegistrationStatusMapper::idFromLegacyCode($legacyStatusCode);
+        $this->assertSame($registrationStatus->id, $mappedStatusId);
+        $mappedStatus = RegistrationStatus::findOrFail($mappedStatusId);
 
         $booking = Booking::create([
             'booking_name' => 'Legacy mapping test',

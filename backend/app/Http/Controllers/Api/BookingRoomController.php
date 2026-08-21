@@ -13,6 +13,7 @@ use App\Models\BookingRoomGuest;
 use App\Models\Guest;
 use App\Models\BookingChild;
 use App\Services\RoomAvailabilityService;
+use App\Services\RegistrationStatusMapper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -2213,10 +2214,10 @@ class BookingRoomController extends Controller
             // Khôi phục booking nếu booking đang bị Noshow (status = 4)
             $booking = Booking::find($bookingId);
             if ($booking && intval($booking->status) === Booking::STATUS_NO_SHOW) {
-                $newStatus = RegistrationStatus::where('booking_status_id', 1)->first();
+                $newStatusId = RegistrationStatusMapper::idFromLegacyCode(1);
                 $booking->update([
                     'status'                 => Booking::STATUS_RESERVATION,
-                    'registration_status_id' => $newStatus ? $newStatus->id : $booking->registration_status_id,
+                    'registration_status_id' => $newStatusId ?? $booking->registration_status_id,
                     'updated_by'             => Auth::user()?->username ?? 'system',
                 ]);
             }

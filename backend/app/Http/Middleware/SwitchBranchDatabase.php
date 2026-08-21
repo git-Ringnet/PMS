@@ -46,6 +46,15 @@ class SwitchBranchDatabase
             ], 422);
         }
 
+        // Do not purge the in-memory SQLite connection used by feature tests
+        // when the requested branch intentionally resolves to that connection.
+        if (app()->environment('testing') && $targetConnection === DB::getDefaultConnection()) {
+            $request->attributes->set('_branch_code', $resolvedCode);
+            $request->attributes->set('_branch_connection', $targetConnection);
+
+            return $next($request);
+        }
+
         // 3. Thực hiện chuyển đổi connection cho toàn bộ vòng đời Request
         if ($targetConnection) {
             config(['database.default' => $targetConnection]);

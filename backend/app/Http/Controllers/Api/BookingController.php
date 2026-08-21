@@ -17,6 +17,7 @@ use App\Models\RoomRateCode;
 use App\Models\StandardRate;
 use App\Models\SystemDateRoll;
 use App\Services\RoomAvailabilityService;
+use App\Services\RegistrationStatusMapper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use App\Support\ModuleCode;
@@ -2314,11 +2315,11 @@ class BookingController extends Controller
 
         // 3. Thực hiện khôi phục
         DB::transaction(function () use ($booking) {
-            $newStatus = RegistrationStatus::where('booking_status_id', 1)->first();
+            $newStatusId = RegistrationStatusMapper::idFromLegacyCode(1);
 
             $booking->update([
                 'status'                 => Booking::STATUS_RESERVATION,
-                'registration_status_id' => $newStatus ? $newStatus->id : $booking->registration_status_id,
+                'registration_status_id' => $newStatusId ?? $booking->registration_status_id,
                 'updated_by'             => Auth::user()?->username ?? 'system',
             ]);
 
