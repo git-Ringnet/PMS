@@ -14,9 +14,14 @@ class ActivityLogService
      */
     public static function log(array $data): ActivityLog
     {
-        return ActivityLog::create(array_merge([
-            'created_at' => now(),
-        ], $data));
+        try {
+            return ActivityLog::create(array_merge([
+                'created_at' => now(),
+            ], $data));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('ActivityLog failed: ' . $e->getMessage());
+            return new ActivityLog();
+        }
     }
 
     /**
