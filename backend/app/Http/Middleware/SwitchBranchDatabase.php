@@ -42,10 +42,12 @@ class SwitchBranchDatabase
         if ($targetConnection) {
             Config::set('database.default', $targetConnection);
             DB::setDefaultConnection($targetConnection);
+            DB::purge($targetConnection);
 
             $targetDb = Config::get("database.connections.{$targetConnection}.database");
             if ($targetDb) {
                 Config::set('database.connections.mysql.database', $targetDb);
+                DB::purge('mysql');
             }
         }
 
