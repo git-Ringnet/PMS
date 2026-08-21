@@ -16,6 +16,8 @@ return new class extends Migration
 
             // User snapshot (nullable cho login thất bại)
             // Audit stays in the branch DB while User lives in mysql_system.
+            // User snapshot (nullable cho login thất bại hoặc multi-database)
+
             $table->unsignedBigInteger('user_id')->nullable();
             $table->string('user_name')->default('');
             $table->string('employee_code')->nullable();

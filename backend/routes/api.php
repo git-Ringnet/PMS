@@ -184,6 +184,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // System Administration routes
     Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase']);
     Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase']);
+    Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision']);
     Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);

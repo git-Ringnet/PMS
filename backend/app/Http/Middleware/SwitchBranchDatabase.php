@@ -50,6 +50,7 @@ class SwitchBranchDatabase
         if ($targetConnection) {
             config(['database.default' => $targetConnection]);
             DB::setDefaultConnection($targetConnection);
+            DB::purge($targetConnection);
 
             $targetDb = config("database.connections.{$targetConnection}.database");
             if ($targetDb) {
