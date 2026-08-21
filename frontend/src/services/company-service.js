@@ -34,7 +34,7 @@ export const deleteCompany = (id) => http.delete(`/companies/${id}`)
 export const fetchSystemBranches = (params = {}) => http.get('/system-branches', { params })
 export const createSystemBranch = (data) => http.post('/system-branches', data)
 export const updateSystemBranch = (id, data) => http.put(`/system-branches/${id}`, data)
-export const deleteSystemBranch = (id) => http.delete(`/system-branches/${id}`)
+export const deleteSystemBranch = (id, params = {}) => http.delete(`/system-branches/${id}`, { params })
 
 // ==================== SYSTEM USERS / EMPLOYEES (NHÂN VIÊN HỆ THỐNG) ====================
 export const fetchUsers = (params = {}) => http.get('/users', { params })

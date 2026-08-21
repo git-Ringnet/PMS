@@ -200,4 +200,28 @@ class TenantDatabaseService
             'seeded' => $seeded,
         ];
     }
+
+    /**
+     * Xóa hoàn toàn Database vật lý của chi nhánh trên MySQL server.
+     */
+    public static function dropBranchDatabase(string $branchCode): bool
+    {
+        $dbName = self::getDatabaseName($branchCode);
+        $connName = self::getConnectionName($branchCode);
+
+        // Bảo vệ an toàn: Tuyệt đối không xóa Database System trung tâm
+        if ($dbName === 'pms_system') {
+            return false;
+        }
+
+        try {
+            DB::purge($connName);
+            DB::connection('mysql_system')->statement("DROP DATABASE IF EXISTS `{$dbName}`;");
+            Log::info("TenantDatabaseService: Đã xóa thành công Database vật lý {$dbName}");
+            return true;
+        } catch (\Throwable $e) {
+            Log::error("TenantDatabaseService: Xóa database {$dbName} thất bại: " . $e->getMessage());
+            return false;
+        }
+    }
 }

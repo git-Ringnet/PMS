@@ -133,18 +133,33 @@ class SystemBranchController extends Controller
     /**
      * Remove the specified system branch.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $branch = SystemBranch::find($id);
         if (!$branch) {
             return response()->json(['message' => 'System branch not found'], 404);
         }
 
+        $dropDatabase = $request->boolean('drop_database', false);
+        $dbName = \App\Services\TenantDatabaseService::getDatabaseName($branch->code);
+
+        // Xóa liên kết user - chi nhánh
+        \App\Models\UserBranch::where('system_branch_id', $branch->id)->delete();
+
+        // Nếu người dùng chọn xóa kèm Database vật lý
+        $dbDropped = false;
+        if ($dropDatabase) {
+            $dbDropped = \App\Services\TenantDatabaseService::dropBranchDatabase($branch->code);
+        }
+
         $branch->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'System branch deleted successfully',
+            'message' => $dropDatabase && $dbDropped 
+                ? "Đã xóa chi nhánh và cơ sở dữ liệu ({$dbName}) thành công!"
+                : "Đã xóa chi nhánh thành công!",
+            'dropped_database' => $dbDropped,
         ]);
     }
 

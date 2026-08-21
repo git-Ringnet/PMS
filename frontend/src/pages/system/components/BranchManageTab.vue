@@ -203,25 +203,38 @@ const handleConfirmCreate = async () => {
   }
 }
 
-const handleDelete = async (item) => {
-  const confirmed = await uiStore.confirm({
-    title: 'Xác nhận xóa',
-    message: `Bạn có chắc chắn muốn xóa chi nhánh "${item.name}" (${item.code})?`,
-    confirmText: 'Xóa',
-    cancelText: 'Hủy'
-  })
-  if (!confirmed) return
+// Delete modal state
+const isDeleteModalOpen = ref(false)
+const branchToDelete = ref(null)
+const dropDatabaseOption = ref(false)
 
+const handleDelete = (item) => {
+  branchToDelete.value = item
+  dropDatabaseOption.value = false
+  isDeleteModalOpen.value = true
+}
+
+const handleConfirmDelete = async () => {
+  if (!branchToDelete.value) return
+
+  const item = branchToDelete.value
+  const dropDb = dropDatabaseOption.value
+
+  isDeleteModalOpen.value = false
   loading.value = true
   try {
-    await deleteSystemBranch(item.id)
-    uiStore.showToast('Xóa chi nhánh thành công!', 'success')
+    const res = await deleteSystemBranch(item.id, {
+      drop_database: dropDb ? 1 : 0
+    })
+    const msg = res.data?.message || (dropDb ? 'Đã xóa chi nhánh và cơ sở dữ liệu thành công!' : 'Đã xóa chi nhánh thành công!')
+    uiStore.showToast(msg, 'success')
     loadData()
   } catch (err) {
     console.error(err)
     uiStore.showToast('Không thể xóa chi nhánh này. Có thể chi nhánh đang liên kết với thông tin công ty.', 'error')
   } finally {
     loading.value = false
+    branchToDelete.value = null
   }
 }
 </script>
@@ -574,6 +587,107 @@ const handleDelete = async (item) => {
             class="px-5 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none shadow-xs transition-colors"
           >
             Tạo Chi Nhánh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Xác Nhận Xóa Chi Nhánh & Tùy Chọn Xóa Database -->
+    <div 
+      v-if="isDeleteModalOpen" 
+      class="fixed inset-0 z-55 flex items-center justify-center bg-black/55 backdrop-blur-xs"
+    >
+      <div class="bg-white rounded-lg w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in select-none">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-rose-500 to-rose-600 px-5 py-3 flex items-center justify-between text-white border-b border-rose-600">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            <h2 class="text-sm font-bold tracking-wide">
+              Xác Nhận Xóa Chi Nhánh
+            </h2>
+          </div>
+          <button @click="isDeleteModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-5 flex flex-col gap-3 text-xs text-slate-700">
+          <p class="leading-relaxed">
+            Bạn có chắc chắn muốn xóa chi nhánh <strong class="text-rose-700 font-bold">{{ branchToDelete?.name }}</strong> ({{ branchToDelete?.code }}) khỏi hệ thống?
+          </p>
+
+          <!-- Tóm tắt thông tin chi nhánh -->
+          <div class="bg-slate-50 border border-slate-200 rounded-md p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500 font-semibold">Tên chi nhánh:</span>
+              <span class="font-bold text-slate-800">{{ branchToDelete?.name }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500 font-semibold">Mã chi nhánh:</span>
+              <span class="px-2 py-0.5 bg-white border border-slate-300 rounded font-mono font-bold text-slate-800">{{ branchToDelete?.code }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500 font-semibold">Cơ sở dữ liệu liên kết:</span>
+              <span class="px-2 py-0.5 bg-rose-50 border border-rose-300 rounded font-mono font-bold text-rose-700">{{ getExpectedDbName(branchToDelete?.code) }}</span>
+            </div>
+          </div>
+
+          <!-- Lựa chọn phương thức xóa -->
+          <div class="flex flex-col gap-2 mt-1">
+            <div class="font-bold text-slate-700">Chọn phương thức xóa:</div>
+
+            <!-- Tùy chọn 1: Chỉ xóa chi nhánh -->
+            <label 
+              @click="dropDatabaseOption = false" 
+              :class="[!dropDatabaseOption ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-500' : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100']"
+              class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all"
+            >
+              <input type="radio" :checked="!dropDatabaseOption" name="delete_opt" class="mt-0.5 text-sky-600 focus:ring-sky-500" />
+              <div class="flex flex-col gap-0.5">
+                <span class="font-bold text-slate-800 text-xs">Chỉ xóa thông tin chi nhánh</span>
+                <span class="text-[11px] text-slate-500 leading-snug">Chỉ xóa chi nhánh khỏi danh sách quản lý. Dữ liệu trên Database MySQL (<code class="font-mono font-semibold text-slate-700">{{ getExpectedDbName(branchToDelete?.code) }}</code>) vẫn được giữ lại để lưu trữ.</span>
+              </div>
+            </label>
+
+            <!-- Tùy chọn 2: Xóa chi nhánh và Xóa sạch Database -->
+            <label 
+              @click="dropDatabaseOption = true" 
+              :class="[dropDatabaseOption ? 'border-rose-500 bg-rose-50/80 ring-1 ring-rose-500' : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100']"
+              class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all"
+            >
+              <input type="radio" :checked="dropDatabaseOption" name="delete_opt" class="mt-0.5 text-rose-600 focus:ring-rose-500" />
+              <div class="flex flex-col gap-0.5">
+                <div class="flex items-center gap-1.5">
+                  <span class="font-bold text-rose-700 text-xs">Xóa chi nhánh & XÓA TOÀN BỘ DATABASE</span>
+                  <span class="px-1.5 py-0.2 bg-rose-100 text-rose-700 rounded text-[10px] font-bold">Nguy hiểm</span>
+                </div>
+                <span class="text-[11px] text-rose-600/90 leading-snug">Hệ thống sẽ chạy lệnh <code class="font-mono font-bold bg-rose-100 px-1 py-0.2 rounded text-rose-800">DROP DATABASE</code> để xóa vĩnh viễn cơ sở dữ liệu (<code class="font-mono font-bold text-rose-800">{{ getExpectedDbName(branchToDelete?.code) }}</code>) trên máy chủ MySQL. Không thể phục hồi!</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-slate-50 px-5 py-3.5 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button 
+            type="button"
+            @click="isDeleteModalOpen = false" 
+            class="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs cursor-pointer border-none transition-colors"
+          >
+            Hủy Bỏ
+          </button>
+          <button 
+            type="button"
+            @click="handleConfirmDelete"
+            :class="[
+              dropDatabaseOption 
+                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200' 
+                : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-200'
+            ]"
+            class="px-5 py-1.5 rounded-md font-bold text-xs cursor-pointer border-none shadow-xs transition-colors"
+          >
+            {{ dropDatabaseOption ? 'Xóa Chi Nhánh & Xóa Cả Database' : 'Chỉ Xóa Chi Nhánh' }}
           </button>
         </div>
       </div>
