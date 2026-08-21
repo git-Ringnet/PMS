@@ -23,6 +23,8 @@ class SystemBranch extends Model
         'address',
         'accounting_month',
         'accounting_year',
+        'organization_type',
+        'db_connection',
         'is_active',
     ];
 

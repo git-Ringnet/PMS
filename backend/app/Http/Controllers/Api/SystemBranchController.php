@@ -49,11 +49,17 @@ class SystemBranchController extends Controller
             'is_active' => 'nullable|boolean',
         ]);
 
+        $validated['organization_type'] = $validated['organization_type'] ?? 'PMS';
         $branch = SystemBranch::create($validated);
+
+        // Tự động khởi tạo Database, Migrate bảng và Seed dữ liệu mẫu cho chi nhánh mới
+        $provisionResult = \App\Services\TenantDatabaseService::provisionBranch($branch, withSeed: true);
 
         return response()->json([
             'success' => true,
-            'data' => new SystemBranchResource($branch),
+            'message' => 'Tạo chi nhánh và khởi tạo Database thành công!',
+            'data' => new SystemBranchResource($branch->fresh()),
+            'provision' => $provisionResult,
         ], 201);
     }
 
@@ -117,6 +123,27 @@ class SystemBranchController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'System branch deleted successfully',
+        ]);
+    }
+
+    /**
+     * Khởi tạo hoặc cập nhật lại Database cho chi nhánh.
+     */
+    public function provision(Request $request, $id)
+    {
+        $branch = SystemBranch::find($id);
+        if (!$branch) {
+            return response()->json(['message' => 'System branch not found'], 404);
+        }
+
+        $withSeed = $request->boolean('seed', true);
+        $result = \App\Services\TenantDatabaseService::provisionBranch($branch, $withSeed);
+
+        return response()->json([
+            'success' => $result['success'],
+            'message' => $result['success'] ? 'Khởi tạo Database chi nhánh thành công!' : 'Có lỗi khi khởi tạo Database chi nhánh.',
+            'data' => new SystemBranchResource($branch->fresh()),
+            'provision' => $result,
         ]);
     }
 }

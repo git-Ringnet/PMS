@@ -21,21 +21,25 @@ class SwitchBranchDatabase
 
         $targetConnection = null;
 
-        // 1. Kiểm tra theo Branch Code (ví dụ: HKT1, HKT2, HKT3, HKT4, SYSTEM)
+        // 1. Kiểm tra theo Branch Code (ví dụ: HKT1, HKT2, HKT3, HKT4, HKT5, CANTHO, ...)
         if ($branchCode) {
             $codeClean = strtolower(trim($branchCode));
             $candidateConn = 'mysql_' . $codeClean;
-            if (Config::has("database.connections.{$candidateConn}")) {
-                $targetConnection = $candidateConn;
+            if (!Config::has("database.connections.{$candidateConn}")) {
+                $dbName = \App\Services\TenantDatabaseService::getDatabaseName($branchCode);
+                \App\Services\TenantDatabaseService::registerDynamicConnection($candidateConn, $dbName);
             }
+            $targetConnection = $candidateConn;
         }
 
         // 2. Kiểm tra theo Branch ID (1 -> mysql_hkt1, 2 -> mysql_hkt2, ...)
         if (!$targetConnection && $branchId) {
             $candidateConn = 'mysql_hkt' . (int)$branchId;
-            if (Config::has("database.connections.{$candidateConn}")) {
-                $targetConnection = $candidateConn;
+            if (!Config::has("database.connections.{$candidateConn}")) {
+                $dbName = 'pms_hkt' . (int)$branchId;
+                \App\Services\TenantDatabaseService::registerDynamicConnection($candidateConn, $dbName);
             }
+            $targetConnection = $candidateConn;
         }
 
         // 3. Thực hiện chuyển đổi connection cho toàn bộ vòng đời Request
