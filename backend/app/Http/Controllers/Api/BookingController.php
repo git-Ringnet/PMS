@@ -175,7 +175,12 @@ class BookingController extends Controller
             $dateType = $request->date_type;
             $query->where(function ($q) use ($request, $dateType) {
                 if ($dateType === 'arrival') {
-                    $q->whereBetween('arrival_date', [$request->from_date, $request->to_date]);
+                    // NgÃ y Ä‘áº¿n nghiá»‡p vá»¥ nÃ³i Ä‘áº¿n phÃ²ng, khÃ´ng pháº£i luÃ´n lÃ  ngÃ y header Booking.
+                    $fromUtc = Carbon::parse($request->from_date, 'Asia/Ho_Chi_Minh')->startOfDay()->utc();
+                    $toUtc = Carbon::parse($request->to_date, 'Asia/Ho_Chi_Minh')->endOfDay()->utc();
+                    $q->whereHas('bookingRooms', function ($roomQuery) use ($fromUtc, $toUtc) {
+                        $roomQuery->whereBetween('arrival_date', [$fromUtc, $toUtc]);
+                    });
                 } elseif ($dateType === 'departure') {
                     $q->whereBetween('departure_date', [$request->from_date, $request->to_date]);
                 } else {
@@ -187,13 +192,21 @@ class BookingController extends Controller
 
         // Filter theo tên đăng ký hoặc ID (mã BK)
         if ($request->search) {
-            $search = $request->search;
+            $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {
-                $q->where('booking_name', 'like', '%' . $search . '%')
-                  ->orWhere('contact_name', 'like', '%' . $search . '%');
-                
+                $like = '%' . $search . '%';
+
+                $q->where('booking_name', 'like', $like)
+                    ->orWhere('contact_name', 'like', $like)
+                    ->orWhere('external_booking_code', 'like', $like)
+                    ->orWhereHas('company', function ($companyQuery) use ($like) {
+                        $companyQuery->where('name', 'like', $like)
+                            ->orWhere('code', 'like', $like);
+                    });
+
+                // booking_code lÃ  accessor (vÃ­ dá»¥ GAL4), nÃªn tra pháº§n sá»‘ vÃ o id.
                 $cleanId = preg_replace('/[^0-9]/', '', $search);
-                if (!empty($cleanId)) {
+                if ($cleanId !== '') {
                     $q->orWhere('id', $cleanId);
                 }
             });

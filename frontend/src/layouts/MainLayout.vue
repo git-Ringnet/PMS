@@ -7,6 +7,7 @@ import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
 import { fetchOutlets } from '@/services/outlet-service'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
+import SystemSearchModal from '@/pages/reservation/components/SystemSearchModal.vue'
 import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
@@ -29,6 +30,11 @@ const systemDate = ref('')
 const dbShift = ref('')
 
 const authStore = useAuthStore()
+
+const isHeaderBookingSearchOpen = ref(false)
+const headerBookingSearchQuery = ref('')
+const headerSearchButtonRef = ref(null)
+const headerBookingSearchPosition = ref({ top: 70, right: 16 })
 
 // Topbar custom background color (default #006bdb)
 const headerBgColor = computed(() => authStore.settings?.topbar_color || '#006bdb')
@@ -777,6 +783,39 @@ function goHome() {
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
 }
+
+function openHeaderBookingSearch() {
+  if (route.path.startsWith('/reservation') && route.query.tab === 'create-res') {
+    router.push({
+      path: route.path,
+      query: { ...route.query, openBookingSearch: 'true' },
+    })
+    return
+  }
+
+  const button = headerSearchButtonRef.value
+  if (button) {
+    const rect = button.getBoundingClientRect()
+    headerBookingSearchPosition.value = {
+      top: Math.round(rect.bottom + 18),
+      right: 6,
+    }
+  }
+  headerBookingSearchQuery.value = ''
+  isHeaderBookingSearchOpen.value = true
+}
+
+function handleHeaderBookingSelected(booking) {
+  isHeaderBookingSearchOpen.value = false
+  headerBookingSearchQuery.value = ''
+  router.push({
+    path: '/reservation',
+    query: {
+      tab: 'create-res',
+      bookingCode: booking.booking_code || booking.id,
+    },
+  })
+}
 </script>
 
 <template>
@@ -879,7 +918,11 @@ function toggleSidebar() {
       <!-- Right Side: User Info / Date / Time (Right) -->
       <div class="flex items-center justify-end gap-1.5 text-sm whitespace-nowrap shrink-0">
         <!-- Search icon button -->
-        <button 
+        <button
+          v-if="!route.path.startsWith('/housekeeping')"
+          ref="headerSearchButtonRef"
+          @click="openHeaderBookingSearch"
+          title="Tìm kiếm Booking"
           class="p-0.5 rounded bg-transparent border-none cursor-pointer flex items-center justify-center shrink-0 transition-colors duration-200"
           :class="isHeaderBgDark ? 'text-white hover:bg-white/15' : 'text-gray-900 dark:text-white hover:bg-black/10'"
         >
@@ -1249,6 +1292,15 @@ function toggleSidebar() {
         </div>
       </div>
     </header>
+
+    <SystemSearchModal
+      v-model:show="isHeaderBookingSearchOpen"
+      v-model:query="headerBookingSearchQuery"
+      :position="headerBookingSearchPosition"
+      :showSearchInput="true"
+      :systemDate="systemDate"
+      @select-booking="handleHeaderBookingSelected"
+    />
 
     <!-- Sub Navigation (Light Theme Tabs) -->
     <div

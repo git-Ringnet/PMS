@@ -214,6 +214,9 @@ const selectedRoomAction = ref('0')
 
 // ==================== REDESIGN GLOBAL SEARCH & DOCK ====================
 const isGlobalSearchOpen = ref(false)
+const globalSearchQuery = ref('')
+const globalSearchBtnRef = ref(null)
+const globalSearchModalPosition = ref({ top: 120, right: 16 })
 const isSubListOpen = ref(false)
 const isPrintPrice = ref(true)
 
@@ -234,6 +237,25 @@ function handleGlobalSearchResultClick(booking) {
 
 function openGlobalSearch() {
   isGlobalSearchOpen.value = true
+  nextTick(() => {
+    const anchor = globalSearchBtnRef.value
+    if (!anchor) return
+    const rect = anchor.getBoundingClientRect()
+    globalSearchModalPosition.value = {
+      top: Math.round(rect.bottom + 8),
+      right: 6
+    }
+  })
+}
+
+async function openGlobalSearchFromQuery() {
+  if (route.query.openBookingSearch !== 'true') return
+
+  await nextTick()
+  openGlobalSearch()
+
+  const { openBookingSearch, ...query } = route.query
+  await router.replace({ query })
 }
 
 function getColWidthPx(col) {
@@ -1553,6 +1575,7 @@ onMounted(async () => {
     } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
       await handleAddTabClick()
     }
+    await openGlobalSearchFromQuery()
   } catch (err) {
     console.error('Lỗi khi khởi tạo dữ liệu trang:', err)
   } finally {
@@ -1579,6 +1602,7 @@ watch(() => route.query, async (newQuery) => {
   } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
     await handleAddTabClick()
   }
+  await openGlobalSearchFromQuery()
 }, { deep: true })
 
 async function loadDropdowns() {
@@ -4842,10 +4866,17 @@ defineExpose({
 
       <div class="topbar-divider"></div>
 
-      <button class="global-search-btn" @click="openGlobalSearch" title="Tìm kiếm toàn hệ thống">
+      <div ref="globalSearchBtnRef" class="global-search-btn" title="Tìm kiếm toàn hệ thống">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-        <span>Tìm kiếm toàn hệ thống</span>
-      </button>
+        <input
+          v-model="globalSearchQuery"
+          type="text"
+          placeholder="Tìm kiếm toàn hệ thống"
+          @focus="openGlobalSearch"
+          @input="openGlobalSearch"
+          @click.stop
+        />
+      </div>
 
       <!-- Hotel Service Filter + Column Selector in Top Bar -->
       <div v-if="activeTab" class="flex items-center gap-1.5 ml-2.5 text-white/90 text-xs font-bold shrink-0">
@@ -6375,6 +6406,8 @@ defineExpose({
     <Teleport to="body">
       <SystemSearchModal 
         v-model:show="isGlobalSearchOpen" 
+        v-model:query="globalSearchQuery"
+        :position="globalSearchModalPosition"
         :registrationStatuses="registrationStatuses" 
         :activeTab="activeTab" 
         :systemDate="systemDate"
