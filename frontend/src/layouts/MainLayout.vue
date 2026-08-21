@@ -648,7 +648,6 @@ const formattedTimeVi = computed(() => {
     day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
-    second: '2-digit',
     hour12: true
   })
   
@@ -658,7 +657,6 @@ const formattedTimeVi = computed(() => {
   const year = parts.find(p => p.type === 'year').value
   const hour = parts.find(p => p.type === 'hour').value
   const minute = parts.find(p => p.type === 'minute').value
-  const second = parts.find(p => p.type === 'second').value
   const dayPeriod = parts.find(p => p.type === 'dayPeriod').value // "AM" or "PM"
   
   let dateStr = ''
@@ -674,7 +672,7 @@ const formattedTimeVi = computed(() => {
   const period = currentLang.value === 'vi'
     ? (dayPeriod === 'PM' ? 'CH' : 'SA')
     : dayPeriod
-  return `${dateStr} ${hour}:${minute}:${second} ${period}`
+  return `${dateStr} ${hour}:${minute} ${period}`
 })
 
 

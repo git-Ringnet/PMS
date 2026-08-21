@@ -172,7 +172,17 @@ class RolePermissionSeeder extends Seeder
         }
 
         // ── 5. Gán Super Admin cho user đầu tiên ─────────────────
-        $adminUser = User::where('email', 'test@example.com')->first();
+        $adminUser = User::updateOrCreate(
+            ['email' => 'test@example.com'],
+            [
+                'name' => 'Test User',
+                'username' => 'testuser',
+                'password' => \Illuminate\Support\Facades\Hash::make('PmsPass@123'),
+                'email_verified_at' => now(),
+                'is_active_user' => true,
+            ]
+        );
+
         if ($adminUser && isset($roles['super_admin'])) {
             UserRole::updateOrCreate(
                 ['user_id' => $adminUser->id, 'role_id' => $roles['super_admin']->id, 'system_branch_id' => null],

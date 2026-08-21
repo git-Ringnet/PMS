@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\CompanyResource;
 use App\Models\Company;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CompanyController extends Controller
 {
@@ -74,7 +75,7 @@ class CompanyController extends Controller
             'max_debt' => 'nullable|numeric|min:0',
             'bank_account' => 'nullable|string|max:255',
             'booker_id'                => 'nullable|exists:bookers,id',
-            'sales_person_id'          => 'nullable|exists:users,id',
+            'sales_person_id'          => ['nullable', Rule::exists('mysql_system.users', 'id')],
             'rate_code'                => 'nullable|string|max:100',
             'branch_id'                => 'nullable|exists:branches,id',
             'is_active'                => 'nullable|boolean',
@@ -127,7 +128,7 @@ class CompanyController extends Controller
             'max_debt' => 'nullable|numeric|min:0',
             'bank_account' => 'nullable|string|max:255',
             'booker_id'                => 'nullable|exists:bookers,id',
-            'sales_person_id'          => 'nullable|exists:users,id',
+            'sales_person_id'          => ['nullable', Rule::exists('mysql_system.users', 'id')],
             'rate_code'                => 'nullable|string|max:100',
             'branch_id'                => 'nullable|exists:branches,id',
             'is_active'                => 'nullable|boolean',

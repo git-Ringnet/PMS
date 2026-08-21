@@ -6,6 +6,7 @@ use App\Models\PaymentMethod;
 use App\Models\Currency;
 use App\Models\UnitOfMeasure;
 use App\Models\RoomRateCode;
+use App\Models\StandardRate;
 use App\Models\RegistrationStatus;
 use Illuminate\Database\Seeder;
 
@@ -204,18 +205,20 @@ class SystemDefinitionSeeder extends Seeder
 
         foreach ($rateCodes as $rc) {
             $createdRc = RoomRateCode::updateOrCreate(['Ma' => $rc['Ma']], $rc);
+            $period = [];
+            foreach (StandardRate::with(['roomClass', 'roomForm'])->get() as $standardRate) {
+                $classCode = $standardRate->roomClass?->code;
+                $formName = $standardRate->roomForm?->name;
+                if (!$classCode || !$formName) continue;
+                $period['DEFAULT_' . $classCode . '_' . $formName] = $rc['Value'] > 0 ? (float) $rc['Value'] : 0;
+            }
             
             // Khởi tạo bảng giá plan tương ứng
             \App\Models\RoomRatePlan::updateOrCreate(
                 ['RateCode' => $createdRc->Ma, 'Code' => 'DEFAULT'],
                 [
                     'Description' => $createdRc->Description,
-                    'Period' => [
-                        1 => $rc['Value'] > 0 ? $rc['Value'] : 0,
-                        2 => $rc['Value'] > 0 ? $rc['Value'] + 200000 : 0,
-                        3 => $rc['Value'] > 0 ? $rc['Value'] + 400000 : 0,
-                        4 => $rc['Value'] > 0 ? $rc['Value'] + 600000 : 0,
-                    ]
+                    'Period' => $period,
                 ]
             );
         }

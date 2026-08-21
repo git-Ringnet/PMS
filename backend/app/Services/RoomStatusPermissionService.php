@@ -4,18 +4,19 @@ namespace App\Services;
 
 use App\Models\HotelConfig;
 use Illuminate\Http\Request;
+use App\Support\ModuleCode;
 
 class RoomStatusPermissionService
 {
     public function canChange(Request $request): bool
     {
-        $module = strtolower((string) $request->input('current_module', 'frontdesk'));
+        $module = ModuleCode::normalize($request->input('current_module', ModuleCode::FRONTDESK), ModuleCode::FRONTDESK);
 
-        if ($module === 'reservation') {
+        if ($module === ModuleCode::RESERVATION) {
             return false;
         }
 
-        if ($module === 'housekeeping') {
+        if ($module === ModuleCode::HOUSEKEEPING) {
             return true;
         }
 

@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\UsesSystemConnection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Permission extends Model
 {
-    protected $connection = 'mysql_system';
+    use UsesSystemConnection;
 
     protected $fillable = [
         'code', 'name', 'module', 'description',

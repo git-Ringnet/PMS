@@ -19,7 +19,8 @@ return new class extends Migration
             $table->longText('content_html')->nullable();
             $table->text('css')->nullable();
             $table->string('note')->nullable(); // Ghi chú thay đổi
-            $table->foreignId('updated_by')->nullable()->constrained('users')->onDelete('set null');
+            // Shared User lives in mysql_system; cross-database FK is intentionally omitted.
+            $table->unsignedBigInteger('updated_by')->nullable()->index();
             $table->timestamps();
         });
     }

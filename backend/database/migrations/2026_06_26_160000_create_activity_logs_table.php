@@ -15,7 +15,10 @@ return new class extends Migration
             $table->id();
 
             // User snapshot (nullable cho login thất bại)
-            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+            // Audit stays in the branch DB while User lives in mysql_system.
+            // User snapshot (nullable cho login thất bại hoặc multi-database)
+
+            $table->unsignedBigInteger('user_id')->nullable();
             $table->string('user_name')->default('');
             $table->string('employee_code')->nullable();
 

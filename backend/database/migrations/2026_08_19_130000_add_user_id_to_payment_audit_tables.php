@@ -19,7 +19,8 @@ return new class extends Migration
         foreach ($this->tables as $tableName) {
             if (!Schema::hasColumn($tableName, 'user_id')) {
                 Schema::table($tableName, function (Blueprint $table) {
-                    $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
+                    // Shared User lives in mysql_system; keep a scalar reference in the branch DB.
+                    $table->unsignedBigInteger('user_id')->nullable()->index();
                 });
             }
         }
@@ -30,7 +31,6 @@ return new class extends Migration
         foreach (array_reverse($this->tables) as $tableName) {
             if (Schema::hasColumn($tableName, 'user_id')) {
                 Schema::table($tableName, function (Blueprint $table) {
-                    $table->dropForeign(['user_id']);
                     $table->dropColumn('user_id');
                 });
             }

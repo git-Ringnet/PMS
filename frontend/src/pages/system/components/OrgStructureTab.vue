@@ -40,21 +40,34 @@ const roleAppAssignments = ref({
 
 // Cấu trúc cây dữ liệu phòng ban & vị trí
 const treeData = ref([])
+const loadError = ref(null)
 
 const loadAllDataFromDB = async () => {
   loading.value = true
+  loadError.value = null
   try {
-    const [deptRes, modRes, roleRes, userRes] = await Promise.all([
+    const results = await Promise.allSettled([
       fetchDepartments(),
       fetchModules(),
       fetchRoles(),
-      fetchUsers({ page: 1, per_page: 200 }),
+      fetchUsers({ page: 1, per_page: 100 }),
     ])
 
-    departmentsList.value = deptRes.data?.data || []
-    modulesList.value = modRes.data?.data || []
-    rolesList.value = roleRes.data?.data || []
-    usersList.value = userRes.data?.data || []
+    const deptRes = results[0].status === 'fulfilled' ? results[0].value : null
+    const modRes = results[1].status === 'fulfilled' ? results[1].value : null
+    const roleRes = results[2].status === 'fulfilled' ? results[2].value : null
+    const userRes = results[3].status === 'fulfilled' ? results[3].value : null
+
+    // Kiểm tra nếu tất cả request đều lỗi (ví dụ rớt mạng hoặc timeout)
+    const hasAnySuccess = results.some(r => r.status === 'fulfilled')
+    if (!hasAnySuccess && results[0].reason) {
+      throw results[0].reason
+    }
+
+    departmentsList.value = deptRes?.data?.data || []
+    modulesList.value = modRes?.data?.data || []
+    rolesList.value = roleRes?.data?.data || []
+    usersList.value = userRes?.data?.data || []
 
     // Xây dựng cây thư mục từ Database: BỘ PHẬN -> VỊ TRÍ
     treeData.value = departmentsList.value.map(dept => {
@@ -105,6 +118,9 @@ const loadAllDataFromDB = async () => {
     }
   } catch (err) {
     console.error('Lỗi khi tải dữ liệu từ database:', err)
+    loadError.value = err.message?.includes('timeout') 
+      ? 'Hết thời gian chờ phản hồi từ máy chủ (Timeout). Vui lòng thử lại.' 
+      : 'Không thể tải dữ liệu từ máy chủ. Vui lòng thử lại.'
   } finally {
     loading.value = false
   }
@@ -263,6 +279,18 @@ const saveNewDeptOrPos = async () => {
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center h-48">
         <div class="w-5 h-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+
+      <!-- Error State with Retry Button -->
+      <div v-else-if="loadError" class="p-4 flex flex-col items-center justify-center text-center gap-2 text-slate-600 h-48">
+        <span class="text-amber-500 text-lg">⚠️</span>
+        <p class="text-[11px] text-slate-500 leading-tight">{{ loadError }}</p>
+        <button 
+          @click="loadAllDataFromDB" 
+          class="mt-1 px-3 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1"
+        >
+          <span>🔄 Thử lại</span>
+        </button>
       </div>
 
       <!-- Danh sách Phòng Ban & Vị Trí (Tree View) -->

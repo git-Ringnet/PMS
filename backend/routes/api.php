@@ -12,7 +12,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
 
 // Protected routes (Sanctum)
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -131,6 +131,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/rooms/permissions', [\App\Http\Controllers\Api\RoomController::class, 'permissions']);
     Route::get('/rooms/vacant', [\App\Http\Controllers\Api\RoomController::class, 'vacant']);
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
+    Route::post('/rooms/bulk-status', [\App\Http\Controllers\Api\RoomController::class, 'bulkUpdateStatus']);
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 
@@ -183,6 +184,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // System Administration routes
     Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase']);
     Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase']);
+    Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision']);
     Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
     Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);

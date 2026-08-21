@@ -76,3 +76,15 @@ php artisan db:reset-all system
    - Đăng nhập hệ thống.
    - Chọn chi nhánh **HKT 2 (TP.HCM)** trên Header ➔ Tạo 1 phòng hoặc đặt phòng mới.
    - Chuyển sang chi nhánh **HKT 1 (Nha Trang)** ➔ Kiểm tra phòng vừa tạo **không** xuất hiện bên HKT 1 (Dữ liệu hoàn toàn độc lập giữa các database chi nhánh).
+
+---
+
+## 5. Tự Động Tạo Database Khi Thêm Chi Nhánh Mới (Dynamic Multi-Tenant)
+
+Hệ thống hỗ trợ **tự động 100%** khi Quản trị viên thêm chi nhánh mới từ giao diện **System > Quản lý chi nhánh**:
+1. **Tạo Database vật lý**: Backend tự động thực thi `CREATE DATABASE IF NOT EXISTS pms_{code}`.
+2. **Khởi tạo bảng**: Tự động chạy toàn bộ migrations cho database chi nhánh mới.
+3. **Nạp dữ liệu mẫu**: Tự động seed các cấu hình ban đầu (loại phòng, ca, dịch vụ...).
+4. **Phân quyền tự động**: Tự động cấp quyền chi nhánh mới cho các tài khoản Super Admin.
+5. **Chuyển đổi tức thì**: Người dùng chọn chi nhánh mới trên Topbar và sử dụng ngay lập tức mà **không cần Dev phải cấu hình thêm bất cứ dòng nào trong code hay .env**.
+

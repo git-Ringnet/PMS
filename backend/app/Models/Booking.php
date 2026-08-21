@@ -63,7 +63,9 @@ class Booking extends Model
         'special_requests',
         'sales_person',
         'created_by',
+        'created_by_user_id',
         'updated_by',
+        'updated_by_user_id',
         'module',
         'edit_count',
         'edit_message',
@@ -92,6 +94,8 @@ class Booking extends Model
         'edit_count'           => 'integer',
         'payment_value'        => 'decimal:2',
         'commission'           => 'decimal:2',
+        'created_by_user_id'   => 'integer',
+        'updated_by_user_id'   => 'integer',
         'shuttle_info'         => 'array',
         'deposit_details'      => 'array',
     ];
@@ -106,13 +110,28 @@ class Booking extends Model
     const STATUS_NO_SHOW     = 4;   // No Show
     const STATUS_TRANSFER    = 100; // Chuyển phòng
 
+    protected static function booted(): void
+    {
+        static::creating(function (Booking $booking) {
+            $booking->created_by_user_id ??= auth()->id();
+        });
+
+        static::updating(function (Booking $booking) {
+            if (auth()->check()) {
+                $booking->updated_by_user_id = auth()->id();
+            }
+        });
+    }
+
     // =========================================
     // RELATIONSHIPS
     // =========================================
 
     public function registrationStatus()
     {
-        return $this->belongsTo(RegistrationStatus::class);
+        // bookings.registration_status_id stores registration_statuses.id.
+        // The legacy SP1311 code is registration_statuses.booking_status_id.
+        return $this->belongsTo(RegistrationStatus::class, 'registration_status_id', 'id');
     }
 
     public function bookingStatus()
@@ -148,6 +167,16 @@ class Booking extends Model
     public function paymentMethod()
     {
         return $this->belongsTo(PaymentMethod::class);
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function updater()
+    {
+        return $this->belongsTo(User::class, 'updated_by_user_id');
     }
 
     public function bookingRooms()

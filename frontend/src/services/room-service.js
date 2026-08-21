@@ -198,6 +198,15 @@ export const roomService = {
     }
   },
 
+  async bulkUpdateRoomStatus(roomIds, roomStatusCode, currentModule = 'frontdesk') {
+    const response = await http.post('/rooms/bulk-status', {
+      room_ids: roomIds,
+      room_status_code: roomStatusCode,
+      current_module: currentModule,
+    })
+    return response.data
+  },
+
   async getRoomStatusPermission(currentModule = 'frontdesk') {
     const response = await http.get('/rooms/permissions', { params: { current_module: currentModule } })
     return response.data

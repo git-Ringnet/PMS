@@ -4,7 +4,6 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -19,34 +18,64 @@ class SwitchBranchDatabase
         $branchCode = $request->header('X-Branch-Code');
         $branchId = $request->header('X-Branch-Id');
 
-        $targetConnection = null;
+        $connections = config('database_domains.branch_connections', []);
+        $defaultCode = strtoupper((string) config('database_domains.default_branch_code', 'HKT1'));
 
-        // 1. Kiểm tra theo Branch Code (ví dụ: HKT1, HKT2, HKT3, HKT4, SYSTEM)
-        if ($branchCode) {
-            $codeClean = strtolower(trim($branchCode));
-            $candidateConn = 'mysql_' . $codeClean;
-            if (Config::has("database.connections.{$candidateConn}")) {
-                $targetConnection = $candidateConn;
-            }
+        // Existing feature tests use the default SQLite connection and do not
+        // send branch headers. Keep them isolated from real branch databases.
+        if (app()->environment('testing') && !$branchCode && !$branchId) {
+            $request->attributes->set('_branch_code', $defaultCode);
+            $request->attributes->set('_branch_connection', DB::getDefaultConnection());
+
+            return $next($request);
         }
 
-        // 2. Kiểm tra theo Branch ID (1 -> mysql_hkt1, 2 -> mysql_hkt2, ...)
-        if (!$targetConnection && $branchId) {
-            $candidateConn = 'mysql_hkt' . (int)$branchId;
-            if (Config::has("database.connections.{$candidateConn}")) {
-                $targetConnection = $candidateConn;
+        $branch = null;
+        if ($branchId) {
+            $branch = \App\Models\SystemBranch::find($branchId);
+        }
+        if (!$branch && $branchCode) {
+            $branch = \App\Models\SystemBranch::where('code', $branchCode)
+                ->orWhere('code', trim((string) $branchCode))
+                ->first();
+        }
+
+        if ($branch) {
+            $resolvedCode = $branch->code;
+            $request->attributes->set('_branch_id', $branch->id);
+            $request->attributes->set('_branch_code', $branch->code);
+        } else {
+            $resolvedCode = $branchCode ? trim((string) $branchCode) : $defaultCode;
+            $request->attributes->set('_branch_code', $resolvedCode);
+        }
+
+        $upperCode = strtoupper($resolvedCode);
+        $targetConnection = $connections[$upperCode] ?? $connections[$resolvedCode] ?? null;
+
+        // Nếu chưa khai báo tĩnh trong config, tự động phân giải và đăng ký Dynamic Connection
+        if (!$targetConnection) {
+            $candidateConn = \App\Services\TenantDatabaseService::getConnectionName($resolvedCode);
+            $dbName = \App\Services\TenantDatabaseService::getDatabaseName($resolvedCode);
+
+            if (!config("database.connections.{$candidateConn}")) {
+                \App\Services\TenantDatabaseService::registerDynamicConnection($candidateConn, $dbName);
             }
+            $targetConnection = $candidateConn;
         }
 
         // 3. Thực hiện chuyển đổi connection cho toàn bộ vòng đời Request
         if ($targetConnection) {
-            Config::set('database.default', $targetConnection);
+            config(['database.default' => $targetConnection]);
             DB::setDefaultConnection($targetConnection);
+            DB::purge($targetConnection);
 
-            $targetDb = Config::get("database.connections.{$targetConnection}.database");
+            $targetDb = config("database.connections.{$targetConnection}.database");
             if ($targetDb) {
-                Config::set('database.connections.mysql.database', $targetDb);
+                config(['database.connections.mysql.database' => $targetDb]);
             }
+
+            $request->attributes->set('_branch_code', $resolvedCode);
+            $request->attributes->set('_branch_connection', $targetConnection);
         }
 
         return $next($request);
