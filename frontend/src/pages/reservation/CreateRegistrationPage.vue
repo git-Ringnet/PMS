@@ -60,6 +60,7 @@ import {
   deleteBookingRoomServicesBulk,
   lockRoomMove,
   unlockRoomMove,
+  restoreBooking,
   revertBookingNoshow,
   revertRoomNoshow,
   chargeRoomNoshow
@@ -1243,6 +1244,34 @@ function handleDrop(targetKey) {
 
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
+
+const isCancelledBooking = computed(() => {
+  const tab = activeTab.value
+  if (!tab) return false
+  const rooms = tab.rooms || []
+  return Number(tab.status) === 3 || (rooms.length > 0 && rooms.every(room => Number(room.bookingRoomStatus) === 3))
+})
+
+const isInlineEditLocked = computed(() => {
+  const tab = activeTab.value
+  if (!tab) return false
+  if (isCancelledBooking.value) return true
+  if (Number(tab.status) !== 1) return false
+
+  return (tab.rooms || []).some(room => [1, 2, 3, 100].includes(Number(room.bookingRoomStatus)))
+})
+
+function isRoomEditLocked(room) {
+  return isEditing.value && [1, 2, 3, 100].includes(Number(room?.bookingRoomStatus))
+}
+
+watch(isInlineEditLocked, (locked) => {
+  if (locked && isEditing.value) {
+    const tab = activeTab.value
+    isEditing.value = false
+    restoreTabFromBackup(tab)
+  }
+})
 
 const isCheckInDisabled = computed(() => {
   const tab = activeTab.value
@@ -3740,6 +3769,10 @@ function validateRoomDatesAgainstBooking(tab) {
 
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
+    if (isInlineEditLocked.value) {
+      uiStore.showToast('Booking đang ở hoặc có phòng đã ở/đã trả/chuyển/hủy, không được phép chỉnh sửa.', 'warning')
+      return
+    }
     isEditing.value = true
     const tab = activeTab.value
     if (tab) {
@@ -4253,7 +4286,9 @@ async function triggerAction(actionName) {
       if (confirmed) {
         try {
           uiStore.showToast('Đang khôi phục booking...', 'info')
-          let res = await revertBookingNoshow(tab.dbId)
+          let res = isCancelledBooking.value
+            ? await restoreBooking(tab.dbId)
+            : await revertBookingNoshow(tab.dbId)
           if (res.data?.success) {
             uiStore.showToast('Khôi phục booking thành công!', 'success')
             await loadBookings()
@@ -4266,7 +4301,9 @@ async function triggerAction(actionName) {
               if (confirmedOver) {
                 try {
                   uiStore.showToast('Đang khôi phục booking (force)...', 'info')
-                  let resForce = await revertBookingNoshow(tab.dbId, { force: true })
+                  let resForce = isCancelledBooking.value
+                    ? await restoreBooking(tab.dbId, { force: true })
+                    : await revertBookingNoshow(tab.dbId, { force: true })
                   if (resForce.data?.success) {
                     uiStore.showToast('Khôi phục booking thành công!', 'success')
                     await loadBookings()
@@ -4810,7 +4847,14 @@ defineExpose({
           Thông tin đăng ký
         </button>
         
-        <button v-if="!isEditing" class="btn" @click="triggerAction('Sửa')">
+        <button
+          v-if="!isEditing"
+          class="btn"
+          @click="triggerAction('Sửa')"
+          :disabled="isInlineEditLocked"
+          :title="isInlineEditLocked ? 'Booking/phòng đã phát sinh, không được chỉnh sửa' : 'Sửa booking'"
+          :class="{ 'opacity-50 cursor-not-allowed': isInlineEditLocked }"
+        >
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
           Sửa
         </button>
@@ -4835,7 +4879,7 @@ defineExpose({
         </button>
 
         <button 
-          v-if="activeTab && activeTab.dbId && (Number(activeTab.status) === 4 || isAllRoomsNoshow)" 
+          v-if="activeTab && activeTab.dbId && (isCancelledBooking || Number(activeTab.status) === 4 || isAllRoomsNoshow)"
           class="btn blue" 
           @click="triggerAction('Khôi phục BK')"
         >
@@ -4847,7 +4891,7 @@ defineExpose({
         </button>
 
         <button 
-          v-if="activeTab && Number(activeTab.status) !== 4 && !isAllRoomsNoshow" 
+          v-if="activeTab && !isCancelledBooking && ![4].includes(Number(activeTab.status)) && !isAllRoomsNoshow"
           class="btn red" 
           @click="triggerAction('Xóa')"
         >
@@ -5090,7 +5134,11 @@ defineExpose({
                     <template v-for="(room, idx) in group.rooms" :key="room.id">
                       <tr 
                         class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
-                        :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
+                        :class="[
+                          selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
+                          isRoomEditLocked(room) ? 'pointer-events-none opacity-60' : ''
+                        ]"
+                        :title="isRoomEditLocked(room) ? 'Phòng đã phát sinh, không được chỉnh sửa' : ''"
                         @click="handleRowSelect(room.id)"
                       >
                         <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -5658,8 +5706,10 @@ defineExpose({
                               class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
                               :class="[
                                 selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
-                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
+                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : '',
+                                isRoomEditLocked(room) ? 'pointer-events-none opacity-60' : ''
                               ]"
+                              :title="isRoomEditLocked(room) ? 'Phòng đã phát sinh, không được chỉnh sửa' : ''"
                               @click="handleRowSelect(room.id)"
                             >
                               <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>

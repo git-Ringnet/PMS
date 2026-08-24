@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="show"
-    class="fixed inset-0 bg-black/20 z-[99998] flex items-center justify-center p-4 select-none"
+    class="fixed inset-0 bg-black/20 z-[99998] flex items-center justify-center p-4 select-none pointer-events-auto"
     @click.self="close"
   >
     <div 
@@ -210,6 +210,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import {
   fetchSpecialRequestsCatalog,
+  fetchBookingRoomSpecialRequests,
   createSpecialRequestMaster,
   deleteSpecialRequestMaster,
   syncBookingRoomSpecialRequests
@@ -286,9 +287,20 @@ async function loadData() {
     const catalogRes = await fetchSpecialRequestsCatalog()
     catalog.value = catalogRes.data?.data || []
 
-    // Extract already assigned special requests
-    if (props.room?.specialRequests && Array.isArray(props.room.specialRequests)) {
-      selectedIds.value = props.room.specialRequests.map(r => {
+    const bookingRoomId = props.room?.bookingRoomId || props.room?.booking_room_id
+    const assignedRes = bookingRoomId
+      ? await fetchBookingRoomSpecialRequests(bookingRoomId)
+      : null
+    const assignedRequests = assignedRes?.data?.data
+
+    // Phòng đã lưu: lấy quan hệ SP2107 trực tiếp từ API để luôn đồng bộ.
+    // Phòng chưa lưu: dùng dữ liệu tạm do form cha truyền xuống.
+    const sourceRequests = Array.isArray(assignedRequests)
+      ? assignedRequests
+      : (Array.isArray(props.room?.specialRequests) ? props.room.specialRequests : [])
+
+    if (sourceRequests.length > 0) {
+      selectedIds.value = sourceRequests.map(r => {
         if (typeof r === 'number') return r
         return r.special_request_id || r.specialRequest?.id || r.id
       }).filter(Boolean)

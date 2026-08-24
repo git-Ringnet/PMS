@@ -788,11 +788,11 @@ function hasSpecialRequest(room, codes) {
 }
 
 function shouldShowBirthday(room) {
-  return Boolean(room.has_birthday_today) || hasSpecialRequest(room, ['birthday'])
+  return Boolean(room.has_birthday_today) || hasSpecialRequest(room, ['BD', 'birthday'])
 }
 
 function shouldShowHoneymoon(room) {
-  return hasSpecialRequest(room, ['honeymoon', 'honey_moon'])
+  return hasSpecialRequest(room, ['HM', 'honeymoon', 'honey_moon'])
 }
 
 // Show Broom icon for dirty rooms

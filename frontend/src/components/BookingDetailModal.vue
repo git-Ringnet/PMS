@@ -188,6 +188,10 @@ function onExtraBedSaved(data) {
   }
 }
 
+function onSpecialRequestsSaved() {
+  emit('refresh')
+}
+
 const formattedRoomForModals = computed(() => ({
   ...props.room,
   bookingRoomId: bookingRoomId.value,
@@ -203,6 +207,9 @@ const formattedRoomForModals = computed(() => ({
   extraBedQty: Number(pricingInfo.value.extra_bed_qty || 0),
   extraBedPrice: parseNumber(pricingInfo.value.extra_bed_price) || 300000,
   rate: props.room.rate,
+  specialRequests: Array.isArray(props.room.specialRequests)
+    ? props.room.specialRequests
+    : (Array.isArray(props.room.special_requests) ? props.room.special_requests : []),
 }))
 
 // Custom 24h TimePicker Computed & Functions
@@ -1179,6 +1186,7 @@ function parseNumber(val) {
   <SpecialRequestsModal
     v-model:show="showSpecialRequestsModal"
     :room="formattedRoomForModals"
+    @saved="onSpecialRequestsSaved"
   />
 
   <ChildBreakfastModal

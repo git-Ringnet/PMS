@@ -40,7 +40,7 @@ const dropdownRef = ref(null)
 
 // Default selected statuses from localStorage or initial defaults
 const savedStatuses = localStorage.getItem('pms_availability_selected_statuses')
-let initialStatuses = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+let initialStatuses = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'BBC']
 if (savedStatuses) {
   try {
     const parsed = JSON.parse(savedStatuses)
@@ -93,7 +93,7 @@ const days = computed(() => {
 
 // Columns displayed inside the room class grid for each day
 const activeSubColumns = computed(() => {
-  const order = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+  const order = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'BBC']
   const cols = order.filter(code => selectedStatuses.value.includes(code))
   if (cols.length === 0) cols.push('AV')
   return cols
@@ -108,7 +108,7 @@ const allStatusesList = computed(() => {
     { code: 'OOO', label: 'OOO', color: '#10b981', activeClasses: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
     { code: 'OOS', label: 'OOS', color: '#6b7280', activeClasses: 'bg-slate-100 border-slate-300 text-slate-700' },
     { code: 'EB', label: 'EB', color: '#ec4899', activeClasses: 'bg-pink-50 border-pink-300 text-pink-700' },
-    { code: 'SOFAB', label: 'SOFAB', color: '#8b5cf6', activeClasses: 'bg-violet-50 border-violet-300 text-violet-700' }
+    { code: 'BBC', label: 'BBC', color: '#8b5cf6', activeClasses: 'bg-violet-50 border-violet-300 text-violet-700' }
   ]
 })
 
@@ -119,7 +119,7 @@ function toggleStatus(code) {
       selectedStatuses.value.splice(index, 1)
     }
   } else {
-    const order = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+    const order = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'BBC']
     const newList = [...selectedStatuses.value, code]
     newList.sort((a, b) => order.indexOf(a) - order.indexOf(b))
     selectedStatuses.value = newList
@@ -241,7 +241,7 @@ function getSubColValue(rcCode, dateStr, subCol) {
   if (subCol === 'OCC') return data.occ
   if (subCol === 'EB') return data.eb
   if (subCol === 'ALM') return data.alm
-  if (subCol === 'SOFAB') return data.sofab
+  if (subCol === 'BBC') return data.bbc
   return 0
 }
 
@@ -252,7 +252,7 @@ function getSumValue(subCol, dateStr) {
   if (subCol === 'OCC') return statistics.value[dateStr]?.total_occupied ?? 0
   if (subCol === 'EB') return statistics.value[dateStr]?.extra_beds ?? 0
   if (subCol === 'ALM') return statistics.value[dateStr]?.allotment ?? 0
-  if (subCol === 'SOFAB') return 0
+  if (subCol === 'BBC') return statistics.value[dateStr]?.bbc ?? 0
   return 0
 }
 
@@ -272,7 +272,7 @@ function roomRowBackground(index) {
 
 function isDetailClickable(metric, isTotalRow = false) {
   return isTotalRow
-    ? ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB'].includes(metric)
+    ? ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'BBC'].includes(metric)
     : ['AV', 'OCC', 'ALM', 'OOO', 'OOS'].includes(metric)
 }
 
@@ -442,7 +442,7 @@ onMounted(async () => {
       
       // If there is NO saved choice in localStorage, we populate selectedStatuses with all of them
       if (!localStorage.getItem('pms_availability_selected_statuses')) {
-        selectedStatuses.value = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'SOFAB']
+        selectedStatuses.value = ['AV', 'OCC', 'ALM', 'OOO', 'OOS', 'EB', 'BBC']
       }
     }
   } catch (error) {
