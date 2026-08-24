@@ -5,6 +5,7 @@ import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePermission } from '@/composables/usePermission'
 import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
@@ -31,6 +32,7 @@ import echo from '@/services/echo'
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+const { can } = usePermission()
 const route = useRoute()
 const router = useRouter()
 
@@ -409,12 +411,7 @@ async function onQuickAssignSuccess() {
 // Methods
 function handleRoomClick(room) {
   if (!room) return
-  // Nếu click vào phòng trống (không có booking) -> Mở modal Giao phòng nhanh / Nhận phòng nhanh
-  const hasBooking = !!room.booking_code || room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'
-  if (!hasBooking) {
-    quickAssignTargetRoom.value = room
-    showQuickAssignModal.value = true
-  }
+  lastFocusedRoom.value = room
 }
 
 async function handleQuickCheckIn() {
@@ -959,6 +956,8 @@ const contextMenu = ref({
   submenuUp: false,
 })
 const contextMenuRef = ref(null)
+// Phòng được chọn gần nhất làm đích cho các phím tắt Room Map.
+const lastFocusedRoom = ref(null)
 
 const statusItems = [
   { key: ROOM_STATUSES.AVAILABLE, label: 'Sẵn sàng' },
@@ -971,6 +970,7 @@ const statusItems = [
 
 function handleContextMenu(event, room) {
   event.preventDefault()
+  lastFocusedRoom.value = room
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   hoverTooltip.value.show = false
 
@@ -1039,6 +1039,49 @@ function handleContextMenu(event, room) {
 
 function closeContextMenu() {
   contextMenu.value.show = false
+}
+function openRoomShortcutScreen(room) {
+  if (!room) return
+  router.push({
+    query: room.booking_code
+      ? { ...route.query, tab: 'create-res', bookingCode: room.booking_code }
+      : {
+          ...route.query,
+          tab: 'create-res',
+          action: 'new',
+          roomNumber: room.room_number,
+          roomTypeId: room.room_type_id || room.room_class_id || '',
+        },
+  })
+  nextTick(() => {
+    if (!room.booking_code && createRegRef.value && typeof createRegRef.value.handleAddTabClick === 'function') {
+      createRegRef.value.handleAddTabClick()
+    }
+  })
+  closeContextMenu()
+}
+
+function handleRoomMapShortcut(event) {
+  const target = event.target
+  if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
+  if (currentTab.value !== 'room-map') return
+
+  const key = String(event.key || '').toLowerCase()
+  if (!['b', 'g', 'c', 'i', '1', '2', '3'].includes(key)) return
+
+  const room = lastFocusedRoom.value || contextMenu.value.room
+  if (!room) return
+  event.preventDefault()
+
+  if (key === '1') return changeRoomStatus(room, ROOM_STATUS_CODES.VACANT_READY)
+  if (key === '2') return changeRoomStatus(room, ROOM_STATUS_CODES.VACANT_CLEAN)
+  if (key === '3') return changeRoomStatus(room, ROOM_STATUS_CODES.VACANT_DIRTY)
+  if (key === 'i') {
+    if (moduleContext.value === 'frontdesk') showRoomInfo(room)
+    return
+  }
+  // B/G/C mở màn hình đăng ký của phòng đang chọn theo luồng context menu hiện tại.
+  openRoomShortcutScreen(room)
 }
 
 // Show room info modal
@@ -1378,6 +1421,7 @@ onMounted(async () => {
   isInitialLoad.value = false
 
   window.addEventListener('click', closeContextMenu)
+  window.addEventListener('keydown', handleRoomMapShortcut)
   window.addEventListener('click', handleClickOutsideSettings)
 
   calculateScale()
@@ -1399,6 +1443,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('keydown', handleRoomMapShortcut)
   window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
 
@@ -2346,7 +2391,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       <div v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]" :key="room.id" class="room-card"
                         :class="[
                           isInitialLoad ? 'room-card-animate' : '',
-                          (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : ''
+                          (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : '',
+                          lastFocusedRoom?.id === room.id ? 'room-card-selected' : ''
                       ]" :style="getRoomCardStyle(room, floorIdx, roomIdx)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)"
                        @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
                         @mousemove="showTooltip($event, room)" @mouseleave="hideTooltip">
@@ -2469,7 +2515,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="room in roomStore.filteredRooms" :key="`list-${room.id}`" class="border-b border-slate-200 hover:brightness-95 transition-colors cursor-pointer select-none h-9" :style="getListRowStyle(room)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
+                      <tr v-for="room in roomStore.filteredRooms" :key="`list-${room.id}`" class="border-b border-slate-200 hover:brightness-95 transition-colors cursor-pointer select-none h-9" :class="lastFocusedRoom?.id === room.id ? 'room-row-selected' : ''" :style="getListRowStyle(room)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
                         <td class="p-2 border-r border-slate-200 text-center" @click.stop><input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" aria-label="Chọn phòng" /></td>
                         <td class="p-2 border-r border-slate-200 text-center"><span v-if="hasArrivalToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1" title="Đến hôm nay"></span><span v-if="hasDepartureToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="Đi hôm nay"></span><span v-if="!hasArrivalToday(room) && !hasDepartureToday(room)">-</span></td>
                         <td class="p-2 border-r border-slate-200 text-center"><RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" /><span v-else>-</span></td>
@@ -2524,7 +2570,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     <tbody>
                       <tr v-for="room in roomStore.filteredRooms" :key="room.id"
                         class="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer select-none h-9"
-                        :class="room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#97d5ff]/40 hover:bg-[#97d5ff]/60' : 'bg-white'"
+                        :class="lastFocusedRoom?.id === room.id ? 'room-row-selected' : (room.status === ROOM_STATUSES.OCCUPIED ? 'bg-[#97d5ff]/40 hover:bg-[#97d5ff]/60' : 'bg-white')"
                         @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
                         <td class="p-2 border-r border-slate-200 text-center" @click.stop><input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" aria-label="Chọn phòng" /></td>
                         <!-- TTDK (Status Dot) -->
@@ -2868,7 +2914,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <div class="h-px bg-slate-300 my-1"></div>
 
             <!-- Nhận phòng -->
-            <button v-if="moduleContext === 'frontdesk'" @click="handleQuickCheckinFromMenu()"
+            <button v-if="moduleContext === 'frontdesk' && can('fo.checkin')" @click="handleQuickCheckinFromMenu()"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3815,4 +3861,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
   opacity: 0;
   transform: translate(-50%, 4px) scale(0.97) !important;
 }
-</style>
+.room-card-selected {
+  background-color: #e5e7eb !important;
+  box-shadow: inset 0 0 0 2px #9ca3af, 0 2px 8px rgba(71, 85, 105, 0.18);
+}
+
+.room-row-selected,
+.room-row-selected:hover {
+  background-color: #e5e7eb !important;
+}</style>

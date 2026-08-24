@@ -264,6 +264,18 @@ class BookingRoom extends Model
         return $this->hasMany(BookingChild::class);
     }
 
+    public function childAssignments()
+    {
+        return $this->hasMany(BookingRoomChild::class, 'booking_room_id');
+    }
+
+    public function assignedChildren()
+    {
+        return $this->belongsToMany(BookingChild::class, 'booking_room_children', 'booking_room_id', 'booking_child_id')
+            ->withPivot('status')
+            ->wherePivot('status', 1);
+    }
+
     public function doNotMoveLocks()
     {
         return $this->hasMany(RoomDoNotMoveLock::class);

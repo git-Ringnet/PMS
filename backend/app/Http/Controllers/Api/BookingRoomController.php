@@ -1504,12 +1504,17 @@ class BookingRoomController extends Controller
 
         $availableRooms = [];
         $statusLabels = [
-            'available'   => 'Sẵn sàng (Vacant Clean)',
-            'clean'       => 'Vacant Clean',
-            'dirty'       => 'Vacant Dirty',
-            'checkout'    => 'Vacant Dirty',
-            'maintenance' => 'Out of Service (OOO)',
-            'occupied'    => 'Occupied',
+            'vacant_ready'   => '',
+            'vacant_clean'   => 'Vacant Clean',
+            'vacant_dirty'   => 'Vacant Dirty',
+            'turndown'       => 'Vacant Dirty',
+            'occupied_ready' => 'Occupied',
+            'occupied_clean' => 'Occupied Clean',
+            'occupied_dirty' => 'Occupied Dirty',
+            'ooo'            => 'Out of Service (OOO)',
+            'oos'            => 'Out of Service (OOS)',
+            'housekeeping'   => 'Housekeeping',
+            'dnd'            => 'Do Not Disturb',
         ];
 
         foreach ($allRooms as $room) {
@@ -1537,9 +1542,9 @@ class BookingRoomController extends Controller
                     'is_virtual'      => (bool)$room->is_virtual,
                     'rate'            => (float)($stdRate?->rate ?? 0),
                     'extra_bed_rate'  => (float)($stdRate?->extra_bed_rate ?? 0),
-                    'status'          => $room->status,
-                    'status_label'    => $statusLabels[$room->status] ?? $room->status,
-                    'is_ready'        => $room->status === 'available',
+                    'status'          => $room->room_status_code,
+                    'status_label'    => $statusLabels[$room->room_status_code] ?? $room->room_status_code,
+                    'is_ready'        => in_array($room->room_status_code, ['vacant_ready', 'vacant_clean'], true),
                 ];
             }
         }
@@ -1556,8 +1561,9 @@ class BookingRoomController extends Controller
 
         $occupiedRooms = [];
         foreach ($occupiedBookingRooms as $obrItem) {
-            $primaryGuest = $obrItem->guests->firstWhere('is_primary', 1)?->guest;
-            $guestNames = $obrItem->guests->map(fn($g) => $g->guest?->full_name)->filter()->values();
+            $activeOccupiedGuests = $obrItem->guests->where('status', '!=', 100);
+            $primaryGuest = $activeOccupiedGuests->firstWhere('is_primary', 1)?->guest;
+            $guestNames = $activeOccupiedGuests->map(fn($g) => $g->guest?->full_name)->filter()->values();
             $mainGuestName = $primaryGuest?->full_name ?? ($guestNames[0] ?? 'Khách');
 
             $statusText = "Inhouse guest: ({$obrItem->booking_id}) " . mb_strtoupper($mainGuestName);
@@ -1590,7 +1596,8 @@ class BookingRoomController extends Controller
 
         usort($occupiedRooms, fn($a, $b) => strcmp($a['room_number'], $b['room_number']));
 
-        $guests = $bookingRoom->guests->map(function ($gPivot) {
+        // Khach da chuyen (status=100) khong con thuoc phong cu.
+        $guests = $bookingRoom->guests->where('status', '!=', 100)->values()->map(function ($gPivot) {
             return [
                 'guest_id'   => $gPivot->guest_id,
                 'full_name'  => $gPivot->guest?->full_name ?? '',
@@ -1599,8 +1606,9 @@ class BookingRoomController extends Controller
             ];
         });
 
-        $children = $bookingRoom->children
-            ? $bookingRoom->children->where('child_status', 0)->values()->map(function ($c) {
+        $assignedChildren = $bookingRoom->assignedChildren()->get();
+        $children = ($assignedChildren->isNotEmpty() ? $assignedChildren : ($bookingRoom->children ? $bookingRoom->children->where('child_status', 0) : collect()))
+            ->values()->map(function ($c) {
                 return [
                     'guest_id'   => $c->id,
                     'full_name'  => $c->full_name ?: ($c->age_group === 'baby' ? 'Em bé' : 'Trẻ em'),
@@ -1608,8 +1616,7 @@ class BookingRoomController extends Controller
                     'is_child'   => true,
                     'age_group'  => $c->age_group,
                 ];
-            })
-            : collect();
+            });
 
         if ($children->isEmpty()) {
             $fallbackChildren = collect();
@@ -1689,6 +1696,7 @@ class BookingRoomController extends Controller
             'reason'             => 'required|string|max:500',
             'target_room_number' => 'required|string',
             'selected_guest_ids' => 'nullable|array',
+            'selected_child_ids' => 'nullable|array',
             'is_change_rate'     => 'nullable|boolean',
             'rate'               => 'nullable|numeric|min:0',
             'extra_bed_qty'      => 'nullable|integer|min:0',
@@ -1702,7 +1710,28 @@ class BookingRoomController extends Controller
         $reason = trim($request->input('reason'));
         $targetRoomNumber = trim($request->input('target_room_number'));
         $selectedGuestIds = $request->input('selected_guest_ids', []);
+        $selectedChildIds = $request->input('selected_child_ids', []);
         $isChangeRate = filter_var($request->input('is_change_rate', false), FILTER_VALIDATE_BOOLEAN);
+
+        $syncMovedChildren = function ($sourceRoom, $targetRoom, $children): void {
+            foreach ($children as $child) {
+                \App\Models\BookingRoomChild::updateOrCreate([
+                    'booking_child_id' => $child->id,
+                    'booking_room_id' => $sourceRoom->id,
+                ], ['status' => 100]);
+                \App\Models\BookingRoomChild::updateOrCreate([
+                    'booking_child_id' => $child->id,
+                    'booking_room_id' => $targetRoom->id,
+                ], ['status' => 1]);
+                $child->update(['child_status' => 100]);
+            }
+        };
+        $getActiveChildren = function ($room) {
+            $assigned = $room->assignedChildren()->get();
+            return $assigned->isNotEmpty()
+                ? $assigned
+                : \App\Models\BookingChild::where('booking_room_id', $room->id)->where('child_status', 0)->get();
+        };
 
         $currentUser = Auth::user()?->username ?? 'system';
         $systemDate = $this->avService->getSystemDate();
@@ -1753,17 +1782,25 @@ class BookingRoomController extends Controller
                 $timeStr = $now->format('H:i:s');
                 $sysDateStr = $systemDate->toDateString();
 
-                $allGuests = $bookingRoom->guests()->get();
+                $allGuests = $bookingRoom->guests()->where('status', '!=', 100)->get();
+                $activeChildren = $getActiveChildren($bookingRoom);
+                $childrenToMove = $activeChildren->whereIn('id', $selectedChildIds);
                 $allGuestsCount = $allGuests->count();
-                $isAllGuestsMoved = empty($selectedGuestIds) || (count($selectedGuestIds) >= $allGuestsCount);
-
                 $movedGuestPivots = empty($selectedGuestIds)
                     ? $allGuests
                     : $allGuests->whereIn('guest_id', $selectedGuestIds);
                 $movedGuestIds = $movedGuestPivots->pluck('guest_id')->toArray();
+                $isAllGuestsMoved = $movedGuestPivots->count() === $allGuestsCount && $childrenToMove->count() === $activeChildren->count();
+
 
                 $movedAdultsCount = $movedGuestPivots->count(); // Count of moved adults
-                $movedChildrenCount = 0; // Count of moved children
+                $movedChildrenCount = $childrenToMove->count();
+            $movedBabiesCount = $childrenToMove->where('age_group', 'baby')->count();
+            $movedRegularChildrenCount = $movedChildrenCount - $movedBabiesCount;
+
+                if ($activeChildren->isNotEmpty() && $movedGuestPivots->count() === $allGuestsCount && $movedChildrenCount < $activeChildren->count()) {
+                    return response()->json(['success' => false, 'message' => 'Không thể chuyển toàn bộ người lớn mà để trẻ em ở lại phòng cũ.'], 422);
+                }
 
                 if ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN) {
                     $originalArrivalStr = $bookingRoom->actual_arrival_date
@@ -1785,7 +1822,8 @@ class BookingRoomController extends Controller
                     $attributes['arrival_time']        = $timeStr;
                     $attributes['ActutalNumOfDays']    = max(1, \Carbon\Carbon::parse($sysDateStr)->diffInDays(\Carbon\Carbon::parse($originalDepartureStr)));
                     $attributes['adults']              = $movedAdultsCount;
-                    $attributes['children_qty']        = $movedChildrenCount;
+                    $attributes['children_qty']        = $movedRegularChildrenCount;
+                    $attributes['babies']              = $movedBabiesCount;
                     $attributes['booking_date']        = $sysDateStr;
                     $attributes['check_in_user']       = $currentUser;
                     $attributes['check_out_user']      = null;
@@ -1803,6 +1841,7 @@ class BookingRoomController extends Controller
                         if ($request->has('extra_bed_qty')) $attributes['extra_bed_qty'] = $request->extra_bed_qty;
                         if ($request->has('extra_bed_rate')) $attributes['extra_bed_rate'] = $request->extra_bed_rate;
                         if ($request->filled('rate_code')) $attributes['rate_code'] = $request->rate_code;
+                        elseif ($request->has('rate') && (float)$request->rate !== (float)$bookingRoom->rate) $attributes['rate_code'] = null;
                     }
 
                     // Insert new booking room record (Sp2100)
@@ -1841,34 +1880,15 @@ class BookingRoomController extends Controller
                             \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id')
                         );
 
-                        // Sp2500 (booking_children): Update children in old room -> Status = 100 & Clone to new room
-                        $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
-                        \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->update([
-                            'child_status' => 100,
-                        ]);
-
-                        foreach ($oldChildren as $childItem) {
-                            $oldChildId = $childItem->id;
-                            $childData = $childItem->toArray();
-                            unset($childData['id'], $childData['created_at'], $childData['updated_at']);
-                            $childData['id'] = 'BC' . uniqid();
-                            $childData['booking_room_id'] = $newRoom->id;
-                            $childData['child_status'] = 0;
-                            $newChild = \App\Models\BookingChild::create($childData);
-
-                            // Sp2401 (booking_child_breakfast_details): Transfer unbilled breakfast details >= system_date
-                            \App\Models\BookingChildBreakfastDetail::where('booking_child_id', $oldChildId)
-                                ->where('service_date', '>=', $sysDateStr)
-                                ->update(['booking_child_id' => $newChild->id]);
-                        }
                     } else {
                         // Partial move -> Old room remains Checked-In (Status = 1), update remaining guest count
                         $remainingAdults = max(1, ($bookingRoom->adults ?? 1) - $movedAdultsCount);
-                        $remainingChildren = max(0, ($bookingRoom->children_qty ?? 0) - $movedChildrenCount);
+                        $remainingChildren = max(0, ($bookingRoom->children_qty ?? 0) - $movedRegularChildrenCount);
 
                         $bookingRoom->update([
                             'adults'       => $remainingAdults,
                             'children_qty' => $remainingChildren,
+                            'babies'       => max(0, (int) ($bookingRoom->babies ?? 0) - $movedBabiesCount),
                             'note'           => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
                             'updated_by'     => $currentUser,
                         ]);
@@ -1899,7 +1919,21 @@ class BookingRoomController extends Controller
                         ]);
                     }
 
+                    if ($childrenToMove->isNotEmpty()) {
+                        $syncMovedChildren($bookingRoom, $newRoom, $childrenToMove);
+                    }
+
+                    \App\Models\ServiceBill::where('RentalRoomId2', $bookingRoom->id)
+                        ->whereIn('CustomerId2', $movedGuestIds)
+                        ->update(['RentalRoomId2' => $newRoom->id]);
+
+                    if (!$isAllGuestsMoved && $movedGuestPivots->contains('is_primary', true)) {
+                        \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update(['is_primary' => 0]);
+                        \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->where('status', '!=', 100)->orderBy('id')->first()?->update(['is_primary' => 1]);
+                    }
+
                     // --- 4. TRANSFER LINKED RECORDS (Sp2401, Sp2102, Sp2107, Sp3000, Sp3002) ---
+                    if ($isAllGuestsMoved) {
                     // Sp2401 & Sp2102 & Sp3000: Transfer future/unbilled services from system_date onwards
                     \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
                         ->where('service_date', '>=', $sysDateStr)
@@ -1913,6 +1947,7 @@ class BookingRoomController extends Controller
                     \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
                         ->update(['booking_room_id' => $newRoom->id]);
 
+                    }
                     DB::commit();
 
                     try {
@@ -1940,6 +1975,7 @@ class BookingRoomController extends Controller
                         if ($request->has('extra_bed_qty')) $updateData['extra_bed_qty'] = $request->extra_bed_qty;
                         if ($request->has('extra_bed_rate')) $updateData['extra_bed_rate'] = $request->extra_bed_rate;
                         if ($request->filled('rate_code')) $updateData['rate_code'] = $request->rate_code;
+                        elseif ($request->has('rate') && (float)$request->rate !== (float)$bookingRoom->rate) $updateData['rate_code'] = null;
                     }
                     $bookingRoom->update($updateData);
 
@@ -1980,12 +2016,22 @@ class BookingRoomController extends Controller
 
             $activeGuests = $bookingRoom->guests()->where('status', '!=', 100)->get();
             $totalAdultsCount = $activeGuests->count();
+            $activeChildren = $getActiveChildren($bookingRoom);
+            $childrenToMove = $activeChildren->whereIn('id', $selectedChildIds);
 
             $guestsToMove = empty($selectedGuestIds)
                 ? $activeGuests
                 : $activeGuests->whereIn('guest_id', $selectedGuestIds);
             $movedGuestIds = $guestsToMove->pluck('guest_id')->toArray();
             $movedAdultsCount = count($movedGuestIds);
+            $movedChildrenCount = $childrenToMove->count();
+            $movedBabiesCount = $childrenToMove->where('age_group', 'baby')->count();
+            $movedRegularChildrenCount = $movedChildrenCount - $movedBabiesCount;
+            $isAllGuestsMoved = $movedAdultsCount === $totalAdultsCount && $movedChildrenCount === $activeChildren->count();
+
+            if ($activeChildren->isNotEmpty() && $movedAdultsCount === $totalAdultsCount && $movedChildrenCount < $activeChildren->count()) {
+                return response()->json(['success' => false, 'message' => 'Không thể chuyển toàn bộ người lớn mà để trẻ em ở lại phòng cũ.'], 422);
+            }
 
             if ($movedAdultsCount === 0) {
                 return response()->json([
@@ -2015,26 +2061,6 @@ class BookingRoomController extends Controller
             try {
                 $timeStr = \Carbon\Carbon::now()->format('H:i:s');
                 $sysDateStr = $systemDate->toDateString();
-                $isAllGuestsMoved = empty($selectedGuestIds) || ($movedAdultsCount >= $totalAdultsCount);
-
-                $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
-                $movedChildrenCount = $isAllGuestsMoved ? $oldChildren->count() : 0;
-
-                if ($isAllGuestsMoved && $oldChildren->count() > 0) {
-                    \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->update([
-                        'child_status' => 100,
-                    ]);
-
-                    foreach ($oldChildren as $childItem) {
-                        $childData = $childItem->toArray();
-                        unset($childData['id'], $childData['created_at'], $childData['updated_at']);
-                        $childData['id'] = 'BC' . uniqid();
-                        $childData['booking_room_id'] = $targetBookingRoom->id;
-                        $childData['child_status'] = 0;
-                        \App\Models\BookingChild::create($childData);
-                    }
-                }
-
                 // --- 1. UPDATE OLD ROOM GUESTS (Sp2200) -> Status = 100 ---
                 \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
                     ->whereIn('guest_id', $movedGuestIds)
@@ -2046,13 +2072,17 @@ class BookingRoomController extends Controller
                     ]);
                 app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($movedGuestIds);
 
+                if ($guestsToMove->contains('is_primary', true)) {
+                    \App\Models\BookingRoomGuest::where('booking_room_id', $targetBookingRoom->id)->update(['is_primary' => 0]);
+                }
+
                 // --- 2. INSERT GUESTS INTO TARGET INHOUSE ROOM (Sp2200) -> Status = 1 ---
                 foreach ($guestsToMove as $gPivot) {
-                    \App\Models\BookingRoomGuest::firstOrCreate([
+                    \App\Models\BookingRoomGuest::updateOrCreate([
                         'booking_room_id' => $targetBookingRoom->id,
                         'guest_id'        => $gPivot->guest_id,
                     ], [
-                        'is_primary'           => 0,
+                        'is_primary'           => (bool) $gPivot->is_primary,
                         'status'               => BookingRoom::STATUS_CHECKED_IN,
                         'actual_arrival_date'  => $sysDateStr,
                         'actual_arrival_time'  => $timeStr,
@@ -2061,12 +2091,27 @@ class BookingRoomController extends Controller
                     ]);
                 }
 
+                if ($childrenToMove->isNotEmpty()) {
+                    $syncMovedChildren($bookingRoom, $targetBookingRoom, $childrenToMove);
+                }
+
+                \App\Models\ServiceBill::where('RentalRoomId2', $bookingRoom->id)
+                    ->whereIn('CustomerId2', $movedGuestIds)
+                    ->update(['RentalRoomId2' => $targetBookingRoom->id]);
+
+                if (!$isAllGuestsMoved && $guestsToMove->contains('is_primary', true)) {
+                    \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update(['is_primary' => 0]);
+                    \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->where('status', '!=', 100)->orderBy('id')->first()?->update(['is_primary' => 1]);
+                }
+
                 // --- 3. UPDATE TARGET INHOUSE ROOM (Sp2100) ---
-                $newTotalChildren = ($targetBookingRoom->children_qty ?? 0) + $movedChildrenCount;
+                $newTotalChildren = ($targetBookingRoom->children_qty ?? 0) + $movedRegularChildrenCount;
+                $newTotalBabies = ($targetBookingRoom->babies ?? 0) + $movedBabiesCount;
                 $noteMsg = "Gộp khách từ phòng {$bookingRoom->room_number}: {$reason}";
                 $targetUpdateData = [
                     'adults'       => $newTotalAdults,
                     'children_qty' => $newTotalChildren,
+                    'babies'       => $newTotalBabies,
                     'note'         => trim(($targetBookingRoom->note ? $targetBookingRoom->note . ' | ' : '') . $noteMsg),
                     'updated_by'   => $currentUser,
                 ];
@@ -2075,6 +2120,7 @@ class BookingRoomController extends Controller
                     if ($request->has('extra_bed_qty')) $targetUpdateData['extra_bed_qty'] = $request->extra_bed_qty;
                     if ($request->has('extra_bed_rate')) $targetUpdateData['extra_bed_rate'] = $request->extra_bed_rate;
                     if ($request->filled('rate_code')) $targetUpdateData['rate_code'] = $request->rate_code;
+                    elseif ($request->has('rate') && (float)$request->rate !== (float)$targetBookingRoom->rate) $targetUpdateData['rate_code'] = null;
                 }
                 $targetBookingRoom->update($targetUpdateData);
 
@@ -2104,6 +2150,8 @@ class BookingRoomController extends Controller
                     $remainingAdults = max(1, $totalAdultsCount - $movedAdultsCount);
                     $bookingRoom->update([
                         'adults'     => $remainingAdults,
+                        'children_qty' => max(0, (int) ($bookingRoom->children_qty ?? 0) - $movedRegularChildrenCount),
+                        'babies'       => max(0, (int) ($bookingRoom->babies ?? 0) - $movedBabiesCount),
                         'note'       => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
                         'updated_by' => $currentUser,
                     ]);
@@ -2119,7 +2167,6 @@ class BookingRoomController extends Controller
                         ->update(['booking_room_id' => $targetBookingRoom->id]);
 
                 }
-
                 DB::commit();
 
                 return response()->json([

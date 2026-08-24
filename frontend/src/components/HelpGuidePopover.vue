@@ -146,7 +146,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 9. Ưu tiên tính phí -->
-          <div class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
+          <div v-if="false" class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
             <div class="w-4 h-4 flex items-center justify-center shrink-0">
               <RoomIcon name="priority-paid" class="w-4.5 h-4.5" />
             </div>
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 2. Nhóm hóa đơn -->
-          <div class="flex items-center justify-between text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
+          <div v-if="false" class="flex items-center justify-between text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
             <div class="flex items-center gap-3 select-text">
               <div class="w-4 h-4 flex items-center justify-center shrink-0 text-[#fd0404]">
                 <RoomIcon name="group-invoice" class="w-4.5 h-4.5" />
@@ -258,7 +258,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 9. Có người trong phòng -->
-          <div class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
+          <div v-if="false" class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
             <div class="w-4 h-4 flex items-center justify-center shrink-0 text-slate-600">
               <RoomIcon name="in-house" class="w-4.5 h-4.5" />
             </div>
@@ -266,7 +266,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 10. Yêu cầu dọn phòng -->
-          <div class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
+          <div v-if="false" class="flex items-center gap-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 px-2 py-1 -mx-2 rounded-lg transition-colors cursor-pointer select-text">
             <div class="w-4 h-4 flex items-center justify-center shrink-0 text-slate-600">
               <RoomIcon name="hk-request" class="w-4.5 h-4.5" />
             </div>

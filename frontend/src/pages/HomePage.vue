@@ -2,9 +2,11 @@
 import { useRouter } from "vue-router";
 import { ref, onMounted } from "vue";
 import { useUiStore } from "@/stores/ui-store";
+import { usePermission } from "@/composables/usePermission";
 
 const router = useRouter();
 const uiStore = useUiStore();
+const { can, canAny, isSuperAdmin } = usePermission();
 const isLoaded = ref(false);
 
 function navigateTo(route) {
@@ -33,6 +35,7 @@ onMounted(() => {
     <div class="relative z-10 flex flex-wrap items-center justify-center gap-12 sm:gap-16 md:gap-20 px-6 max-w-5xl">
       <!-- 1. PROVISTA PMS Card -->
       <div 
+        v-if="isSuperAdmin || canAny(['fo.booking.view', 'fo.frontdesk.view', 'hk.view', 'mgmt.report.view', 'system.setting'])"
         class="flex flex-col items-center group transition-all duration-1000"
         :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'"
         style="transition-delay: 100ms;"
@@ -59,6 +62,7 @@ onMounted(() => {
 
       <!-- 2. PROVISTA F&B Card -->
       <div 
+        v-if="isSuperAdmin || canAny(['fb.view', 'fb.order.view', 'fb.order.create', 'fb.party.manage', 'fb.payment'])"
         class="flex flex-col items-center group transition-all duration-1000"
         :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'"
         style="transition-delay: 200ms;"
@@ -85,6 +89,7 @@ onMounted(() => {
 
       <!-- 3. PROVISTA SYSTEM Card -->
       <div 
+        v-if="isSuperAdmin || canAny(['system.user.view', 'system.user.manage', 'system.setting', 'system.branch.manage'])"
         class="flex flex-col items-center group transition-all duration-1000"
         :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'"
         style="transition-delay: 300ms;"

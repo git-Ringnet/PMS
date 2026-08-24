@@ -134,7 +134,8 @@ class RoomController extends Controller
                     }
                 }
 
-                $primaryGuest = $br->guests->firstWhere('is_primary', true) ?? $br->guests->first();
+                $activeGuests = $br->guests->where('status', '!=', 100);
+                $primaryGuest = $activeGuests->firstWhere('is_primary', true) ?? $activeGuests->first();
                 $room->guest_name = $primaryGuest?->guest?->full_name ?? '';
                 $room->booking_code = $br->booking?->booking_code ?? '';
                 $room->booking_name = $br->booking?->booking_name ?? '';
@@ -143,11 +144,17 @@ class RoomController extends Controller
                 $room->arrival_date = $br->arrival_date ? $br->arrival_date->toDateString() : '';
                 $room->departure_date = $br->departure_date ? $br->departure_date->toDateString() : '';
                 $room->nights = $br->arrival_date && $br->departure_date ? $br->arrival_date->diffInDays($br->departure_date) : 1;
-                $room->adults = $br->adults ?? 2;
-                $room->children = (int) ($br->children_qty ?: ($br->children ? $br->children->where('age_group', 'child')->count() : 0));
-                $room->babies = (int) ($br->babies ?: ($br->children ? $br->children->where('age_group', 'baby')->count() : 0));
+                // Room Map dùng số khách/trẻ đang thực sự còn ở phòng.
+                $activeAdultCount = $activeGuests->count();
+                $assignedChildren = $br->assignedChildren()->get();
+                $room->adults = $activeAdultCount > 0 ? $activeAdultCount : ($br->adults ?? 2);
+                $room->children = $assignedChildren->isNotEmpty()
+                    ? $assignedChildren->where('age_group', 'child')->count()
+                    : (int) ($br->children_qty ?: ($br->children ? $br->children->where('child_status', '!=', 100)->where('age_group', 'child')->count() : 0));
+                $room->babies = $assignedChildren->isNotEmpty()
+                    ? $assignedChildren->where('age_group', 'baby')->count()
+                    : (int) ($br->babies ?: ($br->children ? $br->children->where('child_status', '!=', 100)->where('age_group', 'baby')->count() : 0));
                 $room->guest_count = (int) $room->adults + $room->children + $room->babies;
-                $room->arrival_time = $br->arrival_time ?? '14:00';
                 $room->rate = $br->rate ?? 0;
                 $room->rate_code = $br->rate_code ?? null;
                 $room->standard_rate = (float) ($br->roomClass?->standardRates

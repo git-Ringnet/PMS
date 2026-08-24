@@ -29,8 +29,10 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
+import { usePermission } from '@/composables/usePermission'
 
 const uiStore = useUiStore()
+const { can } = usePermission()
 const route = useRoute()
 const router = useRouter()
 
@@ -2705,6 +2707,7 @@ onUnmounted(() => {
 
           <!-- Thêm đặt cọc -->
           <button 
+            v-if="can('fo.payment.create')"
             @click="showPrepaymentModal = true"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
             :title="isSidebarCollapsed ? 'Thanh toán trước' : ''"
@@ -2715,6 +2718,7 @@ onUnmounted(() => {
 
           <!-- Thanh toán -->
           <button 
+            v-if="can('fo.payment.create')"
             @click="openPaymentModal"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
             :title="isSidebarCollapsed ? 'Thanh toán' : ''"
@@ -2725,6 +2729,7 @@ onUnmounted(() => {
 
           <!-- Xóa thanh toán -->
           <button 
+            v-if="can('fo.payment.create')"
             @click="openDeletePaymentModal"
             :disabled="selectedPaymentItems.length === 0 || isServiceOperationLoading"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
@@ -2819,7 +2824,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Bottom Button: Trả phòng -->
-      <div class="pt-2 border-t border-[#475569] shrink-0">
+      <div v-if="can('fo.checkout')" class="pt-2 border-t border-[#475569] shrink-0">
         <button 
           @click="openCheckoutModal"
           :disabled="!selectedBooking || isServiceOperationLoading"
