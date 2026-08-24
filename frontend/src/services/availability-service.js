@@ -24,7 +24,7 @@ export const fetchRegistrationStatuses = () => {
 }
 
 /**
- * Lấy dữ liệu chi tiết cho một ô AV/OCC/ALM/OOO/OOS/EB/SOFAB.
+ * Lấy dữ liệu chi tiết cho một ô AV/OCC/ALM/OOO/OOS/EB/BBC.
  */
 export const fetchAvailabilityDetails = ({ date, metric, roomClassId = null }) => {
   return http.get('/availability/details', {

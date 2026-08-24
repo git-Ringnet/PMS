@@ -188,9 +188,9 @@
                 <td class="p-2.5 text-center pr-5">
                   <span 
                     class="px-2.5 py-1 rounded-md text-[11px] font-bold inline-block border shadow-2xs"
-                    :class="getStatusBadgeStyle(b.status)"
+                    :class="getStatusBadgeStyle(getDisplayStatus(b))"
                   >
-                    {{ getStatusText(b.status) }}
+                    {{ getStatusText(getDisplayStatus(b)) }}
                   </span>
                 </td>
               </tr>
@@ -351,6 +351,14 @@ function getStatusText(status) {
     case 4: return 'No Show'
     default: return 'Khác'
   }
+}
+
+function getDisplayStatus(booking) {
+  const rooms = booking?.booking_rooms || []
+  if (Number(booking?.status) === 3 || (rooms.length > 0 && rooms.every(room => Number(room.status) === 3))) {
+    return 3
+  }
+  return booking?.status
 }
 
 function getStatusBadgeStyle(status) {

@@ -26,7 +26,8 @@ class BookingRoomSpecialRequestController extends Controller
     // GET /special-requests — Danh mục master
     public function catalog()
     {
-        $catalog = SpecialRequest::orderBy('sort_order', 'asc')
+        $catalog = SpecialRequest::where('is_active', true)
+            ->orderBy('sort_order', 'asc')
             ->get();
 
         return response()->json(['success' => true, 'data' => $catalog]);

@@ -37,6 +37,7 @@ export const updateBookingRoomNoPost = (roomId, noPost) => http.patch(`/booking-
  */
 export const deleteBooking = (id, data = {}) => http.delete(`/bookings/${id}`, { data })
 export const copyBooking = (id, data) => http.post(`/bookings/${id}/copy`, data)
+export const restoreBooking = (id, params = {}) => http.post(`/bookings/${id}/restore`, params)
 export const revertBookingNoshow = (id, params = {}) => http.post(`/bookings/${id}/revert-noshow`, params)
 
 // ==================== BOOKING ROOMS (GIAO PHÒNG / CHECK-IN) ====================

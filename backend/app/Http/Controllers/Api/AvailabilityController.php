@@ -95,6 +95,7 @@ class AvailabilityController extends Controller
                 'total_occupied'   => 0,  // Standard occupied + allotment
                 'av'               => $grandTotalRooms,
                 'extra_beds'       => 0,
+                'bbc'              => 0,
                 'arrivals_rooms'   => 0,
                 'departures_rooms' => 0,
                 'bk_guaranteed'    => 0,
@@ -163,7 +164,8 @@ class AvailabilityController extends Controller
                 'roomClass:id,code',
                 'booking.registrationStatus',
                 'booking.paymentMethod',
-                'booking.company'
+                'booking.company',
+                'specialRequests.specialRequest'
             ])
             ->get();
 
@@ -174,6 +176,7 @@ class AvailabilityController extends Controller
         $arrivalCounts   = []; // Arrivals: arrival_date = dStr
         $departureCounts = [];
         $extraBedCounts  = [];
+        $babyCotCounts   = [];
 
         $bookedRooms     = []; // $bookedRooms[classCode][dateStr][] = room_number
         $inhouseRooms    = []; // $inhouseRooms[classCode][dateStr][] = room_number
@@ -266,6 +269,14 @@ class AvailabilityController extends Controller
                             $extraBedCounts[$classCode][$dStr] = ($extraBedCounts[$classCode][$dStr] ?? 0) + $br->extra_bed_qty;
                         }
 
+                        $hasBabyCot = $br->specialRequests->contains(function ($pivot) {
+                            $code = strtolower((string) ($pivot->specialRequest?->code ?? ''));
+                            return in_array(str_replace('_', '', $code), ['bc', 'babycot'], true);
+                        });
+                        if ($hasBabyCot) {
+                            $babyCotCounts[$classCode][$dStr] = ($babyCotCounts[$classCode][$dStr] ?? 0) + 1;
+                        }
+
                         // Advanced statistics counts
                         if ($isHU) {
                             $statistics[$dStr]['internal_rooms']++;
@@ -346,6 +357,7 @@ class AvailabilityController extends Controller
                 $inhouseCount = $inhouseCounts[$code][$dStr] ?? 0;
                 $occupied     = $bkCount + $inhouseCount; // standard non-allotment occupied
                 $ebCount      = $extraBedCounts[$code][$dStr] ?? 0;
+                $babyCotCount = $babyCotCounts[$code][$dStr] ?? 0;
                 $arrivals     = $arrivalCounts[$code][$dStr] ?? 0;
                 $departures   = $departureCounts[$code][$dStr] ?? 0;
                 $almCount     = $allotmentCounts[$code][$dStr] ?? 0;
@@ -377,6 +389,7 @@ class AvailabilityController extends Controller
                     'total_occ'  => $occupied,
                     'occ_rooms'  => $occRooms,
                     'eb'         => $ebCount,
+                    'bbc'        => $babyCotCount,
                     'arr'        => $arrivals,
                     'dep'        => $departures,
                     'sellable'   => $sellable,
@@ -390,6 +403,7 @@ class AvailabilityController extends Controller
                 $statistics[$dStr]['inhouse']          += $inhouseCount;
                 $statistics[$dStr]['total_occupied']   += ($occupied + $almCount);
                 $statistics[$dStr]['extra_beds']       += $ebCount;
+                $statistics[$dStr]['bbc']               += $babyCotCount;
                 $statistics[$dStr]['arrivals_rooms']   += $arrivals;
                 $statistics[$dStr]['departures_rooms'] += $departures;
 
@@ -492,7 +506,7 @@ class AvailabilityController extends Controller
     {
         $validated = $request->validate([
             'date'         => ['required', 'date'],
-            'metric'       => ['required', 'in:AV,OCC,ALM,OOO,OOS,EB,SOFAB'],
+            'metric'       => ['required', 'in:AV,OCC,ALM,OOO,OOS,EB,BBC'],
             'room_class_id'=> ['nullable', 'integer', 'exists:room_classes,id'],
         ]);
 
@@ -544,6 +558,7 @@ class AvailabilityController extends Controller
                 'booking.company:id,name,code',
                 'roomClass:id,code,name',
                 'guests.guest:id,full_name',
+                'specialRequests.specialRequest',
             ])
             ->orderBy('booking_id')
             ->orderBy('id')
@@ -623,6 +638,14 @@ class AvailabilityController extends Controller
             ->map($mapBookingRow)
             ->values();
 
+        $bbcBookingRows = $bookingRooms
+            ->filter(fn ($room) => $room->specialRequests->contains(function ($pivot) {
+                $code = strtolower((string) ($pivot->specialRequest?->code ?? ''));
+                return in_array(str_replace('_', '', $code), ['bc', 'babycot'], true);
+            }))
+            ->map($mapBookingRow)
+            ->values();
+
         $lockRows = $locks
             ->filter(fn ($lock) => strtoupper((string) $lock->lock_type) === $metric)
             ->map(function ($lock) use ($rooms) {
@@ -652,7 +675,7 @@ class AvailabilityController extends Controller
             'ALM' => $allotmentBookingRows,
             'OOO', 'OOS' => $lockRows,
             'EB' => $extraBedBookingRows,
-            'SOFAB' => collect(),
+            'BBC' => $bbcBookingRows,
             default => $occBookingRows,
         };
 
