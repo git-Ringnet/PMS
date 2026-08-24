@@ -52,11 +52,11 @@ class GuestController extends Controller
                 'adults_count'     => $room->adults ?? 1,
                 'babies_count'     => $room->babies ?? 0,
                 'children_count'   => $room->children_qty ?? 0,
-                'guests'           => $room->guests->map(fn($rg) => array_merge(
+                'guests'           => $room->guests->where('status', '!=', 100)->map(fn($rg) => array_merge(
                     $rg->guest->toArray(),
                     ['pivot_id' => $rg->id, 'is_primary' => $rg->is_primary]
                 )),
-                'children'         => $room->children->values(),
+                'children'         => ($room->assignedChildren()->get()->isNotEmpty() ? $room->assignedChildren()->get() : $room->children->where('child_status', 0))->values(),
             ];
         });
 
@@ -148,7 +148,7 @@ class GuestController extends Controller
     public function roomGuests($roomId)
     {
         $room   = BookingRoom::findOrFail($roomId);
-        $guests = $room->guests()->with(['guest' => function ($query) {
+        $guests = $room->guests()->where('status', '!=', 100)->with(['guest' => function ($query) {
             $query->withCount('bookingRoomGuests');
         }])->get();
 
@@ -971,20 +971,28 @@ class GuestController extends Controller
     {
         $booking  = Booking::findOrFail($bookingId);
         $query    = $booking->children()->with('bookingRoom', 'breakfastDetails');
+        $roomId = $request->input('booking_room_id');
 
-        if ($request->filled('booking_room_id')) {
-            $roomId = $request->booking_room_id;
-            $query->where(function ($q) use ($roomId) {
-                $q->where('booking_room_id', $roomId)
-                  ->orWhereNull('booking_room_id');
-            });
+        if ($roomId) {
+            // Vị trí hiện tại của trẻ được lưu ở bảng phân bổ khi chuyển khách.
+            $assignedIds = \App\Models\BookingRoomChild::where('booking_room_id', $roomId)
+                ->where('status', 1)->pluck('booking_child_id');
+            if ($assignedIds->isNotEmpty()) {
+                $query->whereIn('id', $assignedIds);
+            } else {
+                $query->where('booking_room_id', $roomId)->where('child_status', '!=', 100);
+            }
         }
 
         $children = $query->get();
+        if ($roomId) {
+            $children->each(function ($child) use ($roomId) {
+                $child->booking_room_id = $roomId;
+            });
+        }
 
         return response()->json(['success' => true, 'data' => $children]);
     }
-
     // POST /bookings/{bookingId}/children — Thêm trẻ em vào booking
     public function addChild(Request $request, $bookingId)
     {

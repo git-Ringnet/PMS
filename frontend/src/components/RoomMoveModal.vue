@@ -473,54 +473,47 @@ function handleSubmit() {
     return
   }
 
-  if (selectedMoveType.value === 'available') {
-    const target = availableRooms.value.find(r => r.room_number === selectedTargetRoomNumber.value)
-    if (target && !target.is_ready) {
-      uiStore.showToast('Vui lòng kiểm tra tình trạng phòng (Phòng chưa ở trạng thái Sẵn sàng)', 'error')
-      return
-    }
-    executeSubmit((currentRoom.value?.guests || []).map(g => g.guest_id))
-  } else if (selectedMoveType.value === 'merge') {
-    const guests = currentRoom.value?.guests || []
-    const children = currentRoom.value?.children || []
+  if (selectedMoveType.value === 'available' && !isTargetRoomReady.value) {
+    uiStore.showToast('Vui lòng kiểm tra tình trạng phòng (Phòng chưa ở trạng thái Sẵn sàng)', 'error')
+    return
+  }
 
-    if (guests.length === 0 && children.length === 0) {
-      uiStore.showToast('Phòng hiện tại không có danh sách khách!', 'error')
-      return
-    }
+  // Chuẩn hóa collection sau khi lọc khách đã chuyển
+  const toArray = (value) => Array.isArray(value) ? value : Object.values(value || {})
+  const guests = toArray(currentRoom.value?.guests)
+  const children = toArray(currentRoom.value?.children)
 
-    const adultList = guests.map(g => ({
-      guest_id: g.guest_id,
-      full_name: g.full_name || 'Khách',
-      is_child: false,
-      selected: true,
-    }))
+  if (guests.length === 0 && children.length === 0) {
+    uiStore.showToast('Phòng hiện tại không có danh sách khách!', 'error')
+    return
+  }
 
-    const childList = children.map(c => ({
+  guestSelectionList.value = [
+    ...guests.map(g => ({ guest_id: g.guest_id, full_name: g.full_name || 'Khách', is_child: false, selected: true })),
+    ...children.map(c => ({
       guest_id: c.guest_id,
       full_name: c.full_name || (c.age_group === 'baby' ? 'Em bé' : 'Trẻ em'),
       is_child: true,
       selected: true,
-    }))
-
-    guestSelectionList.value = [...adultList, ...childList]
-    showGuestSelectModal.value = true
-  }
+    })),
+  ]
+  showGuestSelectModal.value = true
 }
 
 function confirmGuestSelection() {
-  const selectedIds = guestSelectionList.value.filter(g => g.selected).map(g => g.guest_id)
+  const selectedAdults = guestSelectionList.value.filter(g => g.selected && !g.is_child).map(g => g.guest_id)
+  const selectedChildren = guestSelectionList.value.filter(g => g.selected && g.is_child).map(g => g.guest_id)
 
-  if (selectedIds.length === 0) {
+  if (selectedAdults.length === 0 && selectedChildren.length === 0) {
     uiStore.showToast('Vui lòng chọn ít nhất 1 khách để chuyển sang phòng gộp!', 'warning')
     return
   }
 
   showGuestSelectModal.value = false
-  executeSubmit(selectedIds)
+  executeSubmit(selectedAdults, selectedChildren)
 }
 
-async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
+async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExceedCapacity = false) {
   submitting.value = true
   try {
     const payload = {
@@ -528,6 +521,7 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
       target_room_number: selectedTargetRoomNumber.value,
       reason: reason.value.trim(),
       selected_guest_ids: selectedGuestIds,
+      selected_child_ids: selectedChildIds,
       is_change_rate: isChangeRate.value,
       rate_code: selectedRateCode.value,
       rate: Number(newRate.value),
@@ -554,7 +548,7 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
       })
       if (confirmed) {
         submitting.value = false
-        executeSubmit(selectedGuestIds, true)
+        executeSubmit(selectedGuestIds, selectedChildIds, true)
         return
       }
     } else if (errorData?.detail) {
@@ -876,6 +870,7 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
           </button>
         </div>
 
+        <div class="px-4 pt-3 text-[11px] font-semibold text-blue-700">Đã tick = chuyển khách sang phòng mới · Bỏ tick = giữ khách ở phòng cũ</div>
         <div class="p-4 space-y-4 max-h-[60vh] overflow-auto">
           <!-- Người lớn -->
           <div>
