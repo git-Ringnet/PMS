@@ -182,12 +182,39 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
 
     // System Administration routes
-    Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase']);
-    Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase']);
-    Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision']);
-    Route::apiResource('system-branches', \App\Http\Controllers\Api\SystemBranchController::class);
+    Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase'])->middleware('permission:system.setting');
+    Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase'])->middleware('permission:system.setting');
+    Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision'])->middleware('permission:system.branch.manage');
+    Route::get('system-branches/list', [\App\Http\Controllers\Api\UserPermissionController::class, 'listBranches']);
+    Route::get('system-branches', [\App\Http\Controllers\Api\SystemBranchController::class, 'index']);
+    Route::post('system-branches', [\App\Http\Controllers\Api\SystemBranchController::class, 'store'])->middleware('permission:system.branch.manage');
+    Route::get('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'show']);
+    Route::put('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'update'])->middleware('permission:system.branch.manage');
+    Route::delete('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'destroy'])->middleware('permission:system.branch.manage');
     Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
-    Route::apiResource('users', \App\Http\Controllers\Api\UserController::class);
+    
+    // User & Employee routes
+    Route::get('users', [\App\Http\Controllers\Api\UserController::class, 'index'])->middleware('permission:system.user.view');
+    Route::post('users', [\App\Http\Controllers\Api\UserController::class, 'store'])->middleware('permission:system.user.manage');
+    Route::get('users/{user}', [\App\Http\Controllers\Api\UserController::class, 'show'])->middleware('permission:system.user.view');
+    Route::put('users/{user}', [\App\Http\Controllers\Api\UserController::class, 'update'])->middleware('permission:system.user.manage');
+    Route::delete('users/{user}', [\App\Http\Controllers\Api\UserController::class, 'destroy'])->middleware('permission:system.user.manage');
+    Route::post('users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature'])->middleware('permission:system.user.manage');
+    Route::delete('users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature'])->middleware('permission:system.user.manage');
+
+    // User Roles & Branch Sync
+    Route::get('users/{id}/permissions', [\App\Http\Controllers\Api\UserPermissionController::class, 'getUserPermissions'])->middleware('permission:system.user.view');
+    Route::post('users/{id}/branches/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncBranches'])->middleware('permission:system.user.manage');
+    Route::post('users/{id}/roles/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncRoles'])->middleware('permission:system.user.manage');
+
+    // Roles & Permissions Management
+    Route::get('roles', [\App\Http\Controllers\Api\RoleController::class, 'index'])->middleware('permission:system.user.view');
+    Route::post('roles', [\App\Http\Controllers\Api\RoleController::class, 'store'])->middleware('permission:system.user.manage');
+    Route::put('roles/{id}', [\App\Http\Controllers\Api\RoleController::class, 'update'])->middleware('permission:system.user.manage');
+    Route::delete('roles/{id}', [\App\Http\Controllers\Api\RoleController::class, 'destroy'])->middleware('permission:system.user.manage');
+    Route::get('roles/{id}/permissions', [\App\Http\Controllers\Api\RoleController::class, 'getPermissions'])->middleware('permission:system.user.view');
+    Route::post('roles/{id}/permissions/sync', [\App\Http\Controllers\Api\RoleController::class, 'syncPermissions'])->middleware('permission:system.user.manage');
+    Route::get('permissions', [\App\Http\Controllers\Api\RoleController::class, 'allPermissions'])->middleware('permission:system.user.view');
     Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class);
     Route::post('/housekeeping/outlets/reorder', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'reorder']);
     Route::delete('/housekeeping/outlets/{housekeepingOutlet}/force', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'forceDestroy'])->name('housekeeping.outlets.force-destroy');
@@ -310,57 +337,62 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // #12 — Xuất Excel (đặt TRƯỚC apiResource để không bị override)
     Route::get('bookings/init-dropdowns', [\App\Http\Controllers\Api\BookingController::class, 'initDropdowns']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
-    Route::apiResource('bookings', \App\Http\Controllers\Api\BookingController::class);
-    Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking']);
+    Route::get('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'show']);
+    Route::get('bookings', [\App\Http\Controllers\Api\BookingController::class, 'index']);
+    // Các action ghi cần quyền
+    Route::post('bookings', [\App\Http\Controllers\Api\BookingController::class, 'store'])->middleware('permission:fo.booking.create');
+    Route::put('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'update'])->middleware('permission:fo.booking.edit');
+    Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
+    Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware('permission:fo.booking.edit');
 
     // #19 — Nhân bản booking
-    Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy']);
+    Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy'])->middleware('permission:fo.booking.create');
     // #22 — Khôi phục booking đã hủy
-    Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore']);
+    Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore'])->middleware('permission:fo.booking.edit');
     // Khôi phục booking noshow
-    Route::post('bookings/{id}/revert-noshow', [\App\Http\Controllers\Api\BookingController::class, 'revertNoshow']);
+    Route::post('bookings/{id}/revert-noshow', [\App\Http\Controllers\Api\BookingController::class, 'revertNoshow'])->middleware('permission:fo.booking.edit');
 
     // --- Booking Rooms (SP2100) ---
     Route::prefix('bookings/{bookingId}/rooms')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
-        Route::post('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'store']);
-        Route::put('/{roomId}', [\App\Http\Controllers\Api\BookingRoomController::class, 'update']);
-        Route::post('/bulk-update', [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate']);
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'store'])->middleware('permission:fo.booking.create');
+        Route::put('/{roomId}', [\App\Http\Controllers\Api\BookingRoomController::class, 'update'])->middleware('permission:fo.booking.edit');
+        Route::post('/bulk-update', [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate'])->middleware('permission:fo.booking.edit');
         // Epic 5 - Check-in
-        Route::patch('/{roomId}/check-in', [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn']);
-        Route::post('/{roomId}/undo-checkin', [\App\Http\Controllers\Api\BookingRoomController::class, 'undoCheckIn']);
+        Route::patch('/{roomId}/check-in', [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn'])->middleware('permission:fo.checkin');
+        Route::post('/{roomId}/undo-checkin', [\App\Http\Controllers\Api\BookingRoomController::class, 'undoCheckIn'])->middleware('permission:fo.checkin');
         // Epic 6 - Nâng hạng phòng
-        Route::patch('/{roomId}/upgrade', [\App\Http\Controllers\Api\BookingRoomController::class, 'upgrade']);
+        Route::patch('/{roomId}/upgrade', [\App\Http\Controllers\Api\BookingRoomController::class, 'upgrade'])->middleware('permission:fo.room.move');
         // Epic 8 - Gỡ số phòng
-        Route::patch('/{roomId}/unassign', [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign']);
+        Route::patch('/{roomId}/unassign', [\App\Http\Controllers\Api\BookingRoomController::class, 'unassign'])->middleware('permission:fo.booking.edit');
         // Epic 9 - Hủy phòng
-        Route::delete('/{roomId}/cancel', [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel']);
+        Route::delete('/{roomId}/cancel', [\App\Http\Controllers\Api\BookingRoomController::class, 'cancel'])->middleware('permission:fo.booking.cancel');
         // Khôi phục phòng noshow
-        Route::post('/{roomId}/revert-noshow', [\App\Http\Controllers\Api\BookingRoomController::class, 'revertNoshow']);
+        Route::post('/{roomId}/revert-noshow', [\App\Http\Controllers\Api\BookingRoomController::class, 'revertNoshow'])->middleware('permission:fo.booking.edit');
         // Charge noshow
-        Route::post('/{roomId}/charge-noshow', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'chargeNoshow']);
+        Route::post('/{roomId}/charge-noshow', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'chargeNoshow'])->middleware('permission:fo.booking.noshow');
         // Tách phòng
-        Route::post('/{roomId}/split', [\App\Http\Controllers\Api\BookingRoomController::class, 'split']);
+        Route::post('/{roomId}/split', [\App\Http\Controllers\Api\BookingRoomController::class, 'split'])->middleware('permission:fo.booking.edit');
         // Epic 3 - Auto assign room number
-        Route::post('/{roomId}/auto-assign', [\App\Http\Controllers\Api\BookingRoomController::class, 'autoAssign']);
+        Route::post('/{roomId}/auto-assign', [\App\Http\Controllers\Api\BookingRoomController::class, 'autoAssign'])->middleware('permission:fo.booking.edit');
         // Epic 11 - Do Not Move
-        Route::post('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'lockMove']);
-        Route::delete('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'unlockMove']);
+        Route::post('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'lockMove'])->middleware('permission:fo.booking.edit');
+        Route::delete('/{roomId}/lock-move', [\App\Http\Controllers\Api\BookingRoomController::class, 'unlockMove'])->middleware('permission:fo.booking.edit');
         // Chuyển phòng & Gộp phòng
         Route::get('/{roomId}/move-target-rooms', [\App\Http\Controllers\Api\BookingRoomController::class, 'getMoveTargetRooms']);
-        Route::post('/{roomId}/move', [\App\Http\Controllers\Api\BookingRoomController::class, 'moveRoom']);
+        Route::post('/{roomId}/move', [\App\Http\Controllers\Api\BookingRoomController::class, 'moveRoom'])->middleware('permission:fo.room.move');
     });
 
     // --- Booking Room Services (SP2102) — Epic 4, 10, 14 ---
     Route::prefix('booking-rooms/{roomId}/services')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
-        Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store']);
-        Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete']);
-        Route::post('/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancel']);
-        Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio']);
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store'])->middleware('permission:fo.service.create');
+        Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete'])->middleware('permission:fo.service.cancel');
+        Route::post('/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancel'])->middleware('permission:fo.service.cancel');
+        Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio'])->middleware('permission:fo.service.create');
         Route::get('/quick-transfer-candidates', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransferCandidates']);
-        Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer']);
-        Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio']);
+        Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer'])->middleware('permission:fo.service.create');
+        Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio'])->middleware('permission:fo.service.create');
     });
     Route::patch('booking-rooms/{roomId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateRoom']);
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
@@ -399,16 +431,16 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
         Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
-    Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom']);
-    Route::post('/bookings/{bookingId}/checkout-preview', [\App\Http\Controllers\Api\GuestController::class, 'previewCheckoutRooms']);
-    Route::post('/bookings/{bookingId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutBooking']);
-    Route::post('/booking-rooms/{roomId}/children/{childId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutChild']);
-    Route::post('/booking-rooms/{roomId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreRoomCheckout']);
-    Route::post('/bookings/{bookingId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreBookingCheckout']);
+    Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom'])->middleware('permission:fo.checkout');
+    Route::post('/bookings/{bookingId}/checkout-preview', [\App\Http\Controllers\Api\GuestController::class, 'previewCheckoutRooms'])->middleware('permission:fo.checkout');
+    Route::post('/bookings/{bookingId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutBooking'])->middleware('permission:fo.checkout');
+    Route::post('/booking-rooms/{roomId}/children/{childId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutChild'])->middleware('permission:fo.checkout');
+    Route::post('/booking-rooms/{roomId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreRoomCheckout'])->middleware('permission:fo.checkout');
+    Route::post('/bookings/{bookingId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreBookingCheckout'])->middleware('permission:fo.checkout');
     Route::get('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
-    Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild']);
-    Route::put('/booking-children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'updateChild']);
-    Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild']);
+    Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild'])->middleware('permission:fo.booking.edit');
+    Route::put('/booking-children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'updateChild'])->middleware('permission:fo.booking.edit');
+    Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild'])->middleware('permission:fo.booking.edit');
 
     // Breakfast details (Epic 13)
     Route::get('/booking-children/{childId}/breakfast-details', [\App\Http\Controllers\Api\GuestController::class, 'breakfastDetails']);
@@ -421,17 +453,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // #18 — PAYMENTS (Đặt cọc / Deposit) routes
     // =====================================================================
     Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
-    Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store']);
-    Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment']);
-    Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update']);
-    Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio']);
-    Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy']);
-    Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split']);
-    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany']);
-    Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer']);
+    Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store'])->middleware('permission:fo.payment.create');
+    Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment'])->middleware('permission:fo.payment.create');
+    Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update'])->middleware('permission:fo.payment.create');
+    Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio'])->middleware('permission:fo.payment.create');
+    Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy'])->middleware('permission:fo.payment.create');
+    Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split'])->middleware('permission:fo.payment.create');
+    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany'])->middleware('permission:fo.payment.create');
+    Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer'])->middleware('permission:fo.payment.create');
     Route::get('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'debtSettlements']);
-    Route::post('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'storeDebtSettlement']);
-    Route::delete('/payments/{id}/debt-settlements/{settlementId}', [\App\Http\Controllers\Api\PaymentController::class, 'destroyDebtSettlement']);
+    Route::post('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'storeDebtSettlement'])->middleware('permission:fo.payment.create');
+    Route::delete('/payments/{id}/debt-settlements/{settlementId}', [\App\Http\Controllers\Api\PaymentController::class, 'destroyDebtSettlement'])->middleware('permission:fo.payment.create');
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
@@ -441,19 +473,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // =====================================================================
     // Staff
     Route::get('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffIndex']);
-    Route::post('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffStore']);
-    Route::put('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffUpdate']);
-    Route::delete('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffDestroy']);
+    Route::post('/hk/staff', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffStore'])->middleware('permission:hk.assign');
+    Route::put('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffUpdate'])->middleware('permission:hk.assign');
+    Route::delete('/hk/staff/{id}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'staffDestroy'])->middleware('permission:hk.assign');
     // Assignment (ngày + ca)
     Route::get('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'index']);
-    Route::post('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'store']);
+    Route::post('/hk/assignments', [\App\Http\Controllers\Api\HkAssignmentController::class, 'store'])->middleware('permission:hk.assign');
     // Groups
-    Route::post('/hk/assignments/{assignmentId}/groups', [\App\Http\Controllers\Api\HkAssignmentController::class, 'storeGroup']);
-    Route::put('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'updateGroup']);
-    Route::delete('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'destroyGroup']);
+    Route::post('/hk/assignments/{assignmentId}/groups', [\App\Http\Controllers\Api\HkAssignmentController::class, 'storeGroup'])->middleware('permission:hk.assign');
+    Route::put('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'updateGroup'])->middleware('permission:hk.assign');
+    Route::delete('/hk/assignments/groups/{groupId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'destroyGroup'])->middleware('permission:hk.assign');
     // Rooms in group
-    Route::post('/hk/assignments/groups/{groupId}/rooms', [\App\Http\Controllers\Api\HkAssignmentController::class, 'addRooms']);
-    Route::delete('/hk/assignments/groups/{groupId}/rooms/{roomId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'removeRoom']);
+    Route::post('/hk/assignments/groups/{groupId}/rooms', [\App\Http\Controllers\Api\HkAssignmentController::class, 'addRooms'])->middleware('permission:hk.assign');
+    Route::delete('/hk/assignments/groups/{groupId}/rooms/{roomId}', [\App\Http\Controllers\Api\HkAssignmentController::class, 'removeRoom'])->middleware('permission:hk.assign');
     Route::get('/availability/details', [\App\Http\Controllers\Api\AvailabilityController::class, 'details']);
     Route::get('/availability/check', [\App\Http\Controllers\Api\AvailabilityController::class, 'check']);
 
