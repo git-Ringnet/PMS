@@ -236,38 +236,45 @@ const langDropdownRef = ref(null)
 
 const loadBranches = async () => {
   if (!authStore.token) return
-  try {
-    const res = await fetchSystemBranches()
-    branchesList.value = res.data.data || []
-    
-    // Khôi phục chi nhánh đã lưu từ localStorage hoặc lấy chi nhánh đầu tiên
-    const savedBranchId = localStorage.getItem('selected_branch_id')
-    if (savedBranchId && branchesList.value.some(b => b.id === Number(savedBranchId))) {
-      selectedBranch.value = branchesList.value.find(b => b.id === Number(savedBranchId))
-      localStorage.setItem('selected_branch_code', selectedBranch.value.code)
-    } else if (branchesList.value.length > 0) {
-      const defaultBranch = branchesList.value.find(b => b.code === 'HKT1') || branchesList.value[0]
-      selectedBranch.value = defaultBranch
-      localStorage.setItem('selected_branch_id', defaultBranch.id)
-      localStorage.setItem('selected_branch_code', defaultBranch.code)
+  // Dùng branches từ authStore (đã được lọc theo user_branches)
+  if (authStore.branches && authStore.branches.length > 0) {
+    branchesList.value = authStore.branches
+  } else {
+    // Fallback: super admin hoặc user chưa có branch assignment
+    try {
+      const res = await fetchSystemBranches()
+      branchesList.value = res.data.data || []
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách chi nhánh:', err)
     }
-  } catch (err) {
-    console.error('Lỗi khi tải danh sách chi nhánh:', err)
+  }
+
+  // Khôi phục chi nhánh đã lưu từ localStorage hoặc lấy chi nhánh đầu tiên
+  const savedBranchId = localStorage.getItem('selected_branch_id')
+  if (savedBranchId && branchesList.value.some(b => b.id === Number(savedBranchId))) {
+    selectedBranch.value = branchesList.value.find(b => b.id === Number(savedBranchId))
+    localStorage.setItem('selected_branch_code', selectedBranch.value.code)
+  } else if (branchesList.value.length > 0) {
+    const primaryBranch = branchesList.value.find(b => b.is_primary) || branchesList.value[0]
+    selectedBranch.value = primaryBranch
+    localStorage.setItem('selected_branch_id', primaryBranch.id)
+    localStorage.setItem('selected_branch_code', primaryBranch.code)
   }
 }
 
-function handleSelectBranch(branch) {
+async function handleSelectBranch(branch) {
   selectedBranch.value = branch
   localStorage.setItem('selected_branch_id', branch.id)
   localStorage.setItem('selected_branch_code', branch.code)
   sessionStorage.setItem('pms_active_branch', JSON.stringify(branch))
-  authStore.switchBranch(branch)
+  // switchBranch giờ là async — refresh permissions trước khi reload
+  await authStore.switchBranch(branch)
   isBranchDropdownOpen.value = false
-  
+
   sessionStorage.setItem('switching_branch', 'true')
   sessionStorage.setItem('switching_to_name', branch.name)
   isSwitchingBranch.value = true
-  
+
   setTimeout(() => {
     window.location.reload()
   }, 100)

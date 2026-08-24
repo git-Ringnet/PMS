@@ -17,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToGroup('api', \App\Http\Middleware\SwitchBranchDatabase::class);
         $middleware->appendToGroup('api', \App\Http\Middleware\LogActivity::class);
         $middleware->appendToGroup('api', \App\Http\Middleware\BlockNightAuditRequests::class);
+        $middleware->alias([
+            'permission' => \App\Http\Middleware\RequirePermission::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

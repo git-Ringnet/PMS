@@ -55,6 +55,21 @@ const userPermData = ref(null) // { branches, roles, all_permissions }
 // Selected branches & roles trong permission tab
 const selectedBranches = ref([]) // [{branch_id, is_primary}]
 const selectedRoles = ref([]) // [{role_id, system_branch_id}]
+const selectedWarehouses = ref([]) // ['bep', 'fo', ...]
+
+const defaultWarehouseList = [
+  { id: 'bep', name: 'Kho bộ phận Bếp' },
+  { id: 'ccdc', name: 'Kho Công cụ dụng cụ' },
+  { id: 'fb', name: 'Kho bộ phận nhà hàng' },
+  { id: 'fo', name: 'Kho bộ phận FO' },
+  { id: 'hk', name: 'Kho bộ phận HK' },
+  { id: 'hr', name: 'Kho bộ phận HR' },
+  { id: 'kt', name: 'Kho bộ phận Kỹ Thuật' },
+  { id: 'sm', name: 'Kho bộ phận SM' },
+  { id: 'all', name: 'Kho Tổng' },
+  { id: 'food', name: 'Kho Thực phẩm' },
+  { id: 'vpp', name: 'Kho tổng văn phòng phẩm' },
+]
 
 const loadPermissionData = async (userId) => {
   if (!userId) return
@@ -72,7 +87,7 @@ const loadPermissionData = async (userId) => {
     // Pre-fill selections from existing data
     selectedBranches.value = (userPermData.value?.branches || []).map(b => ({
       branch_id: b.id,
-      is_primary: b.is_primary,
+      is_primary: !!b.is_primary,
     }))
     selectedRoles.value = (userPermData.value?.roles || []).map(r => ({
       role_id: r.role_id,
@@ -86,20 +101,43 @@ const loadPermissionData = async (userId) => {
 }
 
 const isBranchSelected = (branchId) => selectedBranches.value.some(b => b.branch_id === branchId)
+const isBranchPrimary = (branchId) => selectedBranches.value.some(b => b.branch_id === branchId && b.is_primary)
+
 const toggleBranch = (branch) => {
   const idx = selectedBranches.value.findIndex(b => b.branch_id === branch.id)
   if (idx === -1) {
     selectedBranches.value.push({ branch_id: branch.id, is_primary: selectedBranches.value.length === 0 })
   } else {
+    const wasPrimary = selectedBranches.value[idx].is_primary
     selectedBranches.value.splice(idx, 1)
-    // Nếu xóa primary → set primary cho cái đầu
-    if (selectedBranches.value.length > 0 && !selectedBranches.value.some(b => b.is_primary)) {
+    if (wasPrimary && selectedBranches.value.length > 0) {
       selectedBranches.value[0].is_primary = true
     }
   }
 }
-const setPrimary = (branchId) => {
-  selectedBranches.value.forEach(b => b.is_primary = b.branch_id === branchId)
+
+const togglePrimary = (branch) => {
+  const idx = selectedBranches.value.findIndex(b => b.branch_id === branch.id)
+  if (idx === -1) {
+    // Nếu chưa chọn chi nhánh -> tự động chọn và đặt làm primary
+    selectedBranches.value.forEach(b => b.is_primary = false)
+    selectedBranches.value.push({ branch_id: branch.id, is_primary: true })
+  } else {
+    const currentPrimary = selectedBranches.value[idx].is_primary
+    if (currentPrimary) {
+      selectedBranches.value[idx].is_primary = false
+    } else {
+      selectedBranches.value.forEach(b => b.is_primary = false)
+      selectedBranches.value[idx].is_primary = true
+    }
+  }
+}
+
+const isWarehouseSelected = (wId) => selectedWarehouses.value.includes(wId)
+const toggleWarehouse = (wId) => {
+  const idx = selectedWarehouses.value.indexOf(wId)
+  if (idx === -1) selectedWarehouses.value.push(wId)
+  else selectedWarehouses.value.splice(idx, 1)
 }
 
 const getBranchRoleForBranch = (branchId) => {
@@ -346,9 +384,19 @@ const saveItem = async () => {
       // If signature is selected locally but not uploaded yet, do it
       if (tempSignatureFile.value) {
         await uploadSignatureDirectly(tempSignatureFile.value)
-      } else {
-        uiStore.showToast('Cập nhật nhân viên thành công!', 'success')
       }
+      // Đồng bộ phân quyền chi nhánh & vai trò nếu có thay đổi
+      if (selectedBranches.value.length > 0) {
+        try {
+          await Promise.all([
+            syncUserBranches(currentId.value, { branches: selectedBranches.value }),
+            syncUserRoles(currentId.value, { roles: selectedRoles.value }),
+          ])
+        } catch (e) {
+          console.error('Lỗi lưu phân quyền:', e)
+        }
+      }
+      uiStore.showToast('Cập nhật nhân viên thành công!', 'success')
     } else {
       res = await createUser(payload)
       const newUserId = res.data.data.id
@@ -957,10 +1005,10 @@ const changePage = (page) => {
         </div>
 
         <!-- Tab Content: Permissions -->
-        <div v-else class="p-4 max-h-[60vh] overflow-y-auto">
+        <div v-else class="p-6 max-h-[60vh] overflow-y-auto space-y-5">
           <!-- Loading -->
           <div v-if="permLoading" class="flex items-center justify-center h-40">
-            <div class="w-5 h-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
 
           <!-- Chưa mở edit mode -->
@@ -972,45 +1020,65 @@ const changePage = (page) => {
           </div>
 
           <!-- Content -->
-          <div v-else class="space-y-4">
+          <div v-else class="space-y-5">
             <!-- Section 1: Chi nhánh -->
             <div>
-              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Chi Nhánh Được Phép Truy Cập</div>
-              <div class="grid grid-cols-2 gap-2">
-                <label v-for="branch in allBranches" :key="branch.id"
-                  class="flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all"
-                  :class="isBranchSelected(branch.id) ? 'border-sky-400 bg-sky-50' : 'border-slate-200 hover:border-slate-300'">
-                  <input type="checkbox" :checked="isBranchSelected(branch.id)" @change="toggleBranch(branch)"
-                    class="w-3.5 h-3.5 accent-sky-500 shrink-0"/>
-                  <div class="flex-1 min-w-0">
-                    <div class="font-bold text-slate-800 text-[11px]">{{ branch.code }}</div>
-                    <div class="text-[10px] text-slate-500 truncate">{{ branch.name }}</div>
-                  </div>
-                  <!-- Primary badge -->
-                  <button v-if="isBranchSelected(branch.id)"
-                    @click.prevent="setPrimary(branch.id)"
-                    :class="['text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 transition-colors',
-                      selectedBranches.find(b => b.branch_id === branch.id)?.is_primary
-                        ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-400 hover:bg-sky-100']">
-                    Primary
-                  </button>
-                </label>
+              <div class="text-xs font-bold text-slate-700 mb-2.5">Chi Nhánh</div>
+              <div class="border border-slate-200 rounded-md overflow-hidden bg-white shadow-2xs">
+                <table class="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr class="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-bold">
+                      <th class="py-2.5 px-4 w-28 text-center border-r border-slate-200">Chi Nhánh</th>
+                      <th class="py-2.5 px-4 border-r border-slate-200">Tên Chi Nhánh</th>
+                      <th class="py-2.5 px-4 w-44 text-center">Chi Nhánh Chính</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    <tr v-for="branch in allBranches" :key="branch.id"
+                        class="transition-colors cursor-pointer"
+                        :class="isBranchSelected(branch.id) ? 'bg-[#99cff5]/40 hover:bg-[#99cff5]/50' : 'hover:bg-slate-50'">
+                      <td class="py-3 px-4 text-center border-r border-slate-100">
+                        <input type="checkbox"
+                               :checked="isBranchSelected(branch.id)"
+                               @change="toggleBranch(branch)"
+                               class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer" />
+                      </td>
+                      <td class="py-3 px-4 font-semibold text-slate-800 border-r border-slate-100" @click="toggleBranch(branch)">
+                        {{ branch.name || branch.code }}
+                      </td>
+                      <td class="py-3 px-4 text-center">
+                        <label class="relative inline-flex items-center cursor-pointer select-none">
+                          <input type="checkbox"
+                                 :checked="isBranchPrimary(branch.id)"
+                                 @change="togglePrimary(branch)"
+                                 class="sr-only peer" />
+                          <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-400"></div>
+                        </label>
+                      </td>
+                    </tr>
+                    <tr v-if="allBranches.length === 0">
+                      <td colspan="3" class="py-6 text-center text-slate-400 text-xs">
+                        Đang tải danh sách chi nhánh...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <!-- Section 2: Vai trò theo chi nhánh -->
-            <div v-if="selectedBranches.length > 0">
-              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Vai Trò Theo Chi Nhánh</div>
-              <div class="space-y-2">
+            <!-- Section 2: Vai trò theo chi nhánh (RBAC) -->
+            <div v-if="selectedBranches.length > 0" class="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+              <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Vai Trò Theo Chi Nhánh</div>
+              <div class="grid grid-cols-2 gap-3">
                 <div v-for="sb in selectedBranches" :key="sb.branch_id"
-                  class="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                  <div class="text-xs font-black text-slate-600 w-16 shrink-0">
-                    {{ allBranches.find(b => b.id === sb.branch_id)?.code || '?' }}
+                     class="flex items-center gap-2 p-2 bg-white rounded border border-slate-200 shadow-2xs">
+                  <div class="text-xs font-bold text-slate-700 w-24 shrink-0 truncate">
+                    {{ allBranches.find(b => b.id === sb.branch_id)?.name || allBranches.find(b => b.id === sb.branch_id)?.code }}
                   </div>
                   <select
                     :value="getBranchRoleForBranch(sb.branch_id)"
                     @change="e => setRoleForBranch(sb.branch_id, e.target.value)"
-                    class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-sky-400">
+                    class="flex-1 text-xs border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:border-sky-400">
                     <option value="">-- Chọn vai trò --</option>
                     <option v-for="role in allRoles" :key="role.id" :value="role.id">
                       {{ role.name }} ({{ role.department_scope || 'All' }})
@@ -1020,25 +1088,23 @@ const changePage = (page) => {
               </div>
             </div>
 
-            <!-- Section 3: Tổng hợp quyền hiện tại (readonly) -->
-            <div v-if="userPermData?.all_permissions?.length > 0">
-              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                Quyền Hiện Tại ({{ userPermData.all_permissions.length }} quyền)
-              </div>
-              <div class="flex flex-wrap gap-1">
-                <span v-for="perm in userPermData.all_permissions" :key="perm"
-                  class="text-[9px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-                  {{ perm }}
-                </span>
-              </div>
-            </div>
+            <hr class="border-slate-200" />
 
-            <!-- Save button -->
-            <div class="flex justify-end pt-2">
-              <button @click="savePermissions"
-                class="px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-lg transition-colors">
-                Lưu Phân Quyền
-              </button>
+            <!-- Section 3: Phân Quyền Kho -->
+            <div>
+              <div class="text-xs font-bold text-slate-700 mb-3.5">
+                Phân Quyền Kho Cho User: <span class="font-extrabold text-slate-900">{{ form.name || form.username || 'User' }}</span>
+              </div>
+              <div class="grid grid-cols-3 gap-x-6 gap-y-3.5">
+                <label v-for="w in defaultWarehouseList" :key="w.id"
+                       class="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none">
+                  <input type="checkbox"
+                         :checked="isWarehouseSelected(w.id)"
+                         @change="toggleWarehouse(w.id)"
+                         class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer" />
+                  <span class="font-medium text-slate-700">{{ w.name }}</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>

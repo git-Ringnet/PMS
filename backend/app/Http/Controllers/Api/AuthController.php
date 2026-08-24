@@ -80,12 +80,46 @@ class AuthController extends Controller
     }
 
     /**
-     * Get authenticated user.
+     * Get authenticated user — trả kèm permissions/branches/roles để frontend refresh.
      */
     public function me(Request $request)
     {
         $user = $request->user();
-        $user->load('setting');
-        return response()->json($user);
+        $user->load(['setting', 'branches', 'userRoles.role', 'userRoles.branch']);
+
+        $branches = $user->branches->map(fn($b) => [
+            'id'            => $b->id,
+            'code'          => $b->code,
+            'name'          => $b->name,
+            'address'       => $b->address,
+            'is_primary'    => (bool) $b->pivot->is_primary,
+            'db_connection' => $b->db_connection,
+        ]);
+
+        // Lấy branchId từ header (khi frontend đã chọn branch cụ thể)
+        $branchId = null;
+        $headerBranchId = $request->header('X-Branch-Id');
+        if ($headerBranchId) {
+            $branchId = (int) $headerBranchId;
+        } else {
+            $activeBranch = $branches->firstWhere('is_primary', true) ?? $branches->first();
+            $branchId = $activeBranch ? $activeBranch['id'] : null;
+        }
+
+        $permissions = $user->allPermissions($branchId)->values();
+        $roles = $user->userRoles->map(fn($ur) => [
+            'role_code'        => $ur->role?->code,
+            'role_name'        => $ur->role?->name,
+            'system_branch_id' => $ur->system_branch_id,
+        ]);
+        $activeBranch = $branches->firstWhere('is_primary', true) ?? $branches->first();
+
+        return response()->json([
+            'user'          => $user,
+            'permissions'   => $permissions,
+            'branches'      => $branches,
+            'active_branch' => $activeBranch,
+            'roles'         => $roles,
+        ]);
     }
 }

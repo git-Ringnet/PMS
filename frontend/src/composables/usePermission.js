@@ -13,6 +13,7 @@ export function usePermission() {
   return {
     can: (code) => authStore.hasPermission(code),
     canAny: (codes) => authStore.canAny(codes),
+    canAll: (codes) => codes.every(c => authStore.hasPermission(c)),
     isSuperAdmin: authStore.isSuperAdmin,
     isAdmin: authStore.isAdmin,
     activeBranch: authStore.activeBranch,
