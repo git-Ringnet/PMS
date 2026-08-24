@@ -1268,7 +1268,9 @@ const hasNoshowRoomSelected = computed(() => {
 })
 
 const bookingContext = computed(() => {
-  return (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
+  // The main registration tab must remain on the last saved snapshot while
+  // the edit modal is open. Modal-only state is read directly from modalForm.
+  return activeTab.value
 })
 
 const isAllRoomsNoshow = computed(() => {
@@ -7420,7 +7422,7 @@ defineExpose({
         :currenciesList="currenciesList" 
         :rooms="modalForm?.rooms || activeTab?.rooms || []"
         v-model:deposits="modalForm.deposits" 
-        @update:paymentValue="modalForm.paymentValue = $event; if (activeTab) { activeTab.deposit = $event; activeTab.paymentValue = $event; }" 
+        @update:paymentValue="modalForm.paymentValue = $event"
       />
     </Teleport>
 
