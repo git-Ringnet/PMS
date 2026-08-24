@@ -1504,12 +1504,17 @@ class BookingRoomController extends Controller
 
         $availableRooms = [];
         $statusLabels = [
-            'available'   => 'Sẵn sàng (Vacant Clean)',
-            'clean'       => 'Vacant Clean',
-            'dirty'       => 'Vacant Dirty',
-            'checkout'    => 'Vacant Dirty',
-            'maintenance' => 'Out of Service (OOO)',
-            'occupied'    => 'Occupied',
+            'vacant_ready'   => '',
+            'vacant_clean'   => 'Vacant Clean',
+            'vacant_dirty'   => 'Vacant Dirty',
+            'turndown'       => 'Vacant Dirty',
+            'occupied_ready' => 'Occupied',
+            'occupied_clean' => 'Occupied Clean',
+            'occupied_dirty' => 'Occupied Dirty',
+            'ooo'            => 'Out of Service (OOO)',
+            'oos'            => 'Out of Service (OOS)',
+            'housekeeping'   => 'Housekeeping',
+            'dnd'            => 'Do Not Disturb',
         ];
 
         foreach ($allRooms as $room) {
@@ -1537,9 +1542,9 @@ class BookingRoomController extends Controller
                     'is_virtual'      => (bool)$room->is_virtual,
                     'rate'            => (float)($stdRate?->rate ?? 0),
                     'extra_bed_rate'  => (float)($stdRate?->extra_bed_rate ?? 0),
-                    'status'          => $room->status,
-                    'status_label'    => $statusLabels[$room->status] ?? $room->status,
-                    'is_ready'        => $room->status === 'available',
+                    'status'          => $room->room_status_code,
+                    'status_label'    => $statusLabels[$room->room_status_code] ?? $room->room_status_code,
+                    'is_ready'        => in_array($room->room_status_code, ['vacant_ready', 'vacant_clean'], true),
                 ];
             }
         }
@@ -1704,6 +1709,20 @@ class BookingRoomController extends Controller
         $selectedGuestIds = $request->input('selected_guest_ids', []);
         $isChangeRate = filter_var($request->input('is_change_rate', false), FILTER_VALIDATE_BOOLEAN);
 
+        $syncMovedChildren = function ($sourceRoom, $targetRoom, $children): void {
+            foreach ($children as $child) {
+                \App\Models\BookingRoomChild::updateOrCreate([
+                    'booking_child_id' => $child->id,
+                    'booking_room_id' => $sourceRoom->id,
+                ], ['status' => 100]);
+                \App\Models\BookingRoomChild::updateOrCreate([
+                    'booking_child_id' => $child->id,
+                    'booking_room_id' => $targetRoom->id,
+                ], ['status' => 1]);
+                $child->update(['child_status' => 100]);
+            }
+        };
+
         $currentUser = Auth::user()?->username ?? 'system';
         $systemDate = $this->avService->getSystemDate();
 
@@ -1803,6 +1822,7 @@ class BookingRoomController extends Controller
                         if ($request->has('extra_bed_qty')) $attributes['extra_bed_qty'] = $request->extra_bed_qty;
                         if ($request->has('extra_bed_rate')) $attributes['extra_bed_rate'] = $request->extra_bed_rate;
                         if ($request->filled('rate_code')) $attributes['rate_code'] = $request->rate_code;
+                        elseif ($request->has('rate') && (float)$request->rate !== (float)$bookingRoom->rate) $attributes['rate_code'] = null;
                     }
 
                     // Insert new booking room record (Sp2100)
@@ -1841,26 +1861,10 @@ class BookingRoomController extends Controller
                             \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id')
                         );
 
-                        // Sp2500 (booking_children): Update children in old room -> Status = 100 & Clone to new room
-                        $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
-                        \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->update([
-                            'child_status' => 100,
-                        ]);
-
-                        foreach ($oldChildren as $childItem) {
-                            $oldChildId = $childItem->id;
-                            $childData = $childItem->toArray();
-                            unset($childData['id'], $childData['created_at'], $childData['updated_at']);
-                            $childData['id'] = 'BC' . uniqid();
-                            $childData['booking_room_id'] = $newRoom->id;
-                            $childData['child_status'] = 0;
-                            $newChild = \App\Models\BookingChild::create($childData);
-
-                            // Sp2401 (booking_child_breakfast_details): Transfer unbilled breakfast details >= system_date
-                            \App\Models\BookingChildBreakfastDetail::where('booking_child_id', $oldChildId)
-                                ->where('service_date', '>=', $sysDateStr)
-                                ->update(['booking_child_id' => $newChild->id]);
-                        }
+                        // Preserve child IDs; only room assignments change.
+                        $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)
+                            ->where('child_status', 0)->get();
+                        $syncMovedChildren($bookingRoom, $newRoom, $oldChildren);
                     } else {
                         // Partial move -> Old room remains Checked-In (Status = 1), update remaining guest count
                         $remainingAdults = max(1, ($bookingRoom->adults ?? 1) - $movedAdultsCount);
@@ -1940,6 +1944,7 @@ class BookingRoomController extends Controller
                         if ($request->has('extra_bed_qty')) $updateData['extra_bed_qty'] = $request->extra_bed_qty;
                         if ($request->has('extra_bed_rate')) $updateData['extra_bed_rate'] = $request->extra_bed_rate;
                         if ($request->filled('rate_code')) $updateData['rate_code'] = $request->rate_code;
+                        elseif ($request->has('rate') && (float)$request->rate !== (float)$bookingRoom->rate) $updateData['rate_code'] = null;
                     }
                     $bookingRoom->update($updateData);
 
@@ -2017,22 +2022,12 @@ class BookingRoomController extends Controller
                 $sysDateStr = $systemDate->toDateString();
                 $isAllGuestsMoved = empty($selectedGuestIds) || ($movedAdultsCount >= $totalAdultsCount);
 
-                $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
+                $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)
+                    ->where('child_status', 0)->get();
                 $movedChildrenCount = $isAllGuestsMoved ? $oldChildren->count() : 0;
 
                 if ($isAllGuestsMoved && $oldChildren->count() > 0) {
-                    \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->update([
-                        'child_status' => 100,
-                    ]);
-
-                    foreach ($oldChildren as $childItem) {
-                        $childData = $childItem->toArray();
-                        unset($childData['id'], $childData['created_at'], $childData['updated_at']);
-                        $childData['id'] = 'BC' . uniqid();
-                        $childData['booking_room_id'] = $targetBookingRoom->id;
-                        $childData['child_status'] = 0;
-                        \App\Models\BookingChild::create($childData);
-                    }
+                    $syncMovedChildren($bookingRoom, $targetBookingRoom, $oldChildren);
                 }
 
                 // --- 1. UPDATE OLD ROOM GUESTS (Sp2200) -> Status = 100 ---
@@ -2075,6 +2070,7 @@ class BookingRoomController extends Controller
                     if ($request->has('extra_bed_qty')) $targetUpdateData['extra_bed_qty'] = $request->extra_bed_qty;
                     if ($request->has('extra_bed_rate')) $targetUpdateData['extra_bed_rate'] = $request->extra_bed_rate;
                     if ($request->filled('rate_code')) $targetUpdateData['rate_code'] = $request->rate_code;
+                    elseif ($request->has('rate') && (float)$request->rate !== (float)$targetBookingRoom->rate) $targetUpdateData['rate_code'] = null;
                 }
                 $targetBookingRoom->update($targetUpdateData);
 

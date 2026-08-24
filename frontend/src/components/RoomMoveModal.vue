@@ -688,7 +688,7 @@ async function executeSubmit(selectedGuestIds, confirmExceedCapacity = false) {
                   <td class="col-phong" style="font-weight: 600; color: #1e3a8a;">{{ r.room_number }}</td>
                   <td class="col-them">
                     <span :class="['status-badge', r.is_ready ? 'status-clean' : 'status-dirty']">
-                      {{ r.is_ready ? 'Vacant Clean' : (r.status_label || 'Vacant Dirty') }}
+                      {{ r.status_label || '' }}
                     </span>
                   </td>
                 </tr>

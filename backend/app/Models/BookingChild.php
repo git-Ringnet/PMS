@@ -28,6 +28,18 @@ class BookingChild extends Model
                 $model->id = 'T' . str_pad($nextNum, 9, '0', STR_PAD_LEFT);
             }
         });
+
+        static::created(function ($model) {
+            if (!empty($model->booking_room_id)) {
+                BookingRoomChild::firstOrCreate(
+                    [
+                        'booking_child_id' => $model->id,
+                        'booking_room_id' => $model->booking_room_id,
+                    ],
+                    ['status' => (int) ($model->child_status ?? 1)]
+                );
+            }
+        });
     }
 
     protected $fillable = [

@@ -5,10 +5,12 @@ namespace Tests\Feature;
 use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\Guest;
+use App\Models\Permission;
 use App\Models\BookingRoomGuest;
 use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
+use App\Models\Role;
 use App\Models\SystemDateRoll;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,6 +32,16 @@ class RoomMoveTest extends TestCase
         parent::setUp();
 
         $this->user = User::factory()->create(['username' => 'admin_test']);
+        $moveRole = Role::firstOrCreate(
+            ['code' => 'fo_manager'],
+            ['name' => 'Trưởng lễ tân', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
+        );
+        $movePermission = Permission::firstOrCreate(
+            ['code' => 'fo.room.move'],
+            ['name' => 'Chuyển phòng', 'module' => 'FO']
+        );
+        $moveRole->permissions()->syncWithoutDetaching([$movePermission->id]);
+        $this->user->roles()->attach($moveRole->id);
         $this->actingAs($this->user);
 
         DB::table('booking_statuses')->insert([
