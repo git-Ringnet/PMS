@@ -5,6 +5,7 @@ import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePermission } from '@/composables/usePermission'
 import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
@@ -31,6 +32,7 @@ import echo from '@/services/echo'
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+const { can } = usePermission()
 const route = useRoute()
 const router = useRouter()
 
@@ -2868,7 +2870,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <div class="h-px bg-slate-300 my-1"></div>
 
             <!-- Nhận phòng -->
-            <button v-if="moduleContext === 'frontdesk'" @click="handleQuickCheckinFromMenu()"
+            <button v-if="moduleContext === 'frontdesk' && can('fo.checkin')" @click="handleQuickCheckinFromMenu()"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

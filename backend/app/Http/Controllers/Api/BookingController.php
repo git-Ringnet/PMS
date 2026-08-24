@@ -17,6 +17,7 @@ use App\Models\RoomRateCode;
 use App\Models\StandardRate;
 use App\Models\SystemDateRoll;
 use App\Services\RoomAvailabilityService;
+use App\Services\RegistrationStatusMapper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use App\Support\ModuleCode;
@@ -174,7 +175,12 @@ class BookingController extends Controller
             $dateType = $request->date_type;
             $query->where(function ($q) use ($request, $dateType) {
                 if ($dateType === 'arrival') {
-                    $q->whereBetween('arrival_date', [$request->from_date, $request->to_date]);
+                    // NgÃ y Ä‘áº¿n nghiá»‡p vá»¥ nÃ³i Ä‘áº¿n phÃ²ng, khÃ´ng pháº£i luÃ´n lÃ  ngÃ y header Booking.
+                    $fromUtc = Carbon::parse($request->from_date, 'Asia/Ho_Chi_Minh')->startOfDay()->utc();
+                    $toUtc = Carbon::parse($request->to_date, 'Asia/Ho_Chi_Minh')->endOfDay()->utc();
+                    $q->whereHas('bookingRooms', function ($roomQuery) use ($fromUtc, $toUtc) {
+                        $roomQuery->whereBetween('arrival_date', [$fromUtc, $toUtc]);
+                    });
                 } elseif ($dateType === 'departure') {
                     $q->whereBetween('departure_date', [$request->from_date, $request->to_date]);
                 } else {
@@ -186,13 +192,21 @@ class BookingController extends Controller
 
         // Filter theo tên đăng ký hoặc ID (mã BK)
         if ($request->search) {
-            $search = $request->search;
+            $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {
-                $q->where('booking_name', 'like', '%' . $search . '%')
-                  ->orWhere('contact_name', 'like', '%' . $search . '%');
-                
+                $like = '%' . $search . '%';
+
+                $q->where('booking_name', 'like', $like)
+                    ->orWhere('contact_name', 'like', $like)
+                    ->orWhere('external_booking_code', 'like', $like)
+                    ->orWhereHas('company', function ($companyQuery) use ($like) {
+                        $companyQuery->where('name', 'like', $like)
+                            ->orWhere('code', 'like', $like);
+                    });
+
+                // booking_code lÃ  accessor (vÃ­ dá»¥ GAL4), nÃªn tra pháº§n sá»‘ vÃ o id.
                 $cleanId = preg_replace('/[^0-9]/', '', $search);
-                if (!empty($cleanId)) {
+                if ($cleanId !== '') {
                     $q->orWhere('id', $cleanId);
                 }
             });
@@ -1238,7 +1252,9 @@ class BookingController extends Controller
             // 2. Cascade: Hủy và ghi log cho từng phòng trong booking (SP8052)
             $allRooms = $booking->bookingRooms;
             foreach ($allRooms as $bRoom) {
+                $guestIds = $bRoom->guests()->pluck('guest_id');
                 $bRoom->guests()->update(['status' => 3]);
+                app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
                 $bRoom->children()->update(['child_status' => 3]);
                 $bRoom->update([
                     'status' => BookingRoom::STATUS_CANCELLED,
@@ -1502,6 +1518,7 @@ class BookingController extends Controller
                         $bRoom->update(['status' => BookingRoom::STATUS_BOOKED]);
                         // Khôi phục guests
                         $bRoom->guests()->update(['status' => 0]);
+                        app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bRoom->guests()->pluck('guest_id'));
                         // Khôi phục children
                         $bRoom->children()->update(['child_status' => 0]);
                     }
@@ -2314,11 +2331,11 @@ class BookingController extends Controller
 
         // 3. Thực hiện khôi phục
         DB::transaction(function () use ($booking) {
-            $newStatus = RegistrationStatus::where('booking_status_id', 1)->first();
+            $newStatusId = RegistrationStatusMapper::idFromLegacyCode(1);
 
             $booking->update([
                 'status'                 => Booking::STATUS_RESERVATION,
-                'registration_status_id' => $newStatus ? $newStatus->id : $booking->registration_status_id,
+                'registration_status_id' => $newStatusId ?? $booking->registration_status_id,
                 'updated_by'             => Auth::user()?->username ?? 'system',
             ]);
 
@@ -2329,14 +2346,11 @@ class BookingController extends Controller
                     ]);
 
                     // Khôi phục guests
+                    $guestIds = BookingRoomGuest::where('booking_room_id', $bRoom->id)->pluck('guest_id');
                     BookingRoomGuest::where('booking_room_id', $bRoom->id)
                         ->where('status', 4)
                         ->update(['status' => 0]);
-
-                    $guestIds = BookingRoomGuest::where('booking_room_id', $bRoom->id)->pluck('guest_id');
-                    Guest::whereIn('id', $guestIds)
-                        ->where('guest_status', 4)
-                        ->update(['guest_status' => 0]);
+                    app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
 
                     // Khôi phục children
                     BookingChild::where('booking_room_id', $bRoom->id)

@@ -13,6 +13,50 @@
 
 ---
 
+## [2026-08-24] - [Giai Đoạn 1] Xây Dựng Khung Nền Tảng Phân Quyền & Giao Diện Cấu Hình Nhân Viên
+### Module: System / Quản Trị Nhân Viên & Phân Quyền (Bước 1)
+
+- **Công việc đã làm ở Bước 1**:
+  - **Backend API Routes**:
+    - Khởi tạo các API endpoints phục vụ cấu hình phân quyền ([`RoleController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/RoleController.php), [`UserPermissionController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/UserPermissionController.php)).
+    - Đăng ký middleware kiểm tra quyền cơ bản ([`RequirePermission.php`](file:///d:/PMS/backend/app/Http/Middleware/RequirePermission.php)).
+  - **Frontend UI Setup**:
+    - Dựng giao diện tab **Phân quyền đặc thù** trong [`EmployeeTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue) (bảng Chi nhánh, toggle Chi nhánh chính, danh sách kho).
+    - Tạo composable [`usePermission.js`](file:///d:/PMS/frontend/src/composables/usePermission.js) và trang 403 [`ForbiddenPage.vue`](file:///d:/PMS/frontend/src/pages/ForbiddenPage.vue).
+  - **Trạng thái**:
+    - Mới chỉ là **bước đầu tiên (khung nền tảng kỹ thuật và UI mẫu)**, **chưa gán phân quyền thực tế** cho nhân viên nào.
+    - Tất cả tài khoản hiện tại vẫn đang truy cập 100% tất cả các chức năng và chi nhánh bình thường.
+    - Tạm dừng phần phân quyền tại đây để chuyển sang làm các nghiệp vụ khác.
+
+---
+
+## [2026-08-21] - Triển Khai Hệ Thống Phân Quyền Toàn Diện (RBAC & Multi-Branch Permissions)
+### Module: RBAC / Authentication, Authorization & Phân Quyền Theo Chi Nhánh
+
+- **Đã hoàn thành**:
+  - **Backend Authorization & Permission Middleware**:
+    - Tạo mới middleware [`RequirePermission.php`](file:///d:/PMS/backend/app/Http/Middleware/RequirePermission.php):
+      - Tự động kiểm tra quyền user theo chi nhánh cụ thể từ request header/attributes (`_branch_id`).
+      - Cho phép Super Admin bypass tự động.
+      - Hỗ trợ nhiều permission với logic OR (`->middleware('permission:fo.booking.create,fo.booking.edit')`).
+    - Đăng ký alias `permission` trong [`bootstrap/app.php`](file:///d:/PMS/backend/bootstrap/app.php).
+    - Cập nhật [`AuthController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/AuthController.php) hàm `me()`: Trả về đầy đủ `permissions`, `branches`, `active_branch`, `roles` theo từng chi nhánh khi chuyển đổi hoặc refresh trang.
+    - Bảo vệ toàn diện các API routes nhạy cảm trong [`api.php`](file:///d:/PMS/backend/routes/api.php) (Bookings, BookingRooms, Check-in, Check-out, Payments, HK Assignment, System Users, System Branches).
+  - **Frontend Permission System & Composables**:
+    - Nâng cấp [`usePermission.js`](file:///d:/PMS/frontend/src/composables/usePermission.js): Cung cấp `can()`, `canAny()`, `canAll()`, `isSuperAdmin`, `isAdmin`.
+    - Nâng cấp [`auth-store.js`](file:///d:/PMS/frontend/src/stores/auth-store.js):
+      - `initialize()`: Lấy và lưu trữ permissions/roles/branches tương ứng theo chi nhánh đang active.
+      - `switchBranch()`: Tự động gọi API ngầm refresh lại quyền và roles tương ứng với chi nhánh vừa chọn.
+    - **Frontend Route Guard**:
+      - Cập nhật [`router/index.js`](file:///d:/PMS/frontend/src/router/index.js): Bổ sung `meta.permission` cho từng trang (`/reservation`, `/frontdesk`, `/housekeeping`, `/reports`, `/fnb/*`, `/system`). Tự động chuyển hướng về `/forbidden` khi không đủ quyền.
+      - Tạo mới trang 403 cao cấp [`ForbiddenPage.vue`](file:///d:/PMS/frontend/src/pages/ForbiddenPage.vue).
+    - **Topbar & Fine-grained UI Permission Guards**:
+      - Cập nhật [`MainLayout.vue`](file:///d:/PMS/frontend/src/layouts/MainLayout.vue): Dropdown chi nhánh trên Header chỉ hiển thị các chi nhánh mà tài khoản được phân quyền trong `user_branches`.
+      - Cập nhật [`HomePage.vue`](file:///d:/PMS/frontend/src/pages/HomePage.vue): Các thẻ ứng dụng (PMS, F&B, SYSTEM) tự động ẩn/hiện theo quyền của nhân viên.
+      - Gắn `v-if="can(...)"` vào các nút hành động cốt lõi: Nhận phòng (`fo.checkin`), Thanh toán & Xóa thanh toán (`fo.payment.create`), Trả phòng (`fo.checkout`), Thanh toán FnB (`fb.payment`).
+
+---
+
 ## [2026-08-21] - Tự Động Tạo Tenant Database Khi Thêm Chi Nhánh Mới (Auto Multi-Tenant Provisioning)
 ### Module: System / Multi-Database & Quản Lý Chi Nhánh
 

@@ -13,6 +13,7 @@ use App\Models\BookingRoomGuest;
 use App\Models\Guest;
 use App\Models\BookingChild;
 use App\Services\RoomAvailabilityService;
+use App\Services\RegistrationStatusMapper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -731,6 +732,7 @@ class BookingRoomController extends Controller
             $bookingRoom->guests()->update([
                 'status' => BookingRoom::STATUS_CHECKED_IN
             ]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bookingRoom->guests()->pluck('guest_id'));
 
             // Nếu tất cả phòng trong booking đều đã check-in → cập nhật booking header
             $allCheckedIn = $booking->bookingRooms()
@@ -799,6 +801,7 @@ class BookingRoomController extends Controller
             $bookingRoom->guests()->update([
                 'status' => BookingRoom::STATUS_BOOKED
             ]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bookingRoom->guests()->pluck('guest_id'));
 
             // Cập nhật booking status về STATUS_RESERVATION (0) nếu trước đó là STATUS_CHECKIN (1)
             $hasOtherInhouse = $booking->bookingRooms()
@@ -904,7 +907,9 @@ class BookingRoomController extends Controller
         DB::beginTransaction();
         try {
             // Cascade: hủy guests gắn với phòng này
+            $guestIds = $bookingRoom->guests()->pluck('guest_id');
             $bookingRoom->guests()->update(['status' => 3]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
             // Cascade: hủy children gắn với phòng này
             $bookingRoom->children()->update(['child_status' => 3]);
             $reasonText = $request->note;
@@ -1832,6 +1837,9 @@ class BookingRoomController extends Controller
                             'actual_checkout_time' => $timeStr,
                             'checkout_by'          => $currentUser,
                         ]);
+                        app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds(
+                            \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id')
+                        );
 
                         // Sp2500 (booking_children): Update children in old room -> Status = 100 & Clone to new room
                         $oldChildren = \App\Models\BookingChild::where('booking_room_id', $bookingRoom->id)->get();
@@ -1874,6 +1882,7 @@ class BookingRoomController extends Controller
                                 'actual_checkout_time' => $timeStr,
                                 'checkout_by'          => $currentUser,
                             ]);
+                        app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($movedGuestIds);
                     }
 
                     // --- 3. INSERT GUESTS INTO NEW ROOM (Sp2200) ---
@@ -2035,6 +2044,7 @@ class BookingRoomController extends Controller
                         'actual_checkout_time' => $timeStr,
                         'checkout_by'          => $currentUser,
                     ]);
+                app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($movedGuestIds);
 
                 // --- 2. INSERT GUESTS INTO TARGET INHOUSE ROOM (Sp2200) -> Status = 1 ---
                 foreach ($guestsToMove as $gPivot) {
@@ -2196,14 +2206,11 @@ class BookingRoomController extends Controller
             ]);
 
             // Khôi phục khách trong phòng
+            $guestIds = BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id');
             BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
                 ->where('status', 4)
                 ->update(['status' => 0]);
-
-            $guestIds = BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id');
-            Guest::whereIn('id', $guestIds)
-                ->where('guest_status', 4)
-                ->update(['guest_status' => 0]);
+            app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
 
             // Khôi phục trẻ em
             BookingChild::where('booking_room_id', $bookingRoom->id)
@@ -2213,10 +2220,10 @@ class BookingRoomController extends Controller
             // Khôi phục booking nếu booking đang bị Noshow (status = 4)
             $booking = Booking::find($bookingId);
             if ($booking && intval($booking->status) === Booking::STATUS_NO_SHOW) {
-                $newStatus = RegistrationStatus::where('booking_status_id', 1)->first();
+                $newStatusId = RegistrationStatusMapper::idFromLegacyCode(1);
                 $booking->update([
                     'status'                 => Booking::STATUS_RESERVATION,
-                    'registration_status_id' => $newStatus ? $newStatus->id : $booking->registration_status_id,
+                    'registration_status_id' => $newStatusId ?? $booking->registration_status_id,
                     'updated_by'             => Auth::user()?->username ?? 'system',
                 ]);
             }

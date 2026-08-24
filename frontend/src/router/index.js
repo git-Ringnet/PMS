@@ -24,25 +24,25 @@ const routes = [
     path: '/reservation',
     name: 'Reservation',
     component: () => import('@/pages/reservation/RoomMapPage.vue'),
-    meta: { title: 'Đặt phòng - PMS' },
+    meta: { title: 'Đặt phòng - PMS', permission: 'fo.booking.view' },
   },
   {
     path: '/frontdesk',
     name: 'FrontDesk',
     component: () => import('@/pages/frontdesk/FrontDeskPage.vue'),
-    meta: { title: 'Lễ tân - PMS' },
+    meta: { title: 'Lễ tân - PMS', permission: 'fo.frontdesk.view' },
   },
   {
     path: '/housekeeping',
     name: 'Housekeeping',
     component: () => import('@/pages/housekeeping/HousekeepingPage.vue'),
-    meta: { title: 'Buồng phòng - PMS' },
+    meta: { title: 'Buồng phòng - PMS', permission: 'hk.view' },
   },
   {
     path: '/reports',
     name: 'Reports',
     component: () => import('@/pages/reports/ReportsPage.vue'),
-    meta: { title: 'Báo cáo quản lý - PMS' },
+    meta: { title: 'Báo cáo quản lý - PMS', permission: 'mgmt.report.view' },
   },
   {
     path: '/config',
@@ -54,7 +54,7 @@ const routes = [
     path: '/system',
     name: 'SystemConfig',
     component: () => import('@/pages/system/SystemPage.vue'),
-    meta: { title: 'Cấu hình hệ thống - Provista', noLayout: true },
+    meta: { title: 'Cấu hình hệ thống - Provista', noLayout: true, permission: 'system.user.view' },
   },
   {
     path: '/fnb',
@@ -66,19 +66,19 @@ const routes = [
     path: '/fnb/restaurant',
     name: 'FnbRestaurant',
     component: () => import('@/pages/fnb/RestaurantPage.vue'),
-    meta: { title: 'Nhà Hàng - F&B' }
+    meta: { title: 'Nhà Hàng - F&B', permission: 'fb.view' }
   },
   {
     path: '/fnb/party',
     name: 'party',
     component: () => import('@/pages/fnb/PartyPage.vue'),
-    meta: { title: 'PARTY - F&B' }
+    meta: { title: 'PARTY - F&B', permission: 'fb.party.manage' }
   },
   {
     path: '/fnb/search',
     name: 'search',
     component: () => import('@/pages/fnb/SearchPage.vue'),
-    meta: { title: 'Tìm kiếm đơn hàng - F&B' }
+    meta: { title: 'Tìm kiếm đơn hàng - F&B', permission: 'fb.order.view' }
   },
   {
     path: '/fnb/other',
@@ -90,8 +90,15 @@ const routes = [
     path: '/fnb/report',
     name: 'fnb-report',
     component: () => import('@/pages/fnb/ReportPage.vue'),
-    meta: { title: 'Báo cáo - F&B' }
-  }
+    meta: { title: 'Báo cáo - F&B', permission: 'mgmt.report.view' }
+  },
+  {
+    // Trang 403 - không có quyền
+    path: '/forbidden',
+    name: 'Forbidden',
+    component: () => import('@/pages/ForbiddenPage.vue'),
+    meta: { title: 'Không có quyền truy cập', noLayout: true },
+  },
 ]
 
 const router = createRouter({
@@ -122,6 +129,16 @@ router.beforeEach(async (to, from) => {
           return '/login'
         }
       }
+
+      // Kiểm tra permission nếu route có meta.permission
+      if (to.meta.permission) {
+        const isSuperAdmin = authStore.roles.some(r => r.role_code === 'super_admin')
+        const hasAccess = isSuperAdmin || authStore.permissions.includes(to.meta.permission)
+        if (!hasAccess) {
+          return { name: 'Forbidden' }
+        }
+      }
+
       document.title = to.meta.title || 'PMS - Hệ thống Quản lý Khách sạn'
       return true
     }
@@ -129,4 +146,3 @@ router.beforeEach(async (to, from) => {
 })
 
 export default router
-

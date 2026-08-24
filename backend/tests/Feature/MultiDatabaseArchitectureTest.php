@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\SystemBranch;
 use App\Models\User;
 use App\Models\UserBranch;
+use App\Http\Middleware\BlockNightAuditRequests;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -12,6 +13,15 @@ use Tests\TestCase;
 class MultiDatabaseArchitectureTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // This test verifies branch routing; the night-audit middleware has a
+        // separate hotel-settings dependency and is outside this test scope.
+        $this->withoutMiddleware(BlockNightAuditRequests::class);
+    }
 
     public function test_authenticated_user_can_only_access_an_assigned_branch(): void
     {

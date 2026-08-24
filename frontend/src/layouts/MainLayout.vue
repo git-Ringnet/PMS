@@ -7,6 +7,7 @@ import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
 import { fetchOutlets } from '@/services/outlet-service'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
+import SystemSearchModal from '@/pages/reservation/components/SystemSearchModal.vue'
 import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
@@ -29,6 +30,11 @@ const systemDate = ref('')
 const dbShift = ref('')
 
 const authStore = useAuthStore()
+
+const isHeaderBookingSearchOpen = ref(false)
+const headerBookingSearchQuery = ref('')
+const headerSearchButtonRef = ref(null)
+const headerBookingSearchPosition = ref({ top: 70, right: 16 })
 
 // Topbar custom background color (default #006bdb)
 const headerBgColor = computed(() => authStore.settings?.topbar_color || '#006bdb')
@@ -78,7 +84,7 @@ function updateCssVariables(colorVal) {
       }
     }
     
-    document.documentElement.style.setProperty('--pms-custom-theme-text', isDark ? '#ffffff' : '#003d66')
+    document.documentElement.style.setProperty('--pms-custom-theme-text', isDark ? '#ffffff' : '#000000')
     document.documentElement.style.setProperty('--pms-custom-theme-border', 'transparent')
   }
 }
@@ -230,38 +236,45 @@ const langDropdownRef = ref(null)
 
 const loadBranches = async () => {
   if (!authStore.token) return
-  try {
-    const res = await fetchSystemBranches()
-    branchesList.value = res.data.data || []
-    
-    // Khôi phục chi nhánh đã lưu từ localStorage hoặc lấy chi nhánh đầu tiên
-    const savedBranchId = localStorage.getItem('selected_branch_id')
-    if (savedBranchId && branchesList.value.some(b => b.id === Number(savedBranchId))) {
-      selectedBranch.value = branchesList.value.find(b => b.id === Number(savedBranchId))
-      localStorage.setItem('selected_branch_code', selectedBranch.value.code)
-    } else if (branchesList.value.length > 0) {
-      const defaultBranch = branchesList.value.find(b => b.code === 'HKT1') || branchesList.value[0]
-      selectedBranch.value = defaultBranch
-      localStorage.setItem('selected_branch_id', defaultBranch.id)
-      localStorage.setItem('selected_branch_code', defaultBranch.code)
+  // Dùng branches từ authStore (đã được lọc theo user_branches)
+  if (authStore.branches && authStore.branches.length > 0) {
+    branchesList.value = authStore.branches
+  } else {
+    // Fallback: super admin hoặc user chưa có branch assignment
+    try {
+      const res = await fetchSystemBranches()
+      branchesList.value = res.data.data || []
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách chi nhánh:', err)
     }
-  } catch (err) {
-    console.error('Lỗi khi tải danh sách chi nhánh:', err)
+  }
+
+  // Khôi phục chi nhánh đã lưu từ localStorage hoặc lấy chi nhánh đầu tiên
+  const savedBranchId = localStorage.getItem('selected_branch_id')
+  if (savedBranchId && branchesList.value.some(b => b.id === Number(savedBranchId))) {
+    selectedBranch.value = branchesList.value.find(b => b.id === Number(savedBranchId))
+    localStorage.setItem('selected_branch_code', selectedBranch.value.code)
+  } else if (branchesList.value.length > 0) {
+    const primaryBranch = branchesList.value.find(b => b.is_primary) || branchesList.value[0]
+    selectedBranch.value = primaryBranch
+    localStorage.setItem('selected_branch_id', primaryBranch.id)
+    localStorage.setItem('selected_branch_code', primaryBranch.code)
   }
 }
 
-function handleSelectBranch(branch) {
+async function handleSelectBranch(branch) {
   selectedBranch.value = branch
   localStorage.setItem('selected_branch_id', branch.id)
   localStorage.setItem('selected_branch_code', branch.code)
   sessionStorage.setItem('pms_active_branch', JSON.stringify(branch))
-  authStore.switchBranch(branch)
+  // switchBranch giờ là async — refresh permissions trước khi reload
+  await authStore.switchBranch(branch)
   isBranchDropdownOpen.value = false
-  
+
   sessionStorage.setItem('switching_branch', 'true')
   sessionStorage.setItem('switching_to_name', branch.name)
   isSwitchingBranch.value = true
-  
+
   setTimeout(() => {
     window.location.reload()
   }, 100)
@@ -775,6 +788,39 @@ function goHome() {
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
 }
+
+function openHeaderBookingSearch() {
+  if (route.path.startsWith('/reservation') && route.query.tab === 'create-res') {
+    router.push({
+      path: route.path,
+      query: { ...route.query, openBookingSearch: 'true' },
+    })
+    return
+  }
+
+  const button = headerSearchButtonRef.value
+  if (button) {
+    const rect = button.getBoundingClientRect()
+    headerBookingSearchPosition.value = {
+      top: Math.round(rect.bottom + 18),
+      right: 6,
+    }
+  }
+  headerBookingSearchQuery.value = ''
+  isHeaderBookingSearchOpen.value = true
+}
+
+function handleHeaderBookingSelected(booking) {
+  isHeaderBookingSearchOpen.value = false
+  headerBookingSearchQuery.value = ''
+  router.push({
+    path: '/reservation',
+    query: {
+      tab: 'create-res',
+      bookingCode: booking.booking_code || booking.id,
+    },
+  })
+}
 </script>
 
 <template>
@@ -877,7 +923,11 @@ function toggleSidebar() {
       <!-- Right Side: User Info / Date / Time (Right) -->
       <div class="flex items-center justify-end gap-1.5 text-sm whitespace-nowrap shrink-0">
         <!-- Search icon button -->
-        <button 
+        <button
+          v-if="!route.path.startsWith('/housekeeping')"
+          ref="headerSearchButtonRef"
+          @click="openHeaderBookingSearch"
+          title="Tìm kiếm Booking"
           class="p-0.5 rounded bg-transparent border-none cursor-pointer flex items-center justify-center shrink-0 transition-colors duration-200"
           :class="isHeaderBgDark ? 'text-white hover:bg-white/15' : 'text-gray-900 dark:text-white hover:bg-black/10'"
         >
@@ -1247,6 +1297,15 @@ function toggleSidebar() {
         </div>
       </div>
     </header>
+
+    <SystemSearchModal
+      v-model:show="isHeaderBookingSearchOpen"
+      v-model:query="headerBookingSearchQuery"
+      :position="headerBookingSearchPosition"
+      :showSearchInput="true"
+      :systemDate="systemDate"
+      @select-booking="handleHeaderBookingSelected"
+    />
 
     <!-- Sub Navigation (Light Theme Tabs) -->
     <div

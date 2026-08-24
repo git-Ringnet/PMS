@@ -5,7 +5,7 @@ import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
-import { fetchBookings, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
+import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
@@ -206,10 +206,14 @@ const allCompanies = ref([])
 
 // Quick booking modal states
 const showQuickBookingModal = ref(false)
+const quickBookingModalPosition = ref(null)
+const quickBookingDragState = ref(null)
+let quickBookingDragFrame = null
 const rateCodes = ref([])
 const standardRates = ref([])
 const allMarkets = ref([])
 const allCustomerSources = ref([])
+const registrationStatuses = ref([])
 const quickBookingCompanySearch = ref('KHÁCH LẺ')
 const showQuickBookingCompanyDropdown = ref(false)
 const quickBookingForm = ref({
@@ -219,9 +223,83 @@ const quickBookingForm = ref({
   marketSegment: 'Free Individual Traveler',
   sourceCode: 'Free Individual Traveler',
   bookingName: 'Walkin Guest',
+  registrationStatusId: null,
   rateCode: 'Vui lòng chọn giá phòng',
   rate: '890000'
 })
+
+const quickBookingModalStyle = computed(() => {
+  const position = quickBookingModalPosition.value || { x: 0, y: 0 }
+  return {
+    left: '50%',
+    top: '50%',
+    transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`
+  }
+})
+
+function startQuickBookingDrag(event) {
+  if (event.button !== 0) return
+  const modal = event.currentTarget?.parentElement
+  if (!modal) return
+
+  const rect = modal.getBoundingClientRect()
+  const baseLeft = (window.innerWidth - rect.width) / 2
+  const baseTop = (window.innerHeight - rect.height) / 2
+  const currentPosition = quickBookingModalPosition.value || { x: 0, y: 0 }
+  quickBookingDragState.value = {
+    modal,
+    offsetX: event.clientX - (baseLeft + currentPosition.x),
+    offsetY: event.clientY - (baseTop + currentPosition.y),
+    baseLeft,
+    baseTop,
+    width: rect.width,
+    height: rect.height,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    nextPosition: currentPosition
+  }
+  modal.style.willChange = 'transform'
+  event.preventDefault()
+  window.addEventListener('mousemove', moveQuickBookingDrag)
+  window.addEventListener('mouseup', stopQuickBookingDrag)
+}
+
+function moveQuickBookingDrag(event) {
+  if (!quickBookingDragState.value) return
+  const state = quickBookingDragState.value
+  state.clientX = event.clientX
+  state.clientY = event.clientY
+
+  if (quickBookingDragFrame) return
+  quickBookingDragFrame = requestAnimationFrame(() => {
+    const nextX = state.clientX - state.offsetX
+    const nextY = state.clientY - state.offsetY
+    const maxLeft = Math.max(0, window.innerWidth - state.width)
+    const maxTop = Math.max(0, window.innerHeight - state.height)
+    const clampedLeft = Math.min(Math.max(0, nextX), maxLeft)
+    const clampedTop = Math.min(Math.max(0, nextY), maxTop)
+    state.nextPosition = {
+      x: clampedLeft - state.baseLeft,
+      y: clampedTop - state.baseTop
+    }
+    state.modal.style.transform = `translate(calc(-50% + ${state.nextPosition.x}px), calc(-50% + ${state.nextPosition.y}px))`
+    quickBookingDragFrame = null
+  })
+}
+
+function stopQuickBookingDrag() {
+  if (quickBookingDragState.value?.nextPosition) {
+    quickBookingModalPosition.value = quickBookingDragState.value.nextPosition
+    quickBookingDragState.value.modal.style.willChange = ''
+  }
+  quickBookingDragState.value = null
+  if (quickBookingDragFrame) {
+    cancelAnimationFrame(quickBookingDragFrame)
+    quickBookingDragFrame = null
+  }
+  window.removeEventListener('mousemove', moveQuickBookingDrag)
+  window.removeEventListener('mouseup', stopQuickBookingDrag)
+}
 
 // Lock room modal states
 const showLockRoomModal = ref(false)
@@ -1521,6 +1599,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopQuickBookingDrag()
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', closePlanSettings)
   window.removeEventListener('click', closeDatePickerPopover)
@@ -2538,13 +2617,16 @@ async function loadDropdownsAndPrices() {
     if (allCustomerSources.value.length === 0) promises.push(fetchCustomerSources().catch(() => ({ data: [] })))
     else promises.push(Promise.resolve({ data: allCustomerSources.value }))
 
-    const [compRes, rcRes, srRes, mktRes, srcRes] = await Promise.all(promises)
+    promises.push(fetchBookingInitDropdowns().catch(() => ({ data: {} })))
+
+    const [compRes, rcRes, srRes, mktRes, srcRes, initRes] = await Promise.all(promises)
     
     if (compRes?.data) allCompanies.value = compRes.data.data || compRes.data || []
     if (rcRes?.data) rateCodes.value = rcRes.data.data || rcRes.data || []
     if (srRes?.data) standardRates.value = srRes.data.data || srRes.data || []
     if (mktRes?.data) allMarkets.value = mktRes.data.data || mktRes.data || []
     if (srcRes?.data) allCustomerSources.value = srcRes.data.data || srcRes.data || []
+    registrationStatuses.value = initRes?.data?.data?.registration_statuses || []
 
     // If company is selected, auto-set default market & source code
     if (quickBookingCompanySearch.value && allCompanies.value.length > 0) {
@@ -2690,6 +2772,7 @@ async function triggerMenuAction(actionName) {
       marketSegment: 'Free Individual Traveler',
       sourceCode: 'Free Individual Traveler',
       bookingName: 'Walkin Guest',
+      registrationStatusId: null,
       rateCode: 'Vui lòng chọn giá phòng',
       rate: '0'
     }
@@ -3336,6 +3419,11 @@ async function saveQuickBooking() {
     const overallNights = Math.round((new Date(overallDeparture) - new Date(overallArrival)) / (1000 * 60 * 60 * 24)) || 1
     const selectedRateCode = quickBookingForm.value.rateCode !== 'Vui lòng chọn giá phòng' ? quickBookingForm.value.rateCode : null
 
+    if (!quickBookingForm.value.registrationStatusId) {
+      uiStore.showToast('Vui lòng chọn Tình trạng đăng ký.', 'error')
+      return
+    }
+
     // 3. Gom nhóm phòng theo roomClassId, checkIn, checkOut cho room_allocations
     const allocationsMap = {}
 
@@ -3386,7 +3474,7 @@ async function saveQuickBooking() {
       arrival_date: overallArrival,
       departure_date: overallDeparture,
       num_of_days: overallNights,
-      registration_status_id: quickBookingForm.value.registrationStatusId || 1,
+      registration_status_id: quickBookingForm.value.registrationStatusId,
       company_id: companyId,
       market_id: quickBookingForm.value.marketId || 1,
       customer_source_id: quickBookingForm.value.customerSourceId || 1,
@@ -4729,9 +4817,9 @@ function getRoomStatusIconName(item) {
     </transition>
     <!-- Quick Booking Modal -->
     <div v-if="showQuickBookingModal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 select-none">
-      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[450px] overflow-hidden flex flex-col font-sans">
+      <div :style="quickBookingModalStyle" class="absolute bg-white rounded-2xl shadow-2xl border border-slate-200 w-[450px] overflow-hidden flex flex-col font-sans">
         <!-- Header -->
-        <div class="h-[50px] bg-blue-600 flex items-center justify-between px-4 text-white shrink-0">
+        <div @mousedown="startQuickBookingDrag" class="h-[50px] bg-blue-600 flex items-center justify-between px-4 text-white shrink-0 cursor-move">
           <span class="font-bold text-sm tracking-wide">Booking</span>
           <button @click="showQuickBookingModal = false" class="text-white hover:text-slate-200 bg-transparent border-none cursor-pointer flex items-center justify-center p-1 rounded-full hover:bg-white/10 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -4811,6 +4899,17 @@ function getRoomStatusIconName(item) {
           <div class="flex flex-col gap-1.5">
             <label class="font-bold text-slate-700 text-left w-full block">Booking name:</label>
             <input type="text" v-model="quickBookingForm.bookingName" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold" />
+          </div>
+
+          <!-- Registration status -->
+          <div class="flex flex-col gap-1.5">
+            <label class="font-bold text-slate-700 text-left w-full block">Tình trạng đăng ký:</label>
+            <select v-model="quickBookingForm.registrationStatusId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
+              <option :value="null" disabled>— Chọn tình trạng đăng ký —</option>
+              <option v-for="status in registrationStatuses.filter(s => !s.is_hidden)" :key="status.id" :value="status.id">
+                {{ status.name }}
+              </option>
+            </select>
           </div>
 
           <!-- Rate Code -->

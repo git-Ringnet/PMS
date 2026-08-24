@@ -49,9 +49,23 @@ export const useAuthStore = defineStore('auth', {
       if (this.token) {
         try {
           this.loading = true
-          const response = await http.get('/me')
-          this.user = response.data
-          this.settings = response.data.setting?.settings || {}
+          const branchId = localStorage.getItem('selected_branch_id')
+          const headers = branchId ? { 'X-Branch-Id': branchId } : {}
+          const response = await http.get('/me', { headers })
+          const { user, permissions, branches, active_branch, roles } = response.data
+          this.user = user
+          this.settings = user.setting?.settings || {}
+          // Cập nhật permissions/branches/roles nếu server trả về
+          if (permissions) {
+            this.permissions = permissions
+            this.branches = branches || []
+            this.activeBranch = active_branch || null
+            this.roles = roles || []
+            localStorage.setItem('pms_permissions', JSON.stringify(this.permissions))
+            localStorage.setItem('pms_branches', JSON.stringify(this.branches))
+            localStorage.setItem('pms_active_branch', JSON.stringify(this.activeBranch))
+            localStorage.setItem('pms_roles', JSON.stringify(this.roles))
+          }
           cleanOldLocalConfigs()
         } catch (err) {
           console.error('Không thể xác thực user hiện tại', err)
@@ -98,12 +112,28 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    /** Chuyển chi nhánh đang active */
-    switchBranch(branch) {
+    /** Chuyển chi nhánh đang active — refresh permissions từ server */
+    async switchBranch(branch) {
       this.activeBranch = branch
       localStorage.setItem('pms_active_branch', JSON.stringify(branch))
       localStorage.setItem('selected_branch_id', branch.id)
       localStorage.setItem('selected_branch_code', branch.code)
+
+      // Refresh permissions theo branch mới
+      try {
+        const response = await http.get('/me', {
+          headers: { 'X-Branch-Id': branch.id }
+        })
+        const { permissions, roles } = response.data
+        if (permissions) {
+          this.permissions = permissions
+          this.roles = roles || []
+          localStorage.setItem('pms_permissions', JSON.stringify(permissions))
+          localStorage.setItem('pms_roles', JSON.stringify(roles || []))
+        }
+      } catch (err) {
+        console.error('Không thể refresh permissions sau khi chuyển chi nhánh', err)
+      }
     },
 
     async logout() {
