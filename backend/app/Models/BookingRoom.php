@@ -62,6 +62,14 @@ class BookingRoom extends Model
                 $diff = $arr->diffInDays($dep);
                 $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
             }
+
+            // Reservation mới dùng giờ checkout mặc định của legacy PMS.
+            // Phòng mới phát sinh từ chuyển phòng đang ở giữ NULL để chỉ ghi
+            // nhận thời điểm checkout khi thực sự checkout/chuyển tiếp.
+            if ((int) $model->status === self::STATUS_BOOKED) {
+                $model->CheckoutDate = $model->CheckoutDate ?: $model->departure_date;
+                $model->CheckoutTime = $model->CheckoutTime ?: '12:00:00';
+            }
         });
 
         static::updating(function ($model) {
@@ -325,9 +333,11 @@ class BookingRoom extends Model
      * Thực hiện chuyển phòng (Room Move/Transfer) cho phòng đang CheckedIn.
      * Tự động chia tách folio, cập nhật trạng thái phòng cũ và tạo phòng mới.
      */
-    public function moveToRoom($newRoomNumber, $systemDateStr, $currentUser)
+    public function moveToRoom($newRoomNumber, $systemDateStr, $currentUser, $reason = null)
     {
         $systemDate = \Carbon\Carbon::parse($systemDateStr);
+        $moveTime = now()->format('H:i:s');
+        $originalArrivalDate = $this->actual_arrival_date?->toDateString() ?: $this->arrival_date->toDateString();
         
         $attributes = $this->getAttributes();
         unset($attributes['id']);
@@ -354,11 +364,35 @@ class BookingRoom extends Model
                 'booking_room_id' => $newRoom->id,
                 'guest_id' => $gPivot->guest_id,
                 'is_primary' => $gPivot->is_primary,
+                'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                'actual_arrival_date' => $originalArrivalDate,
+                'actual_arrival_time' => $gPivot->actual_arrival_time ?: $this->arrival_time ?: $moveTime,
+                'actual_checkout_date' => $gPivot->actual_checkout_date ?: $this->departure_date->toDateString(),
+                'breakfast' => $gPivot->breakfast,
+            ]);
+        }
+
+        foreach ($this->guests as $gPivot) {
+            $gPivot->update([
+                'status' => BookingRoomGuest::STATUS_CHECKED_OUT,
+                'actual_arrival_date' => $gPivot->actual_arrival_date ?: $originalArrivalDate,
+                'actual_arrival_time' => $gPivot->actual_arrival_time ?: ($this->arrival_time ?: $moveTime),
+                'actual_checkout_date' => $systemDate->toDateString(),
+                'actual_checkout_time' => $moveTime,
+                'checkout_by' => $currentUser,
             ]);
         }
         
         // Chuyển Trẻ em / Em bé
         foreach ($this->children as $child) {
+            BookingRoomChild::updateOrCreate(
+                ['booking_child_id' => $child->id, 'booking_room_id' => $this->id],
+                ['status' => 100]
+            );
+            BookingRoomChild::updateOrCreate(
+                ['booking_child_id' => $child->id, 'booking_room_id' => $newRoom->id],
+                ['status' => 1]
+            );
             $child->update([
                 'booking_room_id' => $newRoom->id,
             ]);
@@ -377,8 +411,13 @@ class BookingRoom extends Model
         // Cập nhật thông tin phòng cũ (đã chuyển)
         $this->update([
             'departure_date' => $systemDate->toDateString(),
+            'departure_time' => $moveTime,
             'status' => self::STATUS_CHECKED_OUT,
             'move_room' => $newRoom->id,
+            'CheckoutDate' => $systemDate->toDateString(),
+            'CheckoutTime' => $moveTime,
+            'reason' => $reason ?: $this->reason,
+            'note' => trim(($this->note ? $this->note . ' | ' : '') . "Đã chuyển sang phòng {$newRoomNumber}" . ($reason ? ": {$reason}" : '')),
             'check_out_user' => $currentUser,
         ]);
         

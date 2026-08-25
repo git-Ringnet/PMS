@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\BookingChild;
+use App\Models\BookingChildBreakfastDetail;
 use App\Models\BookingRoom;
 use App\Models\Guest;
 use App\Models\Permission;
@@ -186,6 +188,7 @@ class RoomMoveTest extends TestCase
             'departure_date' => '2026-07-17',
             'status'         => BookingRoom::STATUS_CHECKED_IN,
             'rate'           => 500000,
+            'arrival_time'   => '08:30:00',
             'is_do_not_move' => 0,
         ]);
 
@@ -194,6 +197,7 @@ class RoomMoveTest extends TestCase
             'booking_room_id' => $bookingRoom->id,
             'guest_id'        => $guest->id,
             'is_primary'       => 1,
+            'breakfast'        => 1,
         ]);
 
         $response = $this->postJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/move", [
@@ -211,6 +215,17 @@ class RoomMoveTest extends TestCase
         $bookingRoom->refresh();
         $this->assertEquals(100, $bookingRoom->status);
         $this->assertEquals('2026-07-13', $bookingRoom->departure_date->toDateString());
+        $this->assertSame('Khách thích phòng tầng cao hơn', $bookingRoom->reason);
+        $this->assertNotNull($bookingRoom->CheckoutDate);
+        $this->assertNotNull($bookingRoom->CheckoutTime);
+
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $bookingRoom->id,
+            'guest_id' => $guest->id,
+            'actual_arrival_date' => '2026-07-10',
+            'actual_arrival_time' => '08:30:00',
+            'status' => 100,
+        ]);
 
         // New room created for room 102
         $this->assertDatabaseHas('booking_rooms', [
@@ -220,6 +235,115 @@ class RoomMoveTest extends TestCase
             'departure_date' => '2026-07-16 00:00:00',
             'status'         => BookingRoom::STATUS_CHECKED_IN,
             'rate'           => 500000,
+        ]);
+
+        $newRoom = BookingRoom::where('booking_id', $booking->id)
+            ->where('room_number', '102')
+            ->firstOrFail();
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $newRoom->id,
+            'guest_id' => $guest->id,
+            'breakfast' => 1,
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+    }
+
+    public function test_new_reservation_defaults_checkout_schedule_to_departure_and_noon(): void
+    {
+        $booking = Booking::create([
+            'booking_name' => 'Booking default checkout',
+            'booking_date' => '2026-07-10',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'created_by' => 'admin_test',
+            'status' => 0,
+        ]);
+
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => '101',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->assertSame('2026-07-17', $room->CheckoutDate->toDateString());
+        $this->assertSame('12:00:00', $room->CheckoutTime);
+    }
+
+    public function test_move_to_room_preserves_guest_breakfast_and_child_breakfast_history(): void
+    {
+        $booking = Booking::create([
+            'booking_name' => 'Booking move child data',
+            'booking_date' => '2026-07-10',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'created_by' => 'admin_test',
+            'status' => Booking::STATUS_CHECKIN,
+        ]);
+
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => '101',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'actual_arrival_date' => '2026-07-10',
+            'arrival_time' => '08:00:00',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        $guest = Guest::create(['full_name' => 'Guest move child data']);
+        $pivot = BookingRoomGuest::create([
+            'booking_room_id' => $room->id,
+            'guest_id' => $guest->id,
+            'is_primary' => 1,
+            'breakfast' => 1,
+        ]);
+        $child = BookingChild::create([
+            'booking_id' => $booking->id,
+            'booking_room_id' => $room->id,
+            'full_name' => 'Child move data',
+            'age_group' => 'child',
+        ]);
+        BookingChildBreakfastDetail::create([
+            'booking_child_id' => $child->id,
+            'service_date' => '2026-07-11',
+            'breakfast' => 1,
+            'is_free' => true,
+            'is_extra_charge' => false,
+            'is_room' => true,
+            'amount' => 0,
+        ]);
+
+        $newRoom = $room->moveToRoom('102', '2026-07-14', 'admin_test', 'Khách yêu cầu đổi phòng');
+
+        $this->assertSame('Khách yêu cầu đổi phòng', $room->fresh()->reason);
+        $this->assertSame(BookingRoom::STATUS_CHECKED_OUT, $room->fresh()->status);
+        $this->assertSame(BookingRoomGuest::STATUS_CHECKED_OUT, $pivot->fresh()->status);
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $newRoom->id,
+            'guest_id' => $guest->id,
+            'breakfast' => 1,
+            'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+        ]);
+        $this->assertDatabaseHas('booking_children', [
+            'id' => $child->id,
+            'booking_room_id' => $newRoom->id,
+        ]);
+        $this->assertDatabaseHas('booking_room_children', [
+            'booking_child_id' => $child->id,
+            'booking_room_id' => $room->id,
+            'status' => 100,
+        ]);
+        $this->assertDatabaseHas('booking_room_children', [
+            'booking_child_id' => $child->id,
+            'booking_room_id' => $newRoom->id,
+            'status' => 1,
+        ]);
+        $this->assertDatabaseHas('booking_child_breakfast_details', [
+            'booking_child_id' => $child->id,
+            'breakfast' => 1,
         ]);
     }
 

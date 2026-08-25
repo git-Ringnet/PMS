@@ -244,6 +244,7 @@ class BookingRoomController extends Controller
                 'extra_bed_qty'   => 'nullable|integer|min:0',
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
+                'reason'          => 'nullable|string|max:500',
                 'guest_name'      => 'nullable|string|max:100',
                 'room_number'     => 'nullable|string',
                 'breakfast'       => 'nullable|boolean',
@@ -331,7 +332,7 @@ class BookingRoomController extends Controller
             
             DB::beginTransaction();
             try {
-                $newRoom = $bookingRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser);
+                $newRoom = $bookingRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser, $validated['reason'] ?? null);
                 $newRoom->update($validated);
                 DB::commit();
                 
@@ -1793,8 +1794,8 @@ class BookingRoomController extends Controller
                 $isAllGuestsMoved = $movedGuestPivots->count() === $allGuestsCount && $childrenToMove->count() === $activeChildren->count();
 
 
-                $movedAdultsCount = $movedGuestPivots->count(); // Count of moved adults
-                $movedChildrenCount = $childrenToMove->count();
+                    $movedAdultsCount = $movedGuestPivots->count(); // Count of moved adults
+                    $movedChildrenCount = $childrenToMove->count();
             $movedBabiesCount = $childrenToMove->where('age_group', 'baby')->count();
             $movedRegularChildrenCount = $movedChildrenCount - $movedBabiesCount;
 
@@ -1847,6 +1848,16 @@ class BookingRoomController extends Controller
                     // Insert new booking room record (Sp2100)
                     $newRoom = BookingRoom::create($attributes);
 
+                    // Chuẩn hóa dữ liệu khách cũ trước khi tách lịch sử chuyển phòng.
+                    // Legacy có thể để trống giờ đến ở booking_room_guests.
+                    $arrivalTime = $bookingRoom->arrival_time ?: $timeStr;
+                    \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
+                        ->whereNull('actual_arrival_time')
+                        ->update([
+                            'actual_arrival_date' => $originalArrivalStr,
+                            'actual_arrival_time' => $arrivalTime,
+                        ]);
+
                     // --- 2. HANDLE OLD ROOM (Sp2100 & Sp2200 & Sp2500) ---
                     if ($isAllGuestsMoved) {
                         // All guests moved -> Old room status = 100, departure_date = system_date - 1
@@ -1861,6 +1872,7 @@ class BookingRoomController extends Controller
                             'departure_time'   => $timeStr,
                             'CheckoutDate'     => $sysDateStr,
                             'CheckoutTime'     => $timeStr,
+                            'reason'           => $reason,
                             'check_out_user'   => $currentUser,
                             'note'             => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển toàn bộ sang phòng {$targetRoomNumber}: {$reason}"),
                             'updated_by'       => $currentUser,
@@ -1889,6 +1901,7 @@ class BookingRoomController extends Controller
                             'adults'       => $remainingAdults,
                             'children_qty' => $remainingChildren,
                             'babies'       => max(0, (int) ($bookingRoom->babies ?? 0) - $movedBabiesCount),
+                            'reason'       => $reason,
                             'note'           => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
                             'updated_by'     => $currentUser,
                         ]);
@@ -1916,6 +1929,7 @@ class BookingRoomController extends Controller
                             'actual_arrival_time'  => $timeStr,
                             'checkin_by'           => $currentUser,
                             'actual_checkout_date' => $originalDepartureStr,
+                            'breakfast'           => $gPivot->breakfast,
                         ]);
                     }
 
@@ -2061,6 +2075,14 @@ class BookingRoomController extends Controller
             try {
                 $timeStr = \Carbon\Carbon::now()->format('H:i:s');
                 $sysDateStr = $systemDate->toDateString();
+                $arrivalTime = $bookingRoom->arrival_time ?: $timeStr;
+                \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
+                    ->whereIn('guest_id', $movedGuestIds)
+                    ->whereNull('actual_arrival_time')
+                    ->update([
+                        'actual_arrival_date' => $bookingRoom->actual_arrival_date?->toDateString() ?: $bookingRoom->arrival_date->toDateString(),
+                        'actual_arrival_time' => $arrivalTime,
+                    ]);
                 // --- 1. UPDATE OLD ROOM GUESTS (Sp2200) -> Status = 100 ---
                 \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
                     ->whereIn('guest_id', $movedGuestIds)
@@ -2088,6 +2110,7 @@ class BookingRoomController extends Controller
                         'actual_arrival_time'  => $timeStr,
                         'checkin_by'           => $currentUser,
                         'actual_checkout_date' => $targetBookingRoom->departure_date->toDateString(),
+                        'breakfast'           => $gPivot->breakfast,
                     ]);
                 }
 
@@ -2140,6 +2163,7 @@ class BookingRoomController extends Controller
                         'departure_time'   => $timeStr,
                         'CheckoutDate'     => $sysDateStr,
                         'CheckoutTime'     => $timeStr,
+                        'reason'           => $reason,
                         'check_out_user'   => $currentUser,
                         'note'             => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp toàn bộ khách sang phòng {$targetRoomNumber}: {$reason}"),
                         'updated_by'       => $currentUser,
@@ -2152,6 +2176,7 @@ class BookingRoomController extends Controller
                         'adults'     => $remainingAdults,
                         'children_qty' => max(0, (int) ($bookingRoom->children_qty ?? 0) - $movedRegularChildrenCount),
                         'babies'       => max(0, (int) ($bookingRoom->babies ?? 0) - $movedBabiesCount),
+                        'reason'       => $reason,
                         'note'       => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
                         'updated_by' => $currentUser,
                     ]);
