@@ -300,6 +300,8 @@ class RoomMoveTest extends TestCase
             'is_primary' => 1,
             'breakfast' => 1,
         ]);
+        $this->assertSame('2026-07-17', $pivot->actual_checkout_date->toDateString());
+        $this->assertSame('12:00:00', $pivot->actual_checkout_time);
         $child = BookingChild::create([
             'booking_id' => $booking->id,
             'booking_room_id' => $room->id,
