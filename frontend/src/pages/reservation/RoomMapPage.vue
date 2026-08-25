@@ -1209,7 +1209,26 @@ function triggerMenuItem(actionName) {
     return
   }
 
-  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'In phiếu ăn sáng') {
+    const room = contextMenu.value.room
+    const fromDate = room?.arrival_date || room?.booking_arrival_date || room?.booking?.arrival_date || room?.actual_arrival_date || room?.check_in || ''
+    const toDate = room?.departure_date || room?.booking_departure_date || room?.booking?.departure_date || room?.actual_departure_date || room?.check_out || ''
+    const printRoute = router.resolve({
+      path: '/frontdesk',
+      query: {
+        tab: 'print-breakfast',
+        roomNumber: room?.room_number || '',
+        data: room?.booking_room_id || room?.booking_code || room?.booking_id || '',
+        fromDate: String(fromDate).substring(0, 10),
+        toDate: String(toDate).substring(0, 10),
+      }
+    })
+    window.open(printRoute.href, '_blank', 'noopener,noreferrer')
+    closeContextMenu()
+    return
+  }
+
+  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In mẫu đăng ký'].includes(actionName)) {
     const room = contextMenu.value.room
     if (room && room.booking_code) {
       router.push({
