@@ -1258,7 +1258,9 @@ const isInlineEditLocked = computed(() => {
   if (isCancelledBooking.value) return true
   if (Number(tab.status) !== 1) return false
 
-  return (tab.rooms || []).some(room => [1, 2, 3, 100].includes(Number(room.bookingRoomStatus)))
+  const rooms = tab.rooms || []
+  const hasEditableRoom = rooms.some(room => Number(room.bookingRoomStatus) === 0)
+  return rooms.length > 0 && !hasEditableRoom
 })
 
 function isRoomEditLocked(room) {
@@ -2893,9 +2895,28 @@ async function updateRoomAvailability() {
   }
 }
 
+function getPersistedRoomCount(row) {
+  return (modalForm.value.rooms || []).filter(room =>
+    room.roomClassId === row.roomClassId && room.bookingRoomId
+  ).length
+}
+
+function getProtectedRoomCount(row) {
+  return (modalForm.value.rooms || []).filter(room =>
+    room.roomClassId === row.roomClassId
+    && room.bookingRoomId
+    && [1, 2, 3, 100].includes(Number(room.bookingRoomStatus))
+  ).length
+}
+
 function updateAllocatedRooms(row) {
   if (row.quantity === undefined || row.quantity === null || row.quantity < 0) {
     row.quantity = 0
+  }
+
+  const protectedRoomCount = getProtectedRoomCount(row)
+  if (row.quantity < protectedRoomCount) {
+    row.quantity = protectedRoomCount
   }
 
   validateRoomQuantity(row)
@@ -2904,8 +2925,10 @@ function updateAllocatedRooms(row) {
     modalForm.value.rooms = []
   }
 
+  const persistedRoomCount = getPersistedRoomCount(row)
   const currentRooms = modalForm.value.rooms.filter(r => r.roomClassId === row.roomClassId && !r.bookingRoomId)
-  const diff = row.quantity - currentRooms.length
+  const desiredNewRoomCount = Math.max(Number(row.quantity) - persistedRoomCount, 0)
+  const diff = desiredNewRoomCount - currentRooms.length
 
   if (diff > 0) {
     for (let i = 0; i < diff; i++) {
@@ -7220,7 +7243,7 @@ defineExpose({
                       <!-- Số lượng -->
                       <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.quantity" :min="getProtectedRoomCount(row)" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
                             <button @click.prevent="row.quantity++; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                             <button @click.prevent="row.quantity > 0 ? (row.quantity--, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
