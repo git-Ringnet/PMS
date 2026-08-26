@@ -270,8 +270,7 @@ class AvailabilityController extends Controller
                         }
 
                         $hasBabyCot = $br->specialRequests->contains(function ($pivot) {
-                            $code = strtolower((string) ($pivot->specialRequest?->code ?? ''));
-                            return in_array(str_replace('_', '', $code), ['bc', 'babycot'], true);
+                            return strtoupper((string) ($pivot->specialRequest?->code ?? '')) === 'BC';
                         });
                         if ($hasBabyCot) {
                             $babyCotCounts[$classCode][$dStr] = ($babyCotCounts[$classCode][$dStr] ?? 0) + 1;
@@ -640,8 +639,7 @@ class AvailabilityController extends Controller
 
         $bbcBookingRows = $bookingRooms
             ->filter(fn ($room) => $room->specialRequests->contains(function ($pivot) {
-                $code = strtolower((string) ($pivot->specialRequest?->code ?? ''));
-                return in_array(str_replace('_', '', $code), ['bc', 'babycot'], true);
+                return strtoupper((string) ($pivot->specialRequest?->code ?? '')) === 'BC';
             }))
             ->map($mapBookingRow)
             ->values();
