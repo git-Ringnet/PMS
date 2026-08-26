@@ -28,6 +28,7 @@ import QuickAssignModal from './components/QuickAssignModal.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
+import ReportsPage from '@/pages/reports/ReportsPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -2329,6 +2330,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <!-- Tab Reports: Báo Cáo -->
+              <div v-else-if="currentTab === 'reports'" class="h-full overflow-hidden bg-white">
+                <ReportsPage />
               </div>
 
               <!-- THE DEFAULT ROOM MAP VIEW -->

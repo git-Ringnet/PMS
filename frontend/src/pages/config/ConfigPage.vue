@@ -78,7 +78,7 @@ function handleBack() {
               currentView === 'system' ? 'Định nghĩa hệ thống' : 
               currentView === 'rate' ? 'Thiết lập giá' :
               currentView === 'housekeeping-menu' ? 'Định nghĩa buồng phòng' : 
-              currentView === 'database-backup' ? 'Sao lưu & Khôi phục Database' : 'Thiết kế biểu mẫu'
+              currentView === 'database-backup' ? 'Sao lưu & Khôi phục Database' : 'Trung tâm mẫu & báo cáo'
             }}
           </span>
         </button>
@@ -156,7 +156,7 @@ function handleBack() {
             <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Định nghĩa buồng phòng</span>
           </div>
 
-          <!-- Card 6: Thiết kế biểu mẫu -->
+          <!-- Card 6: Trung tâm mẫu & báo cáo -->
           <div 
             @click="currentView = 'design-template'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
@@ -166,7 +166,7 @@ function handleBack() {
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21l5.096-.813a2 2 0 001.414-.586L21 14.172a2 2 0 000-2.828l-2.828-2.828a2 2 0 00-2.828 0L9.813 12.071a2 2 0 00-.586 1.414zM10.5 11.5L14 15M3 6h18M3 10h12M3 14h6" />
               </svg>
             </div>
-            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Thiết kế biểu mẫu</span>
+            <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Mẫu & Báo cáo</span>
           </div>
 
           <!-- Card 7: Sao lưu & Khôi phục Database -->

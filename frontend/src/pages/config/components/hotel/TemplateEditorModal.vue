@@ -53,6 +53,7 @@ const showSaveModal = ref(false)
 // Preview state
 const previewHtml = ref('')
 const loadingPreview = ref(false)
+const draggedBlock = ref(null)
 
 // Editor state
 const selectedBand = ref('header') // 'header' | 'detail' | 'footer'
@@ -64,8 +65,11 @@ const openCategories = ref({
   room: true,
   payment: true,
   registration: true,
-  lists: true
+  lists: true,
+  parameters: true,
+  summary: true
 })
+const dataSources = ref([])
 
 // Visual Blocks structure
 const blocks = ref({
@@ -75,7 +79,7 @@ const blocks = ref({
 })
 
 // Variables dictionary for Field List
-const fieldList = {
+const staticFieldList = {
   hotel: [
     { label: 'Tên khách sạn', value: 'hotel.name' },
     { label: 'Địa chỉ', value: 'hotel.address' },
@@ -133,7 +137,36 @@ const fieldList = {
   ]
 }
 
+const selectedDataSource = computed(() => {
+  return dataSources.value.find(source => source.id === template.value?.report_data_source_id) || null
+})
+
+const fieldList = computed(() => {
+  if (!selectedDataSource.value) return staticFieldList
+
+  const parameters = (selectedDataSource.value.parameter_schema || []).map(parameter => ({
+    label: parameter.name,
+    value: `parameters.${parameter.name}`
+  }))
+
+  return {
+    parameters,
+    summary: [
+      { label: 'Số dòng kết quả', value: 'summary.row_count' }
+    ],
+    lists: [
+      { label: `Dữ liệu ${selectedDataSource.value.name}`, value: 'rows', isList: true }
+    ]
+  }
+})
+
 const getListFields = (listValue) => {
+  if (listValue === 'rows' && selectedDataSource.value) {
+    return (selectedDataSource.value.field_schema || []).map(field => ({
+      label: field.name,
+      value: `row.${field.name}`
+    }))
+  }
   if (listValue === 'booking.services') {
     return [
       { label: 'Ngày dịch vụ', value: 'service.date' },
@@ -161,6 +194,21 @@ const getListFields = (listValue) => {
     ]
   }
   return []
+}
+
+const loadDataSources = async () => {
+  try {
+    const response = await http.get('/report-data-sources')
+    dataSources.value = (response.data.data || []).filter(source => source.is_active)
+  } catch (error) {
+    console.error('Không thể tải nguồn dữ liệu báo cáo:', error)
+  }
+}
+
+const onDataSourceChange = () => {
+  const source = selectedDataSource.value
+  template.value.parameter_defaults = source ? { ...(source.sample_parameters || {}) } : {}
+  compileHtml()
 }
 
 // Strip HTML helper to edit plain text
@@ -262,7 +310,8 @@ const loadPreview = async () => {
       margin_top: template.value.margin_top ?? 10,
       margin_bottom: template.value.margin_bottom ?? 10,
       margin_left: template.value.margin_left ?? 10,
-      margin_right: template.value.margin_right ?? 10
+      margin_right: template.value.margin_right ?? 10,
+      parameters: template.value.parameter_defaults || {}
     })
     if (res.data && res.data.html) {
       previewHtml.value = res.data.html
@@ -502,11 +551,13 @@ const addBlock = (type) => {
     newBlock.height = 20 // mm or px
   } else if (type === 'table') {
     newBlock.isNew = true
-    newBlock.dataSource = 'booking.services'
+    newBlock.dataSource = selectedDataSource.value ? 'rows' : 'booking.services'
     newBlock.tableType = 'dynamic'
     newBlock.rowsCount = 3
     newBlock.colsCount = 2
-    newBlock.selectedFields = ['service.name', 'service.price', 'service.quantity', 'service.amount']
+    newBlock.selectedFields = selectedDataSource.value
+      ? getListFields('rows').slice(0, 4).map(field => field.value)
+      : ['service.name', 'service.price', 'service.quantity', 'service.amount']
     newBlock.columns = []
     newBlock.style.marginTop = '10px'
     newBlock.style.marginBottom = '10px'
@@ -575,6 +626,81 @@ const moveBlock = (index, direction) => {
     bandBlocks[index] = bandBlocks[index + 1]
     bandBlocks[index + 1] = temp
   }
+}
+
+const onBlockDragStart = (event, band, index) => {
+  draggedBlock.value = { band, index }
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('application/x-pms-report-block', 'true')
+}
+
+const onBlockDragEnd = () => {
+  draggedBlock.value = null
+}
+
+const onBlockDrop = (event, targetBand, targetIndex) => {
+  event.preventDefault()
+  const field = event.dataTransfer.getData('application/x-pms-report-field')
+  if (field) {
+    addFieldBlock(targetBand, field, targetIndex)
+    return
+  }
+  if (!draggedBlock.value) return
+
+  const { band: sourceBand, index: sourceIndex } = draggedBlock.value
+  const [block] = blocks.value[sourceBand].splice(sourceIndex, 1)
+  let insertionIndex = targetIndex
+  if (sourceBand === targetBand && sourceIndex < insertionIndex) insertionIndex--
+  blocks.value[targetBand].splice(Math.max(0, insertionIndex), 0, block)
+  selectedBand.value = targetBand
+  selectedBlockId.value = block.id
+  draggedBlock.value = null
+  compileHtml()
+}
+
+const onFieldDragStart = (event, field) => {
+  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.setData('application/x-pms-report-field', field.value)
+  event.dataTransfer.setData('text/plain', field.value)
+}
+
+const onCanvasBlockDrop = (event, band, index, block) => {
+  const field = event.dataTransfer.getData('application/x-pms-report-field')
+  if (!field) {
+    onBlockDrop(event, band, index)
+    return
+  }
+
+  event.preventDefault()
+  if (block.type === 'text') {
+    block.content = `${block.content || ''} {{${field}}}`.trim()
+    selectedBlockId.value = block.id
+  } else if (block.type === 'table' && field.startsWith('row.')) {
+    block.isNew = false
+    block.dataSource = 'rows'
+    block.columns = block.columns || []
+    block.columns.push({ header: field.substring(4), value: field, width: 'auto', align: 'left' })
+  } else {
+    addFieldBlock(band, field, index + 1)
+    return
+  }
+  compileHtml()
+}
+
+const addFieldBlock = (band, field, index = blocks.value[band].length) => {
+  const id = `${band}_field_${Date.now()}`
+  blocks.value[band].splice(index, 0, {
+    id,
+    type: 'text',
+    content: `{{${field}}}`,
+    style: {
+      textAlign: 'left', fontSize: '13px', paddingTop: '5px', paddingBottom: '5px',
+      marginBottom: '5px', color: '#1e293b', fontWeight: 'normal', whiteSpace: 'pre-wrap'
+    }
+  })
+  selectedBand.value = band
+  selectedBlockId.value = id
+  compileHtml()
 }
 
 // Remove block
@@ -1050,13 +1176,20 @@ const compileBlockToHtml = (b) => {
       blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; text-align: ${col.align || 'left'};">${col.header}</th>\n`
     })
     blockHtml += '      </tr>\n    </thead>\n'
-    blockHtml += '    <tbody>\n'
-    
-    blockHtml += `      <tr class="pms-detail-row" data-source="${b.dataSource}">\n`
+    if (b.groupBy) {
+      blockHtml += `    <tbody class="pms-grouped-rows" data-source="${b.dataSource}" data-group-by="${b.groupBy}"${b.subgroupBy ? ` data-subgroup-by="${b.subgroupBy}"` : ''}>\n`
+      if (b.groupHeader) blockHtml += `      <tr class="pms-group-header">${b.groupHeader}</tr>\n`
+      if (b.subgroupHeader) blockHtml += `      <tr class="pms-subgroup-header">${b.subgroupHeader}</tr>\n`
+    } else {
+      blockHtml += '    <tbody>\n'
+    }
+
+    blockHtml += `      <tr class="pms-detail-row"${b.groupBy ? '' : ` data-source="${b.dataSource}"`}>\n`
     b.columns.forEach(col => {
       blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
+    if (b.groupBy && b.groupFooter) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
     blockHtml += '    </tbody>\n'
     blockHtml += '  </table>\n'
   } else if (b.type === 'static-table') {
@@ -1297,6 +1430,8 @@ const saveTemplateDraft = async () => {
       group: template.value.group,
       name: template.value.name,
       report: template.value.report,
+      report_data_source_id: template.value.report_data_source_id || null,
+      parameter_defaults: template.value.parameter_defaults || {},
       page_size: template.value.page_size || 'A4',
       page_orientation: template.value.page_orientation || 'portrait',
       margin_top: template.value.margin_top ?? 10,
@@ -1306,7 +1441,8 @@ const saveTemplateDraft = async () => {
       content_json: blocks.value,
       content_html: template.value.content_html,
       css: template.value.css || '',
-      note: 'Bản nháp tự động'
+      note: 'Bản nháp tự động',
+      save_mode: 'draft'
     })
   } catch (err) {
     console.error('Lỗi lưu nháp:', err)
@@ -1323,6 +1459,8 @@ const saveTemplateWithVersion = async () => {
       group: template.value.group,
       name: template.value.name,
       report: template.value.report,
+      report_data_source_id: template.value.report_data_source_id || null,
+      parameter_defaults: template.value.parameter_defaults || {},
       page_size: template.value.page_size || 'A4',
       page_orientation: template.value.page_orientation || 'portrait',
       margin_top: template.value.margin_top ?? 10,
@@ -1332,7 +1470,8 @@ const saveTemplateWithVersion = async () => {
       content_json: blocks.value,
       content_html: template.value.content_html,
       css: template.value.css || '',
-      note: note.value || 'Cập nhật mẫu biểu thiết kế trực quan'
+      note: note.value || 'Cập nhật mẫu biểu thiết kế trực quan',
+      save_mode: 'version'
     })
     
     if (res.data && res.data.success) {
@@ -1390,6 +1529,7 @@ const rollbackToVersion = async (versionId) => {
 watch(() => props.isOpen, (newVal) => {
   if (newVal && props.templateId) {
     activeTab.value = 'design'
+    loadDataSources()
     loadTemplate()
     loadVersions()
   }
@@ -1531,6 +1671,30 @@ const selectBand = (band) => {
         <template v-if="activeTab === 'design'">
           <!-- Column 1: Field List (Left Panel) -->
           <div class="w-1/4 bg-slate-50 border-r border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
+
+            <!-- DYNAMIC MYSQL STORED PROCEDURE DATA SOURCE -->
+            <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-emerald-200 shadow-3xs">
+              <span class="text-[10px] font-black text-emerald-700 uppercase tracking-widest pb-1 border-b border-emerald-100 block">Nguồn dữ liệu Store</span>
+              <select v-model="template.report_data_source_id" @change="onDataSourceChange"
+                class="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-bold text-slate-700 focus:outline-emerald-500">
+                <option :value="null">Dữ liệu mặc định / mock</option>
+                <option v-for="source in dataSources" :key="source.id" :value="source.id">
+                  {{ source.name }} ({{ source.object_name }})
+                </option>
+              </select>
+              <div v-if="selectedDataSource" class="space-y-2">
+                <p class="text-[10px] text-slate-400">Tham số preview</p>
+                <label v-for="parameter in selectedDataSource.parameter_schema || []" :key="parameter.name" class="block text-[10px] font-bold text-slate-500">
+                  {{ parameter.name }}
+                  <input v-model="template.parameter_defaults[parameter.name]"
+                    :type="parameter.data_type === 'date' ? 'date' : 'text'"
+                    class="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs font-medium" />
+                </label>
+                <p class="rounded-md bg-emerald-50 px-2 py-1.5 text-[9px] font-semibold text-emerald-700">
+                  {{ (selectedDataSource.field_schema || []).length }} field đã đồng bộ
+                </p>
+              </div>
+            </div>
             
             <!-- TOOLBOX -->
             <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-slate-200 shadow-3xs">
@@ -1594,13 +1758,14 @@ const selectBand = (band) => {
               <div v-for="(fields, key) in fieldList" :key="key" class="border border-slate-200 rounded-lg bg-white overflow-hidden shadow-3xs">
                 <button @click="openCategories[key] = !openCategories[key]" class="w-full flex justify-between items-center px-3 py-2 bg-slate-50/75 border-none font-bold text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
                   <span class="flex items-center gap-1.5 capitalize">
-                    📁 {{ key === 'hotel' ? 'Khách Sạn' : key === 'customer' ? 'Khách Hàng' : key === 'booking' ? 'Đặt Phòng' : key === 'room' ? 'Hạng & Số Phòng' : key === 'payment' ? 'Thanh Toán' : key === 'registration' ? 'Phiếu Đăng Ký' : 'Bảng Dữ Liệu Lặp' }}
+                    📁 {{ key === 'hotel' ? 'Khách Sạn' : key === 'customer' ? 'Khách Hàng' : key === 'booking' ? 'Đặt Phòng' : key === 'room' ? 'Hạng & Số Phòng' : key === 'payment' ? 'Thanh Toán' : key === 'registration' ? 'Phiếu Đăng Ký' : key === 'parameters' ? 'Tham Số Store' : key === 'summary' ? 'Tổng Hợp' : 'Bảng Dữ Liệu Lặp' }}
                   </span>
                   <ChevronRight class="w-3.5 h-3.5 transition-transform" :class="openCategories[key] ? 'rotate-90' : ''" />
                 </button>
                 
                 <div v-if="openCategories[key]" class="p-1 border-t border-slate-100 flex flex-col gap-0.5 bg-white">
-                  <button v-for="field in fields" :key="field.value" @click="insertVariable(field.value)"
+                  <button v-for="field in fields" :key="field.value" draggable="true"
+                    @dragstart="onFieldDragStart($event, field)" @click="insertVariable(field.value)"
                     class="w-full text-left px-2.5 py-1.5 rounded-md hover:bg-sky-50 text-slate-600 hover:text-sky-700 text-xs font-semibold border-none bg-transparent flex justify-between items-center cursor-pointer transition-colors group">
                     <span>{{ field.label }}</span>
                     <span class="text-[9px] font-mono text-slate-400 group-hover:text-sky-500 font-bold">[{{ field.value }}]</span>
@@ -1650,7 +1815,8 @@ const selectBand = (band) => {
                   selectedBand === 'header' ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200',
                   blocks.header.length === 0 ? 'min-h-[100px] flex items-center justify-center' : ''
                 ]"
-                @click="selectedBand = 'header'">
+                @click="selectedBand = 'header'" @dragover.prevent
+                @drop="onBlockDrop($event, 'header', blocks.header.length)">
                 
                 <!-- Band Title -->
                 <span class="absolute top-0 right-2 -translate-y-1/2 bg-amber-100 text-amber-800 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full select-none">
@@ -1663,7 +1829,9 @@ const selectBand = (band) => {
                 
                 <!-- Blocks inside Header -->
                 <div v-else class="flex flex-col gap-2">
-                  <div v-for="(b, idx) in blocks.header" :key="b.id"
+                  <div v-for="(b, idx) in blocks.header" :key="b.id" draggable="true"
+                    @dragstart="onBlockDragStart($event, 'header', idx)" @dragend="onBlockDragEnd"
+                    @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'header', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'header'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
                     :class="selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white'">
@@ -1928,7 +2096,8 @@ const selectBand = (band) => {
                   selectedBand === 'detail' ? 'border-sky-400 bg-sky-50/20' : 'border-slate-200',
                   blocks.detail.length === 0 ? 'min-h-[100px] flex items-center justify-center' : ''
                 ]"
-                @click="selectedBand = 'detail'">
+                @click="selectedBand = 'detail'" @dragover.prevent
+                @drop="onBlockDrop($event, 'detail', blocks.detail.length)">
                 
                 <!-- Band Title -->
                 <span class="absolute top-0 right-2 -translate-y-1/2 bg-sky-100 text-sky-800 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full select-none">
@@ -1941,7 +2110,9 @@ const selectBand = (band) => {
                 
                 <!-- Blocks inside Detail -->
                 <div v-else class="flex flex-col gap-2">
-                  <div v-for="(b, idx) in blocks.detail" :key="b.id"
+                  <div v-for="(b, idx) in blocks.detail" :key="b.id" draggable="true"
+                    @dragstart="onBlockDragStart($event, 'detail', idx)" @dragend="onBlockDragEnd"
+                    @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'detail', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'detail'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
                     :class="selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white'">
@@ -2206,7 +2377,8 @@ const selectBand = (band) => {
                   selectedBand === 'footer' ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-200',
                   blocks.footer.length === 0 ? 'min-h-[100px] flex items-center justify-center' : ''
                 ]"
-                @click="selectedBand = 'footer'">
+                @click="selectedBand = 'footer'" @dragover.prevent
+                @drop="onBlockDrop($event, 'footer', blocks.footer.length)">
                 
                 <!-- Band Title -->
                 <span class="absolute top-0 right-2 -translate-y-1/2 bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full select-none">
@@ -2219,7 +2391,9 @@ const selectBand = (band) => {
                 
                 <!-- Blocks inside Footer -->
                 <div v-else class="flex flex-col gap-2">
-                  <div v-for="(b, idx) in blocks.footer" :key="b.id"
+                  <div v-for="(b, idx) in blocks.footer" :key="b.id" draggable="true"
+                    @dragstart="onBlockDragStart($event, 'footer', idx)" @dragend="onBlockDragEnd"
+                    @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'footer', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'footer'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
                     :class="selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white'">

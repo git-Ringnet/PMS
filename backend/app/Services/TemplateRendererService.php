@@ -8,35 +8,156 @@ class TemplateRendererService
 {
     /**
      * Render the template by replacing placeholders in HTML and injecting CSS.
-     *
-     * @param string $html
-     * @param string $css
-     * @param array $data
-     * @param array $options
-     * @return string
      */
     public function render(string $html, ?string $css, array $data, array $options = []): string
     {
         // 1. Flatten the structured data array to key-value pairs (e.g., customer.name => 'John')
         $flatData = $this->flattenData($data);
 
-        // 2. Handle detail rows in bands (dynamic table repeating)
+        // 2. Handle grouped report bodies, then ordinary detail rows.
+        $html = $this->renderGroupedRows($html, $data);
+
+        // 3. Handle detail rows in bands (dynamic table repeating)
         // Find tags with class="pms-detail-row" and data-source="..."
         $html = $this->renderDetailRows($html, $data);
 
-        // 3. Replace single placeholders {{category.field}}
+        // 4. Replace single placeholders {{category.field}}
         foreach ($flatData as $key => $value) {
-            $html = str_replace('{{' . $key . '}}', (string)$value, $html);
+            $html = str_replace('{{'.$key.'}}', (string) $value, $html);
         }
 
         // Clean up any remaining unresolved placeholders
         $html = preg_replace('/\{\{[a-zA-Z0-9_\.]+\}\}/', '', $html);
 
-        // 4. Inject CSS styles
+        // 5. Inject CSS styles
         $compiledCss = $css ?? '';
-        
+
         // Return completed HTML document
         return $this->buildFullHtmlDocument($html, $compiledCss, $options);
+    }
+
+    /**
+     * Render a reusable two-level grouped table body.
+     *
+     * Supported row templates inside tbody.pms-grouped-rows:
+     * pms-group-header, pms-subgroup-header, pms-detail-row and pms-group-footer.
+     */
+    private function renderGroupedRows(string $html, array $data): string
+    {
+        $pattern = '/<tbody\b([^>]*class="[^"]*\bpms-grouped-rows\b[^"]*"[^>]*)>(.*?)<\/tbody>/is';
+
+        return preg_replace_callback($pattern, function ($matches) use ($data) {
+            $attributes = $matches[1];
+            $body = $matches[2];
+            $source = $this->attributeValue($attributes, 'data-source') ?? 'rows';
+            $groupBy = $this->attributeValue($attributes, 'data-group-by');
+            $subgroupBy = $this->attributeValue($attributes, 'data-subgroup-by');
+            $subsubgroupBy = $this->attributeValue($attributes, 'data-subsubgroup-by');
+            $items = $this->getValueByPath($data, $source);
+
+            if (! is_array($items) || $items === [] || ! $groupBy) {
+                return '<tbody></tbody>';
+            }
+
+            $groupHeader = $this->groupedRowTemplate($body, 'pms-group-header');
+            $subgroupHeader = $this->groupedRowTemplate($body, 'pms-subgroup-header');
+            $subsubgroupHeader = $this->groupedRowTemplate($body, 'pms-subsubgroup-header');
+            $subsubgroupNote = $this->groupedRowTemplate($body, 'pms-subsubgroup-note');
+            $detail = $this->groupedRowTemplate($body, 'pms-detail-row');
+            $subsubgroupFooter = $this->groupedRowTemplate($body, 'pms-subsubgroup-footer');
+            $subgroupFooter = $this->groupedRowTemplate($body, 'pms-subgroup-footer');
+            $groupFooter = $this->groupedRowTemplate($body, 'pms-group-footer');
+            $output = '';
+
+            foreach ($this->groupItems($items, $groupBy) as $groupRows) {
+                $first = $groupRows[0] ?? [];
+                $output .= $this->renderGroupedTemplate($groupHeader, $first, $groupRows);
+
+                $subgroups = $subgroupBy ? $this->groupItems($groupRows, $subgroupBy) : [$groupRows];
+                foreach ($subgroups as $subgroupRows) {
+                    $subgroupFirst = $subgroupRows[0] ?? [];
+                    $output .= $this->renderGroupedTemplate($subgroupHeader, $subgroupFirst, $subgroupRows);
+
+                    if ($subsubgroupBy) {
+                        $subsubgroups = $this->groupItems($subgroupRows, $subsubgroupBy);
+                        foreach ($subsubgroups as $subsubgroupRows) {
+                            $subsubgroupFirst = $subsubgroupRows[0] ?? [];
+                            $output .= $this->renderGroupedTemplate($subsubgroupHeader, $subsubgroupFirst, $subsubgroupRows);
+                            $output .= $this->renderGroupedTemplate($subsubgroupNote, $subsubgroupFirst, $subsubgroupRows);
+                            foreach ($subsubgroupRows as $row) {
+                                $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                            }
+                            $output .= $this->renderGroupedTemplate($subsubgroupFooter, $subsubgroupFirst, $subsubgroupRows);
+                        }
+                    } else {
+                        foreach ($subgroupRows as $row) {
+                            $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                        }
+                    }
+
+                    $output .= $this->renderGroupedTemplate($subgroupFooter, $subgroupFirst, $subgroupRows);
+                }
+
+                $output .= $this->renderGroupedTemplate($groupFooter, $first, $groupRows);
+            }
+
+            return '<tbody>'.$output.'</tbody>';
+        }, $html);
+    }
+
+    private function attributeValue(string $attributes, string $name): ?string
+    {
+        return preg_match('/\b'.preg_quote($name, '/').'="([^"]*)"/i', $attributes, $matches)
+            ? $matches[1]
+            : null;
+    }
+
+    private function groupedRowTemplate(string $body, string $class): ?string
+    {
+        $pattern = '/<tr\b[^>]*class="[^"]*\b'.preg_quote($class, '/').'\b[^"]*"[^>]*>(.*?)<\/tr>/is';
+
+        return preg_match($pattern, $body, $matches) ? $matches[1] : null;
+    }
+
+    private function groupItems(array $items, string $field): array
+    {
+        $groups = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $key = (string) ($item[$field] ?? '__null__');
+            $groups[$key][] = $item;
+        }
+
+        return array_values($groups);
+    }
+
+    private function renderGroupedTemplate(?string $template, array $row, array $groupRows): string
+    {
+        if ($template === null) {
+            return '';
+        }
+
+        $rendered = preg_replace_callback('/\{\{row\.([A-Za-z0-9_]+)(?:\|([^}]+))?\}\}/', function ($matches) use ($row) {
+            $value = $row[$matches[1]] ?? null;
+            $modifier = $matches[2] ?? null;
+            if ($modifier === 'number') {
+                return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+            }
+
+            return ($value === null || $value === '') ? (string) ($modifier ?? '') : (string) $value;
+        }, $template);
+
+        $rendered = str_replace('{{group.count}}', (string) count($groupRows), $rendered);
+        $rendered = preg_replace_callback('/\{\{group\.distinct\.([A-Za-z0-9_]+)\}\}/', function ($matches) use ($groupRows) {
+            return (string) collect($groupRows)->pluck($matches[1])->filter(fn ($value) => $value !== null && $value !== '')->unique()->count();
+        }, $rendered);
+        $rendered = preg_replace_callback('/\{\{group\.sum\.([A-Za-z0-9_]+)\}\}/', function ($matches) use ($groupRows) {
+            return (string) collect($groupRows)->sum(fn ($row) => is_numeric($row[$matches[1]] ?? null) ? (float) $row[$matches[1]] : 0);
+        }, $rendered);
+
+        return '<tr>'.$rendered."</tr>\n";
     }
 
     /**
@@ -51,11 +172,12 @@ class TemplateRendererService
                 if (array_keys($value) === range(0, count($value) - 1)) {
                     continue;
                 }
-                $result = array_merge($result, $this->flattenData($value, $prefix . $key . '.'));
+                $result = array_merge($result, $this->flattenData($value, $prefix.$key.'.'));
             } else {
-                $result[$prefix . $key] = $value;
+                $result[$prefix.$key] = $value;
             }
         }
+
         return $result;
     }
 
@@ -72,16 +194,16 @@ class TemplateRendererService
         return preg_replace_callback($pattern, function ($matches) use ($data) {
             $dataSourcePath = $matches[1]; // e.g., 'booking.services' or 'booking.rooms'
             $rowTemplate = $matches[2];     // The HTML content of the row
-            
+
             // Extract items from data path
             $items = $this->getValueByPath($data, $dataSourcePath);
 
-            if (empty($items) || !is_array($items)) {
+            if (empty($items) || ! is_array($items)) {
                 return ''; // No items to render
             }
 
             $renderedRows = '';
-            
+
             // Determine variable prefix from data source path (e.g. booking.services -> 'service')
             $parts = explode('.', $dataSourcePath);
             $itemPrefix = end($parts);
@@ -92,6 +214,8 @@ class TemplateRendererService
                 $itemPrefix = 'room';
             } elseif ($itemPrefix === 'payments') {
                 $itemPrefix = 'payment';
+            } elseif ($itemPrefix === 'rows') {
+                $itemPrefix = 'row';
             } else {
                 $itemPrefix = 'item';
             }
@@ -101,11 +225,11 @@ class TemplateRendererService
                 // Replace placeholders for this item: e.g. {{service.name}}
                 foreach ($item as $key => $value) {
                     // Match both {{item.key}} and specific prefix like {{service.key}}
-                    $currentRow = str_replace('{{' . $itemPrefix . '.' . $key . '}}', (string)$value, $currentRow);
-                    $currentRow = str_replace('{{item.' . $key . '}}', (string)$value, $currentRow);
+                    $currentRow = str_replace('{{'.$itemPrefix.'.'.$key.'}}', (string) $value, $currentRow);
+                    $currentRow = str_replace('{{item.'.$key.'}}', (string) $value, $currentRow);
                 }
                 // Wrap back in a table row tag, but remove class/data-source to make it standard
-                $renderedRows .= "<tr>" . $currentRow . "</tr>\n";
+                $renderedRows .= '<tr>'.$currentRow."</tr>\n";
             }
 
             return $renderedRows;
@@ -125,6 +249,7 @@ class TemplateRendererService
                 return null;
             }
         }
+
         return $array;
     }
 
@@ -134,14 +259,14 @@ class TemplateRendererService
     public function getMockData(string $group, ?string $templateName = null): array
     {
         $hotelSetting = HotelSetting::first();
-        
+
         $hotelMock = [
             'name' => $hotelSetting ? $hotelSetting->hotel_name : 'GALLIOT HOTEL NHA TRANG',
             'address' => $hotelSetting ? ($hotelSetting->address ?? '61A Nguyen Thien Thuat, Loc Tho, Nha Trang') : '61A Nguyen Thien Thuat, Loc Tho, Nha Trang',
             'phone' => $hotelSetting ? ($hotelSetting->phone ?? '+84 258 3528 555') : '+84 258 3528 555',
             'email' => $hotelSetting ? ($hotelSetting->email ?? 'info@galliothotel.com') : 'info@galliothotel.com',
-            'logo' => $hotelSetting && $hotelSetting->logo_url 
-                ? '<img src="' . $hotelSetting->logo_url . '" style="height: 60px;" alt="Logo">' 
+            'logo' => $hotelSetting && $hotelSetting->logo_url
+                ? '<img src="'.$hotelSetting->logo_url.'" style="height: 60px;" alt="Logo">'
                 : '<div style="font-weight: bold; font-size: 24px; color: #0284c7;">GALLIOT HOTEL</div>',
         ];
 
@@ -317,7 +442,7 @@ class TemplateRendererService
             ];
         }
 
-        if ($group === 'Invoice' && !$isNavy) {
+        if ($group === 'Invoice' && ! $isNavy) {
             // Galliot Invoice Mock Data
             $customerMock = [
                 'name' => 'PEGAS/9703607',
@@ -356,7 +481,7 @@ class TemplateRendererService
                 ],
                 'payments' => [
                     ['date' => '23/08/2025', 'time' => '14:36', 'ref' => 'Thu 17/07/25', 'method' => 'BT (thu hồi công nợ)', 'amount' => '6,960,000'],
-                ]
+                ],
             ];
 
             $roomMock = [
@@ -400,7 +525,7 @@ class TemplateRendererService
                 ],
                 'payments' => [
                     ['date' => '26/03/2026', 'time' => '09:18', 'method' => 'Deposit (Bank transfer)', 'ref' => 'BT', 'amount' => '2,280,000'],
-                ]
+                ],
             ];
 
             $roomMock = [
@@ -482,10 +607,10 @@ class TemplateRendererService
         body {
             font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
-            padding-top: ' . $marginTop . 'mm;
-            padding-bottom: ' . $marginBottom . 'mm;
-            padding-left: ' . $marginLeft . 'mm;
-            padding-right: ' . $marginRight . 'mm;
+            padding-top: '.$marginTop.'mm;
+            padding-bottom: '.$marginBottom.'mm;
+            padding-left: '.$marginLeft.'mm;
+            padding-right: '.$marginRight.'mm;
             box-sizing: border-box;
             color: #1e293b;
             font-size: 13px;
@@ -520,8 +645,8 @@ class TemplateRendererService
                 padding: 0 !important;
             }
             @page {
-                size: ' . $pageSize . ' ' . $pageOrientation . ';
-                margin: ' . $marginTop . 'mm ' . $marginRight . 'mm ' . $marginBottom . 'mm ' . $marginLeft . 'mm;
+                size: '.$pageSize.' '.$pageOrientation.';
+                margin: '.$marginTop.'mm '.$marginRight.'mm '.$marginBottom.'mm '.$marginLeft.'mm;
             }
             .no-print {
                 display: none !important;
@@ -532,11 +657,11 @@ class TemplateRendererService
         }
         
         /* Dynamic User Injected CSS */
-        ' . $css . '
+        '.$css.'
     </style>
 </head>
 <body>
-    ' . $bodyHtml . '
+    '.$bodyHtml.'
 </body>
 </html>';
     }

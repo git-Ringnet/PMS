@@ -11,6 +11,8 @@ class TemplateVersion extends Model
 
     protected $fillable = [
         'template_id',
+        'report_data_source_id',
+        'parameter_defaults',
         'version',
         'content_json',
         'content_html',
@@ -21,6 +23,7 @@ class TemplateVersion extends Model
 
     protected $casts = [
         'content_json' => 'array',
+        'parameter_defaults' => 'array',
     ];
 
     public function template()
