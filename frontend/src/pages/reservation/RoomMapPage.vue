@@ -3938,8 +3938,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
   transform: translate(-50%, 4px) scale(0.97) !important;
 }
 .room-card-selected {
-  background-color: #e5e7eb !important;
-  box-shadow: inset 0 0 0 2px #9ca3af, 0 2px 8px rgba(71, 85, 105, 0.18);
+  /* Keep the operational room colour visible; selection is a light tint + border only. */
+  box-shadow: inset 0 0 0 2px #64748b, inset 0 0 0 999px rgba(71, 85, 105, 0.13), 0 2px 8px rgba(71, 85, 105, 0.18);
 }
 
 .room-row-selected,
