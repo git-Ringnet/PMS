@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\BookerResource;
 use App\Models\Booker;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class BookerController extends Controller
@@ -91,6 +92,12 @@ class BookerController extends Controller
         $booker = Booker::find($id);
         if (!$booker) {
             return response()->json(['message' => 'Booker not found'], 404);
+        }
+
+        $companyCount = DB::table('companies')->where('booker_id', $booker->id)->count();
+        $bookingCount = DB::table('bookings')->where('booker_id', $booker->id)->count();
+        if ($companyCount || $bookingCount) {
+            return response()->json(['message' => "Không thể xóa người đặt phòng '{$booker->name}' vì đang được sử dụng trong {$companyCount} công ty và {$bookingCount} booking. Vui lòng gỡ liên kết trước."], 422);
         }
 
         $booker->delete();

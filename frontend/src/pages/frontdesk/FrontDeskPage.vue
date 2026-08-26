@@ -6,7 +6,7 @@ import DayClosePage from './DayClosePage.vue'
 import RoomMapPage from '@/pages/reservation/RoomMapPage.vue'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import ReportsPage from '@/pages/reports/ReportsPage.vue'
-
+import SplitOldServicesModal from './components/SplitOldServicesModal.vue'
 const route = useRoute()
 const currentTab = computed(() => route.query.tab || 'room-map')
 </script>
@@ -17,5 +17,6 @@ const currentTab = computed(() => route.query.tab || 'room-map')
   <ActivityLogTab v-else-if="currentTab === 'history'" />
   <ReportsPage v-else-if="currentTab === 'reports'" />
   <RoomMapPage v-else />
+  <SplitOldServicesModal v-if="currentTab === 'split-old-services'" @close="$router.replace({ path: '/frontdesk', query: { tab: 'room-map' } })" />
 </template>
 

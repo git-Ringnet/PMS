@@ -138,7 +138,7 @@ const handleDelete = async (item) => {
     loadData()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa nguồn khách này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa nguồn khách này', 'error')
   }
 }
 </script>

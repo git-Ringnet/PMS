@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CustomerSourceResource;
 use App\Models\CustomerSource;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class CustomerSourceController extends Controller
@@ -85,6 +86,12 @@ class CustomerSourceController extends Controller
         $source = CustomerSource::find($id);
         if (!$source) {
             return response()->json(['message' => 'Customer source not found'], 404);
+        }
+
+        $companyCount = DB::table('companies')->where('customer_source_id', $source->id)->count();
+        $bookingCount = DB::table('bookings')->where('customer_source_id', $source->id)->count();
+        if ($companyCount || $bookingCount) {
+            return response()->json(['message' => "Không thể xóa nguồn khách '{$source->name}' vì đang được sử dụng trong {$companyCount} công ty và {$bookingCount} booking. Vui lòng gỡ liên kết trước."], 422);
         }
 
         $source->delete();
