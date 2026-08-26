@@ -7,6 +7,7 @@ use App\Http\Resources\CompanyResource;
 use App\Models\Company;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 
 class CompanyController extends Controller
 {
@@ -151,6 +152,19 @@ class CompanyController extends Controller
         $company = Company::find($id);
         if (!$company) {
             return response()->json(['message' => 'Company not found'], 404);
+        }
+
+        $references = [
+            'booking' => DB::table('bookings')->where('company_id', $company->id)->count(),
+            'thanh toán' => DB::table('payments')->where('company_id', $company->id)->count(),
+            'khuyến mãi F&B' => DB::table('fb_promotions')->where('company_id', $company->id)->count(),
+            'hóa đơn dịch vụ' => DB::table('service_bills')->where(function ($q) use ($company) {
+                $q->where('CompanyId1', $company->id)->orWhere('CompanyId2', $company->id);
+            })->count(),
+        ];
+        $usedIn = collect($references)->filter()->map(fn ($count, $name) => "{$count} {$name}")->implode(', ');
+        if ($usedIn !== '') {
+            return response()->json(['message' => "Không thể xóa công ty '{$company->name}' vì đang được sử dụng trong {$usedIn}. Vui lòng gỡ liên kết trước."], 422);
         }
 
         $company->delete();

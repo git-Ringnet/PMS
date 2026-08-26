@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\BranchResource;
 use App\Models\Branch;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class BranchController extends Controller
@@ -83,6 +84,12 @@ class BranchController extends Controller
         $branch = Branch::find($id);
         if (!$branch) {
             return response()->json(['message' => 'Branch not found'], 404);
+        }
+
+        $companyCount = DB::table('companies')->where('branch_id', $branch->id)->count();
+        $bookingCount = DB::table('bookings')->where('branch_id', $branch->id)->count();
+        if ($companyCount || $bookingCount) {
+            return response()->json(['message' => "Không thể xóa chi nhánh '{$branch->name}' vì đang được sử dụng trong {$companyCount} công ty và {$bookingCount} booking. Vui lòng gỡ liên kết trước."], 422);
         }
 
         $branch->delete();

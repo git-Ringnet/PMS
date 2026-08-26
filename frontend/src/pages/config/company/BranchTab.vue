@@ -134,7 +134,7 @@ const handleDelete = async (item) => {
     loadData()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa chi nhánh này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa chi nhánh này', 'error')
   }
 }
 </script>

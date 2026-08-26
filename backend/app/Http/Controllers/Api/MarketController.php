@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MarketResource;
 use App\Models\Market;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class MarketController extends Controller
@@ -85,6 +86,12 @@ class MarketController extends Controller
         $market = Market::find($id);
         if (!$market) {
             return response()->json(['message' => 'Market not found'], 404);
+        }
+
+        $companyCount = DB::table('companies')->where('market_id', $market->id)->count();
+        $bookingCount = DB::table('bookings')->where('market_id', $market->id)->count();
+        if ($companyCount || $bookingCount) {
+            return response()->json(['message' => "Không thể xóa thị trường '{$market->name}' vì đang được sử dụng trong {$companyCount} công ty và {$bookingCount} booking. Vui lòng gỡ liên kết trước."], 422);
         }
 
         $market->delete();
