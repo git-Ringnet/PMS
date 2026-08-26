@@ -5,6 +5,7 @@ import { CalendarDays, CheckCircle2 } from '@lucide/vue'
 const props = defineProps({
   startDate: { type: String, default: '' },
   endDate: { type: String, default: '' },
+  systemDate: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:startDate', 'update:endDate', 'change'])
@@ -16,6 +17,7 @@ const draftStart = ref('')
 const draftEnd = ref('')
 
 const localToday = () => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(props.systemDate)) return props.systemDate
   const date = new Date()
   const offset = date.getTimezoneOffset() * 60000
   return new Date(date.getTime() - offset).toISOString().slice(0, 10)
@@ -94,7 +96,7 @@ const onDocumentClick = (event) => {
   if (root.value && !root.value.contains(event.target)) open.value = false
 }
 
-watch(() => [props.startDate, props.endDate], syncDraft, { immediate: true })
+watch(() => [props.startDate, props.endDate, props.systemDate], syncDraft, { immediate: true })
 onMounted(() => document.addEventListener('click', onDocumentClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>

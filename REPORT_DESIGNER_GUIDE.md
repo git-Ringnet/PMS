@@ -841,7 +841,7 @@ Cấu trúc một phần tử trong `parameter_ui_schema`:
 
 `parameter_schema` của Data Source mô tả **Store nhận gì**; `parameter_ui_schema` của Report Definition mô tả **người dùng nhập giá trị đó bằng giao diện nào**. Khi Store thêm tham số, cần đồng bộ Data Source rồi mở Danh mục báo cáo để cấu hình phần giao diện cho tham số mới.
 
-`date-range` là một control giao diện gộp hai parameter Store. Ví dụ `p_from_date` dùng `control: "date-range"` và `range_end_parameter: "p_to_date"`; `p_to_date` dùng `control: "hidden"`. Viewer hiển thị một ô **Chọn ngày**, cho chọn preset như Hôm nay/Tuần này/Tháng này hoặc khoảng tùy chỉnh, rồi gửi cả hai giá trị vào Store khi bấm **Hiển thị báo cáo**.
+`date-range` là một control giao diện gộp hai parameter Store. Ví dụ `p_from_date` dùng `control: "date-range"` và `range_end_parameter: "p_to_date"`; `p_to_date` dùng `control: "hidden"`. Viewer hiển thị một ô **Chọn ngày**, cho chọn preset như Hôm nay/Tuần này/Tháng này hoặc khoảng tùy chỉnh, rồi gửi cả hai giá trị vào Store khi bấm **Hiển thị báo cáo**. Preset **Hôm nay** lấy từ `GET /api/system-date` (ngày nghiệp vụ `system_date_rolls` của chi nhánh), không lấy theo đồng hồ máy người dùng.
 
 ### Nguồn của các option trong bộ lọc đầu vào
 
@@ -896,8 +896,8 @@ Ví dụ cấu hình đúng cho báo cáo phòng đến:
 | `p_area` | `select` | `areas`, không bắt buộc | Chuỗi area hoặc rỗng/null để lấy tất cả |
 | `p_company_id` | `select` | `companies`, không bắt buộc | ID công ty hoặc rỗng/null |
 | `p_booking_id` | `select` | `bookings`, không bắt buộc | ID đăng ký hoặc rỗng/null |
-| `p_show_main_guest` | `checkbox` | `true` | `1`/`true` hoặc `0`/`false` |
-| `p_show_room_rate` | `checkbox` | `true` | `1` trả giá phòng; `0` trả ô giá trống |
+| `p_show_main_guest` | `checkbox` | `true` | `1`/`true` hoặc `0`/`false`; executor chuẩn hóa boolean thành `1`/`0` trước khi gọi Store |
+| `p_show_room_rate` | `checkbox` | `true` | `1` trả giá phòng; `0` trả ô giá trống; executor chuẩn hóa boolean thành `1`/`0` |
 
 Khi cần thêm một option động mới, không sửa template và không thêm query vào Store. Cần thêm một lookup được whitelist trong `ReportLookupController`, thêm lựa chọn vào màn hình Danh mục báo cáo, sau đó cấu hình `options_source` cho parameter phù hợp. Nếu danh mục đó có nhiều dữ liệu, endpoint lookup phải có tìm kiếm/phân trang thay vì tải toàn bộ danh sách.
 

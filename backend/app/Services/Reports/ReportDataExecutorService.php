@@ -124,6 +124,9 @@ class ReportDataExecutorService
         if ($value === null || $value === '') {
             return $value === '' ? null : $value;
         }
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
         if ($value instanceof DateTimeInterface) {
             return $value->format('Y-m-d H:i:s');
         }

@@ -10,11 +10,27 @@ const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
 const loading = ref(false)
+const systemDate = ref('')
 const reports = ref([])
 const activeTabId = ref(null)
 const openTabs = ref([])
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
+
+const localToday = () => {
+  const date = new Date()
+  const offset = date.getTimezoneOffset() * 60000
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10)
+}
+
+const fetchSystemDate = async () => {
+  try {
+    const response = await http.get('/system-date')
+    systemDate.value = response.data?.data?.system_date || localToday()
+  } catch {
+    systemDate.value = localToday()
+  }
+}
 
 const loadParameterOptionsForTab = async (tab) => {
   const report = tab.report
@@ -57,14 +73,14 @@ const loadReports = async () => {
 }
 
 const resolveDefault = (value) => {
-  const today = new Date()
+  const baseDate = new Date(`${systemDate.value || localToday()}T00:00:00`)
   const localDate = (date) => {
     const offset = date.getTimezoneOffset() * 60000
     return new Date(date.getTime() - offset).toISOString().slice(0, 10)
   }
-  if (value === '$today') return localDate(today)
-  if (value === '$month_start') return localDate(new Date(today.getFullYear(), today.getMonth(), 1))
-  if (value === '$month_end') return localDate(new Date(today.getFullYear(), today.getMonth() + 1, 0))
+  if (value === '$today') return localDate(baseDate)
+  if (value === '$month_start') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1))
+  if (value === '$month_end') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0))
   return value ?? ''
 }
 
@@ -216,7 +232,10 @@ watch(() => route.query.report, code => {
   }
 })
 
-onMounted(loadReports)
+onMounted(async () => {
+  await fetchSystemDate()
+  await loadReports()
+})
 </script>
 
 <template>
@@ -286,6 +305,7 @@ onMounted(loadReports)
                 v-else-if="parameter.control === 'date-range'"
                 v-model:start-date="activeTab.parameters[parameter.name]"
                 v-model:end-date="activeTab.parameters[parameter.range_end_parameter]"
+                :system-date="systemDate"
               />
 
               <!-- Checkbox stylized as toggle switch -->

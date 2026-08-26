@@ -58,4 +58,14 @@ class ReportProcedureServicesTest extends TestCase
             ['p_total' => null]
         );
     }
+
+    public function test_executor_casts_checkbox_boolean_to_integer(): void
+    {
+        $catalog = Mockery::mock(ReportProcedureCatalogService::class);
+        $executor = new ReportDataExecutorService($catalog);
+        $castValue = new \ReflectionMethod($executor, 'castValue');
+
+        $this->assertSame(1, $castValue->invoke($executor, true, 'tinyint'));
+        $this->assertSame(0, $castValue->invoke($executor, false, 'tinyint'));
+    }
 }
