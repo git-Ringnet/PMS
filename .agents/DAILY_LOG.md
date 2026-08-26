@@ -288,9 +288,23 @@
     - Cập nhật [FrontDeskPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/FrontDeskPage.vue) hỗ trợ tab `history` (`/frontdesk?tab=history`).
     - Cập nhật [HousekeepingPage.vue](file:///d:/PMS/frontend/src/pages/housekeeping/HousekeepingPage.vue) liên kết tab `history` hiển thị dữ liệu log thời gian thực.
     - Bổ sung menu item **LỊCH SỬ THAO TÁC** vào menu Lễ tân trên [MainLayout.vue](file:///d:/PMS/frontend/src/layouts/MainLayout.vue).
-- **Trạng thái hiện tại**: Toàn bộ hệ thống ghi log và hiển thị lịch sử thao tác đã hoàn thành 100%, test cú pháp PHP và Vite build thành công không có lỗi.
-- **Kế hoạch tiếp theo**: Hỗ trợ người dùng kiểm tra trực tiếp và tiếp tục các tính năng tiếp theo.
+- **Trạng thái hiện tại**: Hoàn thiện toàn bộ luồng Kiểm kê tồn kho, Get Bill, kết chuyển tồn cuối và menu dropdown Giao phòng ở phân hệ Lễ tân.
 
+---
 
-
-
+## [2026-08-26] - Khắc phục lỗi giao diện & tích hợp hệ thống Báo cáo Đa Tab (Multi-Tab Report Viewer)
+### Module: Navigation / Reports Page
+- **Đã hoàn thành**:
+  - **Tích hợp Báo cáo trực tiếp vào Module (Frontdesk / Reservation)**:
+    - Cập nhật [`FrontDeskPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/FrontDeskPage.vue) và [`RoomMapPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/RoomMapPage.vue) để import và render [`ReportsPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reports/ReportsPage.vue) khi `currentTab === 'reports'`.
+    - Việc này giữ nguyên 100% thanh menu chính phía trên và thanh menu sub-navigation bên dưới của phân hệ Lễ tân/Đặt phòng khi người dùng xem báo cáo.
+  - **Đồng bộ hóa Route Điều hướng**:
+    - Thay đổi logic link trong dropdown báo cáo của [`MainLayout.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/layouts/MainLayout.vue) để trỏ đến `/${context}?tab=reports&report=${code}` thay vì redirect hẳn sang `/reports`.
+  - **Xây dựng hệ thống Báo cáo Đa Tab (Multi-Tab System) & Cải tiến Template Báo cáo phòng đến**:
+    - Nâng cấp [`ReportsPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reports/ReportsPage.vue) hỗ trợ mở nhiều tab báo cáo đồng thời, cho phép chuyển đổi qua lại linh hoạt hoặc đóng tab.
+    - Đồng bộ hóa tab đang mở với query param `report` trên URL.
+    - Thiết kế giao diện checkbox dạng toggle-switch màu xanh cyan chuẩn thiết kế mẫu.
+    - **Nâng cấp công cụ gom nhóm dữ liệu (Grouping Engine)**: Cập nhật [`TemplateRendererService.php`](file:///c:/xampp/htdocs/PMS/backend/app/Services/TemplateRendererService.php) hỗ trợ gom nhóm 3 cấp (Date -> Company -> Booking) qua các thuộc tính `data-group-by`, `data-subgroup-by` và `data-subsubgroup-by`, đồng thời bổ sung các row template `pms-subsubgroup-header` và `pms-subsubgroup-note`.
+    - **Cập nhật Stored Procedure & Template in**: Nâng cấp SP `rpt_arriving_rooms` để trả ra thêm cột `ArrivalDateGroup` phục vụ gom nhóm theo ngày. Đồng bộ và thiết kế lại template HTML/CSS của Báo cáo phòng đến chuẩn chỉnh theo đúng giao diện tham chiếu của khách hàng (hiển thị dòng Ngày màu đỏ đậm, bảng chia cột sắc nét, thông tin Ghi chú & Đăng ký hiển thị rõ ràng, mã Booking in màu xanh lá nổi bật, các dòng tổng cộng theo công ty căn lề chuẩn xác).
+- **Trạng thái hiện tại**: Hệ thống báo cáo đa tab và template Báo cáo phòng đến mới đã hoàn thành, tích hợp mượt mà vào luồng Lễ tân/Đặt phòng.
+- **Kế hoạch tiếp theo**: Hỗ trợ người dùng kiểm tra các lỗi hoặc tính năng tiếp theo.
