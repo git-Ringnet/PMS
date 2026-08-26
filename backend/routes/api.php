@@ -81,6 +81,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
         Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn']);
         Route::post('/no-show', [NightAuditController::class, 'noShowRoom']);
         Route::post('/extend-stay', [NightAuditController::class, 'extendStay']); // Bug B
+        Route::post('/split-old-services', [NightAuditController::class, 'splitOldServices']);
 
         Route::post('/run', [NightAuditController::class, 'runNightAudit']);
     });

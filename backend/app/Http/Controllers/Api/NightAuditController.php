@@ -42,6 +42,126 @@ class NightAuditController extends Controller
     }
 
     /**
+     * Tách lại tiền ăn sáng từ tiền phòng cho các đêm đã post.
+     * Chỉ cập nhật SP3001 của SP3000 chưa xuất VAT; tổng tiền bill không thay đổi.
+     */
+    public function splitOldServices(Request $request)
+    {
+        $data = $request->validate([
+            'from_date' => ['required', 'date'],
+            'to_date' => ['required', 'date', 'after_or_equal:from_date'],
+        ]);
+
+        $systemDate = $this->getSystemDate();
+        $fromDate = Carbon::parse($data['from_date'])->startOfDay();
+        $toDate = Carbon::parse($data['to_date'])->startOfDay();
+        if ($toDate->gt($systemDate)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày tách dịch vụ không được lớn hơn ngày hệ thống (' . $systemDate->format('d/m/Y') . ').',
+            ], 422);
+        }
+
+        $setting = HotelSetting::first();
+        $breakfastRate = (float) ($setting?->breakfast_adult_rate ?? 0);
+        $roomService = HotelService::where('code', 'RM')->first();
+        $breakfastService = HotelService::where('code', 'BF')->first();
+        $roomTaxProfile = HotelService::taxProfile($roomService);
+        $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
+        $result = ['updated' => 0, 'skipped_vat' => 0, 'skipped_invalid' => 0];
+
+        DB::transaction(function () use ($fromDate, $toDate, $breakfastRate, $roomTaxProfile, $breakfastTaxProfile, &$result) {
+            // Không phụ thuộc SP3004: các bill dữ liệu cũ có thể chỉ có SP3000/SP3001.
+            $bills = ServiceBill::query()
+                ->where('DepartmentId', 'FO')
+                ->where('ServiceId', 'RM')
+                ->whereDate('Date', '>=', $fromDate->toDateString())
+                ->whereDate('Date', '<=', $toDate->toDateString())
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($bills as $bill) {
+
+                $details = ServiceBillDetail::query()
+                    ->where('BillServiceId', $bill->Ma)
+                    ->lockForUpdate()
+                    ->get();
+                $isVatIssued = $bill->VatId !== null
+                    || $details->contains(fn ($detail) => $detail->VatId !== null || filled($detail->VatNumber));
+                if ($isVatIssued) {
+                    $result['skipped_vat']++;
+                    continue;
+                }
+
+                $room = BookingRoom::find($bill->RentalRoomId1);
+                $positiveRoomDetail = $details->first(fn ($detail) => $detail->ServiceId === 'RM' && (float) $detail->Amount >= 0);
+                if (!$room || !$positiveRoomDetail) {
+                    $result['skipped_invalid']++;
+                    continue;
+                }
+
+                $adults = max(1, (int) $room->adults);
+                $breakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
+                $breakfastDetail = $details->first(fn ($detail) => $detail->ServiceId === 'BF');
+                $discountRoomDetail = $details->first(fn ($detail) => $detail->ServiceId === 'RM' && (float) $detail->Amount < 0);
+                $nextDetailNo = ((int) $details->max('Ma')) + 1;
+                $roomNumber = $room->room_number ?: $room->id;
+
+                if ($breakfastAmount > 0) {
+                    $breakfastValues = [
+                        'DepartmentId' => 'FO', 'ServiceId' => 'BF',
+                        'DescriptionServive' => 'Tiền ăn sáng người lớn - Phòng ' . $roomNumber,
+                        // Giá là đơn giá mỗi khách; Amount mới là tổng tiền BF.
+                        'OriginalRate' => $breakfastRate, 'Quantity' => $adults,
+                        'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'],
+                        'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1,
+                        'DetailBillOriginalAmount' => $breakfastAmount,
+                    ];
+                    if ($breakfastDetail) {
+                        ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', $breakfastDetail->Ma)->update($breakfastValues);
+                    } else {
+                        ServiceBillDetail::create($breakfastValues + ['BillServiceId' => $bill->Ma, 'Ma' => $nextDetailNo++]);
+                    }
+
+                    $discountValues = [
+                        'DepartmentId' => 'FO', 'ServiceId' => 'RM',
+                        'DescriptionServive' => 'Trừ tiền ăn sáng người lớn - Phòng ' . $roomNumber,
+                        'OriginalRate' => -$breakfastAmount, 'Quantity' => 1,
+                        'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'],
+                        'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1,
+                        'DetailBillOriginalAmount' => -$breakfastAmount,
+                    ];
+                    if ($discountRoomDetail) {
+                        ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', $discountRoomDetail->Ma)->update($discountValues);
+                    } else {
+                        ServiceBillDetail::create($discountValues + ['BillServiceId' => $bill->Ma, 'Ma' => $nextDetailNo++]);
+                    }
+                } else {
+                    if ($breakfastDetail) ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', $breakfastDetail->Ma)->delete();
+                    if ($discountRoomDetail) ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', $discountRoomDetail->Ma)->delete();
+                }
+
+                RoomNightBill::where('bill_id', $bill->Ma)->update([
+                    'adult' => $adults,
+                    'child' => (int) $room->children_qty,
+                    'breakfast' => $breakfastAmount > 0 ? $adults : 0,
+                    'breakfast_amount' => $breakfastAmount,
+                    'room' => $room->room_number,
+                    'room_type_id' => $room->room_class_id,
+                    'rate' => (float) $positiveRoomDetail->Amount,
+                ]);
+                $result['updated']++;
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "Đã tách lại chi tiết dịch vụ cho {$result['updated']} bill.",
+            'data' => $result,
+        ]);
+    }
+
+    /**
      * Helper: Lấy ca làm việc hiện tại
      */
     private function getSystemShift()
@@ -597,10 +717,12 @@ class NightAuditController extends Controller
 
         // 2. Ăn sáng (chỉ tính nếu không phải noshow và (all_charged hoặc phòng có bao gồm ăn sáng))
         $breakfastAmount = 0;
+        $breakfastRate = 0;
+        $breakfastAdults = max(1, (int) $room->adults);
         $setting = HotelSetting::first();
         if (!$isNoshow && $room->breakfast) {
             $breakfastRate   = (float)($setting?->breakfast_adult_rate ?? 0);
-            $breakfastAmount = $breakfastRate * max(1, (int)$room->adults);
+            $breakfastAmount = $breakfastRate * $breakfastAdults;
         }
 
         $roomService = HotelService::where('code', 'RM')->first();
@@ -679,7 +801,9 @@ class NightAuditController extends Controller
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'BF',
                 'DescriptionServive'       => $breakfastDescription,
-                'OriginalRate'             => $breakfastAmount,
+                // SP3001: đơn giá 1 suất × số lượng khách = thành tiền.
+                'OriginalRate'             => $breakfastRate,
+                'Quantity'                 => $breakfastAdults,
                 'ServiceCharge'            => $breakfastTaxProfile['service_charge'],
                 'SpecialTax'               => $breakfastTaxProfile['special_tax'],
                 'Tax'                      => $breakfastTaxProfile['tax'],

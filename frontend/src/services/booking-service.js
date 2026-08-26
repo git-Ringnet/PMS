@@ -71,6 +71,7 @@ export const fetchRoomRateCodes = () => http.get('/room-rate-codes')
 export const fetchHotelSettings = () => http.get('/hotel-settings')
 export const fetchSystemTime = () => http.get('/system-time')
 export const fetchSystemDate = () => http.get('/system-date')
+export const splitOldServices = (data) => http.post('/night-audit/split-old-services', data)
 
 // ==================== USER SETTINGS ====================
 export const fetchUserSettings = () => http.get('/user-settings')
