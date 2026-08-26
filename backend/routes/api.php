@@ -338,6 +338,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // #12 — Xuất Excel (đặt TRƯỚC apiResource để không bị override)
     Route::get('bookings/init-dropdowns', [\App\Http\Controllers\Api\BookingController::class, 'initDropdowns']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
+    Route::get('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'index']);
+    Route::get('bookings/{booking}/notifications/active', [\App\Http\Controllers\Api\BookingNotificationController::class, 'active']);
+    Route::post('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'store'])->middleware('permission:fo.booking.edit');
+    Route::put('bookings/{booking}/notifications/{notification}', [\App\Http\Controllers\Api\BookingNotificationController::class, 'update'])->middleware('permission:fo.booking.edit');
+    Route::delete('bookings/{booking}/notifications/{notification}', [\App\Http\Controllers\Api\BookingNotificationController::class, 'destroy'])->middleware('permission:fo.booking.edit');
     Route::get('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'show']);
     Route::get('bookings', [\App\Http\Controllers\Api\BookingController::class, 'index']);
     // Các action ghi cần quyền

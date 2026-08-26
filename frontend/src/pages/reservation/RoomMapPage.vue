@@ -1209,6 +1209,21 @@ function triggerMenuItem(actionName) {
     return
   }
 
+  if (actionName === 'Thông báo') {
+    const room = contextMenu.value.room
+    if (!room?.booking_code) {
+      uiStore.showToast('Phòng này chưa có đăng ký để tạo thông báo.', 'warning')
+      closeContextMenu()
+      return
+    }
+    router.push({
+      path: '/frontdesk',
+      query: { tab: 'create-res', bookingCode: room.booking_code, notification: 'true' }
+    })
+    closeContextMenu()
+    return
+  }
+
   if (actionName === 'In phiếu ăn sáng') {
     const room = contextMenu.value.room
     const fromDate = room?.arrival_date || room?.booking_arrival_date || room?.booking?.arrival_date || room?.actual_arrival_date || room?.check_in || ''

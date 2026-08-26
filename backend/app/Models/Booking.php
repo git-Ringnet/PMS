@@ -208,4 +208,9 @@ class Booking extends Model
     {
         return $this->hasMany(ServiceBill::class, 'RegisterId1', 'id');
     }
+
+    public function notifications()
+    {
+        return $this->hasMany(BookingNotification::class);
+    }
 }
