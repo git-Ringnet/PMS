@@ -52,6 +52,11 @@ const moduleContext = computed(() => {
 const canChangeRoomStatus = ref(false)
 const canCancelCheckIn = ref(false)
 const systemDate = ref('')
+const showRoomLockModal = ref(false)
+const roomLockForm = ref({ room: null, lockType: 'OOO', startDate: '', endDate: '', reason: '' })
+const lockEndDateInput = ref(null)
+const roomLockModalPos = ref({ x: 0, y: 0 })
+let roomLockDragOffset = { x: 0, y: 0 }
 
 const createRegRef = ref(null)
 const showDetailModal = ref(false)
@@ -1205,7 +1210,41 @@ function triggerMenuItem(actionName) {
     return
   }
 
-  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In phiếu ăn sáng', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'Thông báo') {
+    const room = contextMenu.value.room
+    if (!room?.booking_code) {
+      uiStore.showToast('Phòng này chưa có đăng ký để tạo thông báo.', 'warning')
+      closeContextMenu()
+      return
+    }
+    router.push({
+      path: '/frontdesk',
+      query: { tab: 'create-res', bookingCode: room.booking_code, notification: 'true' }
+    })
+    closeContextMenu()
+    return
+  }
+
+  if (actionName === 'In phiếu ăn sáng') {
+    const room = contextMenu.value.room
+    const fromDate = room?.arrival_date || room?.booking_arrival_date || room?.booking?.arrival_date || room?.actual_arrival_date || room?.check_in || ''
+    const toDate = room?.departure_date || room?.booking_departure_date || room?.booking?.departure_date || room?.actual_departure_date || room?.check_out || ''
+    const printRoute = router.resolve({
+      path: '/frontdesk',
+      query: {
+        tab: 'print-breakfast',
+        roomNumber: room?.room_number || '',
+        data: room?.booking_room_id || room?.booking_code || room?.booking_id || '',
+        fromDate: String(fromDate).substring(0, 10),
+        toDate: String(toDate).substring(0, 10),
+      }
+    })
+    window.open(printRoute.href, '_blank', 'noopener,noreferrer')
+    closeContextMenu()
+    return
+  }
+
+  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In mẫu đăng ký'].includes(actionName)) {
     const room = contextMenu.value.room
     if (room && room.booking_code) {
       router.push({
@@ -1301,6 +1340,53 @@ async function unlockRoomMove(room) {
 
 // Change room status directly from context menu
 // roomStatusCode: giá trị từ ROOM_STATUS_CODES (vacant_ready, dirty, ooo, ...)
+function startRoomLockDrag(event) {
+  if (event.button !== 0) return
+  roomLockDragOffset = { x: event.clientX - roomLockModalPos.value.x, y: event.clientY - roomLockModalPos.value.y }
+  document.addEventListener('mousemove', onRoomLockDrag)
+  document.addEventListener('mouseup', stopRoomLockDrag, { once: true })
+}
+
+function onRoomLockDrag(event) {
+  roomLockModalPos.value = { x: event.clientX - roomLockDragOffset.x, y: event.clientY - roomLockDragOffset.y }
+}
+
+function stopRoomLockDrag() {
+  document.removeEventListener('mousemove', onRoomLockDrag)
+}
+
+function openLockEndDatePicker() {
+  const input = lockEndDateInput.value
+  if (!input) return
+  input.focus()
+  if (typeof input.showPicker === 'function') input.showPicker()
+}
+
+function openRoomLockModal(room, lockType) {
+  const startDate = String(rawDate.value || systemDate.value || new Date().toISOString()).substring(0, 10)
+  roomLockForm.value = { room, lockType, startDate, endDate: startDate, reason: '' }
+  showRoomLockModal.value = true
+}
+
+async function submitRoomLock(force = false) {
+  const form = roomLockForm.value
+  if (!form.room || !form.reason.trim()) { uiStore.showToast('Vui lòng nhập ghi chú khi khóa phòng.', 'error'); return }
+  if (!form.endDate || form.endDate < form.startDate) { uiStore.showToast('Ngày kết thúc không được nhỏ hơn ngày bắt đầu.', 'error'); return }
+  try {
+    await roomService.bulkLockRooms({ room_numbers: [form.room.room_number], start_date: `${form.startDate} 00:00:00`, end_date: `${form.endDate} 23:59:59`, lock_type: form.lockType, reason: form.reason.trim(), force, current_module: moduleContext.value })
+    showRoomLockModal.value = false
+    await roomStore.fetchRooms({ date: rawDate.value })
+    await roomStore.fetchStats(rawDate.value)
+    uiStore.showToast(`Đã khóa phòng ${form.room.room_number} thành công.`, 'success')
+  } catch (err) {
+    const resData = err.response?.data
+    if (resData?.require_confirm) {
+      const proceed = await uiStore.confirm({ title: 'Cảnh báo phòng âm', message: resData.message, confirmText: 'Tiếp tục', cancelText: 'Hủy' })
+      if (proceed) await submitRoomLock(true)
+    } else { uiStore.showToast(resData?.message || 'Không thể khóa phòng.', 'error') }
+  }
+}
+
 async function changeRoomStatus(room, roomStatusCode) {
   if (!canChangeRoomStatus.value) {
     uiStore.showToast('User không có quyền đổi trạng thái phòng tại module này.', 'warning')
@@ -1330,52 +1416,9 @@ async function changeRoomStatus(room, roomStatusCode) {
   closeContextMenu()
 
   if (roomStatusCode === 'ooo' || roomStatusCode === 'oos') {
-    const lockType = roomStatusCode === 'oos' ? 'OOS' : 'OOO'
-    const sysDateStr = rawDate.value ? String(rawDate.value).substring(0, 10) : new Date().toISOString().substring(0, 10)
-    const now = new Date()
-    const hh = String(now.getHours()).padStart(2, '0')
-    const mm = String(now.getMinutes()).padStart(2, '0')
-    const ss = String(now.getSeconds()).padStart(2, '0')
-    const nowTime = `${hh}:${mm}:${ss}`
-
-    const doLock = async (force = false) => {
-      const payload = {
-        room_numbers: [room.room_number],
-        start_date: `${sysDateStr} ${nowTime}`,
-        end_date: `${sysDateStr} 23:59:59`,
-        lock_type: lockType || 'OOO',
-        reason: 'Khóa phòng từ sơ đồ phòng',
-        force: force,
-        current_module: moduleContext.value,
-      }
-
-      try {
-        await roomService.bulkLockRooms(payload)
-        await roomStore.fetchRooms({ date: rawDate.value })
-        await roomStore.fetchStats(rawDate.value)
-        uiStore.showToast(t('roomMap.changeStatusSuccess', { room: room.room_number, status: statusLabel }), 'success')
-      } catch (err) {
-        const resData = err.response?.data
-        if (resData && resData.require_confirm) {
-          const proceed = await uiStore.confirm({
-            title: 'Cảnh báo phòng âm',
-            message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
-            confirmText: 'Tiếp tục',
-            cancelText: 'Hủy'
-          })
-          if (proceed) {
-            await doLock(true)
-          }
-        } else {
-          const errMsg = resData?.message || t('roomMap.changeStatusError')
-          uiStore.showToast(errMsg, 'error')
-        }
-      }
-    }
-
-    await doLock(false)
+    openRoomLockModal(room, roomStatusCode === 'oos' ? 'OOS' : 'OOO' )
     return
-  }
+    }
 
   const confirmed = await uiStore.confirm({
     title: t('roomMap.changeStatusTitle'),
@@ -3060,7 +3103,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </button>
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.OOS)"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
-                  <RoomIcon name="oos" class="w-4.5 h-4.5 text-[#38bdf8]" />
+                  <RoomIcon name="oos" class="w-4.5 h-4.5 text-[#4caf50]" />
                   <span>Phòng OOS</span>
                 </button>
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
@@ -3723,7 +3766,40 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
         v-model:deposits="depositBooking.deposits"
       />
     </Teleport>
-    <!-- Room Move Modal -->
+    <!-- Room Lock Modal -->
+    <Teleport to="body">
+      <div v-if="showRoomLockModal" class="fixed inset-0 z-[1000000] flex items-center justify-center bg-slate-900/40 p-4" @click.self="showRoomLockModal = false">
+        <div class="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" :style="{ transform: `translate(${roomLockModalPos.x}px, ${roomLockModalPos.y}px)` }">
+          <div class="flex cursor-move select-none items-center justify-between px-5 py-3 text-white" @mousedown="startRoomLockDrag" :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
+            <h3 class="text-sm font-black uppercase">Thêm khóa {{ roomLockForm.lockType }}</h3>
+            <button type="button" class="text-xl" @click="showRoomLockModal = false">×</button>
+          </div>
+          <div class="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
+            <div class="space-y-4">
+              <label class="block text-[11px] font-bold uppercase text-slate-500">Bắt đầu
+                <input v-model="roomLockForm.startDate" type="date" disabled class="mt-1 w-full cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500" />
+              </label>
+              <label class="block text-[11px] font-bold uppercase text-slate-500">Kết thúc *
+                <div class="relative mt-1">
+                  <input ref="lockEndDateInput" v-model="roomLockForm.endDate" type="date" :min="roomLockForm.startDate" @click="openLockEndDatePicker" class="w-full cursor-pointer rounded border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-700 appearance-auto [&::-webkit-calendar-picker-indicator]:opacity-0" />
+                  <svg @click="openLockEndDatePicker" class="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 cursor-pointer text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                </div>
+              </label>
+              <label class="block text-[11px] font-bold uppercase text-slate-500">Phòng
+                <input :value="roomLockForm.room?.room_number || ''" disabled class="mt-1 w-full cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500" />
+              </label>
+            </div>
+            <label class="block text-[11px] font-bold uppercase text-slate-500">Ghi chú *
+              <textarea v-model="roomLockForm.reason" rows="6" required placeholder="Nhập ghi chú hoặc lý do bảo trì..." class="mt-1 w-full resize-none rounded border px-3 py-2 text-sm"></textarea>
+            </label>
+          </div>
+          <div class="flex justify-end gap-2 border-t bg-slate-50 px-5 py-3">
+            <button type="button" class="rounded border px-4 py-2 text-sm" @click="showRoomLockModal = false">Hủy</button>
+            <button type="button" class="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white" @click="submitRoomLock()">Khóa phòng</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>    <!-- Room Move Modal -->
     <RoomMoveModal v-if="showRoomMoveModal" :show="showRoomMoveModal" :booking-id="roomMoveBookingId"
       :room-id="roomMoveBookingRoomId" @close="showRoomMoveModal = false" @success="handleRoomMoveSuccess" />
 
@@ -3868,8 +3944,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
   transform: translate(-50%, 4px) scale(0.97) !important;
 }
 .room-card-selected {
-  background-color: #e5e7eb !important;
-  box-shadow: inset 0 0 0 2px #9ca3af, 0 2px 8px rgba(71, 85, 105, 0.18);
+  /* Keep the operational room colour visible; selection is a light tint + border only. */
+  box-shadow: inset 0 0 0 2px #64748b, inset 0 0 0 999px rgba(71, 85, 105, 0.13), 0 2px 8px rgba(71, 85, 105, 0.18);
 }
 
 .room-row-selected,

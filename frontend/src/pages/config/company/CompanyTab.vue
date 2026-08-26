@@ -231,7 +231,7 @@ const handleDelete = async (item) => {
     loadData()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa công ty này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa công ty này', 'error')
   }
 }
 

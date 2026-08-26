@@ -140,7 +140,7 @@ const handleDelete = async (item) => {
     loadData()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa người đặt phòng này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa người đặt phòng này', 'error')
   }
 }
 </script>

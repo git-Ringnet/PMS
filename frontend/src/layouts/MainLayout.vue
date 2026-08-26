@@ -510,7 +510,14 @@ const menuItems = computed(() => {
           { name: t('menu.residenceDeclaration'), tab: 'residence-declaration' }
         ]
       },
-      { name: t('menu.dayClose'), route: '/frontdesk?tab=day-close' },
+      {
+        name: t('menu.dayClose'),
+        route: '/frontdesk?tab=day-close',
+        dropdown: [
+          { name: 'SANG NGÀY', tab: 'day-close' },
+          { name: 'TÁCH DỊCH VỤ NGÀY CŨ', tab: 'split-old-services' }
+        ]
+      },
       { name: 'LỊCH SỬ THAO TÁC', route: '/frontdesk?tab=history' },
       { name: t('menu.reports'), route: '/reports', reportSlot: true },
       { name: t('menu.channelManager'), route: '/config' },

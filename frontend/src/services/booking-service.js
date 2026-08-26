@@ -14,6 +14,11 @@ export const fetchBookingInitDropdowns = () => http.get('/bookings/init-dropdown
  * @param {number} id - ID booking
  */
 export const fetchBooking = (id) => http.get(`/bookings/${id}`)
+export const fetchBookingNotifications = (bookingId) => http.get(`/bookings/${bookingId}/notifications`)
+export const fetchActiveBookingNotifications = (bookingId, date) => http.get(`/bookings/${bookingId}/notifications/active`, { params: date ? { date } : {} })
+export const createBookingNotification = (bookingId, data) => http.post(`/bookings/${bookingId}/notifications`, data)
+export const updateBookingNotification = (bookingId, notificationId, data) => http.put(`/bookings/${bookingId}/notifications/${notificationId}`, data)
+export const deleteBookingNotification = (bookingId, notificationId) => http.delete(`/bookings/${bookingId}/notifications/${notificationId}`)
 
 /**
  * Tạo booking mới
@@ -72,6 +77,7 @@ export const fetchRoomRateCodes = () => http.get('/room-rate-codes')
 export const fetchHotelSettings = () => http.get('/hotel-settings')
 export const fetchSystemTime = () => http.get('/system-time')
 export const fetchSystemDate = () => http.get('/system-date')
+export const splitOldServices = (data) => http.post('/night-audit/split-old-services', data)
 
 // ==================== USER SETTINGS ====================
 export const fetchUserSettings = () => http.get('/user-settings')
