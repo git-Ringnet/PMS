@@ -63,10 +63,8 @@ class BookingRoom extends Model
                 $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
             }
 
-            // Reservation mới dùng giờ checkout mặc định của legacy PMS.
-            // Phòng mới phát sinh từ chuyển phòng đang ở giữ NULL để chỉ ghi
-            // nhận thời điểm checkout khi thực sự checkout/chuyển tiếp.
-            if ((int) $model->status === self::STATUS_BOOKED) {
+            // Phòng chưa checkout luôn giữ lịch checkout dự kiến để tương thích legacy.
+            if (in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
                 $model->CheckoutDate = $model->CheckoutDate ?: $model->departure_date;
                 $model->CheckoutTime = $model->CheckoutTime ?: '12:00:00';
             }
@@ -94,6 +92,61 @@ class BookingRoom extends Model
                     $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
                 }
             }
+
+            if ($model->isDirty('departure_date')
+                && in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
+                $model->CheckoutDate = $model->departure_date;
+                $model->CheckoutTime = '12:00:00';
+            }
+        });
+
+        static::updated(function ($model) {
+            if ($model->wasChanged('status') && (int) $model->status === self::STATUS_CHECKED_OUT) {
+                $model->children()
+                    ->whereIn('child_status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
+                    ->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+
+                $model->childAssignments()
+                    ->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
+                    ->update([
+                        'status' => BookingRoomGuest::STATUS_CHECKED_OUT,
+                        'actual_checkout_date' => $model->CheckoutDate?->toDateString() ?: $model->departure_date?->toDateString(),
+                        'actual_checkout_time' => $model->CheckoutTime ?: now()->format('H:i:s'),
+                        'checkout_by' => $model->check_out_user,
+                    ]);
+            }
+
+            $isActive = in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true);
+            $restoredToActive = $model->wasChanged('status') && $isActive;
+
+            if (!$isActive || (!$model->wasChanged('departure_date') && !$restoredToActive)) {
+                return;
+            }
+
+            $departureDate = $model->departure_date?->toDateString();
+            if (!$departureDate) {
+                return;
+            }
+
+            $model->guests()
+                ->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
+                ->update([
+                    'actual_checkout_date' => $departureDate,
+                    'actual_checkout_time' => '12:00:00',
+                ]);
+
+            $childAssignments = $model->childAssignments();
+            if ($restoredToActive) {
+                $childAssignments->where('status', BookingRoomGuest::STATUS_CHECKED_OUT);
+            } else {
+                $childAssignments->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN]);
+            }
+            $childAssignments->update([
+                'status' => (int) $model->status,
+                'actual_checkout_date' => $departureDate,
+                'actual_checkout_time' => '12:00:00',
+                'checkout_by' => null,
+            ]);
         });
 
         static::saving(function ($model) {
@@ -103,6 +156,10 @@ class BookingRoom extends Model
             }
             if ($model->status === self::STATUS_CHECKED_OUT && empty($model->check_out_user)) {
                 $model->check_out_user = $currentUser;
+            }
+            if (in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
+                $model->CheckoutDate = $model->CheckoutDate ?: $model->departure_date;
+                $model->CheckoutTime = $model->CheckoutTime ?: '12:00:00';
             }
             // If the room is not checked in yet, actual_arrival_date always equals arrival_date
             if ($model->status === self::STATUS_BOOKED) {
@@ -198,6 +255,7 @@ class BookingRoom extends Model
     const STATUS_CHECKED_OUT = 2; // Đã trả phòng
     const STATUS_CANCELLED  = 3; // Đã hủy
     const STATUS_NOSHOW     = 4; // Noshow
+    const STATUS_MOVED      = 100; // Đã chuyển/gộp sang phòng khác
 
     // =========================================
     // RELATIONSHIPS
@@ -354,6 +412,8 @@ class BookingRoom extends Model
         $attributes['check_in_user'] = $this->check_in_user ?? $currentUser;
         $attributes['check_out_user'] = null;
         $attributes['move_room'] = null;
+        $attributes['CheckoutDate'] = $this->departure_date->toDateString();
+        $attributes['CheckoutTime'] = '12:00:00';
         
         // Tạo phòng mới
         $newRoom = self::create($attributes);
@@ -365,16 +425,18 @@ class BookingRoom extends Model
                 'guest_id' => $gPivot->guest_id,
                 'is_primary' => $gPivot->is_primary,
                 'status' => BookingRoomGuest::STATUS_CHECKED_IN,
-                'actual_arrival_date' => $originalArrivalDate,
-                'actual_arrival_time' => $gPivot->actual_arrival_time ?: $this->arrival_time ?: $moveTime,
+                'actual_arrival_date' => $systemDate->toDateString(),
+                'actual_arrival_time' => $moveTime,
                 'actual_checkout_date' => $gPivot->actual_checkout_date ?: $this->departure_date->toDateString(),
+                'actual_checkout_time' => '12:00:00',
+                'checkin_by' => $currentUser,
                 'breakfast' => $gPivot->breakfast,
             ]);
         }
 
         foreach ($this->guests as $gPivot) {
             $gPivot->update([
-                'status' => BookingRoomGuest::STATUS_CHECKED_OUT,
+                'status' => self::STATUS_MOVED,
                 'actual_arrival_date' => $gPivot->actual_arrival_date ?: $originalArrivalDate,
                 'actual_arrival_time' => $gPivot->actual_arrival_time ?: ($this->arrival_time ?: $moveTime),
                 'actual_checkout_date' => $systemDate->toDateString(),
@@ -387,14 +449,28 @@ class BookingRoom extends Model
         foreach ($this->children as $child) {
             BookingRoomChild::updateOrCreate(
                 ['booking_child_id' => $child->id, 'booking_room_id' => $this->id],
-                ['status' => 100]
+                [
+                    'status' => self::STATUS_MOVED,
+                    'actual_checkout_date' => $systemDate->toDateString(),
+                    'actual_checkout_time' => $moveTime,
+                    'checkout_by' => $currentUser,
+                ]
             );
             BookingRoomChild::updateOrCreate(
                 ['booking_child_id' => $child->id, 'booking_room_id' => $newRoom->id],
-                ['status' => 1]
+                [
+                    'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                    'actual_arrival_date' => $systemDate->toDateString(),
+                    'actual_arrival_time' => $moveTime,
+                    'actual_checkout_date' => $this->departure_date->toDateString(),
+                    'actual_checkout_time' => '12:00:00',
+                    'checkin_by' => $currentUser,
+                    'checkout_by' => null,
+                ]
             );
             $child->update([
                 'booking_room_id' => $newRoom->id,
+                'child_status' => BookingRoomGuest::STATUS_CHECKED_IN,
             ]);
         }
         
@@ -412,7 +488,7 @@ class BookingRoom extends Model
         $this->update([
             'departure_date' => $systemDate->toDateString(),
             'departure_time' => $moveTime,
-            'status' => self::STATUS_CHECKED_OUT,
+            'status' => self::STATUS_MOVED,
             'move_room' => $newRoom->id,
             'CheckoutDate' => $systemDate->toDateString(),
             'CheckoutTime' => $moveTime,
