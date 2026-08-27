@@ -11,6 +11,7 @@ import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import echo from '@/services/echo'
+import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -1406,13 +1407,7 @@ async function loadBookings() {
           */
         }
 
-        const bookingAmounts = b.booking_rooms
-          .filter(room => Number(room.status) !== 3)
-          .map(calculateRoomAmounts)
-          .reduce((totals, amounts) => ({
-            roomCharge: totals.roomCharge + amounts.roomCharge,
-            serviceCharge: totals.serviceCharge + amounts.serviceCharge
-          }), { roomCharge: 0, serviceCharge: 0 })
+        const bookingAmounts = calculateRoomPlanBookingAmounts(b, systemDate.value)
         const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
         const activePayments = (b.payments || []).filter(payment => Number(payment.edit_flag) === 0 && !payment.deleted_at)
         const depositAmount = activePayments
@@ -1431,7 +1426,7 @@ async function loadBookings() {
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
-          const roomAmounts = calculateRoomAmounts(br)
+          const roomAmounts = calculateRoomPlanRoomAmounts(br, b, systemDate.value)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
           const registrationStatus = b.registration_status || {}
           const registrationStatusName = registrationStatus.name || ''
