@@ -21,6 +21,21 @@ class BookingRoomGuest extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (self $pivot): void {
+            if ($pivot->actual_checkout_date && $pivot->actual_checkout_time) {
+                return;
+            }
+
+            $room = BookingRoom::find($pivot->booking_room_id);
+            if (!$room) {
+                return;
+            }
+
+            // Giữ mặc định ngày/giờ checkout theo Booking_rooms của legacy PMS.
+            $pivot->actual_checkout_date = $pivot->actual_checkout_date ?: $room->departure_date;
+            $pivot->actual_checkout_time = $pivot->actual_checkout_time ?: '12:00:00';
+        });
+
         static::saved(function (self $pivot) {
             app(\App\Services\GuestStatusSyncService::class)->syncForGuest($pivot->guest_id);
         });

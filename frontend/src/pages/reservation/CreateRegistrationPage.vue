@@ -61,6 +61,7 @@ import {
   deleteBookingRoomServicesBulk,
   lockRoomMove,
   unlockRoomMove,
+  restoreBooking,
   revertBookingNoshow,
   revertRoomNoshow,
   chargeRoomNoshow,
@@ -1257,6 +1258,36 @@ function handleDrop(targetKey) {
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
 
+const isCancelledBooking = computed(() => {
+  const tab = activeTab.value
+  if (!tab) return false
+  const rooms = tab.rooms || []
+  return Number(tab.status) === 3 || (rooms.length > 0 && rooms.every(room => Number(room.bookingRoomStatus) === 3))
+})
+
+const isInlineEditLocked = computed(() => {
+  const tab = activeTab.value
+  if (!tab) return false
+  if (isCancelledBooking.value) return true
+  if (Number(tab.status) !== 1) return false
+
+  const rooms = tab.rooms || []
+  const hasEditableRoom = rooms.some(room => Number(room.bookingRoomStatus) === 0)
+  return rooms.length > 0 && !hasEditableRoom
+})
+
+function isRoomEditLocked(room) {
+  return isEditing.value && [1, 2, 3, 100].includes(Number(room?.bookingRoomStatus))
+}
+
+watch(isInlineEditLocked, (locked) => {
+  if (locked && isEditing.value) {
+    const tab = activeTab.value
+    isEditing.value = false
+    restoreTabFromBackup(tab)
+  }
+})
+
 const isCheckInDisabled = computed(() => {
   const tab = activeTab.value
   if (!tab || !tab.rooms || tab.rooms.length === 0) return true
@@ -1281,7 +1312,9 @@ const hasNoshowRoomSelected = computed(() => {
 })
 
 const bookingContext = computed(() => {
-  return (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
+  // The main registration tab must remain on the last saved snapshot while
+  // the edit modal is open. Modal-only state is read directly from modalForm.
+  return activeTab.value
 })
 
 const isAllRoomsNoshow = computed(() => {
@@ -2915,9 +2948,28 @@ async function updateRoomAvailability() {
   }
 }
 
+function getPersistedRoomCount(row) {
+  return (modalForm.value.rooms || []).filter(room =>
+    room.roomClassId === row.roomClassId && room.bookingRoomId
+  ).length
+}
+
+function getProtectedRoomCount(row) {
+  return (modalForm.value.rooms || []).filter(room =>
+    room.roomClassId === row.roomClassId
+    && room.bookingRoomId
+    && [1, 2, 3, 100].includes(Number(room.bookingRoomStatus))
+  ).length
+}
+
 function updateAllocatedRooms(row) {
   if (row.quantity === undefined || row.quantity === null || row.quantity < 0) {
     row.quantity = 0
+  }
+
+  const protectedRoomCount = getProtectedRoomCount(row)
+  if (row.quantity < protectedRoomCount) {
+    row.quantity = protectedRoomCount
   }
 
   validateRoomQuantity(row)
@@ -2926,8 +2978,10 @@ function updateAllocatedRooms(row) {
     modalForm.value.rooms = []
   }
 
+  const persistedRoomCount = getPersistedRoomCount(row)
   const currentRooms = modalForm.value.rooms.filter(r => r.roomClassId === row.roomClassId && !r.bookingRoomId)
-  const diff = row.quantity - currentRooms.length
+  const desiredNewRoomCount = Math.max(Number(row.quantity) - persistedRoomCount, 0)
+  const diff = desiredNewRoomCount - currentRooms.length
 
   if (diff > 0) {
     for (let i = 0; i < diff; i++) {
@@ -3791,6 +3845,10 @@ function validateRoomDatesAgainstBooking(tab) {
 
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
+    if (isInlineEditLocked.value) {
+      uiStore.showToast('Booking đang ở hoặc có phòng đã ở/đã trả/chuyển/hủy, không được phép chỉnh sửa.', 'warning')
+      return
+    }
     isEditing.value = true
     const tab = activeTab.value
     if (tab) {
@@ -4310,7 +4368,9 @@ async function triggerAction(actionName) {
       if (confirmed) {
         try {
           uiStore.showToast('Đang khôi phục booking...', 'info')
-          let res = await revertBookingNoshow(tab.dbId)
+          let res = isCancelledBooking.value
+            ? await restoreBooking(tab.dbId)
+            : await revertBookingNoshow(tab.dbId)
           if (res.data?.success) {
             uiStore.showToast('Khôi phục booking thành công!', 'success')
             await loadBookings()
@@ -4323,7 +4383,9 @@ async function triggerAction(actionName) {
               if (confirmedOver) {
                 try {
                   uiStore.showToast('Đang khôi phục booking (force)...', 'info')
-                  let resForce = await revertBookingNoshow(tab.dbId, { force: true })
+                  let resForce = isCancelledBooking.value
+                    ? await restoreBooking(tab.dbId, { force: true })
+                    : await revertBookingNoshow(tab.dbId, { force: true })
                   if (resForce.data?.success) {
                     uiStore.showToast('Khôi phục booking thành công!', 'success')
                     await loadBookings()
@@ -4870,7 +4932,14 @@ defineExpose({
           Thông tin đăng ký
         </button>
         
-        <button v-if="!isEditing" class="btn" @click="triggerAction('Sửa')">
+        <button
+          v-if="!isEditing"
+          class="btn"
+          @click="triggerAction('Sửa')"
+          :disabled="isInlineEditLocked"
+          :title="isInlineEditLocked ? 'Booking/phòng đã phát sinh, không được chỉnh sửa' : 'Sửa booking'"
+          :class="{ 'opacity-50 cursor-not-allowed': isInlineEditLocked }"
+        >
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
           Sửa
         </button>
@@ -4895,7 +4964,7 @@ defineExpose({
         </button>
 
         <button 
-          v-if="activeTab && activeTab.dbId && (Number(activeTab.status) === 4 || isAllRoomsNoshow)" 
+          v-if="activeTab && activeTab.dbId && (isCancelledBooking || Number(activeTab.status) === 4 || isAllRoomsNoshow)"
           class="btn blue" 
           @click="triggerAction('Khôi phục BK')"
         >
@@ -4907,7 +4976,7 @@ defineExpose({
         </button>
 
         <button 
-          v-if="activeTab && Number(activeTab.status) !== 4 && !isAllRoomsNoshow" 
+          v-if="activeTab && !isCancelledBooking && ![4].includes(Number(activeTab.status)) && !isAllRoomsNoshow"
           class="btn red" 
           @click="triggerAction('Xóa')"
         >
@@ -5150,7 +5219,11 @@ defineExpose({
                     <template v-for="(room, idx) in group.rooms" :key="room.id">
                       <tr 
                         class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer"
-                        :class="{ 'bg-sky-50/60 ring-1 ring-inset ring-sky-200': selectedRows.includes(room.id) }"
+                        :class="[
+                          selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
+                          isRoomEditLocked(room) ? 'pointer-events-none opacity-60' : ''
+                        ]"
+                        :title="isRoomEditLocked(room) ? 'Phòng đã phát sinh, không được chỉnh sửa' : ''"
                         @click="handleRowSelect(room.id)"
                       >
                         <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -5718,8 +5791,10 @@ defineExpose({
                               class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
                               :class="[
                                 selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
-                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : ''
+                                (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : '',
+                                isRoomEditLocked(room) ? 'pointer-events-none opacity-60' : ''
                               ]"
+                              :title="isRoomEditLocked(room) ? 'Phòng đã phát sinh, không được chỉnh sửa' : ''"
                               @click="handleRowSelect(room.id)"
                             >
                               <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
@@ -7230,7 +7305,7 @@ defineExpose({
                       <!-- Số lượng -->
                       <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.quantity" :min="getProtectedRoomCount(row)" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
                             <button @click.prevent="row.quantity++; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                             <button @click.prevent="row.quantity > 0 ? (row.quantity--, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
@@ -7503,7 +7578,7 @@ defineExpose({
         :currenciesList="currenciesList" 
         :rooms="modalForm?.rooms || activeTab?.rooms || []"
         v-model:deposits="modalForm.deposits" 
-        @update:paymentValue="modalForm.paymentValue = $event; if (activeTab) { activeTab.deposit = $event; activeTab.paymentValue = $event; }" 
+        @update:paymentValue="modalForm.paymentValue = $event"
       />
     </Teleport>
 

@@ -27,6 +27,7 @@ class BranchDatabaseSeeder extends Seeder
             HkConfigSeeder::class,
             WarehouseSeeder::class,
             CancelReasonSeeder::class,
+            SpecialRequestSeeder::class,
             NationalitySeeder::class,
         ]);
     }

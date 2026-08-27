@@ -1,3 +1,4 @@
+
 <?php
 
 use Illuminate\Http\Request;
@@ -171,6 +172,28 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('templates/upload-image', [\App\Http\Controllers\Api\TemplateController::class, 'uploadImage']);
     Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
 
+    // Operational print slots (Breakfast Ticket, Invoice, Registration Card...).
+    Route::post('print-template-slots/{printTemplateSlot}/render', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'render']);
+    Route::get('print-template-slots', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'index']);
+    Route::put('print-template-slots/{printTemplateSlot}', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'update']);
+
+    // Dynamic MySQL Stored Procedure report data sources
+    Route::get('report-procedures', [\App\Http\Controllers\Api\ReportProcedureController::class, 'index']);
+    Route::get('report-procedures/{procedure}', [\App\Http\Controllers\Api\ReportProcedureController::class, 'show']);
+    Route::post('report-procedure-samples', [\App\Http\Controllers\Api\ReportProcedureController::class, 'sample']);
+    Route::post('report-data-sources/{reportDataSource}/samples', [\App\Http\Controllers\Api\ReportDataSourceController::class, 'sample']);
+    Route::post('report-data-sources/{reportDataSource}/schema-refreshes', [\App\Http\Controllers\Api\ReportDataSourceController::class, 'refreshSchema']);
+    Route::apiResource('report-data-sources', \App\Http\Controllers\Api\ReportDataSourceController::class)
+        ->parameters(['report-data-sources' => 'reportDataSource']);
+
+    Route::get('report-lookups/{lookup}', [\App\Http\Controllers\Api\ReportLookupController::class, 'index']);
+
+    // Business report catalogue: one Store, configurable filters and many output templates.
+    Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
+    Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
+    Route::apiResource('report-definitions', \App\Http\Controllers\Api\ReportDefinitionController::class)
+        ->parameters(['report-definitions' => 'reportDefinition']);
+
     // System configuration routes
     Route::get('nationalities', [\App\Http\Controllers\Api\NationalityController::class, 'index']);
     Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
@@ -219,6 +242,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class);
     Route::post('/housekeeping/outlets/reorder', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'reorder']);
     Route::delete('/housekeeping/outlets/{housekeepingOutlet}/force', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'forceDestroy'])->name('housekeeping.outlets.force-destroy');
+
     Route::get('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'index'])->name('housekeeping.outlets.index');
     Route::post('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'store'])->name('housekeeping.outlets.store');
     Route::get('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'show'])->name('housekeeping.outlets.show');
@@ -444,6 +468,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('/booking-rooms/{roomId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreRoomCheckout'])->middleware('permission:fo.checkout');
     Route::post('/bookings/{bookingId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreBookingCheckout'])->middleware('permission:fo.checkout');
     Route::get('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
+
     Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild'])->middleware('permission:fo.booking.edit');
     Route::put('/booking-children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'updateChild'])->middleware('permission:fo.booking.edit');
     Route::delete('/bookings/{bookingId}/children/{childId}', [\App\Http\Controllers\Api\GuestController::class, 'removeChild'])->middleware('permission:fo.booking.edit');

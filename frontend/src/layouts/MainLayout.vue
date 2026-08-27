@@ -13,6 +13,7 @@ import { useUiStore } from '@/stores/ui-store'
 const route = useRoute()
 const router = useRouter()
 const activeOutlets = ref([])
+const dynamicReports = ref([])
 
 const loadActiveOutlets = async () => {
   try {
@@ -20,6 +21,16 @@ const loadActiveOutlets = async () => {
     activeOutlets.value = (res.data || []).filter(o => o.is_active)
   } catch (err) {
     console.error('Lỗi khi tải danh sách outlet hoạt động:', err)
+  }
+}
+
+const loadDynamicReports = async () => {
+  try {
+    const response = await http.get('/report-definitions', { params: { active_only: 1 } })
+    dynamicReports.value = response.data.data || []
+  } catch (error) {
+    console.error('Không thể tải menu báo cáo động:', error)
+    dynamicReports.value = []
   }
 }
 
@@ -386,6 +397,7 @@ onMounted(() => {
   fetchSystemDate()
   fetchShifts()
   loadActiveOutlets()
+  loadDynamicReports()
   loadBranches().finally(() => {
     setTimeout(() => {
       isSwitchingBranch.value = false
@@ -411,10 +423,65 @@ onUnmounted(() => {
   }
 })
 
+const buildDynamicReportMenu = (context = null) => {
+  const available = dynamicReports.value
+    .filter(report => report.show_in_menu !== false)
+    .filter(report => !context || (report.menu_locations || ['reservation']).includes(context))
+
+  const groups = new Map()
+  for (const report of available) {
+    const groupName = report.group || 'Báo cáo khác'
+    if (!groups.has(groupName)) {
+      groups.set(groupName, {
+        name: groupName,
+        order: Number(report.menu_group_order || 0),
+        children: []
+      })
+    }
+    const group = groups.get(groupName)
+    group.order = Math.min(group.order, Number(report.menu_group_order || 0))
+    group.children.push({
+      name: report.name,
+      route: context
+        ? `/${context}?tab=reports&report=${encodeURIComponent(report.code)}`
+        : `/reports?report=${encodeURIComponent(report.code)}`,
+      order: Number(report.menu_item_order || 0)
+    })
+  }
+
+  const dropdown = [...groups.values()]
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'vi'))
+    .map(group => ({
+      name: group.name,
+      children: group.children
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'vi'))
+        .map(({ order, ...item }) => item)
+    }))
+
+  return {
+    name: t('menu.reports'),
+    route: context ? `/${context}?tab=reports` : '/reports',
+    dropdown: dropdown.length ? dropdown : undefined,
+    menuOrder: available.length ? Math.min(...available.map(report => Number(report.menu_top_order ?? 20))) : 20,
+    reportSlot: true
+  }
+}
+
+const withDynamicReportMenu = (items, context = null) => {
+  const normalized = items
+    .map((item, index) => ({ ...item, menuOrder: item.menuOrder ?? index * 10 }))
+    .filter(item => !item.reportSlot)
+  normalized.push(buildDynamicReportMenu(context))
+
+  return normalized.sort((a, b) => a.menuOrder - b.menuOrder)
+}
+
 const menuItems = computed(() => {
-  if (route.path.startsWith('/frontdesk')) {
+  const fromModule = route.query.from || null
+
+  if (route.path.startsWith('/frontdesk') || fromModule === 'frontdesk') {
     //trang lễ tân frontdesk
-    return [
+    return withDynamicReportMenu([
       { 
         name: t('menu.checkIn'), 
         route: '/frontdesk',
@@ -452,30 +519,25 @@ const menuItems = computed(() => {
         ]
       },
       { name: 'LỊCH SỬ THAO TÁC', route: '/frontdesk?tab=history' },
-      { name: t('menu.reports'), route: '/reports' },
+      { name: t('menu.reports'), route: '/reports', reportSlot: true },
       { name: t('menu.channelManager'), route: '/config' },
-    ]
+    ], 'frontdesk')
   }
   //trang buồng phòng housekeeping
-  if (route.path.startsWith('/housekeeping')) {
-    return [
+  if (route.path.startsWith('/housekeeping') || fromModule === 'housekeeping') {
+    return withDynamicReportMenu([
       { name: t('menu.minibar'), route: '/housekeeping?tab=minibar' },
       { name: t('menu.laundry'), route: '/housekeeping?tab=laundry' },
       { name: t('menu.compensation'), route: '/housekeeping?tab=compensation' },
-      { name: t('menu.reports'), route: '/reports' },
-    ]
+      { name: t('menu.reports'), route: '/reports', reportSlot: true },
+    ], 'housekeeping')
   }
   //trang báo cáo reports
-  if (route.path.startsWith('/reports')) {
-    return [
-      { name: t('menu.revReport'), route: '/reports?type=revenue' },
-      { name: t('menu.statReport'), route: '/reports?type=stats' },
-      { name: t('menu.cancelReport'), route: '/reports?type=cancel' },
-      { name: t('menu.management'), route: '/reports?type=manage' },
-    ]
+  if (route.path.startsWith('/reports') && !fromModule) {
+    return withDynamicReportMenu([], null)
   }
   // trang PMS chính
-  if (route.path.startsWith('/config')) {
+  if (route.path.startsWith('/config') || fromModule === 'config') {
     return [
       { name: t('menu.reservation'), route: '/reservation' },
       { name: t('menu.frontdesk'), route: '/frontdesk' },
@@ -485,7 +547,7 @@ const menuItems = computed(() => {
     ]
   }
   // trang F&B
-  if (route.path.startsWith('/fnb')) {
+  if (route.path.startsWith('/fnb') || fromModule === 'fnb') {
     const fnbItems = []
     
     if (activeOutlets.value && activeOutlets.value.length > 0) {
@@ -544,7 +606,7 @@ const menuItems = computed(() => {
     return fnbItems
   }
   // trang đặt phòng
-  return [
+  return withDynamicReportMenu([
     {
       name: t('menu.registration'),
       route: '/reservation',
@@ -568,12 +630,7 @@ const menuItems = computed(() => {
     {
       name: t('menu.reports'),
       route: '/reservation?tab=reports',
-      dropdown: [
-        { name: t('menu.regReport'), tab: 'report-reg', hasChevron: true },
-        { name: t('menu.statReport'), tab: 'report-stats', hasChevron: true },
-        { name: t('menu.roomReport'), tab: 'report-rooms', hasChevron: true },
-        { name: t('menu.cancelReportTitle'), tab: 'report-cancel', hasChevron: true }
-      ]
+      reportSlot: true
     },
     {
       name: t('menu.channelManager'),
@@ -582,7 +639,7 @@ const menuItems = computed(() => {
         { name: t('menu.channelManagerRegReport'), tab: 'channel-manager' }
       ]
     }
-  ]
+  ], 'reservation')
 })
 
 const getQueryParam = (name) => {

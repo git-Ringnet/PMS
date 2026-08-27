@@ -36,7 +36,7 @@ const hotelTabs = [
   'CA LÀM VIỆC',
   'CẤU HÌNH',
   'CHI NHÁNH',
-  'MẪU',
+  'MẪU IN',
   'BỘ PHẬN DỊCH VỤ'
 ]
 </script>
@@ -65,7 +65,7 @@ const hotelTabs = [
       <WorkShiftTab v-else-if="activeHotelTab === 'CA LÀM VIỆC'" />
       <HotelConfigTab v-else-if="activeHotelTab === 'CẤU HÌNH'" />
       <BranchTab v-else-if="activeHotelTab === 'CHI NHÁNH'" />
-      <TemplateTab v-else-if="activeHotelTab === 'MẪU'" />
+      <TemplateTab v-else-if="activeHotelTab === 'MẪU IN' || activeHotelTab === 'MẪU'" />
       <ServiceDepartmentTab v-else-if="activeHotelTab === 'BỘ PHẬN DỊCH VỤ'" />
       
       <!-- Fallback block for remaining tabs -->

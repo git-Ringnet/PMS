@@ -28,6 +28,7 @@ import QuickAssignModal from './components/QuickAssignModal.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
+import ReportsPage from '@/pages/reports/ReportsPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -790,11 +791,11 @@ function hasSpecialRequest(room, codes) {
 }
 
 function shouldShowBirthday(room) {
-  return Boolean(room.has_birthday_today) || hasSpecialRequest(room, ['birthday'])
+  return Boolean(room.has_birthday_today) || hasSpecialRequest(room, ['BD', 'birthday'])
 }
 
 function shouldShowHoneymoon(room) {
-  return hasSpecialRequest(room, ['honeymoon', 'honey_moon'])
+  return hasSpecialRequest(room, ['HM', 'honeymoon', 'honey_moon'])
 }
 
 // Show Broom icon for dirty rooms
@@ -2372,6 +2373,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <!-- Tab Reports: Báo Cáo -->
+              <div v-else-if="currentTab === 'reports'" class="h-full overflow-hidden bg-white">
+                <ReportsPage />
               </div>
 
               <!-- THE DEFAULT ROOM MAP VIEW -->

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\TemplateResource;
 use App\Models\Template;
 use App\Models\TemplateVersion;
+use App\Services\Reports\ReportDataExecutorService;
 use App\Services\TemplateRendererService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,14 +19,14 @@ class TemplateController extends Controller
     public function index()
     {
         // Order by group, then default templates first, then by name
-        $templates = Template::orderBy('group')
+        $templates = Template::with('reportDataSource')->orderBy('group')
             ->orderByDesc('is_default')
             ->orderBy('name')
             ->get();
 
         return response()->json([
             'success' => true,
-            'data' => TemplateResource::collection($templates)
+            'data' => TemplateResource::collection($templates),
         ]);
     }
 
@@ -38,6 +39,8 @@ class TemplateController extends Controller
             'group' => 'required|string|max:255',
             'name' => 'required|string|max:255',
             'report' => 'nullable|string|max:255',
+            'report_data_source_id' => 'nullable|exists:report_data_sources,id',
+            'parameter_defaults' => 'nullable|array',
             'page_size' => 'nullable|string|max:50',
             'page_orientation' => 'nullable|string|max:50',
             'margin_top' => 'nullable|integer|min:0',
@@ -53,20 +56,20 @@ class TemplateController extends Controller
         if (empty($validated['content_json'])) {
             $validated['content_json'] = [
                 'header' => [
-                    ['id' => 'h1', 'type' => 'text', 'content' => 'MẪU IN KHÁCH SẠN', 'style' => ['textAlign' => 'center', 'fontSize' => '22px', 'fontWeight' => 'bold', 'marginBottom' => '15px', 'whiteSpace' => 'pre-wrap']]
+                    ['id' => 'h1', 'type' => 'text', 'content' => 'MẪU IN KHÁCH SẠN', 'style' => ['textAlign' => 'center', 'fontSize' => '22px', 'fontWeight' => 'bold', 'marginBottom' => '15px', 'whiteSpace' => 'pre-wrap']],
                 ],
                 'detail' => [
-                    ['id' => 'd1', 'type' => 'text', 'content' => 'Chi tiết giao dịch...', 'style' => ['whiteSpace' => 'pre-wrap']]
+                    ['id' => 'd1', 'type' => 'text', 'content' => 'Chi tiết giao dịch...', 'style' => ['whiteSpace' => 'pre-wrap']],
                 ],
                 'footer' => [
-                    ['id' => 'f1', 'type' => 'text', 'content' => "Người lập phiếu\n\n\nLễ tân", 'style' => ['textAlign' => 'right', 'fontWeight' => 'bold', 'whiteSpace' => 'pre-wrap']]
-                ]
+                    ['id' => 'f1', 'type' => 'text', 'content' => "Người lập phiếu\n\n\nLễ tân", 'style' => ['textAlign' => 'right', 'fontWeight' => 'bold', 'whiteSpace' => 'pre-wrap']],
+                ],
             ];
-            
+
             // Build a very simple default HTML matching the json
             $validated['content_html'] = '<div id="h1" style="text-align: center; font-size: 22px; font-weight: bold; margin-bottom: 15px; white-space: pre-wrap;">MẪU IN KHÁCH SẠN</div>'
-                . '<div id="d1" style="white-space: pre-wrap;">Chi tiết giao dịch...</div>'
-                . '<div id="f1" style="text-align: right; font-weight: bold; white-space: pre-wrap;">Người lập phiếu' . "\n\n\n" . 'Lễ tân</div>';
+                .'<div id="d1" style="white-space: pre-wrap;">Chi tiết giao dịch...</div>'
+                .'<div id="f1" style="text-align: right; font-weight: bold; white-space: pre-wrap;">Người lập phiếu'."\n\n\n".'Lễ tân</div>';
         }
 
         return DB::transaction(function () use ($validated) {
@@ -81,6 +84,8 @@ class TemplateController extends Controller
             // Create initial version 1.0 record
             TemplateVersion::create([
                 'template_id' => $template->id,
+                'report_data_source_id' => $template->report_data_source_id,
+                'parameter_defaults' => $template->parameter_defaults,
                 'version' => '1.0',
                 'content_json' => $template->content_json,
                 'content_html' => $template->content_html,
@@ -91,7 +96,7 @@ class TemplateController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => new TemplateResource($template)
+                'data' => new TemplateResource($template),
             ], 201);
         });
     }
@@ -101,14 +106,14 @@ class TemplateController extends Controller
      */
     public function show($id)
     {
-        $template = Template::find($id);
-        if (!$template) {
+        $template = Template::with('reportDataSource')->find($id);
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
         return response()->json([
             'success' => true,
-            'data' => new TemplateResource($template)
+            'data' => new TemplateResource($template),
         ]);
     }
 
@@ -118,7 +123,7 @@ class TemplateController extends Controller
     public function update(Request $request, $id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
@@ -126,6 +131,8 @@ class TemplateController extends Controller
             'group' => 'required|string|max:255',
             'name' => 'required|string|max:255',
             'report' => 'nullable|string|max:255',
+            'report_data_source_id' => 'nullable|exists:report_data_sources,id',
+            'parameter_defaults' => 'nullable|array',
             'page_size' => 'nullable|string|max:50',
             'page_orientation' => 'nullable|string|max:50',
             'margin_top' => 'nullable|integer|min:0',
@@ -136,18 +143,19 @@ class TemplateController extends Controller
             'content_html' => 'nullable|string',
             'css' => 'nullable|string',
             'note' => 'nullable|string|max:255', // Note for version change
+            'save_mode' => 'nullable|in:draft,version',
         ]);
 
         return DB::transaction(function () use ($validated, $template) {
             // Check if editor content actually changed
             $contentChanged = false;
-            
+
             // Compare arrays for content_json, and strings for content_html / css
             $oldJson = json_encode($template->content_json);
             $newJson = json_encode($validated['content_json'] ?? []);
-            
-            if ($oldJson !== $newJson || 
-                $template->content_html !== ($validated['content_html'] ?? '') || 
+
+            if ($oldJson !== $newJson ||
+                $template->content_html !== ($validated['content_html'] ?? '') ||
                 $template->css !== ($validated['css'] ?? '') ||
                 $template->page_size !== ($validated['page_size'] ?? 'A4') ||
                 $template->page_orientation !== ($validated['page_orientation'] ?? 'portrait') ||
@@ -155,24 +163,29 @@ class TemplateController extends Controller
                 $template->margin_bottom !== ($validated['margin_bottom'] ?? 10) ||
                 $template->margin_left !== ($validated['margin_left'] ?? 10) ||
                 $template->margin_right !== ($validated['margin_right'] ?? 10) ||
-                (isset($validated['note']) && $validated['note'] !== 'Bản nháp tự động')
+                $template->report_data_source_id !== ($validated['report_data_source_id'] ?? null) ||
+                json_encode($template->parameter_defaults) !== json_encode($validated['parameter_defaults'] ?? [])
             ) {
                 $contentChanged = true;
             }
 
-            if ($contentChanged) {
+            $createVersion = $contentChanged && ($validated['save_mode'] ?? 'version') === 'version';
+
+            if ($createVersion) {
                 // Increment version (e.g. 1.0 -> 1.1)
-                $currentVer = (float)$template->version;
+                $currentVer = (float) $template->version;
                 $nextVer = number_format($currentVer + 0.1, 1);
-                $validated['version'] = (string)$nextVer;
+                $validated['version'] = (string) $nextVer;
             }
 
-            $template->update($validated);
+            $template->update(collect($validated)->except(['note', 'save_mode'])->all());
 
-            if ($contentChanged) {
+            if ($createVersion) {
                 // Save new version entry
                 TemplateVersion::create([
                     'template_id' => $template->id,
+                    'report_data_source_id' => $template->report_data_source_id,
+                    'parameter_defaults' => $template->parameter_defaults,
                     'version' => $template->version,
                     'content_json' => $template->content_json,
                     'content_html' => $template->content_html,
@@ -184,7 +197,7 @@ class TemplateController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => new TemplateResource($template)
+                'data' => new TemplateResource($template),
             ]);
         });
     }
@@ -195,23 +208,22 @@ class TemplateController extends Controller
     public function destroy($id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
-        // Cannot delete default template
-        if ($template->is_default) {
+        if ($template->printTemplateSlots()->exists() || $template->reportDefinitions()->exists()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Không thể xóa mẫu đang kích hoạt mặc định. Hãy chọn mẫu khác làm mặc định trước.'
-            ], 400);
+                'message' => 'Không thể xóa thiết kế đang được Mẫu in hoặc Danh mục báo cáo sử dụng.',
+            ], 409);
         }
 
         $template->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'Xóa mẫu biểu thành công'
+            'message' => 'Xóa mẫu biểu thành công',
         ]);
     }
 
@@ -221,13 +233,13 @@ class TemplateController extends Controller
     public function duplicate($id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
         return DB::transaction(function () use ($template) {
             $newTemplate = $template->replicate();
-            $newTemplate->name = $template->name . ' - Sao chép';
+            $newTemplate->name = $template->name.' - Sao chép';
             $newTemplate->is_default = false;
             $newTemplate->version = '1.0';
             $newTemplate->save();
@@ -235,18 +247,20 @@ class TemplateController extends Controller
             // Create initial version
             TemplateVersion::create([
                 'template_id' => $newTemplate->id,
+                'report_data_source_id' => $newTemplate->report_data_source_id,
+                'parameter_defaults' => $newTemplate->parameter_defaults,
                 'version' => '1.0',
                 'content_json' => $newTemplate->content_json,
                 'content_html' => $newTemplate->content_html,
                 'css' => $newTemplate->css,
-                'note' => 'Bản sao từ mẫu ' . $template->name,
+                'note' => 'Bản sao từ mẫu '.$template->name,
                 'updated_by' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Sao chép mẫu biểu thành công',
-                'data' => new TemplateResource($newTemplate)
+                'data' => new TemplateResource($newTemplate),
             ]);
         });
     }
@@ -257,7 +271,7 @@ class TemplateController extends Controller
     public function makeDefault($id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
@@ -272,7 +286,7 @@ class TemplateController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Kích hoạt mẫu mặc định thành công',
-                'data' => new TemplateResource($template)
+                'data' => new TemplateResource($template),
             ]);
         });
     }
@@ -283,14 +297,14 @@ class TemplateController extends Controller
     public function removeDefault($id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
-        if (!$template->is_default) {
+        if (! $template->is_default) {
             return response()->json([
                 'success' => false,
-                'message' => 'Mẫu biểu này hiện không phải mặc định.'
+                'message' => 'Mẫu biểu này hiện không phải mặc định.',
             ], 400);
         }
 
@@ -299,7 +313,7 @@ class TemplateController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Đã hủy mẫu mặc định thành công',
-            'data' => new TemplateResource($template->fresh())
+            'data' => new TemplateResource($template->fresh()),
         ]);
     }
 
@@ -309,7 +323,7 @@ class TemplateController extends Controller
     public function versions($id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
@@ -317,7 +331,7 @@ class TemplateController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $versions
+            'data' => $versions,
         ]);
     }
 
@@ -327,7 +341,7 @@ class TemplateController extends Controller
     public function rollback(Request $request, $id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
@@ -339,37 +353,41 @@ class TemplateController extends Controller
             ->where('id', $request->version_id)
             ->first();
 
-        if (!$version) {
+        if (! $version) {
             return response()->json(['message' => 'Version not found for this template'], 404);
         }
 
         return DB::transaction(function () use ($template, $version) {
             // Increment major version or compute rollback version
-            $currentVer = (float)$template->version;
+            $currentVer = (float) $template->version;
             $nextVer = number_format($currentVer + 1.0, 1); // Rollback increments major version
 
             $template->update([
                 'content_json' => $version->content_json,
                 'content_html' => $version->content_html,
                 'css' => $version->css,
-                'version' => (string)$nextVer,
+                'report_data_source_id' => $version->report_data_source_id,
+                'parameter_defaults' => $version->parameter_defaults,
+                'version' => (string) $nextVer,
             ]);
 
             // Save new version entry for the rollback action itself
             TemplateVersion::create([
                 'template_id' => $template->id,
+                'report_data_source_id' => $template->report_data_source_id,
+                'parameter_defaults' => $template->parameter_defaults,
                 'version' => $template->version,
                 'content_json' => $template->content_json,
                 'content_html' => $template->content_html,
                 'css' => $template->css,
-                'note' => 'Khôi phục về phiên bản ' . $version->version,
+                'note' => 'Khôi phục về phiên bản '.$version->version,
                 'updated_by' => auth()->id(),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Khôi phục phiên bản thành công',
-                'data' => new TemplateResource($template)
+                'data' => new TemplateResource($template),
             ]);
         });
     }
@@ -380,21 +398,13 @@ class TemplateController extends Controller
     public function preview(Request $request, $id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
-        // Đọc template liên kết qua trường report nếu có
-        if (!$request->has('content_html') && $template->report) {
-            $linkedTemplate = Template::where('report', $template->report)->first();
-            if ($linkedTemplate && $linkedTemplate->id !== $template->id) {
-                $template = $linkedTemplate;
-            }
-        }
-
         $renderer = app(TemplateRendererService::class);
-        $mockData = $renderer->getMockData($template->group, $template->name);
-        
+        $mockData = $this->resolvePreviewData($request, $template, $renderer);
+
         $contentHtml = $request->input('content_html', $template->content_html ?? '');
         $css = $request->input('css', $template->css ?? '');
         $pageSize = $request->input('page_size', $template->page_size);
@@ -405,8 +415,8 @@ class TemplateController extends Controller
         $marginRight = $request->input('margin_right', $template->margin_right);
 
         $html = $renderer->render(
-            $contentHtml, 
-            $css, 
+            $contentHtml,
+            $css,
             $mockData,
             [
                 'page_size' => $pageSize,
@@ -420,7 +430,7 @@ class TemplateController extends Controller
 
         return response()->json([
             'success' => true,
-            'html' => $html
+            'html' => $html,
         ]);
     }
 
@@ -430,29 +440,21 @@ class TemplateController extends Controller
     public function render(Request $request, $id)
     {
         $template = Template::find($id);
-        if (!$template) {
+        if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
 
-        // Đọc template liên kết qua trường report nếu có
-        if ($template->report) {
-            $linkedTemplate = Template::where('report', $template->report)->first();
-            if ($linkedTemplate && $linkedTemplate->id !== $template->id) {
-                $template = $linkedTemplate;
-            }
-        }
-
         $renderer = app(TemplateRendererService::class);
-        
+
         // Accept payload directly from frontend, fallback to mock data if empty
         $data = $request->input('data');
-        if (empty($data) || !is_array($data)) {
-            $data = $renderer->getMockData($template->group, $template->name);
+        if (empty($data) || ! is_array($data)) {
+            $data = $this->resolvePreviewData($request, $template, $renderer);
         }
 
         $html = $renderer->render(
-            $template->content_html ?? '', 
-            $template->css ?? '', 
+            $template->content_html ?? '',
+            $template->css ?? '',
             $data,
             [
                 'page_size' => $template->page_size,
@@ -466,7 +468,7 @@ class TemplateController extends Controller
 
         return response()->json([
             'success' => true,
-            'html' => $html
+            'html' => $html,
         ]);
     }
 
@@ -485,22 +487,35 @@ class TemplateController extends Controller
 
         if ($request->hasFile('image')) {
             $file = $request->file('image');
-            $filename = 'template_' . time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $file->getClientOriginalName());
+            $filename = 'template_'.time().'_'.preg_replace('/[^a-zA-Z0-9._-]/', '', $file->getClientOriginalName());
             $file->move(public_path('uploads/templates'), $filename);
-            
-            $url = '/uploads/templates/' . $filename;
-            
+
+            $url = '/uploads/templates/'.$filename;
+
             return response()->json([
                 'success' => true,
                 'url' => $url,
-                'message' => 'Tải ảnh lên thành công!'
+                'message' => 'Tải ảnh lên thành công!',
             ]);
         }
 
         return response()->json([
             'success' => false,
-            'message' => 'Không tìm thấy tệp tải lên.'
+            'message' => 'Không tìm thấy tệp tải lên.',
         ], 400);
     }
-}
 
+    private function resolvePreviewData(Request $request, Template $template, TemplateRendererService $renderer): array
+    {
+        if ($template->report_data_source_id) {
+            $source = $template->reportDataSource()->first();
+            if ($source) {
+                $parameters = $request->input('parameters', $template->parameter_defaults ?? $source->sample_parameters ?? []);
+
+                return app(ReportDataExecutorService::class)->executeSource($source, $parameters);
+            }
+        }
+
+        return $renderer->getMockData($template->group, $template->name);
+    }
+}

@@ -40,6 +40,44 @@ class BookingChild extends Model
                 );
             }
         });
+
+        static::updated(function ($model) {
+            if (!$model->wasChanged('child_status') || empty($model->booking_room_id)) {
+                return;
+            }
+
+            $room = BookingRoom::find($model->booking_room_id);
+            if (!$room) {
+                return;
+            }
+
+            $status = (int) $model->child_status;
+            $assignmentStatus = in_array($status, [0, 1], true) ? 1 : $status;
+            $data = ['status' => $assignmentStatus];
+
+            if ($status === BookingRoomGuest::STATUS_CHECKED_OUT) {
+                $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate();
+                $data += [
+                    'actual_checkout_date' => $systemDate->toDateString(),
+                    'actual_checkout_time' => now()->format('H:i:s'),
+                    'checkout_by' => auth()->user()?->username ?? 'system',
+                ];
+            } elseif (in_array($status, [0, 1], true)) {
+                $data += [
+                    'actual_checkout_date' => $room->departure_date->toDateString(),
+                    'actual_checkout_time' => '12:00:00',
+                    'checkout_by' => null,
+                ];
+            }
+
+            BookingRoomChild::updateOrCreate(
+                [
+                    'booking_child_id' => $model->id,
+                    'booking_room_id' => $model->booking_room_id,
+                ],
+                $data
+            );
+        });
     }
 
     protected $fillable = [

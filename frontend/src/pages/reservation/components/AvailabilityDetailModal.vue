@@ -24,7 +24,7 @@ const metricLabel = computed(() => ({
   OOO: 'Phòng khóa OOO',
   OOS: 'Phòng khóa OOS',
   EB: 'Extra Bed',
-  SOFAB: 'Baby Cot',
+  BBC: 'BBC',
 }[props.metric] || props.metric))
 
 const groupedAvailableRooms = computed(() => {
