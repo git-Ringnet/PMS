@@ -3066,7 +3066,10 @@ function handleDragStart(bk, event) {
   lastGhostTop = null
   dragBoundsCache = null
   requestAnimationFrame(() => {
-    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 122
+    // Keep the drag helper limited to the sticky header.  It must never cover
+    // the first rows of the grid, otherwise `elementFromPoint` cannot resolve
+    // a room cell while a booking is being dragged upward.
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom
   })
 
   if (event && event.currentTarget) {
@@ -3134,7 +3137,7 @@ function handleBookingPointerDown(bk, event) {
   draggedBookingRect.value = { left: rect.left, width: rect.width }
   dragGhostY.value = rect.top + 2
   requestAnimationFrame(() => {
-    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 122
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom
     dragGhostElement = document.querySelector('[data-room-plan-ghost]')
     if (dragGhostElement) dragGhostElement.style.top = `${dragGhostY.value}px`
   })
@@ -3197,7 +3200,13 @@ function getDragVerticalBounds(force = false) {
   const theadEl = scrollContainer.querySelector('thead')
   const tfootEl = scrollContainer.querySelector('tfoot')
 
-  const headerBottom = theadEl ? theadEl.getBoundingClientRect().bottom : containerRect.top + 40
+  // The <thead> itself scrolls with the table; only its <th> cells are sticky.
+  // Reading the thead rect therefore gives an off-screen/negative position
+  // after scrolling down and prevents upward auto-scroll from ever starting.
+  const stickyHeaderCells = theadEl ? Array.from(theadEl.querySelectorAll('th')) : []
+  const headerBottom = stickyHeaderCells.length
+    ? Math.max(...stickyHeaderCells.map(cell => cell.getBoundingClientRect().bottom))
+    : containerRect.top + 40
   const occTop = tfootEl ? tfootEl.getBoundingClientRect().top : containerRect.bottom - 40
 
   const minTop = Math.max(headerBottom + 2, containerRect.top + 42)
@@ -3251,8 +3260,11 @@ function updateDragPosition(targetCell, clientY) {
   }
 
   const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
-  const topScrollBoundary = headerBottom + 120
-  // If mouse is inside or above header, clamp ghost card strictly below header!
+  // Start scrolling only when the pointer reaches the sticky header (plus a
+  // small buffer).  The previous 120px buffer made the preview look frozen
+  // long before the pointer reached the header.
+  const topScrollBoundary = headerBottom + 24
+  // Keep the preview below the sticky header while scrolling upward.
   if (clientY <= topScrollBoundary) {
     setDragGhostTop(minTop)
   } else if (clientY >= occTop) {
@@ -3261,7 +3273,7 @@ function updateDragPosition(targetCell, clientY) {
 
   let scrollY = 0
 
-  // Keep the current scroll area; extend it upward only after crossing the top boundary.
+  // Scroll upward only when the pointer reaches the top edge of the grid.
   if (clientY < topScrollBoundary) {
     const overflow = Math.max(0, topScrollBoundary - clientY)
     // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as the pointer moves further up.
@@ -5346,7 +5358,7 @@ function getRoomStatusIconName(item) {
   <Teleport to="body">
     <div
       v-if="draggedBooking && dragTopZoneHeight"
-      class="fixed inset-x-0 top-0 z-[9998] bg-transparent"
+      class="fixed inset-x-0 top-0 z-[9998] pointer-events-none bg-transparent"
       :style="{ height: `${dragTopZoneHeight}px` }"
       @dragenter.prevent="handleTopDragOver"
       @dragover.prevent="handleTopDragOver"
