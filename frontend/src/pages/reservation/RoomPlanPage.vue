@@ -335,6 +335,7 @@ let lastGhostCellKey = null
 let lastGhostTop = null
 let dragGhostElement = null
 let isPointerDraggingBooking = false
+let bookingPointerPending = null
 const splittingBooking = ref(null)
 const splitIndex = ref(-1)
 
@@ -3119,6 +3120,19 @@ function handleBookingPointerDown(bk, event) {
   }
   if (splittingBooking.value) return
 
+  bookingPointerPending = {
+    booking: bk,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    element: event.currentTarget
+  }
+  window.addEventListener('pointermove', handleBookingPointerMove)
+  window.addEventListener('pointerup', handleBookingPointerUp)
+  window.addEventListener('pointercancel', handleBookingPointerCancel)
+}
+
+function startBookingPointerDrag(bk, event, element) {
   event.preventDefault()
   hideTooltip()
   isPointerDraggingBooking = true
@@ -3130,7 +3144,7 @@ function handleBookingPointerDown(bk, event) {
   lastGhostTop = null
   dragBoundsCache = null
 
-  const rect = event.currentTarget.getBoundingClientRect()
+  const rect = (element || event.currentTarget).getBoundingClientRect()
   draggedBookingRect.value = { left: rect.left, width: rect.width }
   dragGhostY.value = rect.top + 2
   requestAnimationFrame(() => {
@@ -3145,13 +3159,28 @@ function handleBookingPointerDown(bk, event) {
 }
 
 function handleBookingPointerMove(event) {
-  if (!isPointerDraggingBooking || !draggedBooking.value) return
+  if (!isPointerDraggingBooking || !draggedBooking.value) {
+    const pending = bookingPointerPending
+    if (!pending || pending.pointerId !== event.pointerId) return
+
+    const deltaX = event.clientX - pending.startX
+    const deltaY = event.clientY - pending.startY
+    if (Math.hypot(deltaX, deltaY) < 5) return
+
+    bookingPointerPending = null
+    startBookingPointerDrag(pending.booking, event, pending.element)
+  }
+
   const targetCell = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-room-plan-cell]')
   updateDragPosition(targetCell, event.clientY)
 }
 
 function handleBookingPointerUp(event) {
-  if (!isPointerDraggingBooking) return
+  if (!isPointerDraggingBooking) {
+    bookingPointerPending = null
+    stopBookingPointerDrag()
+    return
+  }
   const targetCell = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-room-plan-cell]')
   const roomNo = targetCell?.dataset.room
   const dayIdx = Number(targetCell?.dataset.dayIndex)
@@ -3167,6 +3196,7 @@ function handleBookingPointerUp(event) {
 }
 
 function handleBookingPointerCancel() {
+  bookingPointerPending = null
   stopBookingPointerDrag()
   handleDragEnd()
 }
