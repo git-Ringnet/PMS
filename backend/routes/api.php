@@ -206,6 +206,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
 
     // System Administration routes
+    Route::get('/system/database/info', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'getDatabaseInfo'])->middleware('permission:system.setting');
     Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase'])->middleware('permission:system.setting');
     Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase'])->middleware('permission:system.setting');
     Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision'])->middleware('permission:system.branch.manage');

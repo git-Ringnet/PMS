@@ -59,13 +59,17 @@
           - `Thông Tin Khách`: Mở modal chi tiết thông tin khách của booking.
           - `Nhận phòng`: Thực hiện nhận phòng nhanh cho phòng được chọn.
           - `Nhân bản`: Mở modal sao chép booking đã chọn sang ngày đến mới.
-      - **Xử lý phòng chuyển (status = 100 / STATUS_MOVED) khi Sang ngày (Day Close / Night Audit)**:
-        - Đã cập nhật [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue) và [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php) loại bỏ hoàn toàn các phòng có tình trạng `status = 100` (phòng cũ sau khi chuyển phòng).
-        - Các phòng này không còn bị tính nhầm vào "Phòng đến" / "Phòng đi" hay làm chặn/vô hiệu hóa nút **Sang ngày**.
+      - **Sao lưu & Khôi phục Database Đa Chi Nhánh (Multi-Database Backup & Restore)**:
+        - Nâng cấp [`DatabaseBackupController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/DatabaseBackupController.php) và [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Hỗ trợ toàn diện 3 cấp độ phạm vi:
+          1. **`ALL` (Toàn Bộ Hệ Thống)**: Tự động gom xuất và nạp toàn bộ Database Hệ Thống Chính (`pms_system`) + TẤT CẢ các Database Chi Nhánh con trong 1 file `.sql` duy nhất.
+          2. **`SYSTEM` (Database Hệ Thống Quản Trị)**: Xuất và khôi phục riêng Database `pms_system` chứa dữ liệu người dùng, vai trò, chi nhánh...
+          3. **Từng Chi Nhánh Con (`HKT1`, `HKT2`...)**: Xuất và khôi phục riêng lẻ từng database nghiệp vụ của chi nhánh đó.
+        - **Khôi phục an toàn (Sanitization)**: Tự động loại bỏ các lệnh `CREATE DATABASE` và `USE \`...\`;` khi nạp chi nhánh đơn lẻ, hoặc tự định tuyến nạp theo từng DB khi nạp file tổng hợp `ALL`.
+        - **Frontend UI ([`DatabaseBackupTab.vue`](file:///d:/PMS/frontend/src/pages/config/components/DatabaseBackupTab.vue))**: Sửa lỗi hiển thị UI (chữ số bảng, căn lề dung lượng), Dropdown phạm vi (Toàn bộ / Hệ thống / Chi nhánh con), Bảng tổng quan phân cấp rõ ràng kèm popup xác nhận ghi đè.
     - Tab Phòng ([`sp_041.sql`](file:///d:/PMS/store%20PMS/sp_041.sql)): Gom nhóm Master Booking banner màu xanh nhạt với tổng tiền dịch vụ & tiền thanh toán.
     - Tab Khách ([`sp_043.sql`](file:///d:/PMS/store%20PMS/sp_043.sql)): Đầy đủ 22 trường thông tin khách lưu trú người lớn và trẻ em.
     - Thanh phân trang hiển thị chuẩn PMS (dropdown 50 / 100 / 200 dòng/trang, danh sách nút trang số `1`, `2`, `3`..., nút Trước/Sau và Tổng kết quả).
-- **Trạng thái hiện tại**: Hoàn thành 100% các cập nhật: Nhận phòng nhiều phòng hàng loạt, Modal xác nhận No Show theo Hình 2, phân tách Realtime bộ lọc ngoài và Áp dụng thủ công cho bộ lọc nâng cao, fix triệt để lỗi phòng chuyển (status 100) chặn sang ngày, build Vite production thành công không lỗi.
+- **Trạng thái hiện tại**: Hoàn thành 100% các cập nhật: Nhận phòng nhiều phòng hàng loạt, Modal xác nhận No Show theo Hình 2, phân tách Realtime bộ lọc ngoài và Áp dụng thủ công cho bộ lọc nâng cao, fix triệt để lỗi phòng chuyển (status 100) chặn sang ngày, hoàn thiện module Sao lưu & Khôi phục Database Đa Chi Nhánh hỗ trợ ALL, SYSTEM và từng chi nhánh, build Vite production thành công không lỗi.
 - **Kế hoạch tiếp theo**: Tiếp tục hỗ trợ kiểm thử và hoàn thiện các nghiệp vụ tiếp theo.
 
 ---
