@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CalendarDays, CheckCircle2 } from '@lucide/vue'
+import { addLocalDays, localMonthRange } from '@/utils/report-date-range'
 
 const props = defineProps({
   startDate: { type: String, default: '' },
@@ -25,30 +26,17 @@ const localToday = () => {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10)
 }
 
-const addDays = (dateString, days) => {
-  const date = new Date(`${dateString}T00:00:00`)
-  date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
-}
-
-const monthRange = (dateString) => {
-  const date = new Date(`${dateString}T00:00:00`)
-  const start = new Date(date.getFullYear(), date.getMonth(), 1)
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0)
-  return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)]
-}
-
 const presets = computed(() => {
   const today = localToday()
   const day = new Date(`${today}T00:00:00`).getDay()
   const mondayOffset = day === 0 ? -6 : 1 - day
-  const weekStart = addDays(today, mondayOffset)
+  const weekStart = addLocalDays(today, mondayOffset)
 
   return [
     { value: 'today', label: 'Hôm nay', start: today, end: today },
-    { value: 'yesterday', label: 'Hôm qua', start: addDays(today, -1), end: addDays(today, -1) },
-    { value: 'this_week', label: 'Tuần này', start: weekStart, end: addDays(weekStart, 6) },
-    { value: 'this_month', label: 'Tháng này', start: monthRange(today)[0], end: monthRange(today)[1] },
+    { value: 'yesterday', label: 'Hôm qua', start: addLocalDays(today, -1), end: addLocalDays(today, -1) },
+    { value: 'this_week', label: 'Tuần này', start: weekStart, end: addLocalDays(weekStart, 6) },
+    { value: 'this_month', label: 'Tháng này', start: localMonthRange(today)[0], end: localMonthRange(today)[1] },
     { value: 'custom', label: 'Tùy chỉnh', start: '', end: '' },
   ]
 })
