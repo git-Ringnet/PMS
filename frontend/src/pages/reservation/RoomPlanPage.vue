@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -397,6 +397,7 @@ function openFilterDrawer() {
 }
 
 function applyFilters() {
+  hideTooltip()
   selectedStatuses.value = [...tempSelectedStatuses.value]
   selectedCompanies.value = [...tempSelectedCompanies.value]
   selectedRoomTypes.value = [...tempSelectedRoomTypes.value]
@@ -404,6 +405,7 @@ function applyFilters() {
 }
 
 function clearFilters() {
+  hideTooltip()
   tempSelectedStatuses.value = []
   tempSelectedCompanies.value = []
   tempSelectedRoomTypes.value = []
@@ -1260,9 +1262,13 @@ const fallbackBookings = [
 const bookings = ref([])
 const roomLocks = ref([])
 const loadingBookings = ref(false)
+let loadBookingsRequestId = 0
 
 // Function to fetch actual bookings from backend
 async function loadBookings() {
+  const requestId = ++loadBookingsRequestId
+  hideTooltip()
+
   try {
     loadingBookings.value = true
     emit('loading', true)
@@ -1284,6 +1290,8 @@ async function loadBookings() {
       to_date: formatDateStr(endRange),
       with_billing: true
     })
+
+    if (requestId !== loadBookingsRequestId) return
 
     if (res && res.data && res.data.success && res.data.data && res.data.data.length > 0) {
       const apiBookings = []
@@ -1531,10 +1539,14 @@ async function loadBookings() {
       bookings.value = []
     }
   } catch (err) {
-    console.error('Failed to load real bookings, keeping fallbacks:', err)
+    if (requestId === loadBookingsRequestId) {
+      console.error('Failed to load real bookings, keeping fallbacks:', err)
+    }
   } finally {
-    loadingBookings.value = false
-    emit('loading', false)
+    if (requestId === loadBookingsRequestId) {
+      loadingBookings.value = false
+      emit('loading', false)
+    }
   }
 }
 
@@ -1576,6 +1588,7 @@ function handleWindowClick(event) {
 }
 
 let bc = null
+let suppressDateRangeReload = false
 
 function notifyRoomUpdates() {
   if (!bc) return
@@ -1624,11 +1637,14 @@ onMounted(async () => {
   const endDateVal = new Date(baseDate)
   endDateVal.setDate(baseDate.getDate() + 29)
 
+  suppressDateRangeReload = true
   startDate.value = baseDate
   endDate.value = endDateVal
   tempStartDateStr.value = formatDateStr(baseDate)
   tempEndDateStr.value = formatDateStr(endDateVal)
   dateRangeText.value = `${formatDateToDMY(formatDateStr(baseDate))} ~ ${formatDateToDMY(formatDateStr(endDateVal))}`
+  await nextTick()
+  suppressDateRangeReload = false
 
   // 3. Mark settings loaded so watchers can start auto-saving
   settingsLoaded.value = true
@@ -1691,6 +1707,7 @@ onBeforeUnmount(() => {
 
 // Listen to date changes to reload data
 watch([startDate, endDate], () => {
+  if (suppressDateRangeReload) return
   loadBookings()
 })
 
@@ -3690,6 +3707,7 @@ async function saveQuickBooking() {
     uiStore.showToast('Đã tạo phiếu đăng ký nhanh thành công!', 'success')
     showQuickBookingModal.value = false
     selectedCells.value = []
+    hideTooltip()
     
     await roomStore.fetchRooms()
     await loadBookings()
@@ -4212,7 +4230,7 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
+    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @scroll.passive="hideTooltip" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
