@@ -9,6 +9,7 @@ use App\Models\BookingCancelLog;
 use App\Models\BookingRoomService;
 use App\Models\HotelConfig;
 use App\Models\RoomDoNotMoveLock;
+use App\Models\SystemDateRoll;
 use App\Models\BookingRoomGuest;
 use App\Models\Guest;
 use App\Models\BookingChild;
@@ -905,6 +906,10 @@ class BookingRoomController extends Controller
             'note'             => 'nullable|string',
         ]);
 
+        $systemDate = SystemDateRoll::latest('id')->value('system_date');
+        $cancelledAt = Carbon::parse($systemDate ?? now())
+            ->setTimeFromTimeString(now()->format('H:i:s'));
+
         DB::beginTransaction();
         try {
             // Cascade: hủy guests gắn với phòng này
@@ -935,7 +940,7 @@ class BookingRoomController extends Controller
                 'note'                   => $request->note,
                 'cancelled_by_user_id'   => Auth::id() ?? 0,
                 'cancelled_by_username'  => Auth::user()?->username ?? 'system',
-                'cancelled_at'           => now(),
+                'cancelled_at'           => $cancelledAt,
             ]);
 
             DB::commit();
