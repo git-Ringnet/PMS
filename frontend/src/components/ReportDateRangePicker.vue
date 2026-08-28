@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CalendarDays, CheckCircle2 } from '@lucide/vue'
-import { addLocalDays, localMonthRange } from '@/utils/report-date-range'
+import { addLocalDays, localMonthRange, localQuarterRange, localYearRange } from '@/utils/report-date-range'
 
 const props = defineProps({
   startDate: { type: String, default: '' },
@@ -31,12 +31,34 @@ const presets = computed(() => {
   const day = new Date(`${today}T00:00:00`).getDay()
   const mondayOffset = day === 0 ? -6 : 1 - day
   const weekStart = addLocalDays(today, mondayOffset)
+  const previousWeekStart = addLocalDays(weekStart, -7)
+  const nextWeekStart = addLocalDays(weekStart, 7)
+  const [thisMonthStart, thisMonthEnd] = localMonthRange(today)
+  const [previousMonthStart, previousMonthEnd] = localMonthRange(addLocalDays(thisMonthStart, -1))
+  const [nextMonthStart, nextMonthEnd] = localMonthRange(addLocalDays(thisMonthEnd, 1))
+  const [thisQuarterStart, thisQuarterEnd] = localQuarterRange(today)
+  const [previousQuarterStart, previousQuarterEnd] = localQuarterRange(today, -1)
+  const [nextQuarterStart, nextQuarterEnd] = localQuarterRange(today, 1)
+  const [thisYearStart, thisYearEnd] = localYearRange(today)
+  const [previousYearStart, previousYearEnd] = localYearRange(today, -1)
+  const [nextYearStart, nextYearEnd] = localYearRange(today, 1)
 
   return [
     { value: 'today', label: 'Hôm nay', start: today, end: today },
-    { value: 'yesterday', label: 'Hôm qua', start: addLocalDays(today, -1), end: addLocalDays(today, -1) },
     { value: 'this_week', label: 'Tuần này', start: weekStart, end: addLocalDays(weekStart, 6) },
-    { value: 'this_month', label: 'Tháng này', start: localMonthRange(today)[0], end: localMonthRange(today)[1] },
+    { value: 'this_month', label: 'Tháng này', start: thisMonthStart, end: thisMonthEnd },
+    { value: 'this_quarter', label: 'Quý này', start: thisQuarterStart, end: thisQuarterEnd },
+    { value: 'this_year', label: 'Năm nay', start: thisYearStart, end: thisYearEnd },
+    { value: 'tomorrow', label: 'Ngày mai', start: addLocalDays(today, 1), end: addLocalDays(today, 1) },
+    { value: 'next_week', label: 'Tuần tiếp theo', start: nextWeekStart, end: addLocalDays(nextWeekStart, 6) },
+    { value: 'next_month', label: 'Tháng tiếp theo', start: nextMonthStart, end: nextMonthEnd },
+    { value: 'next_quarter', label: 'Quý tiếp theo', start: nextQuarterStart, end: nextQuarterEnd },
+    { value: 'next_year', label: 'Năm tiếp theo', start: nextYearStart, end: nextYearEnd },
+    { value: 'yesterday', label: 'Hôm qua', start: addLocalDays(today, -1), end: addLocalDays(today, -1) },
+    { value: 'previous_week', label: 'Tuần trước', start: previousWeekStart, end: addLocalDays(previousWeekStart, 6) },
+    { value: 'previous_month', label: 'Tháng trước', start: previousMonthStart, end: previousMonthEnd },
+    { value: 'previous_quarter', label: 'Quý trước', start: previousQuarterStart, end: previousQuarterEnd },
+    { value: 'previous_year', label: 'Năm trước', start: previousYearStart, end: previousYearEnd },
     { value: 'custom', label: 'Tùy chỉnh', start: '', end: '' },
   ]
 })

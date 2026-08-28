@@ -89,7 +89,22 @@ const openReportInTab = (report) => {
   if (!tab) {
     const defaultParams = {}
     for (const definition of report.parameter_ui_schema || []) {
-      defaultParams[definition.name] = resolveDefault(definition.default)
+      const resolved = resolveDefault(definition.default)
+      const options = definition.options || []
+      const firstOption = options[0]
+      const legacyDefault = definition.name === 'p_sort_by'
+        ? 'Room'
+        : definition.name === 'p_order_by'
+          ? 'ASC'
+          : ''
+      // Existing report definitions may have an empty persisted default even
+      // though the parameter is required. Keep execution usable by selecting
+      // the first configured option (e.g. OOS sort = Room).
+      defaultParams[definition.name] = resolved || (
+        ['select', 'radio'].includes(definition.control) && firstOption !== undefined
+          ? (firstOption.value ?? firstOption)
+          : legacyDefault || resolved
+      )
     }
 
     tab = reactive({
@@ -144,8 +159,28 @@ const closeTab = (tabId) => {
   }
 }
 
+const normalizeReportParameters = (tab) => {
+  for (const definition of tab.report.parameter_ui_schema || []) {
+    if (tab.parameters[definition.name] !== '' && tab.parameters[definition.name] !== null && tab.parameters[definition.name] !== undefined) continue
+
+    const firstOption = (definition.options || [])[0]
+    const legacyDefault = definition.name === 'p_sort_by'
+      ? 'Room'
+      : definition.name === 'p_order_by'
+        ? 'ASC'
+        : ''
+
+    if (firstOption !== undefined) {
+      tab.parameters[definition.name] = firstOption.value ?? firstOption
+    } else if (legacyDefault) {
+      tab.parameters[definition.name] = legacyDefault
+    }
+  }
+}
+
 const executeTab = async (tab) => {
   if (!tab || !tab.selectedTemplateId) return
+  normalizeReportParameters(tab)
   const missing = (tab.report.parameter_ui_schema || [])
     .filter(item => item.required && (tab.parameters[item.name] === '' || tab.parameters[item.name] === undefined))
   if (missing.length) {

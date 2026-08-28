@@ -11,7 +11,7 @@ import {
 const props = defineProps({
   templateId: {
     type: Number,
-    required: true
+    default: null
   },
   isOpen: {
     type: Boolean,
@@ -77,6 +77,47 @@ const blocks = ref({
   detail: [],
   footer: []
 })
+
+const defaultBlockStyle = {
+  textAlign: 'left',
+  fontSize: '13px',
+  paddingTop: '0px',
+  paddingBottom: '0px',
+  paddingLeft: '0px',
+  paddingRight: '0px',
+  marginTop: '0px',
+  marginBottom: '0px',
+  color: '#1e293b',
+  fontWeight: 'normal',
+  whiteSpace: 'pre-wrap',
+  backgroundColor: '',
+  borderSide: 'all',
+  borderStyle: 'none',
+  borderWidth: '0px',
+  borderColor: '#cbd5e1',
+  borderRadius: '0px'
+}
+
+const normalizeBlock = (block) => {
+  const normalized = {
+    ...block,
+    style: {
+      ...defaultBlockStyle,
+      ...(block?.style || {})
+    }
+  }
+
+  if (normalized.type === 'columns' && Array.isArray(normalized.columns)) {
+    normalized.columns = normalized.columns.map(column => ({
+      ...column,
+      blocks: Array.isArray(column.blocks)
+        ? column.blocks.map(normalizeBlock)
+        : []
+    }))
+  }
+
+  return normalized
+}
 
 // Variables dictionary for Field List
 const staticFieldList = {
@@ -236,26 +277,17 @@ const loadTemplate = async () => {
     const res = await http.get(`/templates/${props.templateId}`)
     if (res.data && res.data.data) {
       template.value = res.data.data
+      // API may return NULL for templates without saved parameter defaults.
+      // Keep the editor bindings writable while the data source is loading.
+      template.value.parameter_defaults = template.value.parameter_defaults || {}
       
       // Load blocks structure from JSON
       if (template.value.content_json) {
         const json = template.value.content_json
-        const mapBlock = (b) => {
-          if (b.type === 'text') {
-            return {
-              ...b,
-              content: b.content,
-              style: {
-                ...b.style
-              }
-            }
-          }
-          return b
-        }
         blocks.value = {
-          header: (json.header || []).map(mapBlock),
-          detail: (json.detail || []).map(mapBlock),
-          footer: (json.footer || []).map(mapBlock)
+          header: (json.header || []).map(normalizeBlock),
+          detail: (json.detail || []).map(normalizeBlock),
+          footer: (json.footer || []).map(normalizeBlock)
         }
       } else {
         // Fallback or empty structure
@@ -1533,7 +1565,7 @@ watch(() => props.isOpen, (newVal) => {
     loadTemplate()
     loadVersions()
   }
-})
+}, { immediate: true })
 
 watch(activeTab, (newVal) => {
   if (newVal === 'preview') {
@@ -1665,7 +1697,7 @@ const selectBand = (band) => {
       </div>
 
       <!-- 4. Content Area -->
-      <div v-else class="flex-1 overflow-hidden flex items-stretch">
+      <div v-else-if="template" class="flex-1 overflow-hidden flex items-stretch">
         
         <!-- ================== TAB 1: DESIGNER ================== -->
         <template v-if="activeTab === 'design'">
@@ -3124,6 +3156,10 @@ const selectBand = (band) => {
           </div>
         </template>
 
+      </div>
+
+      <div v-else class="flex-1 flex flex-col items-center justify-center gap-3">
+        <p class="text-xs text-slate-400 font-semibold">Chưa có dữ liệu mẫu biểu.</p>
       </div>
     </div>
   </div>
