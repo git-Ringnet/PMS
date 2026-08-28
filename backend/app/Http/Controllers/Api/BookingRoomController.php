@@ -244,6 +244,7 @@ class BookingRoomController extends Controller
                 'extra_bed_qty'   => 'nullable|integer|min:0',
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
+                'reason'          => 'nullable|string|max:500',
                 'guest_name'      => 'nullable|string|max:100',
                 'room_number'     => 'nullable|string',
                 'breakfast'       => 'nullable|boolean',
@@ -331,7 +332,7 @@ class BookingRoomController extends Controller
             
             DB::beginTransaction();
             try {
-                $newRoom = $bookingRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser);
+                $newRoom = $bookingRoom->moveToRoom($newRoomNumber, $systemDate->toDateString(), $currentUser, $validated['reason'] ?? null);
                 $newRoom->update($validated);
                 DB::commit();
                 
@@ -1713,17 +1714,33 @@ class BookingRoomController extends Controller
         $selectedChildIds = $request->input('selected_child_ids', []);
         $isChangeRate = filter_var($request->input('is_change_rate', false), FILTER_VALIDATE_BOOLEAN);
 
-        $syncMovedChildren = function ($sourceRoom, $targetRoom, $children): void {
+        $syncMovedChildren = function ($sourceRoom, $targetRoom, $children, string $moveDate, string $moveTime, string $user): void {
             foreach ($children as $child) {
                 \App\Models\BookingRoomChild::updateOrCreate([
                     'booking_child_id' => $child->id,
                     'booking_room_id' => $sourceRoom->id,
-                ], ['status' => 100]);
+                ], [
+                    'status' => BookingRoom::STATUS_MOVED,
+                    'actual_checkout_date' => $moveDate,
+                    'actual_checkout_time' => $moveTime,
+                    'checkout_by' => $user,
+                ]);
                 \App\Models\BookingRoomChild::updateOrCreate([
                     'booking_child_id' => $child->id,
                     'booking_room_id' => $targetRoom->id,
-                ], ['status' => 1]);
-                $child->update(['child_status' => 100]);
+                ], [
+                    'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                    'actual_arrival_date' => $moveDate,
+                    'actual_arrival_time' => $moveTime,
+                    'actual_checkout_date' => $targetRoom->departure_date->toDateString(),
+                    'actual_checkout_time' => '12:00:00',
+                    'checkin_by' => $user,
+                    'checkout_by' => null,
+                ]);
+                $child->update([
+                    'booking_room_id' => $targetRoom->id,
+                    'child_status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                ]);
             }
         };
         $getActiveChildren = function ($room) {
@@ -1793,8 +1810,8 @@ class BookingRoomController extends Controller
                 $isAllGuestsMoved = $movedGuestPivots->count() === $allGuestsCount && $childrenToMove->count() === $activeChildren->count();
 
 
-                $movedAdultsCount = $movedGuestPivots->count(); // Count of moved adults
-                $movedChildrenCount = $childrenToMove->count();
+                    $movedAdultsCount = $movedGuestPivots->count(); // Count of moved adults
+                    $movedChildrenCount = $childrenToMove->count();
             $movedBabiesCount = $childrenToMove->where('age_group', 'baby')->count();
             $movedRegularChildrenCount = $movedChildrenCount - $movedBabiesCount;
 
@@ -1817,7 +1834,7 @@ class BookingRoomController extends Controller
                     $attributes['room_number']         = $targetRoomNumber;
                     $attributes['status']              = BookingRoom::STATUS_CHECKED_IN;
                     $attributes['arrival_date']        = $sysDateStr;
-                    $attributes['departure_date']      = \Carbon\Carbon::parse($originalDepartureStr)->subDay()->toDateString();
+                    $attributes['departure_date']      = $originalDepartureStr;
                     $attributes['actual_arrival_date'] = $originalArrivalStr;
                     $attributes['arrival_time']        = $timeStr;
                     $attributes['ActutalNumOfDays']    = max(1, \Carbon\Carbon::parse($sysDateStr)->diffInDays(\Carbon\Carbon::parse($originalDepartureStr)));
@@ -1827,8 +1844,8 @@ class BookingRoomController extends Controller
                     $attributes['booking_date']        = $sysDateStr;
                     $attributes['check_in_user']       = $currentUser;
                     $attributes['check_out_user']      = null;
-                    $attributes['CheckoutDate']        = null;
-                    $attributes['CheckoutTime']        = null;
+                    $attributes['CheckoutDate']        = $originalDepartureStr;
+                    $attributes['CheckoutTime']        = '12:00:00';
                     $attributes['move_room']           = null;
                     $attributes['created_by']          = $currentUser;
                     $attributes['updated_by']          = $currentUser;
@@ -1847,20 +1864,30 @@ class BookingRoomController extends Controller
                     // Insert new booking room record (Sp2100)
                     $newRoom = BookingRoom::create($attributes);
 
+                    // Chuẩn hóa dữ liệu khách cũ trước khi tách lịch sử chuyển phòng.
+                    // Legacy có thể để trống giờ đến ở booking_room_guests.
+                    $arrivalTime = $bookingRoom->arrival_time ?: $timeStr;
+                    \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
+                        ->whereNull('actual_arrival_time')
+                        ->update([
+                            'actual_arrival_date' => $originalArrivalStr,
+                            'actual_arrival_time' => $arrivalTime,
+                        ]);
+
                     // --- 2. HANDLE OLD ROOM (Sp2100 & Sp2200 & Sp2500) ---
                     if ($isAllGuestsMoved) {
-                        // All guests moved -> Old room status = 100, departure_date = system_date - 1
-                        $prevDepartureDateStr = \Carbon\Carbon::parse($sysDateStr)->subDay()->toDateString();
+                        // Dự án mới lưu departure_date là ngày checkout, không trừ một ngày.
                         $actualDaysStayed = max(1, \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr)));
 
                         $bookingRoom->update([
-                            'departure_date'   => $prevDepartureDateStr,
+                            'departure_date'   => $sysDateStr,
                             'ActutalNumOfDays' => $actualDaysStayed,
                             'status'           => 100, // Status 100 = Chuyển phòng
                             'move_room'        => $newRoom->id,
                             'departure_time'   => $timeStr,
                             'CheckoutDate'     => $sysDateStr,
                             'CheckoutTime'     => $timeStr,
+                            'reason'           => $reason,
                             'check_out_user'   => $currentUser,
                             'note'             => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển toàn bộ sang phòng {$targetRoomNumber}: {$reason}"),
                             'updated_by'       => $currentUser,
@@ -1889,6 +1916,7 @@ class BookingRoomController extends Controller
                             'adults'       => $remainingAdults,
                             'children_qty' => $remainingChildren,
                             'babies'       => max(0, (int) ($bookingRoom->babies ?? 0) - $movedBabiesCount),
+                            'reason'       => $reason,
                             'note'           => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã chuyển {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
                             'updated_by'     => $currentUser,
                         ]);
@@ -1916,11 +1944,13 @@ class BookingRoomController extends Controller
                             'actual_arrival_time'  => $timeStr,
                             'checkin_by'           => $currentUser,
                             'actual_checkout_date' => $originalDepartureStr,
+                            'actual_checkout_time' => '12:00:00',
+                            'breakfast'           => $gPivot->breakfast,
                         ]);
                     }
 
                     if ($childrenToMove->isNotEmpty()) {
-                        $syncMovedChildren($bookingRoom, $newRoom, $childrenToMove);
+                        $syncMovedChildren($bookingRoom, $newRoom, $childrenToMove, $sysDateStr, $timeStr, $currentUser);
                     }
 
                     \App\Models\ServiceBill::where('RentalRoomId2', $bookingRoom->id)
@@ -2061,6 +2091,14 @@ class BookingRoomController extends Controller
             try {
                 $timeStr = \Carbon\Carbon::now()->format('H:i:s');
                 $sysDateStr = $systemDate->toDateString();
+                $arrivalTime = $bookingRoom->arrival_time ?: $timeStr;
+                \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
+                    ->whereIn('guest_id', $movedGuestIds)
+                    ->whereNull('actual_arrival_time')
+                    ->update([
+                        'actual_arrival_date' => $bookingRoom->actual_arrival_date?->toDateString() ?: $bookingRoom->arrival_date->toDateString(),
+                        'actual_arrival_time' => $arrivalTime,
+                    ]);
                 // --- 1. UPDATE OLD ROOM GUESTS (Sp2200) -> Status = 100 ---
                 \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)
                     ->whereIn('guest_id', $movedGuestIds)
@@ -2088,11 +2126,13 @@ class BookingRoomController extends Controller
                         'actual_arrival_time'  => $timeStr,
                         'checkin_by'           => $currentUser,
                         'actual_checkout_date' => $targetBookingRoom->departure_date->toDateString(),
+                        'actual_checkout_time' => '12:00:00',
+                        'breakfast'           => $gPivot->breakfast,
                     ]);
                 }
 
                 if ($childrenToMove->isNotEmpty()) {
-                    $syncMovedChildren($bookingRoom, $targetBookingRoom, $childrenToMove);
+                    $syncMovedChildren($bookingRoom, $targetBookingRoom, $childrenToMove, $sysDateStr, $timeStr, $currentUser);
                 }
 
                 \App\Models\ServiceBill::where('RentalRoomId2', $bookingRoom->id)
@@ -2129,17 +2169,17 @@ class BookingRoomController extends Controller
                     $originalArrivalStr = $bookingRoom->actual_arrival_date
                         ? $bookingRoom->actual_arrival_date->toDateString()
                         : $bookingRoom->arrival_date->toDateString();
-                    $prevDepartureDateStr = \Carbon\Carbon::parse($sysDateStr)->subDay()->toDateString();
                     $actualDaysStayed = max(1, \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr)));
 
                     $bookingRoom->update([
-                        'departure_date'   => $prevDepartureDateStr,
+                        'departure_date'   => $sysDateStr,
                         'ActutalNumOfDays' => $actualDaysStayed,
                         'status'           => 100, // Status 100 = Chuyển phòng / Gộp phòng
                         'move_room'        => $targetBookingRoom->id,
                         'departure_time'   => $timeStr,
                         'CheckoutDate'     => $sysDateStr,
                         'CheckoutTime'     => $timeStr,
+                        'reason'           => $reason,
                         'check_out_user'   => $currentUser,
                         'note'             => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp toàn bộ khách sang phòng {$targetRoomNumber}: {$reason}"),
                         'updated_by'       => $currentUser,
@@ -2152,6 +2192,7 @@ class BookingRoomController extends Controller
                         'adults'     => $remainingAdults,
                         'children_qty' => max(0, (int) ($bookingRoom->children_qty ?? 0) - $movedRegularChildrenCount),
                         'babies'       => max(0, (int) ($bookingRoom->babies ?? 0) - $movedBabiesCount),
+                        'reason'       => $reason,
                         'note'       => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đã gộp {$movedAdultsCount} khách sang phòng {$targetRoomNumber}: {$reason}"),
                         'updated_by' => $currentUser,
                     ]);

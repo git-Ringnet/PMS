@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchBreakfastList, fetchHotelSettings } from '@/services/breakfast-service'
 import { fetchBusinessInfo } from '@/services/company-service'
 import { fetchSystemDate } from '@/services/booking-service'
@@ -8,6 +9,7 @@ import BreakfastPrintModal from './components/BreakfastPrintModal.vue'
 import BreakfastCouponPreview from './components/BreakfastCouponPreview.vue'
 
 const uiStore = useUiStore()
+const route = useRoute()
 
 // State
 const fromDate = ref('')
@@ -45,6 +47,16 @@ const couponsToPrint = ref([])
 const fromDatePickerRef = ref(null)
 const toDatePickerRef = ref(null)
 
+function syncRoomFilterFromRoute() {
+  const roomNumber = route.query.roomNumber
+  searchFilters.value.roomNumber = typeof roomNumber === 'string' ? roomNumber : ''
+}
+
+function getRouteDate(name) {
+  const value = route.query[name]
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
+}
+
 function openFromDatePicker() {
   if (fromDatePickerRef.value) {
     try {
@@ -74,12 +86,32 @@ function openToDatePicker() {
 }
 
 onMounted(async () => {
+  syncRoomFilterFromRoute()
   await initDates()
   await loadSettings()
   await loadData()
+  // Đi từ Room Map có mã phòng thì mở thẳng màn hình preview nếu đã có phiếu.
+  if (route.query.data && selectedRooms.value.length > 0) {
+    handleConfirmPrint({ mode: 'all', fromDate: fromDate.value, toDate: toDate.value })
+  }
+})
+
+watch(() => route.query.roomNumber, async () => {
+  syncRoomFilterFromRoute()
+  if (fromDate.value) await loadData()
 })
 
 async function initDates() {
+  const routeFromDate = getRouteDate('fromDate')
+  const routeToDate = getRouteDate('toDate')
+  if (routeFromDate || routeToDate) {
+    const from = routeFromDate || routeToDate
+    const to = routeToDate || routeFromDate
+    fromDate.value = from <= to ? from : to
+    toDate.value = from <= to ? to : from
+    return
+  }
+
   let today = new Date().toISOString().slice(0, 10)
   try {
     const res = await fetchSystemDate()
@@ -119,16 +151,18 @@ async function loadData() {
   if (!fromDate.value) return
   isLoading.value = true
   try {
+    const roomContext = typeof route.query.roomNumber === 'string' ? route.query.roomNumber.trim() : ''
     const res = await fetchBreakfastList({
       from_date: fromDate.value,
       to_date: toDate.value || fromDate.value,
       date_type: dateType.value,
-      show_type: showType.value
+      show_type: showType.value,
+      ...(roomContext ? { room_number: roomContext, include_reserved: 1 } : {})
     })
     if (res.data?.success) {
       rawList.value = res.data.data || []
-      // Auto select all initially
-      selectedRowKeys.value = rawList.value.map(r => r.id)
+      // Khi mở từ Room Map, chỉ chọn các dòng của phòng đang thao tác.
+      selectedRowKeys.value = filteredList.value.map(r => r.id)
     }
   } catch (err) {
     console.error('Lỗi tải danh sách phòng ăn sáng:', err)

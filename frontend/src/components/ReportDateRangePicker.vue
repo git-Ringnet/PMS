@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CalendarDays, CheckCircle2 } from '@lucide/vue'
+import { addLocalDays, localMonthRange, localQuarterRange, localYearRange } from '@/utils/report-date-range'
 
 const props = defineProps({
   startDate: { type: String, default: '' },
@@ -15,6 +16,8 @@ const open = ref(false)
 const preset = ref('today')
 const draftStart = ref('')
 const draftEnd = ref('')
+const calendarTarget = ref(null)
+const calendarMonth = ref('')
 
 const toYmd = (date) => {
   const year = date.getFullYear()
@@ -28,43 +31,41 @@ const localToday = () => {
   return toYmd(new Date())
 }
 
-const addDays = (dateString, days) => {
-  const date = new Date(`${dateString}T00:00:00`)
-  date.setDate(date.getDate() + days)
-  return toYmd(date)
-}
-
 const presets = computed(() => {
   const today = localToday()
   const baseDate = new Date(`${today}T00:00:00`)
-  const year = baseDate.getFullYear()
-  const month = baseDate.getMonth()
 
   const day = baseDate.getDay()
   const mondayOffset = day === 0 ? -6 : 1 - day
-  const weekStart = addDays(today, mondayOffset)
-
-  const qStartMonth = Math.floor(month / 3) * 3
+  const weekStart = addLocalDays(today, mondayOffset)
+  const previousWeekStart = addLocalDays(weekStart, -7)
+  const nextWeekStart = addLocalDays(weekStart, 7)
+  const [thisMonthStart, thisMonthEnd] = localMonthRange(today)
+  const [previousMonthStart, previousMonthEnd] = localMonthRange(addLocalDays(thisMonthStart, -1))
+  const [nextMonthStart, nextMonthEnd] = localMonthRange(addLocalDays(thisMonthEnd, 1))
+  const [thisQuarterStart, thisQuarterEnd] = localQuarterRange(today)
+  const [previousQuarterStart, previousQuarterEnd] = localQuarterRange(today, -1)
+  const [nextQuarterStart, nextQuarterEnd] = localQuarterRange(today, 1)
+  const [thisYearStart, thisYearEnd] = localYearRange(today)
+  const [previousYearStart, previousYearEnd] = localYearRange(today, -1)
+  const [nextYearStart, nextYearEnd] = localYearRange(today, 1)
 
   return [
     { value: 'today', label: 'Hôm nay', start: today, end: today },
-    { value: 'this_week', label: 'Tuần này', start: weekStart, end: addDays(weekStart, 6) },
-    { value: 'this_month', label: 'Tháng này', start: toYmd(new Date(year, month, 1)), end: toYmd(new Date(year, month + 1, 0)) },
-    { value: 'this_quarter', label: 'Quý này', start: toYmd(new Date(year, qStartMonth, 1)), end: toYmd(new Date(year, qStartMonth + 3, 0)) },
-    { value: 'this_year', label: 'Năm này', start: toYmd(new Date(year, 0, 1)), end: toYmd(new Date(year, 12, 0)) },
-
-    { value: 'tomorrow', label: 'Ngày mai', start: addDays(today, 1), end: addDays(today, 1) },
-    { value: 'next_week', label: 'Tuần tiếp theo', start: addDays(weekStart, 7), end: addDays(weekStart, 13) },
-    { value: 'next_month', label: 'Tháng tiếp theo', start: toYmd(new Date(year, month + 1, 1)), end: toYmd(new Date(year, month + 2, 0)) },
-    { value: 'next_quarter', label: 'Quý tiếp theo', start: toYmd(new Date(year, qStartMonth + 3, 1)), end: toYmd(new Date(year, qStartMonth + 6, 0)) },
-    { value: 'next_year', label: 'Năm tiếp theo', start: toYmd(new Date(year + 1, 0, 1)), end: toYmd(new Date(year + 1, 12, 0)) },
-
-    { value: 'yesterday', label: 'Hôm qua', start: addDays(today, -1), end: addDays(today, -1) },
-    { value: 'last_week', label: 'Tuần trước', start: addDays(weekStart, -7), end: addDays(weekStart, -1) },
-    { value: 'last_month', label: 'Tháng trước', start: toYmd(new Date(year, month - 1, 1)), end: toYmd(new Date(year, month, 0)) },
-    { value: 'last_quarter', label: 'Quý trước', start: toYmd(new Date(year, qStartMonth - 3, 1)), end: toYmd(new Date(year, qStartMonth, 0)) },
-    { value: 'last_year', label: 'Năm trước', start: toYmd(new Date(year - 1, 0, 1)), end: toYmd(new Date(year - 1, 12, 0)) },
-
+    { value: 'this_week', label: 'Tuần này', start: weekStart, end: addLocalDays(weekStart, 6) },
+    { value: 'this_month', label: 'Tháng này', start: thisMonthStart, end: thisMonthEnd },
+    { value: 'this_quarter', label: 'Quý này', start: thisQuarterStart, end: thisQuarterEnd },
+    { value: 'this_year', label: 'Năm nay', start: thisYearStart, end: thisYearEnd },
+    { value: 'tomorrow', label: 'Ngày mai', start: addLocalDays(today, 1), end: addLocalDays(today, 1) },
+    { value: 'next_week', label: 'Tuần tiếp theo', start: nextWeekStart, end: addLocalDays(nextWeekStart, 6) },
+    { value: 'next_month', label: 'Tháng tiếp theo', start: nextMonthStart, end: nextMonthEnd },
+    { value: 'next_quarter', label: 'Quý tiếp theo', start: nextQuarterStart, end: nextQuarterEnd },
+    { value: 'next_year', label: 'Năm tiếp theo', start: nextYearStart, end: nextYearEnd },
+    { value: 'yesterday', label: 'Hôm qua', start: addLocalDays(today, -1), end: addLocalDays(today, -1) },
+    { value: 'previous_week', label: 'Tuần trước', start: previousWeekStart, end: addLocalDays(previousWeekStart, 6) },
+    { value: 'previous_month', label: 'Tháng trước', start: previousMonthStart, end: previousMonthEnd },
+    { value: 'previous_quarter', label: 'Quý trước', start: previousQuarterStart, end: previousQuarterEnd },
+    { value: 'previous_year', label: 'Năm trước', start: previousYearStart, end: previousYearEnd },
     { value: 'custom', label: 'Tùy chỉnh', start: '', end: '' },
   ]
 })
@@ -97,6 +98,58 @@ const selectPreset = () => {
   draftEnd.value = item.end
 }
 
+const markCustomDate = () => {
+  preset.value = 'custom'
+}
+
+const calendarMonthLabel = computed(() => {
+  if (!calendarMonth.value) return ''
+  const [year, month] = calendarMonth.value.split('-').map(Number)
+  return new Intl.DateTimeFormat('vi-VN', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
+})
+
+const calendarCells = computed(() => {
+  if (!calendarMonth.value) return []
+  const [year, month] = calendarMonth.value.split('-').map(Number)
+  const firstDay = new Date(year, month - 1, 1).getDay()
+  const offset = firstDay === 0 ? 6 : firstDay - 1
+  const daysInMonth = new Date(year, month, 0).getDate()
+  return [...Array(offset).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)]
+})
+
+const calendarLeadingCells = computed(() => calendarCells.value.filter(day => day === null))
+const calendarDays = computed(() => calendarCells.value.filter(day => day !== null))
+
+const openCalendar = (target) => {
+  calendarTarget.value = target
+  const value = target === 'start' ? draftStart.value : draftEnd.value
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? String(value) : localToday()
+  calendarMonth.value = normalized.slice(0, 7)
+}
+
+const shiftCalendarMonth = (amount) => {
+  const [year, month] = calendarMonth.value.split('-').map(Number)
+  const date = new Date(year, month - 1 + amount, 1)
+  calendarMonth.value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+const chooseCalendarDay = (day) => {
+  if (!day || !calendarTarget.value) return
+  const [year, month] = calendarMonth.value.split('-').map(Number)
+  const value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  if (calendarTarget.value === 'start') draftStart.value = value
+  else draftEnd.value = value
+  markCustomDate()
+  calendarTarget.value = null
+}
+
+const isCalendarDaySelected = (day) => {
+  if (!calendarTarget.value || !calendarMonth.value || !day) return false
+  const [year, month] = calendarMonth.value.split('-').map(Number)
+  const value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return (calendarTarget.value === 'start' ? draftStart.value : draftEnd.value) === value
+}
+
 const apply = () => {
   if (!draftStart.value || !draftEnd.value) return
   if (draftStart.value > draftEnd.value) {
@@ -123,7 +176,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   <div ref="root" class="relative mt-1">
     <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 hover:border-sky-300" @click="open = !open">
       <span class="truncate">{{ displayText }}</span>
-      <CalendarDays class="h-4 w-4 shrink-0 text-sky-400" />
+      <CalendarDays class="h-4 w-4 shrink-0 cursor-pointer text-sky-400" title="Mở bộ chọn ngày" @click.stop="open = true" />
     </button>
 
     <div v-if="open" class="absolute left-0 top-[calc(100%+6px)] z-30 w-[320px] rounded-lg border border-slate-300 bg-white p-3 shadow-xl" @click.stop>
@@ -135,12 +188,29 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
       </label>
 
       <div class="mt-3 grid grid-cols-2 gap-2">
-        <label class="text-[11px] font-bold text-slate-500">Từ ngày
-          <input v-model="draftStart" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" @change="preset = 'custom'" />
-        </label>
-        <label class="text-[11px] font-bold text-slate-500">Đến ngày
-          <input v-model="draftEnd" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-xs" @change="preset = 'custom'" />
-        </label>
+        <div class="text-[11px] font-bold text-slate-500">Từ ngày
+          <span class="relative mt-1 block">
+            <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs" @click.stop="openCalendar('start')"><span>{{ formatDate(draftStart) }}</span><CalendarDays class="h-4 w-4 text-sky-500" /></button>
+          </span>
+        </div>
+        <div class="text-[11px] font-bold text-slate-500">Đến ngày
+          <span class="relative mt-1 block">
+            <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs" @click.stop="openCalendar('end')"><span>{{ formatDate(draftEnd) }}</span><CalendarDays class="h-4 w-4 text-sky-500" /></button>
+          </span>
+        </div>
+      </div>
+
+      <div v-if="calendarTarget" class="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-lg" @click.stop>
+        <div class="mb-2 flex items-center justify-between">
+          <button type="button" class="rounded border-none bg-transparent px-2 py-1 text-slate-500 hover:bg-slate-100" @click="shiftCalendarMonth(-1)">‹</button>
+          <span class="text-xs font-bold capitalize text-slate-700">{{ calendarMonthLabel }}</span>
+          <button type="button" class="rounded border-none bg-transparent px-2 py-1 text-slate-500 hover:bg-slate-100" @click="shiftCalendarMonth(1)">›</button>
+        </div>
+        <div class="mb-1 grid grid-cols-7 text-center text-[10px] font-bold text-slate-400"><span v-for="day in ['T2','T3','T4','T5','T6','T7','CN']" :key="day">{{ day }}</span></div>
+        <div class="grid grid-cols-7 gap-1 text-center text-xs">
+          <span v-for="(day, index) in calendarLeadingCells" :key="`${calendarMonth}-empty-${index}`" class="h-7"></span>
+          <button v-for="day in calendarDays" :key="day" type="button" class="h-7 rounded border-none bg-transparent text-slate-700 hover:bg-sky-100" :class="isCalendarDaySelected(day) ? '!bg-sky-500 !text-white' : ''" @click="chooseCalendarDay(day)">{{ day }}</button>
+        </div>
       </div>
 
       <div class="mt-3 flex justify-end border-t border-slate-200 pt-3">

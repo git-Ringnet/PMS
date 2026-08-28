@@ -674,10 +674,7 @@ class BookingController extends Controller
             ], 422);
         }
 
-        // Booking đang ở không cho cập nhật lại các cột phòng đã phát sinh.
-        // Chặn ở backend để không thể bypass quy tắc khóa chỉnh sửa từ frontend.
-        if ((int) $booking->status === Booking::STATUS_CHECKIN
-            && $request->has('room_allocations')
+        $allowAddingRoomsOnly = (int) $booking->status === Booking::STATUS_CHECKIN
             && $booking->bookingRooms()
                 ->whereIn('status', [
                     BookingRoom::STATUS_CHECKED_IN,
@@ -685,12 +682,7 @@ class BookingController extends Controller
                     BookingRoom::STATUS_CANCELLED,
                     100,
                 ])
-                ->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Booking đang ở hoặc đã phát sinh phòng, không được phép chỉnh sửa thông tin phòng!',
-            ], 422);
-        }
+                ->exists();
 
         try {
             $validated = $request->validate([
@@ -792,7 +784,7 @@ class BookingController extends Controller
         }
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly) {
                 // Đồng bộ ngày của phòng theo cấu hình SyncRoomDateByBookingDate
                 $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';
                 if ($syncRoomDates) {
@@ -875,7 +867,7 @@ class BookingController extends Controller
                             }
                             
                             // Kiểm tra chuyển phòng cho phòng đang CheckedIn
-                            if ($bRoom && $bRoom->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
+                            if (!$allowAddingRoomsOnly && $bRoom && $bRoom->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
                                 $oldRoomNumber = $bRoom->room_number;
                                 $newRoomNumber = $detail['roomNumber'] ?? null;
                                 if (!empty($oldRoomNumber) && !empty($newRoomNumber) && $oldRoomNumber !== $newRoomNumber) {
@@ -887,6 +879,10 @@ class BookingController extends Controller
                                     $newRoom = $bRoom->moveToRoom($newRoomNumber, $systemDateStr, $currentUser);
                                     $bRoom = $newRoom;
                                 }
+                            }
+
+                            if ($allowAddingRoomsOnly && $bRoom && $bRoom->status !== \App\Models\BookingRoom::STATUS_BOOKED) {
+                                continue;
                             }
                             
                             $syncRoomDates = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first()?->value == '1';

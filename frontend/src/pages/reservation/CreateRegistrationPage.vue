@@ -19,6 +19,7 @@ import GuestInfoModal from './components/GuestInfoModal.vue'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
+import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -63,7 +64,8 @@ import {
   restoreBooking,
   revertBookingNoshow,
   revertRoomNoshow,
-  chargeRoomNoshow
+  chargeRoomNoshow,
+  fetchActiveBookingNotifications
 } from '@/services/booking-service'
 
 const route = useRoute()
@@ -160,6 +162,10 @@ const isEditModal = ref(false)
 const isSavingModal = ref(false)
 const modalSubTab = ref('info')
 const isQuickUpdateModalOpen = ref(false)
+const isBookingNotificationsModalOpen = ref(false)
+const activeBookingNotifications = ref([])
+const isActiveBookingNotificationsOpen = ref(false)
+let activeBookingNotificationsTimers = []
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
@@ -466,6 +472,13 @@ async function openDepositFromQuery() {
   openDepositModal()
 
   const { action, ...query } = route.query
+  await router.replace({ query })
+}
+
+async function openNotificationFromQuery() {
+  if (route.query.notification !== 'true' || !activeTab.value?.dbId) return
+  isBookingNotificationsModalOpen.value = true
+  const { notification, ...query } = route.query
   await router.replace({ query })
 }
 
@@ -1258,7 +1271,9 @@ const isInlineEditLocked = computed(() => {
   if (isCancelledBooking.value) return true
   if (Number(tab.status) !== 1) return false
 
-  return (tab.rooms || []).some(room => [1, 2, 3, 100].includes(Number(room.bookingRoomStatus)))
+  const rooms = tab.rooms || []
+  const hasEditableRoom = rooms.some(room => Number(room.bookingRoomStatus) === 0)
+  return rooms.length > 0 && !hasEditableRoom
 })
 
 function isRoomEditLocked(room) {
@@ -1603,6 +1618,7 @@ onMounted(async () => {
     if (route.query.bookingCode) {
       await openBookingModalByCode(route.query.bookingCode)
       await openDepositFromQuery()
+      await openNotificationFromQuery()
     } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
       await handleAddTabClick()
     }
@@ -1620,7 +1636,41 @@ function handleTabsWheel(e) {
   }
 }
 
+async function loadActiveBookingNotifications(tab = activeTab.value) {
+  activeBookingNotificationsTimers.forEach(clearTimeout)
+  activeBookingNotificationsTimers = []
+  if (!tab?.dbId) {
+    activeBookingNotifications.value = []
+    isActiveBookingNotificationsOpen.value = false
+    return
+  }
+  try {
+    const res = await fetchActiveBookingNotifications(tab.dbId, systemDate.value)
+    activeBookingNotifications.value = res.data?.data || []
+    isActiveBookingNotificationsOpen.value = activeBookingNotifications.value.length > 0
+    activeBookingNotifications.value.forEach((notice, index) => {
+      activeBookingNotificationsTimers.push(setTimeout(() => dismissActiveBookingNotification(notice.id), 6000 + index * 250))
+    })
+  } catch (err) {
+    // Không chặn việc mở booking nếu API thông báo tạm thời không khả dụng.
+    console.warn('Không thể tải thông báo booking:', err)
+  }
+}
+
+function dismissActiveBookingNotification(notificationId) {
+  activeBookingNotifications.value = activeBookingNotifications.value.filter(notice => notice.id !== notificationId)
+  isActiveBookingNotificationsOpen.value = activeBookingNotifications.value.length > 0
+}
+
+function notificationRoomLabel(notification) {
+  if (notification.scope_type === 'booking') return `Booking ${activeTab.value?.id || ''}`
+  const ids = notification.booking_room_ids || []
+  const numbers = ids.map(id => activeTab.value?.rooms?.find(room => String(room.bookingRoomId || room.id) === String(id))?.roomNumber || id)
+  return `Phòng: ${numbers.join(', ')}`
+}
+
 onBeforeUnmount(() => {
+  activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', loadBookings)
   window.removeEventListener('deposit-updated', loadBookings)
@@ -1630,11 +1680,16 @@ watch(() => route.query, async (newQuery) => {
   if (newQuery.bookingCode) {
     await openBookingModalByCode(newQuery.bookingCode)
     await openDepositFromQuery()
+    await openNotificationFromQuery()
   } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
     await handleAddTabClick()
   }
   await openGlobalSearchFromQuery()
 }, { deep: true })
+
+watch(activeTabId, () => {
+  loadActiveBookingNotifications()
+})
 
 async function loadDropdowns() {
   try {
@@ -2893,9 +2948,28 @@ async function updateRoomAvailability() {
   }
 }
 
+function getPersistedRoomCount(row) {
+  return (modalForm.value.rooms || []).filter(room =>
+    room.roomClassId === row.roomClassId && room.bookingRoomId
+  ).length
+}
+
+function getProtectedRoomCount(row) {
+  return (modalForm.value.rooms || []).filter(room =>
+    room.roomClassId === row.roomClassId
+    && room.bookingRoomId
+    && [1, 2, 3, 100].includes(Number(room.bookingRoomStatus))
+  ).length
+}
+
 function updateAllocatedRooms(row) {
   if (row.quantity === undefined || row.quantity === null || row.quantity < 0) {
     row.quantity = 0
+  }
+
+  const protectedRoomCount = getProtectedRoomCount(row)
+  if (row.quantity < protectedRoomCount) {
+    row.quantity = protectedRoomCount
   }
 
   validateRoomQuantity(row)
@@ -2904,8 +2978,10 @@ function updateAllocatedRooms(row) {
     modalForm.value.rooms = []
   }
 
+  const persistedRoomCount = getPersistedRoomCount(row)
   const currentRooms = modalForm.value.rooms.filter(r => r.roomClassId === row.roomClassId && !r.bookingRoomId)
-  const diff = row.quantity - currentRooms.length
+  const desiredNewRoomCount = Math.max(Number(row.quantity) - persistedRoomCount, 0)
+  const diff = desiredNewRoomCount - currentRooms.length
 
   if (diff > 0) {
     for (let i = 0; i < diff; i++) {
@@ -3879,6 +3955,12 @@ async function triggerAction(actionName) {
     }
   } else if (actionName === 'Thông tin đăng ký') {
     openEditModal()
+  } else if (actionName === 'Thông báo') {
+    if (!activeTab.value?.dbId) {
+      uiStore.showToast('Vui lòng lưu đăng ký trước khi tạo thông báo.', 'warning')
+      return
+    }
+    isBookingNotificationsModalOpen.value = true
   } else if (actionName === 'Thông tin khách hàng') {
     openGuestInfoModal()
   } else if (actionName === 'Hóa đơn' || actionName === 'Hoá đơn') {
@@ -4767,6 +4849,7 @@ async function openBookingModalByCode(bookingCode) {
   if (foundTab) {
     removeClosedTabId(foundTab.dbId)
     activeTabId.value = foundTab.id
+    await loadActiveBookingNotifications(foundTab)
   } else {
     try {
       const res = await fetchBookings({ search: bookingCode })
@@ -4781,6 +4864,8 @@ async function openBookingModalByCode(bookingCode) {
           }
         })
         replaceBookingTab(bItem)
+        await nextTick()
+        await loadActiveBookingNotifications(activeTab.value)
       }
     } catch (err) {
       console.error('Lỗi khi mở booking theo mã:', err)
@@ -7220,7 +7305,7 @@ defineExpose({
                       <!-- Số lượng -->
                       <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.quantity" :min="getProtectedRoomCount(row)" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
                             <button @click.prevent="row.quantity++; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                             <button @click.prevent="row.quantity > 0 ? (row.quantity--, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
@@ -7461,6 +7546,27 @@ defineExpose({
       </div>
     </Teleport>
 
+    <!-- THÔNG BÁO THEO BOOKING / PHÒNG -->
+    <BookingNotificationsModal
+      v-model:show="isBookingNotificationsModalOpen"
+      :booking="activeTab"
+      :system-date="systemDate"
+      :user-name="authStore.user?.name || authStore.user?.username || '—'"
+      @saved="loadActiveBookingNotifications()"
+    />
+
+    <Teleport to="body">
+      <div v-if="isActiveBookingNotificationsOpen" class="pointer-events-none fixed left-1/2 top-2 z-[99997] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 space-y-2">
+        <TransitionGroup name="booking-notice">
+          <article v-for="(notice, index) in activeBookingNotifications" :key="notice.id" class="pointer-events-auto relative rounded-lg border border-blue-200 border-l-4 border-l-blue-500 bg-blue-50 px-4 py-3 shadow-xl" :style="{ transitionDelay: `${index * 120}ms` }">
+            <button class="absolute right-2 top-1 text-xl font-light text-blue-400 hover:text-blue-700" aria-label="Đóng thông báo" @click="dismissActiveBookingNotification(notice.id)">×</button>
+            <p class="pr-6 text-base font-bold text-blue-600">{{ notificationRoomLabel(notice) }}</p>
+            <p class="mt-0.5 whitespace-pre-wrap text-sm text-slate-700">{{ notice.description }}</p>
+          </article>
+        </TransitionGroup>
+      </div>
+    </Teleport>
+
     <!-- DEPOSIT MODAL MATCHING ĐẶT CỌC.html -->
     <Teleport to="body">
       <DepositModal 
@@ -7605,6 +7711,10 @@ defineExpose({
 <style src="./CreateRegistrationPage.css"></style>
 
 <style>
+.booking-notice-enter-active,
+.booking-notice-leave-active { transition: opacity .25s ease, transform .25s ease; }
+.booking-notice-enter-from,
+.booking-notice-leave-to { opacity: 0; transform: translateY(-12px) scale(.97); }
 .cancelled-room,
 .cancelled-room span,
 .cancelled-room td {

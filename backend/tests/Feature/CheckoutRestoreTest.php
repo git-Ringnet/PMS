@@ -3,13 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\BookingChild;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\Guest;
+use App\Models\Permission;
 use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\RoomLock;
+use App\Models\Role;
 use App\Models\SystemDateRoll;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,7 +31,18 @@ class CheckoutRestoreTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->actingAs(User::factory()->create(['username' => 'checkout_restore_user']));
+        $user = User::factory()->create(['username' => 'checkout_restore_user']);
+        $role = Role::firstOrCreate(
+            ['code' => 'checkout_restore_test'],
+            ['name' => 'Checkout restore test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
+        );
+        $permission = Permission::firstOrCreate(
+            ['code' => 'fo.checkout'],
+            ['name' => 'Check-out / Trả phòng', 'module' => 'FO']
+        );
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $user->roles()->attach($role->id);
+        $this->actingAs($user);
         DB::table('booking_statuses')->insert([
             ['id' => 0, 'name' => 'Reservation'],
             ['id' => 1, 'name' => 'Checked In'],
@@ -63,11 +77,51 @@ class CheckoutRestoreTest extends TestCase
 
     public function test_restore_room_checkout_restores_only_the_last_checkout_group(): void
     {
+        $movedChild = BookingChild::create([
+            'booking_id' => $this->booking->id,
+            'booking_room_id' => $this->bookingRoom->id,
+            'full_name' => 'Moved child history',
+            'child_status' => BookingRoomGuest::STATUS_CHECKED_OUT,
+        ]);
+        DB::table('booking_room_children')
+            ->where('booking_child_id', $movedChild->id)
+            ->where('booking_room_id', $this->bookingRoom->id)
+            ->update(['status' => BookingRoom::STATUS_MOVED]);
+        $currentChild = BookingChild::create([
+            'booking_id' => $this->booking->id,
+            'booking_room_id' => $this->bookingRoom->id,
+            'full_name' => 'Current child',
+            'child_status' => BookingRoomGuest::STATUS_CHECKED_OUT,
+        ]);
+
         $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")->assertSuccessful();
 
-        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_IN, 'CheckoutDate' => null]);
-        $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $this->bookingRoom->id, 'guest_id' => $this->lastGuest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('booking_rooms', [
+            'id' => $this->bookingRoom->id,
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+            'CheckoutDate' => '2026-08-05 00:00:00',
+            'CheckoutTime' => '12:00:00',
+        ]);
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $this->bookingRoom->id,
+            'guest_id' => $this->lastGuest->id,
+            'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+            'actual_checkout_date' => '2026-08-05',
+            'actual_checkout_time' => '12:00:00',
+        ]);
         $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $this->bookingRoom->id, 'guest_id' => $this->earlyGuest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('booking_room_children', [
+            'booking_child_id' => $movedChild->id,
+            'booking_room_id' => $this->bookingRoom->id,
+            'status' => BookingRoom::STATUS_MOVED,
+        ]);
+        $this->assertDatabaseHas('booking_room_children', [
+            'booking_child_id' => $currentChild->id,
+            'booking_room_id' => $this->bookingRoom->id,
+            'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+            'actual_checkout_date' => '2026-08-05',
+            'actual_checkout_time' => '12:00:00',
+        ]);
         $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
     }
 

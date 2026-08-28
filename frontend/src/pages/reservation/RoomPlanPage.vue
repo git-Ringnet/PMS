@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -11,6 +11,7 @@ import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import echo from '@/services/echo'
+import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -333,6 +334,8 @@ let dragBoundsCache = null
 let lastGhostCellKey = null
 let lastGhostTop = null
 let dragGhostElement = null
+let isPointerDraggingBooking = false
+let bookingPointerPending = null
 const splittingBooking = ref(null)
 const splitIndex = ref(-1)
 
@@ -394,6 +397,7 @@ function openFilterDrawer() {
 }
 
 function applyFilters() {
+  hideTooltip()
   selectedStatuses.value = [...tempSelectedStatuses.value]
   selectedCompanies.value = [...tempSelectedCompanies.value]
   selectedRoomTypes.value = [...tempSelectedRoomTypes.value]
@@ -401,6 +405,7 @@ function applyFilters() {
 }
 
 function clearFilters() {
+  hideTooltip()
   tempSelectedStatuses.value = []
   tempSelectedCompanies.value = []
   tempSelectedRoomTypes.value = []
@@ -1257,9 +1262,13 @@ const fallbackBookings = [
 const bookings = ref([])
 const roomLocks = ref([])
 const loadingBookings = ref(false)
+let loadBookingsRequestId = 0
 
 // Function to fetch actual bookings from backend
 async function loadBookings() {
+  const requestId = ++loadBookingsRequestId
+  hideTooltip()
+
   try {
     loadingBookings.value = true
     emit('loading', true)
@@ -1281,6 +1290,8 @@ async function loadBookings() {
       to_date: formatDateStr(endRange),
       with_billing: true
     })
+
+    if (requestId !== loadBookingsRequestId) return
 
     if (res && res.data && res.data.success && res.data.data && res.data.data.length > 0) {
       const apiBookings = []
@@ -1405,13 +1416,7 @@ async function loadBookings() {
           */
         }
 
-        const bookingAmounts = b.booking_rooms
-          .filter(room => Number(room.status) !== 3)
-          .map(calculateRoomAmounts)
-          .reduce((totals, amounts) => ({
-            roomCharge: totals.roomCharge + amounts.roomCharge,
-            serviceCharge: totals.serviceCharge + amounts.serviceCharge
-          }), { roomCharge: 0, serviceCharge: 0 })
+        const bookingAmounts = calculateRoomPlanBookingAmounts(b, systemDate.value)
         const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
         const activePayments = (b.payments || []).filter(payment => Number(payment.edit_flag) === 0 && !payment.deleted_at)
         const depositAmount = activePayments
@@ -1430,7 +1435,7 @@ async function loadBookings() {
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
-          const roomAmounts = calculateRoomAmounts(br)
+          const roomAmounts = calculateRoomPlanRoomAmounts(br, b, systemDate.value)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
           const registrationStatus = b.registration_status || {}
           const registrationStatusName = registrationStatus.name || ''
@@ -1534,10 +1539,14 @@ async function loadBookings() {
       bookings.value = []
     }
   } catch (err) {
-    console.error('Failed to load real bookings, keeping fallbacks:', err)
+    if (requestId === loadBookingsRequestId) {
+      console.error('Failed to load real bookings, keeping fallbacks:', err)
+    }
   } finally {
-    loadingBookings.value = false
-    emit('loading', false)
+    if (requestId === loadBookingsRequestId) {
+      loadingBookings.value = false
+      emit('loading', false)
+    }
   }
 }
 
@@ -1579,6 +1588,7 @@ function handleWindowClick(event) {
 }
 
 let bc = null
+let suppressDateRangeReload = false
 
 function notifyRoomUpdates() {
   if (!bc) return
@@ -1627,11 +1637,14 @@ onMounted(async () => {
   const endDateVal = new Date(baseDate)
   endDateVal.setDate(baseDate.getDate() + 29)
 
+  suppressDateRangeReload = true
   startDate.value = baseDate
   endDate.value = endDateVal
   tempStartDateStr.value = formatDateStr(baseDate)
   tempEndDateStr.value = formatDateStr(endDateVal)
   dateRangeText.value = `${formatDateToDMY(formatDateStr(baseDate))} ~ ${formatDateToDMY(formatDateStr(endDateVal))}`
+  await nextTick()
+  suppressDateRangeReload = false
 
   // 3. Mark settings loaded so watchers can start auto-saving
   settingsLoaded.value = true
@@ -1674,6 +1687,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopQuickBookingDrag()
+  stopBookingPointerDrag()
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', closePlanSettings)
   window.removeEventListener('click', closeDatePickerPopover)
@@ -1693,6 +1707,7 @@ onBeforeUnmount(() => {
 
 // Listen to date changes to reload data
 watch([startDate, endDate], () => {
+  if (suppressDateRangeReload) return
   loadBookings()
 })
 
@@ -3069,7 +3084,10 @@ function handleDragStart(bk, event) {
   lastGhostTop = null
   dragBoundsCache = null
   requestAnimationFrame(() => {
-    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom + 122
+    // Keep the drag helper limited to the sticky header.  It must never cover
+    // the first rows of the grid, otherwise `elementFromPoint` cannot resolve
+    // a room cell while a booking is being dragged upward.
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom
   })
 
   if (event && event.currentTarget) {
@@ -3104,6 +3122,112 @@ function handleDragStart(bk, event) {
   document.addEventListener('dragover', handleWindowDragOver, true)
 }
 
+function handleBookingPointerDown(bk, event) {
+  if (event.button !== 0) return
+  if (event.target.closest('[data-room-plan-resize-handle], [data-room-plan-split-handle]')) return
+
+  if (bk.type === 'InHouse') {
+    uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+    return
+  }
+  if (bk.type === 'CheckedOut') {
+    uiStore.showToast('Phòng đã Check-out không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+    return
+  }
+  if (bk.isDoNotMove) {
+    uiStore.showToast('Phòng đang bị khóa di chuyển (Do Not Move). Không thể kéo thả.', 'warning')
+    return
+  }
+  if (splittingBooking.value) return
+
+  bookingPointerPending = {
+    booking: bk,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    element: event.currentTarget
+  }
+  window.addEventListener('pointermove', handleBookingPointerMove)
+  window.addEventListener('pointerup', handleBookingPointerUp)
+  window.addEventListener('pointercancel', handleBookingPointerCancel)
+}
+
+function startBookingPointerDrag(bk, event, element) {
+  event.preventDefault()
+  hideTooltip()
+  isPointerDraggingBooking = true
+  draggedBooking.value = bk
+  dragSourceStartIdx.value = bk.startIndex
+  dragSourceEndIdx.value = bk.endIndex
+  dragSourceRoom.value = bk.room
+  lastGhostCellKey = null
+  lastGhostTop = null
+  dragBoundsCache = null
+
+  const rect = (element || event.currentTarget).getBoundingClientRect()
+  draggedBookingRect.value = { left: rect.left, width: rect.width }
+  dragGhostY.value = rect.top + 2
+  requestAnimationFrame(() => {
+    dragTopZoneHeight.value = getDragVerticalBounds(true).headerBottom
+    dragGhostElement = document.querySelector('[data-room-plan-ghost]')
+    if (dragGhostElement) dragGhostElement.style.top = `${dragGhostY.value}px`
+  })
+
+  window.addEventListener('pointermove', handleBookingPointerMove)
+  window.addEventListener('pointerup', handleBookingPointerUp)
+  window.addEventListener('pointercancel', handleBookingPointerCancel)
+}
+
+function handleBookingPointerMove(event) {
+  if (!isPointerDraggingBooking || !draggedBooking.value) {
+    const pending = bookingPointerPending
+    if (!pending || pending.pointerId !== event.pointerId) return
+
+    const deltaX = event.clientX - pending.startX
+    const deltaY = event.clientY - pending.startY
+    if (Math.hypot(deltaX, deltaY) < 5) return
+
+    bookingPointerPending = null
+    startBookingPointerDrag(pending.booking, event, pending.element)
+  }
+
+  const targetCell = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-room-plan-cell]')
+  updateDragPosition(targetCell, event.clientY)
+}
+
+function handleBookingPointerUp(event) {
+  if (!isPointerDraggingBooking) {
+    bookingPointerPending = null
+    stopBookingPointerDrag()
+    return
+  }
+  const targetCell = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-room-plan-cell]')
+  const roomNo = targetCell?.dataset.room
+  const dayIdx = Number(targetCell?.dataset.dayIndex)
+  const targetRoom = dbRooms.value.find(item => String(item.room) === String(roomNo))
+  const targetDay = Number.isInteger(dayIdx) ? days.value[dayIdx] : null
+  stopBookingPointerDrag()
+
+  if (targetRoom && targetDay) {
+    handleDrop(targetRoom, targetDay, { preventDefault() {} })
+  } else {
+    handleDragEnd()
+  }
+}
+
+function handleBookingPointerCancel() {
+  bookingPointerPending = null
+  stopBookingPointerDrag()
+  handleDragEnd()
+}
+
+function stopBookingPointerDrag() {
+  isPointerDraggingBooking = false
+  window.removeEventListener('pointermove', handleBookingPointerMove)
+  window.removeEventListener('pointerup', handleBookingPointerUp)
+  window.removeEventListener('pointercancel', handleBookingPointerCancel)
+}
+
 let scrollAnimationFrame = null
 let currentScrollX = 0
 let currentScrollY = 0
@@ -3123,7 +3247,13 @@ function getDragVerticalBounds(force = false) {
   const theadEl = scrollContainer.querySelector('thead')
   const tfootEl = scrollContainer.querySelector('tfoot')
 
-  const headerBottom = theadEl ? theadEl.getBoundingClientRect().bottom : containerRect.top + 40
+  // The <thead> itself scrolls with the table; only its <th> cells are sticky.
+  // Reading the thead rect therefore gives an off-screen/negative position
+  // after scrolling down and prevents upward auto-scroll from ever starting.
+  const stickyHeaderCells = theadEl ? Array.from(theadEl.querySelectorAll('th')) : []
+  const headerBottom = stickyHeaderCells.length
+    ? Math.max(...stickyHeaderCells.map(cell => cell.getBoundingClientRect().bottom))
+    : containerRect.top + 40
   const occTop = tfootEl ? tfootEl.getBoundingClientRect().top : containerRect.bottom - 40
 
   const minTop = Math.max(headerBottom + 2, containerRect.top + 42)
@@ -3155,10 +3285,17 @@ function setDragGhostTop(top) {
 
 function handleGlobalDragOver(event) {
   if (!draggedBooking.value) return
+  if (event.__roomPlanDragHandled) return
+  event.__roomPlanDragHandled = true
   event.preventDefault()
 
   const targetCell = event.target?.closest?.('[data-room-plan-cell]')
-  if (targetCell && targetCell !== event.currentTarget) {
+  updateDragPosition(targetCell, event.clientY)
+}
+
+function updateDragPosition(targetCell, clientY) {
+  if (!draggedBooking.value) return
+  if (targetCell) {
     const cellKey = `${targetCell.dataset.room}:${targetCell.dataset.dayIndex}`
     if (lastGhostCellKey !== cellKey) {
       lastGhostCellKey = cellKey
@@ -3170,9 +3307,11 @@ function handleGlobalDragOver(event) {
   }
 
   const { minTop, maxTop, headerBottom, occTop } = getDragVerticalBounds()
-  const clientY = event.clientY
-  const topScrollBoundary = headerBottom + 120
-  // If mouse is inside or above header, clamp ghost card strictly below header!
+  // Start scrolling only when the pointer reaches the sticky header (plus a
+  // small buffer).  The previous 120px buffer made the preview look frozen
+  // long before the pointer reached the header.
+  const topScrollBoundary = headerBottom + 24
+  // Keep the preview below the sticky header while scrolling upward.
   if (clientY <= topScrollBoundary) {
     setDragGhostTop(minTop)
   } else if (clientY >= occTop) {
@@ -3181,7 +3320,7 @@ function handleGlobalDragOver(event) {
 
   let scrollY = 0
 
-  // Keep the current scroll area; extend it upward only after crossing the top boundary.
+  // Scroll upward only when the pointer reaches the top edge of the grid.
   if (clientY < topScrollBoundary) {
     const overflow = Math.max(0, topScrollBoundary - clientY)
     // Smooth speed: Starts at 2px/frame, gradually speeds up to 12px/frame as the pointer moves further up.
@@ -3266,6 +3405,7 @@ function startAutoScrollLoop() {
 }
 
 function handleDragEnd() {
+  stopBookingPointerDrag()
   draggedBooking.value = null
   draggedBookingRect.value = null
   dragSourceStartIdx.value = null
@@ -3346,6 +3486,16 @@ async function handleDrop(targetRoom, targetDay, event) {
     }
   }
 
+  const sourceBooking = bookings.value.find(item => String(item.bookingRoomId) === String(bk.bookingRoomId))
+  const previousRoom = sourceBooking?.room
+
+  // Giữ booking tại phòng đích ngay khi thả để người dùng biết thao tác đang chờ xác nhận/lưu.
+  if (sourceBooking) sourceBooking.room = targetRoomNumber
+
+  const revertPreviewMove = () => {
+    if (sourceBooking) sourceBooking.room = previousRoom
+  }
+
   const proceedMove = async (differentClass = false) => {
     try {
       loadingBookings.value = true
@@ -3370,10 +3520,12 @@ async function handleDrop(targetRoom, targetDay, event) {
         }
         await loadBookings()
       } else {
+        revertPreviewMove()
         uiStore.showToast(res?.data?.message || 'Có lỗi xảy ra khi chuyển phòng.', 'error')
       }
     } catch (err) {
       console.error(err)
+      revertPreviewMove()
       uiStore.showToast(err.response?.data?.message || 'Không thể chuyển phòng.', 'error')
     } finally {
       loadingBookings.value = false
@@ -3384,12 +3536,14 @@ async function handleDrop(targetRoom, targetDay, event) {
   if (originalRoomClass !== targetRoomClass) {
     uiStore.confirm({
       title: 'Xác nhận chuyển phòng khác loại',
-      message: `Bạn đang chuyển phòng khác loại phòng (${originalRoomClass} -> ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`,
+      message: `Chuyển phòng ${previousRoom} sang ${targetRoomNumber} (${originalRoomClass} → ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`,
       confirmText: 'Đồng ý',
       cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (confirmed) {
         await proceedMove(true)
+      } else {
+        revertPreviewMove()
       }
     })
   } else {
@@ -3565,6 +3719,7 @@ async function saveQuickBooking() {
     uiStore.showToast('Đã tạo phiếu đăng ký nhanh thành công!', 'success')
     showQuickBookingModal.value = false
     selectedCells.value = []
+    hideTooltip()
     
     await roomStore.fetchRooms()
     await loadBookings()
@@ -4087,7 +4242,7 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
+    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @scroll.passive="hideTooltip" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
@@ -4203,8 +4358,8 @@ function getRoomStatusIconName(item) {
                 @mouseenter="handleCellMouseEnter(item, day, dayIdx, idx, $event)"
                 @click="handleCellClick(item, day, dayIdx, $event)"
                 @contextmenu.prevent="handleCellContextMenu(item, day, $event)"
-                @dragenter="allowRoomPlanDrop"
-                @dragover="allowRoomPlanDrop"
+                @dragenter.prevent="handleGlobalDragOver"
+                @dragover.prevent="handleGlobalDragOver"
                 @drop="handleDrop(item, day, $event)"
               >
                 <!-- Render bookings starting at this cell -->
@@ -4218,10 +4373,9 @@ function getRoomStatusIconName(item) {
                     @click.stop
                     @dblclick.prevent.stop="handleBookingDblClick(bk)"
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
-                    draggable="true"
-                    @dragstart="handleDragStart(bk, $event)"
-                    @dragend="handleDragEnd"
-                    class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-all"
+                    draggable="false"
+                    @pointerdown="handleBookingPointerDown(bk, $event)"
+                    class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
                       splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-visible',
@@ -4236,6 +4390,7 @@ function getRoomStatusIconName(item) {
                     <!-- Left resize handle -->
                     <div 
                       v-if="bk.code !== 'LOCK'"
+                      data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 left-0 w-2 z-20 select-none"
                       :style="{ cursor: Number(hotelSettings?.RoomPlan_AllowChangeArrivalDate) === 1 ? 'w-resize' : 'not-allowed' }"
                       @mousedown.stop="startResize(bk, 'start', $event)"
@@ -4244,6 +4399,7 @@ function getRoomStatusIconName(item) {
                     <!-- Right resize handle -->
                     <div 
                       v-if="bk.code !== 'LOCK'"
+                      data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 right-0 w-2 z-20 select-none"
                       style="cursor: e-resize;"
                       @mousedown.stop="startResize(bk, 'end', $event)"
@@ -4299,6 +4455,7 @@ function getRoomStatusIconName(item) {
                     <!-- Split Handle / Control -->
                     <div 
                       v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
+                      data-room-plan-split-handle
                       class="absolute top-0 bottom-0 w-[4px] bg-white cursor-ew-resize z-40 shadow-[0_0_4px_rgba(0,0,0,0.5)]"
                       :style="{ left: `calc(${((splitIndex - bk.startIndex) / bk.span) * 100}% - 2px)` }"
                       @mousedown.prevent.stop="startDragSplitBar($event)"
@@ -5249,7 +5406,7 @@ function getRoomStatusIconName(item) {
   <Teleport to="body">
     <div
       v-if="draggedBooking && dragTopZoneHeight"
-      class="fixed inset-x-0 top-0 z-[9998] bg-transparent"
+      class="fixed inset-x-0 top-0 z-[9998] pointer-events-none bg-transparent"
       :style="{ height: `${dragTopZoneHeight}px` }"
       @dragenter.prevent="handleTopDragOver"
       @dragover.prevent="handleTopDragOver"
@@ -5257,7 +5414,7 @@ function getRoomStatusIconName(item) {
     <div 
       v-if="draggedBooking && draggedBookingRect"
       data-room-plan-ghost
-      class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-[9px] font-bold leading-tight select-none shadow-2xl opacity-90 transition-all duration-100 ease-out"
+      class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-[9px] font-bold leading-tight select-none shadow-2xl opacity-90 transition-none"
       :class="[
         isBookingMatched(draggedBooking) ? getBookingClass(draggedBooking.type) : 'bg-slate-100 text-slate-400 border-slate-200'
       ]"
@@ -5266,6 +5423,7 @@ function getRoomStatusIconName(item) {
         width: `${draggedBookingRect.width}px`,
         top: `${dragGhostY}px`,
         height: '33px',
+        transition: 'none',
         ...(isBookingMatched(draggedBooking) ? getBookingStyle(draggedBooking.type) : {})
       }"
     >

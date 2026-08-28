@@ -28,6 +28,8 @@ class BreakfastController extends Controller
         $toDateStr = $request->input('to_date', $fromDateStr);
         $dateType = $request->input('date_type', 'breakfast'); // 'breakfast' or 'arrival'
         $showType = (int)$request->input('show_type', 1); // 1: only breakfast, 0: all, 2: no breakfast
+        $targetRoomNumber = trim((string) $request->input('room_number', ''));
+        $includeReserved = $targetRoomNumber !== '' && $request->boolean('include_reserved');
 
         if (!$fromDateStr) {
             $fromDateStr = now()->toDateString();
@@ -73,7 +75,10 @@ class BreakfastController extends Controller
         if ($dateType === 'arrival') {
             // Lọc theo ngày đến của phòng: Lấy các phòng sắp đến & đang đến (Đăng ký 0, Đang ở 1, Chuyển phòng 100)
             $rooms = (clone $roomsQuery)
-                ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, 100])
+                ->whereIn('status', $includeReserved
+                    ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT, 100]
+                    : [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, 100])
+                ->when($targetRoomNumber !== '', fn ($q) => $q->where('room_number', $targetRoomNumber))
                 ->whereBetween('arrival_date', [$fromDate->toDateString(), $toDate->toDateString()])
                 ->orderBy('arrival_date')
                 ->orderBy('room_number')
@@ -90,7 +95,10 @@ class BreakfastController extends Controller
             // Lọc theo ngày ăn sáng (breakfast): CHỈ LẤY CÁC PHÒNG ĐÃ CHECK-IN / ĐANG Ở (1) hoặc ĐÃ CHECK-OUT TRONG NGÀY (2)
             // Khách chưa nhận phòng (Đăng ký 0) chưa có mặt thực tế tại khách sạn nên không nằm trong danh sách ăn sáng
             $candidateRooms = (clone $roomsQuery)
-                ->whereIn('status', [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT])
+                ->whereIn('status', $includeReserved
+                    ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT, 100]
+                    : [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT])
+                ->when($targetRoomNumber !== '', fn ($q) => $q->where('room_number', $targetRoomNumber))
                 ->where('arrival_date', '<=', $toDate->toDateString())
                 ->where('departure_date', '>=', $fromDate->toDateString())
                 ->orderBy('room_number')
