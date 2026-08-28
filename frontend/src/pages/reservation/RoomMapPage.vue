@@ -29,6 +29,7 @@ import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import ReportsPage from '@/pages/reports/ReportsPage.vue'
+import GeneralSearchPage from '@/pages/frontdesk/GeneralSearchPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -392,6 +393,88 @@ const occupiedStats = computed(() => {
 const occupancyRateStats = computed(() => {
   return `${roomStore.occupancyRate}%`
 })
+
+// The statistics popup must use the same room snapshot as Room Map (including
+// the selected PMS date), instead of a mix of legacy statuses and demo values.
+const roomMapStatistics = computed(() => {
+  const rooms = roomStore.rooms || []
+  const isLocked = (room) => ['ooo', 'oos', 'occupied_ooo'].includes(room.room_status_code)
+    || ['OOO', 'OOS'].includes(room.lock_type)
+  const isDirty = (room) => ['vacant_dirty', 'occupied_dirty'].includes(room.room_status_code)
+    || room.status === ROOM_STATUSES.DIRTY
+    || room.is_clean === false
+  const isOccupied = (room) => room.booking_status === 'occupied'
+  const isCheckout = (room) => room.booking_status === 'checkout'
+  const isArrival = (room) => room.booking_status === 'reserved'
+  const pax = (room) => Number(room.guest_count ?? room.adults ?? 0) || 0
+  const rate = (room) => Number(room.rate) || 0
+  const hasRateCode = (room, pattern) => pattern.test(String(room.rate_code || ''))
+  const currentStay = rooms.filter(room => isOccupied(room) || isCheckout(room))
+  const endOfDayStay = rooms.filter(room => isOccupied(room) || isArrival(room))
+  const saleable = rooms.filter(room => !isLocked(room))
+  const occupied = rooms.filter(isOccupied)
+  const checkout = rooms.filter(isCheckout)
+  const arrivals = rooms.filter(isArrival)
+  const groupRooms = endOfDayStay.filter(room => Boolean(room.is_git))
+  const retailRooms = endOfDayStay.filter(room => !room.is_git)
+  const compRooms = endOfDayStay.filter(room => hasRateCode(room, /comp/i))
+  const huRooms = endOfDayStay.filter(room => hasRateCode(room, /(^|[^a-z])hu([^a-z]|$)|house\s*use/i))
+  const internalRooms = endOfDayStay.filter(room => hasRateCode(room, /noi\s*bo|internal/i))
+  const chargeableRooms = endOfDayStay.filter(room => !hasRateCode(room, /comp|(^|[^a-z])hu([^a-z]|$)|house\s*use|noi\s*bo|internal/i))
+  const projectedRevenue = chargeableRooms.reduce((sum, room) => sum + rate(room), 0)
+  const occupiedPax = (list) => list.reduce((sum, room) => sum + pax(room), 0)
+
+  return {
+    totalRooms: rooms.length,
+    ooo: rooms.filter(room => room.room_status_code === 'ooo' || room.room_status_code === 'occupied_ooo' || room.lock_type === 'OOO').length,
+    oos: rooms.filter(room => room.room_status_code === 'oos' || room.lock_type === 'OOS').length,
+    saleableRooms: saleable.length,
+    occupiedReady: occupied.filter(room => !isDirty(room)).length,
+    vacantReady: rooms.filter(room => !room.booking_status && !isLocked(room) && !isDirty(room)).length,
+    occupiedClean: occupied.filter(room => room.room_status_code === 'occupied_clean').length,
+    vacantClean: rooms.filter(room => room.room_status_code === 'vacant_clean').length,
+    occupiedDirty: currentStay.filter(isDirty).length,
+    vacantDirty: rooms.filter(room => !room.booking_status && !isLocked(room) && isDirty(room)).length,
+    pendingCheckoutRooms: checkout.length,
+    pendingCheckoutPax: occupiedPax(checkout),
+    checkedOutRooms: Number(roomStore.stats?.departures_checked_out) || 0,
+    arrivalsRooms: arrivals.length,
+    arrivalsPax: occupiedPax(arrivals),
+    assignedArrivalRooms: arrivals.length,
+    assignedArrivalPax: occupiedPax(arrivals),
+    checkedInRooms: occupied.length,
+    checkedInPax: occupiedPax(occupied),
+    occupiedRooms: currentStay.length,
+    occupiedPax: occupiedPax(currentStay),
+    earlyCheckoutRooms: Number(roomStore.stats?.early_departures) || 0,
+    hourlyRooms: rooms.filter(room => Boolean(room.is_day_use)).length,
+    sameDayBookings: arrivals.length,
+    walkInRooms: rooms.filter(room => Boolean(room.is_walk_in)).length,
+    retailRooms: retailRooms.length,
+    retailPax: occupiedPax(retailRooms),
+    groupRooms: groupRooms.length,
+    groupPax: occupiedPax(groupRooms),
+    chargeableRooms: chargeableRooms.length,
+    chargeablePax: occupiedPax(chargeableRooms),
+    compRooms: compRooms.length,
+    compPax: occupiedPax(compRooms),
+    huRooms: huRooms.length,
+    huPax: occupiedPax(huRooms),
+    internalRooms: internalRooms.length,
+    internalPax: occupiedPax(internalRooms),
+    endOfDayRooms: endOfDayStay.length,
+    endOfDayPax: occupiedPax(endOfDayStay),
+    vacantRooms: Math.max(0, saleable.length - endOfDayStay.length),
+    occupancyRate: saleable.length ? Math.round((endOfDayStay.length / saleable.length) * 100) : 0,
+    projectedRevenue,
+    averageRate: chargeableRooms.length ? Math.round(projectedRevenue / chargeableRooms.length) : 0,
+    revenuePerSaleableRoom: saleable.length ? Math.round(projectedRevenue / saleable.length) : 0,
+  }
+})
+
+function formatVnd(value) {
+  return `${new Intl.NumberFormat('vi-VN').format(Number(value) || 0)} đ`
+}
 
 // Sorted Floors list
 const sortedFloors = computed(() => {
@@ -1980,7 +2063,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
 
               <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
-              <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
+              <div v-if="currentTab === 'search'" class="h-full overflow-hidden">
+                <GeneralSearchPage />
+              </div>
+
+              <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
+              <div v-else-if="currentTab === 'available'" class="h-full overflow-hidden">
                 <AvailableRoomsPage />
               </div>
 
@@ -2473,7 +2561,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </div>
 
                         <!-- Room Content (Centered) -->
-                        <div class="flex flex-col items-center justify-start pt-3 w-full my-auto">
+                        <div class="absolute inset-x-2 top-1/2 flex max-h-[calc(100%-8px)] -translate-y-1/2 flex-col items-center justify-center overflow-hidden text-center">
                           <!-- Room Number -->
                           <div
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
@@ -2494,9 +2582,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Guest Name (if occupied or reserved) -->
                           <div
                             v-if="room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'"
-                            class="font-bold leading-tight text-center w-full mt-1 truncate max-w-full"
+                            class="font-bold leading-tight text-center w-full truncate max-w-full"
                             :style="{ fontSize: Math.max(8, settings.textSizes.guestName * cardScale) + 'px' }"
-                            :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
+                            :class="[
+                              room.booking_color ? 'text-inherit' : 'text-gray-900',
+                              settings.roomHeight < 70 ? 'mt-0' : 'mt-1'
+                            ]">
                             {{ getMockGuestName(room) }}
                           </div>
                         </div>
@@ -3352,20 +3443,20 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <span class="font-semibold">Tổng phòng</span>
                   <span
                     class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.length }}</span>
+                      roomMapStatistics.totalRooms }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-amber-700">OOO</span>
                   <span
                     class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')).length
+                      roomMapStatistics.ooo
                     }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-emerald-700">OOS</span>
                   <span
                     class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')).length
+                      roomMapStatistics.oos
                     }}</span>
                 </div>
                 <div
@@ -3373,7 +3464,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <span>Tổng phòng có thể bán</span>
                   <span
                     class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{
-                      roomStore.rooms.length - roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'oos' || r.room_status_code === 'occupied_ooo' || (!!r.lock_type && r.room_status_code !== 'housekeeping')).length
+                      roomMapStatistics.saleableRooms
                     }}</span>
                 </div>
               </div>
@@ -3393,23 +3484,18 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-8">
                     <td class="font-semibold">Phòng sẵn sàng</td>
-                    <td class="text-right font-bold tabular-nums">0</td>
-                    <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                      ROOM_STATUSES.AVAILABLE && r.is_clean).length }}</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.occupiedReady }}</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.vacantReady }}</td>
                   </tr>
                   <tr class="h-8">
                     <td class="font-semibold">Phòng sạch</td>
-                    <td class="text-right font-bold tabular-nums">0</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.occupiedClean }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.vacantClean }}</td>
                   </tr>
                   <tr class="h-8">
                     <td class="font-semibold">Phòng dơ</td>
-                    <td class="text-right font-bold text-red-600 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
-                    <td class="text-right font-bold text-red-600 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      !==
-                      ROOM_STATUSES.OCCUPIED && (r.status === ROOM_STATUSES.DIRTY || !r.is_clean)).length }}</td>
+                    <td class="text-right font-bold text-red-600 tabular-nums">{{ roomMapStatistics.occupiedDirty }}</td>
+                    <td class="text-right font-bold text-red-600 tabular-nums">{{ roomMapStatistics.vacantDirty }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -3430,77 +3516,53 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-7.5">
                     <td class="font-semibold">Phòng chưa trả</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.pendingCheckoutPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Phòng đã trả</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.CHECKOUT).length }}</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.CHECKOUT).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-red-500 tabular-nums">{{ roomMapStatistics.checkedOutRooms }}</td>
+                    <td class="text-right font-bold text-red-500 tabular-nums">-</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Phòng đến</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r =>
-                      r.status
-                      ===
-                      ROOM_STATUSES.RESERVED).length }}</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r =>
-                      r.status
-                      ===
-                      ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.arrivalsRooms }}</td>
+                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Phòng đến đã gán phòng</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r =>
-                      r.status
-                      ===
-                      ROOM_STATUSES.RESERVED).length }}</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{roomStore.rooms.filter(r =>
-                      r.status
-                      ===
-                      ROOM_STATUSES.RESERVED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.assignedArrivalRooms }}</td>
+                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.assignedArrivalPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Phòng đã đến</td>
-                    <td class="text-right font-bold text-slate-800 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).length }}</td>
-                    <td class="text-right font-bold text-slate-800 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.OCCUPIED && r.id % 7 === 1).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomMapStatistics.checkedInRooms }}</td>
+                    <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomMapStatistics.checkedInPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold text-sky-700">Phòng đang ở</td>
-                    <td class="text-right font-bold text-sky-700 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.OCCUPIED).length }}</td>
-                    <td class="text-right font-bold text-sky-700 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                      ===
-                      ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                    <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomMapStatistics.occupiedRooms }}</td>
+                    <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomMapStatistics.occupiedPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Trả phòng sớm</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Phòng ở theo giờ</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.hourlyRooms }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Đặt phòng trong ngày</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.sameDayBookings }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-semibold">Khách vãng lai</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.walkInRooms }}</td>
+                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
                   </tr>
                 </tbody>
               </table>
@@ -3524,61 +3586,49 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <tbody class="divide-y divide-slate-100 text-slate-700">
                     <tr class="h-7">
                       <td class="font-semibold">Khách lẻ</td>
-                      <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                        ROOM_STATUSES.OCCUPIED).length }}</td>
-                      <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                        ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
+                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.retailRooms }}</td>
+                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.retailPax }}</td>
                       <td class="text-right font-bold text-slate-400">-</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold">Khách đoàn</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.groupRooms }}</td>
+                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.groupPax }}</td>
                       <td class="text-right font-bold text-slate-400">-</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold">Phòng ở (ko b/g COMP.HU)</td>
-                      <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                        ROOM_STATUSES.OCCUPIED).length }}</td>
-                      <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                        ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
-                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomStore.occupancyRate }}%</td>
+                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeableRooms }}</td>
+                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeablePax }}</td>
+                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold">Phòng COMP</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.compRooms }}</td>
+                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.compPax }}</td>
                       <td class="text-right font-bold text-slate-400">-</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold">Phòng ở (ko b/g HU)</td>
-                      <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                        ROOM_STATUSES.OCCUPIED).length }}</td>
-                      <td class="text-right font-bold tabular-nums">{{roomStore.rooms.filter(r => r.status ===
-                        ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
-                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomStore.occupancyRate }}%</td>
+                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
+                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
+                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold">Phòng nội bộ</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">0</td>
+                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.internalRooms }}</td>
+                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.internalPax }}</td>
                       <td class="text-right font-bold text-slate-400">-</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold text-blue-700">Phòng ở</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                        ===
-                        ROOM_STATUSES.OCCUPIED).length }}</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{roomStore.rooms.filter(r => r.status
-                        ===
-                        ROOM_STATUSES.OCCUPIED).reduce((sum, r) => sum + getGuestCount(r), 0) }}</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomStore.occupancyRate }}%</td>
+                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.endOfDayRooms }}</td>
+                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.endOfDayPax }}</td>
+                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-semibold text-red-500">Phòng trống</td>
-                      <td class="text-right font-bold text-red-500 tabular-nums">{{roomStore.rooms.length -
-                        roomStore.rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED || r.status ===
-                          ROOM_STATUSES.MAINTENANCE).length }}</td>
+                      <td class="text-right font-bold text-red-500 tabular-nums">{{ roomMapStatistics.vacantRooms }}</td>
                       <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
                       <td class="text-right font-bold text-slate-400">-</td>
                     </tr>
@@ -3592,15 +3642,15 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <h5 class="font-bold text-slate-900 mb-1 select-none">Dự báo</h5>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Doanh thu</span>
-                  <span class="font-bold text-emerald-600">44,724,486 đ</span>
+                  <span class="font-bold text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Giá phòng trung bình (ko b/g HU)</span>
-                  <span class="font-bold text-slate-800">559,056 đ</span>
+                  <span class="font-bold text-slate-800">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">DT bình quân/ Tổng phòng có thể bán</span>
-                  <span class="font-bold text-slate-800">552,154 đ</span>
+                  <span class="font-bold text-slate-800">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
                 </div>
               </div>
             </div>

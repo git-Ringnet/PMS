@@ -11,6 +11,88 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-08-28] - Hoàn Thiện & Nâng Cấp Module Tìm Kiếm Chung Chuẩn Thiết Kế Mẫu
+### Module: Frontdesk / Reservation - Tìm Kiếm Chung (`/frontdesk?tab=search`, `/reservation?tab=search`)
+
+- **Đã hoàn thành toàn diện theo mẫu [`UI/TÌM KIẾM CHUNG.html`](file:///d:/PMS/UI/TÌM KIẾM CHUNG.html)**:
+  - **1. Bộ Lọc Tùy Biến Kéo Thả (Drag & Drop Customizable Filter Bar)**:
+    - Hỗ trợ đầy đủ tương tác kéo thả HTML5 (`draggable`) và nút chuyển đổi nhanh (`⇥` chuyển vào nâng cao, `⇤` đưa ra tìm nhanh) cho toàn bộ 16 trường nghiệp vụ ([`GeneralSearchPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue)).
+    - Cố định thứ tự trường chuẩn (`FIELD_ORDER`: Mã BK, Tình trạng lưu trú, Ref Code, Booking Name, Booking Status, Contact, Booker, Company, Market Segment, Source Code, Reg Date, User Sale,...).
+    - Tự động lưu cấu hình vị trí các trường theo từng tài khoản người dùng vào `localStorage` (`pms_general_search_layout_${userId}`).
+    - Nút **Bộ lọc nâng cao** hiển thị badge đếm số lượng trường động tương ứng trong bảng điều kiện nâng cao (ví dụ `10`, `12`...).
+  - **2. Bộ Chọn Ngày & Toggle Thông Minh**:
+    - Nút Toggle switch "Tìm theo ngày" (`use_date`), tự động đồng bộ ngày nghiệp vụ từ hệ thống (`/system-date`).
+    - Hiển thị khoảng ngày trực quan kèm nút mở lịch `📅` nhanh.
+  - **3. Autocomplete & Gợi Ý Mã Booking (Mã BK)**:
+    - Dropdown gợi ý tức thì khi gõ từ khóa Mã BK, hiển thị Mã BK, Tên BK và Mã tham chiếu kèm nút xóa nhanh `×`.
+  - **4. Dropdown Quản Lý & Kéo Thả Sắp Xếp Vị Trí Cột (Columns Reordering)**:
+    - Chuyển đổi thành **Dropdown menu gắn ngay dưới nút "⚙ Cột hiển thị"** (chuẩn theo ảnh mẫu 1).
+    - Tích hợp checkbox ẩn/hiện và hỗ trợ **kéo thả (Drag & Drop) hoặc bấm nút mũi tên `▲`/`▼`** để thay đổi thứ tự các cột trực tiếp.
+    - Toàn bộ bảng dữ liệu bên dưới tự động re-render và hiển thị các cột theo đúng thứ tự tùy biến của người dùng, tự động lưu vào `localStorage` (`pms_general_search_columns_${userId}_${tab}`).
+  - **5. Bảng Dữ Liệu & Sub-table Phòng Con Gọn Gàng (Compact Sub-table)**:
+    - Tinh chỉnh sub-table chi tiết phòng con khi bấm mở rộng `+` trong Tab Đăng Ký thành **bảng gọn gàng, kích thước nhỏ gọn** (chuẩn theo ảnh mẫu 3), không bị tràn 100% chiều ngang.
+    - Gom nhóm phòng theo: `Loại Phòng`, `#Phòng`, `#N.Lớn`, `#T.Em`, `Ngày Đến`, `Ngày Đi`, `Mã Giá Phòng`, `Giá Phòng`, `Tổng`.
+    - Bổ sung dòng **Tổng cộng ở đáy sub-table** (Tổng số phòng, tổng người lớn, tổng trẻ em, tổng tiền).
+    - Bổ sung đầy đủ tính năng **sắp xếp cột (Sorting `↕` / `↑` / `↓`) cho cột `Đêm` / `Số đêm` (`nights`) và `Ngày đi` (`departure_date`)** trên cả 3 tab: **Đăng Ký**, **Phòng**, **Khách** đồng bộ cùng Backend và Frontend.
+    - Xử lý **tự động xuống dòng & ngắt chuỗi dài không khoảng trắng (word break / line wrap)** kèm mở rộng không gian hiển thị cho các cột Tên đăng ký (`booking_name`, 240px - 400px), Tên khách (`guest_name`), Loại phòng khởi tạo / thực tế (`room_class_cell`, 170px - 300px), Công ty (`company`), Ghi chú (`note`), Địa chỉ (`address`)... giúp bảng rộng rãi, dễ đọc và không bị tràn kéo dài.
+    - **Nút chức năng Top bar & Dropdown Thao tác chuyên biệt theo từng Tab (Ảnh 1, 2, 3, 4)**:
+      - Nút **"Nhân bản"**: Chỉ hiển thị ở **Tab Đăng Ký** khi có checkbox được chọn (`tab === 'booking' && selectedCount > 0`), mở modal nhân bản `CopyModal` hỗ trợ chọn ngày đến mới và nhân bản tức thì.
+      - Nút **"Thao tác"**: Luôn hiển thị trên thanh công cụ Top Bar. Dropdown menu thiết kế màu trắng sạch sẽ (`#ffffff`, border `#cbd5e1`), icon màu xanh dịu (`#2563eb`), hover êm dịu, không bị chói mắt.
+      - Nút **"Nhân bản"**: Luôn hiển thị ở Tab Đăng Ký, tự động đổi màu xám (disabled) khi chưa chọn hoặc chọn nhiều hơn 1 checkbox.
+      - **Chức năng "Nhận phòng" (Tab Phòng)**: Cho phép tích chọn **nhiều phòng cùng lúc** (`selectedCount >= 1`), kể cả các phòng chưa gán số phòng (trạng thái Đặt phòng `DP` / `0`), xác nhận nhận phòng hàng loạt và phản hồi chi tiết kết quả.
+      - **Modal xác nhận "No Show" (Chuẩn Hình 2)**: Khi bấm `No Show Một Ngày` hoặc `No Show Giai Đoạn`, hiển thị modal popup xác nhận màu xanh chuẩn với 3 tùy chọn tính phí:
+        1. `Tính phí tất cả` (`all_charged`)
+        2. `Tính phí tiền phòng` (`room_only`)
+        3. `không tính phí` (`no_charge`)
+        Cùng 2 nút `[Không]` và `[Có]` để thực hiện xử lý no-show đúng tùy chọn tính phí.
+      - **Phân tách cơ chế Bộ lọc nhanh vs Bộ lọc nâng cao**:
+        - **Bộ lọc nhanh (ở ngoài)**: Khi người dùng nhập/chọn (Mã BK, Tình trạng, ngày...), hệ thống tự động tìm kiếm **Realtime** ngay tức thì.
+        - **Bộ lọc nâng cao (ở trong khung Điều kiện nâng cao)**: Người dùng nhập/chọn các trường bên trong khung nâng cao sẽ **không bị realtime nhảy dữ liệu**, dữ liệu được lưu vào bản nháp (`advDraft`). Chỉ khi bấm nút **"Áp dụng"** (hoặc Enter) thì các bộ lọc này mới được thực thi tìm kiếm. Nút **"Xóa lọc"** làm sạch bộ lọc nâng cao.
+      - **Submenu "No show"**: Hiển thị dạng flyout mở sang **bên trái** (`right: 100%`) và mũi tên `◀`, không còn bị tràn/che khuất khỏi mép phải màn hình.
+      - **Chức năng "Hóa Đơn"**: Bổ sung hỗ trợ đầy đủ các tham số query (`bookingCode`, `booking_code`, `booking_id`, `roomId`, `room_id`) trong [`CheckoutPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) và [`GeneralSearchPage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue), giúp khi click mở đúng chính xác booking và phòng được chọn trên màn hình Hóa đơn/Checkout.
+      - **Cơ chế giới hạn thao tác theo số lượng checkbox được chọn**:
+        - Khi **chưa chọn dòng nào** (`selectedCount === 0`): Các chức năng cần dòng được chọn sẽ hiển thị màu xám disabled trong menu; nút Nhân bản ở ngoài xám disabled; nút Đồ thất lạc luôn click được.
+        - Khi tích chọn **nhiều hơn 1 dòng** (`selectedCount > 1`), các chức năng đơn lẻ gồm: **Đăng Ký**, **Hóa Đơn**, **Thông Tin Khách**, **Nhân bản** sẽ tự động **chuyển màu xám (disabled, không cho click)**, riêng **Nhận phòng** và **No Show** cho phép thao tác nhiều phòng cùng lúc.
+        - Khi tích chọn **đúng 1 dòng** (`selectedCount === 1`), tất cả chức năng đều sáng lên và hoạt động:
+          - `Đăng Ký`: Điều hướng trực tiếp đến đúng phiếu đăng ký / `booking_id` / mã booking đã chọn (ví dụ `GAL1`) trên giao diện tạo/sửa đăng ký.
+          - `Hóa Đơn`: Mở trực tiếp màn hình hóa đơn / thanh toán đúng booking và phòng đã chọn.
+          - `Thông Tin Khách`: Mở modal chi tiết thông tin khách của booking.
+          - `Nhận phòng`: Thực hiện nhận phòng nhanh cho phòng được chọn.
+          - `Nhân bản`: Mở modal sao chép booking đã chọn sang ngày đến mới.
+      - **Sao lưu & Khôi phục Database Đa Chi Nhánh (Multi-Database Backup & Restore)**:
+        - Nâng cấp [`DatabaseBackupController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/DatabaseBackupController.php) và [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Hỗ trợ toàn diện 3 cấp độ phạm vi:
+          1. **`ALL` (Toàn Bộ Hệ Thống)**: Tự động gom xuất và nạp toàn bộ Database Hệ Thống Chính (`pms_system`) + TẤT CẢ các Database Chi Nhánh con trong 1 file `.sql` duy nhất.
+          2. **`SYSTEM` (Database Hệ Thống Quản Trị)**: Xuất và khôi phục riêng Database `pms_system` chứa dữ liệu người dùng, vai trò, chi nhánh...
+          3. **Từng Chi Nhánh Con (`HKT1`, `HKT2`...)**: Xuất và khôi phục riêng lẻ từng database nghiệp vụ của chi nhánh đó.
+        - **Khôi phục an toàn (Sanitization)**: Tự động loại bỏ các lệnh `CREATE DATABASE` và `USE \`...\`;` khi nạp chi nhánh đơn lẻ, hoặc tự định tuyến nạp theo từng DB khi nạp file tổng hợp `ALL`.
+      - **Sửa lỗi hiển thị Thông Báo Booking trên Server ([`BookingNotificationController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingNotificationController.php) & [`CreateRegistrationPage.vue`](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+        - Mở rộng điều kiện lọc API `active`: Trả về toàn bộ thông báo của booking hoặc các thông báo bao quát thời gian lưu trú `arrival_date` $\rightarrow$ `departure_date`, không còn bị chặn khi ngày hiện tại của server khác với ngày tạo thông báo.
+        - Kích hoạt gọi `loadActiveBookingNotifications()` ngay sau khi `loadBookings()` tải xong hoặc khi mở booking theo `bookingCode`, đảm bảo thông báo luôn tự động hiển thị popup khi vào xem booking.
+      - **Nâng cấp Giao diện Bố cục Thông Tin Đăng Ký ([`CreateRegistrationPage.vue`](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+        - Tái cấu trúc thành **Lưới 2 Cột Bento Grid cân xứng & giảm saturation chuyên nghiệp**:
+          - **Đồng bộ màu chỉ báo phân khu**: Xanh dương (Thông tin công ty/kênh bán), Tím (Khách & Người liên hệ), Xanh lá (Đặt cọc & Thanh toán), Cam (Ghi chú booking).
+          - **Giảm saturation nền**: Toàn bộ input/select dùng nền trắng sạch sẽ `bg-white border-slate-300`, thẻ Đặt cọc tinh gọn `bg-slate-50 border-slate-200` với nút `+ Thêm cọc` thanh lịch.
+          - **Phân biệt rõ Editable / Read-only / Calculated fields**:
+            - Mã booking: Hiển thị dạng badge read-only xám nhẹ `bg-slate-100 border-slate-200 cursor-default select-all`.
+            - Số đêm: Calculated field `2 đêm` tự tính từ ngày lưu trú với nút stepper +/- gọn gàng.
+            - Tên đăng ký / Ghi chú: Ô editable viền nét, phản hồi focus mượt mà.
+          - **Đồng bộ màu sắc động theo Tùy chỉnh màu nền Topbar (`authStore.settings.topbar_color` / `--pms-custom-theme`)**:
+            - Màu nền Topbar Header của Modal Thông tin đăng ký và Modal Đặt Cọc (Thêm/Sửa/Tách/Chuyển cọc) tự động đồng bộ 100% với màu nền Topbar hệ thống (Solid hoặc Gradient như Tinh vân, Đại dương, Hoàng hôn...), tự động chuyển tương phản chữ/icon (`isTopBarThemeDark`).
+            - 4 thanh dọc chỉ báo phân khu (Section 1: Công ty/Kênh bán, Section 2: Người liên hệ, Section 3: Đặt cọc, Section 4: Ghi chú) và nút `Cập nhật Booking` ăn theo màu Topbar hệ thống.
+            - Nút `Màu BK` trong modal chỉ phục vụ đổi màu thẻ booking trên sơ đồ phòng, không làm ảnh hưởng đến theme màu Topbar của modal.
+          - **Tối ưu popup thông báo Booking / Phòng**:
+            - Chỉ hiển thị 1 lần khi mở/chuyển sang booking khác hoặc reload trang.
+            - Thao tác nội bộ bên trong cùng 1 booking (như mở modal Đặt cọc, thêm/sửa cọc) không bị re-trigger lại popup thông báo.
+          - **Footer & Dirty Tracking UX**:
+            - Metadata tương phản cao: `👤 testuser • 🕒 28/08/2026 15:19:28`.
+            - Hiển thị badge `● Có thay đổi chưa lưu` khi form bị chỉnh sửa.
+            - Nút `Cập nhật Booking` tự động disabled nếu form chưa có thay đổi, active sáng màu chủ đạo khi có thay đổi.
+    - Tab Phòng ([`sp_041.sql`](file:///d:/PMS/store%20PMS/sp_041.sql)): Gom nhóm Master Booking banner màu xanh nhạt với tổng tiền dịch vụ & tiền thanh toán.
+    - Tab Khách ([`sp_043.sql`](file:///d:/PMS/store%20PMS/sp_043.sql)): Đầy đủ 22 trường thông tin khách lưu trú người lớn và trẻ em.
+    - Thanh phân trang hiển thị chuẩn PMS (dropdown 50 / 100 / 200 dòng/trang, danh sách nút trang số `1`, `2`, `3`..., nút Trước/Sau và Tổng kết quả).
+- **Trạng thái hiện tại**: Hoàn thành 100% các cập nhật: Nhận phòng nhiều phòng hàng loạt, Modal xác nhận No Show theo Hình 2, phân tách Realtime bộ lọc ngoài và Áp dụng thủ công cho bộ lọc nâng cao, fix triệt để lỗi phòng chuyển (status 100) chặn sang ngày, hoàn thiện module Sao lưu & Khôi phục Database Đa Chi Nhánh hỗ trợ ALL, SYSTEM và từng chi nhánh, popup thông báo booking hiển thị chuẩn 1 lần không re-trigger khi đặt cọc, đồng bộ màu Modal Thông tin đăng ký & Modal Đặt Cọc chuẩn theo "Tùy chỉnh màu nền Topbar" hệ thống, build Vite production thành công không lỗi.
+- **Kế hoạch tiếp theo**: Tiếp tục hỗ trợ kiểm thử và hoàn thiện các nghiệp vụ tiếp theo.
+
 ---
 
 ## [2026-08-24] - [Giai Đoạn 1] Xây Dựng Khung Nền Tảng Phân Quyền & Giao Diện Cấu Hình Nhân Viên
@@ -308,3 +390,37 @@
     - **Cập nhật Stored Procedure & Template in**: Nâng cấp SP `rpt_arriving_rooms` để trả ra thêm cột `ArrivalDateGroup` phục vụ gom nhóm theo ngày. Đồng bộ và thiết kế lại template HTML/CSS của Báo cáo phòng đến chuẩn chỉnh theo đúng giao diện tham chiếu của khách hàng (hiển thị dòng Ngày màu đỏ đậm, bảng chia cột sắc nét, thông tin Ghi chú & Đăng ký hiển thị rõ ràng, mã Booking in màu xanh lá nổi bật, các dòng tổng cộng theo công ty căn lề chuẩn xác).
 - **Trạng thái hiện tại**: Hệ thống báo cáo đa tab và template Báo cáo phòng đến mới đã hoàn thành, tích hợp mượt mà vào luồng Lễ tân/Đặt phòng.
 - **Kế hoạch tiếp theo**: Hỗ trợ người dùng kiểm tra các lỗi hoặc tính năng tiếp theo.
+
+---
+
+## [2026-08-27] - Khắc phục lỗi lệch ngày bộ chọn thời gian & định dạng mẫu Báo cáo phòng đến
+### Module: Reports / Bộ chọn thời gian & Báo cáo phòng đến
+
+- **Đã hoàn thành**:
+  - **Sửa lỗi lệch ngày bộ chọn thời gian**:
+    - Nâng cấp [`ReportDateRangePicker.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/components/ReportDateRangePicker.vue) sử dụng hàm format local `YYYY-MM-DD` tự định nghĩa tránh bị lệch múi giờ so với ngày hệ thống do chuyển đổi qua `toISOString()`.
+    - Bổ sung đầy đủ 15 mốc thời gian và sắp xếp theo đúng thứ tự trong ảnh yêu cầu (Hôm nay, Tuần này, Tháng này, Quý này, Năm này, Ngày mai, Tuần tiếp theo, Tháng tiếp theo, Quý tiếp theo, Năm tiếp theo, Hôm qua, Tuần trước, Tháng trước, Quý trước, Năm trước, Tùy chỉnh).
+  - **Tối ưu xem trước mẫu in A4**:
+    - Nâng cấp [`ReportsPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reports/ReportsPage.vue) tự động thu hẹp chiều rộng iframe preview về `max-w-[800px]` (tỷ lệ A4 dọc chuẩn) khi sử dụng mẫu in dọc (`portrait`), giúp hiển thị trực quan và tránh bị kéo giãn dẹt ngang.
+  - **Định dạng bảng dữ liệu & Bổ sung bảng kê Loại phòng**:
+    - Nâng cấp [`ReportDefinitionController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/ReportDefinitionController.php): Bổ sung hàm tính toán tự động thống kê Loại phòng (`room_type_summary` và `room_type_summary_total`) lấy từ danh sách khách chính.
+    - Cập nhật [`arriving_rooms_reference.php`](file:///c:/xampp/htdocs/PMS/backend/database/report_templates/arriving_rooms_reference.php): Định dạng lại bảng chính còn 10 cột, căn chỉnh lại độ rộng cột, đồng thời nhúng bảng **BẢNG KÊ CHI TIẾT THEO LOẠI PHÒNG** tổng hợp số lượng, đêm, người lớn/trẻ em và tỷ lệ phần trăm xuống cuối trang.
+- **Trạng thái hiện tại**: Hoàn thành toàn bộ nghiệp vụ báo cáo phòng đi, phòng đến và sửa lỗi định dạng ngày.
+
+---
+
+## [2026-08-27] - Triển khai Báo cáo phòng đi (Departing Rooms Report) & Sửa định dạng ngày
+### Module: Reports / Báo cáo phòng đi & phòng đến
+
+- **Đã hoàn thành**:
+  - **MySQL Stored Procedure**:
+    - Tạo stored procedure `rpt_departing_rooms` (chuyển đổi từ `sp_008`) để truy vấn dữ liệu phòng đi từ các bảng `booking_rooms`, `bookings`, `booking_room_guests`, `guests`, `companies`, `registration_statuses`, và `booking_room_services`.
+  - **Backend & Services**:
+    - Tạo service [`DepartingRoomsSummaryService.php`](file:///c:/xampp/htdocs/PMS/backend/app/Services/Reports/DepartingRoomsSummaryService.php) tính toán tổng hợp "BẢNG KÊ CHI TIẾT THEO LOẠI PHÒNG" ở đáy trang.
+    - Đăng ký service và cập nhật các luồng tính toán trong [`ReportDefinitionController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/ReportDefinitionController.php).
+    - **Sửa lỗi định dạng ngày**: Nâng cấp [`ReportDefinitionController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/ReportDefinitionController.php) tự động phát hiện và format các tham số ngày dạng `YYYY-MM-DD` sang `DD/MM/YYYY` trước khi chuyển sang template render, giúp hiển thị định dạng ngày tháng tiếng Việt chuẩn trên cả hai báo cáo phòng đến và phòng đi.
+  - **Thiết kế mẫu in (Reference Template)**:
+    - Tạo cấu hình mẫu in tham chiếu [`departing_rooms_reference.php`](file:///c:/xampp/htdocs/PMS/backend/database/report_templates/departing_rooms_reference.php) với thiết kế A4 Portrait, hiển thị đầy đủ 10 cột dữ liệu, các hàng tổng cộng theo Công ty/Ngày/Giai đoạn, thông tin Notice và bảng thống kê loại phòng.
+  - **Database Migration**:
+    - Viết và chạy thành công migration [`2026_08_27_120000_create_departing_rooms_report.php`](file:///c:/xampp/htdocs/PMS/backend/database/migrations/2026_08_27_120000_create_departing_rooms_report.php) để tạo store và seed dữ liệu nguồn, template, và định nghĩa báo cáo động.
+- **Trạng thái hiện tại**: Hoàn thành toàn bộ nghiệp vụ, định dạng ngày hiển thị chuẩn `dd/mm/YYYY`.

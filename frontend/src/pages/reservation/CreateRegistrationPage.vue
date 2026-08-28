@@ -265,6 +265,14 @@ async function openGlobalSearchFromQuery() {
   await router.replace({ query })
 }
 
+watch(() => route.query, async (query) => {
+  const code = query?.edit_id || query?.booking_code || query?.booking_id || query?.edit_code
+  if (code) {
+    await nextTick()
+    await openBookingModalByCode(code)
+  }
+}, { immediate: true })
+
 function getColWidthPx(col) {
   if (!col || !col.width) return 'auto'
   const match = col.width.match(/w-\[(\d+)px\]/)
@@ -309,6 +317,63 @@ const emptyForm = () => ({
 const modalForm = ref(emptyForm())
 const isColorChanged = ref(false)
 const isColorPickerOpen = ref(false)
+const initialModalSnapshot = ref('')
+
+function getModalFormSnapshot() {
+  if (!modalForm.value) return ''
+  return JSON.stringify({
+    bookingName: modalForm.value.bookingName || '',
+    color: modalForm.value.color || '',
+    checkIn: modalForm.value.checkIn || '',
+    checkOut: modalForm.value.checkOut || '',
+    nights: Number(modalForm.value.nights) || 1,
+    registrationStatusId: modalForm.value.registrationStatusId,
+    confirmDate: modalForm.value.confirmDate || '',
+    companyId: modalForm.value.companyId,
+    paymentMethodId: modalForm.value.paymentMethodId,
+    externalBookingCode: modalForm.value.externalBookingCode || '',
+    salesPerson: modalForm.value.salesPerson || '',
+    marketId: modalForm.value.marketId,
+    customerSourceId: modalForm.value.customerSourceId,
+    bookerId: modalForm.value.bookerId,
+    contactName: modalForm.value.contactName || '',
+    contactEmail: modalForm.value.contactEmail || '',
+    contactPhone: modalForm.value.contactPhone || '',
+    note: modalForm.value.note || '',
+    specialRequests: modalForm.value.specialRequests || '',
+    isMasterRoomRate: modalForm.value.isMasterRoomRate,
+    shuttleInfo: modalForm.value.shuttleInfo || [],
+    roomAllocations: (modalForm.value.roomAllocations || []).map(a => ({
+      roomClassId: a.roomClassId,
+      quantity: a.quantity,
+      price: a.price,
+      rateCode: a.rateCode,
+      adults: a.adults,
+      children: a.children,
+      babies: a.babies,
+      breakfastIncluded: a.breakfastIncluded,
+      upgradeClassId: a.upgradeClassId,
+    })),
+    rooms: (modalForm.value.rooms || []).map(r => ({
+      id: r.id,
+      roomClassId: r.roomClassId,
+      roomId: r.roomId,
+      roomNumber: r.roomNumber,
+      price: r.price,
+      rateCode: r.rateCode,
+      checkIn: r.checkIn,
+      checkOut: r.checkOut,
+      adults: r.adults,
+      children: r.children,
+      breakfast: r.breakfast,
+    }))
+  })
+}
+
+const isModalFormDirty = computed(() => {
+  if (!modalForm.value || !modalForm.value.dbId) return true
+  return getModalFormSnapshot() !== initialModalSnapshot.value
+})
 
 const bkColorList = [
   { hex: '#C00000', order: 1 },
@@ -366,6 +431,27 @@ function selectBkColor(hex) {
   isColorChanged.value = true
   isColorPickerOpen.value = false
 }
+
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+})
+
+const isTopBarThemeDark = computed(() => {
+  const bg = authStore.settings?.topbar_color
+  if (!bg) return true
+  if (bg.includes('linear-gradient')) return true
+  if (bg.startsWith('#')) {
+    const hex = bg.substring(1)
+    const rgb = parseInt(hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex, 16)
+    if (isNaN(rgb)) return true
+    const r = (rgb >> 16) & 0xff
+    const g = (rgb >> 8) & 0xff
+    const b = (rgb >> 0) & 0xff
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000
+    return brightness < 185
+  }
+  return true
+})
 
 const activeDepositsList = computed(() => {
   if (!modalForm.value || !modalForm.value.deposits) return []
@@ -1636,20 +1722,33 @@ function handleTabsWheel(e) {
   }
 }
 
-async function loadActiveBookingNotifications(tab = activeTab.value) {
-  activeBookingNotificationsTimers.forEach(clearTimeout)
-  activeBookingNotificationsTimers = []
+const lastNotifiedBookingDbId = ref(null)
+
+async function loadActiveBookingNotifications(tab = activeTab.value, force = false) {
   if (!tab?.dbId) {
+    activeBookingNotificationsTimers.forEach(clearTimeout)
+    activeBookingNotificationsTimers = []
     activeBookingNotifications.value = []
     isActiveBookingNotificationsOpen.value = false
+    lastNotifiedBookingDbId.value = null
     return
   }
+
+  // Nếu không force và vẫn đang ở cùng 1 booking (đã hiển thị thông báo rồi), không trigger lại
+  if (!force && lastNotifiedBookingDbId.value === tab.dbId && isActiveBookingNotificationsOpen.value === false) {
+    return
+  }
+
+  activeBookingNotificationsTimers.forEach(clearTimeout)
+  activeBookingNotificationsTimers = []
+  lastNotifiedBookingDbId.value = tab.dbId
+
   try {
     const res = await fetchActiveBookingNotifications(tab.dbId, systemDate.value)
     activeBookingNotifications.value = res.data?.data || []
     isActiveBookingNotificationsOpen.value = activeBookingNotifications.value.length > 0
     activeBookingNotifications.value.forEach((notice, index) => {
-      activeBookingNotificationsTimers.push(setTimeout(() => dismissActiveBookingNotification(notice.id), 6000 + index * 250))
+      activeBookingNotificationsTimers.push(setTimeout(() => dismissActiveBookingNotification(notice.id), 12000 + index * 500))
     })
   } catch (err) {
     // Không chặn việc mở booking nếu API thông báo tạm thời không khả dụng.
@@ -1681,14 +1780,19 @@ watch(() => route.query, async (newQuery) => {
     await openBookingModalByCode(newQuery.bookingCode)
     await openDepositFromQuery()
     await openNotificationFromQuery()
+    nextTick(() => {
+      loadActiveBookingNotifications()
+    })
   } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
     await handleAddTabClick()
   }
   await openGlobalSearchFromQuery()
 }, { deep: true })
 
-watch(activeTabId, () => {
-  loadActiveBookingNotifications()
+watch(activeTabId, (newId, oldId) => {
+  if (newId !== oldId) {
+    loadActiveBookingNotifications()
+  }
 })
 
 async function loadDropdowns() {
@@ -1764,6 +1868,9 @@ async function loadBookings() {
       // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
       localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
       replaceBookingTab(latestBooking)
+      nextTick(() => {
+        loadActiveBookingNotifications()
+      })
     } else {
       // Các lần sau: lọc theo closedIds đã lưu
       const closedIds = getClosedTabIds()
@@ -1778,6 +1885,9 @@ async function loadBookings() {
 
       if (nextBooking) {
         replaceBookingTab(nextBooking)
+        nextTick(() => {
+          loadActiveBookingNotifications()
+        })
       } else if (currentTab?.id === 'NEW_BOOKING') {
         tabs.value = [currentTab]
         activeTabId.value = currentTab.id
@@ -2709,6 +2819,10 @@ async function handleAddTabClick() {
   await updateRoomAvailability()
   modalSubTab.value = 'info'
   isModalOpen.value = true
+  nextTick(() => {
+    autoResizeTextarea()
+    initialModalSnapshot.value = getModalFormSnapshot()
+  })
 }
 
 async function openEditModal() {
@@ -2764,6 +2878,7 @@ async function openEditModal() {
   isModalOpen.value = true
   nextTick(() => {
     autoResizeTextarea()
+    initialModalSnapshot.value = getModalFormSnapshot()
   })
 }
 
@@ -6563,13 +6678,15 @@ defineExpose({
           :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
         >
           
-          <!-- MODAL HEADER (FINAL.html Style) -->
+          <!-- MODAL HEADER (Follow System Topbar Custom Background) -->
           <div 
-            class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 shrink-0 cursor-move select-none"
+            class="flex justify-between items-center px-4 py-2 shrink-0 cursor-move select-none transition-all duration-300"
+            :style="{ background: topbarThemeBg }"
+            :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
             @mousedown="startDragModal"
           >
             <div class="flex items-center space-x-2 font-semibold text-sm">
-                <i class="fa-solid fa-file-lines text-blue-300"></i>
+                <i class="fa-solid fa-file-lines" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
                 <span>{{ isEditModal ? 'THÔNG TIN ĐĂNG KÝ' : 'TẠO ĐĂNG KÝ' }}</span>
             </div>
             <div class="flex items-center space-x-3">
@@ -6577,9 +6694,10 @@ defineExpose({
                     <button 
                       type="button"
                       @click.stop="isColorPickerOpen = !isColorPickerOpen"
-                      class="flex items-center space-x-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg h-[26px] px-2 shadow-inner cursor-pointer select-none transition"
+                      class="flex items-center space-x-1.5 rounded-lg h-[26px] px-2 shadow-inner cursor-pointer select-none transition"
+                      :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 border border-white/20 text-gray-200' : 'bg-black/10 hover:bg-black/20 border border-black/20 text-slate-900'"
                     >
-                        <span class="text-xs font-medium text-gray-200">Màu BK</span>
+                        <span class="text-xs font-medium" :class="isTopBarThemeDark ? 'text-gray-200' : 'text-slate-900'">Màu BK</span>
                         <span class="w-3.5 h-3.5 rounded-full inline-block border border-white/40 shadow-xs" :style="{ backgroundColor: modalForm.color || '#97D5FF' }"></span>
                     </button>
 
@@ -6619,124 +6737,142 @@ defineExpose({
                 </div>
 
                 <div class="flex items-center space-x-1.5">
-                    <span class="text-xs font-medium text-gray-300">Tiền phòng gửi Master</span>
+                    <span class="text-xs font-medium" :class="isTopBarThemeDark ? 'text-gray-300' : 'text-slate-800'">Tiền phòng gửi Master</span>
                     <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
                         <input type="checkbox" v-model="modalForm.isMasterRoomRate" id="master-room-rate-toggle" class="sr-only peer"/>
                         <label for="master-room-rate-toggle" class="block overflow-hidden h-4 rounded-full bg-gray-400 peer-checked:bg-blue-500 cursor-pointer transition-colors duration-200"></label>
                         <span class="absolute block w-3 h-3 rounded-full bg-white top-0.5 left-0.5 peer-checked:translate-x-4 transition-transform duration-200 pointer-events-none"></span>
                     </div>
                 </div>
-                <div class="flex items-center space-x-2 text-gray-300">
-                    <button class="flex items-center space-x-1 text-xs bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md transition text-gray-200 hover:text-white font-medium shadow-sm cursor-pointer border-none bg-transparent">
+                <div class="flex items-center space-x-2" :class="isTopBarThemeDark ? 'text-gray-300' : 'text-slate-800'">
+                    <button class="flex items-center space-x-1 text-xs px-2 py-0.5 rounded-md transition font-medium shadow-sm cursor-pointer border-none" :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white' : 'bg-black/10 hover:bg-black/20 text-slate-900'">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                         <span>Lịch sử booking</span>
                     </button>
-                    <button class="hover:text-white cursor-pointer border-none bg-transparent"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-                    <button @click="closeModal" class="hover:text-white ml-1 bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none"><i class="fa-solid fa-xmark text-red-400"></i></button>
+                    <button class="cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'hover:text-white' : 'text-slate-700 hover:text-black'"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                    <button @click="closeModal" class="ml-1 px-1.5 py-0.5 rounded-md cursor-pointer border-none transition" :class="isTopBarThemeDark ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400' : 'bg-red-500/20 hover:bg-red-500/30 text-red-700'"><i class="fa-solid fa-xmark"></i></button>
                 </div>
             </div>
           </div>
 
           <!-- SECOND ACTION STRIP (GENERAL DETAILS) -->
-          <div class="px-4 py-2 border-b border-gray-200 flex flex-wrap items-end justify-between gap-2 bg-gray-50/50 shrink-0">
-            <div class="flex flex-col">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Mã booking</div>
-                <div class="font-bold text-sm text-gray-900 h-[32px] flex items-center px-1">{{ modalForm.bookingCode || ((hotelSettings?.prefix_booking_id || 'GAL') + ' (Tự động)') }}</div>
-            </div>
-            <div class="flex flex-col flex-1 min-w-[140px]">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Tên đăng ký <span class="text-red-500">*</span></div>
-                <input 
-                  type="text" 
-                  v-model="modalForm.bookingName" 
-                  placeholder="Nhập tên đăng ký..."
-                  class="font-bold text-sm text-black border border-blue-200 rounded-xl px-3 h-[32px] flex items-center bg-blue-50/70 shadow-sm w-full outline-none focus:border-blue-400 focus:bg-blue-50/90"
-                />
-            </div>
-            <div class="flex flex-col">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Mã tham chiếu</div>
+          <div class="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 shrink-0">
+            <div class="flex flex-wrap items-end gap-2.5">
+              <!-- Mã booking (Read-only Badge) -->
+              <div class="flex flex-col">
+                <span class="text-[11px] text-slate-500 font-bold mb-1">Mã booking</span>
+                <div class="h-[34px] px-3 bg-slate-100 border border-slate-200 rounded-lg flex items-center font-bold text-xs text-slate-700 tracking-wide select-all cursor-default shadow-2xs" title="Mã booking hệ thống">
+                  <span class="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5"></span>
+                  {{ modalForm.bookingCode || ((hotelSettings?.prefix_booking_id || 'GAL') + ' (Tự động)') }}
+                </div>
+              </div>
+
+              <!-- Tên đăng ký (Editable) -->
+              <div class="flex flex-col flex-1 min-w-[200px]">
+                <span class="text-[11px] text-slate-600 font-bold mb-1">Tên đăng ký <span class="text-red-500">*</span></span>
+                <div class="relative flex items-center">
+                  <i class="fa-solid fa-pen text-slate-400 text-xs absolute left-3 pointer-events-none"></i>
+                  <input 
+                    type="text" 
+                    v-model="modalForm.bookingName" 
+                    placeholder="Nhập tên đăng ký..."
+                    class="font-bold text-xs text-slate-900 border border-slate-300 rounded-lg pl-8 pr-3 h-[34px] bg-white w-full outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              <!-- Mã tham chiếu -->
+              <div class="flex flex-col w-[120px]">
+                <span class="text-[11px] text-slate-500 font-bold mb-1">Mã tham chiếu</span>
                 <input 
                   type="text" 
                   v-model="modalForm.externalBookingCode" 
                   placeholder="Mã tham chiếu" 
-                  class="border border-gray-300 rounded-xl px-3 text-xs focus:outline-none focus:border-blue-500 w-28 h-[32px] shadow-sm font-semibold"
+                  class="border border-slate-300 rounded-lg px-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 h-[34px] font-semibold bg-white transition-all shadow-2xs"
                 />
-            </div>
-            <div class="flex flex-col shrink-0 w-[230px]">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Ngày lưu trú</div>
-                <div class="flex items-center space-x-2 text-xs font-semibold text-gray-800 border border-gray-300 rounded-xl px-2 h-[32px] bg-white shadow-sm w-full">
-                    <i class="fa-regular fa-calendar text-blue-500 shrink-0"></i>
-                    <input 
-                      type="date" 
-                      v-model="modalForm.checkIn" 
-                      :min="systemDate"
-                      @change="handleCheckInChange"
-                      @click="$event.target.showPicker && $event.target.showPicker()"
-                      class="date-span-input checkin-date-input"
-                    />
-                    <i class="fa-solid fa-arrow-right text-gray-400 text-xs shrink-0"></i>
-                    <input 
-                      type="date" 
-                      v-model="modalForm.checkOut" 
-                      :min="modalForm.checkIn"
-                      @change="handleDateChange"
-                      @click="$event.target.showPicker && $event.target.showPicker()"
-                      class="date-span-input checkout-date-input"
-                    />
+              </div>
+
+              <!-- Ngày lưu trú -->
+              <div class="flex flex-col shrink-0 w-[235px]">
+                <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày lưu trú</span>
+                <div class="flex items-center space-x-1 text-xs font-semibold text-slate-800 border border-slate-300 rounded-lg px-2 h-[34px] bg-white shadow-2xs w-full focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                  <i class="fa-regular fa-calendar text-blue-500 shrink-0 text-xs"></i>
+                  <input 
+                    type="date" 
+                    v-model="modalForm.checkIn" 
+                    :min="systemDate"
+                    @change="handleCheckInChange"
+                    @click="$event.target.showPicker && $event.target.showPicker()"
+                    class="date-span-input checkin-date-input text-xs font-bold text-slate-800"
+                  />
+                  <i class="fa-solid fa-arrow-right text-slate-400 text-[10px] shrink-0"></i>
+                  <input 
+                    type="date" 
+                    v-model="modalForm.checkOut" 
+                    :min="modalForm.checkIn"
+                    @change="handleDateChange"
+                    @click="$event.target.showPicker && $event.target.showPicker()"
+                    class="date-span-input checkout-date-input text-xs font-bold text-slate-800"
+                  />
                 </div>
-            </div>
-            <div class="flex flex-col w-[65px]">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Đêm</div>
-                <div class="font-bold text-sm text-gray-900 border border-gray-300 rounded-xl h-[32px] flex items-center justify-between px-2 bg-white shadow-sm relative">
-                    <input 
-                      type="number" 
-                      v-model="modalForm.nights" 
-                      @input="handleNightsChange"
-                      min="1"
-                      class="border-none bg-transparent text-center w-8 text-sm font-bold focus:outline-none focus:ring-0 p-0 w-8"
-                    />
-                    <div class="flex flex-col select-none">
-                        <button type="button" @click="incrementNights" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
-                        <button type="button" @click="decrementNights" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
-                    </div>
+              </div>
+
+              <!-- Số đêm (Read-only Calculated field) -->
+              <div class="flex flex-col w-[85px]">
+                <span class="text-[11px] text-slate-500 font-bold mb-1">Số đêm</span>
+                <div class="font-bold text-xs text-slate-800 border border-slate-200 rounded-lg h-[34px] flex items-center justify-between px-2 bg-slate-100 shadow-2xs relative select-none cursor-default" title="Tự động tính từ ngày lưu trú">
+                  <span class="text-xs font-bold text-slate-700 pl-0.5">{{ modalForm.nights || 1 }} đêm</span>
+                  <div class="flex flex-col select-none">
+                    <button type="button" @click="incrementNights" class="text-slate-400 hover:text-blue-600 text-[8px] leading-none px-0.5 border-none bg-transparent cursor-pointer" title="Tăng 1 đêm"><i class="fa-solid fa-chevron-up"></i></button>
+                    <button type="button" @click="decrementNights" class="text-slate-400 hover:text-blue-600 text-[8px] leading-none px-0.5 border-none bg-transparent cursor-pointer" title="Giảm 1 đêm"><i class="fa-solid fa-chevron-down"></i></button>
+                  </div>
                 </div>
-            </div>
-            <div class="flex flex-col">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Tình trạng đăng ký <span class="text-red-500">*</span></div>
-                <div class="relative w-full flex items-center">
-                    <select 
-                      v-model="modalForm.registrationStatusId"
-                      @change="handleConfirmDateCalculation"
-                      class="w-full bg-blue-50/70 border border-blue-200 text-black rounded-xl pl-3 pr-8 text-xs focus:outline-none focus:border-blue-400 appearance-none font-bold h-[32px] shadow-sm cursor-pointer"
-                    >
-                        <option :value="null" disabled>— Chọn —</option>
-                        <option v-for="rs in registrationStatuses.filter(s => !s.is_hidden || s.id === modalForm.registrationStatusId)" :key="rs.id" :value="rs.id">{{ rs.name }}</option>
-                    </select>
-                    <button 
-                      v-if="modalForm.registrationStatusId"
-                      type="button" 
-                      @click.stop="modalForm.registrationStatusId = null; handleConfirmDateCalculation()"
-                      class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none"
-                      style="z-index: 10;"
-                      title="Xóa chọn"
-                    >
-                      <i class="fa-solid fa-xmark"></i>
-                    </button>
+              </div>
+
+              <!-- Tình trạng đăng ký -->
+              <div class="flex flex-col min-w-[150px]">
+                <span class="text-[11px] text-slate-600 font-bold mb-1">Tình trạng đăng ký <span class="text-red-500">*</span></span>
+                <div class="relative w-full flex items-center group">
+                  <select 
+                    v-model="modalForm.registrationStatusId"
+                    @change="handleConfirmDateCalculation"
+                    class="w-full bg-white border border-slate-300 text-slate-900 rounded-lg pl-2.5 pr-8 text-xs focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 appearance-none font-bold h-[34px] shadow-2xs cursor-pointer"
+                  >
+                    <option :value="null" disabled>— Chọn tình trạng —</option>
+                    <option v-for="rs in registrationStatuses.filter(s => !s.is_hidden || s.id === modalForm.registrationStatusId)" :key="rs.id" :value="rs.id">{{ rs.name }}</option>
+                  </select>
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                    <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                  </span>
+                  <button 
+                    v-if="modalForm.registrationStatusId"
+                    type="button" 
+                    @click.stop="modalForm.registrationStatusId = null; handleConfirmDateCalculation()"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                    style="z-index: 10;"
+                    title="Xóa chọn"
+                  >
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
                 </div>
-            </div>
-            <div class="flex flex-col shrink-0 w-[150px]">
-                <div class="text-xs text-gray-500 font-semibold mb-0.5">Ngày xác nhận</div>
-                <div class="flex items-center space-x-2 text-xs text-gray-800 border border-gray-300 rounded-xl px-2 h-[32px] bg-white shadow-sm relative w-full">
-                    <input 
-                      type="date" 
-                      v-model="modalForm.confirmDate" 
-                      @click="$event.target.showPicker && $event.target.showPicker()"
-                      class="date-span-input w-full"
-                    />
-                    <i class="fa-regular fa-calendar text-gray-400 pointer-events-none shrink-0"></i>
-                    <button @click="copyConfirmDate" type="button" class="text-gray-400 hover:text-gray-600 cursor-pointer border-none bg-transparent p-0 shrink-0">
-                      <i class="fa-regular fa-copy"></i>
-                    </button>
+              </div>
+
+              <!-- Ngày xác nhận -->
+              <div class="flex flex-col shrink-0 w-[150px]">
+                <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày xác nhận</span>
+                <div class="flex items-center space-x-1.5 text-xs text-slate-800 border border-slate-300 rounded-lg px-2 h-[34px] bg-white shadow-2xs relative w-full focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                  <input 
+                    type="date" 
+                    v-model="modalForm.confirmDate" 
+                    @click="$event.target.showPicker && $event.target.showPicker()"
+                    class="date-span-input w-full text-xs font-semibold"
+                  />
+                  <i class="fa-regular fa-calendar text-slate-400 pointer-events-none shrink-0 text-xs"></i>
+                  <button @click="copyConfirmDate" type="button" class="text-slate-400 hover:text-blue-600 cursor-pointer border-none bg-transparent p-0.5 shrink-0 rounded" title="Sao chép ngày check-in">
+                    <i class="fa-regular fa-copy text-xs"></i>
+                  </button>
                 </div>
+              </div>
             </div>
           </div>
 
@@ -6744,24 +6880,27 @@ defineExpose({
           <div class="flex px-4 border-b border-gray-200 bg-white shrink-0">
               <button 
                 @click="modalSubTab = 'info'"
-                class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent"
-                :class="modalSubTab === 'info' ? 'text-blue-600 border-blue-600' : 'text-gray-500 hover:text-gray-700 border-transparent'"
+                class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent transition-colors"
+                :style="modalSubTab === 'info' ? { color: isTopBarThemeDark ? '#0284c7' : '#006bdb', borderColor: 'var(--pms-custom-theme, #006bdb)' } : {}"
+                :class="modalSubTab !== 'info' ? 'text-gray-500 hover:text-gray-700 border-transparent' : ''"
               >
                   <i class="fa-solid fa-address-card"></i>
                   <span>Thông tin chung</span>
               </button>
               <button 
                 @click="modalSubTab = 'shuttle'"
-                class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent"
-                :class="modalSubTab === 'shuttle' ? 'text-blue-600 border-blue-600' : 'text-gray-500 hover:text-gray-700 border-transparent'"
+                class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent transition-colors"
+                :style="modalSubTab === 'shuttle' ? { color: isTopBarThemeDark ? '#0284c7' : '#006bdb', borderColor: 'var(--pms-custom-theme, #006bdb)' } : {}"
+                :class="modalSubTab !== 'shuttle' ? 'text-gray-500 hover:text-gray-700 border-transparent' : ''"
               >
                   <i class="fa-solid fa-van-shuttle"></i>
                   <span>Thông tin đưa đón</span>
               </button>
               <button 
                 @click="modalSubTab = 'rooms'"
-                class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent"
-                :class="modalSubTab === 'rooms' ? 'text-blue-600 border-blue-600' : 'text-gray-500 hover:text-gray-700 border-transparent'"
+                class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent transition-colors"
+                :style="modalSubTab === 'rooms' ? { color: isTopBarThemeDark ? '#0284c7' : '#006bdb', borderColor: 'var(--pms-custom-theme, #006bdb)' } : {}"
+                :class="modalSubTab !== 'rooms' ? 'text-gray-500 hover:text-gray-700 border-transparent' : ''"
               >
                   <i class="fa-solid fa-bed"></i>
                   <span>Lấy phòng</span>
@@ -6769,281 +6908,316 @@ defineExpose({
           </div>
 
           <!-- MODAL CONTENT SCROLL -->
-          <div class="flex-1 p-3 overflow-y-auto flex flex-col gap-3 bg-gray-50">
+          <div class="flex-1 p-3.5 overflow-y-auto flex flex-col gap-3 bg-slate-50/60">
             
-            <!-- Tab 1: Thông tin chung -->
-            <div v-if="modalSubTab === 'info'" class="flex flex-col space-y-2.5 w-full">
-              <!-- Section 1: Công ty -->
-              <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-xs">
-                  <h3 class="font-bold text-gray-800 mb-1.5 flex items-center text-xs uppercase tracking-wider">
-                      <div class="w-1 h-3 bg-blue-500 rounded-full mr-1.5"></div>
-                      Công ty
-                  </h3>
-                  <div class="flex flex-wrap lg:flex-nowrap gap-2 items-end">
-                      <div class="flex-1 min-w-[160px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Công ty <span class="text-red-500">*</span></label>
-                          <div class="relative w-full flex items-center group">
-                              <select 
-                                v-model="modalForm.companyId"
-                                @change="handleCompanyChange"
-                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs font-bold bg-blue-50/70 text-black h-[32px] cursor-pointer appearance-none"
-                              >
-                                  <option :value="null" disabled>— Chọn công ty —</option>
-                                  <option v-for="c in companies" :key="c.id" :value="c.id">[{{ c.code }}] {{ c.name }}</option>
-                              </select>
-                              <span 
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150 animate-none"
-                                :class="{ 'group-hover:opacity-0': modalForm.companyId }"
-                              >
-                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                              </span>
-                              <button 
-                                v-if="modalForm.companyId"
-                                type="button"
-                                @click.stop="modalForm.companyId = null; handleCompanyChange()"
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                style="z-index: 10;"
-                                title="Xóa chọn"
-                              >
-                                  <i class="fa-solid fa-xmark"></i>
-                              </button>
-                          </div>
-                      </div>
-                      <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Thị trường</label>
-                          <div class="relative w-full flex items-center group">
-                              <select 
-                                v-model="modalForm.marketId"
-                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold appearance-none"
-                              >
-                                  <option :value="null" disabled>— Chọn thị trường —</option>
-                                  <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
-                              </select>
-                              <span 
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
-                                :class="{ 'group-hover:opacity-0': modalForm.marketId }"
-                              >
-                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                              </span>
-                              <button 
-                                v-if="modalForm.marketId"
-                                type="button"
-                                @click.stop="modalForm.marketId = null"
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                style="z-index: 10;"
-                                title="Xóa chọn"
-                              >
-                                  <i class="fa-solid fa-xmark"></i>
-                              </button>
-                          </div>
-                      </div>
-                      <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Nguồn khách</label>
-                          <div class="relative w-full flex items-center group">
-                              <select 
-                                v-model="modalForm.customerSourceId"
-                                class="w-full border border-blue-200 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-xs bg-blue-50/70 text-black h-[32px] cursor-pointer font-bold appearance-none"
-                              >
-                                  <option :value="null" disabled>— Chọn nguồn khách —</option>
-                                  <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
-                              </select>
-                              <span 
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
-                                :class="{ 'group-hover:opacity-0': modalForm.customerSourceId }"
-                              >
-                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                              </span>
-                              <button 
-                                v-if="modalForm.customerSourceId"
-                                type="button"
-                                @click.stop="modalForm.customerSourceId = null"
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                style="z-index: 10;"
-                                title="Xóa chọn"
-                              >
-                                  <i class="fa-solid fa-xmark"></i>
-                              </button>
-                          </div>
-                      </div>
-                      <div class="flex-1 min-w-[130px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Người bán</label>
-                          <div class="relative w-full flex items-center group">
-                              <select 
-                                v-model="modalForm.salesPerson"
-                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold appearance-none cursor-pointer"
-                              >
-                                  <option value="" disabled>— Chọn người bán —</option>
-                                  <option v-for="u in users" :key="u.id" :value="u.username || u.name">{{ u.name || u.username }}</option>
-                              </select>
-                              <span 
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
-                                :class="{ 'group-hover:opacity-0': modalForm.salesPerson }"
-                              >
-                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                              </span>
-                              <button 
-                                v-if="modalForm.salesPerson"
-                                type="button"
-                                @click.stop="modalForm.salesPerson = ''"
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                style="z-index: 10;"
-                                title="Xóa chọn"
-                              >
-                                  <i class="fa-solid fa-xmark"></i>
-                              </button>
-                          </div>
-                      </div>
-                      <div class="flex-1 min-w-[150px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Phương thức thanh toán</label>
-                          <div class="relative w-full flex items-center group">
-                              <select 
-                                v-model="modalForm.paymentMethodId"
-                                class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white h-[32px] font-bold appearance-none cursor-pointer"
-                              >
-                                  <option :value="null" disabled>Chọn phương thức...</option>
-                                  <option v-for="pm in paymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
-                              </select>
-                              <span 
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
-                                :class="{ 'group-hover:opacity-0': modalForm.paymentMethodId }"
-                              >
-                                  <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                              </span>
-                              <button 
-                                v-if="modalForm.paymentMethodId"
-                                type="button"
-                                @click.stop="modalForm.paymentMethodId = null"
-                                class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                style="z-index: 10;"
-                                title="Xóa chọn"
-                              >
-                                  <i class="fa-solid fa-xmark"></i>
-                              </button>
-                          </div>
-                      </div>
+            <!-- Tab 1: Thông tin chung (Bento 2-Column Grid Layout) -->
+            <div v-if="modalSubTab === 'info'" class="grid grid-cols-1 lg:grid-cols-12 gap-3 w-full">
+              
+              <!-- CỘT TRÁI (7 CỘT): ĐƠN VỊ & NGƯỜI LIÊN HỆ -->
+              <div class="lg:col-span-7 flex flex-col gap-3">
+                
+                <!-- Section 1: Công ty & Kênh bán (Fill theo Topbar Theme) -->
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+                  <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                      <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
+                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Thông tin Công ty & Kênh bán</h3>
+                    </div>
                   </div>
-              </div>
 
-              <!-- Section 2: Người liên hệ -->
-              <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-xs">
-                  <h3 class="font-bold text-gray-800 mb-1.5 flex items-center text-xs uppercase tracking-wider">
-                      <div class="w-1 h-3 bg-purple-500 rounded-full mr-1.5"></div>
-                      Người liên hệ
-                  </h3>
-                  <div class="flex flex-wrap md:flex-nowrap gap-2 items-end">
-                      <div class="flex-2 min-w-[260px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Người đặt phòng</label>
-                          <div class="flex space-x-1.5 h-[32px]">
-                              <div class="relative flex-1 flex items-center group">
-                                  <select 
-                                    v-model="modalForm.bookerId"
-                                    @change="handleBookerChange"
-                                    class="w-full border border-gray-300 rounded-xl pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 text-xs bg-white font-bold h-[32px] cursor-pointer appearance-none"
-                                  >
-                                      <option :value="null" disabled>Chọn người đặt...</option>
-                                      <option v-for="b in bookers" :key="b.id" :value="b.id">{{ b.name }}</option>
-                                  </select>
-                                  <span 
-                                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none transition-opacity duration-150"
-                                    :class="{ 'group-hover:opacity-0': modalForm.bookerId }"
-                                  >
-                                      <i class="fa-solid fa-chevron-down text-[10px]"></i>
-                                  </span>
-                                  <button 
-                                    v-if="modalForm.bookerId"
-                                    type="button"
-                                    @click.stop="modalForm.bookerId = null; handleBookerChange()"
-                                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                                    style="z-index: 10;"
-                                    title="Xóa chọn"
-                                  >
-                                      <i class="fa-solid fa-xmark"></i>
-                                  </button>
-                              </div>
-                              <button type="button" class="bg-gray-100 border border-gray-300 px-2.5 py-1 rounded-xl text-gray-600 hover:bg-gray-200 transition cursor-pointer flex-shrink-0">
-                                  <i class="fa-solid fa-user-plus text-xs"></i>
-                              </button>
-                          </div>
-                      </div>
-                      <div class="flex-1 min-w-[160px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Số điện thoại</label>
-                          <input 
-                            type="text" 
-                            v-model="modalForm.contactPhone"
-                            placeholder="Số điện thoại" 
-                            class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs h-[32px] font-bold"
+                  <div class="flex flex-col gap-2.5">
+                    <!-- Hàng 1: Công ty & Phương thức thanh toán -->
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                      <div class="sm:col-span-7 flex flex-col gap-1">
+                        <label class="block text-[11px] text-slate-600 font-bold">
+                          <i class="fa-solid fa-building text-slate-400 mr-1"></i>Công ty <span class="text-red-500">*</span>
+                        </label>
+                        <div class="relative w-full flex items-center group">
+                          <select 
+                            v-model="modalForm.companyId"
+                            @change="handleCompanyChange"
+                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs font-bold bg-white text-slate-900 h-[34px] cursor-pointer appearance-none transition-all"
                           >
-                      </div>
-                      <div class="flex-1 min-w-[160px] flex flex-col gap-0.5">
-                          <label class="block text-[11px] text-gray-500 font-bold">Email</label>
-                          <input 
-                            type="email" 
-                            v-model="modalForm.contactEmail"
-                            placeholder="Email" 
-                            class="w-full border border-gray-300 rounded-xl px-2.5 py-1 focus:outline-none focus:border-blue-500 text-xs h-[32px] font-bold"
+                            <option :value="null" disabled>— Chọn công ty đối tác —</option>
+                            <option v-for="c in companies" :key="c.id" :value="c.id">[{{ c.code }}] {{ c.name }}</option>
+                          </select>
+                          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                          </span>
+                          <button 
+                            v-if="modalForm.companyId"
+                            type="button"
+                            @click.stop="modalForm.companyId = null; handleCompanyChange()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                            style="z-index: 10;"
+                            title="Xóa chọn"
                           >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
                       </div>
+
+                      <div class="sm:col-span-5 flex flex-col gap-1">
+                        <label class="block text-[11px] text-slate-600 font-bold">
+                          <i class="fa-regular fa-credit-card text-slate-400 mr-1"></i>Phương thức thanh toán
+                        </label>
+                        <div class="relative w-full flex items-center group">
+                          <select 
+                            v-model="modalForm.paymentMethodId"
+                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white text-slate-800 h-[34px] font-bold appearance-none cursor-pointer transition-all"
+                          >
+                            <option :value="null" disabled>Chọn phương thức...</option>
+                            <option v-for="pm in paymentMethods" :key="pm.id" :value="pm.id">{{ pm.name }}</option>
+                          </select>
+                          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                          </span>
+                          <button 
+                            v-if="modalForm.paymentMethodId"
+                            type="button"
+                            @click.stop="modalForm.paymentMethodId = null"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                            style="z-index: 10;"
+                            title="Xóa chọn"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Hàng 2: Thị trường, Nguồn khách, Người bán -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div class="flex flex-col gap-1">
+                        <label class="block text-[11px] text-slate-600 font-bold">
+                          <i class="fa-solid fa-globe text-slate-400 mr-1"></i>Thị trường
+                        </label>
+                        <div class="relative w-full flex items-center group">
+                          <select 
+                            v-model="modalForm.marketId"
+                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white text-slate-900 h-[34px] cursor-pointer font-bold appearance-none transition-all"
+                          >
+                            <option :value="null" disabled>— Thị trường —</option>
+                            <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
+                          </select>
+                          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                          </span>
+                          <button 
+                            v-if="modalForm.marketId"
+                            type="button"
+                            @click.stop="modalForm.marketId = null"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                            style="z-index: 10;"
+                            title="Xóa chọn"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="flex flex-col gap-1">
+                        <label class="block text-[11px] text-slate-600 font-bold">
+                          <i class="fa-solid fa-tags text-slate-400 mr-1"></i>Nguồn khách
+                        </label>
+                        <div class="relative w-full flex items-center group">
+                          <select 
+                            v-model="modalForm.customerSourceId"
+                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white text-slate-900 h-[34px] cursor-pointer font-bold appearance-none transition-all"
+                          >
+                            <option :value="null" disabled>— Nguồn khách —</option>
+                            <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
+                          </select>
+                          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                          </span>
+                          <button 
+                            v-if="modalForm.customerSourceId"
+                            type="button"
+                            @click.stop="modalForm.customerSourceId = null"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                            style="z-index: 10;"
+                            title="Xóa chọn"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="flex flex-col gap-1">
+                        <label class="block text-[11px] text-slate-600 font-bold">
+                          <i class="fa-solid fa-user-tie text-slate-400 mr-1"></i>Người bán
+                        </label>
+                        <div class="relative w-full flex items-center group">
+                          <select 
+                            v-model="modalForm.salesPerson"
+                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white h-[34px] font-bold appearance-none cursor-pointer transition-all"
+                          >
+                            <option value="" disabled>— Người bán —</option>
+                            <option v-for="u in users" :key="u.id" :value="u.username || u.name">{{ u.name || u.username }}</option>
+                          </select>
+                          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                          </span>
+                          <button 
+                            v-if="modalForm.salesPerson"
+                            type="button"
+                            @click.stop="modalForm.salesPerson = ''"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                            style="z-index: 10;"
+                            title="Xóa chọn"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+                </div>
+
+                <!-- Section 2: Người liên hệ (Fill theo Topbar Theme) -->
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+                  <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                      <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
+                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Thông tin Người liên hệ</h3>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    <!-- Người đặt phòng -->
+                    <div class="sm:col-span-12 flex flex-col gap-1">
+                      <label class="block text-[11px] text-slate-600 font-bold">
+                        <i class="fa-solid fa-user text-slate-400 mr-1"></i>Người đặt phòng
+                      </label>
+                      <div class="flex space-x-2 h-[34px]">
+                        <div class="relative flex-1 flex items-center group">
+                          <select 
+                            v-model="modalForm.bookerId"
+                            @change="handleBookerChange"
+                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white font-bold h-[34px] cursor-pointer appearance-none transition-all"
+                          >
+                            <option :value="null" disabled>— Chọn người đặt phòng —</option>
+                            <option v-for="b in bookers" :key="b.id" :value="b.id">{{ b.name }}</option>
+                          </select>
+                          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
+                            <i class="fa-solid fa-chevron-down text-[10px]"></i>
+                          </span>
+                          <button 
+                            v-if="modalForm.bookerId"
+                            type="button" 
+                            @click.stop="modalForm.bookerId = null; handleBookerChange()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
+                            style="z-index: 10;"
+                            title="Xóa chọn"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                        <button type="button" class="bg-slate-100 border border-slate-300 px-3 rounded-lg text-slate-600 hover:bg-slate-200 transition cursor-pointer flex-shrink-0 flex items-center gap-1 text-xs font-bold shadow-2xs" title="Thêm người đặt mới">
+                          <i class="fa-solid fa-user-plus text-xs"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Số điện thoại & Email -->
+                    <div class="sm:col-span-6 flex flex-col gap-1">
+                      <label class="block text-[11px] text-slate-600 font-bold">
+                        <i class="fa-solid fa-phone text-slate-400 mr-1"></i>Số điện thoại
+                      </label>
+                      <div class="relative flex items-center">
+                        <input 
+                          type="text" 
+                          v-model="modalForm.contactPhone"
+                          placeholder="Số điện thoại liên hệ" 
+                          class="w-full border border-slate-300 rounded-lg px-3 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs h-[34px] font-bold transition-all shadow-2xs bg-white text-slate-800"
+                        >
+                      </div>
+                    </div>
+
+                    <div class="sm:col-span-6 flex flex-col gap-1">
+                      <label class="block text-[11px] text-slate-600 font-bold">
+                        <i class="fa-solid fa-envelope text-slate-400 mr-1"></i>Email
+                      </label>
+                      <div class="relative flex items-center">
+                        <input 
+                          type="email" 
+                          v-model="modalForm.contactEmail"
+                          placeholder="Địa chỉ email" 
+                          class="w-full border border-slate-300 rounded-lg px-3 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs h-[34px] font-bold transition-all shadow-2xs bg-white text-slate-800"
+                        >
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
-              <!-- Section 3: Đặt cọc -->
-              <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-xs relative">
-                  <div class="flex justify-between items-center mb-1.5">
-                      <h3 class="font-bold text-gray-800 flex items-center text-xs uppercase tracking-wider">
-                          <div class="w-1 h-3 bg-green-500 rounded-full mr-1.5"></div>
-                          Đặt cọc
-                      </h3>
-                      <button 
-                        @click="openDepositModal" 
-                        :disabled="!modalForm.dbId"
-                        type="button" 
-                        class="rounded-md px-2 py-0.5 text-[11px] transition flex items-center gap-1 shadow-xs"
-                        :class="modalForm.dbId ? 'text-gray-600 bg-gray-100 hover:bg-gray-200 cursor-pointer' : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-60'"
-                      >
-                          <i class="fa-solid fa-plus"></i> Thêm cọc
-                      </button>
+              <!-- CỘT PHẢI (5 CỘT): ĐẶT CỌC & GHI CHÚ -->
+              <div class="lg:col-span-5 flex flex-col gap-3">
+                
+                <!-- Section 3: Đặt cọc & Thanh toán (Fill theo Topbar Theme) -->
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+                  <div class="flex justify-between items-center pb-2 mb-2.5 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                      <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
+                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Đặt cọc & Thanh toán</h3>
+                    </div>
+                    <button 
+                      @click="openDepositModal" 
+                      :disabled="!modalForm.dbId"
+                      type="button" 
+                      class="rounded-lg px-2.5 py-1 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
+                      :class="modalForm.dbId ? 'text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 cursor-pointer' : 'text-slate-400 bg-slate-100 cursor-not-allowed opacity-60'"
+                    >
+                      <i class="fa-solid fa-plus text-[10px]"></i> Thêm cọc
+                    </button>
                   </div>
-                  <div class="bg-gray-50 border border-gray-200 rounded-xl p-2 flex flex-wrap md:flex-nowrap gap-4 items-center shadow-inner">
-                      <!-- Số tiền first -->
-                      <div class="text-xs text-gray-800 flex items-center font-bold">
-                          <span class="text-[11px] text-gray-400 font-medium mr-1.5">Số tiền:</span>
-                          <input 
-                            type="text" 
-                            readonly
-                            :value="formatCurrencyInput(modalForm.paymentValue)"
-                            class="border border-gray-200 rounded-lg px-2.5 py-0.5 text-xs font-black text-slate-500 focus:outline-none w-28 bg-slate-100/50 mr-1.5 text-right shadow-inner cursor-not-allowed"
-                          />
-                      </div>
-                      
-                      <!-- Only show Date and Note if booking has deposits -->
-                      <template v-if="hasActiveDeposits">
-                          <div class="text-xs font-semibold text-gray-800 flex items-center">
-                              <span class="text-[11px] text-gray-400 font-medium mr-1.5">Ngày:</span> {{ firstDepositDate }}
-                          </div>
-                          <div class="text-xs text-gray-800 flex items-center font-semibold">
-                              <i class="fa-solid fa-money-bill-wave text-green-600 mr-1.5 text-xs"></i> ({{ firstDepositNote }})
-                          </div>
-                          <div class="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-xs md:ml-auto border border-blue-100">
-                              {{ firstDepositMethodName }}
-                          </div>
-                      </template>
-                  </div>
-              </div>
 
-              <!-- Section 4: Ghi chú -->
-              <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-xs flex flex-col">
-                  <h3 class="font-bold text-gray-800 mb-1.5 flex items-center text-xs uppercase tracking-wider">
-                      <div class="w-1 h-3 bg-yellow-400 rounded-full mr-1.5"></div>
-                      Ghi chú
-                  </h3>
+                  <!-- Khối hiển thị tiền cọc thanh lịch, giảm saturation -->
+                  <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
+                    <div class="flex flex-col">
+                      <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tổng tiền đặt cọc</span>
+                      <div class="text-base font-black text-slate-800 tracking-tight mt-0.5">
+                        {{ formatCurrencyInput(modalForm.paymentValue) }} <span class="text-xs font-bold text-slate-500">VND</span>
+                      </div>
+                    </div>
+                    <div class="w-8 h-8 rounded-lg bg-slate-200/70 text-slate-500 flex items-center justify-center text-sm shrink-0">
+                      <i class="fa-solid fa-money-bill-wave"></i>
+                    </div>
+                  </div>
+
+                  <!-- Thông tin chi tiết lần cọc nếu có -->
+                  <div v-if="hasActiveDeposits" class="mt-2.5 bg-slate-50 border border-slate-200 rounded-lg p-2 flex flex-col gap-1 text-xs">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <span class="font-medium text-[11px]"><i class="fa-regular fa-calendar-days text-slate-400 mr-1"></i> Ngày: <strong>{{ firstDepositDate }}</strong></span>
+                      <span class="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-300 text-[11px]">{{ firstDepositMethodName }}</span>
+                    </div>
+                    <div v-if="firstDepositNote" class="text-slate-500 italic text-[11px] truncate mt-0.5">
+                      <i class="fa-solid fa-comment-dots text-slate-400 mr-1"></i> {{ firstDepositNote }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Section 4: Ghi chú (Fill theo Topbar Theme) -->
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs flex flex-col flex-1">
+                  <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                      <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
+                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Ghi chú Booking</h3>
+                    </div>
+                  </div>
                   <textarea 
                     id="booking-note-textarea"
                     v-model="modalForm.note"
                     @input="autoResizeTextarea"
-                    placeholder="Nhập ghi chú tại đây..." 
-                    class="w-full border border-gray-300 rounded-xl p-2 focus:outline-none focus:border-blue-500 text-xs resize-none min-h-[54px] shadow-inner bg-gray-50/30 font-semibold overflow-hidden"
+                    placeholder="Nhập ghi chú hoặc yêu cầu của khách tại đây..." 
+                    class="w-full border border-slate-300 rounded-xl p-2.5 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs resize-none flex-1 min-h-[96px] shadow-2xs bg-white font-medium text-slate-800 transition-all"
                   ></textarea>
+                </div>
+
               </div>
+
             </div>
 
             <!-- Tab 2: Thông tin đưa đón -->
@@ -7510,30 +7684,41 @@ defineExpose({
           </div>
 
           <!-- MODAL FOOTER -->
-          <div class="bg-white border-t border-gray-200 p-2.5 flex flex-col sm:flex-row justify-between items-center gap-2 shrink-0 rounded-b-xl">
-              <div class="text-xs text-gray-400 flex flex-wrap items-center gap-2 w-full sm:w-auto justify-center sm:justify-start pl-1">
-                  <div class="flex items-center space-x-1.5">
-                      <i class="fa-solid fa-user-pen text-gray-300 text-xs"></i>
-                      <span>Tạo bởi: <strong class="text-gray-500 font-bold">{{ modalForm.createdBy || authStore.user?.username || 'system' }}</strong></span>
+          <div class="bg-white border-t border-slate-200 px-4 py-2.5 flex flex-col sm:flex-row justify-between items-center gap-2 shrink-0 rounded-b-xl">
+              <!-- Left metadata with higher contrast and dirty indicator -->
+              <div class="text-xs text-slate-600 flex flex-wrap items-center gap-2 w-full sm:w-auto justify-center sm:justify-start">
+                  <div class="flex items-center space-x-1.5 font-medium">
+                      <i class="fa-solid fa-user-pen text-slate-400 text-xs"></i>
+                      <span><strong class="text-slate-800 font-bold">{{ modalForm.createdBy || authStore.user?.username || 'system' }}</strong></span>
                   </div>
-                  <div v-if="modalForm.createdAt" class="flex items-center space-x-1.5">
-                      <span class="text-gray-300">|</span>
-                      <i class="fa-solid fa-clock text-gray-300 text-xs"></i>
-                      <span>Thời điểm tạo: <strong class="text-gray-500 font-bold">{{ formatDateTime(modalForm.createdAt) }}</strong></span>
+                  <div v-if="modalForm.createdAt" class="flex items-center space-x-1.5 font-medium">
+                      <span class="text-slate-300">•</span>
+                      <i class="fa-regular fa-clock text-slate-400 text-xs"></i>
+                      <span class="text-slate-700 font-semibold">{{ formatDateTime(modalForm.createdAt) }}</span>
+                  </div>
+                  <div v-if="isModalFormDirty && modalForm.dbId" class="ml-2 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-bold">
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                      <span>Có thay đổi chưa lưu</span>
                   </div>
               </div>
+
+              <!-- Right action buttons with dirty tracking -->
               <div class="flex items-center space-x-2 w-full sm:w-auto justify-center sm:justify-end">
                   <button 
                     @click="closeModal"
                     :disabled="isSavingModal"
-                    class="px-4 py-1.5 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition text-xs cursor-pointer bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="px-4 py-1.5 border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition text-xs cursor-pointer bg-white disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
                   >
                       Hủy bỏ
                   </button>
                   <button 
                     @click="handleSaveNewBooking"
-                    :disabled="isSavingModal"
-                    class="px-4 py-1.5 bg-[#2563eb] text-white font-bold rounded-xl hover:bg-blue-700 transition flex items-center space-x-1.5 shadow-md text-xs cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="isSavingModal || (!!modalForm.dbId && !isModalFormDirty)"
+                    class="px-4 py-1.5 font-bold rounded-xl transition flex items-center space-x-1.5 text-xs border-none"
+                    :class="(modalForm.dbId && !isModalFormDirty)
+                      ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none' 
+                      : [isTopBarThemeDark ? 'text-white font-bold shadow-md' : 'text-slate-900 font-extrabold shadow-md', 'hover:brightness-110 active:scale-95 cursor-pointer']"
+                    :style="(!modalForm.dbId || isModalFormDirty) ? { background: topbarThemeBg } : {}"
                   >
                       <i v-if="isSavingModal" class="fa-solid fa-circle-notch animate-spin"></i>
                       <i v-else class="fa-regular fa-floppy-disk"></i>
@@ -7552,7 +7737,7 @@ defineExpose({
       :booking="activeTab"
       :system-date="systemDate"
       :user-name="authStore.user?.name || authStore.user?.username || '—'"
-      @saved="loadActiveBookingNotifications()"
+      @saved="loadActiveBookingNotifications(activeTab, true)"
     />
 
     <Teleport to="body">

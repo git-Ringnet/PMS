@@ -184,6 +184,10 @@ class RoomController extends Controller
                 $room->confirm_date = $br->booking?->confirm_date ? \Carbon\Carbon::parse($br->booking->confirm_date)->toDateString() : '';
                 $room->sales_person = $br->booking?->sales_person ?? '';
                 $room->is_git = (bool)($br->booking?->is_git ?? false);
+                $room->is_day_use = (bool)($br->booking?->is_day_use ?? false);
+                $room->is_walk_in = $br->booking?->booking_date
+                    ? \Carbon\Carbon::parse($br->booking->booking_date)->toDateString() === $sysDateStr
+                    : false;
                 $room->has_vat = (bool)($br->booking?->has_vat ?? false);
                 $room->payment_method = $br->booking?->paymentMethod?->name ?? '';
                 $room->payment_value = $br->booking?->payment_value ?? 0;

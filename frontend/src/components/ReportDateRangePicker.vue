@@ -19,16 +19,23 @@ const draftEnd = ref('')
 const calendarTarget = ref(null)
 const calendarMonth = ref('')
 
+const toYmd = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const localToday = () => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(props.systemDate)) return props.systemDate
-  const date = new Date()
-  const offset = date.getTimezoneOffset() * 60000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10)
+  return toYmd(new Date())
 }
 
 const presets = computed(() => {
   const today = localToday()
-  const day = new Date(`${today}T00:00:00`).getDay()
+  const baseDate = new Date(`${today}T00:00:00`)
+
+  const day = baseDate.getDay()
   const mondayOffset = day === 0 ? -6 : 1 - day
   const weekStart = addLocalDays(today, mondayOffset)
   const previousWeekStart = addLocalDays(weekStart, -7)

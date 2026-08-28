@@ -2528,15 +2528,22 @@ const openRegistrationFromCheckout = () => {
 }
 
 const selectCheckoutBookingFromRoute = () => {
-  const bookingCode = String(route.query.bookingCode || '').trim()
-  if (!bookingCode) return
+  const bookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
+  if (!bookingKey) return
   const booking = allBookingsList.value.find(item => (
-    String(item.code) === bookingCode || String(item.bookingId) === bookingCode
+    String(item.code) === bookingKey || String(item.bookingId) === bookingKey || String(item.id) === bookingKey || String(item.id) === `B${bookingKey}`
   ))
   if (booking) {
-    const roomId = String(route.query.roomId || '').trim()
+    const roomId = String(route.query.roomId || route.query.room_id || route.query.booking_room_id || '').trim()
     const room = roomId
-      ? booking.roomItems.find(item => String(item.roomId) === roomId || String(item.id) === roomId)
+      ? booking.roomItems.find(item => (
+          String(item.roomId) === roomId || 
+          String(item.id) === roomId || 
+          String(item.id) === `R${roomId}` || 
+          String(item.roomNumber) === roomId ||
+          String(item.rawRoom?.id) === roomId ||
+          String(item.rawRoom?.booking_room_id) === roomId
+        ))
       : null
     selectBookingFromSearch(booking, room)
   }
@@ -2568,7 +2575,7 @@ onMounted(async () => {
   }
 })
 
-watch(() => [route.query.bookingCode, route.query.roomId], async () => {
+watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id], async () => {
   await loadCheckoutBookings()
   selectCheckoutBookingFromRoute()
 })

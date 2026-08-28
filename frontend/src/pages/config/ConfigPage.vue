@@ -188,7 +188,10 @@ function handleBack() {
 
     <!-- VIEW 2: DỊCH VỤ / TÁC VỤ CHI TIẾT -->
     <template v-else>
-      <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 p-6 flex flex-col min-h-0">
+      <div 
+        class="flex-1 flex flex-col min-h-0 overflow-y-auto"
+        :class="currentView === 'database-backup' ? 'p-1' : 'bg-white rounded-xl shadow-xs border border-slate-200 p-6'"
+      >
         <HotelDefinition 
           v-if="currentView === 'hotel'" 
           :initialTab="route.query.tab || 'THÔNG TIN KHÁCH SẠN'"

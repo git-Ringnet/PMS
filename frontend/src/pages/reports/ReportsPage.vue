@@ -17,6 +17,18 @@ const openTabs = ref([])
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 
+const activeTemplate = computed(() => {
+  if (!activeTab.value || !activeTab.value.selectedTemplateId) return null
+  return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
+})
+
+const iframeClass = computed(() => {
+  const orientation = activeTemplate.value?.page_orientation || 'portrait'
+  return orientation === 'landscape'
+    ? 'mx-auto block min-h-[790px] w-full max-w-[1120px] border-0 bg-white shadow-xl'
+    : 'mx-auto block min-h-[1120px] w-full max-w-[800px] border-0 bg-white shadow-xl'
+})
+
 const localToday = () => {
   const date = new Date()
   const offset = date.getTimezoneOffset() * 60000
@@ -118,7 +130,8 @@ const openReportInTab = (report) => {
       dataset: null,
       renderedHtml: '',
       executing: false,
-      rendering: false
+      rendering: false,
+      exporting: false
     })
 
     openTabs.value.push(tab)
@@ -227,6 +240,40 @@ const printReportForTab = (tab) => {
   }
 }
 
+const exportReportForTab = async (tab, format) => {
+  if (!tab?.dataset || !tab.selectedTemplateId || tab.exporting) return
+  tab.exporting = true
+  try {
+    const response = await http.post(`/report-definitions/${tab.report.id}/exports`, {
+      parameters: { ...tab.parameters },
+      template_id: tab.selectedTemplateId,
+      format
+    }, { responseType: 'arraybuffer' })
+    const extension = format === 'xlsx' ? 'xlsx' : format
+    const mimeTypes = {
+      pdf: 'application/pdf',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }
+    const disposition = response.headers['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^";]+)"?/i)
+    const url = URL.createObjectURL(new Blob([response.data], {
+      type: response.headers['content-type'] || mimeTypes[format]
+    }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = match?.[1] || `${tab.report.code}_${new Date().toISOString().slice(0, 10)}.${extension}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || `Không thể xuất ${format.toUpperCase()}`, 'error')
+  } finally {
+    tab.exporting = false
+  }
+}
+
 const csvCell = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
 const downloadCsvForTab = (tab) => {
   if (!tab) return
@@ -312,8 +359,10 @@ onMounted(async () => {
                   </option>
                 </select>
               </label>
-              <button :disabled="!activeTab.renderedHtml" @click="downloadCsvForTab(activeTab)" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> CSV</button>
-              <button :disabled="!activeTab.renderedHtml" @click="printReportForTab(activeTab)" class="flex items-center gap-1 rounded-lg border-none bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><Printer class="h-4 w-4" /> In / PDF</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'xlsx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Excel</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'docx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Word</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'pdf')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> PDF</button>
+              <button :disabled="!activeTab.renderedHtml" @click="printReportForTab(activeTab)" class="flex items-center gap-1 rounded-lg border-none bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><Printer class="h-4 w-4" /> In</button>
             </div>
           </div>
         </header>
@@ -379,7 +428,7 @@ onMounted(async () => {
               </div>
             </div>
 
-            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" class="mx-auto block min-h-[1120px] w-full max-w-[1120px] border-0 bg-white shadow-xl" />
+            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" />
           </section>
         </div>
       </template>

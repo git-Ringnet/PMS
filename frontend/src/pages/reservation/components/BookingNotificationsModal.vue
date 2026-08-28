@@ -31,7 +31,13 @@ const props = defineProps({ show: Boolean, booking: Object, userName: String, sy
 const emit = defineEmits(['update:show', 'saved'])
 const uiStore = useUiStore(); const notifications = ref([]); const selectedId = ref(null); const loading = ref(false); const saving = ref(false); const editing = ref(false); const roomDropdownOpen = ref(false); const pickerRoomIds = ref([]); const appliedRoomIds = ref([])
 const rooms = computed(() => (props.booking?.rooms || []).filter(room => room.bookingRoomId).map(room => ({ id: room.bookingRoomId, roomNumber: room.roomNumber })))
-const blankForm = () => ({ scope_type: 'booking', booking_room_ids: [], starts_on: props.systemDate || '', ends_on: props.systemDate || '', description: '' })
+const blankForm = () => ({ 
+  scope_type: 'booking', 
+  booking_room_ids: [], 
+  starts_on: props.booking?.checkIn ? String(props.booking.checkIn).slice(0, 10) : (props.systemDate || ''), 
+  ends_on: props.booking?.checkOut ? String(props.booking.checkOut).slice(0, 10) : (props.systemDate || ''), 
+  description: '' 
+})
 const form = ref(blankForm())
 const allRoomsSelected = computed(() => rooms.value.length > 0 && pickerRoomIds.value.length === rooms.value.length)
 function formatDate(value) { if (!value) return '—'; const [y, m, d] = String(value).slice(0, 10).split('-'); return y ? `${d}/${m}/${y}` : value }

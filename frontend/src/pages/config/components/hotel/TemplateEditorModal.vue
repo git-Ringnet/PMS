@@ -71,6 +71,21 @@ const openCategories = ref({
 })
 const dataSources = ref([])
 
+const pageDimensions = computed(() => {
+  const dimensions = {
+    A4: [210, 297],
+    A5: [148, 210],
+    Letter: [215.9, 279.4],
+    Legal: [215.9, 355.6]
+  }
+  const [shortSide, longSide] = dimensions[template.value?.page_size] || dimensions.A4
+  const landscape = template.value?.page_orientation === 'landscape'
+  return {
+    width: `${landscape ? longSide : shortSide}mm`,
+    height: `${landscape ? shortSide : longSide}mm`
+  }
+})
+
 // Visual Blocks structure
 const blocks = ref({
   header: [],
@@ -1684,6 +1699,7 @@ const selectBand = (band) => {
               <option value="A4">A4</option>
               <option value="A5">A5</option>
               <option value="Letter">Letter</option>
+              <option value="Legal">Legal</option>
             </select>
           </div>
           <!-- Orientation -->
@@ -1887,8 +1903,8 @@ const selectBand = (band) => {
             <!-- Page Canvas Layout Representation -->
             <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-6 relative flex flex-col"
               :style="{
-                width: template?.page_size === 'A5' ? '148mm' : '210mm',
-                minHeight: template?.page_size === 'A5' ? '210mm' : '297mm',
+                width: pageDimensions.width,
+                minHeight: pageDimensions.height,
                 paddingTop: `${template?.margin_top || 10}mm`,
                 paddingBottom: `${template?.margin_bottom || 10}mm`,
                 paddingLeft: `${template?.margin_left || 10}mm`,
@@ -3145,16 +3161,16 @@ const selectBand = (band) => {
               </button>
             </div>
             
-            <div v-if="loadingPreview" class="bg-white shadow-lg border border-slate-300 w-[210mm] h-[297mm] flex flex-col items-center justify-center gap-3">
+            <div v-if="loadingPreview" class="bg-white shadow-lg border border-slate-300 flex flex-col items-center justify-center gap-3" :style="{ width: pageDimensions.width, height: pageDimensions.height }">
               <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
               <p class="text-xs text-slate-400 italic">Đang biên dịch và render dữ liệu giả lập từ hệ thống...</p>
             </div>
             
             <iframe v-else-if="previewHtml" :srcdoc="previewHtml" 
-              class="bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] rounded-sm transition-all"
+              class="bg-white shadow-lg border border-slate-300 rounded-sm transition-all"
               :style="{
-                width: template?.page_size === 'A5' ? '148mm' : '210mm',
-                minHeight: template?.page_size === 'A5' ? '210mm' : '297mm'
+                width: pageDimensions.width,
+                minHeight: pageDimensions.height
               }"></iframe>
           </div>
         </template>

@@ -103,7 +103,7 @@ Nhận dataset rows/fields/summary
                          ↓
 Render dataset bằng template mặc định
                          ↓
-Hiển thị báo cáo, cho đổi mẫu, in/PDF hoặc tải CSV
+Hiển thị báo cáo, cho đổi mẫu, in hoặc xuất PDF / Excel / Word
 ```
 
 ### 0.3. Quan hệ giữa Store, Data Source, Template và Danh mục báo cáo
@@ -1081,7 +1081,7 @@ Chưa có hoặc cần hoàn thiện thêm:
 - Undo/redo trong designer.
 - Nested drag/drop hoàn chỉnh cho layout nhiều cột.
 - Server-side compiler lấy `content_json` làm nguồn duy nhất.
-- Xuất Excel `.xlsx` thực sự và PDF sinh trực tiếp từ server. Hiện tại Viewer đã có CSV và In/Save as PDF qua trình duyệt.
+- Xuất dữ liệu có nhiều sheet hoặc định dạng Excel nâng cao theo từng ô của mẫu.
 - Phân quyền riêng cho quản trị Store/Data Source.
 - Query timeout cưỡng chế ở database level.
 
@@ -1115,14 +1115,21 @@ Khi người dùng đổi mẫu đầu ra sau khi đã tải dữ liệu, Viewer
 - `GET /api/report-definitions?active_only=1`: danh mục báo cáo, bộ lọc và danh sách mẫu.
 - `POST /api/report-definitions/{id}/execute`: chạy Store và render mẫu được chọn. Body gồm `parameters` và `template_id`.
 - `POST /api/report-definitions/{id}/render`: render lại dataset bằng mẫu khác, không truy vấn database. Body gồm `data` và `template_id`.
+- `POST /api/report-definitions/{id}/exports`: tạo file tải về. Body gồm `parameters`, `template_id` và `format` (`pdf`, `xlsx`, hoặc `docx`). Endpoint này chạy lại Store với đúng điều kiện đang chọn để file luôn dùng dữ liệu hiện tại.
 - `POST|PUT|DELETE /api/report-definitions`: quản trị định nghĩa báo cáo.
 
-Giá trị mặc định của tham số hỗ trợ `$today`, `$month_start`, `$month_end`; Viewer sẽ đổi các token này thành ngày theo máy người dùng trước khi gọi API.
+Giá trị mặc định của tham số hỗ trợ `$today`, `$month_start`, `$month_end`; Viewer đổi các token này theo **ngày nghiệp vụ của hệ thống/chi nhánh**, không theo ngày máy người dùng.
 
-### 16.4. Xuất báo cáo
+### 16.4. Xuất báo cáo và thiết lập trang
 
-- **In / PDF** gọi hộp thoại in của trình duyệt trên đúng mẫu HTML đang xem; chọn “Save as PDF” để lưu PDF.
-- **CSV** xuất dataset gốc từ Store, phù hợp mở bằng Excel và không phụ thuộc bố cục mẫu.
+Các thiết lập trong Designer — **khổ giấy**, **chiều dọc/ngang** và **bốn lề** — được lưu trên từng Template. Chúng không chỉ là xem trước: Viewer dùng chính Template đang chọn khi in hoặc xuất file.
+
+- **In**: mở hộp thoại in của trình duyệt với HTML của mẫu đang xem. Khổ giấy/lề từ Template được áp dụng qua CSS `@page`; máy in thực tế vẫn có thể bị giới hạn bởi driver.
+- **PDF**: server render toàn bộ HTML/CSS của Template thành PDF. Đây là định dạng giữ bố cục gần nhất với bản thiết kế: header, bảng, màu, căn lề và các field `{{...}}`.
+- **Excel (.xlsx)**: xuất dữ liệu Store thành bảng Excel. File đặt khổ giấy, chiều giấy và lề theo Template để hỗ trợ in từ Excel; bảng dữ liệu ưu tiên tính mở/sửa được trong Excel, không cam kết sao chép từng pixel của HTML.
+- **Word (.docx)**: xuất dữ liệu Store thành bảng Word, đồng thời đặt khổ giấy, chiều giấy và lề theo Template. Phù hợp khi cần bổ sung/chỉnh sửa nội dung sau khi tải; không nhằm tái tạo toàn bộ CSS như PDF.
+
+Muốn thay đổi thiết lập xuất/in của một báo cáo: mở **Thư viện thiết kế → Sửa thiết kế**, chọn khổ giấy, chiều giấy và lề ở thanh trên, rồi bấm **Lưu phiên bản**. Sau đó chọn đúng mẫu này tại Viewer trước khi xuất. Không cần sửa Store hay tạo migration chỉ để đổi bố cục.
 
 ### 16.5. Khi sửa Store
 
@@ -1166,11 +1173,10 @@ Mỗi dòng bên dưới là **một Report Definition**, không phải một te
 | Mã báo cáo | Tên báo cáo | Nhóm hiển thị (`group`) | Hiện tại | Thứ tự nút Báo cáo | Thứ tự nhóm | Thứ tự báo cáo |
 |---|---|---|---|---:|---:|---:|
 | `ARRIVING_ROOMS` | Báo cáo phòng đến | `BÁO CÁO ĐĂNG KÝ` | Đăng ký phòng | 20 | 10 | 10 |
-| `DEPARTING_ROOMS` | Báo cáo phòng đi | `BÁO CÁO ĐĂNG KÝ` | Đăng ký phòng | 20 | 10 | 20 |
 | `IN_HOUSE_ROOMS` | Báo cáo phòng ở | `BÁO CÁO ĐĂNG KÝ` | Đăng ký phòng | 20 | 10 | 30 |
 | `DEPOSIT_REPORT` | Báo cáo đặt cọc | `BÁO CÁO ĐĂNG KÝ` | Đăng ký phòng | 20 | 10 | 40 |
 
-Ở mỗi dòng, bật **Kích hoạt** và **Hiện trên menu**, chọn khu vực **Đăng ký phòng** (`reservation`). Tất cả dòng cùng `group = BÁO CÁO ĐĂNG KÝ` sẽ được gom vào một submenu; `menu_group_order=10` đưa nhóm này lên trước các nhóm có số lớn hơn; `menu_item_order` quyết định thứ tự Phòng đến → Phòng đi → Phòng ở… trong nhóm.
+Ở mỗi dòng, bật **Kích hoạt** và **Hiện trên menu**, chọn khu vực **Đăng ký phòng** (`reservation`). Tất cả dòng cùng `group = BÁO CÁO ĐĂNG KÝ` sẽ được gom vào một submenu; `menu_group_order=10` đưa nhóm này lên trước các nhóm có số lớn hơn; `menu_item_order` quyết định thứ tự từng báo cáo trong nhóm.
 
 Kết quả menu được sinh theo quy tắc:
 
@@ -1178,7 +1184,6 @@ Kết quả menu được sinh theo quy tắc:
 BÁO CÁO
   └── BÁO CÁO ĐĂNG KÝ              (group = BÁO CÁO ĐĂNG KÝ)
         ├── BÁO CÁO PHÒNG ĐẾN      (menu_item_order = 10)
-        ├── BÁO CÁO PHÒNG ĐI        (menu_item_order = 20)
         └── BÁO CÁO PHÒNG Ở         (menu_item_order = 30)
 ```
 
