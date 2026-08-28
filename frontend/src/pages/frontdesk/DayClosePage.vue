@@ -208,7 +208,16 @@ function checkRoomStatus(r, b) {
   const raw = rStatus !== null && rStatus !== undefined ? rStatus : bStatus
   const str = getStatusString(raw)
 
-  const isCheckedIn = (
+  const isMoved = (
+    str === '100' ||
+    str === 'moved' ||
+    str === 'status_moved' ||
+    str === 'chuyen_phong' ||
+    Number(raw) === 100 ||
+    Boolean(r && Number(r.status) === 100)
+  )
+
+  const isCheckedIn = !isMoved && (
     str === '1' ||
     str === 'checked_in' ||
     str === 'in_house' ||
@@ -217,7 +226,7 @@ function checkRoomStatus(r, b) {
     str === 'dang_o'
   )
 
-  const isCheckedOut = (
+  const isCheckedOut = !isMoved && (
     str === '2' ||
     str === 'checked_out' ||
     str === 'checkedout' ||
@@ -231,14 +240,16 @@ function checkRoomStatus(r, b) {
     str === 'canceled' ||
     str === 'no_show' ||
     str === 'noshow' ||
-    str === 'da_huy'
+    str === 'da_huy' ||
+    isMoved
   )
 
   return {
     isCheckedIn,
     isCheckedOut,
     isCancelled,
-    isBooked: !isCheckedIn && !isCheckedOut && !isCancelled
+    isMoved,
+    isBooked: !isCheckedIn && !isCheckedOut && !isCancelled && !isMoved
   }
 }
 
@@ -253,8 +264,8 @@ function processRealBookings(bookings) {
     const rooms = b.booking_rooms || b.bookingRooms || []
     if (rooms.length > 0) {
       rooms.forEach(r => {
-        const { isCheckedIn, isCheckedOut, isCancelled } = checkRoomStatus(r, b)
-        if (isCancelled || isCheckedOut) return
+        const { isCheckedIn, isCheckedOut, isCancelled, isMoved } = checkRoomStatus(r, b)
+        if (isCancelled || isCheckedOut || isMoved) return
 
         const arrDate = getEffectiveArrivalDate(r, b)
         const depDate = getEffectiveDepartureDate(r, b)
@@ -265,8 +276,8 @@ function processRealBookings(bookings) {
         if (depDate === sysDateStr && isCheckedIn) depCount++
       })
     } else {
-      const { isCheckedIn, isCheckedOut, isCancelled } = checkRoomStatus(null, b)
-      if (isCancelled || isCheckedOut) return
+      const { isCheckedIn, isCheckedOut, isCancelled, isMoved } = checkRoomStatus(null, b)
+      if (isCancelled || isCheckedOut || isMoved) return
 
       const arrDate = getEffectiveArrivalDate(null, b)
       const depDate = getEffectiveDepartureDate(null, b)
@@ -293,8 +304,8 @@ function processRealBookings(bookings) {
     const rooms = b.booking_rooms || b.bookingRooms || []
 
     const processItem = (r, rIdx) => {
-      const { isCheckedIn, isCheckedOut, isCancelled } = checkRoomStatus(r, b)
-      if (isCancelled || isCheckedOut) return
+      const { isCheckedIn, isCheckedOut, isCancelled, isMoved } = checkRoomStatus(r, b)
+      if (isCancelled || isCheckedOut || isMoved) return
 
       const arrDate = getEffectiveArrivalDate(r, b)
       const depDate = getEffectiveDepartureDate(r, b)
