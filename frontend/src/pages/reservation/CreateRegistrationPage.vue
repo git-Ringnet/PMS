@@ -1657,7 +1657,7 @@ async function loadActiveBookingNotifications(tab = activeTab.value) {
     activeBookingNotifications.value = res.data?.data || []
     isActiveBookingNotificationsOpen.value = activeBookingNotifications.value.length > 0
     activeBookingNotifications.value.forEach((notice, index) => {
-      activeBookingNotificationsTimers.push(setTimeout(() => dismissActiveBookingNotification(notice.id), 6000 + index * 250))
+      activeBookingNotificationsTimers.push(setTimeout(() => dismissActiveBookingNotification(notice.id), 12000 + index * 500))
     })
   } catch (err) {
     // Không chặn việc mở booking nếu API thông báo tạm thời không khả dụng.
@@ -1689,6 +1689,9 @@ watch(() => route.query, async (newQuery) => {
     await openBookingModalByCode(newQuery.bookingCode)
     await openDepositFromQuery()
     await openNotificationFromQuery()
+    nextTick(() => {
+      loadActiveBookingNotifications()
+    })
   } else if (newQuery.action === 'new' || newQuery.newBooking === 'true' || newQuery.roomNumber) {
     await handleAddTabClick()
   }
@@ -1772,6 +1775,9 @@ async function loadBookings() {
       // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
       localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
       replaceBookingTab(latestBooking)
+      nextTick(() => {
+        loadActiveBookingNotifications()
+      })
     } else {
       // Các lần sau: lọc theo closedIds đã lưu
       const closedIds = getClosedTabIds()
@@ -1786,6 +1792,9 @@ async function loadBookings() {
 
       if (nextBooking) {
         replaceBookingTab(nextBooking)
+        nextTick(() => {
+          loadActiveBookingNotifications()
+        })
       } else if (currentTab?.id === 'NEW_BOOKING') {
         tabs.value = [currentTab]
         activeTabId.value = currentTab.id
