@@ -89,7 +89,22 @@ const openReportInTab = (report) => {
   if (!tab) {
     const defaultParams = {}
     for (const definition of report.parameter_ui_schema || []) {
-      defaultParams[definition.name] = resolveDefault(definition.default)
+      const resolved = resolveDefault(definition.default)
+      const options = definition.options || []
+      const firstOption = options[0]
+      const legacyDefault = definition.name === 'p_sort_by'
+        ? 'Room'
+        : definition.name === 'p_order_by'
+          ? 'ASC'
+          : ''
+      // Existing report definitions may have an empty persisted default even
+      // though the parameter is required. Keep execution usable by selecting
+      // the first configured option (e.g. OOS sort = Room).
+      defaultParams[definition.name] = resolved || (
+        ['select', 'radio'].includes(definition.control) && firstOption !== undefined
+          ? (firstOption.value ?? firstOption)
+          : legacyDefault || resolved
+      )
     }
 
     tab = reactive({
@@ -144,8 +159,28 @@ const closeTab = (tabId) => {
   }
 }
 
+const normalizeReportParameters = (tab) => {
+  for (const definition of tab.report.parameter_ui_schema || []) {
+    if (tab.parameters[definition.name] !== '' && tab.parameters[definition.name] !== null && tab.parameters[definition.name] !== undefined) continue
+
+    const firstOption = (definition.options || [])[0]
+    const legacyDefault = definition.name === 'p_sort_by'
+      ? 'Room'
+      : definition.name === 'p_order_by'
+        ? 'ASC'
+        : ''
+
+    if (firstOption !== undefined) {
+      tab.parameters[definition.name] = firstOption.value ?? firstOption
+    } else if (legacyDefault) {
+      tab.parameters[definition.name] = legacyDefault
+    }
+  }
+}
+
 const executeTab = async (tab) => {
   if (!tab || !tab.selectedTemplateId) return
+  normalizeReportParameters(tab)
   const missing = (tab.report.parameter_ui_schema || [])
     .filter(item => item.required && (tab.parameters[item.name] === '' || tab.parameters[item.name] === undefined))
   if (missing.length) {
@@ -291,7 +326,7 @@ onMounted(async () => {
               Báo cáo này không cần tham số.
             </div>
 
-            <label v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
+            <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
               {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
 
               <select v-if="['select', 'radio'].includes(parameter.control)" v-model="activeTab.parameters[parameter.name]" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
@@ -317,7 +352,7 @@ onMounted(async () => {
 
               <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
               <input v-else v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
-            </label>
+            </div>
 
             <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">
               <LoaderCircle v-if="activeTab.executing" class="h-4 w-4 animate-spin" /><Play v-else class="h-4 w-4" />

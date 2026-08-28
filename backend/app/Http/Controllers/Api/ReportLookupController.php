@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -19,6 +20,7 @@ class ReportLookupController extends Controller
             'bookings' => $this->bookings($search),
             'room-classes' => $this->roomClasses(),
             'registration-statuses' => $this->registrationStatuses(),
+            'users' => $this->users($search),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -97,6 +99,24 @@ class ReportLookupController extends Controller
             ->map(fn ($status) => [
                 'value' => $status->id,
                 'label' => $status->vietnamese ?: $status->name,
+            ])->all();
+    }
+
+    private function users(string $search): array
+    {
+        return User::query()
+            ->where('is_active_user', true)
+            ->when($search !== '', fn ($query) => $query->where(function ($nested) use ($search) {
+                $nested->where('username', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('employee_code', 'like', "%{$search}%");
+            }))
+            ->orderBy('username')
+            ->limit(200)
+            ->get(['username', 'name'])
+            ->map(fn ($user) => [
+                'value' => $user->username,
+                'label' => trim("{$user->username} - {$user->name}", ' -'),
             ])->all();
     }
 }
