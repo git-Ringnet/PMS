@@ -7,6 +7,9 @@ import http from './http'
  * @param {Object} params - Filter: { search, status, registration_status_id, from_date, to_date, arrival_date }
  */
 export const fetchBookings = (params = {}) => http.get('/bookings', { params })
+export const fetchGeneralSearch = (params = {}) => http.get('/general-search', { params })
+export const fetchGeneralSearchOptions = () => http.get('/general-search/options')
+export const fetchGeneralSearchSuggestions = (q) => http.get('/general-search/suggestions', { params: { q } })
 export const fetchBookingInitDropdowns = () => http.get('/bookings/init-dropdowns')
 
 /**

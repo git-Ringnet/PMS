@@ -182,16 +182,18 @@ class NightAuditController extends Controller
         $todayEnd = Carbon::today()->endOfDay();
         $alreadyRolledToday = SystemDateRoll::whereBetween('actual_date', [$todayStart, $todayEnd])->exists();
 
-        // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0)
+        // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển)
         $pendingCheckIns = BookingRoom::with(['booking', 'roomClass'])
             ->whereDate('arrival_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_BOOKED)
+            ->where('status', '!=', BookingRoom::STATUS_MOVED)
             ->get();
 
-        // 2. Phòng có lịch check out hôm nay/trước đây nhưng vẫn ở trạng thái in-house (departure_date <= system_date và status = 1)
+        // 2. Phòng có lịch check out hôm nay/trước đây nhưng vẫn ở trạng thái in-house (departure_date <= system_date và status = 1, loại bỏ phòng chuyển)
         $pendingCheckOuts = BookingRoom::with(['booking', 'roomClass'])
             ->whereDate('departure_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
+            ->where('status', '!=', BookingRoom::STATUS_MOVED)
             ->get();
 
         return response()->json([
@@ -458,21 +460,25 @@ class NightAuditController extends Controller
 
         try {
             DB::transaction(function () use ($systemDate, $nextDate, $username, $shift, $occupiedToDirty, $emptyToInspect) {
-                // 2. Kiểm tra lại điều kiện chặn
+                // 2. Kiểm tra lại điều kiện chặn (loại bỏ phòng đã chuyển STATUS_MOVED)
                 $pendingCheckIns = BookingRoom::whereDate('arrival_date', '<=', $systemDate->toDateString())
                     ->where('status', BookingRoom::STATUS_BOOKED)
+                    ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->count();
 
                 $pendingCheckOuts = BookingRoom::whereDate('departure_date', '<=', $systemDate->toDateString())
                     ->where('status', BookingRoom::STATUS_CHECKED_IN)
+                    ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->count();
 
                 if ($pendingCheckIns > 0 || $pendingCheckOuts > 0) {
                     throw new \Exception('Không thể sang ngày vì vẫn còn phòng chưa check-in hoặc chưa check-out.');
                 }
 
-                // 3. Tự động post tiền phòng + các dịch vụ tự động cho phòng đang ở
-                $inhouseRooms = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)->get();
+                // 3. Tự động post tiền phòng + các dịch vụ tự động cho phòng đang ở (loại bỏ STATUS_MOVED)
+                $inhouseRooms = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
+                    ->where('status', '!=', BookingRoom::STATUS_MOVED)
+                    ->get();
                 foreach ($inhouseRooms as $targetRoom) {
                     // Check xem ngày hôm nay đã post tiền phòng chuẩn chưa (is_room_night = 1)
                     $hasStandardRM = false;
@@ -518,6 +524,7 @@ class NightAuditController extends Controller
                 if ($occupiedToDirty) {
                     // Phòng đang ở -> dirty (occupied_dirty)
                     $occupiedNumbers = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
+                        ->where('status', '!=', BookingRoom::STATUS_MOVED)
                         ->whereNotNull('room_number')
                         ->pluck('room_number');
 
@@ -529,6 +536,7 @@ class NightAuditController extends Controller
                 if ($emptyToInspect) {
                     // Phòng trống sẵn sàng -> chờ kiểm tra (vacant_clean - Phòng sạch)
                     $occupiedNumbers = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
+                        ->where('status', '!=', BookingRoom::STATUS_MOVED)
                         ->whereNotNull('room_number')
                         ->pluck('room_number');
 

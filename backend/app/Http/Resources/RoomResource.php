@@ -90,6 +90,8 @@ class RoomResource extends JsonResource
             'confirm_date' => $this->confirm_date,
             'sales_person' => $this->sales_person,
             'is_git' => $this->is_git,
+            'is_day_use' => (bool) ($this->is_day_use ?? false),
+            'is_walk_in' => (bool) ($this->is_walk_in ?? false),
             'has_vat' => $this->has_vat,
             'payment_method' => $this->payment_method,
             'payment_value' => $this->payment_value,
