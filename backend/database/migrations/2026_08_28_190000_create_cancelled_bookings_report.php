@@ -1,0 +1,314 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration
+{
+    private const SOURCE = 'CANCELLED_BOOKINGS';
+
+    private const REPORT = 'CANCELLED_BOOKINGS';
+
+    private const TEMPLATE = 'CANCELLED_BOOKINGS_STANDARD';
+
+    public function up(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
+        $this->createProcedure();
+        $this->seedConfiguration();
+
+        (require database_path('report_templates/cancelled_bookings_reference.php'))->apply();
+    }
+
+    public function down(): void
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
+        $reportId = DB::table('report_definitions')->where('code', self::REPORT)->value('id');
+        $templateId = DB::table('templates')->where('report', self::TEMPLATE)->value('id');
+
+        if ($reportId) {
+            DB::table('report_definition_template')->where('report_definition_id', $reportId)->delete();
+            DB::table('report_definitions')->where('id', $reportId)->delete();
+        }
+        if ($templateId) {
+            DB::table('templates')->where('id', $templateId)->delete();
+        }
+
+        DB::table('report_data_sources')->where('code', self::SOURCE)->delete();
+        DB::unprepared('DROP PROCEDURE IF EXISTS rpt_cancelled_bookings');
+    }
+
+    private function createProcedure(): void
+    {
+        DB::unprepared('DROP PROCEDURE IF EXISTS rpt_cancelled_bookings');
+        DB::unprepared(<<<'SQL'
+CREATE PROCEDURE rpt_cancelled_bookings(
+    IN p_from_date DATE,
+    IN p_to_date DATE,
+    IN p_show_room_info TINYINT,
+    IN p_view_type VARCHAR(20),
+    IN p_booking_id BIGINT
+)
+READS SQL DATA
+BEGIN
+    IF COALESCE(p_show_room_info, 0) = 1 THEN
+        SELECT
+            'room' AS RowType,
+            1 AS PeriodGroup,
+            l.id AS CancellationId,
+            CONCAT(
+                b.id, '|', DATE_FORMAT(l.cancelled_at, '%Y%m%d%H%i%s'), '|',
+                COALESCE(l.cancelled_by_username, ''), '|',
+                COALESCE(NULLIF(l.note, ''), cr.name, br.reason, '')
+            ) AS CancellationGroup,
+            b.id AS BookingId,
+            CONCAT(COALESCE(hs.prefix_booking_id, 'GAL'), b.id) AS BookingCode,
+            b.booking_name AS BookingName,
+            c.name AS Company,
+            DATE_FORMAT(b.booking_date, '%d/%m/%Y') AS BookingDate,
+            DATE_FORMAT(b.arrival_date, '%d/%m/%Y') AS BookingArrivalDate,
+            DATE_FORMAT(b.departure_date, '%d/%m/%Y') AS BookingDepartureDate,
+            DATE_FORMAT(l.cancelled_at, '%d/%m/%Y') AS CancelDate,
+            TIME_FORMAT(l.cancelled_at, '%H:%i') AS CancelTime,
+            l.cancelled_by_username AS CancelledBy,
+            COALESCE(NULLIF(l.note, ''), cr.name, br.reason, '') AS CancelReason,
+            DATEDIFF(br.arrival_date, DATE(l.cancelled_at)) AS DaysCancelBefore,
+            rs.name AS BookingStatus,
+            hs.division AS Division,
+            br.id AS RoomId,
+            br.room_number AS Room,
+            rc.code AS RoomType,
+            DATE_FORMAT(br.arrival_date, '%d/%m/%Y') AS RoomArrivalDate,
+            DATE_FORMAT(br.departure_date, '%d/%m/%Y') AS RoomDepartureDate,
+            br.rate AS Rate,
+            br.adults AS Adult,
+            br.babies AS Baby,
+            br.children_qty AS Child,
+            1 AS RoomCount,
+            COALESCE(r.is_internal, 0) AS IsInternal
+        FROM booking_cancel_logs AS l
+        INNER JOIN booking_rooms AS br ON br.id = l.booking_room_id
+        INNER JOIN bookings AS b ON b.id = COALESCE(l.booking_id, br.booking_id)
+        LEFT JOIN rooms AS r ON r.room_number = br.room_number
+        LEFT JOIN room_classes AS rc ON rc.id = br.room_class_id
+        LEFT JOIN companies AS c ON c.id = b.company_id
+        LEFT JOIN registration_statuses AS rs ON rs.id = b.registration_status_id
+        LEFT JOIN cancel_reasons AS cr ON cr.id = l.cancel_reason_id
+        LEFT JOIN hotel_settings AS hs ON hs.id = (SELECT MIN(id) FROM hotel_settings)
+        WHERE l.cancel_type = 'room'
+          AND COALESCE(r.is_internal, 0) = 0
+          AND (p_booking_id IS NULL OR b.id = p_booking_id)
+          AND (
+              (COALESCE(p_view_type, 'CancelDate') = 'ArrivalDate'
+                  AND br.arrival_date BETWEEN p_from_date AND p_to_date
+                  AND br.status = 3)
+              OR
+              (COALESCE(p_view_type, 'CancelDate') <> 'ArrivalDate'
+                  AND DATE(l.cancelled_at) BETWEEN p_from_date AND p_to_date)
+          )
+        ORDER BY l.cancelled_at, b.id, br.room_number, br.id;
+    ELSE
+        SELECT
+            'booking' AS RowType,
+            1 AS PeriodGroup,
+            l.id AS CancellationId,
+            CAST(l.id AS CHAR) AS CancellationGroup,
+            b.id AS BookingId,
+            CONCAT(COALESCE(hs.prefix_booking_id, 'GAL'), b.id) AS BookingCode,
+            b.booking_name AS BookingName,
+            c.name AS Company,
+            DATE_FORMAT(b.booking_date, '%d/%m/%Y') AS BookingDate,
+            DATE_FORMAT(b.arrival_date, '%d/%m/%Y') AS BookingArrivalDate,
+            DATE_FORMAT(b.departure_date, '%d/%m/%Y') AS BookingDepartureDate,
+            DATE_FORMAT(l.cancelled_at, '%d/%m/%Y') AS CancelDate,
+            TIME_FORMAT(l.cancelled_at, '%H:%i') AS CancelTime,
+            l.cancelled_by_username AS CancelledBy,
+            COALESCE(NULLIF(l.note, ''), cr.name, '') AS CancelReason,
+            DATEDIFF(b.arrival_date, DATE(l.cancelled_at)) AS DaysCancelBefore,
+            rs.name AS BookingStatus,
+            hs.division AS Division,
+            NULL AS RoomId,
+            NULL AS Room,
+            NULL AS RoomType,
+            NULL AS RoomArrivalDate,
+            NULL AS RoomDepartureDate,
+            NULL AS Rate,
+            NULL AS Adult,
+            NULL AS Baby,
+            NULL AS Child,
+            COALESCE(room_counts.RoomCount, 0) AS RoomCount,
+            0 AS IsInternal
+        FROM booking_cancel_logs AS l
+        INNER JOIN bookings AS b ON b.id = l.booking_id
+        LEFT JOIN companies AS c ON c.id = b.company_id
+        LEFT JOIN registration_statuses AS rs ON rs.id = b.registration_status_id
+        LEFT JOIN cancel_reasons AS cr ON cr.id = l.cancel_reason_id
+        LEFT JOIN hotel_settings AS hs ON hs.id = (SELECT MIN(id) FROM hotel_settings)
+        LEFT JOIN (
+            SELECT
+                room_logs.booking_id,
+                COUNT(DISTINCT room_logs.booking_room_id) AS RoomCount
+            FROM booking_cancel_logs AS room_logs
+            INNER JOIN booking_rooms AS counted_room ON counted_room.id = room_logs.booking_room_id
+            LEFT JOIN rooms AS physical_room ON physical_room.room_number = counted_room.room_number
+            WHERE room_logs.cancel_type = 'room'
+              AND COALESCE(physical_room.is_internal, 0) = 0
+            GROUP BY room_logs.booking_id
+        ) AS room_counts ON room_counts.booking_id = b.id
+        WHERE l.cancel_type = 'booking'
+          AND DATE(l.cancelled_at) BETWEEN p_from_date AND p_to_date
+          AND (p_booking_id IS NULL OR b.id = p_booking_id)
+          AND (
+              NOT EXISTS (
+                  SELECT 1 FROM booking_rooms AS any_room
+                  WHERE any_room.booking_id = b.id
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM booking_rooms AS eligible_room
+                  LEFT JOIN rooms AS eligible_physical_room
+                    ON eligible_physical_room.room_number = eligible_room.room_number
+                  WHERE eligible_room.booking_id = b.id
+                    AND COALESCE(eligible_physical_room.is_internal, 0) = 0
+              )
+          )
+        ORDER BY l.cancelled_at, b.id;
+    END IF;
+END
+SQL);
+    }
+
+    private function seedConfiguration(): void
+    {
+        $now = now();
+        $database = DB::connection()->getDatabaseName();
+        $parameters = collect([
+            ['p_from_date', 'date', 'date'],
+            ['p_to_date', 'date', 'date'],
+            ['p_show_room_info', 'tinyint', 'tinyint'],
+            ['p_view_type', 'varchar', 'varchar(20)'],
+            ['p_booking_id', 'bigint', 'bigint'],
+        ])->values()->map(fn (array $parameter, int $index) => [
+            'name' => $parameter[0],
+            'mode' => 'IN',
+            'data_type' => $parameter[1],
+            'database_type' => $parameter[2],
+            'position' => $index + 1,
+            'required' => true,
+        ])->all();
+
+        $integerFields = [
+            'PeriodGroup', 'CancellationId', 'BookingId', 'DaysCancelBefore',
+            'Adult', 'Baby', 'Child', 'RoomCount', 'IsInternal',
+        ];
+        $decimalFields = ['Rate'];
+        $fields = collect([
+            'RowType', 'PeriodGroup', 'CancellationId', 'CancellationGroup', 'BookingId', 'BookingCode',
+            'BookingName', 'Company', 'BookingDate', 'BookingArrivalDate',
+            'BookingDepartureDate', 'CancelDate', 'CancelTime', 'CancelledBy',
+            'CancelReason', 'DaysCancelBefore', 'BookingStatus', 'Division', 'RoomId',
+            'Room', 'RoomType', 'RoomArrivalDate', 'RoomDepartureDate', 'Rate',
+            'Adult', 'Baby', 'Child', 'RoomCount', 'IsInternal',
+        ])->map(fn (string $name) => [
+            'name' => $name,
+            'type' => in_array($name, $integerFields, true)
+                ? 'integer'
+                : (in_array($name, $decimalFields, true) ? 'decimal' : 'string'),
+            'nullable' => ! in_array($name, [
+                'RowType', 'PeriodGroup', 'CancellationId', 'CancellationGroup', 'BookingId', 'BookingCode',
+                'BookingName', 'CancelDate', 'CancelTime', 'RoomCount', 'IsInternal',
+            ], true),
+        ])->all();
+
+        $defaults = [
+            'p_from_date' => now()->toDateString(),
+            'p_to_date' => now()->toDateString(),
+            'p_show_room_info' => 0,
+            'p_view_type' => 'CancelDate',
+            'p_booking_id' => null,
+        ];
+        $ui = [
+            ['name' => 'p_from_date', 'label' => 'Chọn ngày', 'control' => 'date-range', 'range_end_parameter' => 'p_to_date', 'default' => '$today', 'required' => true],
+            ['name' => 'p_to_date', 'label' => 'Đến ngày', 'control' => 'hidden', 'default' => '$today', 'required' => true],
+            ['name' => 'p_show_room_info', 'label' => 'Hiển thị thông tin phòng', 'control' => 'checkbox', 'default' => false, 'required' => false, 'options' => []],
+            ['name' => 'p_view_type', 'label' => 'Loại ngày', 'control' => 'hidden', 'default' => 'CancelDate', 'required' => false],
+            ['name' => 'p_booking_id', 'label' => 'Đăng ký', 'control' => 'hidden', 'default' => '', 'required' => false],
+        ];
+
+        DB::table('report_data_sources')->updateOrInsert(
+            ['code' => self::SOURCE],
+            [
+                'name' => 'Dữ liệu báo cáo hủy đăng ký',
+                'description' => 'MySQL chuyển đổi từ ProVista sp_284, sp_261 và vw_034.',
+                'source_type' => 'procedure',
+                'schema_name' => $database,
+                'object_name' => 'rpt_cancelled_bookings',
+                'parameter_schema' => json_encode($parameters, JSON_UNESCAPED_UNICODE),
+                'field_schema' => json_encode($fields, JSON_UNESCAPED_UNICODE),
+                'sample_parameters' => json_encode($defaults),
+                'max_rows' => 5000,
+                'is_active' => true,
+                'last_discovered_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]
+        );
+        $sourceId = DB::table('report_data_sources')->where('code', self::SOURCE)->value('id');
+
+        DB::table('templates')->updateOrInsert(
+            ['report' => self::TEMPLATE],
+            [
+                'group' => 'Báo cáo hủy phòng',
+                'name' => 'Báo cáo hủy đăng ký - Mẫu tham chiếu legacy',
+                'report_data_source_id' => $sourceId,
+                'parameter_defaults' => json_encode($defaults),
+                'page_size' => 'A4',
+                'page_orientation' => 'landscape',
+                'margin_top' => 8,
+                'margin_bottom' => 8,
+                'margin_left' => 5,
+                'margin_right' => 5,
+                'content_json' => json_encode(['header' => [], 'detail' => [], 'footer' => []]),
+                'content_html' => '',
+                'css' => '',
+                'is_default' => false,
+                'version' => '1.0',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]
+        );
+        $templateId = DB::table('templates')->where('report', self::TEMPLATE)->value('id');
+
+        DB::table('report_definitions')->updateOrInsert(
+            ['code' => self::REPORT],
+            [
+                'name' => 'Báo cáo hủy đăng ký',
+                'group' => 'Báo cáo hủy phòng',
+                'description' => 'Booking và phòng bị hủy theo legacy sp_284/sp_261.',
+                'report_data_source_id' => $sourceId,
+                'parameter_ui_schema' => json_encode($ui, JSON_UNESCAPED_UNICODE),
+                'sort_order' => 10,
+                'is_active' => true,
+                'show_in_menu' => true,
+                'menu_locations' => json_encode(['reservation', 'frontdesk']),
+                'menu_top_order' => 30,
+                'menu_group_order' => 10,
+                'menu_item_order' => 10,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]
+        );
+        $reportId = DB::table('report_definitions')->where('code', self::REPORT)->value('id');
+
+        DB::table('report_definition_template')->updateOrInsert(
+            ['report_definition_id' => $reportId, 'template_id' => $templateId],
+            ['is_default' => true, 'sort_order' => 0, 'created_at' => $now, 'updated_at' => $now]
+        );
+    }
+};

@@ -1247,7 +1247,11 @@ class BookingController extends Controller
             $reasonText = $cReason?->name;
         }
 
-        DB::transaction(function () use ($booking, $id, $request, $reasonText) {
+        $systemDate = SystemDateRoll::latest('id')->value('system_date');
+        $cancelledAt = Carbon::parse($systemDate ?? now())
+            ->setTimeFromTimeString(now()->format('H:i:s'));
+
+        DB::transaction(function () use ($booking, $id, $request, $reasonText, $cancelledAt) {
             $currentUserId = Auth::id() ?? 0;
             $currentUsername = Auth::user()?->username ?? 'system';
 
@@ -1260,7 +1264,7 @@ class BookingController extends Controller
                 'note'                  => $request->note,
                 'cancelled_by_user_id'  => $currentUserId,
                 'cancelled_by_username' => $currentUsername,
-                'cancelled_at'          => now(),
+                'cancelled_at'          => $cancelledAt,
             ]);
 
             // 2. Cascade: Hủy và ghi log cho từng phòng trong booking (SP8052)
@@ -1284,7 +1288,7 @@ class BookingController extends Controller
                     'note'                  => $request->note,
                     'cancelled_by_user_id'  => $currentUserId,
                     'cancelled_by_username' => $currentUsername,
-                    'cancelled_at'          => now(),
+                    'cancelled_at'          => $cancelledAt,
                 ]);
             }
 
