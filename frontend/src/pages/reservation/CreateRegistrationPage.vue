@@ -1722,14 +1722,27 @@ function handleTabsWheel(e) {
   }
 }
 
-async function loadActiveBookingNotifications(tab = activeTab.value) {
-  activeBookingNotificationsTimers.forEach(clearTimeout)
-  activeBookingNotificationsTimers = []
+const lastNotifiedBookingDbId = ref(null)
+
+async function loadActiveBookingNotifications(tab = activeTab.value, force = false) {
   if (!tab?.dbId) {
+    activeBookingNotificationsTimers.forEach(clearTimeout)
+    activeBookingNotificationsTimers = []
     activeBookingNotifications.value = []
     isActiveBookingNotificationsOpen.value = false
+    lastNotifiedBookingDbId.value = null
     return
   }
+
+  // Nếu không force và vẫn đang ở cùng 1 booking (đã hiển thị thông báo rồi), không trigger lại
+  if (!force && lastNotifiedBookingDbId.value === tab.dbId && isActiveBookingNotificationsOpen.value === false) {
+    return
+  }
+
+  activeBookingNotificationsTimers.forEach(clearTimeout)
+  activeBookingNotificationsTimers = []
+  lastNotifiedBookingDbId.value = tab.dbId
+
   try {
     const res = await fetchActiveBookingNotifications(tab.dbId, systemDate.value)
     activeBookingNotifications.value = res.data?.data || []
@@ -1776,8 +1789,10 @@ watch(() => route.query, async (newQuery) => {
   await openGlobalSearchFromQuery()
 }, { deep: true })
 
-watch(activeTabId, () => {
-  loadActiveBookingNotifications()
+watch(activeTabId, (newId, oldId) => {
+  if (newId !== oldId) {
+    loadActiveBookingNotifications()
+  }
 })
 
 async function loadDropdowns() {
@@ -7722,7 +7737,7 @@ defineExpose({
       :booking="activeTab"
       :system-date="systemDate"
       :user-name="authStore.user?.name || authStore.user?.username || '—'"
-      @saved="loadActiveBookingNotifications()"
+      @saved="loadActiveBookingNotifications(activeTab, true)"
     />
 
     <Teleport to="body">

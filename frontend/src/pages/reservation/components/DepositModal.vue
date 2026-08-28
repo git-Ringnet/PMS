@@ -10,16 +10,18 @@
         
         <!-- HEADER -->
         <div 
-          class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 border-b border-[#1a2d42] cursor-move select-none"
+          class="flex justify-between items-center px-4 py-2 border-b border-black/10 cursor-move select-none transition-all duration-300"
+          :style="{ background: topbarThemeBg }"
+          :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
           @mousedown="startDragModal"
         >
             <div class="flex items-center space-x-2">
-                <div class="bg-blue-400/20 p-1.5 rounded-lg">
-                    <i class="fa-solid fa-file-invoice-dollar text-blue-200 text-xs"></i>
+                <div class="p-1.5 rounded-lg" :class="isTopBarThemeDark ? 'bg-white/10 text-blue-200' : 'bg-black/10 text-slate-800'">
+                    <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
                 </div>
                 <span class="font-bold text-xs tracking-wide uppercase">{{ depositForm.id ? 'Sửa đặt cọc' : 'Thêm đặt cọc' }}</span>
             </div>
-            <button @click="close" class="text-slate-300 hover:text-white transition p-1.5 rounded-lg hover:bg-white/10 cursor-pointer border-none bg-transparent">
+            <button @click="close" class="transition p-1.5 rounded-lg cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-700 hover:text-black hover:bg-black/10'">
                 <i class="fa-solid fa-xmark text-sm"></i>
             </button>
         </div>
@@ -304,12 +306,16 @@
         <!-- CUSTOM SPLIT DEPOSIT MODAL -->
         <div v-if="isSplitOpen" class="fixed inset-0 bg-black/60 z-[100000] flex items-center justify-center p-4 backdrop-blur-xs" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
             <div class="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col animate-in fade-in duration-200">
-                <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2.5 border-b border-[#1a2d42]">
+                <div 
+                  class="flex justify-between items-center px-4 py-2.5 border-b border-black/10 transition-all duration-300"
+                  :style="{ background: topbarThemeBg }"
+                  :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
+                >
                     <div class="flex items-center space-x-2">
-                        <i class="fa-solid fa-scissors text-blue-200 text-xs"></i>
+                        <i class="fa-solid fa-scissors text-xs" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
                         <span class="font-bold text-xs uppercase tracking-wide">Tách đặt cọc</span>
                     </div>
-                    <button @click="isSplitOpen = false" class="text-slate-300 hover:text-white transition cursor-pointer border-none bg-transparent">
+                    <button @click="isSplitOpen = false" class="transition cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'text-slate-300 hover:text-white' : 'text-slate-700 hover:text-black'">
                         <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
@@ -402,12 +408,16 @@
         <!-- CUSTOM TRANSFER DEPOSIT MODAL -->
         <div v-if="isTransferOpen" class="fixed inset-0 bg-black/60 z-[100000] flex items-center justify-center p-4 backdrop-blur-xs" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
             <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-visible border border-slate-200 flex flex-col animate-in fade-in duration-200 relative">
-                <div class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2.5 border-b border-[#1a2d42] rounded-t-xl">
+                <div 
+                  class="flex justify-between items-center px-4 py-2.5 border-b border-black/10 rounded-t-xl transition-all duration-300"
+                  :style="{ background: topbarThemeBg }"
+                  :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
+                >
                     <div class="flex items-center space-x-2">
-                        <i class="fa-solid fa-arrow-right-arrow-left text-blue-200 text-xs"></i>
+                        <i class="fa-solid fa-arrow-right-arrow-left text-xs" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
                         <span class="font-bold text-xs uppercase tracking-wide">Chuyển đặt cọc</span>
                     </div>
-                    <button @click="isTransferOpen = false" class="text-slate-300 hover:text-white transition cursor-pointer border-none bg-transparent">
+                    <button @click="isTransferOpen = false" class="transition cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'text-slate-300 hover:text-white' : 'text-slate-700 hover:text-black'">
                         <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
@@ -571,6 +581,28 @@ const emit = defineEmits(['update:show', 'update:deposits', 'update:paymentValue
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+
+// Dynamic Theme topbar background sync
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+})
+
+const isTopBarThemeDark = computed(() => {
+  const bg = authStore.settings?.topbar_color
+  if (!bg) return true
+  if (bg.includes('linear-gradient')) return true
+  if (bg.startsWith('#')) {
+    const hex = bg.substring(1)
+    const rgb = parseInt(hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex, 16)
+    if (isNaN(rgb)) return true
+    const r = (rgb >> 16) & 0xff
+    const g = (rgb >> 8) & 0xff
+    const b = (rgb >> 0) & 0xff
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000
+    return brightness < 185
+  }
+  return true
+})
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
@@ -911,7 +943,7 @@ function parseApiDate(dateStr) {
   return dateStr.substring(0, 10)
 }
 
-async function syncDepositsFromBackend() {
+async function syncDepositsFromBackend(dispatchEvents = false) {
   if (!props.bookingId) return
   try {
     const res = await fetchPayments(props.bookingId)
@@ -942,8 +974,10 @@ async function syncDepositsFromBackend() {
 
     emit('update:deposits', localDeposits.value)
     emit('update:paymentValue', totalValue)
-    window.dispatchEvent(new CustomEvent('deposit-updated'))
-    window.dispatchEvent(new CustomEvent('booking-updated'))
+    if (dispatchEvents) {
+      window.dispatchEvent(new CustomEvent('deposit-updated'))
+      window.dispatchEvent(new CustomEvent('booking-updated'))
+    }
   } catch (err) {
     console.error('Lỗi đồng bộ cọc:', err)
   }
@@ -1014,7 +1048,7 @@ async function addDeposit() {
         formData.append('image', selectedFile.value)
       }
       await createPayment(props.bookingId, formData)
-      await syncDepositsFromBackend()
+      await syncDepositsFromBackend(true)
       uiStore.showToast('Đã thêm đặt cọc mới thành công!', 'success')
       resetForm()
     } else {
@@ -1130,7 +1164,7 @@ async function saveDeposit() {
         formData.append('image', selectedFile.value)
       }
       await updatePayment(depositForm.value.id, formData)
-      await syncDepositsFromBackend()
+      await syncDepositsFromBackend(true)
       uiStore.showToast('Cập nhật đặt cọc thành công!', 'success')
       resetForm()
       selectedDepositIds.value = []
@@ -1192,7 +1226,7 @@ async function deleteDeposits() {
         for (const depId of selectedDepositIds.value) {
           await deletePayment(depId)
         }
-        await syncDepositsFromBackend()
+        await syncDepositsFromBackend(true)
         uiStore.showToast('Đã xóa đặt cọc thành công!', 'success')
         selectedDepositIds.value = []
       } catch (err) {
@@ -1290,7 +1324,7 @@ async function confirmSplit() {
   const targetId = selectedDepositIds.value[0]
   try {
     await splitPayment(targetId, { amounts, department_id: props.departmentId || 'MR' })
-    await syncDepositsFromBackend()
+    await syncDepositsFromBackend(true)
     uiStore.showToast(`Tách cọc thành công (${amounts.length} phần)!`, 'success')
     selectedDepositIds.value = []
     isSplitOpen.value = false
@@ -1445,7 +1479,7 @@ async function confirmTransfer() {
   const targetId = selectedDepositIds.value[0]
   try {
     await transferPayment(targetId, { target_booking_id: transferDestBooking.value.id, department_id: props.departmentId || 'MR' })
-    await syncDepositsFromBackend()
+    await syncDepositsFromBackend(true)
     uiStore.showToast(`Đã chuyển cọc sang booking ${transferDestBooking.value.booking_code} thành công!`, 'success')
     selectedDepositIds.value = []
     isTransferOpen.value = false

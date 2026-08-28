@@ -77,9 +77,12 @@
             - Số đêm: Calculated field `2 đêm` tự tính từ ngày lưu trú với nút stepper +/- gọn gàng.
             - Tên đăng ký / Ghi chú: Ô editable viền nét, phản hồi focus mượt mà.
           - **Đồng bộ màu sắc động theo Tùy chỉnh màu nền Topbar (`authStore.settings.topbar_color` / `--pms-custom-theme`)**:
-            - Màu nền Topbar Header của Modal Thông tin đăng ký tự động đồng bộ 100% với màu nền Topbar hệ thống (Solid hoặc Gradient như Tinh vân, Đại dương, Hoàng hôn...), tự động chuyển tương phản chữ/icon (`isTopBarThemeDark`).
+            - Màu nền Topbar Header của Modal Thông tin đăng ký và Modal Đặt Cọc (Thêm/Sửa/Tách/Chuyển cọc) tự động đồng bộ 100% với màu nền Topbar hệ thống (Solid hoặc Gradient như Tinh vân, Đại dương, Hoàng hôn...), tự động chuyển tương phản chữ/icon (`isTopBarThemeDark`).
             - 4 thanh dọc chỉ báo phân khu (Section 1: Công ty/Kênh bán, Section 2: Người liên hệ, Section 3: Đặt cọc, Section 4: Ghi chú) và nút `Cập nhật Booking` ăn theo màu Topbar hệ thống.
             - Nút `Màu BK` trong modal chỉ phục vụ đổi màu thẻ booking trên sơ đồ phòng, không làm ảnh hưởng đến theme màu Topbar của modal.
+          - **Tối ưu popup thông báo Booking / Phòng**:
+            - Chỉ hiển thị 1 lần khi mở/chuyển sang booking khác hoặc reload trang.
+            - Thao tác nội bộ bên trong cùng 1 booking (như mở modal Đặt cọc, thêm/sửa cọc) không bị re-trigger lại popup thông báo.
           - **Footer & Dirty Tracking UX**:
             - Metadata tương phản cao: `👤 testuser • 🕒 28/08/2026 15:19:28`.
             - Hiển thị badge `● Có thay đổi chưa lưu` khi form bị chỉnh sửa.
@@ -87,7 +90,7 @@
     - Tab Phòng ([`sp_041.sql`](file:///d:/PMS/store%20PMS/sp_041.sql)): Gom nhóm Master Booking banner màu xanh nhạt với tổng tiền dịch vụ & tiền thanh toán.
     - Tab Khách ([`sp_043.sql`](file:///d:/PMS/store%20PMS/sp_043.sql)): Đầy đủ 22 trường thông tin khách lưu trú người lớn và trẻ em.
     - Thanh phân trang hiển thị chuẩn PMS (dropdown 50 / 100 / 200 dòng/trang, danh sách nút trang số `1`, `2`, `3`..., nút Trước/Sau và Tổng kết quả).
-- **Trạng thái hiện tại**: Hoàn thành 100% các cập nhật: Nhận phòng nhiều phòng hàng loạt, Modal xác nhận No Show theo Hình 2, phân tách Realtime bộ lọc ngoài và Áp dụng thủ công cho bộ lọc nâng cao, fix triệt để lỗi phòng chuyển (status 100) chặn sang ngày, hoàn thiện module Sao lưu & Khôi phục Database Đa Chi Nhánh hỗ trợ ALL, SYSTEM và từng chi nhánh, sửa lỗi popup thông báo booking hiển thị tức thì trên cả local và server, kết nối màu Modal Thông tin đăng ký chuẩn theo "Tùy chỉnh màu nền Topbar" hệ thống + dirty tracking UX, build Vite production thành công không lỗi.
+- **Trạng thái hiện tại**: Hoàn thành 100% các cập nhật: Nhận phòng nhiều phòng hàng loạt, Modal xác nhận No Show theo Hình 2, phân tách Realtime bộ lọc ngoài và Áp dụng thủ công cho bộ lọc nâng cao, fix triệt để lỗi phòng chuyển (status 100) chặn sang ngày, hoàn thiện module Sao lưu & Khôi phục Database Đa Chi Nhánh hỗ trợ ALL, SYSTEM và từng chi nhánh, popup thông báo booking hiển thị chuẩn 1 lần không re-trigger khi đặt cọc, đồng bộ màu Modal Thông tin đăng ký & Modal Đặt Cọc chuẩn theo "Tùy chỉnh màu nền Topbar" hệ thống, build Vite production thành công không lỗi.
 - **Kế hoạch tiếp theo**: Tiếp tục hỗ trợ kiểm thử và hoàn thiện các nghiệp vụ tiếp theo.
 
 ---
