@@ -78,6 +78,55 @@ const blocks = ref({
   footer: []
 })
 
+const getBlockScopeClass = (block) => {
+  const safeId = String(block?.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '-')
+  return `pms-template-block-${safeId}`
+}
+
+const collectBlocks = (items) => items.flatMap((block) => {
+  const nestedBlocks = block.type === 'columns'
+    ? (block.columns || []).flatMap(column => collectBlocks(column.blocks || []))
+    : []
+
+  return [block, ...nestedBlocks]
+})
+
+const scopedBlockFontCss = computed(() => {
+  const allBlocks = collectBlocks([
+    ...blocks.value.header,
+    ...blocks.value.detail,
+    ...blocks.value.footer
+  ])
+
+  return allBlocks
+    .filter(block => block.style?.fontSize)
+    .map(block => {
+      const selector = `.template-preview-canvas .${getBlockScopeClass(block)}`
+      return `${selector}, ${selector} * { font-size: ${block.style.fontSize} !important; }`
+    })
+    .join('\n')
+})
+
+const scopedTemplateCss = computed(() => {
+  const css = template.value?.css || ''
+  if (!css.trim()) return ''
+
+  return css.replace(/([^{}]+)\{/g, (match, selectorText) => {
+    const selectors = selectorText.trim()
+    if (!selectors || selectors.startsWith('@')) return match
+
+    const scoped = selectors.split(',').map(selector => {
+      const value = selector.trim()
+      if (!value) return value
+      if (value === 'body') return '.template-preview-canvas'
+      if (value.startsWith('body ')) return `.template-preview-canvas ${value.slice(5)}`
+      return `.template-preview-canvas ${value}`
+    }).join(', ')
+
+    return `${scoped}{`
+  })
+})
+
 const defaultBlockStyle = {
   textAlign: 'left',
   fontSize: '13px',
@@ -1172,7 +1221,12 @@ const compileBlockToHtml = (b) => {
     .map(([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}: ${v}`)
     .join('; ')
   
-  let blockHtml = `<div id="${b.id}" style="${styles}">\n`
+  const blockScopeClass = getBlockScopeClass(b)
+  const fontSizeOverride = b.style?.fontSize
+    ? `<style>.${blockScopeClass}, .${blockScopeClass} * { font-size: ${b.style.fontSize} !important; }</style>\n`
+    : ''
+
+  let blockHtml = `${fontSizeOverride}<div id="${b.id}" class="${blockScopeClass}" style="${styles}">\n`
   
   if (b.type === 'text' || b.type === 'divider') {
     blockHtml += `  ${b.content || ''}\n`
@@ -1831,7 +1885,7 @@ const selectBand = (band) => {
             </div>
 
             <!-- Page Canvas Layout Representation -->
-            <div class="bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-6 relative flex flex-col"
+            <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-6 relative flex flex-col"
               :style="{
                 width: template?.page_size === 'A5' ? '148mm' : '210mm',
                 minHeight: template?.page_size === 'A5' ? '210mm' : '297mm',
@@ -1840,6 +1894,8 @@ const selectBand = (band) => {
                 paddingLeft: `${template?.margin_left || 10}mm`,
                 paddingRight: `${template?.margin_right || 10}mm`
               }">
+              <component :is="'style'" v-if="scopedTemplateCss">{{ scopedTemplateCss }}</component>
+              <component :is="'style'" v-if="scopedBlockFontCss">{{ scopedBlockFontCss }}</component>
               
               <!-- SECTION 1: HEADER BAND -->
               <div class="border-2 border-dashed rounded-lg p-3 mb-4 transition-all relative group/band"
@@ -1887,7 +1943,7 @@ const selectBand = (band) => {
                     </div>
 
                     <!-- Block Visual Content -->
-                    <div v-if="b.type === 'text'" :style="getBlockStyle(b)">
+                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b)">
                       <div v-if="selectedBlockId === b.id" 
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
@@ -2068,7 +2124,7 @@ const selectBand = (band) => {
                           </div>
                           
                           <!-- Content for subblock -->
-                          <div v-if="subBlock.type === 'text'">
+                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock)">
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
@@ -2261,7 +2317,7 @@ const selectBand = (band) => {
                     </div>
                     
                     <!-- Other Block Types -->
-                    <div v-if="b.type === 'text'" :style="getBlockStyle(b)">
+                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b)">
                       <div v-if="selectedBlockId === b.id" 
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
@@ -2349,7 +2405,7 @@ const selectBand = (band) => {
                           </div>
                           
                           <!-- Content for subblock -->
-                          <div v-if="subBlock.type === 'text'">
+                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock)">
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
@@ -2449,7 +2505,7 @@ const selectBand = (band) => {
                     </div>
 
                     <!-- Block Visual Content -->
-                    <div v-if="b.type === 'text'" :style="getBlockStyle(b)">
+                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b)">
                       <div v-if="selectedBlockId === b.id" 
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
@@ -2630,7 +2686,7 @@ const selectBand = (band) => {
                           </div>
                           
                           <!-- Content for subblock -->
-                          <div v-if="subBlock.type === 'text'">
+                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock)">
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
@@ -2732,9 +2788,9 @@ const selectBand = (band) => {
                     <span>Cỡ chữ:</span>
                     <span class="font-bold text-slate-700">{{ selectedBlock.style.fontSize }}</span>
                   </div>
-                  <input type="range" min="10" max="36" step="1" 
+                  <input type="range" min="1" max="50" step="1"
                     :value="parseInt(selectedBlock.style.fontSize)" 
-                    @input="selectedBlock.style.fontSize = `${$event.target.value}px`"
+                    @input="selectedBlock.style.fontSize = `${$event.target.value}px`; compileHtml()"
                     class="w-full accent-sky-600" />
                 </div>
 

@@ -11,7 +11,12 @@ return new class
         }
 
         DB::table('templates')->where('report', 'OOS_LOCK_HISTORY_STANDARD')->update([
-            'content_json' => json_encode(['detail' => [[
+            'content_json' => json_encode(['header' => [
+                ['id'=>'oos_hotel','type'=>'text','content'=>'<div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <b>Ngày:</b> {{report.generated_at}}</div></div></div>','style'=>['fontSize'=>'9px','marginBottom'=>'4px']],
+                ['id'=>'oos_divider','type'=>'divider','content'=>'<hr>','style'=>['marginBottom'=>'4px']],
+                ['id'=>'oos_title','type'=>'text','content'=>'<h1>BÁO CÁO LỊCH SỬ KHÓA PHÒNG OOS</h1>','style'=>['fontSize'=>'20px','textAlign'=>'center','fontWeight'=>'bold','marginBottom'=>'4px']],
+                ['id'=>'oos_period','type'=>'text','content'=>'<p class="period">Ngày: {{parameters.p_from_date}} &nbsp; ~ &nbsp; {{parameters.p_to_date}}</p>','style'=>['fontSize'=>'9px','textAlign'=>'center','marginBottom'=>'6px']],
+            ], 'detail' => [[
                 'id' => 'oos_lock_history_table',
                 'type' => 'table',
                 'dataSource' => 'rows',
