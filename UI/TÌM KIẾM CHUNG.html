@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<title>Đăng ký - Bộ lọc tùy biến</title>
+<style>
+  :root{
+    --blue:#1f6fd6; --blue-dark:#0c4ea0; --blue-bg:#e8f1fc;
+    --green:#7cc242;
+    --ink:#1f2430; --ink-soft:#5b6270; --ink-mute:#8b909c;
+    --line:#e3e6ec; --line-strong:#c9ced8;
+    --surface:#ffffff; --page:#f4f5f7; --radius:6px;
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--page);color:var(--ink);font-size:13px;}
+  .wrap{max-width:1500px;margin:0 auto;padding:16px;}
+
+  .tabs{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:0 4px;margin-bottom:14px;}
+  .tabs-left{display:flex;gap:22px;}
+  .tab{padding:10px 2px;font-size:14px;color:var(--ink-mute);cursor:pointer;border-bottom:2px solid transparent;}
+  .tab.active{color:var(--blue);border-color:var(--blue);font-weight:600;}
+  .tabs-actions{display:flex;align-items:center;gap:8px;padding-bottom:8px;}
+
+  .filterbar{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px;}
+
+  /* Nhóm nút hành động giờ nằm chung hàng với tabs (Đăng Ký/Phòng/Khách) phía trên,
+     phần này không còn dùng nhưng giữ lại phòng khi cần tách trở lại. */
+  .filterbar-actions{display:none;}
+  .filterbar-actions .actions-spacer{flex:1;}
+
+  /* Dòng field: được phép xuống dòng riêng, không ảnh hưởng tới dòng nút phía trên */
+  .filterbar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+  .toggle{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border:1px solid var(--line-strong);border-radius:var(--radius);background:#fff;color:var(--ink-soft);font-size:12.5px;white-space:nowrap;cursor:pointer;}
+  .switch{width:30px;height:16px;border-radius:999px;background:var(--blue);position:relative;flex:none;}
+  .switch::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;}
+
+  .field{height:34px;border:1px solid var(--line-strong);border-radius:var(--radius);padding:0 10px;font-size:13px;color:var(--ink);background:#fff;}
+  .date-range{width:210px;}
+
+  .btn{height:34px;border-radius:var(--radius);border:1px solid var(--line-strong);background:#fff;color:var(--ink);font-size:13px;padding:0 14px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;}
+  .btn:hover{background:#f7f8fa;}
+  .btn-primary{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .btn-primary:hover{background:var(--blue-dark);}
+  .btn-ghost{border:none;background:transparent;color:var(--ink-soft);}
+  .spacer{flex:1;}
+  .badge-count{background:var(--blue-bg);color:var(--blue-dark);font-size:11px;font-weight:600;border-radius:999px;padding:1px 7px;margin-left:2px;}
+
+  /* Quick zone (drop target #1) */
+  #quickZone{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .qpill{position:relative;display:flex;align-items:center;gap:4px;height:34px;border:1px solid var(--line-strong);border-radius:var(--radius);background:#fff;padding:0 6px 0 8px;cursor:grab;}
+  .qpill.drag-over{outline:2px dashed var(--blue);outline-offset:2px;}
+  .qpill input,.qpill select{border:none;outline:none;font-size:13px;color:var(--ink);width:130px;background:transparent;}
+  .qpill select{width:150px;}
+  .qpill .handle{color:var(--ink-mute);font-size:12px;cursor:grab;user-select:none;}
+  .qpill .mv{border:none;background:transparent;color:var(--ink-mute);cursor:pointer;font-size:13px;padding:2px;border-radius:4px;}
+  .qpill .mv:hover{background:var(--blue-bg);color:var(--blue-dark);}
+
+  .divider-hint{font-size:11px;color:var(--ink-mute);border-left:1px dashed var(--line-strong);padding-left:10px;margin-left:2px;}
+
+  /* Advanced panel (drop target #2) */
+  .adv-panel{display:none;border-top:1px solid var(--line);margin-top:12px;padding-top:12px;}
+  .adv-panel.open{display:block;}
+  .adv-title{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:600;color:var(--ink-soft);margin:0 0 10px;text-transform:uppercase;letter-spacing:.03em;}
+  .adv-hint{font-size:11px;color:var(--ink-mute);text-transform:none;font-weight:400;letter-spacing:0;}
+  #advZone{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px 12px;min-height:44px;border:1px solid var(--line-strong);border-radius:8px;background:#fbfbfc;padding:12px 14px;}
+  #advZone.drag-over{outline:2px dashed var(--blue);outline-offset:-2px;}
+  .acard{position:relative;padding:0;background:transparent;cursor:grab;min-width:0;}
+  .acard .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;gap:4px;}
+  .acard label{font-size:10.5px;color:var(--ink-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .acard .mv{border:none;background:transparent;color:var(--ink-mute);cursor:pointer;font-size:12px;padding:0 2px;border-radius:4px;flex:none;line-height:1;}
+  .acard .mv:hover{background:var(--blue-bg);color:var(--blue-dark);}
+  .acard input,.acard select{width:100%;height:30px;border:1px solid var(--line-strong);border-radius:4px;padding:0 6px;font-size:12.5px;background:#fff;}
+  .acard.empty-slot{border:1px dashed var(--line-strong);color:var(--ink-mute);display:flex;align-items:center;justify-content:center;height:56px;font-size:12px;grid-column:span 6;}
+
+  .adv-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
+
+  .toolbar{display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;}
+  .toolbar-left{color:var(--ink-mute);font-size:12px;}
+
+  .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:auto;}
+  table{border-collapse:collapse;width:100%;min-width:1400px;}
+  thead th{position:sticky;top:0;background:#f7f8fa;text-align:left;font-size:11.5px;color:var(--ink-soft);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  tbody td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:12.5px;color:var(--ink);}
+  tbody tr:hover{background:#fafbfc;}
+  .mono{color:var(--blue-dark);font-weight:600;}
+  .status-pill{display:inline-block;background:var(--green);color:#fff;font-weight:600;border-radius:4px;padding:3px 10px;font-size:12px;}
+  .note{color:var(--ink-soft);line-height:1.5;}
+  .checkbox{width:15px;height:15px;}
+
+  .pager{display:flex;align-items:center;justify-content:space-between;padding:10px 4px 0;color:var(--ink-mute);font-size:12px;}
+  .pg{width:26px;height:26px;border-radius:4px;border:1px solid var(--line-strong);background:#fff;display:flex;align-items:center;justify-content:center;}
+  .pg.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 class="sr-only">Giao diện đăng ký với bộ lọc tùy biến kéo thả</h2>
+
+  <div class="tabs">
+    <div class="tabs-left">
+      <div class="tab active">Đăng Ký</div>
+      <div class="tab">Phòng</div>
+      <div class="tab">Khách</div>
+    </div>
+    <div class="tabs-actions">
+      <button class="btn" id="advToggle">Bộ lọc nâng cao <span class="badge-count" id="advCount">10</span></button>
+      <button class="btn btn-ghost">Nhân bản</button>
+      <button class="btn btn-ghost">Thao tác</button>
+      <button class="btn btn-primary">Tìm kiếm</button>
+    </div>
+  </div>
+
+  <div class="filterbar">
+    <div class="filterbar-row">
+      <div class="toggle"><span class="switch"></span>Tìm theo ngày</div>
+      <input class="field date-range" placeholder="09/07/2026 ~ 09/07/2026" />
+
+      <div class="divider-hint">Kéo field vào/ra để tùy chỉnh</div>
+
+      <div id="quickZone"></div>
+    </div>
+
+    <div class="adv-panel" id="advPanel">
+      <p class="adv-title">Điều kiện nâng cao <span class="adv-hint">Kéo thả một field ra thanh tìm nhanh để dùng thường xuyên hơn</span></p>
+      <div id="advZone"></div>
+      <div class="adv-actions">
+        <button class="btn">Xóa lọc</button>
+        <button class="btn btn-primary">Áp dụng</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="toolbar-left">Tổng: 673 kết quả</div>
+    <button class="btn">Cột hiển thị</button>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th><input type="checkbox" class="checkbox" /></th>
+          <th>Mã BK</th><th>Tên đăng ký</th><th>Công ty</th><th>Thị trường</th>
+          <th>Ngày đến</th><th>Ngày đi</th><th>Đêm</th><th>LP khởi tạo</th><th>LP thực tế</th>
+          <th>Tổng</th><th>Đặt cọc</th><th>Khởi tạo</th><th>Thực tế</th><th>Ghi chú</th>
+          <th>Ngày đăng ký</th><th>Người bán</th><th>Người tạo</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><input type="checkbox" class="checkbox" /></td>
+          <td class="mono">GAL6108</td><td>ANEX TOUR - 112588296</td><td>ANEX TOUR</td><td>Travel Agent</td>
+          <td>05/08/2026</td><td>13/08/2026</td><td>8</td><td>FAM (1)</td><td>FAM (1)</td>
+          <td>8,800,000</td><td>0</td><td><span class="status-pill">Guaranteed</span></td><td>Reservation</td>
+          <td class="note">Mr Vcherashnii Ilia, Mrs Vcherashniaia Elena — quiet place</td>
+          <td>08/07/2026</td><td>THACH LAM</td><td>THACH LAM</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" class="checkbox" /></td>
+          <td class="mono">GAL6106</td><td>AB TOUR - 90035665</td><td>AB TOUR</td><td>Travel Agent</td>
+          <td>22/07/2026</td><td>29/07/2026</td><td>7</td><td>FAM (1)</td><td>FAM (1)</td>
+          <td>4,550,000</td><td>0</td><td><span class="status-pill">Guaranteed</span></td><td>Reservation</td>
+          <td class="note">1 Deluxe City View DBL (7 đêm) — birthday, top floor, twin beds</td>
+          <td>08/07/2026</td><td>THACH LAM</td><td>THACH LAM</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" class="checkbox" /></td>
+          <td class="mono">GAL6105</td><td>TRAVEL CONCIERGE - 2681730 (COMMITMENT)</td><td>TRAVEL CONCIERGE - (COMMITMENT)</td><td>Travel Agent</td>
+          <td>12/07/2026</td><td>19/07/2026</td><td>7</td><td>DLXDB (1)</td><td>DLXDB (1)</td>
+          <td>6,230,000</td><td>0</td><td><span class="status-pill">Guaranteed</span></td><td>Reservation</td>
+          <td class="note">1 Deluxe City View SGL (7 đêm) — công ty thanh toán + VAT</td>
+          <td>08/07/2026</td><td>THACH LAM</td><td>THACH LAM</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    <div>200 / trang</div>
+    <div style="display:flex;gap:4px;">
+      <div class="pg active">1</div><div class="pg">2</div><div class="pg">3</div><div class="pg">4</div>
+    </div>
+    <div>Tổng: 673</div>
+  </div>
+</div>
+
+<script>
+// ---- field definitions ----
+var FIELDS = {
+  mabk:        {label:'Mã BK', type:'input', placeholder:'Mã BK'},
+  tinhtranglt: {label:'Tình trạng lưu trú', type:'select', options:['Chưa đến','Đã đến','Đã đi']},
+  refcode:     {label:'Ref Code', type:'input', placeholder:'Nhập Ref Code'},
+  bookingname: {label:'Booking Name', type:'input', placeholder:'Nhập tên đăng ký'},
+  bookingstatus:{label:'Booking Status', type:'select', options:['Guaranteed','Tentative','Waitlist']},
+  contact:     {label:'Contact', type:'input', placeholder:'Nhập contact'},
+  booker:      {label:'Booker', type:'input', placeholder:'Nhập booker'},
+  company:     {label:'Company', type:'input', placeholder:'Chọn công ty'},
+  marketsegment:{label:'Market Segment', type:'select', options:['Travel Agent','Corporate','OTA']},
+  sourcecode:  {label:'Source Code', type:'input', placeholder:'Nhập Source Code'},
+  regdate:     {label:'Reg Date', type:'input', placeholder:'dd/mm/yyyy'},
+  usersale:    {label:'User Sale', type:'input', placeholder:'Chọn User Sale'}
+};
+
+// default placement
+var quickIds = ['mabk','tinhtranglt'];
+var advIds   = ['refcode','bookingname','bookingstatus','contact','booker','company','marketsegment','sourcecode','regdate','usersale'];
+
+// cố định vị trí của mỗi field: Mã BK luôn vị trí 1, Ref Code vị trí 2, v.v.
+// dù kéo ra/kéo vào bao nhiêu lần, field vẫn quay lại đúng vị trí này khi hiển thị.
+var FIELD_ORDER = ['mabk','tinhtranglt','refcode','bookingname','bookingstatus','contact','booker','company','marketsegment','sourcecode','regdate','usersale'];
+function sortByOrder(ids){
+  return ids.slice().sort(function(a,b){ return FIELD_ORDER.indexOf(a) - FIELD_ORDER.indexOf(b); });
+}
+
+var quickZone = document.getElementById('quickZone');
+var advZone   = document.getElementById('advZone');
+var advCount  = document.getElementById('advCount');
+
+function fieldControl(id){
+  var f = FIELDS[id];
+  if(f.type === 'select'){
+    var opts = f.options.map(function(o){return '<option>'+o+'</option>';}).join('');
+    return '<select data-id="'+id+'">'+opts+'</select>';
+  }
+  return '<input data-id="'+id+'" placeholder="'+(f.placeholder||f.label)+'" />';
+}
+
+function render(){
+  var quickOrdered = sortByOrder(quickIds);
+  var advOrdered   = sortByOrder(advIds);
+
+  // quick zone: compact pills, theo đúng vị trí cố định
+  quickZone.innerHTML = quickOrdered.map(function(id){
+    return '<div class="qpill" draggable="true" data-id="'+id+'">' +
+             '<span class="handle">⠿</span>' + fieldControl(id) +
+             '<button class="mv" data-action="toAdv" data-id="'+id+'" title="Chuyển vào bộ lọc nâng cao">⇥</button>' +
+           '</div>';
+  }).join('');
+
+  // advanced zone: labeled cards in a grid, theo đúng vị trí cố định
+  advZone.innerHTML = advOrdered.length ? advOrdered.map(function(id){
+    var f = FIELDS[id];
+    return '<div class="acard" draggable="true" data-id="'+id+'">' +
+             '<div class="top"><label>'+f.label+'</label>' +
+               '<button class="mv" data-action="toQuick" data-id="'+id+'" title="Đưa ra thanh tìm nhanh">⇤</button>' +
+             '</div>' + fieldControl(id) +
+           '</div>';
+  }).join('') : '<div class="acard empty-slot">Kéo field vào đây để đưa vào bộ lọc nâng cao</div>';
+
+  advCount.textContent = advIds.length;
+}
+
+function moveField(id, toQuick){
+  quickIds = quickIds.filter(function(x){return x!==id;});
+  advIds   = advIds.filter(function(x){return x!==id;});
+  if(toQuick) quickIds.push(id); else advIds.push(id);
+  render();
+}
+
+// click-to-move buttons (works without drag, good for touch/accessibility)
+document.addEventListener('click', function(e){
+  var btn = e.target.closest('.mv');
+  if(!btn) return;
+  var id = btn.dataset.id;
+  moveField(id, btn.dataset.action === 'toQuick');
+});
+
+// drag & drop between the two zones
+var draggingId = null;
+document.addEventListener('dragstart', function(e){
+  var el = e.target.closest('.qpill,.acard');
+  if(!el) return;
+  draggingId = el.dataset.id;
+  e.dataTransfer.effectAllowed = 'move';
+});
+[quickZone, advZone].forEach(function(zone){
+  zone.addEventListener('dragover', function(e){
+    e.preventDefault();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', function(){ zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', function(e){
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if(draggingId) moveField(draggingId, zone === quickZone);
+    draggingId = null;
+  });
+});
+
+document.getElementById('advToggle').addEventListener('click', function(){
+  document.getElementById('advPanel').classList.toggle('open');
+});
+
+render();
+</script>
+</body>
+</html>

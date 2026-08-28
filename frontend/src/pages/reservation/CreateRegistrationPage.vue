@@ -265,6 +265,14 @@ async function openGlobalSearchFromQuery() {
   await router.replace({ query })
 }
 
+watch(() => route.query, async (query) => {
+  const code = query?.edit_id || query?.booking_code || query?.booking_id || query?.edit_code
+  if (code) {
+    await nextTick()
+    await openBookingModalByCode(code)
+  }
+}, { immediate: true })
+
 function getColWidthPx(col) {
   if (!col || !col.width) return 'auto'
   const match = col.width.match(/w-\[(\d+)px\]/)

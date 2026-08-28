@@ -29,6 +29,7 @@ import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import ReportsPage from '@/pages/reports/ReportsPage.vue'
+import GeneralSearchPage from '@/pages/frontdesk/GeneralSearchPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -2058,7 +2059,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
 
               <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
-              <div v-if="currentTab === 'available'" class="h-full overflow-hidden">
+              <div v-if="currentTab === 'search'" class="h-full overflow-hidden">
+                <GeneralSearchPage />
+              </div>
+
+              <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
+              <div v-else-if="currentTab === 'available'" class="h-full overflow-hidden">
                 <AvailableRoomsPage />
               </div>
 

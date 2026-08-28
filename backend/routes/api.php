@@ -361,6 +361,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
 
     // #12 — Xuất Excel (đặt TRƯỚC apiResource để không bị override)
     Route::get('bookings/init-dropdowns', [\App\Http\Controllers\Api\BookingController::class, 'initDropdowns']);
+    Route::get('general-search/options', [\App\Http\Controllers\Api\GeneralSearchController::class, 'options']);
+    Route::get('general-search/suggestions', [\App\Http\Controllers\Api\GeneralSearchController::class, 'suggestions']);
+    Route::get('general-search', [\App\Http\Controllers\Api\GeneralSearchController::class, 'index']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
     Route::get('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'index']);
     Route::get('bookings/{booking}/notifications/active', [\App\Http\Controllers\Api\BookingNotificationController::class, 'active']);
