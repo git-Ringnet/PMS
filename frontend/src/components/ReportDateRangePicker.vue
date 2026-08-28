@@ -16,37 +16,55 @@ const preset = ref('today')
 const draftStart = ref('')
 const draftEnd = ref('')
 
+const toYmd = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const localToday = () => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(props.systemDate)) return props.systemDate
-  const date = new Date()
-  const offset = date.getTimezoneOffset() * 60000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10)
+  return toYmd(new Date())
 }
 
 const addDays = (dateString, days) => {
   const date = new Date(`${dateString}T00:00:00`)
   date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
-}
-
-const monthRange = (dateString) => {
-  const date = new Date(`${dateString}T00:00:00`)
-  const start = new Date(date.getFullYear(), date.getMonth(), 1)
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0)
-  return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)]
+  return toYmd(date)
 }
 
 const presets = computed(() => {
   const today = localToday()
-  const day = new Date(`${today}T00:00:00`).getDay()
+  const baseDate = new Date(`${today}T00:00:00`)
+  const year = baseDate.getFullYear()
+  const month = baseDate.getMonth()
+
+  const day = baseDate.getDay()
   const mondayOffset = day === 0 ? -6 : 1 - day
   const weekStart = addDays(today, mondayOffset)
 
+  const qStartMonth = Math.floor(month / 3) * 3
+
   return [
     { value: 'today', label: 'Hôm nay', start: today, end: today },
-    { value: 'yesterday', label: 'Hôm qua', start: addDays(today, -1), end: addDays(today, -1) },
     { value: 'this_week', label: 'Tuần này', start: weekStart, end: addDays(weekStart, 6) },
-    { value: 'this_month', label: 'Tháng này', start: monthRange(today)[0], end: monthRange(today)[1] },
+    { value: 'this_month', label: 'Tháng này', start: toYmd(new Date(year, month, 1)), end: toYmd(new Date(year, month + 1, 0)) },
+    { value: 'this_quarter', label: 'Quý này', start: toYmd(new Date(year, qStartMonth, 1)), end: toYmd(new Date(year, qStartMonth + 3, 0)) },
+    { value: 'this_year', label: 'Năm này', start: toYmd(new Date(year, 0, 1)), end: toYmd(new Date(year, 12, 0)) },
+
+    { value: 'tomorrow', label: 'Ngày mai', start: addDays(today, 1), end: addDays(today, 1) },
+    { value: 'next_week', label: 'Tuần tiếp theo', start: addDays(weekStart, 7), end: addDays(weekStart, 13) },
+    { value: 'next_month', label: 'Tháng tiếp theo', start: toYmd(new Date(year, month + 1, 1)), end: toYmd(new Date(year, month + 2, 0)) },
+    { value: 'next_quarter', label: 'Quý tiếp theo', start: toYmd(new Date(year, qStartMonth + 3, 1)), end: toYmd(new Date(year, qStartMonth + 6, 0)) },
+    { value: 'next_year', label: 'Năm tiếp theo', start: toYmd(new Date(year + 1, 0, 1)), end: toYmd(new Date(year + 1, 12, 0)) },
+
+    { value: 'yesterday', label: 'Hôm qua', start: addDays(today, -1), end: addDays(today, -1) },
+    { value: 'last_week', label: 'Tuần trước', start: addDays(weekStart, -7), end: addDays(weekStart, -1) },
+    { value: 'last_month', label: 'Tháng trước', start: toYmd(new Date(year, month - 1, 1)), end: toYmd(new Date(year, month, 0)) },
+    { value: 'last_quarter', label: 'Quý trước', start: toYmd(new Date(year, qStartMonth - 3, 1)), end: toYmd(new Date(year, qStartMonth, 0)) },
+    { value: 'last_year', label: 'Năm trước', start: toYmd(new Date(year - 1, 0, 1)), end: toYmd(new Date(year - 1, 12, 0)) },
+
     { value: 'custom', label: 'Tùy chỉnh', start: '', end: '' },
   ]
 })
