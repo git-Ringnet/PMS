@@ -207,7 +207,7 @@ class ReportDefinitionController extends Controller
     private function executeReportSource(ReportDefinition $reportDefinition, array $parameters, Request $request): array
     {
         $division = $parameters['p_division'] ?? '__current__';
-        if ($reportDefinition->code !== 'CANCELLED_ROOMS' || ! in_array($division, ['', '__all__'], true)) {
+        if (! in_array($reportDefinition->code, ['CANCELLED_ROOMS', 'NO_SHOW'], true) || ! in_array($division, ['', '__all__'], true)) {
             return $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
         }
 
@@ -263,7 +263,11 @@ class ReportDefinitionController extends Controller
             }
         }
 
-        $this->sortCancelledRoomRows($rows, (bool) ($parameters['p_group_by_reason'] ?? false));
+        if ($reportDefinition->code === 'CANCELLED_ROOMS') {
+            $this->sortCancelledRoomRows($rows, (bool) ($parameters['p_group_by_reason'] ?? false));
+        } else {
+            $this->sortNoShowRows($rows, (string) ($parameters['p_sort_type'] ?? 'ASC'));
+        }
         if (count($rows) > $maxRows) {
             $rows = array_slice($rows, 0, $maxRows);
             $truncated = true;
@@ -301,6 +305,31 @@ class ReportDefinitionController extends Controller
             };
 
             return strcmp($dateKey($left), $dateKey($right));
+        });
+    }
+
+    private function sortNoShowRows(array &$rows, string $sortType): void
+    {
+        $direction = strtoupper($sortType) === 'DESC' ? -1 : 1;
+        $dateKey = static function (array $row): string {
+            $date = (string) ($row['NoshowDate'] ?? '');
+            if (preg_match('/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/', $date, $parts)) {
+                return $parts[3].$parts[2].$parts[1];
+            }
+
+            return $date;
+        };
+
+        usort($rows, static function (array $left, array $right) use ($dateKey, $direction): int {
+            $dateOrder = strcmp($dateKey($left), $dateKey($right));
+            if ($dateOrder !== 0) {
+                return $dateOrder * $direction;
+            }
+
+            return strcmp(
+                implode('|', [$left['NoshowTime'] ?? '', $left['Room'] ?? '', $left['Division'] ?? '']),
+                implode('|', [$right['NoshowTime'] ?? '', $right['Room'] ?? '', $right['Division'] ?? ''])
+            );
         });
     }
 
@@ -347,7 +376,7 @@ class ReportDefinitionController extends Controller
             'parameter_ui_schema.*.required' => 'nullable|boolean',
             'parameter_ui_schema.*.default' => 'nullable',
             'parameter_ui_schema.*.options' => 'nullable|array',
-            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,room-classes,registration-statuses',
+            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,room-classes,registration-statuses,users',
             'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
             'template_ids' => 'required|array|min:1',
             'template_ids.*' => 'integer|distinct|exists:templates,id',

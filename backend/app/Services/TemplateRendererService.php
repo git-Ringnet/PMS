@@ -11,10 +11,16 @@ class TemplateRendererService
      */
     public function render(string $html, ?string $css, array $data, array $options = []): string
     {
+        $data['aggregate'] = array_replace_recursive(
+            is_array($data['aggregate'] ?? null) ? $data['aggregate'] : [],
+            $this->buildListAggregates($data)
+        );
+
         // 1. Flatten the structured data array to key-value pairs (e.g., customer.name => 'John')
         $flatData = $this->flattenData($data);
 
-        // 2. Handle grouped report bodies, then ordinary detail rows.
+        // 2. Handle conditional custom rows, grouped report bodies, then ordinary detail rows.
+        $html = $this->renderConditionalCustomRows($html, $data);
         $html = $this->renderGroupedRows($html, $data);
 
         // 3. Handle detail rows in bands (dynamic table repeating)
@@ -26,14 +32,69 @@ class TemplateRendererService
             $html = str_replace('{{'.$key.'}}', (string) $value, $html);
         }
 
+        $html = preg_replace_callback('/\{\{([a-zA-Z0-9_\.]+)\|number\}\}/', function (array $matches) use ($data): string {
+            $value = $this->getValueByPath($data, $matches[1]);
+            return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+        }, $html);
+
         // Clean up any remaining unresolved placeholders
-        $html = preg_replace('/\{\{[a-zA-Z0-9_\.]+\}\}/', '', $html);
+        $html = preg_replace('/\{\{[a-zA-Z0-9_\.]+(?:\|[a-zA-Z0-9_]+)?\}\}/', '', $html);
 
         // 5. Inject CSS styles
         $compiledCss = $css ?? '';
 
         // Return completed HTML document
         return $this->buildFullHtmlDocument($html, $compiledCss, $options);
+    }
+
+    private function buildListAggregates(array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (! is_array($value) || $key === 'aggregate') {
+                continue;
+            }
+
+            if (array_is_list($value)) {
+                $rows = array_values(array_filter($value, 'is_array'));
+                $sum = [];
+                $distinctCount = [];
+                $fields = [];
+                foreach ($rows as $row) {
+                    $fields = array_unique(array_merge($fields, array_keys($row)));
+                }
+                foreach ($fields as $field) {
+                    $values = array_column($rows, $field);
+                    $sum[$field] = array_sum(array_map(static fn ($item): float => is_numeric($item) ? (float) $item : 0, $values));
+                    $distinctCount[$field] = count(array_unique(array_filter($values, static fn ($item): bool => $item !== null && $item !== '')));
+                }
+                $result[$key] = ['count' => count($rows), 'sum' => $sum, 'distinct_count' => $distinctCount];
+                continue;
+            }
+
+            $nested = $this->buildListAggregates($value);
+            if ($nested !== []) {
+                $result[$key] = $nested;
+            }
+        }
+
+        return $result;
+    }
+
+    private function renderConditionalCustomRows(string $html, array $data): string
+    {
+        $pattern = '/<tr\b([^>]*class="[^"]*\bpms-custom-row\b[^"]*"[^>]*)>(.*?)<\/tr>/is';
+
+        return preg_replace_callback($pattern, function (array $matches) use ($data): string {
+            $enabledBy = $this->attributeValue($matches[1], 'data-visible-by');
+            if ($enabledBy && ! $this->isTruthy($this->getValueByPath($data, $enabledBy))) {
+                return '';
+            }
+
+            $attributes = preg_replace('/\sdata-visible-by="[^"]*"/i', '', $matches[1]);
+            return '<tr'.$attributes.'>'.$matches[2].'</tr>';
+        }, $html);
     }
 
     /**
@@ -330,12 +391,20 @@ class TemplateRendererService
 
             foreach ($items as $item) {
                 $currentRow = $rowTemplate;
-                // Replace placeholders for this item: e.g. {{service.name}}
-                foreach ($item as $key => $value) {
-                    // Match both {{item.key}} and specific prefix like {{service.key}}
-                    $currentRow = str_replace('{{'.$itemPrefix.'.'.$key.'}}', (string) $value, $currentRow);
-                    $currentRow = str_replace('{{item.'.$key.'}}', (string) $value, $currentRow);
-                }
+                $prefixPattern = preg_quote((string) $itemPrefix, '/');
+                $currentRow = preg_replace_callback(
+                    '/\{\{(?:'.$prefixPattern.'|item)\.([A-Za-z0-9_]+)(?:\|([^}]+))?\}\}/',
+                    static function (array $matches) use ($item): string {
+                        $value = $item[$matches[1]] ?? null;
+                        $modifier = $matches[2] ?? null;
+                        if ($modifier === 'number') {
+                            return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+                        }
+
+                        return ($value === null || $value === '') ? (string) ($modifier ?? '') : (string) $value;
+                    },
+                    $currentRow
+                );
                 // Wrap back in a table row tag, but remove class/data-source to make it standard
                 $renderedRows .= '<tr>'.$currentRow."</tr>\n";
             }

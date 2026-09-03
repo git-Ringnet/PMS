@@ -188,6 +188,46 @@ const normalizeBlock = (block) => {
   }
 
   if (normalized.type === 'table') {
+    const legacyFooter = normalized.tableFooter?.enabled
+      ? [{
+          id: `custom_row_${Date.now()}`,
+          enabledBy: '',
+          cells: [
+            { id: `custom_cell_${Date.now()}_1`, type: 'text', content: normalized.tableFooter.label || 'Tổng', colspan: Math.max(1, (normalized.columns?.length || 1) - 1), align: 'right', format: '' },
+            { id: `custom_cell_${Date.now()}_2`, type: 'binding', binding: normalized.tableFooter.value || 'summary.row_count', colspan: 1, align: 'center', format: '' }
+          ]
+        }]
+      : []
+    normalized.customRows = (Array.isArray(normalized.customRows) ? normalized.customRows : legacyFooter).map((row, rowIndex) => ({
+      id: row.id || `custom_row_${rowIndex + 1}`,
+      enabledBy: row.enabledBy || '',
+      className: row.className || '',
+      cells: (Array.isArray(row.cells) ? row.cells : []).map((cell, cellIndex) => ({
+        id: cell.id || `custom_cell_${rowIndex + 1}_${cellIndex + 1}`,
+        type: cell.type || 'text',
+        content: cell.content || '',
+        binding: cell.binding || '',
+        aggregateField: cell.aggregateField || '',
+        colspan: Math.max(1, Number(cell.colspan) || 1),
+        align: cell.align || 'left',
+        format: cell.format || '',
+        className: cell.className || '',
+        backgroundColor: cell.backgroundColor || '',
+        color: cell.color || '',
+        borderColor: cell.borderColor || ''
+      }))
+    }))
+    normalized.columns = (normalized.columns || []).map(column => {
+      const value = String(column.value || '')
+      const hasNumberModifier = value.endsWith('|number')
+
+      return {
+        ...column,
+        value: hasNumberModifier ? value.slice(0, -7) : value,
+        format: column.format || (hasNumberModifier ? 'number' : '')
+      }
+    })
+
     const legacyGroups = [
       { field: normalized.groupBy, header: normalized.groupHeader, enabledBy: normalized.groupEnabledBy },
       { field: normalized.subgroupBy, header: normalized.subgroupHeader },
@@ -347,6 +387,61 @@ const groupingFieldValue = (field) => {
 }
 
 const tableGroups = (block) => Array.isArray(block?.groups) ? block.groups : []
+const tableCustomRows = (block) => Array.isArray(block?.customRows) ? block.customRows : []
+
+const customCellContent = (cell, source = 'rows') => {
+  const modifier = cell.format === 'number' ? '|number' : ''
+  if (cell.type === 'binding') return `{{${cell.binding || 'summary.row_count'}${modifier}}}`
+  if (cell.type === 'count') return `{{aggregate.${source}.count${modifier}}}`
+  if (cell.type === 'sum') return `{{aggregate.${source}.sum.${cell.aggregateField || 'Total'}${modifier}}}`
+  if (cell.type === 'distinct_count') return `{{aggregate.${source}.distinct_count.${cell.aggregateField || 'BookingId'}${modifier}}}`
+  return cell.content || ''
+}
+
+const addTableCustomRow = (block) => {
+  block.customRows = tableCustomRows(block)
+  const stamp = Date.now()
+  const columnCount = Math.max(1, block.columns?.length || 1)
+  block.customRows.push({
+    id: `custom_row_${stamp}`,
+    enabledBy: '',
+    className: '',
+    cells: Array.from({ length: columnCount }, (_, index) => ({
+      id: `custom_cell_${stamp}_${index + 1}`,
+      type: 'text',
+      content: '',
+      binding: '',
+      aggregateField: '',
+      colspan: 1,
+      align: block.columns?.[index]?.align || 'left',
+      format: '',
+      className: '',
+      backgroundColor: '',
+      color: '',
+      borderColor: ''
+    }))
+  })
+  selectedBlockId.value = block.id
+  compileHtml()
+}
+
+const addTableCustomCell = (row) => {
+  row.cells.push({ id: `custom_cell_${Date.now()}`, type: 'text', content: '', binding: '', aggregateField: '', colspan: 1, align: 'left', format: '', className: '', backgroundColor: '', color: '', borderColor: '' })
+  compileHtml()
+}
+
+const removeTableCustomRow = (block, index) => {
+  block.customRows.splice(index, 1)
+  compileHtml()
+}
+
+const moveTableCustomRow = (block, index, offset) => {
+  const target = index + offset
+  if (target < 0 || target >= block.customRows.length) return
+  const [row] = block.customRows.splice(index, 1)
+  block.customRows.splice(target, 0, row)
+  compileHtml()
+}
 
 const syncLegacyGroupFields = (block) => {
   const groups = tableGroups(block).filter(group => group.field)
@@ -757,6 +852,7 @@ const addBlock = (type) => {
       ? getListFields('rows').slice(0, 4).map(field => field.value)
       : ['service.name', 'service.price', 'service.quantity', 'service.amount']
     newBlock.columns = []
+    newBlock.customRows = []
     newBlock.style.marginTop = '10px'
     newBlock.style.marginBottom = '10px'
   } else if (type === 'columns') {
@@ -1394,11 +1490,27 @@ const compileBlockToHtml = (b) => {
 
     blockHtml += `      <tr class="pms-detail-row"${groups.length ? '' : ` data-source="${b.dataSource}"`}>\n`
     b.columns.forEach(col => {
-      blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}}}</td>\n`
+      const modifier = col.format === 'number' ? '|number' : ''
+      blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}${modifier}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
     if (groups.length && b.groupFooter) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
     blockHtml += '    </tbody>\n'
+    if (tableCustomRows(b).length) {
+      blockHtml += '    <tfoot>\n'
+      tableCustomRows(b).forEach(row => {
+        const visibleBy = row.enabledBy ? ` data-visible-by="${row.enabledBy}"` : ''
+        const rowClass = row.className ? ` ${row.className}` : ''
+        blockHtml += `      <tr class="pms-custom-row${rowClass}"${visibleBy}>\n`
+        row.cells.forEach(cell => {
+          const className = cell.className ? ` class="${cell.className}"` : ''
+          const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
+          blockHtml += `        <td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${className} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>\n`
+        })
+        blockHtml += '      </tr>\n'
+      })
+      blockHtml += '    </tfoot>\n'
+    }
     blockHtml += '  </table>\n'
   } else if (b.type === 'static-table') {
     const tableStyle = b.tableStyle || 'grid'
@@ -1511,6 +1623,14 @@ const getTableCellStyle = (block, col) => {
   }
 }
 
+const getCustomTableCellStyle = (block, cell, column = {}) => ({
+  ...getTableCellStyle(block, column),
+  textAlign: cell.align || column.align || 'left',
+  backgroundColor: cell.backgroundColor || undefined,
+  color: cell.color || undefined,
+  borderColor: cell.borderColor || undefined
+})
+
 const getTableHeaderStyle = (block, col) => {
   const align = col.align || 'left'
   const borderStyle = block.tableStyle || 'grid'
@@ -1569,6 +1689,7 @@ const confirmTableSetup = (block) => {
     if (block.columns.length === 0) {
       block.columns = [{ header: 'Cột mới', value: '', width: 'auto', align: 'left' }]
     }
+    block.customRows = Array.isArray(block.customRows) ? block.customRows : []
   } else {
     block.type = 'static-table'
     block.columns = Array.from({ length: block.colsCount }, () => ({
@@ -2175,6 +2296,13 @@ const selectBand = (band) => {
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
                             </tr>
                           </tbody>
+                          <tfoot>
+                            <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
+                            </tr>
+                            <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
+                          </tfoot>
                         </table>
                       </div>
                     </div>
@@ -2455,6 +2583,13 @@ const selectBand = (band) => {
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
                             </tr>
                           </tbody>
+                          <tfoot>
+                            <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
+                            </tr>
+                            <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
+                          </tfoot>
                         </table>
                       </div>
                     </div>
@@ -2757,6 +2892,13 @@ const selectBand = (band) => {
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
                             </tr>
                           </tbody>
+                          <tfoot>
+                            <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
+                            </tr>
+                            <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
+                          </tfoot>
                         </table>
                       </div>
                     </div>
@@ -3193,6 +3335,60 @@ const selectBand = (band) => {
                   </div>
                 </div>
 
+                <div class="flex flex-col gap-2 rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <div>
+                      <div class="text-xs font-black text-slate-700">Hàng tùy chỉnh trong Detail Table</div>
+                      <div class="text-[10px] text-slate-500">Mỗi hàng có nhiều ô và mỗi ô tự chọn nội dung hoặc phép tổng hợp.</div>
+                    </div>
+                    <button type="button" @click="addTableCustomRow(selectedBlock)" class="rounded-lg border border-sky-200 bg-white px-2 py-1 text-[10px] font-black text-sky-700">+ Thêm hàng</button>
+                  </div>
+
+                  <div v-for="(customRow, rowIndex) in tableCustomRows(selectedBlock)" :key="customRow.id" class="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-2">
+                    <div class="flex items-center justify-between">
+                      <span class="text-[10px] font-black text-slate-600">Hàng {{ rowIndex + 1 }}</span>
+                      <div class="flex gap-1">
+                        <button type="button" :disabled="rowIndex === 0" @click="moveTableCustomRow(selectedBlock, rowIndex, -1)" class="rounded border border-slate-200 px-1.5 text-xs disabled:opacity-30">↑</button>
+                        <button type="button" :disabled="rowIndex === tableCustomRows(selectedBlock).length - 1" @click="moveTableCustomRow(selectedBlock, rowIndex, 1)" class="rounded border border-slate-200 px-1.5 text-xs disabled:opacity-30">↓</button>
+                        <button type="button" @click="removeTableCustomRow(selectedBlock, rowIndex)" class="rounded border border-red-200 bg-red-50 px-1.5 text-xs text-red-600">×</button>
+                      </div>
+                    </div>
+
+                    <select v-model="customRow.enabledBy" @change="compileHtml" class="rounded-lg border border-slate-200 p-2 text-[11px]">
+                      <option value="">Luôn hiển thị</option>
+                      <option v-for="parameter in conditionalParameterOptions" :key="parameter.value" :value="parameter.value">Khi {{ parameter.label }}</option>
+                    </select>
+
+                    <div v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" class="flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                      <div class="flex items-center justify-between"><span class="text-[10px] font-bold">Ô {{ cellIndex + 1 }}</span><button type="button" :disabled="customRow.cells.length <= 1" @click="customRow.cells.splice(cellIndex, 1); compileHtml()" class="border-none bg-transparent text-red-500 disabled:opacity-30">×</button></div>
+                      <select v-model="cell.type" @change="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px]">
+                        <option value="text">Văn bản / placeholder</option>
+                        <option value="binding">Binding dữ liệu</option>
+                        <option value="count">Đếm số dòng</option>
+                        <option value="sum">Tổng theo trường</option>
+                        <option value="distinct_count">Đếm không trùng</option>
+                      </select>
+                      <textarea v-if="cell.type === 'text'" v-model="cell.content" @input="compileHtml" rows="2" class="rounded border border-slate-200 bg-white p-1.5 text-[11px] font-mono" placeholder="Tổng hoặc {{parameters.p_type}}"></textarea>
+                      <input v-if="cell.type === 'binding'" v-model="cell.binding" @input="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px] font-mono" placeholder="summary.row_count" />
+                      <select v-if="['sum', 'distinct_count'].includes(cell.type)" v-model="cell.aggregateField" @change="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px] font-mono">
+                        <option v-for="field in getListFields(selectedBlock.dataSource)" :key="field.value" :value="groupingFieldValue(field)">{{ field.label }} [{{ groupingFieldValue(field) }}]</option>
+                      </select>
+                      <div class="grid grid-cols-3 gap-1.5">
+                        <input type="number" min="1" :max="selectedBlock.columns.length" v-model.number="cell.colspan" @input="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px]" placeholder="Colspan" />
+                        <select v-model="cell.align" @change="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px]"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select>
+                        <select v-model="cell.format" @change="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px]"><option value="">Mặc định</option><option value="number">Định dạng số</option></select>
+                      </div>
+                      <div class="grid grid-cols-3 gap-1.5">
+                        <label class="flex flex-col gap-1 text-[9px] font-bold text-slate-500">Màu nền<input type="color" :value="cell.backgroundColor || '#ffffff'" @input="cell.backgroundColor = $event.target.value; compileHtml()" class="h-7 w-full rounded border border-slate-200 bg-white p-0.5" /></label>
+                        <label class="flex flex-col gap-1 text-[9px] font-bold text-slate-500">Màu chữ<input type="color" :value="cell.color || '#1e293b'" @input="cell.color = $event.target.value; compileHtml()" class="h-7 w-full rounded border border-slate-200 bg-white p-0.5" /></label>
+                        <label class="flex flex-col gap-1 text-[9px] font-bold text-slate-500">Màu viền<input type="color" :value="cell.borderColor || '#cbd5e1'" @input="cell.borderColor = $event.target.value; compileHtml()" class="h-7 w-full rounded border border-slate-200 bg-white p-0.5" /></label>
+                      </div>
+                      <button type="button" @click="cell.backgroundColor = ''; cell.color = ''; cell.borderColor = ''; compileHtml()" class="self-end border-none bg-transparent text-[9px] font-bold text-slate-500 underline">Đặt lại màu</button>
+                    </div>
+                    <button type="button" @click="addTableCustomCell(customRow)" class="rounded border border-dashed border-sky-300 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">+ Thêm ô</button>
+                  </div>
+                </div>
+
                 <!-- Table Style option -->
                 <div class="flex flex-col gap-1">
                   <span class="text-[10px] font-bold text-slate-400 uppercase">Kiểu hiển thị đường kẻ:</span>
@@ -3244,6 +3440,14 @@ const selectBand = (band) => {
                           <option v-for="f in getListFields(selectedBlock.dataSource)" :key="f.value" :value="f.value">
                             {{ f.label }} [{{ f.value }}]
                           </option>
+                        </select>
+                      </div>
+
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-[9px] font-bold text-slate-400">Định dạng dữ liệu:</span>
+                        <select v-model="col.format" @change="compileHtml" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-semibold">
+                          <option value="">Mặc định</option>
+                          <option value="number">Số - phân cách hàng nghìn</option>
                         </select>
                       </div>
 

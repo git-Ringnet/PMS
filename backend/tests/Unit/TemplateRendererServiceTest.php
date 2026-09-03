@@ -25,6 +25,20 @@ HTML;
         $this->assertStringNotContainsString('{{row.', $rendered);
     }
 
+    public function test_it_formats_numbers_in_ordinary_detail_rows(): void
+    {
+        $html = <<<'HTML'
+<table><tbody><tr class="pms-detail-row" data-source="rows"><td>{{row.Rate|number}}</td></tr></tbody></table>
+HTML;
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', [
+            'rows' => [['Rate' => 1234567.89]],
+        ]);
+
+        $this->assertStringContainsString('<td>1.234.568</td>', $rendered);
+        $this->assertStringNotContainsString('{{row.Rate|number}}', $rendered);
+    }
+
     public function test_it_renders_grouped_report_rows_and_totals(): void
     {
         $html = <<<'HTML'
@@ -98,5 +112,31 @@ HTML;
         $withReason = app(TemplateRendererService::class)->render($html, '', $data);
         $this->assertSame(1, substr_count($withReason, 'Lý do: Khách đổi lịch'));
         $this->assertSame(2, substr_count($withReason, 'Mã ĐK:'));
+    }
+
+    public function test_it_renders_custom_table_row_aggregates_and_visibility(): void
+    {
+        $html = <<<'HTML'
+<table><tfoot>
+<tr class="pms-custom-row"><td>{{aggregate.rows.count}}</td><td>{{aggregate.rows.sum.Total|number}}</td><td>{{aggregate.rows.distinct_count.BookingId}}</td></tr>
+<tr class="pms-custom-row" data-visible-by="parameters.show_note"><td>Ghi chú</td></tr>
+</tfoot></table>
+HTML;
+        $data = [
+            'parameters' => ['show_note' => false],
+            'rows' => [
+                ['BookingId' => 1, 'Total' => 100000],
+                ['BookingId' => 1, 'Total' => 200000],
+                ['BookingId' => 2, 'Total' => 300000],
+            ],
+        ];
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertStringContainsString('<td>3</td><td>600.000</td><td>2</td>', $rendered);
+        $this->assertStringNotContainsString('Ghi chú', $rendered);
+
+        $data['parameters']['show_note'] = true;
+        $visible = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertStringContainsString('Ghi chú', $visible);
     }
 }

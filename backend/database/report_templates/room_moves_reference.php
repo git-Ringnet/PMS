@@ -42,12 +42,12 @@ return new class
             ['header' => 'Ngày Đến', 'value' => 'row.ArrivalDate', 'width' => '9%', 'align' => 'center'],
             ['header' => 'Phòng', 'value' => 'row.Room', 'width' => '6%', 'align' => 'center'],
             ['header' => 'Loại Phòng', 'value' => 'row.RoomType', 'width' => '11%', 'align' => 'center'],
-            ['header' => 'Giá Phòng', 'value' => 'row.Rate', 'width' => '8%', 'align' => 'right'],
+            ['header' => 'Giá Phòng', 'value' => 'row.Rate', 'format' => 'number', 'width' => '8%', 'align' => 'right'],
             ['header' => 'Ngày Chuyển', 'value' => 'row.ArrivalDate1', 'width' => '9%', 'align' => 'center'],
             ['header' => 'Phòng Chuyển', 'value' => 'row.Room1', 'width' => '7%', 'align' => 'center'],
             ['header' => 'BK Chuyển', 'value' => 'row.BookingCode1', 'width' => '8%', 'align' => 'center'],
             ['header' => 'Loại Phòng', 'value' => 'row.RoomType1', 'width' => '11%', 'align' => 'center'],
-            ['header' => 'Giá Phòng', 'value' => 'row.Rate1', 'width' => '8%', 'align' => 'right'],
+            ['header' => 'Giá Phòng', 'value' => 'row.Rate1', 'format' => 'number', 'width' => '8%', 'align' => 'right'],
             ['header' => 'Người Dùng', 'value' => 'row.Username', 'width' => '8%'],
             ['header' => 'Lý Do', 'value' => 'row.Reason', 'width' => '9%'],
         ];
@@ -58,7 +58,7 @@ return new class
         return <<<'HTML'
 <div class="report-header"><div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <b>Ngày:</b> {{report.generated_at}}</div></div></div><hr><h1>BÁO CÁO CHUYỂN PHÒNG</h1><p class="period"><b>Ngày:</b> {{parameters.p_from_date}} ~ {{parameters.p_to_date}}</p></div>
 <table class="room-moves-table"><thead><tr><th>STT</th><th>Mã ĐK</th><th>Tên Khách</th><th>Ngày Đến</th><th>Phòng</th><th>Loại Phòng</th><th>Giá Phòng</th><th>Ngày Chuyển</th><th>Phòng Chuyển</th><th>BK Chuyển</th><th>Loại Phòng</th><th>Giá Phòng</th><th>Người Dùng</th><th>Lý Do</th></tr></thead>
-<tbody><tr class="pms-detail-row" data-source="rows"><td>{{row.STT}}</td><td>{{row.BookingCode}}</td><td>{{row.Guest}}</td><td>{{row.ArrivalDate}}</td><td>{{row.Room}}</td><td>{{row.RoomType}}</td><td>{{row.Rate}}</td><td>{{row.ArrivalDate1}}</td><td>{{row.Room1}}</td><td>{{row.BookingCode1}}</td><td>{{row.RoomType1}}</td><td>{{row.Rate1}}</td><td>{{row.Username}}</td><td>{{row.Reason}}</td></tr></tbody></table>
+<tbody><tr class="pms-detail-row" data-source="rows"><td>{{row.STT}}</td><td>{{row.BookingCode}}</td><td>{{row.Guest}}</td><td>{{row.ArrivalDate}}</td><td>{{row.Room}}</td><td>{{row.RoomType}}</td><td>{{row.Rate|number}}</td><td>{{row.ArrivalDate1}}</td><td>{{row.Room1}}</td><td>{{row.BookingCode1}}</td><td>{{row.RoomType1}}</td><td>{{row.Rate1|number}}</td><td>{{row.Username}}</td><td>{{row.Reason}}</td></tr></tbody></table>
 <div class="total"><b>Tổng số lượt chuyển:</b> {{summary.row_count}}</div>
 HTML;
     }
