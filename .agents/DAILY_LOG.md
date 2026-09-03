@@ -11,6 +11,20 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-03] - Nâng Cấp Lệnh Multi-DB Migrate Toàn Bộ (php artisan migrate:all)
+### Module: Database / Multi-Tenant Migration Command
+
+- **Đã hoàn thành**:
+  - Nâng cấp command [`MigrateMultiDbCommand.php`](file:///d:/PMS/backend/app/Console/Commands/MigrateMultiDbCommand.php):
+    - Đăng ký tên lệnh chính thức `php artisan migrate:all` và bí danh `php artisan db:migrate-all`.
+    - Hỗ trợ quét tự động (`discoverAllPmsDatabases`) toàn bộ các database `pms_*` trên máy chủ MySQL và bảng `system_branches` (bao gồm các chi nhánh mới như `gkt6`, `hkt5`, `hkt8`, `loloee`...).
+    - Tự động phân loại chạy đúng domain: Bảng quản trị hệ thống chạy vào `pms_system`, bảng nghiệp vụ chạy vào từng chi nhánh.
+    - **An toàn dữ liệu tuyệt đối**: Không xóa bảng (không reset/fresh), không yêu cầu seeder, chỉ nạp các migration mới còn thiếu.
+    - Hỗ trợ tham số mục tiêu: `php artisan migrate:all` (tất cả), `php artisan migrate:all system` (chỉ System), `php artisan migrate:all hkt1` (chỉ 1 chi nhánh).
+- **Trạng thái hiện tại**: Đã test chạy thử nghiệm thành công 100% trên cả 9 database PMS hiện có.
+
+---
+
 ## [2026-08-28] - Hoàn Thiện & Nâng Cấp Module Tìm Kiếm Chung Chuẩn Thiết Kế Mẫu
 ### Module: Frontdesk / Reservation - Tìm Kiếm Chung (`/frontdesk?tab=search`, `/reservation?tab=search`)
 

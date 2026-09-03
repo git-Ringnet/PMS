@@ -65,6 +65,24 @@ php artisan db:reset-all system
 
 ---
 
+### 👉 Chạy Migrate Bổ Sung Bảng Mới (KHÔNG Reset dữ liệu, KHÔNG cần Seeder):
+```bash
+# Migrate cho System và TẤT CẢ các chi nhánh:
+php artisan migrate:all
+
+# Hoặc chỉ migrate riêng cho 1 chi nhánh:
+php artisan migrate:all hkt1
+
+# Hoặc chỉ migrate riêng System DB:
+php artisan migrate:all system
+```
+> Lệnh này sẽ:
+> 1. Tự động quét toàn bộ database `pms_*` trên MySQL và bảng chi nhánh.
+> 2. Chạy migration mới vào đúng database tương ứng (bảng System vào `pms_system`, bảng nghiệp vụ vào từng chi nhánh).
+> 3. Giữ nguyên 100% dữ liệu đang có, không xóa bảng, không chạy seeder.
+
+---
+
 ## 4. Cách Kiểm Tra Hoạt Động Của Hệ Thống
 
 1. **Kiểm tra kết nối 5 Database:**
