@@ -7,9 +7,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::connection()->getDriverName() !== 'mysql') return;
-
-        (require database_path('report_templates/room_moves_reference.php'))->apply();
+        // Đã gộp vào 2026_09_03_100000_create_room_moves_report.php.
     }
 
     public function down(): void

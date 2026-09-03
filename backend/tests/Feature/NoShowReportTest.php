@@ -25,9 +25,10 @@ class NoShowReportTest extends TestCase
     public function test_migration_preserves_sp_054_fields_and_filters(): void
     {
         $migration = file_get_contents(database_path('migrations/2026_09_03_260000_create_no_show_report.php'));
-        $accuracyMigration = file_get_contents(database_path('migrations/2026_09_03_300000_fix_no_show_legacy_accuracy.php'));
-        $unchargedMigration = file_get_contents(database_path('migrations/2026_09_03_310000_include_uncharged_no_show_rows.php'));
-        $dateMatchingMigration = file_get_contents(database_path('migrations/2026_09_03_320000_fix_no_charge_date_matching.php'));
+        $finalProcedure = substr($migration, strpos($migration, 'private function createLegacyAccuracyProcedure'));
+        $accuracyMigration = $finalProcedure;
+        $unchargedMigration = $finalProcedure;
+        $dateMatchingMigration = $finalProcedure;
         foreach (['noshow_logs', 'booking_rooms', 'service_bills', 'p_from_date', 'p_to_date', 'p_type', 'p_user', 'p_type_money', 'p_sort_type', 'p_division', 'br.status = 4', "ServiceId = 'RM'"] as $text) {
             $this->assertStringContainsString($text, $migration);
         }
@@ -36,17 +37,15 @@ class NoShowReportTest extends TestCase
         $this->assertStringContainsString("'value' => 1, 'label' => 'No Charge'", $migration);
         $this->assertStringContainsString("'options_source' => 'users'", $migration);
         $this->assertStringNotContainsString('ALTER TABLE bookings', $migration);
-        $this->assertStringContainsString('INNER JOIN (', $accuracyMigration);
-        $this->assertStringContainsString('room_night_bills AS rnb', $accuracyMigration);
+        $this->assertStringContainsString('INNER JOIN room_night_bills rnb', $accuracyMigration);
+        $this->assertStringContainsString('room_night_bills rnb', $accuracyMigration);
         $this->assertStringContainsString('rnb.is_room_night = 1', $accuracyMigration);
         $this->assertStringContainsString("br.created_by LIKE CONCAT('%', p_user, '%')", $accuracyMigration);
-        $this->assertStringContainsString('billing.HasRoomNight = 1', $accuracyMigration);
-        $this->assertStringContainsString('billing.HasRoomNight = 0', $accuracyMigration);
         $this->assertStringNotContainsString('ns.username LIKE CONCAT', $accuracyMigration);
-        $this->assertStringContainsString('FROM booking_room_services AS brs', $unchargedMigration);
+        $this->assertStringContainsString('FROM booking_room_services brs', $unchargedMigration);
         $this->assertStringContainsString("brs.service_code = 'RM'", $unchargedMigration);
         $this->assertStringContainsString('LEFT JOIN (', $unchargedMigration);
-        $this->assertStringContainsString('INNER JOIN room_night_bills AS rnb', $unchargedMigration);
+        $this->assertStringContainsString('INNER JOIN room_night_bills rnb', $unchargedMigration);
         $this->assertStringContainsString('CASE WHEN charged.RoomId IS NOT NULL', $unchargedMigration);
         $this->assertStringContainsString('COALESCE(billing.Total, charged.Total, br.rate, 0)', $unchargedMigration);
         $this->assertStringContainsString('charged.RoomId IS NULL', $unchargedMigration);

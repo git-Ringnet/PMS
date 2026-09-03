@@ -13,7 +13,8 @@ class RoomMovesReportTest extends TestCase
 
     public function test_migration_preserves_legacy_room_move_filters_and_safe_sorting(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_09_03_240000_fix_room_moves_legacy_accuracy.php'));
+        $migration = file_get_contents(database_path('migrations/2026_09_03_100000_create_room_moves_report.php'));
+        $migration = substr($migration, strpos($migration, 'private function createLegacyAccuracyProcedure'));
         $this->assertStringContainsString('old_br.status = 100', $migration);
         $this->assertStringContainsString('brg.actual_arrival_date >= p_from_date', $migration);
         $this->assertStringContainsString('brg.actual_arrival_date < DATE_ADD(p_to_date, INTERVAL 1 DAY)', $migration);
