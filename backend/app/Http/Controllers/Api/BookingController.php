@@ -2242,6 +2242,16 @@ class BookingController extends Controller
             return $detail;
         }
 
+        // Rate Code cố định chỉ dùng giá nhập tay khi cấu hình cho phép đổi giá.
+        // Rate Code theo ngày luôn phải giữ bảng giá theo ngày đã khai báo.
+        if (!$configuredRateCode->IsDaily
+            && !empty($allocation['manualRateOverride'])
+            && $configuredRateCode->AllowChangeRate
+        ) {
+            $detail['rateCode'] = $rateCode;
+            return $detail;
+        }
+
         if (!array_key_exists((string) $roomClassId, $this->roomClassPricingContextCache)) {
             $standardRate = StandardRate::with(['roomClass', 'roomForm'])
                 ->where('room_class_id', $roomClassId)

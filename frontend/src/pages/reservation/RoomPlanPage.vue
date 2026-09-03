@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import echo from '@/services/echo'
 import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
+import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -228,6 +229,20 @@ const quickBookingForm = ref({
   rateCode: 'Vui lòng chọn giá phòng',
   rate: '890000'
 })
+const selectedQuickBookingRateCode = computed(() => {
+  const rateCode = quickBookingForm.value.rateCode
+  if (!rateCode || rateCode === 'Vui lòng chọn giá phòng') return null
+  return rateCodes.value.find(item => String(item.Ma ?? item.code ?? '') === String(rateCode)) || null
+})
+
+const isQuickBookingDailyRate = computed(() => Boolean(selectedQuickBookingRateCode.value?.IsDaily))
+const isQuickBookingRateEditable = computed(() => {
+  const rateCode = selectedQuickBookingRateCode.value
+  return !rateCode || (!rateCode.IsDaily && Boolean(rateCode.AllowChangeRate))
+})
+const quickBookingRateLabel = computed(() =>
+  isQuickBookingDailyRate.value ? 'Rate (đêm đầu / 1 phòng)' : 'Rate (1 đêm / 1 phòng)'
+)
 
 const quickBookingModalStyle = computed(() => {
   const position = quickBookingModalPosition.value || { x: 0, y: 0 }
@@ -2470,9 +2485,10 @@ function handleCellContextMenu(roomItem, dayItem, event) {
   }
 
   const dateStr = formatDateStr(dayItem.fullDate)
-  const isAlreadySelected = selectedCells.value.some(c => c.room === roomItem.room && c.date === dateStr)
-  
-  if (!isAlreadySelected || selectedCells.value.length === 0) {
+
+  // Giữ nguyên vùng đang chọn để thao tác Tạo áp dụng cho toàn bộ các phòng đã chọn.
+  // Chỉ tự chọn ô được bấm khi người dùng chưa chọn ô nào trước đó.
+  if (selectedCells.value.length === 0) {
     selectedCells.value = [{
       room: roomItem.room,
       date: dateStr,
@@ -2744,90 +2760,31 @@ async function loadDropdownsAndPrices() {
 
 loadDropdownsAndPrices()
 
-function getRoomUnitPrice(roomNo, rateCodeMa) {
+function getRoomUnitPrice(roomNo, rateCodeMa, stayDate = null) {
   const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(roomNo)) : null
   const roomClassId = roomObj ? roomObj.room_class_id : null
   const roomFormId = roomObj ? roomObj.room_form_id : null
 
-  // 1. Nếu có chọn Rate Code
   if (rateCodeMa && rateCodeMa !== 'Vui lòng chọn giá phòng') {
-    const matchedRc = rateCodes.value.find(rc => rc.Ma === rateCodeMa)
-    if (matchedRc) {
-      const plans = matchedRc.rate_plans || matchedRc.ratePlans || []
-      if (plans.length > 0) {
-        const roomClassCode = (roomObj?.roomClass?.Ma || roomObj?.room_class_code || roomObj?.roomClass?.name || '').toUpperCase()
-        const roomFormName = (roomObj?.roomForm?.name || roomObj?.room_form_name || '').trim()
-
-        for (const plan of plans) {
-          if (plan.Period) {
-            let periodObj = plan.Period
-            if (typeof periodObj === 'string') {
-              try { periodObj = JSON.parse(periodObj) } catch (e) { periodObj = {} }
-            }
-            if (periodObj && typeof periodObj === 'object') {
-              const planCode = (plan.Code || 'DEFAULT').toUpperCase()
-              const rcCode = roomClassCode
-              const rfName = roomFormName
-              const rfUpper = rfName.toUpperCase()
-
-              const candidateKeys = [
-                `${planCode}_${rcCode}_${rfName}`,
-                `${planCode}_${rcCode}_${rfUpper}`,
-                `${rateCodeMa}_${rcCode}_${rfName}`,
-                `${rateCodeMa}_${rcCode}_${rfUpper}`,
-                `${rcCode}_${rfName}`,
-                `${rcCode}_${rfUpper}`,
-                `${planCode}_${roomClassId}_${rfName}`,
-                `${roomClassId}_${rfName}`,
-                `${planCode}_${rcCode}`,
-                `${rateCodeMa}_${rcCode}`,
-                `${rcCode}`,
-                `${roomClassId}`,
-              ]
-
-              let found = null
-              for (const key of candidateKeys) {
-                if (key && periodObj[key] !== undefined) {
-                  const val = Number(periodObj[key])
-                  if (!isNaN(val) && val > 0) { found = val; break; }
-                }
-              }
-
-              if (found === null && rcCode) {
-                const keys = Object.keys(periodObj)
-                const matchedKey = keys.find(k => {
-                  const kUpper = k.toUpperCase()
-                  return kUpper.includes(rcCode) && (!rfUpper || kUpper.includes(rfUpper))
-                })
-                if (matchedKey && periodObj[matchedKey] !== undefined) {
-                  const val = Number(periodObj[matchedKey])
-                  if (!isNaN(val) && val > 0) found = val
-                }
-              }
-
-              if (found !== null) return found
-            }
-          }
-        }
-      }
-      if (matchedRc.Value && Number(matchedRc.Value) > 0) {
-        return Number(matchedRc.Value)
-      }
-    }
+    const rateCodePrice = resolveRateCodePrice(rateCodes.value, {
+      rateCode: rateCodeMa,
+      roomClassCode: roomObj?.room_class?.code || roomObj?.roomClass?.Ma || roomObj?.room_class_code || roomObj?.roomClass?.code || '',
+      roomForm: roomObj?.room_form?.name || roomObj?.roomForm?.name || roomObj?.room_form_name || '',
+      date: stayDate,
+      roomClassId,
+    })
+    if (rateCodePrice !== null) return Number(rateCodePrice)
   }
 
-  // 2. Nếu KHÔNG chọn Rate Code: Tra cứu từ bảng standard_rates
+  // Không chọn Rate Code: lấy giá phòng chuẩn.
   if (standardRates.value && standardRates.value.length > 0 && roomClassId) {
-    const matchedSr = standardRates.value.find(sr => 
-      Number(sr.room_class_id) === Number(roomClassId) && 
+    const matchedSr = standardRates.value.find(sr =>
+      Number(sr.room_class_id) === Number(roomClassId) &&
       (!roomFormId || Number(sr.room_form_id) === Number(roomFormId))
     )
-    if (matchedSr && Number(matchedSr.room_price) > 0) {
-      return Number(matchedSr.room_price)
-    }
+    if (matchedSr && Number(matchedSr.room_price) > 0) return Number(matchedSr.room_price)
   }
 
-  // 3. Fallback: Lấy giá niêm yết của roomClass / room
   if (roomObj) {
     if (roomObj.room_class && Number(roomObj.room_class.price) > 0) return Number(roomObj.room_class.price)
     if (Number(roomObj.price) > 0) return Number(roomObj.price)
@@ -2839,15 +2796,14 @@ function calculateQuickBookingPrice() {
   const ranges = selectedRoomsRanges.value
   if (!ranges || ranges.length === 0) return 0
 
-  let totalPrice = 0
-  ranges.forEach(range => {
-    const unitPrice = getRoomUnitPrice(range.room, quickBookingForm.value.rateCode)
-    const nights = range.nights || 1
-    totalPrice += unitPrice * nights
-  })
+  // Rate trên form tạo nhanh là đơn giá cho 1 đêm / 1 phòng, không phải tổng tiền booking.
+  // Nếu các phòng được chọn có giá chuẩn khác nhau, để 0 để người dùng chủ động nhập giá chung.
+  const unitRates = ranges.map(range => getRoomUnitPrice(range.room, quickBookingForm.value.rateCode, range.checkIn))
+  const [firstRate] = unitRates
+  const hasDifferentRates = unitRates.some(rate => Number(rate) !== Number(firstRate))
 
-  quickBookingForm.value.rate = totalPrice
-  return totalPrice
+  quickBookingForm.value.rate = hasDifferentRates ? 0 : (firstRate || 0)
+  return quickBookingForm.value.rate
 }
 
 async function triggerMenuAction(actionName) {
@@ -3658,7 +3614,12 @@ async function saveQuickBooking() {
     ranges.forEach(range => {
       const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(range.room)) : null
       const roomClassId = roomObj ? roomObj.room_class_id : 1
-      const unitPrice = getRoomUnitPrice(range.room, quickBookingForm.value.rateCode)
+      const canOverrideFixedRate = selectedQuickBookingRateCode.value
+        && !selectedQuickBookingRateCode.value.IsDaily
+        && Boolean(selectedQuickBookingRateCode.value.AllowChangeRate)
+      const unitPrice = selectedRateCode && !canOverrideFixedRate
+        ? getRoomUnitPrice(range.room, selectedRateCode, range.checkIn)
+        : Number(quickBookingForm.value.rate || 0)
 
       const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
 
@@ -3670,6 +3631,8 @@ async function saveQuickBooking() {
           departureDate: range.checkOut,
           price: unitPrice,
           rateCode: selectedRateCode,
+          // Chỉ Rate Code cố định có AllowChangeRate mới được phép ghi đè giá nhập tay.
+          manualRateOverride: Boolean(selectedRateCode && isQuickBookingRateEditable.value),
           breakfastIncluded: true,
           rooms: []
         }
@@ -5156,12 +5119,13 @@ function getRoomStatusIconName(item) {
 
           <!-- Rate -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-bold text-slate-700 text-left w-full block">Rate:</label>
+            <label class="font-bold text-slate-700 text-left w-full block">{{ quickBookingRateLabel }}:</label>
             <div class="relative flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
-              <input type="number" v-model="quickBookingForm.rate" class="w-full border-none px-3 py-2 text-slate-800 focus:outline-none focus:ring-0 font-semibold" />
+              <input type="number" v-model="quickBookingForm.rate" :disabled="!isQuickBookingRateEditable" class="w-full border-none px-3 py-2 text-slate-800 focus:outline-none focus:ring-0 font-semibold disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />
               <div class="absolute right-2 flex flex-col gap-0.5 z-10">
                 <button 
                   type="button" 
+                  :disabled="!isQuickBookingRateEditable"
                   @click="quickBookingForm.rate = Number(quickBookingForm.rate || 0) + 50000"
                   class="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center h-3 w-4.5"
                 >
@@ -5171,6 +5135,7 @@ function getRoomStatusIconName(item) {
                 </button>
                 <button 
                   type="button" 
+                  :disabled="!isQuickBookingRateEditable"
                   @click="quickBookingForm.rate = Math.max(0, Number(quickBookingForm.rate || 0) - 50000)"
                   class="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center h-3 w-4.5"
                 >

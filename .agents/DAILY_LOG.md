@@ -11,6 +11,26 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-03] - Điều chỉnh giá tạo đăng ký nhanh từ Kế hoạch phòng
+### Module: Reservation / Kế hoạch phòng (`RoomPlanPage.vue`)
+
+- **Đã hoàn thành**:
+  - Đổi trường **Rate** từ tổng tiền booking thành **đơn giá một đêm của một phòng**.
+  - Khi không chọn Rate Code: tự điền giá phòng chuẩn nếu mọi phòng đã chọn có cùng đơn giá; nếu có bất kỳ mức giá nào khác nhau thì hiển thị `0` để người dùng nhập giá chung.
+  - Giá nhập tay được truyền vào từng `room_allocation`, vì vậy nhập `750.000` cho hai phòng sẽ lưu `750.000` cho mỗi phòng/đêm.
+  - Giữ nguyên vùng chọn nhiều phòng khi mở menu chuột phải, tránh việc thao tác **Tạo** vô tình chỉ còn một phòng.
+  - Rate Code theo ngày (`IsDaily`): hiển thị giá đêm đầu và khóa chỉnh Rate; backend tiếp tục tạo giá theo từng ngày.
+  - Rate Code cố định: chỉ cho phép ghi đè giá khi cấu hình `AllowChangeRate = true`; backend tôn trọng giá nhập tay trong trường hợp này.
+  - Chuẩn hóa lấy `room_class` và `room_form` từ API để Rate Code tính đúng theo loại/dạng phòng.
+- **Kiểm tra**:
+  - `node --test`: 19/19 test tính giá và Rate Code đạt.
+  - `npm run build`: đạt.
+  - `php -l BookingController.php`: đạt.
+- **Tệp thay đổi**:
+  - `frontend/src/pages/reservation/RoomPlanPage.vue`
+  - `backend/app/Http/Controllers/Api/BookingController.php`
+
+---
 ## [2026-09-03] - Đồng Bộ Chiều Cao Thanh Tầng (Floor Pill) Theo Chiều Cao Phòng (Sơ Đồ Phòng)
 ### Module: Reservation / Sơ Đồ Phòng (`RoomMapPage.vue`)
 
