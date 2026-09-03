@@ -191,6 +191,10 @@ const normalizeReportParameters = (tab) => {
   }
 }
 
+const hasEmptySelectOption = (tab, parameter) => (
+  tab.parameterOptions[parameter.name] || parameter.options || []
+).some(option => (option?.value ?? option) === '')
+
 const executeTab = async (tab) => {
   if (!tab || !tab.selectedTemplateId) return
   normalizeReportParameters(tab)
@@ -209,6 +213,8 @@ const executeTab = async (tab) => {
     tab.renderedHtml = response.data.html
     uiStore.showToast(`Đã tải ${tab.dataset.summary?.row_count || 0} dòng dữ liệu từ Store`, 'success')
   } catch (error) {
+    tab.dataset = null
+    tab.renderedHtml = ''
     uiStore.showToast(error.response?.data?.message || 'Không thể chạy báo cáo. Kiểm tra Store và tham số.', 'error')
   } finally {
     tab.executing = false
@@ -376,10 +382,28 @@ onMounted(async () => {
             </div>
 
             <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
-              {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
+              <template v-if="parameter.control === 'checkbox'">
+                <div class="flex h-8 items-center gap-2">
+                  <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
+                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform" :class="activeTab.parameters[parameter.name] ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+                  </button>
+                  <span>{{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span></span>
+                </div>
+              </template>
 
-              <select v-if="['select', 'radio'].includes(parameter.control)" v-model="activeTab.parameters[parameter.name]" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-                <option value="">-- Chọn --</option>
+              <template v-else>
+                {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
+              </template>
+
+              <div v-if="parameter.control === 'radio'" class="mt-1 flex flex-wrap items-center gap-4 text-xs font-normal text-slate-700">
+                <label v-for="option in activeTab.parameterOptions[parameter.name] || parameter.options || []" :key="option.value ?? option" class="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
+                  <input v-model="activeTab.parameters[parameter.name]" type="radio" :name="`${activeTab.id}-${parameter.name}`" :value="option.value ?? option" class="h-4 w-4 border-sky-500 text-sky-600 focus:ring-sky-500" />
+                  {{ option.label ?? option }}
+                </label>
+              </div>
+
+              <select v-else-if="parameter.control === 'select'" v-model="activeTab.parameters[parameter.name]" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                <option v-if="!hasEmptySelectOption(activeTab, parameter)" value="">-- Chọn --</option>
                 <option v-for="option in activeTab.parameterOptions[parameter.name] || parameter.options || []" :key="option.value ?? option" :value="option.value ?? option">
                   {{ option.label ?? option }}
                 </option>
@@ -392,15 +416,8 @@ onMounted(async () => {
                 :system-date="systemDate"
               />
 
-              <!-- Checkbox stylized as toggle switch -->
-              <div v-else-if="parameter.control === 'checkbox'" class="flex items-center justify-between mt-1 h-8">
-                <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1 shrink-0" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
-                  <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm" :class="activeTab.parameters[parameter.name] ? 'translate-x-[18px]' : 'translate-x-1'"></span>
-                </button>
-              </div>
-
               <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
-              <input v-else v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
+              <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
             </div>
 
             <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">

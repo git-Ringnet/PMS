@@ -11,10 +11,16 @@ class TemplateRendererService
      */
     public function render(string $html, ?string $css, array $data, array $options = []): string
     {
+        $data['aggregate'] = array_replace_recursive(
+            is_array($data['aggregate'] ?? null) ? $data['aggregate'] : [],
+            $this->buildListAggregates($data)
+        );
+
         // 1. Flatten the structured data array to key-value pairs (e.g., customer.name => 'John')
         $flatData = $this->flattenData($data);
 
-        // 2. Handle grouped report bodies, then ordinary detail rows.
+        // 2. Handle conditional custom rows, grouped report bodies, then ordinary detail rows.
+        $html = $this->renderConditionalCustomRows($html, $data);
         $html = $this->renderGroupedRows($html, $data);
 
         // 3. Handle detail rows in bands (dynamic table repeating)
@@ -26,14 +32,69 @@ class TemplateRendererService
             $html = str_replace('{{'.$key.'}}', (string) $value, $html);
         }
 
+        $html = preg_replace_callback('/\{\{([a-zA-Z0-9_\.]+)\|number\}\}/', function (array $matches) use ($data): string {
+            $value = $this->getValueByPath($data, $matches[1]);
+            return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+        }, $html);
+
         // Clean up any remaining unresolved placeholders
-        $html = preg_replace('/\{\{[a-zA-Z0-9_\.]+\}\}/', '', $html);
+        $html = preg_replace('/\{\{[a-zA-Z0-9_\.]+(?:\|[a-zA-Z0-9_]+)?\}\}/', '', $html);
 
         // 5. Inject CSS styles
         $compiledCss = $css ?? '';
 
         // Return completed HTML document
         return $this->buildFullHtmlDocument($html, $compiledCss, $options);
+    }
+
+    private function buildListAggregates(array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (! is_array($value) || $key === 'aggregate') {
+                continue;
+            }
+
+            if (array_is_list($value)) {
+                $rows = array_values(array_filter($value, 'is_array'));
+                $sum = [];
+                $distinctCount = [];
+                $fields = [];
+                foreach ($rows as $row) {
+                    $fields = array_unique(array_merge($fields, array_keys($row)));
+                }
+                foreach ($fields as $field) {
+                    $values = array_column($rows, $field);
+                    $sum[$field] = array_sum(array_map(static fn ($item): float => is_numeric($item) ? (float) $item : 0, $values));
+                    $distinctCount[$field] = count(array_unique(array_filter($values, static fn ($item): bool => $item !== null && $item !== '')));
+                }
+                $result[$key] = ['count' => count($rows), 'sum' => $sum, 'distinct_count' => $distinctCount];
+                continue;
+            }
+
+            $nested = $this->buildListAggregates($value);
+            if ($nested !== []) {
+                $result[$key] = $nested;
+            }
+        }
+
+        return $result;
+    }
+
+    private function renderConditionalCustomRows(string $html, array $data): string
+    {
+        $pattern = '/<tr\b([^>]*class="[^"]*\bpms-custom-row\b[^"]*"[^>]*)>(.*?)<\/tr>/is';
+
+        return preg_replace_callback($pattern, function (array $matches) use ($data): string {
+            $enabledBy = $this->attributeValue($matches[1], 'data-visible-by');
+            if ($enabledBy && ! $this->isTruthy($this->getValueByPath($data, $enabledBy))) {
+                return '';
+            }
+
+            $attributes = preg_replace('/\sdata-visible-by="[^"]*"/i', '', $matches[1]);
+            return '<tr'.$attributes.'>'.$matches[2].'</tr>';
+        }, $html);
     }
 
     /**
@@ -51,6 +112,8 @@ class TemplateRendererService
             $body = $matches[2];
             $source = $this->attributeValue($attributes, 'data-source') ?? 'rows';
             $groupBy = $this->attributeValue($attributes, 'data-group-by');
+            $groupConfigured = $this->attributeValue($attributes, 'data-group-configured') === '1';
+            $groupEnabledBy = $this->attributeValue($attributes, 'data-group-enabled-by');
             $subgroupBy = $this->attributeValue($attributes, 'data-subgroup-by');
             $subsubgroupBy = $this->attributeValue($attributes, 'data-subsubgroup-by');
             $items = $this->getValueByPath($data, $source);
@@ -68,6 +131,31 @@ class TemplateRendererService
             $subgroupFooter = $this->groupedRowTemplate($body, 'pms-subgroup-footer');
             $groupFooter = $this->groupedRowTemplate($body, 'pms-group-footer');
             $output = '';
+
+            if ($groupConfigured) {
+                $groups = $this->configuredGroups($body, $data);
+                if ($groups === []) {
+                    foreach ($items as $row) {
+                        if (is_array($row)) {
+                            $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                        }
+                    }
+                } else {
+                    $output = $this->renderConfiguredGroupLevel($items, $groups, 0, $detail);
+                }
+
+                return '<tbody>'.$output.'</tbody>';
+            }
+
+            if ($groupEnabledBy && ! $this->isTruthy($this->getValueByPath($data, $groupEnabledBy))) {
+                foreach ($items as $row) {
+                    if (is_array($row)) {
+                        $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                    }
+                }
+
+                return '<tbody>'.$output.'</tbody>';
+            }
 
             foreach ($this->groupItems($items, $groupBy) as $groupRows) {
                 $first = $groupRows[0] ?? [];
@@ -110,6 +198,87 @@ class TemplateRendererService
         return preg_match('/\b'.preg_quote($name, '/').'="([^"]*)"/i', $attributes, $matches)
             ? $matches[1]
             : null;
+    }
+
+    private function isTruthy(mixed $value): bool
+    {
+        if (is_string($value)) {
+            return ! in_array(strtolower(trim($value)), ['', '0', 'false', 'off', 'no'], true);
+        }
+
+        return (bool) $value;
+    }
+
+    private function configuredGroups(string $body, array $data): array
+    {
+        preg_match_all('/<tr\b([^>]*)>(.*?)<\/tr>/is', $body, $matches, PREG_SET_ORDER);
+        $groups = [];
+
+        foreach ($matches as $match) {
+            $attributes = $match[1];
+            $classes = $this->attributeValue($attributes, 'class') ?? '';
+            if (! preg_match('/\bpms-group-header\b/', $classes)) {
+                continue;
+            }
+
+            $field = $this->attributeValue($attributes, 'data-group-field');
+            if (! $field) {
+                continue;
+            }
+
+            $enabledBy = $this->attributeValue($attributes, 'data-group-enabled-by');
+            if ($enabledBy && ! $this->isTruthy($this->getValueByPath($data, $enabledBy))) {
+                continue;
+            }
+
+            $groups[] = [
+                'field' => $field,
+                'sort' => strtoupper($this->attributeValue($attributes, 'data-group-sort') ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC',
+                'template' => $match[2],
+            ];
+        }
+
+        return $groups;
+    }
+
+    private function renderConfiguredGroupLevel(array $items, array $groups, int $level, ?string $detail): string
+    {
+        if ($level >= count($groups)) {
+            $output = '';
+            foreach ($items as $row) {
+                if (is_array($row)) {
+                    $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                }
+            }
+
+            return $output;
+        }
+
+        $definition = $groups[$level];
+        $grouped = $this->groupItemsWithKeys($items, $definition['field'], $definition['sort']);
+        $output = '';
+
+        foreach ($grouped as $groupRows) {
+            $first = $groupRows[0] ?? [];
+            $output .= $this->renderGroupedTemplate($definition['template'], $first, $groupRows);
+            $output .= $this->renderConfiguredGroupLevel($groupRows, $groups, $level + 1, $detail);
+        }
+
+        return $output;
+    }
+
+    private function groupItemsWithKeys(array $items, string $field, string $sort): array
+    {
+        $groups = [];
+        foreach ($items as $item) {
+            if (is_array($item)) {
+                $groups[(string) ($item[$field] ?? '__null__')][] = $item;
+            }
+        }
+
+        uksort($groups, static fn (string $left, string $right) => strnatcasecmp($left, $right) * ($sort === 'DESC' ? -1 : 1));
+
+        return array_values($groups);
     }
 
     private function groupedRowTemplate(string $body, string $class): ?string
@@ -222,12 +391,20 @@ class TemplateRendererService
 
             foreach ($items as $item) {
                 $currentRow = $rowTemplate;
-                // Replace placeholders for this item: e.g. {{service.name}}
-                foreach ($item as $key => $value) {
-                    // Match both {{item.key}} and specific prefix like {{service.key}}
-                    $currentRow = str_replace('{{'.$itemPrefix.'.'.$key.'}}', (string) $value, $currentRow);
-                    $currentRow = str_replace('{{item.'.$key.'}}', (string) $value, $currentRow);
-                }
+                $prefixPattern = preg_quote((string) $itemPrefix, '/');
+                $currentRow = preg_replace_callback(
+                    '/\{\{(?:'.$prefixPattern.'|item)\.([A-Za-z0-9_]+)(?:\|([^}]+))?\}\}/',
+                    static function (array $matches) use ($item): string {
+                        $value = $item[$matches[1]] ?? null;
+                        $modifier = $matches[2] ?? null;
+                        if ($modifier === 'number') {
+                            return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+                        }
+
+                        return ($value === null || $value === '') ? (string) ($modifier ?? '') : (string) $value;
+                    },
+                    $currentRow
+                );
                 // Wrap back in a table row tag, but remove class/data-source to make it standard
                 $renderedRows .= '<tr>'.$currentRow."</tr>\n";
             }

@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\HotelSetting;
 use App\Models\ReportDefinition;
+use App\Models\SystemBranch;
 use App\Models\Template;
 use App\Services\Reports\ReportDatasetEnricher;
 use App\Services\Reports\ReportDataExecutorService;
 use App\Services\Reports\ReportExportService;
 use App\Services\RoomAvailabilityService;
 use App\Services\TemplateRendererService;
+use App\Services\TenantDatabaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -104,27 +106,7 @@ class ReportDefinitionController extends Controller
 
         try {
             $template = $this->resolveTemplate($reportDefinition, $validated['template_id'] ?? null);
-            $data = $this->executor->executeSource(
-                $reportDefinition->reportDataSource,
-                $validated['parameters'] ?? []
-            );
-            $data['report'] = [
-                'code' => $reportDefinition->code,
-                'name' => $reportDefinition->name,
-                'generated_at' => $this->systemReportTimestamp(),
-                'generated_by' => $request->user()?->name ?? $request->user()?->username ?? '',
-            ];
-            $data['hotel'] = $this->hotelContext();
-
-            $data = $this->datasetEnricher->enrich($reportDefinition, $data);
-
-            if (isset($data['parameters']) && is_array($data['parameters'])) {
-                foreach ($data['parameters'] as $key => $val) {
-                    if (is_string($val) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $val)) {
-                        $data['parameters'][$key] = \Carbon\Carbon::parse($val)->format('d/m/Y');
-                    }
-                }
-            }
+            $data = $this->prepareReportData($reportDefinition, $validated['parameters'] ?? [], $request);
 
             return response()->json([
                 'success' => true,
@@ -200,7 +182,8 @@ class ReportDefinitionController extends Controller
 
     private function prepareReportData(ReportDefinition $reportDefinition, array $parameters, Request $request): array
     {
-        $data = $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
+        $data = $this->executeReportSource($reportDefinition, $parameters, $request);
+        $data = $this->enrichCancelledRoomUsers($reportDefinition, $data);
         $data['report'] = [
             'code' => $reportDefinition->code,
             'name' => $reportDefinition->name,
@@ -217,6 +200,160 @@ class ReportDefinitionController extends Controller
                 }
             }
         }
+
+        return $data;
+    }
+
+    private function executeReportSource(ReportDefinition $reportDefinition, array $parameters, Request $request): array
+    {
+        $division = $parameters['p_division'] ?? '__current__';
+        if (! in_array($reportDefinition->code, ['CANCELLED_ROOMS', 'NO_SHOW'], true) || ! in_array($division, ['', '__all__'], true)) {
+            return $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
+        }
+
+        $user = $request->user();
+        if (! $user) {
+            throw new RuntimeException('Người dùng chưa được xác thực.');
+        }
+
+        $configuredBranchCodes = array_keys(config('database_domains.branch_connections', []));
+        $branches = $user->isSuperAdmin()
+            ? SystemBranch::query()
+                ->where('is_active', true)
+                ->whereIn('code', $configuredBranchCodes)
+                ->orderBy('id')
+                ->get()
+            : $user->branches()
+                ->where('system_branches.is_active', true)
+                ->whereIn('system_branches.code', $configuredBranchCodes)
+                ->orderBy('system_branches.id')
+                ->get();
+
+        if (! $branches || $branches->isEmpty()) {
+            throw new RuntimeException('Người dùng không có chi nhánh được phép xem báo cáo.');
+        }
+
+        $rows = [];
+        $fields = [];
+        $truncated = false;
+        $maxRows = max(1, (int) ($reportDefinition->reportDataSource->max_rows
+            ?? config('reporting.default_max_rows', 1000)));
+
+        foreach ($branches as $branch) {
+            $connectionName = $branch->db_connection ?: TenantDatabaseService::getConnectionName($branch->code);
+            if (! config("database.connections.{$connectionName}")) {
+                TenantDatabaseService::registerDynamicConnection(
+                    $connectionName,
+                    TenantDatabaseService::getDatabaseName($branch->code)
+                );
+            }
+
+            $branchParameters = [...$parameters, 'p_division' => '__current__'];
+            $branchData = $this->executor->executeSource(
+                $reportDefinition->reportDataSource,
+                $branchParameters,
+                $connectionName
+            );
+            $fields = $fields ?: ($branchData['fields'] ?? []);
+            $truncated = $truncated || (bool) ($branchData['summary']['truncated'] ?? false);
+
+            foreach ($branchData['rows'] ?? [] as $row) {
+                $row['Division'] = ! empty($row['Division']) ? $row['Division'] : $branch->code;
+                $rows[] = $row;
+            }
+        }
+
+        if ($reportDefinition->code === 'CANCELLED_ROOMS') {
+            $this->sortCancelledRoomRows($rows, (bool) ($parameters['p_group_by_reason'] ?? false));
+        } else {
+            $this->sortNoShowRows($rows, (string) ($parameters['p_sort_type'] ?? 'ASC'));
+        }
+        if (count($rows) > $maxRows) {
+            $rows = array_slice($rows, 0, $maxRows);
+            $truncated = true;
+        }
+        foreach ($rows as $index => &$row) {
+            $row['STT'] = $index + 1;
+        }
+        unset($row);
+
+        return [
+            'parameters' => $parameters,
+            'rows' => $rows,
+            'summary' => ['row_count' => count($rows), 'truncated' => $truncated],
+            'fields' => $fields,
+        ];
+    }
+
+    private function sortCancelledRoomRows(array &$rows, bool $groupByReason): void
+    {
+        usort($rows, static function (array $left, array $right) use ($groupByReason): int {
+            if ($groupByReason) {
+                $reasonOrder = strcmp((string) ($left['CancelReasonGroup'] ?? ''), (string) ($right['CancelReasonGroup'] ?? ''));
+                if ($reasonOrder !== 0) {
+                    return $reasonOrder;
+                }
+            }
+
+            $dateKey = static function (array $row): string {
+                $date = (string) ($row['CancelDate'] ?? '');
+                $sortableDate = preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $date, $parts)
+                    ? $parts[3].$parts[2].$parts[1]
+                    : $date;
+
+                return implode('|', [$sortableDate, $row['CancelTime'] ?? '', $row['BookingId'] ?? '', $row['Room'] ?? '']);
+            };
+
+            return strcmp($dateKey($left), $dateKey($right));
+        });
+    }
+
+    private function sortNoShowRows(array &$rows, string $sortType): void
+    {
+        $direction = strtoupper($sortType) === 'DESC' ? -1 : 1;
+        $dateKey = static function (array $row): string {
+            $date = (string) ($row['NoshowDate'] ?? '');
+            if (preg_match('/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/', $date, $parts)) {
+                return $parts[3].$parts[2].$parts[1];
+            }
+
+            return $date;
+        };
+
+        usort($rows, static function (array $left, array $right) use ($dateKey, $direction): int {
+            $dateOrder = strcmp($dateKey($left), $dateKey($right));
+            if ($dateOrder !== 0) {
+                return $dateOrder * $direction;
+            }
+
+            return strcmp(
+                implode('|', [$left['NoshowTime'] ?? '', $left['Room'] ?? '', $left['Division'] ?? '']),
+                implode('|', [$right['NoshowTime'] ?? '', $right['Room'] ?? '', $right['Division'] ?? ''])
+            );
+        });
+    }
+
+    private function enrichCancelledRoomUsers(ReportDefinition $reportDefinition, array $data): array
+    {
+        if ($reportDefinition->code !== 'CANCELLED_ROOMS' || empty($data['rows'])) {
+            return $data;
+        }
+
+        $usernames = collect($data['rows'])->pluck('UserName')->filter()->unique()->values();
+        if ($usernames->isEmpty()) {
+            return $data;
+        }
+
+        $connection = config('database_domains.system_connection', 'mysql_system');
+        $names = DB::connection($connection)->table('users')
+            ->whereIn('username', $usernames)
+            ->pluck('name', 'username');
+
+        foreach ($data['rows'] as &$row) {
+            $username = (string) ($row['UserName'] ?? '');
+            $row['UserName'] = $names[$username] ?? $username;
+        }
+        unset($row);
 
         return $data;
     }
@@ -239,7 +376,7 @@ class ReportDefinitionController extends Controller
             'parameter_ui_schema.*.required' => 'nullable|boolean',
             'parameter_ui_schema.*.default' => 'nullable',
             'parameter_ui_schema.*.options' => 'nullable|array',
-            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,room-classes,registration-statuses',
+            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,room-classes,registration-statuses,users',
             'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
             'template_ids' => 'required|array|min:1',
             'template_ids.*' => 'integer|distinct|exists:templates,id',
