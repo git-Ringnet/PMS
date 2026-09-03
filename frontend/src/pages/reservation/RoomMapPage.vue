@@ -984,6 +984,62 @@ function getRoomCardStyle(room, floorIdx, roomIdx) {
   return baseStyle
 }
 
+function getFloorPillStyle() {
+  if (settings.value.floorOrientation === 'Dọc') {
+    return {
+      width: settings.value.roomWidth + 'px',
+      height: 'auto',
+      minHeight: '36px',
+      position: 'static',
+      padding: '6px 8px',
+      flexDirection: 'row',
+      gap: '6px',
+      transition: 'none'
+    }
+  }
+
+  const h = settings.value.roomHeight
+  const isCompact = h < 65
+  const isUltraCompact = h < 52
+
+  return {
+    height: h + 'px',
+    minHeight: h + 'px',
+    maxHeight: h + 'px',
+    boxSizing: 'border-box',
+    padding: isUltraCompact ? '2px 4px' : (isCompact ? '4px 6px' : '8px 8px'),
+    borderRadius: Math.min(14, Math.max(6, Math.round(h * 0.16))) + 'px',
+    justifyContent: 'center',
+    gap: isCompact ? '0px' : '2px',
+    transition: 'none'
+  }
+}
+
+function getFloorTitleStyle() {
+  if (settings.value.floorOrientation === 'Dọc') {
+    return {}
+  }
+  const h = settings.value.roomHeight
+  const fontSize = Math.max(10, Math.min(13, Math.round(h * 0.22)))
+  return {
+    fontSize: fontSize + 'px',
+    lineHeight: '1.15'
+  }
+}
+
+function getFloorCountStyle() {
+  if (settings.value.floorOrientation === 'Dọc') {
+    return { marginTop: '0px' }
+  }
+  const h = settings.value.roomHeight
+  const fontSize = Math.max(8.5, Math.min(11, Math.round(h * 0.18)))
+  return {
+    fontSize: fontSize + 'px',
+    lineHeight: '1.15',
+    marginTop: h < 60 ? '1px' : '3px'
+  }
+}
+
 // Guest names list matching image 2
 function getMockGuestName(room) {
   return room.guest_name || room.primary_guest_name || room.guest_details?.[0] || ''
@@ -2028,9 +2084,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <span class="text-left">Chiều cao phòng</span>
                   <span class="text-slate-500">{{ settings.roomHeight }}px</span>
                 </div>
-                <input type="range" min="50" max="200" v-model.number="settings.roomHeight"
+                <input type="range" min="40" max="200" v-model.number="settings.roomHeight"
                   class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 50) / (200 - 50) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 50) / (200 - 50) * 100) + '%, #e2e8f0 100%)' }" />
+                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 100%)' }" />
               </div>
 
               <!-- Buttons Group -->
@@ -2508,21 +2564,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                    class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
                    :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
                   <div v-for="(floor, floorIdx) in sortedFloors" :key="floor" :class="[
-                    settings.floorOrientation === 'Ngang' ? 'flex gap-4' : 'flex flex-col gap-2',
+                    settings.floorOrientation === 'Ngang' ? 'flex gap-4 items-center' : 'flex flex-col gap-2',
                     isInitialLoad ? 'floor-row-animate' : ''
                   ]" :style="isInitialLoad ? { animationDelay: `${floorIdx * 65}ms` } : {}">
                     <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
-                    <div class="floor-pill cursor-pointer" :style="settings.floorOrientation === 'Dọc' ? {
-                      width: settings.roomWidth + 'px',
-                      height: 'auto',
-                      position: 'static',
-                      padding: '8px 4px',
-                      flexDirection: 'row',
-                      gap: '6px'
-                    } : {}">
-                      <span>{{ t('roomMap.floor', { floor }) }}</span>
-                      <span class="text-[10px] opacity-80 font-bold mt-1"
-                        :style="settings.floorOrientation === 'Dọc' ? { marginTop: '0px' } : {}">
+                    <div class="floor-pill cursor-pointer" :style="getFloorPillStyle()">
+                      <span :style="getFloorTitleStyle()">{{ t('roomMap.floor', { floor }) }}</span>
+                      <span class="opacity-80 font-bold"
+                        :style="getFloorCountStyle()">
                         {{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}
                       </span>
                     </div>

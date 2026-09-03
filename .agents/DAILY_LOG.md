@@ -11,6 +11,21 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-03] - Đồng Bộ Chiều Cao Thanh Tầng (Floor Pill) Theo Chiều Cao Phòng (Sơ Đồ Phòng)
+### Module: Reservation / Sơ Đồ Phòng (`RoomMapPage.vue`)
+
+- **Đã hoàn thành**:
+  - Khắc phục triệt để lỗi thanh chỉ báo Tầng (`.floor-pill`) bị kẹt chiều cao cố định (~65px) không thể thu nhỏ khi người dùng giảm "Chiều cao phòng" xuống 50px hoặc nhỏ hơn.
+  - Xây dựng các hàm tính toán style động:
+    - [`getFloorPillStyle()`](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue): Tự động gán `height`, `minHeight`, `maxHeight` bằng chính xác `settings.roomHeight`, bổ sung `box-sizing: border-box`, co giãn padding thông minh (`2px` - `8px`), bo góc tỷ lệ theo chiều cao.
+    - [`getFloorTitleStyle()`](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue) & [`getFloorCountStyle()`](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue): Tự động co giãn kích cỡ chữ Tầng (`Tầng X`) và số phòng (`(X phòng)`) cân đối từ 8.5px - 13px, căn giữa hoàn hảo.
+  - Căn chỉnh hàng hiển thị phòng với `items-center` giúp thanh tầng và các thẻ phòng luôn thẳng hàng đều đặn.
+  - Mở rộng thanh trượt "Chiều cao phòng" trong Drawer Cài đặt hiển thị xuống tối thiểu **40px** (trước đây là 50px), cho phép người dùng tùy biến giao diện siêu nhỏ gọn theo ý muốn.
+  - Khắc phục triệt để hiện tượng trễ nhịp (delay): Loại bỏ `transition: all 0.35s` trên `.floor-pill` (vốn vô tình gây delay chuyển động chiều cao 0.35 giây so với ô phòng vốn cập nhật tức thì), chuyển sang transition riêng chỉ dành cho hover effects (`transform`, `box-shadow`, `border-color`), giúp thanh Tầng và ô phòng co giãn đồng thời 100% cùng nhịp ở 60fps khi kéo slider.
+  - Build kiểm thử Vite thành công 100%.
+
+---
+
 ## [2026-09-03] - Nâng Cấp Lệnh Multi-DB Migrate Toàn Bộ (php artisan migrate:all)
 ### Module: Database / Multi-Tenant Migration Command
 
