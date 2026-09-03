@@ -346,6 +346,8 @@ watch(isFuture, (newVal) => {
 })
 
 watch(rawDate, async () => {
+  if (isInitialLoad.value || currentTab.value === 'room-plan') return
+
   await Promise.all([
     roomStore.fetchRooms({ date: rawDate.value, silent: true }),
     roomStore.fetchStats(rawDate.value)
@@ -1539,11 +1541,13 @@ onMounted(async () => {
     localStorage.setItem('pms_room_width_migrated_200', 'true')
   }
 
-  // Run data fetches in parallel to minimize load latency
-  await Promise.all([
-    roomStore.fetchRooms({ date: rawDate.value }),
-    roomStore.fetchStats(rawDate.value)
-  ])
+  // Room Plan tự tải dữ liệu cần thiết; tránh gọi trùng /rooms và /rooms/stats từ component cha.
+  if (currentTab.value !== 'room-plan') {
+    await Promise.all([
+      roomStore.fetchRooms({ date: rawDate.value }),
+      roomStore.fetchStats(rawDate.value)
+    ])
+  }
   isLoaded.value = true
   isInitialLoad.value = false
 

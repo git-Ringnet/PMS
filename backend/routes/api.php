@@ -1,4 +1,3 @@
-
 <?php
 
 use Illuminate\Http\Request;
@@ -191,6 +190,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // Business report catalogue: one Store, configurable filters and many output templates.
     Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
     Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
+    Route::post('report-definitions/{reportDefinition}/exports', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'export']);
     Route::apiResource('report-definitions', \App\Http\Controllers\Api\ReportDefinitionController::class)
         ->parameters(['report-definitions' => 'reportDefinition']);
 

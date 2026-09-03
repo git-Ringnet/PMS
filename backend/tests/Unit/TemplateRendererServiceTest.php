@@ -49,4 +49,26 @@ HTML;
         $this->assertStringContainsString('470.000', $rendered);
         $this->assertStringContainsString('Rooms: 2 / Adults: 3', $rendered);
     }
+
+    public function test_it_renders_a_secondary_summary_data_source(): void
+    {
+        $html = <<<'HTML'
+<table><tbody>
+<tr class="pms-detail-row" data-source="room_type_summary"><td>{{item.room_type_code}}</td><td>{{item.qty}}</td><td>{{item.percentage}}</td></tr>
+<tr><td>Tổng</td><td>{{room_type_summary_total.qty}}</td><td>{{room_type_summary_total.percentage}}</td></tr>
+</tbody></table>
+HTML;
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', [
+            'room_type_summary' => [
+                ['room_type_code' => 'SUPD', 'qty' => 2, 'percentage' => '66.67%'],
+                ['room_type_code' => 'SUPT', 'qty' => 1, 'percentage' => '33.33%'],
+            ],
+            'room_type_summary_total' => ['qty' => 3, 'percentage' => '100%'],
+        ]);
+
+        $this->assertStringContainsString('<td>SUPD</td><td>2</td><td>66.67%</td>', $rendered);
+        $this->assertStringContainsString('<td>SUPT</td><td>1</td><td>33.33%</td>', $rendered);
+        $this->assertStringContainsString('<td>Tổng</td><td>3</td><td>100%</td>', $rendered);
+    }
 }

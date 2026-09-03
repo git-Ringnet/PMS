@@ -20,19 +20,29 @@ class BookingNotificationController extends Controller
 
     public function active(Booking $booking)
     {
-        // The PMS business date can differ from the server's calendar date.
-        $today = $requestDate = request('date');
-        if (!$today || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $today)) {
-            $today = now('Asia/Ho_Chi_Minh')->toDateString();
+        $requestDate = request('date');
+        $query = $booking->notifications();
+
+        if ($requestDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestDate)) {
+            $query->where(function ($q) use ($requestDate, $booking) {
+                // 1. Hiệu lực tại ngày chỉ định
+                $q->where(function ($sub) use ($requestDate) {
+                    $sub->whereDate('starts_on', '<=', $requestDate)
+                        ->whereDate('ends_on', '>=', $requestDate);
+                });
+                // 2. Hoặc nằm trong giai đoạn lưu trú của booking
+                if ($booking->arrival_date && $booking->departure_date) {
+                    $q->orWhere(function ($sub) use ($booking) {
+                        $sub->whereDate('starts_on', '<=', $booking->departure_date)
+                            ->whereDate('ends_on', '>=', $booking->arrival_date);
+                    });
+                }
+            });
         }
 
         return response()->json([
             'success' => true,
-            'data' => $booking->notifications()
-                ->whereDate('starts_on', '<=', $today)
-                ->whereDate('ends_on', '>=', $today)
-                ->latest('id')
-                ->get(),
+            'data' => $query->latest('id')->get(),
         ]);
     }
 

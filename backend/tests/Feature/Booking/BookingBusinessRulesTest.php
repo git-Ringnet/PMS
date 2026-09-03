@@ -5,13 +5,16 @@ namespace Tests\Feature\Booking;
 use App\Models\Booking;
 use App\Models\BookingChild;
 use App\Models\BookingChildBreakfastDetail;
+use App\Models\BookingCancelLog;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomService;
 use App\Models\Guest;
 use App\Models\HotelConfig;
 use App\Models\HotelSetting;
+use App\Models\Permission;
 use App\Models\RegistrationStatus;
+use App\Models\Role;
 use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
@@ -114,6 +117,20 @@ class BookingBusinessRulesTest extends TestCase
             'breakfast_child_rate' => 90000,
             'booking_auto_extra_charge_bf_child' => 1
         ]);
+    }
+
+    private function grantBookingCancelPermission(): void
+    {
+        $role = Role::firstOrCreate(
+            ['code' => 'booking_cancel_test'],
+            ['name' => 'Booking cancel test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
+        );
+        $permission = Permission::firstOrCreate(
+            ['code' => 'fo.booking.cancel'],
+            ['name' => 'Hủy đặt phòng', 'module' => 'FO']
+        );
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $this->user->roles()->syncWithoutDetaching([$role->id]);
     }
 
     /**
@@ -413,6 +430,8 @@ class BookingBusinessRulesTest extends TestCase
      */
     public function test_cancel_booking_cascade_updates_guests_and_children_but_orphans_services(): void
     {
+        $this->grantBookingCancelPermission();
+
         // 1. Create booking and room in BOOKED state (allow cancel)
         $booking = $this->createBooking([
             'booking_name' => 'Booking to Cancel',
@@ -464,6 +483,9 @@ class BookingBusinessRulesTest extends TestCase
         ]);
         $response->assertSuccessful();
 
+        $cancelLog = BookingCancelLog::where('booking_room_id', $bRoom->id)->sole();
+        $this->assertSame('2026-08-07', $cancelLog->cancelled_at->toDateString());
+
         // 3. Assert room status and cascade updates
         $bRoom->refresh();
         $this->assertEquals(BookingRoom::STATUS_CANCELLED, $bRoom->status);
@@ -483,6 +505,39 @@ class BookingBusinessRulesTest extends TestCase
             'id' => $service->id,
             'booking_room_id' => $bRoom->id,
         ]);
+    }
+
+    public function test_cancel_whole_booking_logs_use_pms_system_date(): void
+    {
+        $this->grantBookingCancelPermission();
+
+        $booking = $this->createBooking([
+            'booking_name' => 'Whole Booking to Cancel',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'status' => Booking::STATUS_RESERVATION,
+        ]);
+        $bRoom = BookingRoom::create([
+            'id' => 'G0000099',
+            'booking_id' => $booking->id,
+            'room_number' => '102',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $response = $this->deleteJson("/api/bookings/{$booking->id}", [
+            'note' => 'Khách hủy đăng ký',
+        ]);
+
+        $response->assertSuccessful();
+        $logs = BookingCancelLog::where('booking_id', $booking->id)->get();
+        $this->assertCount(2, $logs);
+        $this->assertSame(['booking', 'room'], $logs->pluck('cancel_type')->sort()->values()->all());
+        $this->assertTrue($logs->every(
+            fn (BookingCancelLog $log) => $log->cancelled_at->toDateString() === '2026-08-07'
+        ));
     }
 
     /**

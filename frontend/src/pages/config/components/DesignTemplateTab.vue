@@ -261,7 +261,8 @@ onMounted(() => {
     </div>
 
     <!-- Visual Editor Modal Overlay -->
-    <TemplateEditorModal 
+    <TemplateEditorModal
+      v-if="isEditorOpen && selectedTemplateId"
       :template-id="selectedTemplateId" 
       :is-open="isEditorOpen" 
       @close="isEditorOpen = false" 

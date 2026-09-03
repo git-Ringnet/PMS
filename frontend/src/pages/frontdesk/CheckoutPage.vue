@@ -25,6 +25,7 @@ import {
   X
 } from '@lucide/vue'
 import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge, fetchServiceBillDetails } from '@/services/booking-service'
+import { isCheckedOutRecord } from '@/utils/checkout-status'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
 import echo from '@/services/echo'
@@ -185,12 +186,6 @@ function isVirtualBooking(booking) {
     booking.rawBooking?.is_virtual ||
     booking.roomItems?.some(room => room.isVirtual)
   )
-}
-
-function isCheckedOutRecord(record) {
-  const status = String(record?.status ?? '').trim().toLowerCase()
-  return ['2', 'checkout', 'checked_out', 'checkedout'].includes(status)
-    || Boolean(record?.CheckoutDate || record?.checkout_date)
 }
 
 async function applyCheckoutFilters() {

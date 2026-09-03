@@ -17,6 +17,18 @@ const openTabs = ref([])
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 
+const activeTemplate = computed(() => {
+  if (!activeTab.value || !activeTab.value.selectedTemplateId) return null
+  return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
+})
+
+const iframeClass = computed(() => {
+  const orientation = activeTemplate.value?.page_orientation || 'portrait'
+  return orientation === 'landscape'
+    ? 'mx-auto block min-h-[790px] w-full max-w-[1120px] border-0 bg-white shadow-xl'
+    : 'mx-auto block min-h-[1120px] w-full max-w-[800px] border-0 bg-white shadow-xl'
+})
+
 const localToday = () => {
   const date = new Date()
   const offset = date.getTimezoneOffset() * 60000
@@ -89,7 +101,22 @@ const openReportInTab = (report) => {
   if (!tab) {
     const defaultParams = {}
     for (const definition of report.parameter_ui_schema || []) {
-      defaultParams[definition.name] = resolveDefault(definition.default)
+      const resolved = resolveDefault(definition.default)
+      const options = definition.options || []
+      const firstOption = options[0]
+      const legacyDefault = definition.name === 'p_sort_by'
+        ? 'Room'
+        : definition.name === 'p_order_by'
+          ? 'ASC'
+          : ''
+      // Existing report definitions may have an empty persisted default even
+      // though the parameter is required. Keep execution usable by selecting
+      // the first configured option (e.g. OOS sort = Room).
+      defaultParams[definition.name] = resolved || (
+        ['select', 'radio'].includes(definition.control) && firstOption !== undefined
+          ? (firstOption.value ?? firstOption)
+          : legacyDefault || resolved
+      )
     }
 
     tab = reactive({
@@ -103,7 +130,8 @@ const openReportInTab = (report) => {
       dataset: null,
       renderedHtml: '',
       executing: false,
-      rendering: false
+      rendering: false,
+      exporting: false
     })
 
     openTabs.value.push(tab)
@@ -144,8 +172,28 @@ const closeTab = (tabId) => {
   }
 }
 
+const normalizeReportParameters = (tab) => {
+  for (const definition of tab.report.parameter_ui_schema || []) {
+    if (tab.parameters[definition.name] !== '' && tab.parameters[definition.name] !== null && tab.parameters[definition.name] !== undefined) continue
+
+    const firstOption = (definition.options || [])[0]
+    const legacyDefault = definition.name === 'p_sort_by'
+      ? 'Room'
+      : definition.name === 'p_order_by'
+        ? 'ASC'
+        : ''
+
+    if (firstOption !== undefined) {
+      tab.parameters[definition.name] = firstOption.value ?? firstOption
+    } else if (legacyDefault) {
+      tab.parameters[definition.name] = legacyDefault
+    }
+  }
+}
+
 const executeTab = async (tab) => {
   if (!tab || !tab.selectedTemplateId) return
+  normalizeReportParameters(tab)
   const missing = (tab.report.parameter_ui_schema || [])
     .filter(item => item.required && (tab.parameters[item.name] === '' || tab.parameters[item.name] === undefined))
   if (missing.length) {
@@ -189,6 +237,40 @@ const printReportForTab = (tab) => {
   if (iframe) {
     iframe.contentWindow?.focus()
     iframe.contentWindow?.print()
+  }
+}
+
+const exportReportForTab = async (tab, format) => {
+  if (!tab?.dataset || !tab.selectedTemplateId || tab.exporting) return
+  tab.exporting = true
+  try {
+    const response = await http.post(`/report-definitions/${tab.report.id}/exports`, {
+      parameters: { ...tab.parameters },
+      template_id: tab.selectedTemplateId,
+      format
+    }, { responseType: 'arraybuffer' })
+    const extension = format === 'xlsx' ? 'xlsx' : format
+    const mimeTypes = {
+      pdf: 'application/pdf',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }
+    const disposition = response.headers['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^";]+)"?/i)
+    const url = URL.createObjectURL(new Blob([response.data], {
+      type: response.headers['content-type'] || mimeTypes[format]
+    }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = match?.[1] || `${tab.report.code}_${new Date().toISOString().slice(0, 10)}.${extension}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || `Không thể xuất ${format.toUpperCase()}`, 'error')
+  } finally {
+    tab.exporting = false
   }
 }
 
@@ -277,8 +359,10 @@ onMounted(async () => {
                   </option>
                 </select>
               </label>
-              <button :disabled="!activeTab.renderedHtml" @click="downloadCsvForTab(activeTab)" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> CSV</button>
-              <button :disabled="!activeTab.renderedHtml" @click="printReportForTab(activeTab)" class="flex items-center gap-1 rounded-lg border-none bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><Printer class="h-4 w-4" /> In / PDF</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'xlsx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Excel</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'docx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Word</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'pdf')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> PDF</button>
+              <button :disabled="!activeTab.renderedHtml" @click="printReportForTab(activeTab)" class="flex items-center gap-1 rounded-lg border-none bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><Printer class="h-4 w-4" /> In</button>
             </div>
           </div>
         </header>
@@ -291,7 +375,7 @@ onMounted(async () => {
               Báo cáo này không cần tham số.
             </div>
 
-            <label v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
+            <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
               {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
 
               <select v-if="['select', 'radio'].includes(parameter.control)" v-model="activeTab.parameters[parameter.name]" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
@@ -317,7 +401,7 @@ onMounted(async () => {
 
               <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
               <input v-else v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
-            </label>
+            </div>
 
             <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">
               <LoaderCircle v-if="activeTab.executing" class="h-4 w-4 animate-spin" /><Play v-else class="h-4 w-4" />
@@ -344,7 +428,7 @@ onMounted(async () => {
               </div>
             </div>
 
-            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" class="mx-auto block min-h-[1120px] w-full max-w-[1120px] border-0 bg-white shadow-xl" />
+            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" />
           </section>
         </div>
       </template>
