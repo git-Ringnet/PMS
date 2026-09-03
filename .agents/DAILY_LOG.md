@@ -11,6 +11,21 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-03] - Đổi trạng thái phòng sau trả phòng thành Trống dơ
+### Module: Hóa đơn / Trả phòng (`GuestController.php`)
+
+- **Đã hoàn thành**:
+  - Sửa luồng checkout toàn bộ phòng: cập nhật trực tiếp `room_status_code = vacant_dirty` cho phòng thực.
+  - Loại bỏ việc gán `status = checkout`, vì mutator của model `Room` chuyển giá trị này thành `turndown`.
+  - Giữ nguyên luồng khôi phục checkout: phòng được trả về trạng thái có khách ở khi thao tác hoàn tác thành công.
+- **Kiểm tra**:
+  - `php -l GuestController.php`: đạt.
+  - `CheckoutRestoreTest`: 5 ca đạt.
+  - `CheckoutBusinessRulesTest`: 9 ca hiện trả về `403` do quyền API trong môi trường test, không liên quan đến thay đổi trạng thái phòng.
+- **Tệp thay đổi**:
+  - `backend/app/Http/Controllers/Api/GuestController.php`
+
+---
 ## [2026-09-03] - Điều chỉnh giá tạo đăng ký nhanh từ Kế hoạch phòng
 ### Module: Reservation / Kế hoạch phòng (`RoomPlanPage.vue`)
 

@@ -559,7 +559,9 @@ class GuestController extends Controller
                     'departure_date' => $systemDate->toDateString(),
                     'check_out_user' => Auth::user()?->username ?? 'system',
                 ]);
-                if ($room->room) $room->room->update(['status' => 'checkout']);
+                // Sau trả phòng, chuyển buồng thực sang Trống dơ để Housekeeping xử lý.
+                // Không gán status = checkout vì Room mutator sẽ đổi nó thành turndown.
+                if ($room->room) $room->room->update(['room_status_code' => 'vacant_dirty']);
             } else {
                 $targetGuestId = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->orderByDesc('is_primary')->orderBy('id')->value('guest_id');
                 if ($targetGuestId) {
