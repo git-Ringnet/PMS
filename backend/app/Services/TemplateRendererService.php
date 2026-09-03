@@ -51,6 +51,8 @@ class TemplateRendererService
             $body = $matches[2];
             $source = $this->attributeValue($attributes, 'data-source') ?? 'rows';
             $groupBy = $this->attributeValue($attributes, 'data-group-by');
+            $groupConfigured = $this->attributeValue($attributes, 'data-group-configured') === '1';
+            $groupEnabledBy = $this->attributeValue($attributes, 'data-group-enabled-by');
             $subgroupBy = $this->attributeValue($attributes, 'data-subgroup-by');
             $subsubgroupBy = $this->attributeValue($attributes, 'data-subsubgroup-by');
             $items = $this->getValueByPath($data, $source);
@@ -68,6 +70,31 @@ class TemplateRendererService
             $subgroupFooter = $this->groupedRowTemplate($body, 'pms-subgroup-footer');
             $groupFooter = $this->groupedRowTemplate($body, 'pms-group-footer');
             $output = '';
+
+            if ($groupConfigured) {
+                $groups = $this->configuredGroups($body, $data);
+                if ($groups === []) {
+                    foreach ($items as $row) {
+                        if (is_array($row)) {
+                            $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                        }
+                    }
+                } else {
+                    $output = $this->renderConfiguredGroupLevel($items, $groups, 0, $detail);
+                }
+
+                return '<tbody>'.$output.'</tbody>';
+            }
+
+            if ($groupEnabledBy && ! $this->isTruthy($this->getValueByPath($data, $groupEnabledBy))) {
+                foreach ($items as $row) {
+                    if (is_array($row)) {
+                        $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                    }
+                }
+
+                return '<tbody>'.$output.'</tbody>';
+            }
 
             foreach ($this->groupItems($items, $groupBy) as $groupRows) {
                 $first = $groupRows[0] ?? [];
@@ -110,6 +137,87 @@ class TemplateRendererService
         return preg_match('/\b'.preg_quote($name, '/').'="([^"]*)"/i', $attributes, $matches)
             ? $matches[1]
             : null;
+    }
+
+    private function isTruthy(mixed $value): bool
+    {
+        if (is_string($value)) {
+            return ! in_array(strtolower(trim($value)), ['', '0', 'false', 'off', 'no'], true);
+        }
+
+        return (bool) $value;
+    }
+
+    private function configuredGroups(string $body, array $data): array
+    {
+        preg_match_all('/<tr\b([^>]*)>(.*?)<\/tr>/is', $body, $matches, PREG_SET_ORDER);
+        $groups = [];
+
+        foreach ($matches as $match) {
+            $attributes = $match[1];
+            $classes = $this->attributeValue($attributes, 'class') ?? '';
+            if (! preg_match('/\bpms-group-header\b/', $classes)) {
+                continue;
+            }
+
+            $field = $this->attributeValue($attributes, 'data-group-field');
+            if (! $field) {
+                continue;
+            }
+
+            $enabledBy = $this->attributeValue($attributes, 'data-group-enabled-by');
+            if ($enabledBy && ! $this->isTruthy($this->getValueByPath($data, $enabledBy))) {
+                continue;
+            }
+
+            $groups[] = [
+                'field' => $field,
+                'sort' => strtoupper($this->attributeValue($attributes, 'data-group-sort') ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC',
+                'template' => $match[2],
+            ];
+        }
+
+        return $groups;
+    }
+
+    private function renderConfiguredGroupLevel(array $items, array $groups, int $level, ?string $detail): string
+    {
+        if ($level >= count($groups)) {
+            $output = '';
+            foreach ($items as $row) {
+                if (is_array($row)) {
+                    $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                }
+            }
+
+            return $output;
+        }
+
+        $definition = $groups[$level];
+        $grouped = $this->groupItemsWithKeys($items, $definition['field'], $definition['sort']);
+        $output = '';
+
+        foreach ($grouped as $groupRows) {
+            $first = $groupRows[0] ?? [];
+            $output .= $this->renderGroupedTemplate($definition['template'], $first, $groupRows);
+            $output .= $this->renderConfiguredGroupLevel($groupRows, $groups, $level + 1, $detail);
+        }
+
+        return $output;
+    }
+
+    private function groupItemsWithKeys(array $items, string $field, string $sort): array
+    {
+        $groups = [];
+        foreach ($items as $item) {
+            if (is_array($item)) {
+                $groups[(string) ($item[$field] ?? '__null__')][] = $item;
+            }
+        }
+
+        uksort($groups, static fn (string $left, string $right) => strnatcasecmp($left, $right) * ($sort === 'DESC' ? -1 : 1));
+
+        return array_values($groups);
     }
 
     private function groupedRowTemplate(string $body, string $class): ?string

@@ -71,4 +71,32 @@ HTML;
         $this->assertStringContainsString('<td>SUPT</td><td>1</td><td>33.33%</td>', $rendered);
         $this->assertStringContainsString('<td>Tổng</td><td>3</td><td>100%</td>', $rendered);
     }
+
+    public function test_it_renders_dynamic_group_levels_from_template_configuration(): void
+    {
+        $html = <<<'HTML'
+<table><tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1" data-group-by="Reason">
+<tr class="pms-group-header" data-group-level="0" data-group-field="Reason" data-group-sort="ASC" data-group-enabled-by="parameters.group_reason"><td>Lý do: {{row.Reason}}</td></tr>
+<tr class="pms-group-header" data-group-level="1" data-group-field="BookingCode" data-group-sort="DESC"><td>Mã ĐK: {{row.BookingCode}}</td></tr>
+<tr class="pms-detail-row"><td>{{row.Room}}</td></tr>
+</tbody></table>
+HTML;
+        $data = [
+            'parameters' => ['group_reason' => false],
+            'rows' => [
+                ['Reason' => 'Khách đổi lịch', 'BookingCode' => 'GAL1', 'Room' => '101'],
+                ['Reason' => 'Khách đổi lịch', 'BookingCode' => 'GAL2', 'Room' => '102'],
+            ],
+        ];
+
+        $withoutReason = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertStringNotContainsString('Lý do:', $withoutReason);
+        $this->assertSame(2, substr_count($withoutReason, 'Mã ĐK:'));
+        $this->assertLessThan(strpos($withoutReason, 'Mã ĐK: GAL1'), strpos($withoutReason, 'Mã ĐK: GAL2'));
+
+        $data['parameters']['group_reason'] = true;
+        $withReason = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertSame(1, substr_count($withReason, 'Lý do: Khách đổi lịch'));
+        $this->assertSame(2, substr_count($withReason, 'Mã ĐK:'));
+    }
 }

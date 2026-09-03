@@ -162,6 +162,13 @@ const defaultBlockStyle = {
   borderRadius: '0px'
 }
 
+const parseGroupHeader = (html) => {
+  const match = String(html || '').match(/^\s*<td\b([^>]*)>([\s\S]*)<\/td>\s*$/i)
+  if (!match) return { content: '', className: '' }
+  const classMatch = match[1].match(/\bclass="([^"]*)"/i)
+  return { content: match[2], className: classMatch?.[1] || '' }
+}
+
 const normalizeBlock = (block) => {
   const normalized = {
     ...block,
@@ -178,6 +185,30 @@ const normalizeBlock = (block) => {
         ? column.blocks.map(normalizeBlock)
         : []
     }))
+  }
+
+  if (normalized.type === 'table') {
+    const legacyGroups = [
+      { field: normalized.groupBy, header: normalized.groupHeader, enabledBy: normalized.groupEnabledBy },
+      { field: normalized.subgroupBy, header: normalized.subgroupHeader },
+      { field: normalized.subsubgroupBy, header: normalized.subsubgroupHeader }
+    ].filter(group => group.field)
+    const sourceGroups = Array.isArray(normalized.groups) && normalized.groups.length
+      ? normalized.groups
+      : legacyGroups
+
+    normalized.groups = sourceGroups.map((group, index) => {
+      const parsed = parseGroupHeader(group.header)
+      return {
+        id: group.id || `group_${index + 1}`,
+        field: group.field || '',
+        label: group.label ?? parsed.content ?? '',
+        className: group.className ?? parsed.className ?? '',
+        enabledBy: group.enabledBy || '',
+        sort: String(group.sort || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
+      }
+    })
+    normalized.groupBy = normalized.groups[0]?.field || ''
   }
 
   return normalized
@@ -246,6 +277,15 @@ const selectedDataSource = computed(() => {
   return dataSources.value.find(source => source.id === template.value?.report_data_source_id) || null
 })
 
+const conditionalParameterOptions = computed(() => {
+  return (selectedDataSource.value?.parameter_schema || [])
+    .filter(parameter => ['bit', 'boolean', 'bool', 'tinyint'].includes(String(parameter.data_type || '').toLowerCase()))
+    .map(parameter => ({
+      label: parameter.name,
+      value: `parameters.${parameter.name}`
+    }))
+})
+
 const fieldList = computed(() => {
   if (!selectedDataSource.value) return staticFieldList
 
@@ -299,6 +339,68 @@ const getListFields = (listValue) => {
     ]
   }
   return []
+}
+
+const groupingFieldValue = (field) => {
+  const value = String(field?.value || '')
+  return value.startsWith('row.') ? value.substring(4) : value
+}
+
+const tableGroups = (block) => Array.isArray(block?.groups) ? block.groups : []
+
+const syncLegacyGroupFields = (block) => {
+  const groups = tableGroups(block).filter(group => group.field)
+  block.groupBy = groups[0]?.field || ''
+  block.groupHeader = groups[0] ? `<td colspan="${Math.max(1, block.columns?.length || 1)}"${groups[0].className ? ` class="${groups[0].className}"` : ''}>${groups[0].label || `Nhóm: {{row.${groups[0].field}}}`}</td>` : ''
+  block.groupEnabledBy = groups[0]?.enabledBy || ''
+  block.subgroupBy = groups[1]?.field || ''
+  block.subgroupHeader = groups[1] ? `<td colspan="${Math.max(1, block.columns?.length || 1)}"${groups[1].className ? ` class="${groups[1].className}"` : ''}>${groups[1].label || `Nhóm: {{row.${groups[1].field}}}`}</td>` : ''
+  block.subsubgroupBy = groups[2]?.field || ''
+  block.subsubgroupHeader = groups[2] ? `<td colspan="${Math.max(1, block.columns?.length || 1)}"${groups[2].className ? ` class="${groups[2].className}"` : ''}>${groups[2].label || `Nhóm: {{row.${groups[2].field}}}`}</td>` : ''
+}
+
+const toggleTableGrouping = (block, enabled) => {
+  if (!enabled) {
+    block.groups = []
+  } else if (!tableGroups(block).length) {
+    const field = groupingFieldValue(getListFields(block.dataSource)[0])
+    block.groups = [{ id: `group_${Date.now()}`, field, label: `Nhóm: {{row.${field}}}`, className: '', enabledBy: '', sort: 'ASC' }]
+  }
+  syncLegacyGroupFields(block)
+  compileHtml()
+}
+
+const addTableGroup = (block) => {
+  const used = new Set(tableGroups(block).map(group => group.field))
+  const available = getListFields(block.dataSource).map(groupingFieldValue)
+  const field = available.find(value => !used.has(value)) || available[0] || ''
+  block.groups.push({ id: `group_${Date.now()}`, field, label: `Nhóm: {{row.${field}}}`, className: '', enabledBy: '', sort: 'ASC' })
+  syncLegacyGroupFields(block)
+  compileHtml()
+}
+
+const removeTableGroup = (block, index) => {
+  block.groups.splice(index, 1)
+  syncLegacyGroupFields(block)
+  compileHtml()
+}
+
+const moveTableGroup = (block, index, offset) => {
+  const target = index + offset
+  if (target < 0 || target >= block.groups.length) return
+  const [group] = block.groups.splice(index, 1)
+  block.groups.splice(target, 0, group)
+  syncLegacyGroupFields(block)
+  compileHtml()
+}
+
+const updateTableGroups = (block) => {
+  syncLegacyGroupFields(block)
+  compileHtml()
+}
+
+const groupHeaderPreview = (group) => {
+  return group.label || `Nhóm: ${'{{'}row.${group.field}${'}}'}`
 }
 
 const loadDataSources = async () => {
@@ -1277,20 +1379,25 @@ const compileBlockToHtml = (b) => {
       blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; text-align: ${col.align || 'left'};">${col.header}</th>\n`
     })
     blockHtml += '      </tr>\n    </thead>\n'
-    if (b.groupBy) {
-      blockHtml += `    <tbody class="pms-grouped-rows" data-source="${b.dataSource}" data-group-by="${b.groupBy}"${b.subgroupBy ? ` data-subgroup-by="${b.subgroupBy}"` : ''}>\n`
-      if (b.groupHeader) blockHtml += `      <tr class="pms-group-header">${b.groupHeader}</tr>\n`
-      if (b.subgroupHeader) blockHtml += `      <tr class="pms-subgroup-header">${b.subgroupHeader}</tr>\n`
+    const groups = tableGroups(b).filter(group => group.field)
+    if (groups.length) {
+      blockHtml += `    <tbody class="pms-grouped-rows" data-source="${b.dataSource}" data-group-configured="1" data-group-by="${groups[0].field}">\n`
+      groups.forEach((group, index) => {
+        const enabledBy = group.enabledBy ? ` data-group-enabled-by="${group.enabledBy}"` : ''
+        const className = group.className ? ` class="${group.className}"` : ''
+        const label = group.label || `Nhóm: {{row.${group.field}}}`
+        blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}><td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td></tr>\n`
+      })
     } else {
       blockHtml += '    <tbody>\n'
     }
 
-    blockHtml += `      <tr class="pms-detail-row"${b.groupBy ? '' : ` data-source="${b.dataSource}"`}>\n`
+    blockHtml += `      <tr class="pms-detail-row"${groups.length ? '' : ` data-source="${b.dataSource}"`}>\n`
     b.columns.forEach(col => {
       blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
-    if (b.groupBy && b.groupFooter) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
+    if (groups.length && b.groupFooter) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
     blockHtml += '    </tbody>\n'
     blockHtml += '  </table>\n'
   } else if (b.type === 'static-table') {
@@ -2038,6 +2145,11 @@ const selectBand = (band) => {
                         <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
                           🔗 Bảng lặp nguồn: {{ b.dataSource }}
                         </p>
+                        <p v-if="tableGroups(b).length" class="mb-1 rounded bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
+                          <span v-for="(group, index) in tableGroups(b)" :key="group.id">
+                            Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
+                          </span>
+                        </p>
                         <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
@@ -2051,6 +2163,11 @@ const selectBand = (band) => {
                             </tr>
                           </thead>
                           <tbody>
+                            <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
+                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                                {{ groupHeaderPreview(group) }}
+                              </td>
+                            </tr>
                             <tr class="bg-white">
                               <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
                                 {{ col.value }}
@@ -2308,6 +2425,11 @@ const selectBand = (band) => {
                         <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
                           🔗 Bảng lặp nguồn: {{ b.dataSource }}
                         </p>
+                        <p v-if="tableGroups(b).length" class="mb-1 rounded bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
+                          <span v-for="(group, index) in tableGroups(b)" :key="group.id">
+                            Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
+                          </span>
+                        </p>
                         <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
@@ -2321,6 +2443,11 @@ const selectBand = (band) => {
                             </tr>
                           </thead>
                           <tbody>
+                            <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
+                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                                {{ groupHeaderPreview(group) }}
+                              </td>
+                            </tr>
                             <tr class="bg-white">
                               <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
                                 {{ col.value }}
@@ -2600,6 +2727,11 @@ const selectBand = (band) => {
                         <p class="text-[10px] text-sky-600 font-bold mb-1 uppercase tracking-wide">
                           🔗 Bảng lặp nguồn: {{ b.dataSource }}
                         </p>
+                        <p v-if="tableGroups(b).length" class="mb-1 rounded bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
+                          <span v-for="(group, index) in tableGroups(b)" :key="group.id">
+                            Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
+                          </span>
+                        </p>
                         <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
@@ -2613,6 +2745,11 @@ const selectBand = (band) => {
                             </tr>
                           </thead>
                           <tbody>
+                            <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
+                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                                {{ groupHeaderPreview(group) }}
+                              </td>
+                            </tr>
                             <tr class="bg-white">
                               <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
                                 {{ col.value }}
@@ -3002,10 +3139,58 @@ const selectBand = (band) => {
                 <div class="flex flex-col gap-1">
                   <span class="text-[10px] font-bold text-slate-400 uppercase">Nguồn dữ liệu bảng lặp:</span>
                   <select v-model="selectedBlock.dataSource" class="w-full text-xs border border-slate-200 rounded-lg p-2 focus:outline-sky-500 font-semibold">
-                    <option value="booking.services">Lặp dịch vụ (booking.services)</option>
-                    <option value="booking.rooms">Lặp danh sách phòng (booking.rooms)</option>
-                    <option value="booking.payments">Lặp thanh toán (booking.payments)</option>
+                    <option v-for="source in fieldList.lists" :key="source.value" :value="source.value">{{ source.label }} [{{ source.value }}]</option>
                   </select>
+                </div>
+
+                <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                  <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <div>
+                      <div class="text-xs font-black text-slate-700">Nhóm dữ liệu</div>
+                      <div class="text-[10px] font-normal text-slate-500">Tạo dòng tiêu đề cho từng nhóm trong bảng.</div>
+                    </div>
+                    <input type="checkbox" :checked="tableGroups(selectedBlock).length > 0" @change="toggleTableGrouping(selectedBlock, $event.target.checked)" class="h-4 w-4 accent-sky-600" />
+                  </label>
+                </div>
+
+                <div v-if="tableGroups(selectedBlock).length" class="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="text-[10px] font-black uppercase text-slate-500">Các cấp nhóm</div>
+                      <div class="text-[10px] text-slate-400">Thứ tự từ ngoài vào trong.</div>
+                    </div>
+                    <button type="button" @click="addTableGroup(selectedBlock)" class="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-black text-sky-700">+ Thêm cấp nhóm</button>
+                  </div>
+
+                  <div v-for="(group, groupIndex) in tableGroups(selectedBlock)" :key="group.id" class="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+                    <div class="flex items-center justify-between">
+                      <span class="text-[10px] font-black text-slate-600">Cấp {{ groupIndex + 1 }}</span>
+                      <div class="flex gap-1">
+                        <button type="button" :disabled="groupIndex === 0" @click="moveTableGroup(selectedBlock, groupIndex, -1)" class="rounded border border-slate-200 bg-white px-1.5 text-xs disabled:opacity-30">↑</button>
+                        <button type="button" :disabled="groupIndex === tableGroups(selectedBlock).length - 1" @click="moveTableGroup(selectedBlock, groupIndex, 1)" class="rounded border border-slate-200 bg-white px-1.5 text-xs disabled:opacity-30">↓</button>
+                        <button type="button" @click="removeTableGroup(selectedBlock, groupIndex)" class="rounded border border-red-200 bg-red-50 px-1.5 text-xs text-red-600">×</button>
+                      </div>
+                    </div>
+
+                    <select v-model="group.field" @change="updateTableGroups(selectedBlock)" class="w-full rounded-lg border border-slate-200 bg-white p-2 text-xs font-semibold">
+                      <option v-for="field in getListFields(selectedBlock.dataSource)" :key="field.value" :value="groupingFieldValue(field)">
+                        {{ field.label }} [{{ groupingFieldValue(field) }}]
+                      </option>
+                    </select>
+
+                    <div class="grid grid-cols-2 gap-2">
+                      <select v-model="group.enabledBy" @change="updateTableGroups(selectedBlock)" class="rounded-lg border border-slate-200 bg-white p-2 text-[11px]">
+                        <option value="">Luôn nhóm</option>
+                        <option v-for="parameter in conditionalParameterOptions" :key="parameter.value" :value="parameter.value">Khi {{ parameter.label }}</option>
+                      </select>
+                      <select v-model="group.sort" @change="updateTableGroups(selectedBlock)" class="rounded-lg border border-slate-200 bg-white p-2 text-[11px]">
+                        <option value="ASC">Tăng dần</option>
+                        <option value="DESC">Giảm dần</option>
+                      </select>
+                    </div>
+
+                    <textarea v-model="group.label" @input="updateTableGroups(selectedBlock)" rows="2" class="w-full rounded-lg border border-slate-200 bg-white p-2 text-[11px] font-mono" :placeholder="`Nhóm: {{row.${group.field}}}`"></textarea>
+                  </div>
                 </div>
 
                 <!-- Table Style option -->
