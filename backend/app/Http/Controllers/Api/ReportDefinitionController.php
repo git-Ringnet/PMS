@@ -207,7 +207,7 @@ class ReportDefinitionController extends Controller
     private function executeReportSource(ReportDefinition $reportDefinition, array $parameters, Request $request): array
     {
         $division = $parameters['p_division'] ?? '__current__';
-        if (! in_array($reportDefinition->code, ['CANCELLED_ROOMS', 'NO_SHOW'], true) || ! in_array($division, ['', '__all__'], true)) {
+        if (! in_array($reportDefinition->code, ['CANCELLED_ROOMS', 'NO_SHOW', 'NO_SHOW_BY_DAY'], true) || ! in_array($division, ['', '__all__'], true)) {
             return $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
         }
 
@@ -312,7 +312,7 @@ class ReportDefinitionController extends Controller
     {
         $direction = strtoupper($sortType) === 'DESC' ? -1 : 1;
         $dateKey = static function (array $row): string {
-            $date = (string) ($row['NoshowDate'] ?? '');
+            $date = (string) ($row['NoshowDate'] ?? $row['LateCheckInDate'] ?? '');
             if (preg_match('/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/', $date, $parts)) {
                 return $parts[3].$parts[2].$parts[1];
             }
@@ -327,8 +327,8 @@ class ReportDefinitionController extends Controller
             }
 
             return strcmp(
-                implode('|', [$left['NoshowTime'] ?? '', $left['Room'] ?? '', $left['Division'] ?? '']),
-                implode('|', [$right['NoshowTime'] ?? '', $right['Room'] ?? '', $right['Division'] ?? ''])
+                implode('|', [$left['NoshowTime'] ?? $left['LateCheckInTime'] ?? '', $left['Room'] ?? '', $left['Division'] ?? '']),
+                implode('|', [$right['NoshowTime'] ?? $right['LateCheckInTime'] ?? '', $right['Room'] ?? '', $right['Division'] ?? ''])
             );
         });
     }
