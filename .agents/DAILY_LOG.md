@@ -11,6 +11,30 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-04] - Sửa chuyển khách sang phòng Inhouse và phân bổ bill theo khách
+### Module: Reservation / Chuyển phòng & Hóa đơn (`BookingRoomController.php`, `CheckoutPage.vue`)
+
+- **Đã hoàn thành**:
+  - Giữ nguyên khách chính hiện hữu của phòng Inhouse đích; mọi khách mới chuyển tới được thêm dưới dạng khách phụ.
+  - Chỉ chuyển các bill đang thuộc phòng nguồn và đúng khách được chọn sang phòng đích; không cập nhật nhầm bill có sẵn của phòng đích.
+  - Giữ `RentalRoomId2`, `CustomerId2` là `NULL` đối với bill chưa từng chuyển của phòng đích.
+  - Đồng bộ chi tiết dịch vụ theo bill/khách sang phòng đích để phòng cũ không còn hiển thị dịch vụ của khách đã chuyển.
+  - Màn Hóa đơn xác định chủ bill theo `Id2` khi bill đã chuyển, nếu chưa chuyển thì dùng `Id1`; bill được tách đúng theo từng khách thay vì gom vào khách chính.
+  - Loại khách trạng thái `100` khỏi danh sách khách còn ở của phòng nguồn và luôn ưu tiên hiển thị khách chính phòng đích trước.
+
+- **Kiểm tra**:
+  - `RoomMoveTest`: 10/10 test, 66 assertions đạt; có ca kiểm thử riêng cho hai phòng có bill 264.500 và 100.000.
+  - Test frontend quyền sở hữu bill và trạng thái checkout: 7/7 đạt.
+  - Build frontend Vite và kiểm tra cú pháp PHP đạt.
+
+- **Tệp thay đổi**:
+  - `backend/app/Http/Controllers/Api/BookingRoomController.php`
+  - `backend/tests/Feature/RoomMoveTest.php`
+  - `frontend/src/pages/frontdesk/CheckoutPage.vue`
+  - `frontend/src/utils/service-bill-ownership.js`
+  - `frontend/tests/service-bill-ownership.test.js`
+
+---
 ## [2026-09-03] - Đổi trạng thái phòng sau trả phòng thành Trống dơ
 ### Module: Hóa đơn / Trả phòng (`GuestController.php`)
 

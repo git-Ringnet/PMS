@@ -2117,17 +2117,18 @@ class BookingRoomController extends Controller
                     ]);
                 app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($movedGuestIds);
 
-                if ($guestsToMove->contains('is_primary', true)) {
-                    \App\Models\BookingRoomGuest::where('booking_room_id', $targetBookingRoom->id)->update(['is_primary' => 0]);
-                }
 
                 // --- 2. INSERT GUESTS INTO TARGET INHOUSE ROOM (Sp2200) -> Status = 1 ---
                 foreach ($guestsToMove as $gPivot) {
+                    $existingTargetGuest = \App\Models\BookingRoomGuest::where('booking_room_id', $targetBookingRoom->id)
+                        ->where('guest_id', $gPivot->guest_id)
+                        ->first();
                     \App\Models\BookingRoomGuest::updateOrCreate([
                         'booking_room_id' => $targetBookingRoom->id,
                         'guest_id'        => $gPivot->guest_id,
                     ], [
-                        'is_primary'           => (bool) $gPivot->is_primary,
+                        // Phòng đích đang ở giữ nguyên khách chính; khách mới chuyển tới luôn là khách phụ.
+                        'is_primary'           => $existingTargetGuest ? (bool) $existingTargetGuest->is_primary : false,
                         'status'               => BookingRoom::STATUS_CHECKED_IN,
                         'actual_arrival_date'  => $sysDateStr,
                         'actual_arrival_time'  => $timeStr,
@@ -2137,14 +2138,56 @@ class BookingRoomController extends Controller
                         'breakfast'           => $gPivot->breakfast,
                     ]);
                 }
+                app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($movedGuestIds);
 
                 if ($childrenToMove->isNotEmpty()) {
                     $syncMovedChildren($bookingRoom, $targetBookingRoom, $childrenToMove, $sysDateStr, $timeStr, $currentUser);
                 }
 
-                \App\Models\ServiceBill::where('RentalRoomId2', $bookingRoom->id)
-                    ->whereIn('CustomerId2', $movedGuestIds)
-                    ->update(['RentalRoomId2' => $targetBookingRoom->id]);
+                // Chỉ chuyển bill hiện thuộc phòng nguồn và đúng khách được chọn.
+                // Bill gốc của phòng đích không bị cập nhật các cột RentalRoomId2/CustomerId2.
+                $movedServiceBills = \App\Models\ServiceBill::where(function ($query) use ($bookingRoom) {
+                        $query->where('RentalRoomId2', $bookingRoom->id)
+                            ->orWhere(function ($originalOwner) use ($bookingRoom) {
+                                $originalOwner->where('RentalRoomId1', $bookingRoom->id)
+                                    ->where(function ($currentOwner) {
+                                        $currentOwner->whereNull('RentalRoomId2')
+                                            ->orWhere('RentalRoomId2', '')
+                                            ->orWhere('RentalRoomId2', '0');
+                                    });
+                            });
+                    })
+                    ->where(function ($query) use ($movedGuestIds) {
+                        $query->whereIn('CustomerId2', $movedGuestIds)
+                            ->orWhere(function ($originalGuest) use ($movedGuestIds) {
+                                $originalGuest->whereIn('CustomerId1', $movedGuestIds)
+                                    ->where(function ($currentGuest) {
+                                        $currentGuest->whereNull('CustomerId2')
+                                            ->orWhere('CustomerId2', '')
+                                            ->orWhere('CustomerId2', '0');
+                                    });
+                            });
+                    })
+                    ->lockForUpdate()
+                    ->get();
+
+                foreach ($movedServiceBills as $bill) {
+                    $currentGuestId = $bill->CustomerId2 ?: $bill->CustomerId1;
+                    $bill->update([
+                        'RentalRoomId2' => $targetBookingRoom->id,
+                        'CustomerId2'   => $currentGuestId,
+                    ]);
+                }
+
+                \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
+                    ->where(function ($query) use ($movedGuestIds, $movedServiceBills) {
+                        $query->whereIn('guest_id', $movedGuestIds);
+                        $movedBillIds = $movedServiceBills->pluck('Ma')->filter()->values();
+                        if ($movedBillIds->isNotEmpty()) {
+                            $query->orWhereIn('service_bill_id', $movedBillIds);
+                        }
+                    })
+                    ->update(['booking_room_id' => $targetBookingRoom->id]);
 
                 if (!$isAllGuestsMoved && $guestsToMove->contains('is_primary', true)) {
                     \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update(['is_primary' => 0]);
