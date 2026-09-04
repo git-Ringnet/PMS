@@ -26,6 +26,25 @@
   - `backend/app/Http/Controllers/Api/GuestController.php`
 
 ---
+## [2026-09-03] - Sửa danh sách phòng đích và hiển thị lịch sử chuyển phòng
+
+### Module: Reservation / Chuyển phòng & Booking (`BookingRoomController.php`, `CreateRegistrationPage.vue`)
+
+- **Đã hoàn thành**:
+  - Danh sách phòng đích khi chuyển phòng chỉ trả về phòng vật lý `vacant_ready`/`vacant_clean` và còn trống trong toàn bộ giai đoạn ở còn lại.
+  - Loại trừ phòng đang ở, phòng trả trong ngày và các phòng chưa sẵn sàng khỏi danh sách phòng trống.
+  - Màn hình Booking hiển thị lại phòng cũ đã chuyển (trạng thái `100` - Phòng chuyển) để tra cứu lịch sử.
+  - Phòng chuyển được hiển thị chỉ đọc và không cộng lặp vào tổng tiền/tổng số phòng hiện tại.
+  - Sửa tiêu đề cột Phòng trong popup Chuyển phòng luôn cố định khi cuộn danh sách.
+
+- **Kiểm tra**:
+  - Bộ kiểm thử frontend: 19/19 thành công.
+  - Build frontend Vite thành công.
+  - Kiểm tra cú pháp PHP và `git diff --check` thành công.
+
+- **Tệp thay đổi**:
+  - `backend/app/Http/Controllers/Api/BookingRoomController.php`
+  - `frontend/src/pages/reservation/CreateRegistrationPage.vue`
 ## [2026-09-03] - Điều chỉnh giá tạo đăng ký nhanh từ Kế hoạch phòng
 ### Module: Reservation / Kế hoạch phòng (`RoomPlanPage.vue`)
 

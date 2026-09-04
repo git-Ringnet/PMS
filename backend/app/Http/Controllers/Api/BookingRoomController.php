@@ -1531,7 +1531,9 @@ class BookingRoomController extends Controller
                 $bookingRoom->id
             );
 
-            if (!$isOccupied) {
+            // Chỉ nhận phòng vật lý đang trống và sạch: Vacant Ready/Vacant Clean.
+            // Không dùng accessor status vì một số mã occupied_* có thể được quy đổi về available.
+            if (!$isOccupied && in_array($room->room_status_code, ['vacant_ready', 'vacant_clean'], true)) {
                 $stdRate = $ratesMap->get($room->room_class_id);
 
                 $availableRooms[] = [

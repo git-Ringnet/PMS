@@ -1126,7 +1126,9 @@ th {
 
 th.col-phong {
   overflow: visible !important;
-  position: relative !important;
+  /* Giữ tiêu đề cột Phòng cố định khi cuộn; sticky vẫn là mốc đặt popup tìm kiếm. */
+  position: sticky !important;
+  top: 0;
   z-index: 30 !important;
 }
 
