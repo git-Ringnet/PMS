@@ -201,6 +201,8 @@ const normalizeBlock = (block) => {
     normalized.customRows = (Array.isArray(normalized.customRows) ? normalized.customRows : legacyFooter).map((row, rowIndex) => ({
       id: row.id || `custom_row_${rowIndex + 1}`,
       enabledBy: row.enabledBy || '',
+      scope: ['table', 'group', 'detail'].includes(row.scope) ? row.scope : 'table',
+      level: Math.max(0, Number(row.level) || 0),
       className: row.className || '',
       cells: (Array.isArray(row.cells) ? row.cells : []).map((cell, cellIndex) => ({
         id: cell.id || `custom_cell_${rowIndex + 1}_${cellIndex + 1}`,
@@ -405,6 +407,8 @@ const addTableCustomRow = (block) => {
   block.customRows.push({
     id: `custom_row_${stamp}`,
     enabledBy: '',
+    scope: 'table',
+    level: 0,
     className: '',
     cells: Array.from({ length: columnCount }, (_, index) => ({
       id: `custom_cell_${stamp}_${index + 1}`,
@@ -498,6 +502,12 @@ const groupHeaderPreview = (group) => {
   return group.label || `Nhóm: ${'{{'}row.${group.field}${'}}'}`
 }
 
+const customRowScopeLabel = (scope) => ({
+  table: 'Toàn bảng',
+  group: 'Theo cấp nhóm',
+  detail: 'Theo từng dòng dữ liệu'
+}[scope] || 'Toàn bảng')
+
 const loadDataSources = async () => {
   try {
     const response = await http.get('/report-data-sources')
@@ -568,6 +578,10 @@ const loadTemplate = async () => {
       } else {
         selectedBlockId.value = null
       }
+
+      // Keep the runtime HTML synchronized with the loaded designer structure.
+      // The designer is driven by content_json, while report preview/render uses content_html.
+      compileHtml()
     }
   } catch (err) {
     console.error('Lỗi tải mẫu in:', err)
@@ -1476,6 +1490,21 @@ const compileBlockToHtml = (b) => {
     })
     blockHtml += '      </tr>\n    </thead>\n'
     const groups = tableGroups(b).filter(group => group.field)
+    const customRows = tableCustomRows(b)
+    const groupCustomRows = customRows.filter(row => row.scope === 'group')
+    const detailCustomRows = customRows.filter(row => row.scope === 'detail')
+    const tableCustomRowsOnly = customRows.filter(row => row.scope !== 'group' && row.scope !== 'detail')
+    const compileCustomRow = (row, className, attributes = '') => {
+      const rowClass = row.className ? ` ${row.className}` : ''
+      const visibleBy = row.enabledBy ? ` data-visible-by="${row.enabledBy}"` : ''
+      let rowHtml = `      <tr class="${className}${rowClass}"${attributes}${visibleBy}>\n`
+      row.cells.forEach(cell => {
+        const cellClass = cell.className ? ` class="${cell.className}"` : ''
+        const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
+        rowHtml += `        <td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>\n`
+      })
+      return rowHtml + '      </tr>\n'
+    }
     if (groups.length) {
       blockHtml += `    <tbody class="pms-grouped-rows" data-source="${b.dataSource}" data-group-configured="1" data-group-by="${groups[0].field}">\n`
       groups.forEach((group, index) => {
@@ -1494,21 +1523,14 @@ const compileBlockToHtml = (b) => {
       blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}${modifier}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
-    if (groups.length && b.groupFooter) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
+    detailCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-detail-custom-row') })
+    groupCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-group-custom-row', ` data-group-level="${Math.max(0, Number(row.level) || 0)}"`) })
+    const hasOuterGroupCustomRow = groupCustomRows.some(row => Math.max(0, Number(row.level) || 0) === 0)
+    if (groups.length && b.groupFooter && !hasOuterGroupCustomRow) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
     blockHtml += '    </tbody>\n'
-    if (tableCustomRows(b).length) {
+    if (tableCustomRowsOnly.length) {
       blockHtml += '    <tfoot>\n'
-      tableCustomRows(b).forEach(row => {
-        const visibleBy = row.enabledBy ? ` data-visible-by="${row.enabledBy}"` : ''
-        const rowClass = row.className ? ` ${row.className}` : ''
-        blockHtml += `      <tr class="pms-custom-row${rowClass}"${visibleBy}>\n`
-        row.cells.forEach(cell => {
-          const className = cell.className ? ` class="${cell.className}"` : ''
-          const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
-          blockHtml += `        <td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${className} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>\n`
-        })
-        blockHtml += '      </tr>\n'
-      })
+      tableCustomRowsOnly.forEach(row => { blockHtml += compileCustomRow(row, 'pms-custom-row') })
       blockHtml += '    </tfoot>\n'
     }
     blockHtml += '  </table>\n'
@@ -3358,6 +3380,20 @@ const selectBand = (band) => {
                       <option value="">Luôn hiển thị</option>
                       <option v-for="parameter in conditionalParameterOptions" :key="parameter.value" :value="parameter.value">Khi {{ parameter.label }}</option>
                     </select>
+
+                    <div class="grid grid-cols-2 gap-2">
+                      <select v-model="customRow.scope" @change="compileHtml" class="rounded-lg border border-slate-200 p-2 text-[11px]">
+                        <option value="table">Toàn bảng</option>
+                        <option value="group">Theo cấp nhóm</option>
+                        <option value="detail">Theo từng dòng dữ liệu</option>
+                      </select>
+                      <select v-if="customRow.scope === 'group'" v-model.number="customRow.level" @change="compileHtml" class="rounded-lg border border-slate-200 p-2 text-[11px]">
+                        <option v-for="(group, groupIndex) in tableGroups(selectedBlock)" :key="group.id" :value="groupIndex">Cấp {{ groupIndex + 1 }}</option>
+                      </select>
+                      <div v-else class="rounded-lg border border-slate-100 bg-slate-50 p-2 text-[10px] text-slate-500">
+                        {{ customRowScopeLabel(customRow.scope) }}
+                      </div>
+                    </div>
 
                     <div v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" class="flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
                       <div class="flex items-center justify-between"><span class="text-[10px] font-bold">Ô {{ cellIndex + 1 }}</span><button type="button" :disabled="customRow.cells.length <= 1" @click="customRow.cells.splice(cellIndex, 1); compileHtml()" class="border-none bg-transparent text-red-500 disabled:opacity-30">×</button></div>

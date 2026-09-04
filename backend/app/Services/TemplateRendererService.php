@@ -130,6 +130,8 @@ class TemplateRendererService
             $subsubgroupFooter = $this->groupedRowTemplate($body, 'pms-subsubgroup-footer');
             $subgroupFooter = $this->groupedRowTemplate($body, 'pms-subgroup-footer');
             $groupFooter = $this->groupedRowTemplate($body, 'pms-group-footer');
+            $groupCustomRows = $this->groupedRowTemplates($body, 'pms-group-custom-row');
+            $detailCustomRows = $this->groupedRowTemplates($body, 'pms-detail-custom-row');
             $output = '';
 
             if ($groupConfigured) {
@@ -141,7 +143,7 @@ class TemplateRendererService
                         }
                     }
                 } else {
-                    $output = $this->renderConfiguredGroupLevel($items, $groups, 0, $detail);
+                    $output = $this->renderConfiguredGroupLevel($items, $groups, 0, $detail, $groupFooter, $groupCustomRows, $detailCustomRows);
                 }
 
                 return '<tbody>'.$output.'</tbody>';
@@ -241,13 +243,16 @@ class TemplateRendererService
         return $groups;
     }
 
-    private function renderConfiguredGroupLevel(array $items, array $groups, int $level, ?string $detail): string
+    private function renderConfiguredGroupLevel(array $items, array $groups, int $level, ?string $detail, ?string $groupFooter = null, array $groupCustomRows = [], array $detailCustomRows = []): string
     {
         if ($level >= count($groups)) {
             $output = '';
             foreach ($items as $row) {
                 if (is_array($row)) {
                     $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                    foreach ($detailCustomRows as $customRow) {
+                        $output .= $this->renderGroupedTemplate($customRow['template'], $row, [$row]);
+                    }
                 }
             }
 
@@ -261,7 +266,16 @@ class TemplateRendererService
         foreach ($grouped as $groupRows) {
             $first = $groupRows[0] ?? [];
             $output .= $this->renderGroupedTemplate($definition['template'], $first, $groupRows);
-            $output .= $this->renderConfiguredGroupLevel($groupRows, $groups, $level + 1, $detail);
+            $output .= $this->renderConfiguredGroupLevel($groupRows, $groups, $level + 1, $detail, $groupFooter, $groupCustomRows, $detailCustomRows);
+            foreach ($groupCustomRows as $customRow) {
+                if ($customRow['level'] === $level) {
+                    $output .= $this->renderGroupedTemplate($customRow['template'], $first, $groupRows);
+                }
+            }
+            $hasOuterGroupCustomRow = $level === 0 && collect($groupCustomRows)->contains(fn (array $customRow): bool => $customRow['level'] === 0);
+            if ($level === 0 && $groupFooter !== null && ! $hasOuterGroupCustomRow) {
+                $output .= $this->renderGroupedTemplate($groupFooter, $first, $groupRows);
+            }
         }
 
         return $output;
@@ -286,6 +300,26 @@ class TemplateRendererService
         $pattern = '/<tr\b[^>]*class="[^"]*\b'.preg_quote($class, '/').'\b[^"]*"[^>]*>(.*?)<\/tr>/is';
 
         return preg_match($pattern, $body, $matches) ? $matches[1] : null;
+    }
+
+    private function groupedRowTemplates(string $body, string $class): array
+    {
+        preg_match_all('/<tr\b([^>]*)>(.*?)<\/tr>/is', $body, $matches, PREG_SET_ORDER);
+        $rows = [];
+
+        foreach ($matches as $match) {
+            $classes = $this->attributeValue($match[1], 'class') ?? '';
+            if (! preg_match('/\b'.preg_quote($class, '/').'\b/', $classes)) {
+                continue;
+            }
+
+            $rows[] = [
+                'level' => max(0, (int) ($this->attributeValue($match[1], 'data-group-level') ?? 0)),
+                'template' => $match[2],
+            ];
+        }
+
+        return $rows;
     }
 
     private function groupItems(array $items, string $field): array
