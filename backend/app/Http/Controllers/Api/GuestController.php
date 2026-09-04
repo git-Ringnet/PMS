@@ -820,6 +820,8 @@ class GuestController extends Controller
             'entry_purpose', 'border_gate', 'occupation', 'note', 'avatar',
         ]));
 
+        $this->syncGeoFromData([$request->all()]);
+
         // Cập nhật thông tin vào bảng pivot booking_room_guests cho từng khách cụ thể
         $pivotData = [];
         if ($request->has('arrival_date'))   $pivotData['actual_arrival_date']  = $request->arrival_date;
@@ -1260,6 +1262,8 @@ class GuestController extends Controller
                 }
             }
 
+            $this->syncGeoFromData(array_merge($guestsData, $childrenData));
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1267,6 +1271,29 @@ class GuestController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Cập nhật thông tin khách hàng loạt thành công!']);
+    }
+
+    /**
+     * Tự động lưu địa giới hành chính vào các bảng provinces, districts, wards khi lưu khách
+     */
+    private function syncGeoFromData(array $items): void
+    {
+        foreach ($items as $item) {
+            if (!is_array($item)) continue;
+            $p = !empty($item['province']) ? trim($item['province']) : null;
+            $d = !empty($item['district']) ? trim($item['district']) : null;
+            $w = !empty($item['ward']) ? trim($item['ward']) : null;
+
+            if ($p) {
+                \App\Models\Province::firstOrCreate(['name' => $p], ['is_active' => true]);
+            }
+            if ($d) {
+                \App\Models\District::firstOrCreate(['name' => $d, 'province_name' => $p], ['is_active' => true]);
+            }
+            if ($w) {
+                \App\Models\Ward::firstOrCreate(['name' => $w, 'district_name' => $d, 'province_name' => $p], ['is_active' => true]);
+            }
+        }
     }
 
     public function uploadAvatar(Request $request, $id)

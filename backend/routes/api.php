@@ -196,6 +196,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
 
     // System configuration routes
     Route::get('nationalities', [\App\Http\Controllers\Api\NationalityController::class, 'index']);
+    // Guest definitions routes (SP8015, SP8017, SP8019, SP8042, SP8055)
+    Route::get('guest-definitions', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'index']);
+    Route::get('guest-titles', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'titles']);
+    Route::get('border-gates', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'borderGates']);
+    Route::get('entry-purposes', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'entryPurposes']);
+    Route::get('guest-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'guestTypes']);
+    Route::get('id-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'idTypes']);
+    Route::get('provinces', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'provinces']);
+    Route::get('districts', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'districts']);
+    Route::get('wards', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'wards']);
+    Route::post('geo/sync', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'syncGeo']);
     Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
     Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);

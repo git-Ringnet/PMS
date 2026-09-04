@@ -11,6 +11,47 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-04] - Tách danh mục thông tin khách thành 9 bảng Database độc lập
+### Module: Reservation / Cấu hình thông tin khách (`GuestDefinitionController.php`, `GuestInfoModal.vue`, `GuestDetailModal.vue`)
+
+- **Đã hoàn thành**:
+  - Chuẩn hóa đầy đủ 9 bảng Master Data tương ứng danh sách định nghĩa thông tin khách ProVista:
+    1. `guest_titles` (SP8015 - DanhXung): 8 danh xưng chuẩn.
+    2. `border_gates` (SP8017 - DanhMucCuaKhau): 13 cửa khẩu quốc tế đường hàng không, đường bộ, đường biển.
+    3. `entry_purposes` (SP8019 - DanhMucMucDichLuuTru): 7 mục đích lưu trú/nhập cảnh.
+    4. `nationalities` (SP8020 - DanhMucQuocTich): Bảng quốc tịch hiện hữu.
+    5. `guest_types` (SP8042 - GuestType): 6 phân loại khách (FIT, GIT, VIP, Crew, Long Stay, Corporate).
+    6. `provinces` (SP8047 - Tinh/Thanh Pho): Đã seed 63 tỉnh/thành phố chuẩn Việt Nam.
+    7. `districts` (SP8048 - Quận Huyện): Lưu tự động khi người dùng chọn/lưu khách.
+    8. `wards` (SP8049 - Phường/ Xã): Lưu tự động khi người dùng chọn/lưu khách.
+    9. `id_types` (SP8055 - LoaiGiayTo): 4 loại giấy tờ tùy thân chuẩn (CCCD, CMND, Hộ chiếu, Khác).
+  - Backend:
+    - Tạo 2 migration `create_guest_definitions_tables` và `create_provinces_districts_wards_tables` chạy trên toàn bộ 9 Database chi nhánh.
+    - Tạo Models `GuestTitle`, `BorderGate`, `EntryPurpose`, `GuestType`, `IdType`, `Province`, `District`, `Ward`.
+    - Tạo seeders `GuestDefinitionSeeder` và `ProvinceSeeder`, đăng ký vào `BranchDatabaseSeeder`.
+    - API `GET /api/guest-definitions` gom dữ liệu 1 request; các endpoint lẻ và `POST /api/geo/sync`.
+    - Tự động bóc tách và lưu địa giới hành chính vào `provinces`, `districts`, `wards` khi lưu khách trong `GuestController`.
+  - Frontend:
+    - Bổ sung `fetchGuestDefinitions()` và `syncGeoData()` vào `booking-service.js`.
+    - Cập nhật `GuestInfoModal.vue` & `GuestDetailModal.vue` nạp dữ liệu động cho các dropdown: Danh xưng, Loại giấy tờ, Loại khách, Mục đích, Cửa khẩu (chuyển ô text thành select dropdown).
+- **Kiểm tra**:
+  - `php artisan migrate:all`: Đạt trên 9/9 database PMS.
+  - Seeding: Nạp thành công trên tất cả database chi nhánh.
+  - `npm run build`: Hoàn tất thành công, không có lỗi cú pháp hay bundle.
+  - Test tinker & scratch `POST /api/geo/sync`: Ghi nhận dữ liệu chuẩn vào DB.
+- **Tệp thay đổi**:
+  - `backend/database/migrations/2026_09_04_150000_create_guest_definitions_tables.php`
+  - `backend/database/migrations/2026_09_04_154000_create_provinces_districts_wards_tables.php`
+  - `backend/app/Models/GuestTitle.php`, `BorderGate.php`, `EntryPurpose.php`, `GuestType.php`, `IdType.php`, `Province.php`, `District.php`, `Ward.php`
+  - `backend/database/seeders/GuestDefinitionSeeder.php`, `ProvinceSeeder.php`, `BranchDatabaseSeeder.php`
+  - `backend/app/Http/Controllers/Api/GuestDefinitionController.php`
+  - `backend/app/Http/Controllers/Api/GuestController.php`
+  - `backend/routes/api.php`
+  - `frontend/src/services/booking-service.js`
+  - `frontend/src/pages/reservation/components/GuestInfoModal.vue`
+  - `frontend/src/pages/reservation/components/GuestDetailModal.vue`
+
+---
 ## [2026-09-04] - Sửa chuyển khách sang phòng Inhouse và phân bổ bill theo khách
 ### Module: Reservation / Chuyển phòng & Hóa đơn (`BookingRoomController.php`, `CheckoutPage.vue`)
 

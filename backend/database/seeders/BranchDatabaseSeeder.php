@@ -29,6 +29,8 @@ class BranchDatabaseSeeder extends Seeder
             CancelReasonSeeder::class,
             SpecialRequestSeeder::class,
             NationalitySeeder::class,
+            GuestDefinitionSeeder::class,
+            ProvinceSeeder::class,
         ]);
     }
 }

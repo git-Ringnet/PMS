@@ -160,6 +160,8 @@ export const uploadGuestAvatar = (guestId, formData) => http.post(`/guests/${gue
 })
 export const fetchCancelReasons = () => http.get('/cancel-reasons')
 export const fetchNationalities = (params = {}) => http.get('/nationalities', { params })
+export const fetchGuestDefinitions = () => http.get('/guest-definitions')
+export const syncGeoData = (data) => http.post('/geo/sync', data)
 
 // ==================== POST BILLS (THÊM DỊCH VỤ LỄ TÂN) ====================
 export const postFoServiceBill = (data) => http.post('/booking-room-services/post-fo-service-bill', data)
