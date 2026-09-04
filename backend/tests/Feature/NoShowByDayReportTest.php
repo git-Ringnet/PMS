@@ -19,7 +19,8 @@ class NoShowByDayReportTest extends TestCase
         }
 
         $this->assertStringContainsString("DATE_FORMAT(br.CheckoutDate, '%d/%m/%Y') AS CheckoutDate", $migration);
-        $this->assertStringContainsString('charge.ChargeDate = billing.service_date', $migration);
+        $this->assertStringContainsString('charge.ChargeDate = DATE(lc.late_checkin_date)', $migration);
+        $this->assertStringContainsString('COALESCE(charge.Total, billing.Total, 0) AS Total', $migration);
         $this->assertStringContainsString('COALESCE(p_type, 2) = 0 AND charge.BillId IS NOT NULL', $migration);
         $this->assertStringContainsString('COALESCE(p_type, 2) = 1 AND charge.BillId IS NULL', $migration);
         $this->assertStringContainsString("'control' => 'select', 'default' => '', 'required' => false, 'options_source' => 'bookings'", $migration);

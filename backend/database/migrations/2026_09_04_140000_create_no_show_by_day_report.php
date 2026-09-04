@@ -50,8 +50,8 @@ BEGIN
                 THEN LPAD(99999999 - CAST(DATE_FORMAT(lc.late_checkin_date, '%Y%m%d') AS UNSIGNED), 8, '0')
             ELSE DATE_FORMAT(lc.late_checkin_date, '%Y%m%d')
         END AS DateSortKey,
-        billing.service_date AS Date,
-        COALESCE(billing.Total, 0) AS Total,
+        COALESCE(charge.ChargeDate, billing.service_date) AS Date,
+        COALESCE(charge.Total, billing.Total, 0) AS Total,
         lc.username AS Username,
         lc.shift AS Ca,
         lc.reason AS Reason,
@@ -81,7 +81,7 @@ BEGIN
         WHERE sb.ServiceId = 'RM' AND sb.Edit = 0
         GROUP BY sb.RentalRoomId1, DATE(sb.Date)
     ) charge ON charge.RoomId = br.id
-        AND charge.ChargeDate = billing.service_date
+        AND charge.ChargeDate = DATE(lc.late_checkin_date)
     WHERE lc.late_checkin_date >= p_from_date
       AND lc.late_checkin_date < DATE_ADD(p_to_date, INTERVAL 1 DAY)
       AND (p_user IS NULL OR p_user = '' OR br.created_by LIKE CONCAT('%', p_user, '%'))
