@@ -460,8 +460,10 @@ class GuestController extends Controller
             $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_IN]);
             $room->update([
                 'status' => BookingRoom::STATUS_CHECKED_IN,
-                'CheckoutDate' => null,
-                'CheckoutTime' => null,
+                'departure_date' => $room->planned_departure_date ?: $room->departure_date,
+                'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
+                'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
+                'CheckoutTime' => '12:00:00',
                 'check_out_user' => null,
             ]);
             if ($room->room) $room->room->update(['status' => 'occupied']);
@@ -520,8 +522,10 @@ class GuestController extends Controller
 
                 $room->update([
                     'status' => BookingRoom::STATUS_CHECKED_IN,
-                    'CheckoutDate' => null,
-                    'CheckoutTime' => null,
+                    'departure_date' => $room->planned_departure_date ?: $room->departure_date,
+                    'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
+                    'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
+                    'CheckoutTime' => '12:00:00',
                     'check_out_user' => null,
                 ]);
 

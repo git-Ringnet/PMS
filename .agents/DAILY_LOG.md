@@ -531,3 +531,58 @@
   - **Database Migration**:
     - Viết và chạy thành công migration [`2026_08_27_120000_create_departing_rooms_report.php`](file:///c:/xampp/htdocs/PMS/backend/database/migrations/2026_08_27_120000_create_departing_rooms_report.php) để tạo store và seed dữ liệu nguồn, template, và định nghĩa báo cáo động.
 - **Trạng thái hiện tại**: Hoàn thành toàn bộ nghiệp vụ, định dạng ngày hiển thị chuẩn `dd/mm/YYYY`.
+
+## [2026-09-04] - Hoàn thiện công suất Room Map và lưu lịch sử checkout sớm
+### Module: Kế hoạch phòng / Room Map / Thống kê
+
+- **Công suất phòng**:
+  - Tính theo công thức: phòng ở dự kiến cuối ngày / (tổng phòng khách sạn - phòng OOO) * 100%.
+  - Chỉ tính phòng vật lý: loại phòng nội bộ (rooms.is_internal = 1) và phòng ảo có số phòng bắt đầu bằng 0.
+  - Phòng thật ở tầng 0 vẫn được tính nếu không thuộc hai điều kiện loại trừ trên.
+  - Chỉ lấy booking có tình trạng đăng ký registration_statuses.is_availability = 1.
+  - Đếm theo số phòng vật lý duy nhất, loại phòng OOO khỏi cả khả năng bán và dự báo phòng ở.
+  - Room Map và popup Thống kê cùng sử dụng chỉ số từ API /rooms/stats, tránh lệch công thức giữa hai màn hình.
+  - Khi xem ngày lịch sử/tương lai, OOO/OOS lấy theo thời gian hiệu lực của room_locks; room_status_code chỉ dùng cho ngày hệ thống.
+- **Checkout sớm**:
+  - Bổ sung booking_rooms.planned_departure_date và planned_num_of_days để giữ ngày đi/số đêm dự kiến ban đầu.
+  - Khi checkout sớm, departure_date, CheckoutDate và ActutalNumOfDays phản ánh dữ liệu thực tế; dữ liệu kế hoạch không bị ghi đè.
+  - Chỉ số early_departures xác định theo CheckoutDate < planned_departure_date.
+  - Khi hoàn tác checkout, khôi phục ngày đi và số đêm từ dữ liệu kế hoạch.
+  - Migration chỉ có thể khởi tạo dữ liệu kế hoạch cũ từ giá trị hiện còn lưu; các lần checkout sớm đã mất dữ liệu trước bản sửa không thể suy ngược chính xác.
+- **Kiểm thử**:
+  - Test công suất bao phủ phòng nội bộ, phòng 0xx, phòng thật tầng trệt, OOO và booking không tính availability.
+  - Test checkout sớm xác nhận giữ nguyên ngày đi/số đêm dự kiến và cập nhật đúng số đêm thực tế.
+  - Test hoàn tác checkout và build frontend production đều thành công.
+- **Ghi chú kỹ thuật**:
+  - Không tìm thấy mã nguồn sp_195 trong repository; công thức tương đương được triển khai tại service/API hiện hành.
+### Bổ sung kiểm tra realtime và toàn bộ chỉ tiêu popup
+- Đã chạy migration 2026_09_04_100000 trên database dự án hiện tại.
+- Sau mỗi thao tác khóa/mở khóa, sự kiện Echo, khi mở popup, khi quay lại tab và polling dự phòng 15 giây đều đồng bộ lại Rooms + Stats.
+- Chống response API cũ ghi đè response mới khi nhiều yêu cầu realtime chạy gần nhau.
+- Bỏ cơ chế âm thầm trả mock khi API thống kê lỗi; thêm tham số chống cache cho mỗi lần tải.
+- Tách đúng hai công thức:
+  - Tổng phòng có thể bán = Tổng phòng - OOO - OOS.
+  - Mẫu số công suất = Tổng phòng - OOO.
+- Hoàn thiện Room/Pax cho phòng đến, đã đến, đang ở, phòng đi; bổ sung gia hạn, day-use, đặt trong ngày và Walk-in theo đúng source code WALKIN.
+- Dữ liệu thực tế kiểm tra trên DB: Tổng 180, OOO 1, OOS 1, có thể bán 178, mẫu số công suất 179, phòng ở 6, phòng trống 172, công suất 3%.
+- Test thống kê đạt 38 assertions, bao gồm cả ca toàn bộ phòng OOO để bảo đảm công suất về 0 và không chia cho 0.
+
+### Rà soát lần cuối theo nghiệp vụ sp_195 / Link Hotel
+- Database dự án hiện tại không có stored procedure `sp_195`; đã đối chiếu theo mô tả nghiệp vụ và dữ liệu màn hình khách cung cấp.
+- Sửa dự báo cuối ngày để tính cả reservation hợp lệ chưa gán số phòng; mỗi dòng `booking_rooms` chưa gán tương ứng một phòng dự kiến.
+- Booking đã gán chỉ được tính khi là phòng vật lý, không phải phòng nội bộ/phòng 0xx và không nằm trong OOO/OOS.
+- Tách đúng hai chỉ tiêu:
+  - **Phòng đến**: gồm phòng đã đến và reservation đến trong ngày, kể cả chưa gán phòng.
+  - **Phòng đến đã gán phòng**: chỉ gồm phòng đã đến và reservation đã có số phòng vật lý.
+- Chuẩn hóa dữ liệu số đêm ban đầu theo Link Hotel:
+  - `booking_rooms.NumOfDays` giữ nguyên số đêm đặt ban đầu.
+  - `booking_rooms.ActutalNumOfDays`, `departure_date`, `CheckoutDate` cập nhật theo ngày checkout thực tế.
+  - Trả phòng sớm được nhận diện bằng `CheckoutDate = ngày xem` và `ActutalNumOfDays < NumOfDays`.
+  - `planned_departure_date` giữ ngày đi dự kiến ban đầu để phục vụ gia hạn và hoàn tác checkout.
+- Đã chạy migration đổi tên trường kế hoạch thành `NumOfDays` trên database local.
+- Dữ liệu local sau rà soát: tổng phòng vật lý 180, OOO 1, OOS 1, phòng có thể bán 178, phòng dự kiến cuối ngày 9, mẫu số công suất 179, công suất 5%.
+- Kiểm thử:
+  - RoomOccupancyStatisticsTest đạt 40 assertions, gồm reservation chưa gán phòng, phân biệt phòng đến/đã gán, OOO/OOS, phòng nội bộ, phòng 0xx, is_availability, checkout sớm, gia hạn, day-use, đặt trong ngày và walk-in.
+  - Test checkout sớm và 4 test hoàn tác checkout đều đạt.
+  - Frontend production build thành công.
+  - Bộ CheckoutBusinessRulesTest còn 2 lỗi cũ về room charge chuyển master trả 422; không thuộc thay đổi thống kê/checkout sớm.

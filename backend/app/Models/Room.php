@@ -116,50 +116,30 @@ class Room extends Model
     }
 
     /**
-     * Scope chỉ lấy phòng thực tế (bỏ phòng ảo / phòng nội bộ: floor=0, grid_row=0, grid_column=0 hoặc is_internal=true)
+     * Scope chỉ lấy phòng thực tế (bỏ phòng nội bộ và phòng ảo có số phòng bắt đầu bằng 0)
      */
     public function scopePhysical($query)
     {
         return $query->where('is_internal', false)
-            ->where(function ($q) {
-                $q->whereNotIn('floor', ['0', 0, 'Floor 0', 'Tầng 0', 'Floor virtual', 'Virtual'])
-                  ->orWhere('grid_row', '>', 0)
-                  ->orWhere('grid_column', '>', 0);
-            });
+            ->where('room_number', 'not like', '0%');
     }
 
     /**
-     * Scope lấy phòng ảo / phòng nội bộ (floor = 0 & grid_row = 0 & grid_column = 0 HOẶC is_internal = true)
+     * Scope lấy phòng ảo / phòng nội bộ theo đúng quy ước nghiệp vụ.
      */
     public function scopeVirtual($query)
     {
-        return $query->where(function ($q) {
-            $q->where('is_internal', true)
-              ->orWhere(function ($sub) {
-                  $sub->whereIn('floor', ['0', 0, 'Floor 0', 'Tầng 0', 'Floor virtual', 'Virtual'])
-                      ->where('grid_row', 0)
-                      ->where('grid_column', 0);
-              });
+        return $query->where(function ($query) {
+            $query->where('is_internal', true)
+                ->orWhere('room_number', 'like', '0%');
         });
     }
 
     /**
-     * Accessor kiểm tra xem phòng có phải phòng ảo không
+     * Kiểm tra phòng ảo: phòng nội bộ hoặc số phòng bắt đầu bằng 0.
      */
     public function getIsVirtualAttribute(): bool
     {
-        if ($this->is_internal) {
-            return true;
-        }
-        $floorStr = trim((string)$this->floor);
-        $isFloorZero = in_array($floorStr, ['0', 'Floor 0', 'Tầng 0', 'Floor virtual', 'Virtual'], true);
-        $isRowZero = (int)$this->grid_row === 0;
-        $isColZero = (int)$this->grid_column === 0;
-
-        if ($isFloorZero && $isRowZero && $isColZero) {
-            return true;
-        }
-
-        return false;
+        return $this->is_internal || str_starts_with((string) $this->room_number, '0');
     }
 }

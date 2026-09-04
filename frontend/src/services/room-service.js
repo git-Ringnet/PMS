@@ -230,25 +230,10 @@ export const roomService = {
       return { success: true, data: stats }
     }
 
-    try {
-      const params = {}
-      if (date) params.date = date
-      const response = await http.get('/rooms/stats', { params })
-      return response.data
-    } catch (error) {
-      console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
-      const rooms = getMockRooms()
-      const stats = {
-        total: rooms.length,
-        available: rooms.filter(r => r.status === ROOM_STATUSES.AVAILABLE).length,
-        occupied: rooms.filter(r => r.status === ROOM_STATUSES.OCCUPIED).length,
-        dirty: rooms.filter(r => r.status === ROOM_STATUSES.DIRTY).length,
-        maintenance: rooms.filter(r => r.status === ROOM_STATUSES.MAINTENANCE).length,
-        reserved: rooms.filter(r => r.status === ROOM_STATUSES.RESERVED).length,
-        checkout: rooms.filter(r => r.status === ROOM_STATUSES.CHECKOUT).length,
-      }
-      return { success: true, data: stats }
-    }
+    const params = { _ts: Date.now() }
+    if (date) params.date = date
+    const response = await http.get('/rooms/stats', { params })
+    return response.data
   },
 
   /**

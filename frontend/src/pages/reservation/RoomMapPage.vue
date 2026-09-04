@@ -394,8 +394,7 @@ const occupancyRateStats = computed(() => {
   return `${roomStore.occupancyRate}%`
 })
 
-// The statistics popup must use the same room snapshot as Room Map (including
-// the selected PMS date), instead of a mix of legacy statuses and demo values.
+// Popup dùng cùng kết quả công suất từ API với thẻ Room Map để không lệch công thức nghiệp vụ.
 const roomMapStatistics = computed(() => {
   const rooms = roomStore.rooms || []
   const isLocked = (room) => ['ooo', 'oos', 'occupied_ooo'].includes(room.room_status_code)
@@ -422,34 +421,38 @@ const roomMapStatistics = computed(() => {
   const internalRooms = endOfDayStay.filter(room => hasRateCode(room, /noi\s*bo|internal/i))
   const chargeableRooms = endOfDayStay.filter(room => !hasRateCode(room, /comp|(^|[^a-z])hu([^a-z]|$)|house\s*use|noi\s*bo|internal/i))
   const projectedRevenue = chargeableRooms.reduce((sum, room) => sum + rate(room), 0)
+  const apiStat = (key, fallback = 0) => {
+    const value = roomStore.stats?.[key]
+    return value === undefined || value === null ? fallback : (Number(value) || 0)
+  }
   const occupiedPax = (list) => list.reduce((sum, room) => sum + pax(room), 0)
 
   return {
-    totalRooms: rooms.length,
-    ooo: rooms.filter(room => room.room_status_code === 'ooo' || room.room_status_code === 'occupied_ooo' || room.lock_type === 'OOO').length,
-    oos: rooms.filter(room => room.room_status_code === 'oos' || room.lock_type === 'OOS').length,
-    saleableRooms: saleable.length,
+    totalRooms: apiStat('total_rooms', rooms.length),
+    ooo: apiStat('ooo'),
+    oos: apiStat('oos'),
+    saleableRooms: apiStat('saleable_rooms', saleable.length),
     occupiedReady: occupied.filter(room => !isDirty(room)).length,
     vacantReady: rooms.filter(room => !room.booking_status && !isLocked(room) && !isDirty(room)).length,
     occupiedClean: occupied.filter(room => room.room_status_code === 'occupied_clean').length,
     vacantClean: rooms.filter(room => room.room_status_code === 'vacant_clean').length,
     occupiedDirty: currentStay.filter(isDirty).length,
     vacantDirty: rooms.filter(room => !room.booking_status && !isLocked(room) && isDirty(room)).length,
-    pendingCheckoutRooms: checkout.length,
-    pendingCheckoutPax: occupiedPax(checkout),
+    pendingCheckoutRooms: apiStat('departures_pending', checkout.length),
+    pendingCheckoutPax: apiStat('departures_pending_pax', occupiedPax(checkout)),
     checkedOutRooms: Number(roomStore.stats?.departures_checked_out) || 0,
-    arrivalsRooms: arrivals.length,
-    arrivalsPax: occupiedPax(arrivals),
-    assignedArrivalRooms: arrivals.length,
-    assignedArrivalPax: occupiedPax(arrivals),
-    checkedInRooms: occupied.length,
-    checkedInPax: occupiedPax(occupied),
-    occupiedRooms: currentStay.length,
-    occupiedPax: occupiedPax(currentStay),
+    arrivalsRooms: apiStat('arrivals_total', arrivals.length),
+    arrivalsPax: apiStat('arrivals_total_pax', occupiedPax(arrivals)),
+    assignedArrivalRooms: apiStat('arrivals_assigned', arrivals.length),
+    assignedArrivalPax: apiStat('arrivals_assigned_pax', occupiedPax(arrivals)),
+    checkedInRooms: apiStat('arrivals_checked_in', occupied.length),
+    checkedInPax: apiStat('arrivals_checked_in_pax', occupiedPax(occupied)),
+    occupiedRooms: apiStat('occupied_current', currentStay.length),
+    occupiedPax: apiStat('occupied_current_pax', occupiedPax(currentStay)),
     earlyCheckoutRooms: Number(roomStore.stats?.early_departures) || 0,
-    hourlyRooms: rooms.filter(room => Boolean(room.is_day_use)).length,
-    sameDayBookings: arrivals.length,
-    walkInRooms: rooms.filter(room => Boolean(room.is_walk_in)).length,
+    hourlyRooms: apiStat('day_rooms'),
+    sameDayBookings: apiStat('same_day_reservations'),
+    walkInRooms: apiStat('walk_in_rooms'),
     retailRooms: retailRooms.length,
     retailPax: occupiedPax(retailRooms),
     groupRooms: groupRooms.length,
@@ -462,13 +465,13 @@ const roomMapStatistics = computed(() => {
     huPax: occupiedPax(huRooms),
     internalRooms: internalRooms.length,
     internalPax: occupiedPax(internalRooms),
-    endOfDayRooms: endOfDayStay.length,
-    endOfDayPax: occupiedPax(endOfDayStay),
-    vacantRooms: Math.max(0, saleable.length - endOfDayStay.length),
-    occupancyRate: saleable.length ? Math.round((endOfDayStay.length / saleable.length) * 100) : 0,
+    endOfDayRooms: apiStat('occupied_projected', endOfDayStay.length),
+    endOfDayPax: apiStat('occupied_projected_pax', occupiedPax(endOfDayStay)),
+    vacantRooms: apiStat('vacant_projected', Math.max(0, saleable.length - endOfDayStay.length)),
+    occupancyRate: apiStat('occupancy_rate'),
     projectedRevenue,
     averageRate: chargeableRooms.length ? Math.round(projectedRevenue / chargeableRooms.length) : 0,
-    revenuePerSaleableRoom: saleable.length ? Math.round(projectedRevenue / saleable.length) : 0,
+    revenuePerSaleableRoom: apiStat('saleable_rooms', saleable.length) ? Math.round(projectedRevenue / apiStat('saleable_rooms', saleable.length)) : 0,
   }
 })
 
@@ -1578,6 +1581,26 @@ async function changeRoomStatus(room, roomStatusCode) {
   }
 }
 
+let roomMapSyncTimer = null
+
+async function refreshRoomMapSnapshot() {
+  if (currentTab.value !== 'room-map') return
+  await Promise.allSettled([
+    roomStore.fetchRooms({ date: rawDate.value, silent: true }),
+    roomStore.fetchStats(rawDate.value),
+  ])
+}
+
+async function openStatsModal() {
+  showStatsModal.value = true
+  // Luôn lấy snapshot mới khi mở popup, không dùng số liệu của lần mở trước.
+  await refreshRoomMapSnapshot()
+}
+
+function refreshWhenVisible() {
+  if (!document.hidden) refreshRoomMapSnapshot()
+}
+
 onMounted(async () => {
   // Fetch system date and set rawDate
   try {
@@ -1617,15 +1640,13 @@ onMounted(async () => {
   // Lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel')
-      .listen('.room.status.updated', () => {
-        roomStore.fetchRooms({ date: rawDate.value, silent: true })
-        roomStore.fetchStats(rawDate.value)
-      })
-      .listen('.reservation.updated', () => {
-        roomStore.fetchRooms({ date: rawDate.value, silent: true })
-        roomStore.fetchStats(rawDate.value)
-      })
+      .listen('.room.status.updated', refreshRoomMapSnapshot)
+      .listen('.reservation.updated', refreshRoomMapSnapshot)
   }
+
+  // Echo là kênh chính; polling là dự phòng khi websocket gián đoạn hoặc tab vừa quay lại.
+  roomMapSyncTimer = window.setInterval(refreshRoomMapSnapshot, 15000)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
 })
 
 onBeforeUnmount(() => {
@@ -1633,7 +1654,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleRoomMapShortcut)
   window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
-
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
+  if (roomMapSyncTimer) window.clearInterval(roomMapSyncTimer)
   // Hủy lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')
@@ -1798,7 +1820,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             </button>
 
             <!-- Công suất card -->
-            <button @click="showStatsModal = true"
+            <button @click="openStatsModal"
               class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="showStatsModal ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div

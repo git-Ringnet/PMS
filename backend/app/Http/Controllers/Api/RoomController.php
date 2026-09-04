@@ -72,6 +72,7 @@ class RoomController extends Controller
 
         // Tải các phòng đang được đặt/đang ở hôm nay
         $bookingRoomsToday = \App\Models\BookingRoom::whereNotNull('room_number')
+            ->whereHas('booking.registrationStatus', fn ($query) => $query->where('is_availability', 1))
             ->whereIn('status', [
                 \App\Models\BookingRoom::STATUS_BOOKED,
                 \App\Models\BookingRoom::STATUS_CHECKED_IN
@@ -85,6 +86,7 @@ class RoomController extends Controller
             })
             ->with([
                 'booking.company',
+                'booking.customerSource',
                 'booking.registrationStatus',
                 'booking.paymentMethod',
                 'roomClass.standardRates.roomForm',
@@ -185,9 +187,12 @@ class RoomController extends Controller
                 $room->sales_person = $br->booking?->sales_person ?? '';
                 $room->is_git = (bool)($br->booking?->is_git ?? false);
                 $room->is_day_use = (bool)($br->booking?->is_day_use ?? false);
-                $room->is_walk_in = $br->booking?->booking_date
-                    ? \Carbon\Carbon::parse($br->booking->booking_date)->toDateString() === $sysDateStr
-                    : false;
+                $room->is_same_day_booking = $br->booking?->booking_date
+                    && $br->arrival_date
+                    && \Carbon\Carbon::parse($br->booking->booking_date)->toDateString() === $sysDateStr
+                    && $br->arrival_date->toDateString() === $sysDateStr;
+                $room->is_walk_in = strtoupper((string) ($br->booking?->customerSource?->code ?? '')) === 'WALKIN'
+                    && $br->arrival_date?->toDateString() === $sysDateStr;
                 $room->has_vat = (bool)($br->booking?->has_vat ?? false);
                 $room->payment_method = $br->booking?->paymentMethod?->name ?? '';
                 $room->payment_value = $br->booking?->payment_value ?? 0;
@@ -438,78 +443,28 @@ class RoomController extends Controller
      */
     public function stats(Request $request)
     {
-        $roomsResponse = $this->index(new Request(['include_internal' => 0]))->getData(true);
-        $rooms = $roomsResponse['data'] ?? [];
+        $request->validate(['date' => 'nullable|date']);
 
-        $stats = [
-            'total' => count($rooms),
-            'available' => 0,
-            'occupied' => 0,
-            'dirty' => 0,
-            'maintenance' => 0,
-            'reserved' => 0,
-            'checkout' => 0,
-        ];
-
-        foreach ($rooms as $room) {
-            $st = $room['status'] ?? 'available';
-            if (array_key_exists($st, $stats)) {
-                $stats[$st]++;
-            }
-        }
-
-        // Bổ sung thống kê phòng đến (bao gồm cả phòng đã gán và chưa gán số phòng)
         $avService = app(\App\Services\RoomAvailabilityService::class);
-        $sysDateStr = $request->date ? \Carbon\Carbon::parse($request->date)->toDateString() : $avService->getSystemDate()->toDateString();
-        $availabilityBookingRoom = fn ($query) => $query->whereHas('booking.registrationStatus', fn ($statusQuery) => $statusQuery->where('is_availability', 1));
+        $systemDate = $request->filled('date')
+            ? \Carbon\Carbon::parse($request->date)
+            : $avService->getSystemDate();
 
-        // 1. Số phòng đang ở tại thời điểm hiện tại (Checked In)
-        $occupiedCurrent = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
-            ->tap($availabilityBookingRoom)
-            ->count();
-
-        // 2. Những phòng chưa check-in hôm nay hoặc trước đó (chưa in hôm nay)
-        $pendingArrivals = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_BOOKED)
-            ->whereDate('arrival_date', '<=', $sysDateStr)
-            ->tap($availabilityBookingRoom)
-            ->count();
-
-        // 3. Những phòng đi hôm nay hoặc trước đó nhưng chưa check-out (out hôm nay nhưng chưa out)
-        $pendingDepartures = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
-            ->whereDate('departure_date', '<=', $sysDateStr)
-            ->tap($availabilityBookingRoom)
-            ->count();
-
-        // 4. Số dự kiến cuối ngày
-        $occupiedProjected = max(0, $occupiedCurrent + $pendingArrivals - $pendingDepartures);
-
-        // 5. Thống kê Đã đến (Arrivals)
-        $arrivalsCheckedIn = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
-            ->whereDate('arrival_date', $sysDateStr)
-            ->tap($availabilityBookingRoom)
-            ->count();
-
-        $stats['arrivals_checked_in'] = $arrivalsCheckedIn;
-        $stats['arrivals_pending']    = $pendingArrivals;
-        $stats['arrivals_total']      = $arrivalsCheckedIn + $pendingArrivals;
-
-        // 6. Thống kê Đang ở (Occupied)
-        $stats['occupied_current']    = $occupiedCurrent;
-        $stats['occupied_projected']  = $occupiedProjected;
-
-        // 7. Thống kê Đã đi (Departures)
-        $departuresCheckedOut = \App\Models\BookingRoom::where('status', \App\Models\BookingRoom::STATUS_CHECKED_OUT)
-            ->whereDate('departure_date', $sysDateStr)
-            ->tap($availabilityBookingRoom)
-            ->count();
-
-        $stats['departures_checked_out'] = $departuresCheckedOut;
-        $stats['departures_pending']     = $pendingDepartures;
-        $stats['departures_total']       = $departuresCheckedOut + $pendingDepartures;
+        $occupancyStats = app(\App\Services\RoomOccupancyStatisticsService::class)
+            ->calculate($systemDate);
 
         return response()->json([
             'success' => true,
-            'data' => $stats
+            'data' => array_merge($occupancyStats, [
+                // Giữ khóa cũ để các vị trí khác chưa nâng cấp vẫn đọc đúng dữ liệu.
+                'total' => $occupancyStats['total_rooms'],
+                'maintenance' => $occupancyStats['ooo'] + $occupancyStats['oos'],
+                'occupied' => $occupancyStats['occupied_current'],
+                'available' => $occupancyStats['vacant_projected'],
+                'dirty' => 0,
+                'reserved' => $occupancyStats['arrivals_pending'],
+                'checkout' => $occupancyStats['departures_pending'],
+            ]),
         ]);
     }
 

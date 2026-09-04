@@ -62,6 +62,9 @@ class BookingRoom extends Model
                 $diff = $arr->diffInDays($dep);
                 $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
             }
+            // Giữ riêng kế hoạch ban đầu để nhận diện checkout sớm sau khi ngày đi thực tế thay đổi.
+            $model->planned_departure_date = $model->planned_departure_date ?: $model->departure_date;
+            $model->NumOfDays = $model->NumOfDays ?: $model->ActutalNumOfDays;
 
             // Phòng chưa checkout luôn giữ lịch checkout dự kiến để tương thích legacy.
             if (in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
@@ -91,6 +94,13 @@ class BookingRoom extends Model
                     $diff = $arr->diffInDays($dep);
                     $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
                 }
+            }
+
+            // Cho phép sửa kế hoạch khi còn là reservation; từ lúc check-in phải giữ nguyên để nhận diện gia hạn/trả sớm.
+            if ((int) $model->getOriginal('status') === self::STATUS_BOOKED
+                && ($model->isDirty('arrival_date') || $model->isDirty('departure_date'))) {
+                $model->planned_departure_date = $model->departure_date;
+                $model->NumOfDays = $model->ActutalNumOfDays;
             }
 
             if ($model->isDirty('departure_date')
@@ -193,6 +203,8 @@ class BookingRoom extends Model
         'original_room_class_id',
         'arrival_date',
         'departure_date',
+        'planned_departure_date',
+        'NumOfDays',
         'ActutalNumOfDays',
         'actual_arrival_date',
         'arrival_time',
@@ -228,6 +240,8 @@ class BookingRoom extends Model
     protected $casts = [
         'arrival_date'           => 'date',
         'departure_date'         => 'date',
+        'planned_departure_date' => 'date',
+        'NumOfDays'    => 'integer',
         'ActutalNumOfDays'       => 'integer',
         'actual_arrival_date'    => 'date',
         'CheckoutDate'           => 'date',
