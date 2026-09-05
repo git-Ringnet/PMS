@@ -11,6 +11,24 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-04] - Khắc phục lỗi khóa ngoại 1451 khi sửa số lượng khách / trẻ em trong phòng
+### Module: Reservation / Cập nhật phòng (`BookingController.php`)
+
+- **Đã hoàn thành**:
+  - Xử lý triệt để lỗi `SQLSTATE[23000]: 1451 Cannot delete or update a parent row (booking_room_guests_guest_id_foreign ON DELETE RESTRICT)` khi cập nhật số lượng khách hoặc trẻ em của phòng.
+  - Trong [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php):
+    - Khi giảm số người lớn (`adults`), chỉ gỡ liên kết phòng `$pivotToRemove->delete()`.
+    - Đối với bảng `guests`, kiểm tra an toàn: chỉ dọn dẹp profile nếu đó là khách ảo tự sinh (`Guest X`) và không còn bất kỳ liên kết phòng/dịch vụ/thanh toán nào khác (`!BookingRoomGuest::where('guest_id', $gId)->exists()`).
+    - Bọc logic dọn dẹp khách ảo trong `try...catch` để việc dọn rác không bao giờ làm gián đoạn hay crash giao dịch lưu đặt phòng.
+- **Kiểm tra**:
+  - `php -l BookingController.php`: Cú pháp chuẩn, không lỗi.
+  - `php artisan test tests/Feature/RoomMoveTest.php`: 10/10 passed.
+  - `php artisan test tests/Feature/CheckoutRestoreTest.php`: 4/4 passed.
+- **Tệp thay đổi**:
+  - [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php)
+
+---
+
 ## [2026-09-04] - Tách danh mục thông tin khách thành 9 bảng Database độc lập
 ### Module: Reservation / Cấu hình thông tin khách (`GuestDefinitionController.php`, `GuestInfoModal.vue`, `GuestDetailModal.vue`)
 

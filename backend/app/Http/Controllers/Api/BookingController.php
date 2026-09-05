@@ -1053,7 +1053,23 @@ class BookingController extends Controller
                                 foreach ($secondariesToRemove as $pivotToRemove) {
                                     $gId = $pivotToRemove->guest_id;
                                     $pivotToRemove->delete();
-                                    \App\Models\Guest::where('id', $gId)->delete();
+
+                                    // Chỉ dọn dẹp khách ảo (Guest X) tự sinh nếu không còn bất kỳ liên kết phòng/dịch vụ nào
+                                    if ($gId) {
+                                        try {
+                                            $hasOtherReferences = \App\Models\BookingRoomGuest::where('guest_id', $gId)->exists()
+                                                || \App\Models\BookingRoomService::where('guest_id', $gId)->exists()
+                                                || \App\Models\Payment::where('guest_id', $gId)->exists();
+                                            if (!$hasOtherReferences) {
+                                                $guestObj = \App\Models\Guest::find($gId);
+                                                if ($guestObj && str_starts_with($guestObj->full_name, 'Guest ') && empty($guestObj->id_number) && empty($guestObj->passport_number)) {
+                                                    $guestObj->delete();
+                                                }
+                                            }
+                                        } catch (\Throwable $ignored) {
+                                            // Không để lỗi dọn dẹp khách ảo làm gián đoạn cập nhật đặt phòng
+                                        }
+                                    }
                                 }
                             }
 
@@ -1105,12 +1121,21 @@ class BookingController extends Controller
                         // Xóa các pivot guests
                         \App\Models\BookingRoomGuest::whereIn('booking_room_id', $unrestoredRoomIds)->delete();
                         
-                        // Xóa các khách tương ứng để tránh bị rác database (orphaned guests)
+                        // Xóa các khách ảo tương ứng để tránh bị rác database (chỉ dọn placeholder guests tự sinh)
                         if ($guestIds->count() > 0) {
-                            $stillReferenced = \App\Models\BookingRoomGuest::whereIn('guest_id', $guestIds)->pluck('guest_id')->unique();
-                            $orphanedGuestIds = $guestIds->diff($stillReferenced);
-                            if ($orphanedGuestIds->count() > 0) {
-                                \App\Models\Guest::whereIn('id', $orphanedGuestIds)->delete();
+                            try {
+                                $stillReferenced = \App\Models\BookingRoomGuest::whereIn('guest_id', $guestIds)->pluck('guest_id')->unique();
+                                $orphanedGuestIds = $guestIds->diff($stillReferenced);
+                                if ($orphanedGuestIds->count() > 0) {
+                                    foreach ($orphanedGuestIds as $oId) {
+                                        $guestObj = \App\Models\Guest::find($oId);
+                                        if ($guestObj && str_starts_with($guestObj->full_name, 'Guest ') && empty($guestObj->id_number) && empty($guestObj->passport_number)) {
+                                            $guestObj->delete();
+                                        }
+                                    }
+                                }
+                            } catch (\Throwable $ignored) {
+                                // Không để lỗi dọn dẹp khách ảo làm gián đoạn cập nhật đặt phòng
                             }
                         }
                     }
