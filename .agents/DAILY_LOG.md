@@ -11,6 +11,23 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-05] - Loại bỏ triệt để phòng đã chuyển (status = 100) khỏi Tab Phòng đến (Sang ngày)
+### Module: Frontdesk / Sang ngày (`DayClosePage.vue`)
+
+- **Đã hoàn thành**:
+  - Khắc phục lỗi tab "Phòng đến" và biến đếm `arrivalCount` trên trang Sang ngày (`DayClosePage.vue`) lấy cả các phòng đã chuyển (`status = 100` / `move_room`), khiến hệ thống hiểu nhầm còn phòng đến chưa check-in và vô hiệu hóa nút "Sang ngày".
+  - Trong [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue):
+    - Kiểm tra trực tiếp và loại bỏ ngay lập tức mọi phòng có `Number(r.status) === 100`, `r.status === '100'`, hoặc `r.move_room == 1` ngay từ đầu vòng lặp xử lý danh sách phòng.
+    - Cập nhật điều kiện xác định Phòng đến: Bắt buộc phòng phải ở trạng thái Đặt trước chưa check-in (`isBooked && !isCheckedIn`), ngày đến trùng ngày hệ thống (`arrDate === sysDateStr`), và tuyệt đối không phải phòng chuyển (`!isMoved && Number(r.status) !== 100`).
+    - Đồng bộ logic loại trừ phòng `status = 100` trên cả biến đếm `arrCount` (nút Sang ngày) và danh sách hiển thị dữ liệu bảng (`processItem`).
+- **Kiểm tra**:
+  - Build frontend Vite production (`npm run build`): Thành công 100% không lỗi.
+  - MariaDB recovery: Đã phục hồi và khởi chạy dịch vụ MariaDB ổn định.
+- **Tệp thay đổi**:
+  - [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue)
+
+---
+
 ## [2026-09-04] - Khắc phục lỗi khóa ngoại 1451 khi sửa số lượng khách / trẻ em trong phòng
 ### Module: Reservation / Cập nhật phòng (`BookingController.php`)
 
