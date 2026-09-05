@@ -24,7 +24,7 @@ class CancelledRoomsReportTest extends TestCase
 
     public function test_migration_preserves_sp_261_room_cancellation_rules(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_09_03_190000_fix_cancelled_rooms_report_accuracy.php'));
+        $migration = file_get_contents(database_path('migrations/2026_09_03_140000_create_cancelled_rooms_report.php'));
         $this->assertStringContainsString('l.cancel_type = \'room\'', $migration);
         $this->assertStringContainsString('COALESCE(p_view_type, \'CancelDate\') = \'ArrivalDate\'', $migration);
         $this->assertStringContainsString('br.status = 3', $migration);
@@ -33,11 +33,10 @@ class CancelledRoomsReportTest extends TestCase
         $this->assertStringContainsString('DATEDIFF(br.arrival_date, DATE(l.cancelled_at))', $migration);
         $this->assertStringContainsString('p_division', $migration);
         $this->assertStringContainsString('p_group_by_reason', $migration);
-        $this->assertStringContainsString('$parameter[\'control\'] = \'hidden\'', $migration);
+        $this->assertStringContainsString("'p_booking_id', 'label' => 'Booking', 'control' => 'hidden'", $migration);
         $this->assertStringNotContainsString('b.deleted_at IS NULL', $migration);
         $this->assertStringNotContainsString('br.deleted_at IS NULL', $migration);
-        $schemaMigration = file_get_contents(database_path('migrations/2026_09_03_170000_fix_cancelled_rooms_parameter_schema.php'));
-        $this->assertStringContainsString("'position' => 6", $schemaMigration);
+        $this->assertStringContainsString("'position' => 6", $migration);
         $this->assertStringNotContainsString('PREPARE ', $migration);
     }
 
@@ -77,7 +76,7 @@ class CancelledRoomsReportTest extends TestCase
     {
         $legacySchema = file_get_contents(base_path('../old_database_struct/db_schema/ProVistaDTXHotel/tables/SP1100.md'));
         $roomClassMigration = file_get_contents(database_path('migrations/2026_06_11_000002_create_room_classes_table.php'));
-        $reportMigration = file_get_contents(database_path('migrations/2026_09_03_220000_fix_cancelled_rooms_all_branches.php'));
+        $reportMigration = file_get_contents(database_path('migrations/2026_09_03_140000_create_cancelled_rooms_report.php'));
 
         $this->assertStringContainsString('**ShortName**', $legacySchema);
         $this->assertStringContainsString("\$table->string('code')->unique(); // Tên viết tắt", $roomClassMigration);

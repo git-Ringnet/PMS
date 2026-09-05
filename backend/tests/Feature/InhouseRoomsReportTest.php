@@ -30,7 +30,7 @@ class InhouseRoomsReportTest extends TestCase
 
     public function test_accuracy_migration_counts_distinct_rooms_and_deduplicates_room_nights(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_08_27_170000_fix_room_report_data_accuracy.php'));
+        $migration = file_get_contents(database_path('migrations/2026_08_27_140000_create_inhouse_rooms_report.php'));
 
         $this->assertStringContainsString('COUNT(DISTINCT RentalRoomId)', $migration);
         $this->assertStringContainsString('WHERE IsMainGuest = 1', $migration);

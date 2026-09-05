@@ -28,7 +28,8 @@ class NoShowByDayReportTest extends TestCase
 
         $this->assertStringContainsString("'NO_SHOW'", file_get_contents(database_path('migrations/2026_09_03_260000_create_no_show_report.php')));
         $this->assertStringContainsString('NO_SHOW_BY_DAY_STANDARD', file_get_contents(database_path('report_templates/no_show_by_day_reference.php')));
-        $this->assertFileExists(database_path('migrations/2026_09_04_150000_fix_no_show_by_day_legacy_accuracy.php'));
+        $this->assertFileDoesNotExist(database_path('migrations/2026_09_04_150000_fix_no_show_by_day_legacy_accuracy.php'));
+        $this->assertFileDoesNotExist(database_path('migrations/2026_09_04_160000_fix_no_show_by_day_posted_bill_amount.php'));
     }
 
     public function test_template_groups_by_room_type_then_late_checkin_date(): void

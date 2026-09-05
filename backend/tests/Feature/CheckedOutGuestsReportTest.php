@@ -38,6 +38,20 @@ class CheckedOutGuestsReportTest extends TestCase
         $this->assertStringContainsString('CONCAT(COALESCE(hs.prefix_booking_id, \'\'), b.id)', $migration);
     }
 
+    public function test_main_migration_contains_final_layout_after_consolidation(): void
+    {
+        $migration = $this->migration();
+
+        $this->assertStringContainsString("'page_orientation'=>'portrait'", $migration);
+        $this->assertStringContainsString("'version'=>'1.8'", $migration);
+        $this->assertStringContainsString("report_templates/checked_out_guests_reference.php", $migration);
+
+        foreach (range(12, 17) as $sequence) {
+            $pattern = database_path(sprintf('migrations/2026_09_05_%d0000_*checked_out_guests*.php', $sequence));
+            $this->assertSame([], glob($pattern) ?: []);
+        }
+    }
+
     public function test_template_exposes_checkout_guest_columns_and_no_placeholders_after_render(): void
     {
         $template = require database_path('report_templates/checked_out_guests_reference.php');

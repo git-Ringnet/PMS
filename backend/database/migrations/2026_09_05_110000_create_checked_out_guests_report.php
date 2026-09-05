@@ -134,8 +134,8 @@ SQL);
         $sourceId = DB::table('report_data_sources')->where('code', self::SOURCE)->value('id');
         DB::table('templates')->updateOrInsert(['report'=>self::TEMPLATE], [
             'group'=>'Báo cáo phòng','name'=>'Danh sách khách đã trả phòng - Mẫu chuẩn','report_data_source_id'=>$sourceId,'parameter_defaults'=>json_encode($defaults),
-            'page_size'=>'A4','page_orientation'=>'landscape','margin_top'=>6,'margin_bottom'=>6,'margin_left'=>5,'margin_right'=>5,
-            'content_json'=>json_encode(['header'=>[],'detail'=>[],'footer'=>[]]),'content_html'=>'<h1>BÁO CÁO DANH SÁCH KHÁCH ĐÃ TRẢ PHÒNG</h1>','css'=>'','is_default'=>false,'version'=>'1.0','created_at'=>$now,'updated_at'=>$now,
+            'page_size'=>'A4','page_orientation'=>'portrait','margin_top'=>6,'margin_bottom'=>6,'margin_left'=>5,'margin_right'=>5,
+            'content_json'=>json_encode(['header'=>[],'detail'=>[],'footer'=>[]]),'content_html'=>'<h1>BÁO CÁO DANH SÁCH KHÁCH ĐÃ TRẢ PHÒNG</h1>','css'=>'','is_default'=>false,'version'=>'1.8','created_at'=>$now,'updated_at'=>$now,
         ]);
         (require database_path('report_templates/checked_out_guests_reference.php'))->apply();
         $templateId = DB::table('templates')->where('report', self::TEMPLATE)->value('id');
