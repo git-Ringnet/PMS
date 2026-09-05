@@ -477,7 +477,7 @@ class TemplateRendererService
             'phone' => $hotelSetting ? ($hotelSetting->phone ?? '+84 258 3528 555') : '+84 258 3528 555',
             'email' => $hotelSetting ? ($hotelSetting->email ?? 'info@galliothotel.com') : 'info@galliothotel.com',
             'logo' => $hotelSetting && $hotelSetting->logo_url
-                ? '<img src="'.$hotelSetting->logo_url.'" style="height: 60px;" alt="Logo">'
+                ? '<img src="'.$this->normalizeAssetUrl($hotelSetting->logo_url).'" style="height: 60px;" alt="Logo">'
                 : '<div style="font-weight: bold; font-size: 24px; color: #0284c7;">GALLIOT HOTEL</div>',
         ];
 
@@ -868,6 +868,10 @@ class TemplateRendererService
         }
         
         /* Dynamic User Injected CSS */
+        .report-header-band table, .report-detail-band table, .report-footer-band table {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
         '.$css.'
     </style>
 </head>
@@ -875,5 +879,15 @@ class TemplateRendererService
     '.$bodyHtml.'
 </body>
 </html>';
+    }
+
+    private function normalizeAssetUrl(?string $url): string
+    {
+        $url = trim((string) $url);
+        if ($url === '' || str_starts_with($url, '/') || preg_match('/^(https?:|data:|blob:)/i', $url)) {
+            return $url;
+        }
+
+        return '/'.ltrim($url, '/');
     }
 }

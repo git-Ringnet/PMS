@@ -474,6 +474,9 @@ class ReportDefinitionController extends Controller
     {
         $hotel = HotelSetting::first();
         $logoUrl = $hotel?->logo_url ?: $hotel?->logo;
+        if ($logoUrl && ! str_starts_with($logoUrl, '/') && ! preg_match('/^(https?:|data:|blob:)/i', $logoUrl)) {
+            $logoUrl = '/'.ltrim($logoUrl, '/');
+        }
 
         return [
             'name' => $hotel?->hotel_name ?? '',
@@ -536,7 +539,13 @@ class ReportDefinitionController extends Controller
             'version' => $template->version,
             'page_size' => $template->page_size,
             'page_orientation' => $template->page_orientation,
+            'margin_top' => $template->margin_top,
+            'margin_bottom' => $template->margin_bottom,
+            'margin_left' => $template->margin_left,
+            'margin_right' => $template->margin_right,
+            'parameter_defaults' => $template->parameter_defaults ?? [],
             'is_default' => (bool) ($template->pivot?->is_default ?? false),
+            'updated_at' => $template->updated_at,
         ];
     }
 

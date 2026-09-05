@@ -21,6 +21,12 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved'])
 
+const notifyTemplateSaved = () => {
+  window.dispatchEvent(new CustomEvent('pms:report-template-saved', {
+    detail: { templateId: Number(props.templateId) }
+  }))
+}
+
 const uiStore = useUiStore()
 const loading = ref(false)
 const saving = ref(false)
@@ -153,7 +159,7 @@ const defaultBlockStyle = {
   marginBottom: '0px',
   color: '#1e293b',
   fontWeight: 'normal',
-  whiteSpace: 'pre-wrap',
+  whiteSpace: 'normal',
   backgroundColor: '',
   borderSide: 'all',
   borderStyle: 'none',
@@ -672,7 +678,7 @@ const addSubBlock = (parentBlock, colIdx, type) => {
       marginBottom: '2px',
       color: '#1e293b',
       fontWeight: 'normal',
-      whiteSpace: 'pre-wrap'
+      whiteSpace: 'normal'
     }
   }
   
@@ -842,7 +848,7 @@ const addBlock = (type) => {
       marginBottom: '5px',
       color: '#1e293b',
       fontWeight: 'normal',
-      whiteSpace: 'pre-wrap'
+      whiteSpace: 'normal'
     }
   }
   
@@ -883,7 +889,7 @@ const addBlock = (type) => {
               fontSize: '12px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -900,7 +906,7 @@ const addBlock = (type) => {
               fontSize: '12px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1003,7 +1009,7 @@ const addFieldBlock = (band, field, index = blocks.value[band].length) => {
     content: `{{${field}}}`,
     style: {
       textAlign: 'left', fontSize: '13px', paddingTop: '5px', paddingBottom: '5px',
-      marginBottom: '5px', color: '#1e293b', fontWeight: 'normal', whiteSpace: 'pre-wrap'
+      marginBottom: '5px', color: '#1e293b', fontWeight: 'normal', whiteSpace: 'normal'
     }
   })
   selectedBand.value = band
@@ -1164,7 +1170,7 @@ const addHotelInfoBlock = () => {
               marginBottom: '2px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1187,7 +1193,7 @@ const addHotelInfoBlock = () => {
               marginBottom: '2px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1204,7 +1210,7 @@ const addHotelInfoBlock = () => {
       marginBottom: '15px',
       color: '#1e293b',
       fontWeight: 'normal',
-      whiteSpace: 'pre-wrap'
+      whiteSpace: 'normal'
     }
   }
   blocks.value[band].push(newBlock)
@@ -1238,7 +1244,7 @@ const addCustomerInfoBlock = () => {
               marginBottom: '2px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1261,7 +1267,7 @@ const addCustomerInfoBlock = () => {
               marginBottom: '2px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1278,7 +1284,7 @@ const addCustomerInfoBlock = () => {
       marginBottom: '10px',
       color: '#1e293b',
       fontWeight: 'normal',
-      whiteSpace: 'pre-wrap',
+      whiteSpace: 'normal',
       borderBottom: '1px solid #e2e8f0'
     }
   }
@@ -1313,7 +1319,7 @@ const addSignatureBlock = () => {
               marginBottom: '2px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1336,7 +1342,7 @@ const addSignatureBlock = () => {
               marginBottom: '2px',
               color: '#1e293b',
               fontWeight: 'normal',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
             }
           }
         ]
@@ -1353,7 +1359,7 @@ const addSignatureBlock = () => {
       marginBottom: '40px',
       color: '#1e293b',
       fontWeight: 'normal',
-      whiteSpace: 'pre-wrap'
+              whiteSpace: 'normal'
     }
   }
   blocks.value[band].push(newBlock)
@@ -1831,6 +1837,7 @@ const saveTemplateWithVersion = async () => {
       note.value = ''
       await loadTemplate()
       await loadVersions()
+      notifyTemplateSaved()
       emit('saved')
     }
   } catch (err) {
@@ -1864,6 +1871,8 @@ const rollbackToVersion = async (versionId) => {
       uiStore.showToast('Khôi phục phiên bản thành công!', 'success')
       await loadTemplate()
       await loadVersions()
+      notifyTemplateSaved()
+      emit('saved')
       if (activeTab.value === 'design') {
         // Force refresh design UI
       }
