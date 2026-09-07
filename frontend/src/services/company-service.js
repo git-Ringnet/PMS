@@ -76,3 +76,26 @@ export const fetchDepartments = () => http.get('/departments')
 export const createDepartment = (data) => http.post('/departments', data)
 export const fetchModules = () => http.get('/modules')
 export const fetchSystemBranchesList = () => http.get('/system-branches/list')
+// ==================== ORGANIZATION RBAC ====================
+export const fetchOrganization = () => http.get('/organization')
+export const createOrganizationDepartment = (data) => http.post('/organization/departments', data)
+export const updateOrganizationDepartment = (id, data) => http.put(`/organization/departments/${id}`, data)
+export const createPosition = (data) => http.post('/organization/positions', data)
+export const updatePosition = (id, data) => http.put(`/organization/positions/${id}`, data)
+export const deletePosition = (id) => http.delete(`/organization/positions/${id}`)
+export const syncPositionBranches = (id, data) => http.post(`/organization/positions/${id}/branches/sync`, data)
+export const fetchBranchRoleMatrix = (roleId, params) => http.get(`/roles/${roleId}/branch-permissions`, { params })
+export const syncBranchRoleMatrix = (roleId, data) => http.post(`/roles/${roleId}/branch-permissions/sync`, data)
+export const copyRole = (roleId, data) => http.post(`/roles/${roleId}/copy`, data)
+export const createPermissionScreen = (data) => http.post('/permission-screens', data)
+export const fetchUserOrganization = (userId) => http.get(`/users/${userId}/organization`)
+export const syncUserOrganization = (userId, data) => http.post(`/users/${userId}/organization/sync`, data)
+export const syncUserWarehouses = (userId, data) => http.post(`/users/${userId}/warehouses/sync`, data)
+export const fetchWarehouses = (branch = null) => http.get('/warehouses', branch ? {
+  headers: {
+    'X-Branch-Id': String(branch.id),
+    'X-Branch-Code': branch.code,
+  },
+} : {})
+export const resetUserPassword = (userId) => http.post(`/users/${userId}/reset-password`)
+export const changeUserPassword = (data) => http.post('/me/change-password', data)

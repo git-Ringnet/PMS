@@ -15,6 +15,7 @@ Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController:
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/me/change-password', [AuthController::class, 'changePassword']);
 
     Route::get('/user', function (Request $request) {
         return $request->user();
@@ -196,6 +197,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
 
     // System configuration routes
     Route::get('nationalities', [\App\Http\Controllers\Api\NationalityController::class, 'index']);
+    // Guest definitions routes (SP8015, SP8017, SP8019, SP8042, SP8055)
+    Route::get('guest-definitions', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'index']);
+    Route::get('guest-titles', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'titles']);
+    Route::get('border-gates', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'borderGates']);
+    Route::get('entry-purposes', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'entryPurposes']);
+    Route::get('guest-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'guestTypes']);
+    Route::get('id-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'idTypes']);
+    Route::get('provinces', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'provinces']);
+    Route::get('districts', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'districts']);
+    Route::get('wards', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'wards']);
+    Route::post('geo/sync', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'syncGeo']);
     Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
     Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
@@ -224,6 +236,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('users/{user}', [\App\Http\Controllers\Api\UserController::class, 'show'])->middleware('permission:system.user.view');
     Route::put('users/{user}', [\App\Http\Controllers\Api\UserController::class, 'update'])->middleware('permission:system.user.manage');
     Route::delete('users/{user}', [\App\Http\Controllers\Api\UserController::class, 'destroy'])->middleware('permission:system.user.manage');
+    Route::post('users/{user}/reset-password', [\App\Http\Controllers\Api\UserController::class, 'resetPassword'])->middleware('permission:system.user.manage');
     Route::post('users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature'])->middleware('permission:system.user.manage');
     Route::delete('users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature'])->middleware('permission:system.user.manage');
 
@@ -231,6 +244,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('users/{id}/permissions', [\App\Http\Controllers\Api\UserPermissionController::class, 'getUserPermissions'])->middleware('permission:system.user.view');
     Route::post('users/{id}/branches/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncBranches'])->middleware('permission:system.user.manage');
     Route::post('users/{id}/roles/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncRoles'])->middleware('permission:system.user.manage');
+
+    // Cơ cấu tổ chức và phân quyền theo từng chi nhánh
+    Route::get('organization', [\App\Http\Controllers\Api\OrganizationController::class, 'index'])->middleware('permission:system.user.view');
+    Route::post('organization/departments', [\App\Http\Controllers\Api\OrganizationController::class, 'storeDepartment'])->middleware('permission:system.user.manage');
+    Route::put('organization/departments/{department}', [\App\Http\Controllers\Api\OrganizationController::class, 'updateDepartment'])->middleware('permission:system.user.manage');
+    Route::post('organization/positions', [\App\Http\Controllers\Api\OrganizationController::class, 'storePosition'])->middleware('permission:system.user.manage');
+    Route::put('organization/positions/{position}', [\App\Http\Controllers\Api\OrganizationController::class, 'updatePosition'])->middleware('permission:system.user.manage');
+    Route::delete('organization/positions/{position}', [\App\Http\Controllers\Api\OrganizationController::class, 'destroyPosition'])->middleware('permission:system.user.manage');
+    Route::post('organization/positions/{position}/branches/sync', [\App\Http\Controllers\Api\OrganizationController::class, 'syncPositionBranches'])->middleware('permission:system.user.manage');
+
+    Route::get('users/{user}/organization', [\App\Http\Controllers\Api\UserOrganizationController::class, 'show'])->middleware('permission:system.user.view');
+    Route::post('users/{user}/organization/sync', [\App\Http\Controllers\Api\UserOrganizationController::class, 'sync'])->middleware('permission:system.user.manage');
+    Route::post('users/{user}/warehouses/sync', [\App\Http\Controllers\Api\UserOrganizationController::class, 'syncWarehouses'])->middleware('permission:system.user.manage');
 
     // Roles & Permissions Management
     Route::get('roles', [\App\Http\Controllers\Api\RoleController::class, 'index'])->middleware('permission:system.user.view');
@@ -240,6 +266,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('roles/{id}/permissions', [\App\Http\Controllers\Api\RoleController::class, 'getPermissions'])->middleware('permission:system.user.view');
     Route::post('roles/{id}/permissions/sync', [\App\Http\Controllers\Api\RoleController::class, 'syncPermissions'])->middleware('permission:system.user.manage');
     Route::get('permissions', [\App\Http\Controllers\Api\RoleController::class, 'allPermissions'])->middleware('permission:system.user.view');
+    Route::get('roles/{role}/branch-permissions', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'matrix'])->middleware('permission:system.user.view');
+    Route::post('roles/{role}/branch-permissions/sync', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'sync'])->middleware('permission:system.user.manage');
+    Route::post('roles/{sourceRole}/copy', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'copyRole'])->middleware('permission:system.user.manage');
+    Route::post('permission-screens', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'storeScreen'])->middleware('permission:system.user.manage');
     Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class);
     Route::post('/housekeeping/outlets/reorder', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'reorder']);
     Route::delete('/housekeeping/outlets/{housekeepingOutlet}/force', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'forceDestroy'])->name('housekeeping.outlets.force-destroy');
@@ -288,8 +318,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
 
     // ─── Chuyển kho (Transfer) ────────────────────────────────────────
     Route::post('/inventory/transfer', [\App\Http\Controllers\Api\InventoryTransferController::class, 'store']);
-    Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature']);
-    Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature']);
+    Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature'])
+        ->middleware('permission:system.user.manage');
+    Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature'])
+        ->middleware('permission:system.user.manage');
     Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);
     Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update']);
     Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
@@ -543,7 +575,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     });
 
     // ── Roles & Permissions ─────────────────────────────────────
-    Route::prefix('roles')->group(function () {
+    Route::prefix('roles')->middleware('permission:system.user.manage')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\RoleController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\RoleController::class, 'store']);
         Route::put('/{id}', [\App\Http\Controllers\Api\RoleController::class, 'update']);
@@ -551,23 +583,27 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
         Route::get('/{id}/permissions', [\App\Http\Controllers\Api\RoleController::class, 'getPermissions']);
         Route::post('/{id}/permissions/sync', [\App\Http\Controllers\Api\RoleController::class, 'syncPermissions']);
     });
-    Route::get('/permissions', [\App\Http\Controllers\Api\RoleController::class, 'allPermissions']);
+    Route::get('/permissions', [\App\Http\Controllers\Api\RoleController::class, 'allPermissions'])
+        ->middleware('permission:system.user.view');
 
     // ── User Permissions & Branches ─────────────────────────────
-    Route::get('/system-branches/list', [\App\Http\Controllers\Api\UserPermissionController::class, 'listBranches']);
-    Route::prefix('users/{userId}')->group(function () {
+    Route::get('/system-branches/list', [\App\Http\Controllers\Api\UserPermissionController::class, 'listBranches'])
+        ->middleware('permission:system.user.view');
+    Route::prefix('users/{userId}')->middleware('permission:system.user.manage')->group(function () {
         Route::get('/permissions', [\App\Http\Controllers\Api\UserPermissionController::class, 'getUserPermissions']);
         Route::post('/branches/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncBranches']);
         Route::post('/roles/sync', [\App\Http\Controllers\Api\UserPermissionController::class, 'syncRoles']);
     });
 
     // ── Departments & Modules (Cơ cấu tổ chức & Ứng dụng) ───────
-    Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
-    Route::post('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'store']);
+    Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index'])
+        ->middleware('permission:system.user.view');
+    Route::post('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'store'])
+        ->middleware('permission:system.user.manage');
     Route::get('/modules', function () {
         $modules = \App\Models\Module::where('is_active', true)->orderBy('sort_order')->get();
         return response()->json(['success' => true, 'data' => $modules]);
-    });
+    })->middleware('permission:system.user.view');
 });
 
 Route::post('/test-log', function (Illuminate\Http\Request $request) {

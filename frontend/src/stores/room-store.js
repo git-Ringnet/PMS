@@ -9,6 +9,8 @@ export const useRoomStore = defineStore('room', () => {
   const loading = ref(false)
   const error = ref(null)
   const stats = ref(null)
+  // Chỉ response thống kê mới nhất được phép cập nhật store, tránh request realtime cũ ghi đè.
+  let statsRequestSequence = 0
   const filters = ref({
     floor: null,
     status: null,
@@ -111,6 +113,7 @@ export const useRoomStore = defineStore('room', () => {
   })
 
   const occupancyRate = computed(() => {
+    if (stats.value?.occupancy_rate !== undefined) return Number(stats.value.occupancy_rate) || 0
     if (rooms.value.length === 0) return 0
     return Math.round((roomStats.value.occupied / rooms.value.length) * 100)
   })
@@ -191,11 +194,20 @@ export const useRoomStore = defineStore('room', () => {
   }
 
   async function fetchStats(date = null) {
+    const requestSequence = ++statsRequestSequence
     try {
       const response = await roomService.getRoomStats(date)
-      stats.value = response.data
+      if (requestSequence === statsRequestSequence) {
+        stats.value = response.data
+      }
+      return response.data
     } catch (err) {
+      if (requestSequence === statsRequestSequence) {
+        stats.value = null
+        error.value = 'Không thể tải thống kê phòng.'
+      }
       console.error('fetchStats error:', err)
+      return null
     }
   }
 

@@ -16,23 +16,27 @@ http.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
-    
+
     // Đính kèm ngôn ngữ hiện tại của người dùng vào header
     const lang = localStorage.getItem('pms_lang') || 'vi'
     config.headers['Accept-Language'] = lang
     config.headers['X-Language'] = lang
 
     // Đính kèm chi nhánh hiện tại để backend chuyển connection DB tương ứng
-    const branchCode = localStorage.getItem('selected_branch_code') || 'HKT1'
-    const branchId = localStorage.getItem('selected_branch_id') || '1'
-    config.headers['X-Branch-Code'] = branchCode
-    config.headers['X-Branch-Id'] = branchId
+    const branchCode = localStorage.getItem('selected_branch_code')
+    const branchId = localStorage.getItem('selected_branch_id')
+    if (!config.headers['X-Branch-Code'] && branchCode) {
+      config.headers['X-Branch-Code'] = branchCode
+    }
+    if (!config.headers['X-Branch-Id'] && branchId) {
+      config.headers['X-Branch-Id'] = branchId
+    }
 
     // Nếu data là FormData, xóa Content-Type để trình duyệt / Axios tự tạo header multipart kèm boundary chuẩn
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type']
     }
-    
+
     return config
   },
   (error) => Promise.reject(error)
@@ -40,6 +44,8 @@ http.interceptors.request.use(
 
 // Flag tránh redirect nhiều lần khi nhiều request 401 cùng lúc
 let _isRedirectingToLogin = false
+// Flag tránh dispatch 423 liên tục
+let _isHandling423 = false
 
 // Response interceptor
 http.interceptors.response.use(
@@ -75,6 +81,12 @@ http.interceptors.response.use(
         setTimeout(() => { _isRedirectingToLogin = false }, 3000)
       } else if (status === 403) {
         console.error('Không có quyền truy cập')
+      } else if (status === 423 && !_isHandling423) {
+        // 423 = must_change_password: bắt buộc đổi mật khẩu lần đầu
+        // Dispatch custom event để ForceChangePasswordModal bắt (tránh circular dep với store)
+        _isHandling423 = true
+        window.dispatchEvent(new CustomEvent('pms:force-change-password'))
+        setTimeout(() => { _isHandling423 = false }, 3000)
       } else if (status === 500) {
         console.error('Lỗi máy chủ')
       }

@@ -5,41 +5,35 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    /**
-     * Display a listing of employees.
-     */
     public function index(Request $request)
     {
         $query = User::query();
 
-        // Search name, email, employee_code, username
-        if ($request->has('search') && !empty($request->search)) {
+        if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('username', 'like', "%{$search}%")
-                  ->orWhere('employee_code', 'like', "%{$search}%");
+            $query->where(function ($scope) use ($search) {
+                $scope->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('username', 'like', "%{$search}%")
+                    ->orWhere('employee_code', 'like', "%{$search}%");
             });
         }
 
-        // Sorting
         $sortField = $request->get('sort_field', 'id');
-        $sortDir = $request->get('sort_dir', 'desc');
-        
-        $validSortFields = ['id', 'name', 'username', 'email', 'employee_code', 'job_title', 'department', 'birth_date', 'phone', 'address', 'created_at'];
-        if (in_array($sortField, $validSortFields)) {
-            $query->orderBy($sortField, $sortDir);
-        } else {
-            $query->orderBy('id', 'desc');
-        }
+        $sortDirection = strtolower($request->get('sort_dir', 'desc')) === 'asc' ? 'asc' : 'desc';
+        $validSortFields = [
+            'id', 'name', 'username', 'email', 'employee_code', 'job_title',
+            'department', 'birth_date', 'phone', 'address', 'created_at',
+        ];
+        $query->orderBy(in_array($sortField, $validSortFields, true) ? $sortField : 'id', $sortDirection);
 
-        $perPage = $request->get('per_page', 100);
-        $users = $query->paginate($perPage);
+        $users = $query->paginate(min(200, max(1, (int) $request->get('per_page', 100))));
 
         return response()->json([
             'success' => true,
@@ -53,77 +47,13 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Store a newly created employee.
-     */
     public function store(Request $request)
     {
+        $system = config('database_domains.system_connection');
         $validated = $request->validate([
-            'employee_code' => 'nullable|string|max:100|unique:users,employee_code',
             'name' => 'required|string|max:255',
-            'username' => 'required|string|max:255|unique:users,username',
-            'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:6',
-            'department_code' => 'nullable|string|max:100',
-            'department' => 'nullable|string|max:255',
-            'job_title_code' => 'nullable|string|max:100',
-            'job_title' => 'nullable|string|max:255',
-            'birth_date' => 'nullable|date',
-            'start_date' => 'nullable|date',
-            'phone' => 'nullable|string|max:50',
-            'address' => 'nullable|string|max:1000',
-            'is_active_user' => 'nullable|boolean',
-        ], [
-            'name.required' => 'Họ tên nhân viên không được để trống.',
-            'username.required' => 'Tên đăng nhập không được để trống.',
-            'username.unique' => 'Tên đăng nhập đã được sử dụng bởi nhân viên khác.',
-            'email.required' => 'Email không được để trống.',
-            'email.unique' => 'Email đã được sử dụng bởi nhân viên khác.',
-            'password.required' => 'Mật khẩu không được để trống.',
-            'password.min' => 'Mật khẩu phải chứa ít nhất 6 ký tự.',
-            'employee_code.unique' => 'Mã nhân viên đã tồn tại.',
-        ]);
-
-        $validated['password'] = Hash::make($validated['password']);
-        
-        $user = User::create($validated);
-
-        return response()->json([
-            'success' => true,
-            'data' => $user,
-        ], 201);
-    }
-
-    /**
-     * Display the specified employee.
-     */
-    public function show($id)
-    {
-        $user = User::find($id);
-        if (!$user) {
-            return response()->json(['message' => 'Employee not found'], 404);
-        }
-        return response()->json([
-            'success' => true,
-            'data' => $user,
-        ]);
-    }
-
-    /**
-     * Update the specified employee.
-     */
-    public function update(Request $request, $id)
-    {
-        $user = User::find($id);
-        if (!$user) {
-            return response()->json(['message' => 'Employee not found'], 404);
-        }
-
-        $validated = $request->validate([
-            'employee_code' => 'nullable|string|max:100|unique:users,employee_code,' . $id,
-            'name' => 'required|string|max:255',
-            'username' => 'required|string|max:255|unique:users,username,' . $id,
-            'email' => 'required|string|email|max:255|unique:users,email,' . $id,
+            'username' => ['nullable', 'string', 'max:255', Rule::unique($system.'.users', 'username')],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique($system.'.users', 'email')],
             'password' => 'nullable|string|min:6',
             'department_code' => 'nullable|string|max:100',
             'department' => 'nullable|string|max:255',
@@ -134,64 +64,115 @@ class UserController extends Controller
             'phone' => 'nullable|string|max:50',
             'address' => 'nullable|string|max:1000',
             'is_active_user' => 'nullable|boolean',
-        ], [
-            'name.required' => 'Họ tên nhân viên không được để trống.',
-            'username.required' => 'Tên đăng nhập không được để trống.',
-            'username.unique' => 'Tên đăng nhập đã được sử dụng bởi nhân viên khác.',
-            'email.required' => 'Email không được để trống.',
-            'email.unique' => 'Email đã được sử dụng bởi nhân viên khác.',
-            'password.min' => 'Mật khẩu phải chứa ít nhất 6 ký tự.',
-            'employee_code.unique' => 'Mã nhân viên đã tồn tại.',
-        ]);
+        ], $this->validationMessages());
 
-        if (isset($validated['password']) && !empty($validated['password'])) {
+        $prefix = strtoupper(preg_replace('/[^A-Z0-9]/i', '', config('database_domains.employee_code_prefix')) ?: 'NV');
+        $user = DB::connection($system)->transaction(function () use ($validated, $prefix) {
+            $lastCode = User::query()
+                ->where('employee_code', 'like', $prefix.'%')
+                ->lockForUpdate()
+                ->orderByRaw('CAST(SUBSTRING(employee_code, ?) AS UNSIGNED) DESC', [strlen($prefix) + 1])
+                ->value('employee_code');
+            $nextNumber = $lastCode && preg_match('/^'.preg_quote($prefix, '/').'(\d+)$/', $lastCode, $matches)
+                ? ((int) $matches[1]) + 1
+                : 1;
+
+            return User::create([
+                ...$validated,
+                'employee_code' => $prefix.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT),
+                'username' => $validated['username'] ?: $validated['email'],
+                'password' => Hash::make($validated['password'] ?: $validated['email']),
+                'must_change_password' => true,
+                'is_active_user' => $validated['is_active_user'] ?? true,
+            ]);
+        });
+
+        return response()->json(['success' => true, 'data' => $user], 201);
+    }
+
+    public function show($id)
+    {
+        $user = User::find($id);
+        return $user
+            ? response()->json(['success' => true, 'data' => $user])
+            : response()->json(['message' => 'Không tìm thấy nhân viên.'], 404);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $user = User::find($id);
+        if (!$user) {
+            return response()->json(['message' => 'Không tìm thấy nhân viên.'], 404);
+        }
+
+        $system = config('database_domains.system_connection');
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'username' => ['nullable', 'string', 'max:255', Rule::unique($system.'.users', 'username')->ignore($id)],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique($system.'.users', 'email')->ignore($id)],
+            'password' => 'nullable|string|min:6',
+            'department_code' => 'nullable|string|max:100',
+            'department' => 'nullable|string|max:255',
+            'job_title_code' => 'nullable|string|max:100',
+            'job_title' => 'nullable|string|max:255',
+            'birth_date' => 'nullable|date',
+            'start_date' => 'nullable|date',
+            'phone' => 'nullable|string|max:50',
+            'address' => 'nullable|string|max:1000',
+            'is_active_user' => 'nullable|boolean',
+        ], $this->validationMessages());
+
+        $validated['username'] = $validated['username'] ?: $validated['email'];
+        if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
+            $validated['must_change_password'] = true;
         } else {
             unset($validated['password']);
         }
 
         $user->update($validated);
+        if (array_key_exists('is_active_user', $validated) && !$validated['is_active_user']) {
+            $user->tokens()->delete();
+        }
+
+        return response()->json(['success' => true, 'data' => $user->fresh()]);
+    }
+
+    public function resetPassword(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+        $user->update([
+            'password' => Hash::make($user->email),
+            'must_change_password' => true,
+        ]);
+        $user->tokens()->delete();
 
         return response()->json([
             'success' => true,
-            'data' => $user,
+            'message' => 'Đã đặt lại mật khẩu về email ('.$user->email.') và yêu cầu đổi ở lần đăng nhập tiếp theo.',
         ]);
     }
 
-    /**
-     * Remove the specified employee.
-     */
     public function destroy(Request $request, $id)
     {
         $user = User::find($id);
         if (!$user) {
-            return response()->json(['message' => 'Employee not found'], 404);
+            return response()->json(['message' => 'Không tìm thấy nhân viên.'], 404);
         }
-
-        // Prevent self deletion
-        if ($request->user() && $request->user()->id == $user->id) {
+        if ($request->user() && (int) $request->user()->id === (int) $user->id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Bạn không thể tự xóa tài khoản của chính mình!',
+                'message' => 'Bạn không thể tự ngừng sử dụng tài khoản của chính mình.',
             ], 400);
         }
 
-        // Remove signature file if exists
-        if ($user->signature_url && file_exists(public_path($user->signature_url))) {
-            @unlink(public_path($user->signature_url));
-        }
+        // Giữ nguyên user để bảo toàn lịch sử giao dịch, chỉ khóa quyền truy cập.
+        $user->update(['is_active_user' => false]);
+        $user->tokens()->delete();
 
-        $user->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Employee deleted successfully',
-        ]);
+        return response()->json(['success' => true, 'message' => 'Đã ngừng sử dụng tài khoản nhân viên.']);
     }
 
-    /**
-     * Upload employee signature.
-     */
     public function uploadSignature(Request $request, $id)
     {
         $request->validate([
@@ -200,60 +181,50 @@ class UserController extends Controller
             'signature.required' => 'Vui lòng chọn ảnh chữ ký.',
             'signature.image' => 'File tải lên phải là hình ảnh.',
             'signature.max' => 'Dung lượng chữ ký không được vượt quá 10MB.',
-            'signature.uploaded' => 'Tải chữ ký lên thất bại. Vui lòng kiểm tra lại dung lượng file (tối đa 10MB) hoặc cấu hình máy chủ PHP.',
+            'signature.uploaded' => 'Tải chữ ký lên thất bại. Vui lòng kiểm tra dung lượng hoặc cấu hình PHP.',
         ]);
 
-        $user = User::find($id);
-        if (!$user) {
-            return response()->json(['message' => 'Employee not found'], 404);
+        $user = User::findOrFail($id);
+        $oldSignature = $user->getRawOriginal('signature_url');
+        if ($oldSignature && file_exists(public_path($oldSignature))) {
+            @unlink(public_path($oldSignature));
         }
 
-        if ($request->hasFile('signature')) {
-            // Remove old file
-            if ($user->signature_url && file_exists(public_path($user->signature_url))) {
-                @unlink(public_path($user->signature_url));
-            }
-
-            $file = $request->file('signature');
-            $filename = 'signature_' . $user->id . '_' . time() . '_' . $file->getClientOriginalName();
-            
-            // Ensure directory exists
-            $dirPath = public_path('uploads/signatures');
-            if (!file_exists($dirPath)) {
-                mkdir($dirPath, 0755, true);
-            }
-            
-            $file->move($dirPath, $filename);
-            
-            $user->signature_url = 'uploads/signatures/' . $filename;
-            $user->save();
+        $file = $request->file('signature');
+        $filename = 'signature_'.$user->id.'_'.time().'_'.$file->getClientOriginalName();
+        $directory = public_path('uploads/signatures');
+        if (!file_exists($directory)) {
+            mkdir($directory, 0755, true);
         }
+        $file->move($directory, $filename);
 
-        return response()->json([
-            'success' => true,
-            'data' => $user,
-        ]);
-    }
-
-    /**
-     * Delete employee signature.
-     */
-    public function deleteSignature($id)
-    {
-        $user = User::find($id);
-        if (!$user) {
-            return response()->json(['message' => 'Employee not found'], 404);
-        }
-
-        if ($user->signature_url && file_exists(public_path($user->signature_url))) {
-            @unlink(public_path($user->signature_url));
-        }
-        $user->signature_url = null;
+        $user->signature_url = 'uploads/signatures/'.$filename;
         $user->save();
 
-        return response()->json([
-            'success' => true,
-            'data' => $user,
-        ]);
+        return response()->json(['success' => true, 'data' => $user]);
+    }
+
+    public function deleteSignature($id)
+    {
+        $user = User::findOrFail($id);
+        $signature = $user->getRawOriginal('signature_url');
+        if ($signature && file_exists(public_path($signature))) {
+            @unlink(public_path($signature));
+        }
+        $user->update(['signature_url' => null]);
+
+        return response()->json(['success' => true, 'data' => $user->fresh()]);
+    }
+
+    private function validationMessages(): array
+    {
+        return [
+            'name.required' => 'Họ tên nhân viên không được để trống.',
+            'username.required' => 'Tên đăng nhập không được để trống.',
+            'username.unique' => 'Tên đăng nhập đã được sử dụng.',
+            'email.required' => 'Email không được để trống.',
+            'email.unique' => 'Email đã được sử dụng.',
+            'password.min' => 'Mật khẩu phải chứa ít nhất 6 ký tự.',
+        ];
     }
 }

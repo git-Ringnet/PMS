@@ -42,14 +42,11 @@ class PaymentController extends Controller
     protected function canOperateOldDay(): bool
     {
         $user = Auth::user();
-        if (!$user) return true;
-        $username = strtolower((string)($user->username ?? ''));
-        if (in_array($username, ['admin', 'system'], true) || !empty($user->is_admin)) return true;
+        if (!$user) return false;
 
-        $settings = $user->setting?->settings ?? [];
-        if (!isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) return true;
-        $val = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
-        return $val === true || $val === 1 || $val === '1' || $val === 'true' || $val === 'default';
+        return $user->canPerformHistoricalDateActions(
+            request()->attributes->get('_branch_id')
+        );
     }
 
     private function resolvePaymentMethodCode($input)

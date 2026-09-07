@@ -121,10 +121,8 @@
                       <template v-if="col.key === 'id_type'">
                         <select v-model="guest.id_type" class="table-input">
                           <option value="">Loại</option>
-                          <option value="CCCD">CCCD</option>
-                          <option value="CMND">CMND</option>
-                          <option value="Hộ chiếu">Hộ chiếu</option>
-                          <option value="Khác">Khác</option>
+                          <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
+                          <option v-if="guest.id_type && !idTypesList.some(it => getIdTypeValue(it) === guest.id_type || it.name === guest.id_type)" :value="guest.id_type">{{ guest.id_type }}</option>
                         </select>
                       </template>
 
@@ -141,11 +139,8 @@
                       <template v-if="col.key === 'guest_type'">
                         <select v-model="guest.guest_type" class="table-input">
                           <option value="">Loại khách</option>
-                          <option value="FIT">FIT</option>
-                          <option value="GIT">GIT</option>
-                          <option value="VIP">VIP</option>
-                          <option value="Crew">Crew</option>
-                          <option value="Long Stay">Long Stay</option>
+                          <option v-for="gt in guestTypesList" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
+                          <option v-if="guest.guest_type && !guestTypesList.some(gt => getGuestTypeValue(gt) === guest.guest_type || gt.name === guest.guest_type)" :value="guest.guest_type">{{ guest.guest_type }}</option>
                         </select>
                       </template>
 
@@ -153,12 +148,17 @@
                       <template v-if="col.key === 'entry_purpose'">
                         <select v-model="guest.entry_purpose" class="table-input">
                           <option value="">Mục đích</option>
-                          <option value="Du lịch">Du lịch</option>
-                          <option value="Công tác">Công tác</option>
-                          <option value="Thăm thân">Thăm thân</option>
-                          <option value="Học tập">Học tập</option>
-                          <option value="Đầu tư">Đầu tư</option>
-                          <option value="Khác">Khác</option>
+                          <option v-for="ep in entryPurposesList" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
+                          <option v-if="guest.entry_purpose && !entryPurposesList.some(ep => ep.name === guest.entry_purpose)" :value="guest.entry_purpose">{{ guest.entry_purpose }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Border gate dropdown -->
+                      <template v-if="col.key === 'border_gate'">
+                        <select v-model="guest.border_gate" class="table-input">
+                          <option value="">-- Cửa khẩu --</option>
+                          <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
+                          <option v-if="guest.border_gate && !borderGateNames.includes(guest.border_gate)" :value="guest.border_gate">{{ guest.border_gate }}</option>
                         </select>
                       </template>
 
@@ -192,7 +192,7 @@
                       </template>
 
                       <!-- Text fields -->
-                      <template v-if="['full_name', 'id_number', 'phone', 'email', 'visa_no', 'border_gate', 'note', 'address'].includes(col.key)">
+                      <template v-if="['full_name', 'id_number', 'phone', 'email', 'visa_no', 'note', 'address'].includes(col.key)">
                         <input v-model="guest[col.key]" type="text" class="table-input" />
                       </template>
                     </template>
@@ -247,10 +247,8 @@
                       <template v-if="col.key === 'id_type'">
                         <select v-model="child.id_type" class="table-input">
                           <option value="">Loại</option>
-                          <option value="CCCD">CCCD</option>
-                          <option value="CMND">CMND</option>
-                          <option value="Hộ chiếu">Hộ chiếu</option>
-                          <option value="Khác">Khác</option>
+                          <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
+                          <option v-if="child.id_type && !idTypesList.some(it => getIdTypeValue(it) === child.id_type || it.name === child.id_type)" :value="child.id_type">{{ child.id_type }}</option>
                         </select>
                       </template>
 
@@ -267,11 +265,8 @@
                       <template v-if="col.key === 'guest_type'">
                         <select v-model="child.guest_type" class="table-input">
                           <option value="">Loại khách</option>
-                          <option value="FIT">FIT</option>
-                          <option value="GIT">GIT</option>
-                          <option value="VIP">VIP</option>
-                          <option value="Crew">Crew</option>
-                          <option value="Long Stay">Long Stay</option>
+                          <option v-for="gt in guestTypesList" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
+                          <option v-if="child.guest_type && !guestTypesList.some(gt => getGuestTypeValue(gt) === child.guest_type || gt.name === child.guest_type)" :value="child.guest_type">{{ child.guest_type }}</option>
                         </select>
                       </template>
 
@@ -279,12 +274,17 @@
                       <template v-if="col.key === 'entry_purpose'">
                         <select v-model="child.entry_purpose" class="table-input">
                           <option value="">Mục đích</option>
-                          <option value="Du lịch">Du lịch</option>
-                          <option value="Công tác">Công tác</option>
-                          <option value="Thăm thân">Thăm thân</option>
-                          <option value="Học tập">Học tập</option>
-                          <option value="Đầu tư">Đầu tư</option>
-                          <option value="Khác">Khác</option>
+                          <option v-for="ep in entryPurposesList" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
+                          <option v-if="child.entry_purpose && !entryPurposesList.some(ep => ep.name === child.entry_purpose)" :value="child.entry_purpose">{{ child.entry_purpose }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Border gate dropdown -->
+                      <template v-if="col.key === 'border_gate'">
+                        <select v-model="child.border_gate" class="table-input">
+                          <option value="">-- Cửa khẩu --</option>
+                          <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
+                          <option v-if="child.border_gate && !borderGateNames.includes(child.border_gate)" :value="child.border_gate">{{ child.border_gate }}</option>
                         </select>
                       </template>
 
@@ -318,7 +318,7 @@
                       </template>
 
                       <!-- Text fields -->
-                      <template v-if="['full_name', 'id_number', 'phone', 'email', 'visa_no', 'border_gate', 'note', 'address'].includes(col.key)">
+                      <template v-if="['full_name', 'id_number', 'phone', 'email', 'visa_no', 'note', 'address'].includes(col.key)">
                         <input v-model="child[col.key]" type="text" class="table-input" />
                       </template>
                     </template>
@@ -476,7 +476,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { fetchBookingGuests, initBookingGuests, bulkUpdateBookingGuests, fetchNationalities } from '@/services/booking-service'
+import { fetchBookingGuests, initBookingGuests, bulkUpdateBookingGuests, fetchNationalities, fetchGuestDefinitions, syncGeoData } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import GuestDetailModal from './GuestDetailModal.vue'
 
@@ -535,7 +535,52 @@ const allColumns = ref([
 
 const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 
-const titlesList = ['Mr.', 'Mrs.', 'Ms.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
+// ==================== MASTER DATA ĐỊNH NGHĨA KHÁCH ====================
+const guestDefinitions = ref({
+  titles: [],
+  border_gates: [],
+  entry_purposes: [],
+  guest_types: [],
+  id_types: [],
+})
+
+const titlesList = computed(() => {
+  if (guestDefinitions.value.titles?.length > 0) {
+    return guestDefinitions.value.titles.map(t => t.name)
+  }
+  return ['Mr.', 'Mrs.', 'Ms.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
+})
+
+const borderGatesList = computed(() => guestDefinitions.value.border_gates || [])
+const borderGateNames = computed(() => borderGatesList.value.map(g => g.name))
+const entryPurposesList = computed(() => guestDefinitions.value.entry_purposes || [])
+const guestTypesList = computed(() => guestDefinitions.value.guest_types || [])
+const idTypesList = computed(() => guestDefinitions.value.id_types || [])
+
+function getIdTypeValue(it) {
+  if (!it) return ''
+  if (it.code === 'PASSPORT') return 'Hộ chiếu'
+  if (it.code === 'OTHER') return 'Khác'
+  return it.code || it.name
+}
+
+function getGuestTypeValue(gt) {
+  if (!gt) return ''
+  if (gt.code === 'CREW') return 'Crew'
+  if (gt.code === 'LONGSTAY') return 'Long Stay'
+  return gt.code
+}
+
+async function loadGuestDefinitions() {
+  try {
+    const res = await fetchGuestDefinitions()
+    if (res.data?.success) {
+      guestDefinitions.value = res.data.data || {}
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh mục thông tin khách:', err)
+  }
+}
 
 // ==================== NATIONALITIES ====================
 const nationalitiesList = ref([])
@@ -568,6 +613,7 @@ async function loadNationalities() {
 
 onMounted(() => {
   loadNationalities()
+  loadGuestDefinitions()
 })
 
 function getNationalityLabel(code) {
@@ -645,6 +691,7 @@ watch(() => props.show, (v) => {
     modalPos.value = { x: 0, y: 0 }
     if (props.bookingId) loadGuests()
     loadNationalities()
+    loadGuestDefinitions()
   }
 })
 
@@ -728,6 +775,7 @@ async function handleProvinceChange(lineKey, row, newProvinceName) {
   wardsForLine.value[lineKey] = []
   if (newProvinceName) {
     districtsForLine.value[lineKey] = await fetchDistricts(newProvinceName)
+    syncGeoData({ province: newProvinceName }).catch(() => {})
   }
 }
 
@@ -737,6 +785,7 @@ async function handleDistrictChange(lineKey, row, newDistrictName) {
   wardsForLine.value[lineKey] = []
   if (row.province && newDistrictName) {
     wardsForLine.value[lineKey] = await fetchWards(row.province, newDistrictName)
+    syncGeoData({ province: row.province, district: newDistrictName }).catch(() => {})
   }
 }
 

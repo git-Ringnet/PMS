@@ -7,6 +7,10 @@ return [
     */
     'system_connection' => env('SYSTEM_DB_CONNECTION', 'mysql_system'),
 
+    'default_application_code' => env('DEFAULT_APPLICATION_CODE', 'PMS'),
+
+    'employee_code_prefix' => env('EMPLOYEE_CODE_PREFIX', 'NB'),
+
     'default_branch_code' => env('DEFAULT_BRANCH_CODE', 'HKT1'),
 
     'branch_connections' => [
@@ -34,6 +38,12 @@ return [
         'user_branches',
         'user_roles',
         'user_settings',
+        'organization_departments',
+        'positions',
+        'position_branch_roles',
+        'user_branch_positions',
+        'branch_role_permissions',
+        'user_warehouse_permissions',
     ],
 
     'system_migrations' => [
@@ -46,6 +56,8 @@ return [
         '2026_07_15_105629_create_user_settings_table.php',
         '2026_08_19_210000_create_roles_and_permissions_tables.php',
         '2026_08_21_120001_restore_system_user_foreign_keys.php',
+        '2026_09_05_100000_expand_organization_rbac.php',
+        '2026_09_05_110000_patch_organization_rbac_refinements.php',
     ],
 
     'system_seeders' => [

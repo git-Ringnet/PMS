@@ -235,8 +235,8 @@ class BookingRoomServiceController extends Controller
         $hasEbDeleted = false;
 
         foreach ($services as $svc) {
-            // Check Epic 10: only allow deleting if service_date >= system_date AND is_posted == 0
-            if (Carbon::parse($svc->service_date)->lt($systemDate) || $svc->is_posted == 1) {
+            // Bill đã post phải hủy theo luồng đối trừ; dịch vụ ngày cũ cần quyền đặc thù của Role.
+            if ($svc->is_posted == 1 || (Carbon::parse($svc->service_date)->lt($systemDate) && !$this->canOperateOldDay())) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Không thể xóa dịch vụ bổ sung trong quá khứ hoặc đã được post sang Folio (Dịch vụ: ' . ($svc->service_name ?: $svc->service_code) . ' ngày ' . $svc->service_date->toDateString() . ').',
@@ -2342,13 +2342,11 @@ class BookingRoomServiceController extends Controller
     protected function canOperateOldDay(): bool
     {
         $user = Auth::user();
-        if (!$user) return true;
-        $username = strtolower((string)($user->username ?? ''));
-        if (in_array($username, ['admin', 'system'], true) || !empty($user->is_admin)) return true;
-        $settings = $user->setting?->settings ?? [];
-        if (!isset($settings['RuleUserCorrectOrPostBillPaymentOldDay'])) return true;
-        $value = $settings['RuleUserCorrectOrPostBillPaymentOldDay'];
-        return $value === true || $value === 1 || $value === '1' || $value === 'true' || $value === 'default';
+        if (!$user) return false;
+
+        return $user->canPerformHistoricalDateActions(
+            request()->attributes->get('_branch_id')
+        );
     }
 
     /**

@@ -460,8 +460,10 @@ class GuestController extends Controller
             $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_IN]);
             $room->update([
                 'status' => BookingRoom::STATUS_CHECKED_IN,
-                'CheckoutDate' => null,
-                'CheckoutTime' => null,
+                'departure_date' => $room->planned_departure_date ?: $room->departure_date,
+                'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
+                'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
+                'CheckoutTime' => '12:00:00',
                 'check_out_user' => null,
             ]);
             if ($room->room) $room->room->update(['status' => 'occupied']);
@@ -520,8 +522,10 @@ class GuestController extends Controller
 
                 $room->update([
                     'status' => BookingRoom::STATUS_CHECKED_IN,
-                    'CheckoutDate' => null,
-                    'CheckoutTime' => null,
+                    'departure_date' => $room->planned_departure_date ?: $room->departure_date,
+                    'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
+                    'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
+                    'CheckoutTime' => '12:00:00',
                     'check_out_user' => null,
                 ]);
 
@@ -559,7 +563,9 @@ class GuestController extends Controller
                     'departure_date' => $systemDate->toDateString(),
                     'check_out_user' => Auth::user()?->username ?? 'system',
                 ]);
-                if ($room->room) $room->room->update(['status' => 'checkout']);
+                // Sau trả phòng, chuyển buồng thực sang Trống dơ để Housekeeping xử lý.
+                // Không gán status = checkout vì Room mutator sẽ đổi nó thành turndown.
+                if ($room->room) $room->room->update(['room_status_code' => 'vacant_dirty']);
             } else {
                 $targetGuestId = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->orderByDesc('is_primary')->orderBy('id')->value('guest_id');
                 if ($targetGuestId) {
@@ -813,6 +819,8 @@ class GuestController extends Controller
             'visa_no', 'entry_date', 'visa_expiry_date',
             'entry_purpose', 'border_gate', 'occupation', 'note', 'avatar',
         ]));
+
+        $this->syncGeoFromData([$request->all()]);
 
         // Cập nhật thông tin vào bảng pivot booking_room_guests cho từng khách cụ thể
         $pivotData = [];
@@ -1254,6 +1262,8 @@ class GuestController extends Controller
                 }
             }
 
+            $this->syncGeoFromData(array_merge($guestsData, $childrenData));
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1261,6 +1271,29 @@ class GuestController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Cập nhật thông tin khách hàng loạt thành công!']);
+    }
+
+    /**
+     * Tự động lưu địa giới hành chính vào các bảng provinces, districts, wards khi lưu khách
+     */
+    private function syncGeoFromData(array $items): void
+    {
+        foreach ($items as $item) {
+            if (!is_array($item)) continue;
+            $p = !empty($item['province']) ? trim($item['province']) : null;
+            $d = !empty($item['district']) ? trim($item['district']) : null;
+            $w = !empty($item['ward']) ? trim($item['ward']) : null;
+
+            if ($p) {
+                \App\Models\Province::firstOrCreate(['name' => $p], ['is_active' => true]);
+            }
+            if ($d) {
+                \App\Models\District::firstOrCreate(['name' => $d, 'province_name' => $p], ['is_active' => true]);
+            }
+            if ($w) {
+                \App\Models\Ward::firstOrCreate(['name' => $w, 'district_name' => $d, 'province_name' => $p], ['is_active' => true]);
+            }
+        }
     }
 
     public function uploadAvatar(Request $request, $id)
