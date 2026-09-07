@@ -15,7 +15,7 @@ class ReportDataExecutorService
 {
     public function __construct(private readonly ReportProcedureCatalogService $catalog) {}
 
-    public function executeSource(ReportDataSource $source, array $parameters): array
+    public function executeSource(ReportDataSource $source, array $parameters, ?string $connectionName = null): array
     {
         if (! $source->is_active) {
             throw new InvalidArgumentException('Report data source is inactive.');
@@ -29,7 +29,8 @@ class ReportDataExecutorService
             $source->object_name,
             $source->parameter_schema ?? [],
             $parameters,
-            $source->max_rows
+            $source->max_rows,
+            $connectionName
         );
     }
 
@@ -37,7 +38,8 @@ class ReportDataExecutorService
         string $objectName,
         array $parameterSchema,
         array $parameters,
-        ?int $maxRows = null
+        ?int $maxRows = null,
+        ?string $connectionName = null
     ): array {
         $this->catalog->assertIdentifier($objectName);
         [$placeholders, $bindings] = $this->prepareBindings($parameterSchema, $parameters);
@@ -47,7 +49,7 @@ class ReportDataExecutorService
         $statement = null;
 
         try {
-            $statement = $this->connection()->getPdo()->prepare($sql);
+            $statement = $this->connection($connectionName)->getPdo()->prepare($sql);
             $statement->execute($bindings);
             $rows = [];
             $truncated = false;
@@ -183,9 +185,9 @@ class ReportDataExecutorService
         return min(max(1, $maxRows ?? $default), $maximum);
     }
 
-    private function connection(): Connection
+    private function connection(?string $connectionName = null): Connection
     {
-        $connection = DB::connection();
+        $connection = DB::connection($connectionName);
         if ($connection->getDriverName() !== 'mysql') {
             throw new RuntimeException('Stored procedure reports require a MySQL branch connection.');
         }

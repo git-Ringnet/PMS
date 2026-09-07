@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
@@ -22,11 +22,25 @@ const activeTemplate = computed(() => {
   return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
 })
 
+const reportPreviewZoom = 1.25
+const reportPreviewDimensions = computed(() => {
+  const landscape = activeTemplate.value?.page_orientation === 'landscape'
+  return landscape
+    ? { width: 1120, height: 790 }
+    : { width: 800, height: 1120 }
+})
+const reportPreviewContainerStyle = computed(() => ({
+  width: `${reportPreviewDimensions.value.width * reportPreviewZoom}px`,
+  height: `${reportPreviewDimensions.value.height * reportPreviewZoom}px`
+}))
+const reportPreviewFrameStyle = computed(() => ({
+  width: `${reportPreviewDimensions.value.width}px`,
+  height: `${reportPreviewDimensions.value.height}px`,
+  transform: `scale(${reportPreviewZoom})`,
+  transformOrigin: 'top left'
+}))
 const iframeClass = computed(() => {
-  const orientation = activeTemplate.value?.page_orientation || 'portrait'
-  return orientation === 'landscape'
-    ? 'mx-auto block min-h-[790px] w-full max-w-[1120px] border-0 bg-white shadow-xl'
-    : 'mx-auto block min-h-[1120px] w-full max-w-[800px] border-0 bg-white shadow-xl'
+  return 'block border-0 bg-white shadow-xl'
 })
 
 const localToday = () => {
@@ -112,11 +126,13 @@ const openReportInTab = (report) => {
       // Existing report definitions may have an empty persisted default even
       // though the parameter is required. Keep execution usable by selecting
       // the first configured option (e.g. OOS sort = Room).
-      defaultParams[definition.name] = resolved || (
+      defaultParams[definition.name] = definition.control === 'multi-select'
+        ? (Array.isArray(resolved) ? resolved : (resolved ? String(resolved).split(',').map(value => value.trim()).filter(Boolean) : []))
+        : resolved || (
         ['select', 'radio'].includes(definition.control) && firstOption !== undefined
           ? (firstOption.value ?? firstOption)
           : legacyDefault || resolved
-      )
+        )
     }
 
     tab = reactive({
@@ -191,11 +207,38 @@ const normalizeReportParameters = (tab) => {
   }
 }
 
+const reportParametersPayload = (tab) => Object.fromEntries(
+  Object.entries(tab.parameters).map(([name, value]) => {
+    const definition = (tab.report.parameter_ui_schema || []).find(item => item.name === name)
+    return [name, definition?.control === 'multi-select' && Array.isArray(value) ? value.join(',') : value]
+  })
+)
+
+const hasEmptySelectOption = (tab, parameter) => (
+  tab.parameterOptions[parameter.name] || parameter.options || []
+).some(option => (option?.value ?? option) === '')
+
+const multiSelectOptions = (tab, parameter) => tab.parameterOptions[parameter.name] || parameter.options || []
+
+const multiSelectLabel = (tab, parameter) => {
+  const selected = Array.isArray(tab.parameters[parameter.name]) ? tab.parameters[parameter.name] : []
+  if (!selected.length) return '-- Chọn dịch vụ --'
+  const options = multiSelectOptions(tab, parameter)
+  const labels = selected.map(value => options.find(option => (option?.value ?? option) === value)?.label ?? value)
+  return labels.length > 2 ? `${labels.slice(0, 2).join(', ')} (+${labels.length - 2})` : labels.join(', ')
+}
+
+const syncTemplateSummary = (tab, summary) => {
+  if (!tab || !summary?.id) return
+  const template = (tab.report.templates || []).find(item => Number(item.id) === Number(summary.id))
+  if (template) Object.assign(template, summary)
+}
+
 const executeTab = async (tab) => {
   if (!tab || !tab.selectedTemplateId) return
   normalizeReportParameters(tab)
   const missing = (tab.report.parameter_ui_schema || [])
-    .filter(item => item.required && (tab.parameters[item.name] === '' || tab.parameters[item.name] === undefined))
+    .filter(item => item.required && (tab.parameters[item.name] === '' || tab.parameters[item.name] === undefined || (item.control === 'multi-select' && (!Array.isArray(tab.parameters[item.name]) || tab.parameters[item.name].length === 0))))
   if (missing.length) {
     uiStore.showToast(`Vui lòng nhập: ${missing.map(item => item.label).join(', ')}`, 'warning')
     return
@@ -203,12 +246,15 @@ const executeTab = async (tab) => {
   tab.executing = true
   try {
     const response = await http.post(`/report-definitions/${tab.report.id}/execute`, {
-      parameters: { ...tab.parameters }, template_id: tab.selectedTemplateId
+      parameters: reportParametersPayload(tab), template_id: tab.selectedTemplateId
     })
+    syncTemplateSummary(tab, response.data.template)
     tab.dataset = response.data.data
     tab.renderedHtml = response.data.html
     uiStore.showToast(`Đã tải ${tab.dataset.summary?.row_count || 0} dòng dữ liệu từ Store`, 'success')
   } catch (error) {
+    tab.dataset = null
+    tab.renderedHtml = ''
     uiStore.showToast(error.response?.data?.message || 'Không thể chạy báo cáo. Kiểm tra Store và tham số.', 'error')
   } finally {
     tab.executing = false
@@ -223,6 +269,7 @@ const changeTemplateForTab = async (tab) => {
       template_id: tab.selectedTemplateId,
       data: tab.dataset
     })
+    syncTemplateSummary(tab, response.data.template)
     tab.renderedHtml = response.data.html
   } catch (error) {
     uiStore.showToast(error.response?.data?.message || 'Không thể đổi mẫu đầu ra', 'error')
@@ -245,7 +292,7 @@ const exportReportForTab = async (tab, format) => {
   tab.exporting = true
   try {
     const response = await http.post(`/report-definitions/${tab.report.id}/exports`, {
-      parameters: { ...tab.parameters },
+      parameters: reportParametersPayload(tab),
       template_id: tab.selectedTemplateId,
       format
     }, { responseType: 'arraybuffer' })
@@ -293,6 +340,38 @@ const downloadCsvForTab = (tab) => {
   URL.revokeObjectURL(url)
 }
 
+const refreshReportTab = async (tab) => {
+  const response = await http.get(`/report-definitions/${tab.report.id}`)
+  const report = response.data.data
+  const templates = report.templates || []
+  const selectedTemplate = templates.find(item => Number(item.id) === Number(tab.selectedTemplateId))
+
+  tab.report = report
+  tab.selectedTemplateId = selectedTemplate?.id
+    || templates.find(item => item.is_default)?.id
+    || templates[0]?.id
+    || null
+
+  const reportIndex = reports.value.findIndex(item => Number(item.id) === Number(report.id))
+  if (reportIndex !== -1) reports.value[reportIndex] = report
+  if (tab.dataset && tab.selectedTemplateId) await changeTemplateForTab(tab)
+}
+
+const handleTemplateSaved = async (event) => {
+  const templateId = Number(event.detail?.templateId)
+  if (!templateId) return
+
+  const affectedTabs = openTabs.value.filter(tab => (
+    tab.report.templates || []
+  ).some(template => Number(template.id) === templateId))
+
+  try {
+    await Promise.all(affectedTabs.map(refreshReportTab))
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật mẫu báo cáo vừa lưu', 'warning')
+  }
+}
+
 // Watch active tab template change
 watch(() => activeTab.value?.selectedTemplateId, (val, oldVal) => {
   if (val && oldVal && val !== oldVal) {
@@ -315,8 +394,13 @@ watch(() => route.query.report, code => {
 })
 
 onMounted(async () => {
+  window.addEventListener('pms:report-template-saved', handleTemplateSaved)
   await fetchSystemDate()
   await loadReports()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pms:report-template-saved', handleTemplateSaved)
 })
 </script>
 
@@ -376,10 +460,42 @@ onMounted(async () => {
             </div>
 
             <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
-              {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
+              <template v-if="parameter.control === 'checkbox'">
+                <div class="flex h-8 items-center gap-2">
+                  <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
+                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform" :class="activeTab.parameters[parameter.name] ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+                  </button>
+                  <span>{{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span></span>
+                </div>
+              </template>
 
-              <select v-if="['select', 'radio'].includes(parameter.control)" v-model="activeTab.parameters[parameter.name]" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-                <option value="">-- Chọn --</option>
+              <template v-else>
+                {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
+              </template>
+
+              <div v-if="parameter.control === 'radio'" class="mt-1 flex flex-wrap items-center gap-4 text-xs font-normal text-slate-700">
+                <label v-for="option in activeTab.parameterOptions[parameter.name] || parameter.options || []" :key="option.value ?? option" class="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
+                  <input v-model="activeTab.parameters[parameter.name]" type="radio" :name="`${activeTab.id}-${parameter.name}`" :value="option.value ?? option" class="h-4 w-4 border-sky-500 text-sky-600 focus:ring-sky-500" />
+                  {{ option.label ?? option }}
+                </label>
+              </div>
+
+              <details v-else-if="parameter.control === 'multi-select'" class="relative mt-1 font-normal">
+                <summary class="flex min-h-9 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  <span class="truncate">{{ multiSelectLabel(activeTab, parameter) }}</span>
+                  <span class="ml-2 text-slate-400">▾</span>
+                </summary>
+                <div class="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                  <label v-for="option in multiSelectOptions(activeTab, parameter)" :key="option.value ?? option" class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
+                    <input v-model="activeTab.parameters[parameter.name]" type="checkbox" :value="option.value ?? option" class="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                    <span>{{ option.label ?? option }}</span>
+                  </label>
+                  <div v-if="!multiSelectOptions(activeTab, parameter).length" class="px-2 py-1 text-xs text-slate-400">Không có dịch vụ</div>
+                </div>
+              </details>
+
+              <select v-else-if="parameter.control === 'select'" v-model="activeTab.parameters[parameter.name]" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                <option v-if="!hasEmptySelectOption(activeTab, parameter)" value="">-- Chọn --</option>
                 <option v-for="option in activeTab.parameterOptions[parameter.name] || parameter.options || []" :key="option.value ?? option" :value="option.value ?? option">
                   {{ option.label ?? option }}
                 </option>
@@ -392,15 +508,8 @@ onMounted(async () => {
                 :system-date="systemDate"
               />
 
-              <!-- Checkbox stylized as toggle switch -->
-              <div v-else-if="parameter.control === 'checkbox'" class="flex items-center justify-between mt-1 h-8">
-                <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1 shrink-0" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
-                  <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow-sm" :class="activeTab.parameters[parameter.name] ? 'translate-x-[18px]' : 'translate-x-1'"></span>
-                </button>
-              </div>
-
               <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
-              <input v-else v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
+              <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
             </div>
 
             <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">
@@ -428,7 +537,9 @@ onMounted(async () => {
               </div>
             </div>
 
-            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" />
+            <div v-else class="mx-auto" :style="reportPreviewContainerStyle">
+              <iframe ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" :style="reportPreviewFrameStyle" />
+            </div>
           </section>
         </div>
       </template>

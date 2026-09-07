@@ -21,6 +21,7 @@ class ReportLookupController extends Controller
             'room-classes' => $this->roomClasses(),
             'registration-statuses' => $this->registrationStatuses(),
             'users' => $this->users($search),
+            'hotel-services' => $this->hotelServices($search),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -117,6 +118,24 @@ class ReportLookupController extends Controller
             ->map(fn ($user) => [
                 'value' => $user->username,
                 'label' => trim("{$user->username} - {$user->name}", ' -'),
+            ])->all();
+    }
+
+    private function hotelServices(string $search): array
+    {
+        return DB::table('hotel_services')
+            ->where('is_active', true)
+            ->where('code', '<>', 'RM')
+            ->when($search !== '', fn ($query) => $query->where(function ($nested) use ($search) {
+                $nested->where('code', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%");
+            }))
+            ->orderBy('name')
+            ->limit(500)
+            ->get(['code', 'name'])
+            ->map(fn ($service) => [
+                'value' => $service->code,
+                'label' => trim("{$service->code} - {$service->name}", ' -'),
             ])->all();
     }
 }

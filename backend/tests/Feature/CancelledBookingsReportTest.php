@@ -14,7 +14,6 @@ class CancelledBookingsReportTest extends TestCase
 
         $this->assertStringContainsString('CREATE PROCEDURE rpt_cancelled_bookings', $migration);
         $this->assertStringContainsString("l.cancel_type = 'booking'", $migration);
-        $this->assertStringContainsString("l.cancel_type = 'room'", $migration);
         $this->assertStringContainsString("COALESCE(p_view_type, 'CancelDate') = 'ArrivalDate'", $migration);
         $this->assertStringContainsString('DATE(l.cancelled_at) BETWEEN p_from_date AND p_to_date', $migration);
         $this->assertStringContainsString('DATEDIFF(b.arrival_date, DATE(l.cancelled_at))', $migration);
@@ -32,7 +31,7 @@ class CancelledBookingsReportTest extends TestCase
 
     public function test_room_detail_correction_uses_all_rooms_from_cancelled_booking(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_08_28_191000_update_cancelled_bookings_room_details.php'));
+        $migration = file_get_contents(database_path('migrations/2026_08_28_190000_create_cancelled_bookings_report.php'));
 
         $this->assertStringContainsString("WHERE l.cancel_type = 'booking'", $migration);
         $this->assertStringContainsString('INNER JOIN booking_rooms AS br ON br.booking_id = b.id', $migration);

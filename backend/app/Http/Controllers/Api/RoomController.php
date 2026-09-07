@@ -103,22 +103,25 @@ class RoomController extends Controller
         foreach ($rooms as $room) {
             $room->booking_status = null;
 
-            // Ưu tiên trạng thái OOO/OOS (Active Lock hôm nay)
+            // Ưu tiên trạng thái OOO/OOS (Active Lock ngày đang xem)
             $currentLock = $room->allActiveLocks ? $room->allActiveLocks->first(function($l) use ($sysDateStr) {
                 $startStr = \Carbon\Carbon::parse($l->start_date)->toDateString();
                 $endStr = \Carbon\Carbon::parse($l->end_date)->toDateString();
-                return $sysDateStr >= $startStr && $sysDateStr <= $endStr;
+                return $sysDateStr >= $startStr && $sysDateStr <= $endStr && (int)$l->is_active === 1 && $l->status !== 'Done';
             }) : null;
 
-            if ($currentLock && in_array($room->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
+            if ($currentLock) {
                 // Phòng có lock OOO/OOS -> ghi đè room_status_code tương ứng
-                $lockCode = $currentLock->lock_type === 'OOS' ? 'oos' : 'ooo';
+                $lockCode = strtoupper($currentLock->lock_type) === 'OOS' ? 'oos' : 'ooo';
                 $room->lock_type = $currentLock->lock_type;
                 $room->setRelation('activeLock', $currentLock);
                 $room->room_status_code = $lockCode;
             } else {
                 $room->lock_type = null;
                 $room->setRelation('activeLock', null);
+                if (in_array($room->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
+                    $room->room_status_code = 'vacant_ready';
+                }
             }
 
             // Tìm booking tương ứng

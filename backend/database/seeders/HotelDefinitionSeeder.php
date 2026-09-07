@@ -405,6 +405,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'AllowNegativeAmountDeposit', 'value' => '', 'description' => 'AllowNegativeAmountDeposit', 'is_visible' => false],
             ['name' => 'OOOCheckDepartment', 'value' => '0', 'description' => 'Kiểm tra bộ phận khi mở khóa OOO (0: không kiểm tra, 1: kiểm tra)', 'is_visible' => true],
             ['name' => 'OOSCheckDepartment', 'value' => '0', 'description' => 'Kiểm tra bộ phận khi mở khóa OOS (0: không kiểm tra, 1: kiểm tra)', 'is_visible' => true],
+            ['name' => 'RoleUserUnlockRoomOOO/OOS', 'value' => 'Admin,FO,FOM,Sales,HK', 'description' => 'Danh sách Role user được phép mở khóa phòng OOO/OOS (vd: Admin,FO,FOM,Sales,HK)', 'is_visible' => true],
             ['name' => 'OOORoleUserUnlock', 'value' => 'Admin,FOM,Sales,HKM', 'description' => 'Quyền user được phép mở khóa OOO', 'is_visible' => true],
             ['name' => 'OOSRoleUserUnlock', 'value' => 'Admin,FOM,Sales,HKM', 'description' => 'Quyền user được phép mở khóa OOS', 'is_visible' => true],
             ['name' => 'FrmOOO_DefineLockByTime', 'value' => '23:59', 'description' => 'Thời gian kết thúc khóa mặc định', 'is_visible' => true],
