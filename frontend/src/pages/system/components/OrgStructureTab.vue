@@ -1,548 +1,747 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { 
-  fetchDepartments, 
-  createDepartment, 
-  fetchModules, 
-  fetchRoles, 
-  fetchUsers 
+import { computed, onMounted, ref } from 'vue'
+import {
+  fetchOrganization,
+  fetchModules,
+  fetchRoles,
+  fetchSystemBranchesList,
+  createOrganizationDepartment,
+  createPosition,
+  updatePosition,
+  deletePosition,
+  syncPositionBranches,
+  fetchBranchRoleMatrix,
+  syncBranchRoleMatrix,
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
-
-// State dữ liệu từ Database
 const loading = ref(false)
-const departmentsList = ref([])
-const modulesList = ref([])
-const rolesList = ref([])
-const usersList = ref([])
-
-// State chọn vị trí và bộ phận hiện tại
-const selectedDept = ref(null)
+const departments = ref([])
+const applications = ref([])
+const branches = ref([])
+const roles = ref([])
+const selectedDepartment = ref(null)
 const selectedPosition = ref(null)
-
-// Tab bên phải: 'apps' (Ứng dụng) | 'users' (Người dùng)
 const activeRightTab = ref('apps')
+const collapsedDepts = ref(new Set()) // Set<department.id>
 
-// Gán 3 ứng dụng chính (PMS, POS, SYS) theo vai trò
-const roleAppAssignments = ref({
-  'fo_manager': ['PMS'],
-  'fo_staff': ['PMS'],
-  'hk_manager': ['PMS'],
-  'hk_staff': ['PMS'],
-  'super_admin': ['SYS', 'PMS', 'POS'],
-  'branch_admin': ['SYS', 'PMS', 'POS'],
-  'mgmt': ['SYS', 'PMS'],
-  'fb_manager': ['POS'],
-  'fb_staff': ['POS'],
-})
+const toggleDept = (id) => {
+  if (collapsedDepts.value.has(id)) {
+    collapsedDepts.value.delete(id)
+  } else {
+    collapsedDepts.value.add(id)
+  }
+  // trigger reactivity
+  collapsedDepts.value = new Set(collapsedDepts.value)
+}
 
-// Cấu trúc cây dữ liệu phòng ban & vị trí
-const treeData = ref([])
-const loadError = ref(null)
+const showDepartmentModal = ref(false)
+const departmentForm = ref({ code: '', name: '' })
+const showPositionModal = ref(false)
+const positionForm = ref({ id: null, department_id: null, code: '', name: '' })
 
-const loadAllDataFromDB = async () => {
+const showApplicationModal = ref(false)
+const selectedApplicationCode = ref('PMS')
+const branchAssignments = ref([])
+
+const showPermissionModal = ref(false)
+const permissionLoading = ref(false)
+const permissionContext = ref(null)
+const permissionGroups = ref({})
+
+const loadData = async () => {
   loading.value = true
-  loadError.value = null
   try {
-    const results = await Promise.allSettled([
-      fetchDepartments(),
+    const [organizationRes, moduleRes, branchRes, roleRes] = await Promise.all([
+      fetchOrganization(),
       fetchModules(),
+      fetchSystemBranchesList(),
       fetchRoles(),
-      fetchUsers({ page: 1, per_page: 100 }),
     ])
+    departments.value = organizationRes.data.data || []
+    applications.value = moduleRes.data.data || []
+    branches.value = branchRes.data.data || []
+    roles.value = roleRes.data.data || []
 
-    const deptRes = results[0].status === 'fulfilled' ? results[0].value : null
-    const modRes = results[1].status === 'fulfilled' ? results[1].value : null
-    const roleRes = results[2].status === 'fulfilled' ? results[2].value : null
-    const userRes = results[3].status === 'fulfilled' ? results[3].value : null
-
-    // Kiểm tra nếu tất cả request đều lỗi (ví dụ rớt mạng hoặc timeout)
-    const hasAnySuccess = results.some(r => r.status === 'fulfilled')
-    if (!hasAnySuccess && results[0].reason) {
-      throw results[0].reason
-    }
-
-    departmentsList.value = deptRes?.data?.data || []
-    modulesList.value = modRes?.data?.data || []
-    rolesList.value = roleRes?.data?.data || []
-    usersList.value = userRes?.data?.data || []
-
-    // Xây dựng cây thư mục từ Database: BỘ PHẬN -> VỊ TRÍ
-    treeData.value = departmentsList.value.map(dept => {
-      let positions = []
-
-      if (dept.code === 'FO') {
-        positions = [
-          { id: 'fo_mgr', name: 'Trưởng Lễ Tân', code: 'fo_manager', apps: ['PMS'] },
-          { id: 'fo_stf', name: 'Nhân Viên Lễ Tân', code: 'fo_staff', apps: ['PMS'] },
-        ]
-      } else if (dept.code === 'HK') {
-        positions = [
-          { id: 'hk_mgr', name: 'Trưởng Buồng Phòng', code: 'hk_manager', apps: ['PMS'] },
-          { id: 'hk_stf', name: 'Nhân Viên Buồng Phòng', code: 'hk_staff', apps: ['PMS'] },
-        ]
-      } else if (dept.code === 'SYS') {
-        positions = [
-          { id: 'sys_sa', name: 'Super Administrator', code: 'super_admin', apps: ['SYS', 'PMS', 'POS'] },
-          { id: 'sys_ba', name: 'Quản Trị Chi Nhánh', code: 'branch_admin', apps: ['SYS', 'PMS', 'POS'] },
-          { id: 'sys_mg', name: 'Quản Lý (MGMT)', code: 'mgmt', apps: ['SYS', 'PMS'] },
-        ]
-      } else if (dept.code === 'FB') {
-        positions = [
-          { id: 'fb_mgr', name: 'Trưởng Nhà Hàng', code: 'fb_manager', apps: ['POS'] },
-          { id: 'fb_stf', name: 'Nhân Viên F&B', code: 'fb_staff', apps: ['POS'] },
-        ]
-      } else {
-        positions = [
-          { id: `${dept.code}_pos`, name: `Nhân viên ${dept.name}`, code: `${dept.code.toLowerCase()}_staff`, apps: ['PMS'] }
-        ]
-      }
-
-      return {
-        id: dept.id,
-        code: dept.code,
-        name: dept.name,
-        isOpen: true,
-        positions,
-      }
-    })
-
-    // Chọn vị trí đầu tiên mặc định
-    if (treeData.value.length > 0) {
-      selectedDept.value = treeData.value[0]
-      if (treeData.value[0].positions.length > 0) {
-        selectedPosition.value = treeData.value[0].positions[0]
-      }
-    }
-  } catch (err) {
-    console.error('Lỗi khi tải dữ liệu từ database:', err)
-    loadError.value = err.message?.includes('timeout') 
-      ? 'Hết thời gian chờ phản hồi từ máy chủ (Timeout). Vui lòng thử lại.' 
-      : 'Không thể tải dữ liệu từ máy chủ. Vui lòng thử lại.'
+    const selectedId = selectedPosition.value?.id
+    const restored = departments.value
+      .flatMap(department => department.positions || [])
+      .find(position => position.id === selectedId)
+    selectedPosition.value = restored || departments.value[0]?.positions?.[0] || null
+    selectedDepartment.value = departments.value.find(department =>
+      department.positions?.some(position => position.id === selectedPosition.value?.id)
+    ) || departments.value[0] || null
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể tải cơ cấu tổ chức', 'error')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
-  loadAllDataFromDB()
-})
+onMounted(loadData)
 
-const selectPos = (dept, pos) => {
-  selectedDept.value = dept
-  selectedPosition.value = pos
+const selectPosition = (department, position) => {
+  selectedDepartment.value = department
+  selectedPosition.value = position
 }
 
-const toggleDept = (dept) => {
-  dept.isOpen = !dept.isOpen
-}
-
-// Ứng dụng gán cho vị trí đang chọn (lấy đúng từ 3 app trong DB modules)
-const currentApps = computed(() => {
-  if (!selectedPosition.value?.apps) return []
-  return selectedPosition.value.apps.map(code => {
-    const found = modulesList.value.find(m => m.code === code)
-    if (found) {
-      return { code: found.code, name: found.name, version: 'Version 2.0' }
+const applicationCards = computed(() => {
+  if (!selectedPosition.value) return []
+  const codes = [...new Set((selectedPosition.value.branch_roles || []).map(item => item.application_code))]
+  return codes.map(code => {
+    const application = applications.value.find(item => item.code === code)
+    const assignments = selectedPosition.value.branch_roles.filter(item => item.application_code === code)
+    return {
+      code,
+      name: application?.name || `PROVISTA ${code}`,
+      portal_key: application?.portal_key || code.toLowerCase(),
+      branchCount: assignments.length,
+      assignments,
     }
-    return { code, name: `PROVISTA ${code}`, version: 'Version 1.0' }
   })
 })
 
-// Người dùng tương ứng từ Database
 const currentUsers = computed(() => {
-  if (!usersList.value.length || !selectedDept.value) return []
-  const deptCode = (selectedDept.value.code || '').toLowerCase()
-  const deptName = (selectedDept.value.name || '').toLowerCase()
-  const posName = (selectedPosition.value?.name || '').toLowerCase()
-  const posCode = (selectedPosition.value?.code || '').toLowerCase()
-
-  return usersList.value.filter(u => {
-    const uDeptCode = (u.department_code || '').toLowerCase()
-    const uDeptName = (u.department || '').toLowerCase()
-    const uJobCode = (u.job_title_code || '').toLowerCase()
-    const uJobName = (u.job_title || '').toLowerCase()
-
-    return uDeptCode === deptCode || 
-           uDeptName.includes(deptName) || 
-           deptName.includes(uDeptName) ||
-           uJobCode === posCode ||
-           uJobName.includes(posName)
-  })
+  if (!selectedPosition.value) return []
+  const uniqueUsers = new Map()
+  for (const assignment of selectedPosition.value.user_assignments || []) {
+    if (assignment.user) uniqueUsers.set(assignment.user.id, assignment.user)
+  }
+  return [...uniqueUsers.values()]
 })
 
-// Modals
-const showAddAppModal = ref(false)
-const selectedAppToAdd = ref('')
-
-const openAddAppModal = () => {
-  selectedAppToAdd.value = ''
-  showAddAppModal.value = true
+const openCreateDepartment = () => {
+  departmentForm.value = { code: '', name: '' }
+  showDepartmentModal.value = true
 }
 
-const confirmAddApp = () => {
-  if (!selectedAppToAdd.value) return
-  if (!selectedPosition.value.apps.includes(selectedAppToAdd.value)) {
-    selectedPosition.value.apps.push(selectedAppToAdd.value)
-    if (selectedPosition.value.code) {
-      roleAppAssignments.value[selectedPosition.value.code] = [...selectedPosition.value.apps]
-    }
-    uiStore.showToast('Đã thêm ứng dụng thành công!', 'success')
+const saveDepartment = async () => {
+  if (!departmentForm.value.code || !departmentForm.value.name) return
+  try {
+    await createOrganizationDepartment({
+      code: departmentForm.value.code.toUpperCase(),
+      name: departmentForm.value.name,
+    })
+    showDepartmentModal.value = false
+    await loadData()
+    uiStore.showToast('Đã tạo bộ phận', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể tạo bộ phận', 'error')
   }
-  showAddAppModal.value = false
 }
 
-const removeApp = (appCode) => {
-  if (!confirm(`Bạn có chắc chắn muốn xóa ứng dụng ${appCode} khỏi vị trí này?`)) return
-  selectedPosition.value.apps = selectedPosition.value.apps.filter(c => c !== appCode)
-  if (selectedPosition.value.code) {
-    roleAppAssignments.value[selectedPosition.value.code] = [...selectedPosition.value.apps]
+const openPosition = (department, position = null) => {
+  positionForm.value = {
+    id: position?.id || null,
+    department_id: department.id,
+    code: position?.code || '',
+    name: position?.name || '',
   }
-  uiStore.showToast('Đã xóa ứng dụng', 'success')
+  showPositionModal.value = true
 }
 
-// Modal Thêm Bộ Phận / Vị Trí mới
-const showAddDeptModal = ref(false)
-const newDeptCode = ref('')
-const newDeptName = ref('')
-const newPosName = ref('')
-const selectedParentDeptId = ref(null)
-const isSubmittingDept = ref(false)
-
-const openAddDeptModal = () => {
-  newDeptCode.value = ''
-  newDeptName.value = ''
-  newPosName.value = ''
-  selectedParentDeptId.value = selectedDept.value?.id || departmentsList.value[0]?.id
-  showAddDeptModal.value = true
-}
-
-const saveNewDeptOrPos = async () => {
-  if (newDeptName.value.trim()) {
-    isSubmittingDept.value = true
-    try {
-      const code = (newDeptCode.value.trim() || newDeptName.value.substring(0, 3)).toUpperCase()
-      await createDepartment({
-        code,
-        name: newDeptName.value.trim(),
-      })
-      uiStore.showToast('Đã tạo phòng ban mới vào Database!', 'success')
-      await loadAllDataFromDB()
-      showAddDeptModal.value = false
-    } catch (err) {
-      uiStore.showToast(err.response?.data?.message || 'Lỗi khi tạo phòng ban', 'error')
-    } finally {
-      isSubmittingDept.value = false
+const savePosition = async () => {
+  if (!positionForm.value.code || !positionForm.value.name) return
+  try {
+    const payload = {
+      organization_department_id: positionForm.value.department_id,
+      code: positionForm.value.code.toUpperCase(),
+      name: positionForm.value.name,
     }
-  } else if (newPosName.value.trim() && selectedParentDeptId.value) {
-    const targetDept = treeData.value.find(d => d.id === selectedParentDeptId.value)
-    if (targetDept) {
-      const newPos = {
-        id: Date.now(),
-        name: newPosName.value.trim(),
-        code: `pos_${Date.now()}`,
-        apps: ['PMS'],
+    if (positionForm.value.id) await updatePosition(positionForm.value.id, payload)
+    else await createPosition(payload)
+    showPositionModal.value = false
+    await loadData()
+    uiStore.showToast('Đã lưu vị trí công việc', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể lưu vị trí', 'error')
+  }
+}
+
+const removePosition = async () => {
+  if (!selectedPosition.value) return
+  if (!confirm(`Xóa vị trí "${selectedPosition.value.name}"?`)) return
+  try {
+    await deletePosition(selectedPosition.value.id)
+    selectedPosition.value = null
+    await loadData()
+    uiStore.showToast('Đã xóa vị trí', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể xóa vị trí', 'error')
+  }
+}
+
+const loadApplicationAssignments = applicationCode => {
+  selectedApplicationCode.value = applicationCode
+  branchAssignments.value = branches.value.map(branch => {
+    const current = selectedPosition.value?.branch_roles?.find(item =>
+      item.application_code === applicationCode && item.system_branch_id === branch.id
+    )
+    return {
+      branch,
+      enabled: !!current,
+      role_id: current?.role_id || '',
+    }
+  })
+}
+
+const openApplication = (applicationCode = null) => {
+  loadApplicationAssignments(applicationCode || applications.value[0]?.code || '')
+  showApplicationModal.value = true
+}
+
+const saveApplication = async () => {
+  const invalid = branchAssignments.value.some(item => item.enabled && !item.role_id)
+  if (invalid) {
+    uiStore.showToast('Vui lòng chọn Role cho tất cả chi nhánh đã tích', 'warning')
+    return
+  }
+  try {
+    await syncPositionBranches(selectedPosition.value.id, {
+      application_code: selectedApplicationCode.value,
+      assignments: branchAssignments.value
+        .filter(item => item.enabled)
+        .map(item => ({ system_branch_id: item.branch.id, role_id: Number(item.role_id) })),
+    })
+    showApplicationModal.value = false
+    await loadData()
+    uiStore.showToast('Đã cập nhật ứng dụng cho vị trí', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể lưu ứng dụng', 'error')
+  }
+}
+
+const removeApplication = async (applicationCode) => {
+  if (!confirm(`Gỡ ứng dụng ${applicationCode} khỏi vị trí này?`)) return
+  await syncPositionBranches(selectedPosition.value.id, {
+    application_code: applicationCode,
+    assignments: [],
+  })
+  await loadData()
+}
+
+const openPermission = async (assignment) => {
+  permissionLoading.value = true
+  showPermissionModal.value = true
+  permissionContext.value = assignment
+  try {
+    const response = await fetchBranchRoleMatrix(assignment.role_id, {
+      system_branch_id: assignment.system_branch_id,
+      application_code: assignment.application_code,
+    })
+    permissionGroups.value = response.data.data.permissions || {}
+  } catch (error) {
+    uiStore.showToast('Không thể tải ma trận quyền', 'error')
+  } finally {
+    permissionLoading.value = false
+  }
+}
+
+const screensForModule = permissions => {
+  const map = {}
+  for (const permission of permissions || []) {
+    const key = permission.screen_code || permission.code
+    if (!map[key]) {
+      map[key] = {
+        code: key,
+        name: permission.screen_name || permission.name,
+        path: permission.path,
+        actions: {},
       }
-      targetDept.positions.push(newPos)
-      selectedPosition.value = newPos
-      uiStore.showToast('Đã thêm vị trí mới!', 'success')
     }
-    showAddDeptModal.value = false
+    map[key].actions[permission.action || 'view'] = permission
+  }
+  return Object.values(map)
+}
+
+const togglePermission = (screen, action, checked) => {
+  const permission = screen.actions[action]
+  if (!permission) return
+  permission.granted = checked
+  if (checked && action !== 'view' && screen.actions.view) screen.actions.view.granted = true
+  if (!checked && action === 'view') {
+    for (const item of Object.values(screen.actions)) item.granted = false
+  }
+}
+
+const savePermissionMatrix = async () => {
+  const permissionIds = Object.values(permissionGroups.value)
+    .flat()
+    .filter(permission => permission.granted)
+    .map(permission => permission.id)
+  try {
+    await syncBranchRoleMatrix(permissionContext.value.role_id, {
+      system_branch_id: permissionContext.value.system_branch_id,
+      application_code: permissionContext.value.application_code,
+      permission_ids: permissionIds,
+    })
+    showPermissionModal.value = false
+    uiStore.showToast('Đã lưu ma trận phân quyền', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể lưu phân quyền', 'error')
   }
 }
 </script>
 
 <template>
-  <div class="flex-1 flex overflow-hidden bg-white select-none text-xs">
-    
-    <!-- ==================== CỘT TRÁI: CƠ CẤU TỔ CHỨC ==================== -->
-    <div class="w-64 border-r border-slate-200 flex flex-col shrink-0 bg-[#f8fafc]">
-      <!-- Header Sidebar Trái -->
-      <div class="flex items-center justify-between px-3 py-2 bg-[#e0f2fe] border-b border-slate-200">
-        <div class="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
-          <svg class="w-3.5 h-3.5 text-sky-600" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-          </svg>
-          <span>Cơ cấu tổ chức</span>
-        </div>
-        <button 
-          @click="openAddDeptModal"
-          class="w-4.5 h-4.5 rounded-full border border-sky-400 text-sky-600 hover:bg-sky-100 flex items-center justify-center font-black text-xs cursor-pointer transition-colors bg-white shadow-2xs"
-          title="Thêm bộ phận / vị trí mới"
+  <div class="flex h-full min-h-0 bg-white text-xs select-none">
+    <!-- Left column: Cây cơ cấu tổ chức (image1.png) -->
+    <aside class="w-[300px] shrink-0 border-r border-slate-200 flex flex-col bg-white">
+      <!-- Header bar -->
+      <div class="h-10 px-3 flex items-center justify-between bg-slate-50/90 border-b border-slate-200">
+        <span class="font-bold text-slate-800 text-xs">Cơ cấu tổ chức</span>
+        <button
+          class="w-5 h-5 rounded-full bg-[#72c6e6] hover:bg-[#5db3d4] text-white font-bold text-xs flex items-center justify-center border-none cursor-pointer transition-colors shadow-2xs"
+          title="Thêm bộ phận mới"
+          @click="openCreateDepartment"
         >
           +
         </button>
       </div>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="flex items-center justify-center h-48">
-        <div class="w-5 h-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-
-      <!-- Error State with Retry Button -->
-      <div v-else-if="loadError" class="p-4 flex flex-col items-center justify-center text-center gap-2 text-slate-600 h-48">
-        <span class="text-amber-500 text-lg">⚠️</span>
-        <p class="text-[11px] text-slate-500 leading-tight">{{ loadError }}</p>
-        <button 
-          @click="loadAllDataFromDB" 
-          class="mt-1 px-3 py-1 bg-sky-500 hover:bg-sky-600 text-white rounded text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1"
-        >
-          <span>🔄 Thử lại</span>
-        </button>
-      </div>
-
-      <!-- Danh sách Phòng Ban & Vị Trí (Tree View) -->
+      <!-- Department & Position Tree -->
+      <div v-if="loading" class="p-6 text-center text-slate-400">Đang tải cơ cấu tổ chức...</div>
       <div v-else class="flex-1 overflow-y-auto py-1">
-        <div v-for="dept in treeData" :key="dept.id" class="flex flex-col">
-          <!-- Item Bộ Phận -->
-          <div 
-            @click="toggleDept(dept)"
-            class="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-700 hover:bg-slate-200/60 cursor-pointer font-bold transition-colors select-none text-[11px]"
-          >
-            <!-- Biểu tượng Thu nhỏ / Mở rộng -->
-            <button class="w-3.5 h-3.5 flex items-center justify-center bg-[#93c5fd] hover:bg-sky-400 text-white rounded-xs border-none cursor-pointer p-0 shrink-0">
-              <span class="text-[10px] leading-none">{{ dept.isOpen ? '−' : '+' }}</span>
-            </button>
-            <span class="truncate">{{ dept.name }}</span>
-          </div>
-
-          <!-- Danh sách Vị Trí trong Bộ Phận -->
-          <div v-show="dept.isOpen" class="flex flex-col ml-5 pl-1 border-l border-slate-200">
-            <div 
-              v-for="pos in dept.positions" 
-              :key="pos.id"
-              @click="selectPos(dept, pos)"
-              :class="[
-                'px-3 py-1.5 cursor-pointer font-medium text-[11.5px] transition-colors rounded-xs select-none',
-                selectedPosition?.id === pos.id 
-                  ? 'bg-[#7dd3fc] text-white font-bold shadow-2xs' 
-                  : 'text-slate-600 hover:bg-slate-100'
-              ]"
+        <section v-for="department in departments" :key="department.id" class="mb-0.5">
+          <!-- Department row -->
+          <div class="group flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 transition-colors cursor-pointer" @click="toggleDept(department.id)">
+            <span
+              class="w-3.5 h-3.5 rounded-xs bg-[#72c6e6] text-white flex items-center justify-center font-black text-[10px] shrink-0 select-none leading-none transition-colors hover:bg-[#5db3d4]"
+              :title="collapsedDepts.has(department.id) ? 'Mở rộng' : 'Thu gọn'"
             >
-              {{ pos.name }}
-            </div>
+              {{ collapsedDepts.has(department.id) ? '+' : '-' }}
+            </span>
+            <span class="font-bold text-slate-800 uppercase text-[11.5px] tracking-wide flex-1 truncate" :title="department.name">
+              {{ department.name }}
+            </span>
+            <button
+              class="opacity-0 group-hover:opacity-100 w-4 h-4 rounded text-[#0ea5e9] hover:bg-sky-100 flex items-center justify-center font-bold text-xs border-none bg-transparent cursor-pointer transition-opacity"
+              title="Thêm vị trí vào bộ phận này"
+              @click.stop="openPosition(department)"
+            >
+              +
+            </button>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- ==================== CỘT PHẢI: CHI TIẾT ỨNG DỤNG / NGƯỜI DÙNG ==================== -->
-    <div class="flex-1 flex flex-col overflow-hidden bg-white">
-      
-      <!-- Top Navigation Tabs (Ứng dụng | Người dùng) -->
-      <div class="flex items-center px-4 pt-1 bg-[#e0f2fe] border-b border-slate-200 shrink-0 gap-1">
-        <button 
-          @click="activeRightTab = 'apps'"
-          :class="[
-            'px-4 py-1.5 border-none font-bold text-xs cursor-pointer rounded-t-sm transition-all shadow-2xs',
-            activeRightTab === 'apps'
-              ? 'bg-white text-slate-800 border-t-2 border-sky-500'
-              : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-sky-100/50'
-          ]"
-        >
-          Ứng dụng
-        </button>
-        <button 
-          @click="activeRightTab = 'users'"
-          :class="[
-            'px-4 py-1.5 border-none font-bold text-xs cursor-pointer rounded-t-sm transition-all shadow-2xs',
-            activeRightTab === 'users'
-              ? 'bg-white text-slate-800 border-t-2 border-sky-500'
-              : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-sky-100/50'
-          ]"
-        >
-          Người dùng ({{ currentUsers.length }})
-        </button>
+          <!-- Position rows — ẩn khi bộ phận đang đóng -->
+          <template v-if="!collapsedDepts.has(department.id)">
+            <button
+              v-for="position in department.positions"
+              :key="position.id"
+              class="w-full text-left pl-8 pr-3 py-1.5 transition-colors cursor-pointer border-none text-xs block truncate"
+              :class="selectedPosition?.id === position.id
+                ? 'bg-[#72c6e6] text-white font-bold shadow-2xs'
+                : 'bg-transparent text-slate-700 hover:bg-slate-100/70 font-normal'"
+              @click="selectPosition(department, position)"
+            >
+              {{ position.name }}
+            </button>
+          </template>
+        </section>
       </div>
+    </aside>
 
-      <!-- Action Button Toolbar -->
-      <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-        <div class="flex items-center gap-2">
-          <button 
-            v-if="activeRightTab === 'apps'"
-            @click="openAddAppModal"
-            class="px-3 py-1.5 bg-[#7dd3fc] hover:bg-[#38bdf8] text-white border-none rounded-md font-bold text-xs cursor-pointer shadow-xs transition-colors"
+    <!-- Right main area: Tabs Ứng dụng & Người dùng (image1.png) -->
+    <main class="flex-1 min-w-0 flex flex-col bg-white">
+      <!-- Tab Header -->
+      <div class="h-10 px-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+        <div class="flex items-center gap-1 h-full">
+          <button
+            class="h-full px-4 text-xs font-bold border-none cursor-pointer transition-colors flex items-center"
+            :class="activeRightTab === 'apps'
+              ? 'bg-white text-[#0ea5e9] border-t-2 border-t-[#0ea5e9] border-x border-slate-200 font-extrabold -mb-[1px]'
+              : 'bg-transparent text-slate-600 hover:text-slate-900'"
+            @click="activeRightTab = 'apps'"
           >
-            Thêm ứng dụng
+            Ứng dụng
           </button>
-          <div class="text-xs text-slate-500 font-semibold ml-2">
-            Đang chọn: <span class="text-slate-800 font-bold">{{ selectedDept?.name }}</span> ➔ <span class="text-sky-600 font-black">{{ selectedPosition?.name }}</span>
-          </div>
+          <button
+            class="h-full px-4 text-xs font-bold border-none cursor-pointer transition-colors flex items-center"
+            :class="activeRightTab === 'users'
+              ? 'bg-white text-[#0ea5e9] border-t-2 border-t-[#0ea5e9] border-x border-slate-200 font-extrabold -mb-[1px]'
+              : 'bg-transparent text-slate-600 hover:text-slate-900'"
+            @click="activeRightTab = 'users'"
+          >
+            Người dùng
+          </button>
+        </div>
+
+        <div v-if="selectedPosition" class="flex items-center gap-3">
+          <button
+            class="text-[#0ea5e9] hover:text-[#0284c7] font-semibold text-xs border-none bg-transparent cursor-pointer"
+            @click="openPosition(selectedDepartment, selectedPosition)"
+          >
+            Sửa vị trí
+          </button>
+          <button
+            class="text-rose-500 hover:text-rose-700 font-semibold text-xs border-none bg-transparent cursor-pointer"
+            @click="removePosition"
+          >
+            Xóa vị trí
+          </button>
         </div>
       </div>
 
-      <!-- Content Area -->
-      <div class="flex-1 overflow-y-auto p-6 bg-white">
-        
-        <!-- ==================== TAB 1: DANH SÁCH ỨNG DỤNG ==================== -->
-        <div v-if="activeRightTab === 'apps'">
-          <div v-if="!currentApps.length" class="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
-            <svg class="w-10 h-10 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-            </svg>
-            <span class="text-xs">Chưa có ứng dụng nào được gán cho vị trí này.</span>
-          </div>
+      <!-- Tab Content: Applications (image1.png) -->
+      <div v-if="!selectedPosition" class="flex-1 grid place-items-center text-slate-400">
+        Chọn một vị trí công việc từ cây bên trái để xem cấu hình
+      </div>
 
-          <!-- Lưới các thẻ ứng dụng (3 ứng dụng chính PROVISTA PMS, F&B, SYSTEM) -->
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            <div 
-              v-for="app in currentApps" 
-              :key="app.code"
-              class="flex items-center gap-3.5 p-3 rounded-lg border border-slate-100 hover:border-sky-200 hover:bg-sky-50/40 transition-all shadow-2xs"
+      <div v-else-if="activeRightTab === 'apps'" class="flex-1 overflow-y-auto p-5">
+        <!-- Button Thêm ứng dụng (matching image1.png: sky-blue rounded button) -->
+        <button
+          class="px-4 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-2xs transition-colors mb-5 inline-flex items-center gap-1.5"
+          @click="openApplication('PMS')"
+        >
+          Thêm ứng dụng
+        </button>
+
+        <!-- Grid Cards (matching image1.png) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <article
+            v-for="application in applicationCards"
+            :key="application.code"
+            class="border border-slate-200/80 rounded-lg p-4 flex items-center gap-4 bg-white shadow-2xs hover:shadow-xs transition-all"
+          >
+            <!-- Logo Icon: Rhombus diamond matching image1.png -->
+            <div class="flex flex-col items-center justify-center shrink-0 w-12">
+              <div class="w-8 h-8 bg-[#0ea5e9] rounded-sm rotate-45 flex items-center justify-center shadow-2xs">
+                <div class="w-4 h-4 bg-white -rotate-45 rounded-2xs"></div>
+              </div>
+              <span class="text-[10px] font-black text-[#0ea5e9] tracking-wider mt-1 uppercase">
+                {{ application.code }}
+              </span>
+            </div>
+
+            <!-- Details -->
+            <div class="flex-1 min-w-0">
+              <h3 class="font-bold text-slate-800 text-sm truncate">{{ application.name }}</h3>
+              <p class="text-slate-400 text-xs font-medium mt-0.5">Version</p>
+              <p class="text-[11px] text-slate-500 mt-0.5">{{ application.branchCount }} chi nhánh được cấu hình</p>
+              <div class="mt-2.5 flex items-center gap-3">
+                <button
+                  class="text-rose-500 hover:text-rose-700 font-bold text-xs border-none bg-transparent cursor-pointer p-0"
+                  @click="removeApplication(application.code)"
+                >
+                  Xóa
+                </button>
+                <button
+                  class="text-[#0ea5e9] hover:text-[#0284c7] font-bold text-xs border-none bg-transparent cursor-pointer p-0"
+                  @click="openApplication(application.code)"
+                >
+                  Sửa
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Tab Content: Users -->
+      <div v-else class="flex-1 overflow-y-auto p-5">
+        <div class="border border-slate-200 rounded-lg overflow-hidden shadow-2xs">
+          <table class="w-full border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100/90 text-left border-b border-slate-200 text-slate-700 font-bold">
+                <th class="p-2.5 w-28 border-r border-slate-200">Mã NV</th>
+                <th class="p-2.5 border-r border-slate-200">Tên nhân viên</th>
+                <th class="p-2.5">Email</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="user in currentUsers" :key="user.id" class="hover:bg-slate-50 transition-colors">
+                <td class="p-2.5 font-medium text-slate-600 border-r border-slate-100">{{ user.employee_code || '-' }}</td>
+                <td class="p-2.5 font-bold text-slate-800 border-r border-slate-100">{{ user.name }}</td>
+                <td class="p-2.5 text-slate-600">{{ user.email }}</td>
+              </tr>
+              <tr v-if="!currentUsers.length">
+                <td colspan="3" class="p-8 text-center text-slate-400 font-medium">Chưa có nhân viên ở vị trí này</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <Teleport to="body">
+      <!-- Modal: Sửa ứng dụng (Matching image2.png) -->
+      <div v-if="showApplicationModal" class="fixed inset-0 z-[100] bg-black/50 grid place-items-center p-4">
+        <div class="bg-white w-full max-w-4xl rounded-lg shadow-2xl overflow-hidden border border-slate-200 animate-in">
+          <!-- Sky-blue banner header matching image2.png -->
+          <header class="px-5 py-3 bg-[#72c6e6] text-white flex items-center justify-between">
+            <h3 class="text-sm font-bold tracking-wide text-white m-0">Sửa ứng dụng</h3>
+            <button
+              @click="showApplicationModal = false"
+              class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none"
             >
-              <!-- Icon Kim Cương Logo Provista -->
-              <div class="w-11 h-11 flex flex-col items-center justify-center shrink-0">
-                <div class="w-7 h-7 bg-[#0ea5e9] rounded-sm rotate-45 flex items-center justify-center shadow-xs">
-                  <div class="w-4 h-4 bg-white -rotate-45 flex items-center justify-center">
-                    <span class="text-[8px] font-black text-[#0ea5e9]">{{ app.code }}</span>
-                  </div>
-                </div>
-                <span class="text-[9px] font-black text-[#0ea5e9] mt-0.5 tracking-tighter">{{ app.code }}</span>
-              </div>
-
-              <!-- Chi tiết Ứng dụng -->
-              <div class="flex-1 min-w-0">
-                <div class="font-black text-slate-800 text-xs tracking-tight uppercase truncate">
-                  {{ app.name }}
-                </div>
-                <div class="text-[10.5px] text-slate-400 font-medium mt-0.5">
-                  {{ app.version }}
-                </div>
-                <!-- Links Hành Động -->
-                <div class="flex items-center gap-2.5 mt-1.5 text-[11px] font-bold">
-                  <button 
-                    @click="removeApp(app.code)" 
-                    class="text-red-500 hover:text-red-700 bg-transparent border-none p-0 cursor-pointer transition-colors"
-                  >
-                    Xóa
-                  </button>
-                  <button 
-                    @click="uiStore.showToast('Thông tin ứng dụng hệ thống chuẩn', 'info')" 
-                    class="text-sky-600 hover:text-sky-800 bg-transparent border-none p-0 cursor-pointer transition-colors"
-                  >
-                    Sửa
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ==================== TAB 2: DANH SÁCH NGƯỜI DÙNG ==================== -->
-        <div v-else-if="activeRightTab === 'users'">
-          <div v-if="!currentUsers.length" class="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
-            <svg class="w-10 h-10 stroke-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-            </svg>
-            <span class="text-xs">Chưa có nhân viên nào thuộc vị trí này trong Database.</span>
-          </div>
-
-          <div v-else class="border border-slate-200 rounded-lg overflow-hidden">
-            <table class="w-full text-left border-collapse">
-              <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600">
-                  <th class="py-2 px-3">MÃ NV</th>
-                  <th class="py-2 px-3">HỌ VÀ TÊN</th>
-                  <th class="py-2 px-3">EMAIL</th>
-                  <th class="py-2 px-3">BỘ PHẬN</th>
-                  <th class="py-2 px-3">VỊ TRÍ</th>
-                  <th class="py-2 px-3 text-center">TRẠNG THÁI</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr v-for="user in currentUsers" :key="user.id" class="hover:bg-slate-50">
-                  <td class="py-2 px-3 font-mono font-bold text-sky-600">{{ user.employee_code || user.id }}</td>
-                  <td class="py-2 px-3 font-bold text-slate-800">{{ user.name }}</td>
-                  <td class="py-2 px-3 text-slate-500">{{ user.email || '—' }}</td>
-                  <td class="py-2 px-3 text-slate-600">{{ user.department || selectedDept?.name }}</td>
-                  <td class="py-2 px-3 text-slate-600">{{ user.job_title || selectedPosition?.name }}</td>
-                  <td class="py-2 px-3 text-center">
-                    <span :class="['px-2 py-0.5 rounded-full text-[10px] font-bold', user.is_active_user ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500']">
-                      {{ user.is_active_user ? 'Hoạt động' : 'Tạm khóa' }}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- ==================== MODAL: THÊM ỨNG DỤNG ==================== -->
-    <Teleport to="body">
-      <div v-if="showAddAppModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-          <div class="px-4 py-3 bg-[#e0f2fe] border-b border-slate-200 flex items-center justify-between">
-            <h3 class="text-xs font-bold text-slate-800">Thêm ứng dụng cho vị trí</h3>
-            <button @click="showAddAppModal = false" class="text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer font-bold">✕</button>
-          </div>
-          <div class="p-4 flex flex-col gap-3">
-            <label class="text-[11px] font-bold text-slate-600">Chọn ứng dụng (Database):</label>
-            <select v-model="selectedAppToAdd" class="border border-slate-300 rounded-md p-2 text-xs focus:outline-sky-500 bg-white">
-              <option value="">-- Chọn ứng dụng cần gán --</option>
-              <option v-for="m in modulesList" :key="m.code" :value="m.code" :disabled="selectedPosition?.apps?.includes(m.code)">
-                {{ m.name }} ({{ m.code }}) {{ selectedPosition?.apps?.includes(m.code) ? '— Đã gán' : '' }}
-              </option>
-            </select>
-          </div>
-          <div class="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-            <button @click="showAddAppModal = false" class="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer">
-              Hủy
+              ✕
             </button>
-            <button @click="confirmAddApp" :disabled="!selectedAppToAdd" class="px-3 py-1 bg-[#7dd3fc] hover:bg-[#38bdf8] disabled:opacity-50 text-white rounded-md font-bold text-xs border-none cursor-pointer">
-              Thêm
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+          </header>
 
-    <!-- ==================== MODAL: THÊM BỘ PHẬN / VỊ TRÍ ==================== -->
-    <Teleport to="body">
-      <div v-if="showAddDeptModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-          <div class="px-4 py-3 bg-[#e0f2fe] border-b border-slate-200 flex items-center justify-between">
-            <h3 class="text-xs font-bold text-slate-800">Thêm Bộ Phận / Vị Trí Mới</h3>
-            <button @click="showAddDeptModal = false" class="text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer font-bold">✕</button>
-          </div>
-          <div class="p-4 flex flex-col gap-3">
-            <div class="flex flex-col gap-1">
-              <label class="text-[11px] font-bold text-slate-700">Tạo Bộ Phận Mới:</label>
-              <div class="grid grid-cols-3 gap-2">
-                <input v-model="newDeptCode" type="text" placeholder="Mã (ví dụ: MKT)..." class="border border-slate-200 rounded-md p-2 text-xs focus:outline-sky-500 uppercase" maxlength="10" />
-                <input v-model="newDeptName" type="text" placeholder="Tên bộ phận..." class="col-span-2 border border-slate-200 rounded-md p-2 text-xs focus:outline-sky-500" />
-              </div>
-            </div>
-            
-            <div class="text-center text-[10px] text-slate-400 font-bold uppercase">— HOẶC THÊM VỊ TRÍ VÀO BỘ PHẬN —</div>
-
-            <div class="flex flex-col gap-1">
-              <label class="text-[11px] font-bold text-slate-700">Chọn Bộ Phận Cha:</label>
-              <select v-model="selectedParentDeptId" class="border border-slate-200 rounded-md p-2 text-xs focus:outline-sky-500 bg-white">
-                <option v-for="d in treeData" :key="d.id" :value="d.id">{{ d.name }}</option>
+          <div class="p-5 space-y-4">
+            <!-- Ứng dụng select -->
+            <div>
+              <label class="font-bold text-slate-700 text-xs block mb-1.5">Ứng dụng</label>
+              <select
+                v-model="selectedApplicationCode"
+                @change="loadApplicationAssignments(selectedApplicationCode)"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold text-slate-800 bg-white focus:outline-sky-500"
+              >
+                <option v-for="application in applications" :key="application.code" :value="application.code">
+                  {{ application.name }}
+                </option>
               </select>
             </div>
 
-            <div class="flex flex-col gap-1">
-              <label class="text-[11px] font-bold text-slate-700">Tên Vị Trí Công Việc:</label>
-              <input v-model="newPosName" type="text" placeholder="Nhập tên vị trí..." class="border border-slate-200 rounded-md p-2 text-xs focus:outline-sky-500" />
+            <!-- Table Chi nhánh, Vị Trí Công Việc, Phân Quyền (image2.png) -->
+            <div class="border border-slate-200 rounded-md overflow-hidden">
+              <table class="w-full border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200">
+                    <th class="p-2.5 w-12 text-center border-r border-slate-200"></th>
+                    <th class="text-left p-2.5 border-r border-slate-200">Chi nhánh</th>
+                    <th class="text-left p-2.5 border-r border-slate-200">Vị Trí Công Việc</th>
+                    <th class="p-2.5 text-center w-36">Phân Quyền</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr
+                    v-for="row in branchAssignments"
+                    :key="row.branch.id"
+                    class="transition-colors"
+                    :class="row.enabled ? 'bg-sky-50/40 hover:bg-sky-50/60' : 'hover:bg-slate-50'"
+                  >
+                    <td class="p-2.5 text-center border-r border-slate-100">
+                      <input
+                        v-model="row.enabled"
+                        type="checkbox"
+                        class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer"
+                      />
+                    </td>
+                    <td class="p-2.5 font-semibold text-slate-800 border-r border-slate-100">
+                      {{ row.branch.name }}
+                    </td>
+                    <td class="p-2.5 border-r border-slate-100">
+                      <select
+                        v-model="row.role_id"
+                        :disabled="!row.enabled"
+                        class="w-full border border-slate-300 rounded-md p-1.5 text-xs font-semibold focus:outline-sky-500 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        <option value="">Vị Trí Công Việc (Role)</option>
+                        <option v-for="role in roles" :key="role.id" :value="role.id">{{ role.name }}</option>
+                      </select>
+                    </td>
+                    <td class="p-2.5 text-center">
+                      <button
+                        v-if="row.enabled && row.role_id"
+                        class="px-4 py-1 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md text-xs font-bold border-none cursor-pointer transition-colors shadow-2xs"
+                        @click="openPermission({ role_id: Number(row.role_id), system_branch_id: row.branch.id, application_code: selectedApplicationCode })"
+                      >
+                        Cấu hình
+                      </button>
+                      <span v-else class="text-slate-300 text-[11px]">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-          <div class="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-            <button @click="showAddDeptModal = false" class="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer">
-              Hủy
+
+          <!-- Footer matching image2.png: Cancel & Lưu -->
+          <footer class="px-5 py-3 bg-slate-50/90 border-t border-slate-200 flex justify-end gap-2.5">
+            <button
+              class="px-5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer transition-colors"
+              @click="showApplicationModal = false"
+            >
+              Cancel
             </button>
-            <button @click="saveNewDeptOrPos" :disabled="isSubmittingDept" class="px-3 py-1 bg-[#7dd3fc] hover:bg-[#38bdf8] text-white rounded-md font-bold text-xs border-none cursor-pointer">
-              {{ isSubmittingDept ? 'Đang lưu...' : 'Lưu' }}
+            <button
+              class="px-6 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-xs transition-colors"
+              @click="saveApplication"
+            >
+              Lưu
             </button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Modal: Phân quyền chi tiết Màn hình (Matching image3.png) -->
+      <div v-if="showPermissionModal" class="fixed inset-0 z-[110] bg-black/50 grid place-items-center p-4">
+        <div class="bg-white w-full max-w-5xl h-[85vh] rounded-lg shadow-2xl flex flex-col overflow-hidden border border-slate-200 animate-in">
+          <!-- Sky-blue header banner matching image3.png -->
+          <header class="px-5 py-3 bg-[#72c6e6] text-white flex items-center justify-between">
+            <h3 class="text-sm font-bold tracking-wide text-white m-0">Phân Quyền</h3>
+            <button
+              @click="showPermissionModal = false"
+              class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none"
+            >
+              ✕
+            </button>
+          </header>
+
+          <!-- Sub-bar matching image3.png -->
+          <div class="px-5 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <span class="text-[#0ea5e9] font-bold text-xs">Màn hình</span>
           </div>
+
+          <!-- Body -->
+          <div v-if="permissionLoading" class="flex-1 grid place-items-center text-slate-400 font-medium">
+            Đang tải ma trận quyền...
+          </div>
+          <div v-else class="flex-1 overflow-auto p-4 space-y-4">
+            <section
+              v-for="(permissions, module) in permissionGroups"
+              :key="module"
+              class="border border-slate-200 rounded-md overflow-hidden bg-white shadow-2xs"
+            >
+              <!-- Module Header Bar matching image3.png: [-] [x] ModuleName + [Thêm] -->
+              <div class="flex items-center gap-2.5 px-3 py-2 bg-slate-100/90 border-b border-slate-200">
+                <span class="w-3.5 h-3.5 rounded-xs bg-[#72c6e6] text-white flex items-center justify-center font-black text-[10px] shrink-0 leading-none">
+                  -
+                </span>
+                <span class="font-bold text-slate-800 text-xs uppercase tracking-wide">
+                  {{ module }}
+                </span>
+              </div>
+
+              <!-- Screens table matching image3.png columns: Màn hình | View | Add | Delete | Edit -->
+              <table class="w-full border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50 text-slate-600 font-bold border-b border-slate-100">
+                    <th class="text-left p-2.5 pl-6">Màn hình</th>
+                    <th class="w-20 text-center p-2.5">View</th>
+                    <th class="w-20 text-center p-2.5">Add</th>
+                    <th class="w-20 text-center p-2.5">Delete</th>
+                    <th class="w-20 text-center p-2.5">Edit</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr
+                    v-for="screen in screensForModule(permissions)"
+                    :key="screen.code"
+                    class="hover:bg-slate-50/80 transition-colors"
+                  >
+                    <td class="p-2.5 pl-6">
+                      <span class="font-semibold text-slate-800">{{ screen.name }}</span>
+                      <small v-if="screen.path" class="block text-slate-400 text-[10px]">{{ screen.path }}</small>
+                    </td>
+                    <!-- Checkbox cells in order: View, Add, Delete, Edit -->
+                    <td v-for="action in ['view', 'add', 'delete', 'edit']" :key="action" class="text-center p-2.5">
+                      <input
+                        v-if="screen.actions[action]"
+                        type="checkbox"
+                        :checked="screen.actions[action].granted"
+                        @change="togglePermission(screen, action, $event.target.checked)"
+                        class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer"
+                      />
+                      <span v-else class="text-slate-200 text-xs">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+          </div>
+
+          <!-- Footer -->
+          <footer class="px-5 py-3 bg-slate-50/90 border-t border-slate-200 flex justify-end gap-2.5">
+            <button
+              class="px-5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer transition-colors"
+              @click="showPermissionModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              class="px-6 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-xs transition-colors"
+              @click="savePermissionMatrix"
+            >
+              Lưu
+            </button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Modal: Thêm bộ phận -->
+      <div v-if="showDepartmentModal" class="fixed inset-0 z-[100] bg-black/50 grid place-items-center p-4">
+        <div class="bg-white w-[420px] rounded-lg shadow-2xl overflow-hidden border border-slate-200 animate-in">
+          <header class="px-5 py-3 bg-[#72c6e6] text-white font-bold text-sm flex items-center justify-between">
+            <span>Thêm bộ phận</span>
+            <button @click="showDepartmentModal = false" class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+          </header>
+          <div class="p-5 space-y-3">
+            <div>
+              <label class="font-bold text-slate-700 text-xs block mb-1">Mã bộ phận *</label>
+              <input
+                v-model="departmentForm.code"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]"
+                placeholder="Ví dụ: FO, HK, FB..."
+              />
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 text-xs block mb-1">Tên bộ phận *</label>
+              <input
+                v-model="departmentForm.name"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white"
+                placeholder="Ví dụ: Bộ phận Lễ Tân"
+              />
+            </div>
+          </div>
+          <footer class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">
+            <button class="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer" @click="showDepartmentModal = false">Cancel</button>
+            <button class="px-5 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-xs" @click="saveDepartment">Lưu</button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Modal: Thêm/Sửa vị trí công việc -->
+      <div v-if="showPositionModal" class="fixed inset-0 z-[100] bg-black/50 grid place-items-center p-4">
+        <div class="bg-white w-[460px] rounded-lg shadow-2xl overflow-hidden border border-slate-200 animate-in">
+          <header class="px-5 py-3 bg-[#72c6e6] text-white font-bold text-sm flex items-center justify-between">
+            <span>{{ positionForm.id ? 'Sửa' : 'Thêm' }} vị trí công việc</span>
+            <button @click="showPositionModal = false" class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+          </header>
+          <div class="p-5 space-y-3">
+            <div>
+              <label class="font-bold text-slate-700 text-xs block mb-1">Bộ phận</label>
+              <input
+                class="w-full border border-slate-200 rounded-md p-2 text-xs bg-slate-100 text-slate-600 font-semibold"
+                :value="departments.find(item => item.id === positionForm.department_id)?.name"
+                readonly
+              />
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 text-xs block mb-1">Mã vị trí *</label>
+              <input
+                v-model="positionForm.code"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]"
+                placeholder="Ví dụ: FOM, FOS, FO..."
+              />
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 text-xs block mb-1">Tên vị trí công việc *</label>
+              <input
+                v-model="positionForm.name"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white"
+                placeholder="Ví dụ: Trưởng Bộ Phận, Nhân Viên Lễ Tân..."
+              />
+            </div>
+          </div>
+          <footer class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">
+            <button class="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer" @click="showPositionModal = false">Cancel</button>
+            <button class="px-5 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-xs" @click="savePosition">Lưu</button>
+          </footer>
         </div>
       </div>
     </Teleport>
-
   </div>
 </template>
+
+<style scoped>
+.animate-in {
+  animation: modalFadeIn 0.2s ease-out forwards;
+}
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+</style>

@@ -1,5 +1,7 @@
 # Nhật Ký Tiến Độ Dự Án (Project Dev Log)
 
+# Nhật Ký Tiến Độ Dự Án (Project Dev Log)
+
 > File này ghi nhận tiến độ công việc, các tính năng/nghiệp vụ đã hoàn thành, trạng thái hiện tại và kế hoạch tiếp theo để tiếp nối công việc giữa các phiên làm việc.
 
 ---
@@ -8,8 +10,185 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
-- **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
-- **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
+
+## [2026-09-07] - Tự động sinh Username theo Tên nhân viên & Hiển thị rõ ràng Mật khẩu mặc định
+### Module: Hệ thống / Quản lý Nhân viên & Xác thực (`EmployeeTab.vue`, `AuthController.php`, `UserController.php`)
+
+- **Đã hoàn thành**:
+  - **Trường Tên đăng nhập (Username) trong modal Thêm/Sửa nhân viên ([EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue))**:
+    - Bổ sung ô nhập `Tên Đăng Nhập (Username) *` vào form modal nhân viên.
+    - Tự động sinh username (`toUsernameSlug`): Khi người dùng nhập "Tên Nhân Viên" (ví dụ: `Thảo Vy` $\rightarrow$ `thaovy`, `Nguyễn Văn A` $\rightarrow$ `nguyenvana`), hệ thống tự động bóc tách dấu tiếng Việt, viết thường không dấu và điền sẵn vào ô Username.
+    - Cho phép người dùng tùy ý chỉnh sửa lại username nếu muốn.
+    - Hiển thị cột `Tên Đăng Nhập` (Username) ngay sau cột Tên Nhân Viên trên bảng danh sách nhân viên để người quản trị dễ dàng tra cứu.
+  - **Minh bạch Mật khẩu mặc định (Email)**:
+    - Khu vực mật khẩu khởi tạo được đóng khung nổi bật với badge: `Mật khẩu mặc định: [email nhân viên]`.
+    - Placeholder hiển thị động: `Mặc định nếu để trống: [email nhân viên]`.
+    - Kèm ghi chú rõ ràng: `Lưu ý: Nếu để trống ô này, mật khẩu đăng nhập ban đầu sẽ là Email của nhân viên. Hệ thống sẽ bắt buộc đổi mật khẩu ở lần đăng nhập đầu tiên.`
+    - Nút `Đặt Lại Mật Khẩu`: Cập nhật popup xác nhận và toast thông báo hiển thị chính xác địa chỉ email nhân viên được đặt làm mật khẩu.
+  - **Xác thực đăng nhập linh hoạt ([AuthController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AuthController.php))**:
+    - Nâng cấp endpoint `login` hỗ trợ đăng nhập linh hoạt bằng cả **Username** hoặc **Email** (tìm theo `username` hoặc `email` và so khớp mật khẩu bằng `Hash::check`), giúp người dùng đăng nhập thuận tiện, không bị nhầm lẫn.
+- **Kiểm tra**:
+  - `npm run build`: Thành công 100%, không lỗi template hay syntax.
+  - `php artisan test --filter=OrganizationRbacTest`: 15/15 tests passed (45 assertions).
+  - `php artisan test --filter=login`: 2/2 tests passed (3 assertions).
+- **Trạng thái hiện tại**: Hoàn thành 100%.
+
+## [2026-09-07] - Hoàn thiện RBAC đa ứng dụng, phân quyền kho theo chi nhánh & loại bỏ mã cứng
+### Module: Hệ thống / Phân quyền RBAC (`User.php`, `UserOrganizationController.php`, `BranchRolePermissionController.php`, `EmployeeTab.vue`, `OrgStructureTab.vue`, `ForcePasswordChange.php`, `UserController.php`, migration refinements)
+
+- **Đã hoàn thành**:
+  - **Mở rộng ma trận phân quyền chi tiết 46 màn hình nghiệp vụ (184 permissions) theo chuẩn [image3.png](file:///d:/PMS/.agents/scratch/docx_media/word/media/image3.png) & thực tế khách sạn**:
+    - Nâng cấp [RbacMatrixSeeder.php](file:///d:/PMS/backend/database/seeders/RbacMatrixSeeder.php): tách nhỏ và chi tiết hóa từ 26 lên **46 màn hình nghiệp vụ chuyên sâu** thuộc 6 phân hệ lớn:
+      - **FO (14 màn hình)**: Đặt phòng (Booking), Đặt cọc (Deposit), Hóa đơn (Bill/Folio), Công ty & Đại lý (Company/TA), Phân bổ quỹ phòng (Allotment), Hồ sơ khách hàng (Guest Profile), Sơ đồ phòng (Rack/FrontDesk), Giao nhận phòng (Check-in/out), Chuyển phòng (Room Move), Khóa phòng OOO/OOS (Room Lock), Xử lý No-show, Thanh toán & Thu tiền, Cấn trừ công nợ (Debt Settlement), Dịch vụ phòng.
+      - **HK (7 màn hình)**: Tổng quan buồng, Trạng thái phòng (Room Status), Phân công dọn phòng (Assignment), Đồ thất lạc (Lost & Found), Hóa đơn minibar/giặt ủi (Service Bills), Kho buồng & vải vóc, Báo cáo buồng phòng.
+      - **FB (5 màn hình)**: Tổng quan nhà hàng (Outlets), Order & gọi món, Thanh toán F&B, Menu & sản phẩm, Tiệc & sự kiện.
+      - **MGMT (8 màn hình)**: Báo cáo tổng hợp, Báo cáo doanh thu, Báo cáo công suất, Báo cáo khách đến, Báo cáo khách đi, Báo cáo khách lưu trú, Báo cáo hủy phòng, Lịch sử thao tác (Audit Logs).
+      - **CONFIG (8 màn hình)**: Thông tin khách sạn, Hạng phòng & loại phòng, Danh mục buồng phòng (Rooms), Bảng giá phòng (Rate Plans), Dịch vụ khách sạn, Ca làm việc (Shifts), Nguồn khách & thị trường (Markets), Ngày hệ thống (Night Audit).
+      - **SYSTEM (4 màn hình)**: Quản lý nhân viên, Vai trò & phân quyền, Chi nhánh, Cài đặt hệ thống.
+    - Mỗi màn hình đều có đủ 4 actions checkbox độc lập (`View`, `Add`, `Delete`, `Edit`).
+    - Nạp thành công **4,256 bản ghi** `branch_role_permissions` trên 8 chi nhánh, phân quyền sát theo từng cấp bậc (Super Admin, Quản trị chi nhánh, Quản lý, Trưởng bộ phận, Nhân viên).
+    - Bảo toàn 100% các mã quyền route hiện có, toàn bộ 15/15 tests `OrganizationRbacTest.php` đạt.
+
+  - **Migration [2026_09_05_110000_patch_organization_rbac_refinements.php](file:///d:/PMS/backend/database/migrations/2026_09_05_110000_patch_organization_rbac_refinements.php) — cải tiến toàn diện**:
+    - Mở rộng `positions.code` lên `varchar(100)` tương tự `permissions.code`/`screen_code`.
+    - Hàm `backfillCustomRolesAndPositions` chỉ xử lý role đang thực sự được gán cho user (`whereIn user_roles`), bỏ qua role đã có `position_branch_roles`, tìm phòng ban theo `department_scope` hoặc phòng ban active đầu tiên (loại bỏ fallback cứng `OT`).
+    - Hàm `backfillSuperAdminAcrossBranches` tìm đúng `position_id` từ `PositionBranchRole` tương ứng chi nhánh thay vì tìm tên vị trí có `ADMIN`/`DIR`.
+    - Cả hai hàm dùng `config('database_domains.default_application_code')` thay vì hardcode `'PMS'`.
+  - **[User.php](file:///d:/PMS/backend/app/Models/User.php)**:
+    - `allPermissions(?$branchId, ?$applicationCode)`: `applicationCode` optional, mặc định từ config; loại bỏ hoàn toàn fallback leo thang quyền khi user đã có vị trí.
+    - `hasPermission($code, $branchId, $applicationCode)`: tự suy `applicationCode` từ DB permission tương ứng nếu không truyền.
+    - `canPerformHistoricalDateActions($branchId, $applicationCode)`: hàm mới tính quyền thao tác ngày cũ từ `Role.allow_historical_date_actions` theo vị trí + chi nhánh + ứng dụng thực tế (không còn đọc `user.settings` hardcode).
+    - `isSuperAdmin()`: dùng join trực tiếp (`position_branch_roles` → `roles`) thay vì whereHas lồng nhau để tránh N+1.
+  - **[ForcePasswordChange.php](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php)** (mới): middleware chặn mọi API business (trả 423) khi `must_change_password = true`, trừ whitelist `/api/login`, `/api/logout`, `/api/me`, `/api/me/change-password`, `/api/hotel-settings`; đăng ký vào group `api`.
+  - **[UserController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php)**:
+    - Không hardcode `'mysql_system'` và `'NB'` prefix: đọc từ `config('database_domains.system_connection')` và `config('database_domains.employee_code_prefix')`.
+    - `username` không bắt buộc nhập; tự động fallback về `email` khi để trống.
+    - Unique validation dùng `Rule::unique($system.'.users')` để không bị lỗi khi tên connection thay đổi.
+  - **[UserOrganizationController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/UserOrganizationController.php)**:
+    - `syncWarehouses`: validate kho phải thuộc chi nhánh đã được gán vị trí; kiểm tra warehouse_id có tồn tại thật trong database chi nhánh (cross-DB query); chặn trùng lặp.
+    - Dùng `config('database_domains.default_application_code')` thay vì `'PMS'` hardcode.
+  - **[BranchRolePermissionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BranchRolePermissionController.php)**:
+    - Toàn bộ `application_code = 'PMS'` cứng đổi sang `config('database_domains.default_application_code')`.
+  - **[PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php) & [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php)**:
+    - `canOperateOldDay()` đổi hoàn toàn sang `$user->canPerformHistoricalDateActions(branchId)` từ Role thực tế, loại bỏ việc đọc `user.settings` và username hardcode.
+  - **[http.js](file:///d:/PMS/frontend/src/services/http.js)**: Không còn fallback `'HKT1'` / `'1'` cứng cho header `X-Branch-Code`/`X-Branch-Id`; chỉ gắn khi có giá trị thật trong localStorage.
+  - **[company-service.js](file:///d:/PMS/frontend/src/services/company-service.js)**: `fetchWarehouses(branch)` nhận tham số chi nhánh để gửi đúng header; tải kho riêng theo từng chi nhánh.
+  - **[EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue)**:
+    - Kho (`warehousesByBranch`) nạp lazy theo từng chi nhánh, không nạp tất cả ngay khi mở modal.
+    - Dropdown "Chi nhánh áp dụng quyền kho" cho phép chọn chi nhánh cụ thể trước khi tick kho.
+    - `selectedWarehouses` từ `number[]` đổi thành `{system_branch_id, warehouse_id}[]` để lưu đúng chi nhánh.
+    - `syncUserOrganization` gửi đúng `application_code` từ `position.branch_roles` (không hardcode PMS); `application_codes` tự tổng hợp từ assignments + ứng dụng hiện hành.
+    - `positionsForBranch` bỏ filter `application_code === 'PMS'`; hiển thị vị trí của mọi ứng dụng cho chi nhánh đó.
+    - Mật khẩu không còn bắt buộc khi thêm nhân viên; nếu để trống sẽ dùng email làm mật khẩu mặc định.
+    - "Đặt Lại Mật Khẩu" gọi `resetUserPassword()` (endpoint `/api/me/reset-password`), không còn set cứng `password123`.
+  - **[OrgStructureTab.vue](file:///d:/PMS/frontend/src/pages/system/components/OrgStructureTab.vue)**:
+    - Tab "Người dùng" dùng `position.user_assignments` từ API (eager load) thay vì lọc theo `job_title_code` cũ.
+    - Dropdown ứng dụng trong modal "Sửa ứng dụng" khi thay đổi sẽ nạp lại đúng assignment của ứng dụng đó.
+  - **[OrganizationController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/OrganizationController.php)**:
+    - Mở rộng max `code` validation lên `100`.
+    - `syncLegacyDepartments()` tự đồng bộ bảng `departments` cũ vào `organization_departments` khi tải trang tổ chức.
+- **[config/database_domains.php](file:///d:/PMS/backend/config/database_domains.php)**:
+  - Thêm `default_application_code` (default `PMS`) và `employee_code_prefix` (default `NB`) đọc từ `.env`.
+- **Kiểm thử**:
+  - `OrganizationRbacTest.php`: **15/15 tests đạt (45 assertions)**, thêm 4 test case mới:
+    - Quyền POS không phụ thuộc vào PMS (application riêng biệt).
+    - `canPerformHistoricalDateActions` phản ánh đúng cờ Role tại chi nhánh.
+    - `ForcePasswordChange` chặn API nghiệp vụ khi `must_change_password = true`.
+  - `npm run build`: thành công 100%, không lỗi Vue SFC.
+  - `php -l`: không lỗi cú pháp trên 6 file backend được sửa.
+- **Trạng thái hiện tại**: Hoàn thành 100% — không còn hardcode chi nhánh, ứng dụng, vị trí hay kho.
+- **Kế hoạch tiếp theo**: Kiểm thử E2E trên staging; nghiệm thu thao tác ngày cũ theo Role thực tế.
+
+---
+
+## [2026-09-05] - Cập nhật toàn diện Giao diện (UI, Màu sắc, Bố cục, Modals) theo Phân quyền và tạo nhân viên.docx
+### Module: Hệ thống / Quản lý Cơ cấu tổ chức, Phân quyền Roles & Quản lý nhân viên (`OrgStructureTab.vue`, `RoleManageTab.vue`, `EmployeeTab.vue`)
+
+- **Đã hoàn thành**:
+  - **Trực quan hóa tài liệu mẫu**:
+    - Trích xuất toàn bộ 7 ảnh chụp màn hình từ `Phân quyền và tạo nhân viên.docx` làm chuẩn đối chiếu chi tiết (cây tổ chức, modal sửa app, ma trận phân quyền 4 cột, modal nhân viên, danh sách bảng, dropdown vị trí, phân quyền kho & chi nhánh chính).
+  - **Cơ cấu tổ chức ([OrgStructureTab.vue](file:///d:/PMS/frontend/src/pages/system/components/OrgStructureTab.vue)) - Hình 1, 2, 3**:
+    - Cây phòng ban & vị trí: Cập nhật icon `[-]` nền vuông xanh `#72c6e6`, highlight vị trí được chọn màu xanh `#72c6e6` chữ trắng đậm kèm hiệu ứng mũi tên.
+    - Tab "Ứng dụng" / "Người dùng": Thiết kế thẻ ứng dụng hình thoi đặc trưng, hiển thị "Version" và các liên kết thao tác "Xóa" (đỏ) / "Sửa" (xanh).
+    - Modal "Sửa ứng dụng" (Hình 2): Banner tiêu đề màu xanh sky `#72c6e6`, bảng cấu hình chọn Role theo chi nhánh với nút "Cấu hình" dạng viên thuốc (pill badge).
+    - Modal "Phân quyền" (Hình 3): Banner tiêu đề `#72c6e6`, thanh phụ "Màn hình", ma trận 4 cột quyền chuẩn xác: `View` | `Add` | `Delete` | `Edit`.
+  - **Quản lý vai trò & Phân quyền ([RoleManageTab.vue](file:///d:/PMS/frontend/src/pages/system/components/RoleManageTab.vue)) - Hình 3**:
+    - Cột danh sách vai trò: Nút `+ Thêm` màu `#0ea5e9`, danh sách vai trò sạch sẽ với thanh chỉ báo active màu xanh.
+    - Bảng ma trận quyền: Gom nhóm theo Module với biểu tượng `[-]` nền xám bo góc, tiêu đề Module in hoa đậm, 4 cột thao tác theo đúng thứ tự tài liệu: `View` | `Add` | `Delete` | `Edit`.
+    - Chuẩn hóa header bộ lọc: Dropdown chọn Ứng dụng & Chi nhánh gọn gàng, badge ngày giờ lịch sử, đồng bộ toàn bộ modals (Thêm Role, Nhân bản Role, Thêm màn hình) sang banner `#72c6e6`.
+  - **Quản lý nhân viên ([EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue)) - Hình 4, 5, 6, 7**:
+    - Bảng danh sách nhân viên (Hình 5): Căn chỉnh 9 cột mặc định (`Mã NV`, `Tên NV`, `Vị trí`, `Bộ phận`, `Ngày sinh`, `Điện thoại`, `Email`, `Địa chỉ`, `Xóa`), ẩn mặc định 2 cột thừa (tên đăng nhập, chữ ký) nhưng vẫn cho bật qua bánh răng cài đặt.
+    - Cột xóa: Đổi nút xóa hình khối xanh cũ thành icon thùng rác đỏ trực tiếp trên ô bảng chuẩn Hình 5.
+    - Thanh công cụ: Nút tìm kiếm và nút tròn `(+) Thêm` màu `#72c6e6`.
+    - Modal "Chỉnh Sửa / Thêm Nhân Viên" (Hình 4, 6):
+      - Form 2 cột với nền input vàng kem nhẹ `#fffbeb` cho các trường nhập liệu.
+      - Dropdown Vị trí công việc lọc động theo đúng Bộ phận được chọn (Hình 6).
+      - Thẻ Chữ ký: Khung viền nét đứt với icon tròn `+` và nút `Chọn Ảnh`, tích hợp xem trước và icon xóa/xem (Hình 4).
+      - Footer: Switch iOS bật/tắt "Người Sử Dụng", nút "Đặt Lại Mật Khẩu", nút Cancel, nút Lưu xanh `#72c6e6`, và nút trợ giúp màu cam `?` bo tròn ở góc trái (Hình 4).
+    - Tab "Phân quyền đặc thù" (Hình 7):
+      - Bảng Chi nhánh với highlight dòng đang chọn bằng màu `#99cff5` nhạt.
+      - Switch iOS bật/tắt "Chi Nhánh Chính".
+      - Bảng phân quyền kho chia 3 cột checkboxes gọn gàng mang tiêu đề "Phân Quyền Kho Cho User: [Tên Nhân Viên]".
+- **Kiểm tra**:
+  - `npm run build`: Thành công 100% không cảnh báo lỗi Vue SFC.
+  - `php artisan test tests/Feature/OrganizationRbacTest.php`: 11/11 tests đạt (100%).
+- **Trạng thái hiện tại**: Hoàn thành 100%.
+
+---
+
+## [2026-09-05] - Chuẩn hóa Cơ cấu tổ chức, Phân quyền RBAC đa chi nhánh và Quản lý nhân viên
+### Module: Hệ thống / Phân quyền & Quản lý nhân viên (`OrganizationController.php`, `BranchRolePermissionController.php`, `UserOrganizationController.php`, `User.php`, `EmployeeTab.vue`, `OrgStructureTab.vue`, `RoleManageTab.vue`, `ForceChangePasswordModal.vue`, `App.vue`)
+
+- **Đã hoàn thành**:
+  - **Bảo mật & Xác thực**:
+    - [AuthController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AuthController.php): Loại bỏ triệt để việc log plaintext password vào file log; thêm kiểm tra `is_active_user` khi đăng nhập (trả về 403 nếu tài khoản bị khóa/ngừng kích hoạt); bổ sung endpoint đổi mật khẩu `POST /api/me/change-password`; cập nhật `login()` và `me()` tải danh sách chi nhánh và permissions từ schema mới.
+    - [EnsureBranchAccess.php](file:///d:/PMS/backend/app/Http/Middleware/EnsureBranchAccess.php): Chặn người dùng có `is_active_user = false` truy cập API nghiệp vụ với HTTP 403.
+    - [api.php](file:///d:/PMS/backend/routes/api.php): Đăng ký route `POST /api/me/change-password` và các route quản trị cơ cấu tổ chức, vai trò ma trận, phân quyền kho.
+    - [User.php](file:///d:/PMS/backend/app/Models/User.php):
+      - Khắc phục lỗ hổng fallback: User đã gán vị trí ở chi nhánh nhưng có quyền rỗng sẽ **không bao giờ** fallback về quyền cũ (loại bỏ nguy cơ leo thang quyền ngoài ý muốn). Chỉ fallback về `user_roles` đối với user chưa hề được gán vị trí trong schema mới.
+      - Super Admin tự động bypass và lấy toàn bộ permissions đang hoạt động.
+      - `hasBranchAccess()` kiểm tra quyền Super Admin, `user_branch_positions` và `user_branches`.
+  - **Migration & Backfill DB**:
+    - [2026_09_05_100000_expand_organization_rbac.php](file:///d:/PMS/backend/database/migrations/2026_09_05_100000_expand_organization_rbac.php): Migration gốc mở rộng schema RBAC, tạo cấu trúc cây phòng ban, vị trí công việc, và vai trò chi nhánh.
+    - [2026_09_05_110000_patch_organization_rbac_refinements.php](file:///d:/PMS/backend/database/migrations/2026_09_05_110000_patch_organization_rbac_refinements.php):
+      - Tăng kích thước `permissions.code` và `permissions.screen_code` lên `varchar(100)` để chứa đầy đủ mã dài theo cấu trúc module/app.
+      - Backfill đầy đủ Super Admin trên mọi chi nhánh hoạt động.
+      - Tự động sinh Position và PositionBranchRole cho mọi Custom Role cũ chưa có vị trí.
+      - Đã chạy thành công qua `php artisan migrate`.
+  - **Backend API Controllers**:
+    - [BranchRolePermissionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BranchRolePermissionController.php): Tự động thêm tiền tố app (`pos.`, `sys.`) cho màn hình thuộc các ứng dụng ngoài PMS, tránh đè chéo namespace; tự động gán quyền `view` khi chọn bất kỳ hành động `add`/`edit`/`delete`.
+    - [UserOrganizationController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/UserOrganizationController.php): Quản lý đồng bộ vị trí nhân viên qua `sync()`; lưu phân quyền kho qua `syncWarehouses()`.
+    - [OrganizationController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/OrganizationController.php): Dynamic connection, composite unique mã chức danh theo bộ phận, chống trùng lặp chi nhánh.
+  - **Giao diện Frontend**:
+    - [EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue):
+      - Chuyển hoàn toàn sang lưu quyền nhân viên qua API `syncUserOrganization` (`POST /api/users/{id}/organization/sync`), loại bỏ triệt để việc gọi API cũ `syncUserBranches` và `syncUserRoles`.
+      - Danh sách bộ phận và vị trí công việc được nạp động từ cây tổ chức (computed), loại bỏ hoàn toàn các mã chức danh cũ hardcode (`RL016`, `RL017`,...).
+      - Danh sách kho được lấy động từ API `/api/warehouses`.
+      - Phân quyền kho được lưu theo từng chi nhánh qua API `syncUserWarehouses` (`POST /api/users/{id}/warehouses/sync`) vào bảng `user_warehouse_permissions`.
+    - [ForceChangePasswordModal.vue](file:///d:/PMS/frontend/src/components/ForceChangePasswordModal.vue) & [App.vue](file:///d:/PMS/frontend/src/App.vue):
+      - Modal bắt buộc đổi mật khẩu lần đầu khi `must_change_password === true`, gắn toàn cục tại `App.vue`, không thể đóng/bỏ qua, tích hợp nút đăng xuất an toàn.
+    - [company-service.js](file:///d:/PMS/frontend/src/services/company-service.js): Export `fetchWarehouses`, `syncUserWarehouses`, `changeUserPassword`.
+- **Kiểm tra & Kiểm thử tự động**:
+  - [OrganizationRbacTest.php](file:///d:/PMS/backend/tests/Feature/OrganizationRbacTest.php): Bộ kiểm thử hoàn chỉnh 11 kịch bản nghiệp vụ:
+    1. Một nhân viên có vị trí công việc khác nhau tại từng chi nhánh.
+    2. Tài khoản chưa kích hoạt / bị khóa (`is_active_user = false`) bị từ chối đăng nhập với HTTP 403.
+    3. Không lưu mật khẩu thô vào file log khi đăng nhập.
+    4. Cùng một nhân viên nhận bộ quyền hoàn toàn khác nhau tại Chi nhánh A và Chi nhánh B.
+    5. Cấp quyền Add/Edit/Delete tự động kéo theo quyền View của màn hình tương ứng.
+    6. Super Admin có toàn quyền trên toàn bộ chi nhánh.
+    7. Endpoint đổi mật khẩu `/api/me/change-password` xác thực mật khẩu cũ và cập nhật mật khẩu mới.
+    8. Fallback tương thích ngược về `user_roles` cũ nếu nhân viên chưa được gán vị trí theo schema mới.
+    9. Quyền rỗng tại chi nhánh KHÔNG fallback về legacy roles gây nguy cơ leo thang quyền.
+    10. Thêm màn hình non-PMS tự động tiền tố hóa mã permission chống trùng lặp.
+    11. Endpoint sync-warehouses lưu chính xác danh sách kho vào DB.
+  - Kết quả chạy test: `11 passed, 33 assertions (100%)`.
+  - Build frontend Vite (`npm run build`): Thành công 100% không lỗi.
+- **Tài liệu bàn giao**:
+  - Đã cập nhật toàn diện [RBAC_ORGANIZATION_IMPLEMENTATION_REVIEW.md](file:///d:/PMS/RBAC_ORGANIZATION_IMPLEMENTATION_REVIEW.md) phản ánh đúng trạng thái đã hoàn tất toàn bộ 7 điểm hiệu chỉnh.
+- **Trạng thái hiện tại**: Đã hoàn thành 100% tất cả các yêu cầu rà soát và sửa đổi.
+- **Kế hoạch tiếp theo**: Sẵn sàng triển khai nghiệm thu và kiểm tra người dùng cuối.
+
+---
 
 ## [2026-09-05] - Loại bỏ triệt để phòng đã chuyển (status = 100) khỏi Tab Phòng đến (Sang ngày)
 ### Module: Frontdesk / Sang ngày (`DayClosePage.vue`)
@@ -662,3 +841,36 @@
   - Test checkout sớm và 4 test hoàn tác checkout đều đạt.
   - Frontend production build thành công.
   - Bộ CheckoutBusinessRulesTest còn 2 lỗi cũ về room charge chuyển master trả 422; không thuộc thay đổi thống kê/checkout sớm.
+
+
+## [2026-09-05] - Cơ cấu tổ chức, phân quyền theo chi nhánh và quản lý nhân viên
+### Module: System / Cơ cấu tổ chức / Vai trò / Nhân viên
+
+- Đã đối chiếu nghiệp vụ với SP1304, SP8032, SP1604; bảng cũ chỉ dùng tham chiếu, không phụ thuộc runtime.
+- Tạo thiết kế System DB cho bộ phận, vị trí, Role theo chi nhánh/ứng dụng, vị trí nhân viên theo chi nhánh/ứng dụng, quyền Role theo chi nhánh và quyền kho.
+- Bổ sung metadata màn hình, cờ thao tác ngày cũ và bắt buộc đổi mật khẩu.
+- Migration khởi tạo 14 bộ phận, vị trí mặc định, chuẩn hóa và backfill quyền cũ.
+- API hỗ trợ CRUD cơ cấu, ma trận View/Add/Edit/Delete, thêm màn hình, copy Role, gán vị trí nhân viên và quyền kho.
+- Add/Edit/Delete tự kéo theo View ở frontend và backend.
+- Đồng bộ từng ứng dụng, không xóa nhầm POS/SYSTEM khi sửa PMS; dựng lại user_roles để tương thích màn cũ.
+- UI Cơ cấu tổ chức, Vai trò & Phân quyền, Nhân viên đã chuyển sang dữ liệu động; một user có thể có vị trí khác nhau theo chi nhánh.
+- Nhân viên tự sinh mã NBxxxx; username/mật khẩu mặc định theo email; reset mật khẩu yêu cầu đổi lại; khóa tài khoản thu hồi token.
+- Test OrganizationRbacTest đạt 1 test/3 assertions; frontend production build thành công.
+- MultiDatabaseArchitectureTest còn một lỗi cũ về branch code/id (mong đợi 422, nhận 200), không thuộc RBAC.
+- Chưa chạy migration pms_system và chưa chuyển middleware runtime sang ma trận mới vì cần xác nhận riêng trước khi tác động quyền đăng nhập hiện hành.
+- Đã tạo tài liệu bàn giao `RBAC_ORGANIZATION_IMPLEMENTATION_REVIEW.md`, liệt kê schema, API, UI, business rule, kết quả test, phần chưa áp dụng và checklist để Antigravity rà soát.
+
+### [2026-09-07] Rà soát độc lập và hoàn thiện RBAC sau bản sửa Gemini
+
+- Kiểm tra lại yêu cầu khách: Bộ phận → Position, Position × Chi nhánh × Ứng dụng → Role, View/Add/Edit/Delete, user đa chi nhánh, chi nhánh chính, kho, mật khẩu và chữ ký.
+- Sửa fallback quyền rỗng, phân giải quyền đa ứng dụng, nhận diện Super Admin đúng assignment và trả đủ quyền ứng dụng trong login/me.
+- Nối `allow_historical_date_actions` vào controller bill/payment; bỏ setting cũ mặc định cho phép ngày cũ.
+- Đồng bộ bộ phận động từ `departments`/SP1304; tab user của Position đọc từ `user_branch_positions`.
+- Sửa Employee UI: không fallback Position toàn hệ thống, kho theo từng chi nhánh, lưu assignment mọi ứng dụng, validate trước khi tạo user, reset mật khẩu qua API về email.
+- Backend quyền kho kiểm tra chi nhánh được phép, chống trùng và xác minh kho đúng database chi nhánh.
+- Bỏ hardcode HKT1/id 1 trong HTTP client; mã nhân viên dùng `EMPLOYEE_CODE_PREFIX`; ứng dụng mặc định dùng `DEFAULT_APPLICATION_CODE`.
+- Siết middleware cho route RBAC tương thích cũ và route chữ ký khai báo trùng.
+- Đã chạy migration System DB: `2026_09_05_110000` batch 2 thành công.
+- Test: RBAC 15/15, 45 assertions; frontend build thành công; runtime local đúng 8 chi nhánh, 15 bộ phận, 18 Position, 3 ứng dụng và kho HKT1/HKT2.
+- Full backend suite: 108/171 passed; 61 lỗi 403 do test cũ thiếu fixture quyền, 2 lỗi môi trường thiếu Dompdf/GD. Không thêm bypass test vào production.
+- Chi tiết bằng chứng tại `RBAC_ORGANIZATION_IMPLEMENTATION_REVIEW.md`.

@@ -4,6 +4,7 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AlertModal from '@/components/AlertModal.vue'
+import ForceChangePasswordModal from '@/components/ForceChangePasswordModal.vue'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import echo from '@/services/echo'
 import http from '@/services/http'
@@ -68,6 +69,7 @@ onUnmounted(() => {
   <ToastContainer />
   <ConfirmModal />
   <AlertModal />
+  <ForceChangePasswordModal />
 
   <!-- Global System Lock Overlay during Night Audit -->
   <div v-if="isNightAuditRunning" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center text-white">
