@@ -136,6 +136,38 @@ const isEditingActiveLock = computed(() => {
   return startDateStr <= sysDate
 })
 
+const startDateInputRef = ref(null)
+const endDateInputRef = ref(null)
+
+const openStartDatePicker = () => {
+  if (isEditingActiveLock.value) return
+  if (startDateInputRef.value) {
+    if (typeof startDateInputRef.value.showPicker === 'function') {
+      try {
+        startDateInputRef.value.showPicker()
+      } catch (e) {
+        startDateInputRef.value.focus()
+      }
+    } else {
+      startDateInputRef.value.focus()
+    }
+  }
+}
+
+const openEndDatePicker = () => {
+  if (endDateInputRef.value) {
+    if (typeof endDateInputRef.value.showPicker === 'function') {
+      try {
+        endDateInputRef.value.showPicker()
+      } catch (e) {
+        endDateInputRef.value.focus()
+      }
+    } else {
+      endDateInputRef.value.focus()
+    }
+  }
+}
+
 watch(() => bulkForm.value.start_date, (newVal) => {
   if (newVal) {
     bulkForm.value.start_time = '00:00'
@@ -1182,27 +1214,68 @@ const toggleRowMenu = (rowKey, event) => {
             <!-- Start Date -->
             <div class="flex flex-col gap-1">
               <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Bắt đầu</span>
-              <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
+              <div 
+                class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]"
+              >
                 <input 
+                  ref="startDateInputRef"
                   type="date" 
                   v-model="bulkForm.start_date" 
                   :min="systemDate || getTodayString()"
                   :disabled="isEditingActiveLock"
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full disabled:opacity-60 disabled:cursor-not-allowed" 
                 />
+                <button
+                  type="button"
+                  :disabled="isEditingActiveLock"
+                  @click="openStartDatePicker"
+                  class="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed bg-transparent border-none p-0 flex items-center"
+                  title="Mở lịch"
+                >
+                  <svg 
+                    class="w-4 h-4" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24" 
+                    stroke-width="2"
+                  >
+                    <rect x="3" y="4" width="18" height="17" rx="2"/>
+                    <path d="M16 2v4M8 2v4M3 10h18"/>
+                  </svg>
+                </button>
               </div>
             </div>
 
             <!-- End Date -->
             <div class="flex flex-col gap-1">
               <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Kết thúc</span>
-              <div class="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
+              <div 
+                class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]"
+              >
                 <input 
+                  ref="endDateInputRef"
                   type="date" 
                   v-model="bulkForm.end_date" 
                   :min="bulkForm.start_date || systemDate || getTodayString()"
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full cursor-pointer" 
+                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full" 
                 />
+                <button
+                  type="button"
+                  @click="openEndDatePicker"
+                  class="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 bg-transparent border-none p-0 flex items-center"
+                  title="Mở lịch"
+                >
+                  <svg 
+                    class="w-4 h-4" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24" 
+                    stroke-width="2"
+                  >
+                    <rect x="3" y="4" width="18" height="17" rx="2"/>
+                    <path d="M16 2v4M8 2v4M3 10h18"/>
+                  </svg>
+                </button>
               </div>
             </div>
 

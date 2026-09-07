@@ -58,27 +58,31 @@ class RoomLockController extends Controller
         $room = Room::where('room_number', $validated['room_number'])->firstOrFail();
         $roomId = $room->id;
 
-        // Adjust dates according to start_date being today or in the future
+        // Adjust dates according to start_date being today (system date) or in the future
         $rawStart = $request->input('start_date');
         $rawEnd = $request->input('end_date');
 
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
         $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
-        $localTodayStr = $localNow->format('Y-m-d');
 
         $reqStart = \Carbon\Carbon::parse($validated['start_date']);
         $reqStartDateStr = $reqStart->format('Y-m-d');
 
         $hasNoTime = !str_contains($rawStart, ' ') || str_ends_with($rawStart, ' 00:00:00') || str_ends_with($rawStart, ' 00:00');
         if ($hasNoTime) {
-            if ($reqStartDateStr === $localTodayStr) {
-                // Start date is today, use current time
-                $validated['start_date'] = $localNow->format('Y-m-d H:i:s');
-            } elseif ($reqStartDateStr > $localTodayStr) {
-                // Start date is in the future, start at 00:00:00
-                $validated['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+            if ($reqStartDateStr === $sysDateStr) {
+                // Start date is system date, use current execution time
+                $validated['start_date'] = $reqStartDateStr . ' ' . $localNow->format('H:i:s');
+            } elseif ($reqStartDateStr > $sysDateStr) {
+                // Start date is in the future (> sysDate), start at 00:00:00
+                $validated['start_date'] = $reqStartDateStr . ' 00:00:00';
             } else {
                 // Start date is in the past, start at 00:00:00
-                $validated['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+                $validated['start_date'] = $reqStartDateStr . ' 00:00:00';
             }
         }
 
@@ -233,8 +237,12 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => 'Không có danh sách phòng cần khóa.'], 422);
         }
 
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
         $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
-        $localTodayStr = $localNow->format('Y-m-d');
         $defaultEndTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->first()?->value ?? '23:59';
 
         $preparedLocks = [];
@@ -251,10 +259,12 @@ class RoomLockController extends Controller
 
             $hasNoTime = !str_contains($rawStart, ' ') || str_ends_with($rawStart, ' 00:00:00') || str_ends_with($rawStart, ' 00:00');
             if ($hasNoTime) {
-                if ($reqStartDateStr === $localTodayStr) {
-                    $item['start_date'] = $localNow->format('Y-m-d H:i:s');
+                if ($reqStartDateStr === $sysDateStr) {
+                    $item['start_date'] = $reqStartDateStr . ' ' . $localNow->format('H:i:s');
+                } elseif ($reqStartDateStr > $sysDateStr) {
+                    $item['start_date'] = $reqStartDateStr . ' 00:00:00';
                 } else {
-                    $item['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+                    $item['start_date'] = $reqStartDateStr . ' 00:00:00';
                 }
             }
 
@@ -485,11 +495,26 @@ class RoomLockController extends Controller
         }
 
         // Check and update room statuses for affected rooms
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
         $affectedRoomNumbers = array_unique($affectedRoomNumbers);
         foreach ($affectedRoomNumbers as $roomNumber) {
-            $hasActive = RoomLock::where('room_number', $roomNumber)->where('is_active', 1)->exists();
-            if (!$hasActive) {
-                Room::where('room_number', $roomNumber)->update(['room_status_code' => 'vacant_ready']);
+            $hasActiveToday = RoomLock::where('room_number', $roomNumber)
+                ->where('is_active', 1)
+                ->where('status', 'Active')
+                ->whereDate('start_date', '<=', $sysDateStr)
+                ->whereDate('end_date', '>=', $sysDateStr)
+                ->exists();
+
+            if (!$hasActiveToday) {
+                $targetRoom = Room::where('room_number', $roomNumber)->first();
+                if ($targetRoom && in_array($targetRoom->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
+                    $targetRoom->update(['room_status_code' => 'vacant_ready']);
+                    event(new \App\Events\RoomStatusUpdated($targetRoom->id, 'vacant_ready', 'Mở khóa phòng'));
+                }
             }
         }
 
@@ -620,8 +645,12 @@ class RoomLockController extends Controller
         $rawStart = $request->input('start_date');
         $rawEnd = $request->input('end_date');
 
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
         $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
-        $localTodayStr = $localNow->format('Y-m-d');
 
         $reqStart = \Carbon\Carbon::parse($validated['start_date']);
         $reqStartDateStr = $reqStart->format('Y-m-d');
@@ -629,17 +658,17 @@ class RoomLockController extends Controller
         $origLockStart = \Carbon\Carbon::parse($lock->start_date);
 
         if ($reqStartDateStr === $origLockStart->format('Y-m-d')) {
-            if (str_ends_with($rawStart, '00:00:00') || str_ends_with($rawStart, '00:00')) {
+            if (str_ends_with($rawStart, '00:00:00') || str_ends_with($rawStart, '00:00') || !str_contains($rawStart, ' ')) {
                 $validated['start_date'] = $origLockStart->format('Y-m-d H:i:s');
             }
         } else {
-            if (str_ends_with($rawStart, '00:00:00') || str_ends_with($rawStart, '00:00')) {
-                if ($reqStartDateStr === $localTodayStr) {
-                    $validated['start_date'] = $localNow->format('Y-m-d H:i:s');
-                } elseif ($reqStartDateStr > $localTodayStr) {
-                    $validated['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+            if (str_ends_with($rawStart, '00:00:00') || str_ends_with($rawStart, '00:00') || !str_contains($rawStart, ' ')) {
+                if ($reqStartDateStr === $sysDateStr) {
+                    $validated['start_date'] = $reqStartDateStr . ' ' . $localNow->format('H:i:s');
+                } elseif ($reqStartDateStr > $sysDateStr) {
+                    $validated['start_date'] = $reqStartDateStr . ' 00:00:00';
                 } else {
-                    $validated['start_date'] = $reqStart->format('Y-m-d 00:00:00');
+                    $validated['start_date'] = $reqStartDateStr . ' 00:00:00';
                 }
             }
         }
@@ -784,10 +813,25 @@ class RoomLockController extends Controller
             $lock->room_number
         );
 
-        // Check if there are other active locks
-        $hasActive = RoomLock::where('room_number', $roomNumber)->where('is_active', 1)->exists();
-        if (!$hasActive) {
-            Room::where('room_number', $roomNumber)->update(['room_status_code' => 'vacant_ready']);
+        // Check if there are other active locks today
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+
+        $hasActiveToday = RoomLock::where('room_number', $roomNumber)
+            ->where('is_active', 1)
+            ->where('status', 'Active')
+            ->whereDate('start_date', '<=', $sysDateStr)
+            ->whereDate('end_date', '>=', $sysDateStr)
+            ->exists();
+
+        if (!$hasActiveToday) {
+            $targetRoom = Room::where('room_number', $roomNumber)->first();
+            if ($targetRoom && in_array($targetRoom->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
+                $targetRoom->update(['room_status_code' => 'vacant_ready']);
+                event(new \App\Events\RoomStatusUpdated($targetRoom->id, 'vacant_ready', 'Mở khóa phòng'));
+            }
         }
 
         return response()->json([
@@ -1055,7 +1099,7 @@ class RoomLockController extends Controller
     }
 
     /**
-     * Check if user job title / role has permission to unlock.
+     * Check if user role has permission to unlock.
      */
     private function checkUnlockRolePermission(Request $request, RoomLock $lock)
     {
@@ -1064,64 +1108,94 @@ class RoomLockController extends Controller
             return null;
         }
 
-        $isOoo = strtoupper($lock->lock_type) === 'OOO';
-        $isOos = strtoupper($lock->lock_type) === 'OOS';
+        // Ưu tiên đọc cấu hình RoleUserUnlockRoomOOO/OOS
+        $allowedRolesStr = \App\Models\HotelConfig::where('name', 'RoleUserUnlockRoomOOO/OOS')->value('value');
 
-        $configName = $isOoo ? 'OOORoleUserUnlock' : 'OOSRoleUserUnlock';
-        $allowedRolesStr = \App\Models\HotelConfig::where('name', $configName)->first()?->value;
-
-        if (empty($allowedRolesStr)) {
-            return null; // No restriction if empty
+        // Fallback về cấu hình riêng lẻ nếu chưa cấu hình chung
+        if ($allowedRolesStr === null || trim((string)$allowedRolesStr) === '') {
+            $isOoo = strtoupper($lock->lock_type) === 'OOO';
+            $configName = $isOoo ? 'OOORoleUserUnlock' : 'OOSRoleUserUnlock';
+            $allowedRolesStr = \App\Models\HotelConfig::where('name', $configName)->value('value');
         }
 
-        $allowedRoles = array_map('trim', explode(',', $allowedRolesStr));
+        if (empty($allowedRolesStr) || trim((string)$allowedRolesStr) === '') {
+            return null; // Không cấu hình => không giới hạn
+        }
+
+        $allowedRoles = preg_split('/[,;|]+/', strtolower((string) $allowedRolesStr), -1, PREG_SPLIT_NO_EMPTY);
         if (empty($allowedRoles)) {
             return null;
         }
 
-        $userJobTitle = strtolower($user->job_title ?? '');
-        $userJobCode = strtolower($user->job_title_code ?? '');
-        $userDeptCode = strtolower($user->department_code ?? '');
-        $username = strtolower($user->username ?? '');
+        // Thu thập danh sách Roles (tên Rule/vai trò, job_title_code, department_code) của user
+        $userRoles = [];
+
+        // 1. Roles từ bảng phân quyền roles (code & name)
+        if (method_exists($user, 'roles')) {
+            try {
+                $rolesList = $user->roles;
+                if ($rolesList) {
+                    foreach ($rolesList as $r) {
+                        if (!empty($r->code)) $userRoles[] = strtolower(trim((string)$r->code));
+                        if (!empty($r->name)) $userRoles[] = strtolower(trim((string)$r->name));
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Ignore if relation error
+            }
+        }
+
+        // 2. Chức danh & Bộ phận (job_title_code, job_title, department_code, department)
+        if (!empty($user->job_title_code)) $userRoles[] = strtolower(trim((string)$user->job_title_code));
+        if (!empty($user->job_title)) $userRoles[] = strtolower(trim((string)$user->job_title));
+        if (!empty($user->department_code)) $userRoles[] = strtolower(trim((string)$user->department_code));
+        if (!empty($user->department)) $userRoles[] = strtolower(trim((string)$user->department));
+
+        $userRoles = array_unique(array_filter($userRoles));
 
         $matched = false;
-        foreach ($allowedRoles as $role) {
-            $roleLower = strtolower($role);
+        foreach ($allowedRoles as $allowedRole) {
+            $roleLower = trim(strtolower($allowedRole));
 
-            // Direct matches
-            if ($roleLower === $username || $roleLower === $userJobCode || $roleLower === $userDeptCode) {
-                $matched = true;
-                break;
-            }
-
-            // Check if role name matches or is contained in job_title (e.g. "Admin" in "Administrator" or "Tổng giám đốc")
-            if (str_contains($userJobTitle, $roleLower)) {
+            // So khớp trực tiếp với bất kỳ Role / Job title nào của user
+            if (in_array($roleLower, $userRoles, true)) {
                 $matched = true;
                 break;
             }
 
-            // Check abbreviations / common mappings
-            if ($roleLower === 'admin' && (str_contains($userJobTitle, 'quản trị') || str_contains($userJobTitle, 'tổng giám đốc') || $username === 'admin' || $username === 'testuser')) {
+            // So khớp mềm / substring
+            foreach ($userRoles as $uRole) {
+                if ($uRole === $roleLower || str_contains($uRole, $roleLower) || str_contains($roleLower, $uRole)) {
+                    $matched = true;
+                    break 2;
+                }
+            }
+
+            // Xử lý các quy ước Role phổ biến:
+            // Admin / Quản trị
+            if ($roleLower === 'admin' && (in_array('administrator', $userRoles, true) || in_array('quản trị', $userRoles, true) || in_array('tổng giám đốc', $userRoles, true) || strtolower($user->username ?? '') === 'admin')) {
                 $matched = true;
                 break;
             }
-            if ($roleLower === 'fom' && (str_contains($userJobTitle, 'lễ tân') || $userDeptCode === 'fo' || str_contains($userJobTitle, 'trưởng bộ phận'))) {
+            // FO / FOM / Lễ tân
+            if (in_array($roleLower, ['fo', 'fom'], true) && (in_array('fo', $userRoles, true) || in_array('fom', $userRoles, true) || in_array('lễ tân', $userRoles, true) || in_array('reception', $userRoles, true))) {
                 $matched = true;
                 break;
             }
-            if ($roleLower === 'hkm' && (str_contains($userJobTitle, 'buồng') || str_contains($userJobTitle, 'hk') || $userDeptCode === 'hk' || str_contains($userJobTitle, 'trưởng hk'))) {
+            // HK / HKM / Buồng phòng
+            if (in_array($roleLower, ['hk', 'hkm'], true) && (in_array('hk', $userRoles, true) || in_array('hkm', $userRoles, true) || in_array('buồng phòng', $userRoles, true) || in_array('buồng', $userRoles, true) || in_array('housekeeping', $userRoles, true))) {
                 $matched = true;
                 break;
             }
-            if ($roleLower === 'sales' && (str_contains($userJobTitle, 'sales') || str_contains($userJobTitle, 'kinh doanh') || $userDeptCode === 'sales')) {
+            // Sales / Kinh doanh
+            if ($roleLower === 'sales' && (in_array('sales', $userRoles, true) || in_array('kinh doanh', $userRoles, true))) {
                 $matched = true;
                 break;
             }
         }
 
         if (!$matched) {
-            $typeName = $isOoo ? 'OOO' : 'OOS';
-            return "Tài khoản của bạn không có vai trò được phép mở khóa phòng {$typeName} (Quyền yêu cầu: {$allowedRolesStr}).";
+            return "Tài khoản của bạn không thuộc vai trò (Role) được phép mở khóa phòng (Vai trò yêu cầu: {$allowedRolesStr}).";
         }
 
         return null;
