@@ -461,6 +461,7 @@ class BookingController extends Controller
                                 'adults' => $detail['adults'] ?? 2,
                                 'babies' => $detail['babies'] ?? 0,
                                 'children_qty' => $detail['children'] ?? 0,
+                                'is_day_use' => (bool) ($validated['is_day_use'] ?? false),
                                 'extra_bed_qty' => (int)($detail['extraBedQty'] ?? (empty($detail['extraBedPrice']) ? 0 : 1)),
                                 'extra_bed_rate' => $detail['extraBedPrice'] ?? 0,
                                 'status' => \App\Models\BookingRoom::STATUS_BOOKED,
@@ -807,6 +808,8 @@ class BookingController extends Controller
                 }
 
                 $booking->update($validated);
+                \App\Models\BookingRoom::where('booking_id', $booking->id)
+                    ->update(['is_day_use' => (bool) $booking->is_day_use]);
 
                 // Đồng bộ room_allocations (từ UI gửi lên) - xử lý thông minh để cập nhật thay vì xóa/tạo lại
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
@@ -947,7 +950,7 @@ class BookingController extends Controller
                                     ? (filled($detail['rateCode']) ? $detail['rateCode'] : null)
                                     : ($alloc['rateCode'] ?? null),
                                 'breakfast' => isset($detail['breakfast']) ? !empty($detail['breakfast']) : !empty($alloc['breakfastIncluded']),
-                                'is_day_use' => filter_var($detail['hourly'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                                'is_day_use' => (bool) $booking->is_day_use,
                                 'discount' => $detail['discount'] ?? $alloc['discount'] ?? null,
                                 'discount_type' => $detail['discountType'] ?? $alloc['discountType'] ?? null,
                                 'discount_value' => $detail['discountValue'] ?? $alloc['discountValue'] ?? 0,

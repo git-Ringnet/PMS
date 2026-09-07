@@ -80,7 +80,7 @@ class BookingRoomController extends Controller
             'is_day_use'      => 'nullable|boolean',
         ]);
 
-        $isDayUse = filter_var($request->input('is_day_use'), FILTER_VALIDATE_BOOLEAN);
+        $isDayUse = (bool) $booking->is_day_use;
         if (!$isDayUse && $validated['departure_date'] === $validated['arrival_date']) {
             return response()->json([
                 'success' => false,
@@ -138,6 +138,7 @@ class BookingRoomController extends Controller
         }
 
         $validated['booking_id']              = $bookingId;
+        $validated['is_day_use']              = $isDayUse;
         $validated['original_room_class_id']  = $validated['room_class_id']; // Lưu LP khởi tạo
         $validated['status']                  = BookingRoom::STATUS_BOOKED;
         $validated['created_by']              = Auth::user()?->username ?? 'system';
