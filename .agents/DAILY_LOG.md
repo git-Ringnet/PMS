@@ -11,6 +11,41 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-07] - Tích hợp tự động RbacMatrixSeeder vào luồng Reset Multi-DB
+### Module: Hệ thống / RBAC Seeder & Console Commands ([database_domains.php](file:///d:/PMS/backend/config/database_domains.php), [ResetMultiDbCommand.php](file:///d:/PMS/backend/app/Console/Commands/ResetMultiDbCommand.php))
+
+- **Đã hoàn thành**:
+  - **Đăng ký seeder vào cấu hình hệ thống**:
+    - Bổ sung `Database\Seeders\RbacMatrixSeeder::class` vào mảng `system_seeders` trong [config/database_domains.php](file:///d:/PMS/backend/config/database_domains.php).
+  - **Tích hợp tự động vào lệnh Reset Multi-DB ([ResetMultiDbCommand.php](file:///d:/PMS/backend/app/Console/Commands/ResetMultiDbCommand.php))**:
+    - Thêm phương thức `seedRbacMatrix()` tự động chạy `db:seed --class=RbacMatrixSeeder` trên `mysql_system`.
+    - Gọi tự động ngay sau khi hoàn thành đồng bộ danh sách chi nhánh động (`syncDatabasesToSystemBranches`) và gán quyền Super Admin.
+    - Đảm bảo 100% các lần chạy `php artisan db:reset-all --seed-all` (hoặc `target=system`) đều tự động nạp đầy đủ 46 màn hình (184 permissions) và backfill trọn vẹn `branch_role_permissions` trên tất cả chi nhánh phát hiện động (`GKT6`, `HKT5`, `HKT8`...).
+- **Kiểm tra**:
+  - `php -l`: Cú pháp PHP chuẩn trên cả 2 file.
+  - `php artisan test --filter=OrganizationRbacTest`: 15/15 tests đạt (45 assertions).
+
+---
+
+## [2026-09-07] - Tối ưu UI Vị trí công việc theo chi nhánh & Bổ sung nút thu gọn/mở rộng
+### Module: Hệ thống / Quản lý Nhân viên ([EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue))
+
+- **Đã hoàn thành**:
+  - **Khắc phục lỗi tràn UI khối "Vị trí công việc theo chi nhánh"**:
+    - Thay thế dropdown select dài dễ bị tràn viền bằng thẻ thông tin **chỉ xem (Read-only Tag)** tinh gọn, bo góc, có icon chức vụ và nhãn phòng ban màu xanh sky nhã nhặn.
+    - Thêm `overflow-hidden`, `min-w-0`, `truncate` và `box-border` đảm bảo co giãn hoàn hảo không bao giờ bị tràn khung.
+    - Bổ sung padding đáy `pb-12` cho container modal giúp khi cuộn xuống không bị che khuất viền đáy.
+  - **Bổ sung nút mũi tên bật/tắt (Collapsible Toggle)**:
+    - Cho phép click vào tiêu đề để thu gọn hoặc mở rộng danh sách vị trí chi nhánh.
+    - Mũi tên xoay 180 độ có hiệu ứng chuyển động mượt mà, tích hợp badge đếm số chi nhánh đã chọn.
+  - **Đồng bộ phân công vị trí tập trung**:
+    - Tự động kế thừa chức danh chính của nhân viên sang các chi nhánh được tick chọn.
+    - Xác nhận và làm rõ luồng nghiệp vụ: Việc phân công Role và ma trận quyền hạn cho từng vị trí theo chi nhánh được thực hiện tập trung tại **Cơ cấu tổ chức** (modal Sửa ứng dụng & Cấu hình). Modal nhân viên chỉ đóng vai trò xem thông tin phân công.
+- **Kiểm tra**:
+  - `npm run build`: Thành công 100%.
+
+---
+
 ## [2026-09-07] - Tự động sinh Username theo Tên nhân viên & Hiển thị rõ ràng Mật khẩu mặc định
 ### Module: Hệ thống / Quản lý Nhân viên & Xác thực (`EmployeeTab.vue`, `AuthController.php`, `UserController.php`)
 

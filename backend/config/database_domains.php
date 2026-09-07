@@ -65,6 +65,7 @@ return [
         Database\Seeders\InfoBusinessSeeder::class,
         Database\Seeders\EmployeeSeeder::class,
         Database\Seeders\RolePermissionSeeder::class,
+        Database\Seeders\RbacMatrixSeeder::class,
     ],
 
     // Tables not yet verified against the complete legacy database stay in Branch DB.

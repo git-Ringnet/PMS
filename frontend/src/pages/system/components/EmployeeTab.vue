@@ -88,6 +88,28 @@ const loadWarehousesForBranch = async (branchId) => {
   }
 }
 
+const isBranchPositionsOpen = ref(true)
+
+const getBranchName = (branchId) => {
+  const b = allBranches.value.find(item => Number(item.id) === Number(branchId))
+  return b ? (b.name || b.code) : `Chi nhánh #${branchId}`
+}
+
+const getBranchPositionName = (branchId) => {
+  const branch = selectedBranches.value.find(b => b.branch_id === branchId)
+  let posId = branch?.position_id
+  if (!posId) {
+    const mainPos = allPositions.value.find(p => p.code === form.value.job_title_code)
+    if (mainPos) {
+      if (branch) branch.position_id = mainPos.id
+      posId = mainPos.id
+    }
+  }
+  if (!posId) return form.value.job_title || 'Chưa gán vị trí'
+  const pos = allPositions.value.find(p => Number(p.id) === Number(posId))
+  return pos ? `${pos.name}` : (form.value.job_title || 'Chưa gán vị trí')
+}
+
 const getBranchPosition = (branchId) => {
   return selectedBranches.value.find(b => b.branch_id === branchId)?.position_id || ''
 }
@@ -143,7 +165,8 @@ const isBranchPrimary = (branchId) => selectedBranches.value.some(b => b.branch_
 const toggleBranch = (branch) => {
   const idx = selectedBranches.value.findIndex(b => b.branch_id === branch.id)
   if (idx === -1) {
-    const defaultPos = positionsForBranch(branch.id)[0]?.id || null
+    const mainPos = allPositions.value.find(p => p.code === form.value.job_title_code)
+    const defaultPos = mainPos?.id || positionsForBranch(branch.id)[0]?.id || null
     selectedBranches.value.push({
       branch_id: branch.id,
       position_id: defaultPos,
@@ -1186,7 +1209,7 @@ const changePage = (page) => {
         </div>
 
         <!-- Tab Content: Permissions (matching image7.png) -->
-        <div v-else class="p-6 max-h-[62vh] overflow-y-auto space-y-5">
+        <div v-else class="p-6 pb-12 max-h-[62vh] overflow-y-auto space-y-5">
           <!-- Loading -->
           <div v-if="permLoading" class="flex items-center justify-center h-40">
             <div class="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
@@ -1212,9 +1235,9 @@ const changePage = (page) => {
                         :class="isBranchSelected(branch.id) ? 'bg-[#99cff5]/45 hover:bg-[#99cff5]/60' : 'hover:bg-slate-50'">
                       <td class="py-2.5 px-4 text-center border-r border-slate-100">
                         <input type="checkbox"
-                               :checked="isBranchSelected(branch.id)"
-                               @change="toggleBranch(branch)"
-                               class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer" />
+                                :checked="isBranchSelected(branch.id)"
+                                @change="toggleBranch(branch)"
+                                class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer" />
                       </td>
                       <td class="py-2.5 px-4 font-semibold text-slate-800 border-r border-slate-100" @click="toggleBranch(branch)">
                         {{ branch.name || branch.code }}
@@ -1239,24 +1262,75 @@ const changePage = (page) => {
               </div>
             </div>
 
-            <!-- Section 2: Vị trí công việc theo chi nhánh (RBAC) -->
-            <div v-if="selectedBranches.length > 0" class="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
-              <div class="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Vị Trí Công Việc Theo Chi Nhánh</div>
-              <div class="grid grid-cols-2 gap-3">
-                <div v-for="sb in selectedBranches" :key="sb.branch_id"
-                     class="flex items-center gap-2 p-2 bg-white rounded border border-slate-200 shadow-2xs">
-                  <div class="text-xs font-bold text-slate-700 w-24 shrink-0 truncate">
-                    {{ allBranches.find(b => b.id === sb.branch_id)?.name || allBranches.find(b => b.id === sb.branch_id)?.code }}
+            <!-- Section 2: Vị trí công việc theo chi nhánh (Chế độ xem gọn gàng, có nút đóng/mở) -->
+            <div v-if="selectedBranches.length > 0" class="p-3 bg-slate-50 border border-slate-200 rounded-lg w-full overflow-hidden space-y-2.5 box-border">
+              <!-- Header với nút mũi tên đóng/mở -->
+              <div
+                @click="isBranchPositionsOpen = !isBranchPositionsOpen"
+                class="flex items-center justify-between cursor-pointer select-none py-0.5 hover:opacity-85 transition-opacity"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Vị Trí Công Việc Theo Chi Nhánh (Chỉ Xem)
+                  </span>
+                  <span class="text-[10px] bg-[#e0f2fe] text-[#0369a1] font-extrabold px-2 py-0.2 rounded-full border border-sky-200">
+                    {{ selectedBranches.length }} chi nhánh
+                  </span>
+                </div>
+                <div class="flex items-center gap-1.5 text-slate-500 text-xs">
+                  <span class="text-[11px] font-medium">
+                    {{ isBranchPositionsOpen ? 'Thu gọn' : 'Mở rộng' }}
+                  </span>
+                  <svg
+                    class="w-4 h-4 transition-transform duration-200"
+                    :class="{ 'rotate-180': isBranchPositionsOpen }"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Nội dung danh sách vị trí khi mở rộng -->
+              <div v-show="isBranchPositionsOpen" class="space-y-2 pt-1 border-t border-slate-200/70">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <div
+                    v-for="sb in selectedBranches"
+                    :key="sb.branch_id"
+                    class="flex items-center justify-between gap-2 p-2.5 bg-white rounded-md border border-slate-200 shadow-2xs min-w-0"
+                  >
+                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                      <div class="w-2 h-2 rounded-full bg-sky-500 shrink-0"></div>
+                      <span class="text-xs font-bold text-slate-800 truncate" :title="getBranchName(sb.branch_id)">
+                        {{ getBranchName(sb.branch_id) }}
+                      </span>
+                    </div>
+
+                    <!-- Badge vị trí công việc (Read-only, tinh gọn không tràn) -->
+                    <div class="shrink-0 max-w-[65%]">
+                      <span
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#f0f9ff] text-[#0284c7] font-semibold text-[11px] border border-[#bae6fd] truncate"
+                        :title="getBranchPositionName(sb.branch_id)"
+                      >
+                        <svg class="w-3 h-3 text-[#0284c7] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <span class="truncate">{{ getBranchPositionName(sb.branch_id) }}</span>
+                      </span>
+                    </div>
                   </div>
-                  <select
-                    :value="getBranchPosition(sb.branch_id)"
-                    @change="e => setPositionForBranch(sb.branch_id, e.target.value)"
-                    class="flex-1 text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:border-sky-400 font-medium">
-                    <option value="">-- Chọn vị trí công việc --</option>
-                    <option v-for="pos in positionsForBranch(sb.branch_id)" :key="pos.id" :value="pos.id">
-                      {{ pos.name }} ({{ pos.department_name || pos.department?.name || pos.code }})
-                    </option>
-                  </select>
+                </div>
+
+                <div class="text-[10.5px] text-slate-500 flex items-center gap-1.5 pt-0.5">
+                  <svg class="w-3.5 h-3.5 text-sky-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>
+                    Vị trí công việc và vai trò được phân công tập trung tại <strong>Cơ cấu tổ chức</strong> (modal Sửa ứng dụng &amp; Cấu hình).
+                  </span>
                 </div>
               </div>
             </div>
