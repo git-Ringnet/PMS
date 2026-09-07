@@ -22,11 +22,25 @@ const activeTemplate = computed(() => {
   return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
 })
 
+const reportPreviewZoom = 1.25
+const reportPreviewDimensions = computed(() => {
+  const landscape = activeTemplate.value?.page_orientation === 'landscape'
+  return landscape
+    ? { width: 1120, height: 790 }
+    : { width: 800, height: 1120 }
+})
+const reportPreviewContainerStyle = computed(() => ({
+  width: `${reportPreviewDimensions.value.width * reportPreviewZoom}px`,
+  height: `${reportPreviewDimensions.value.height * reportPreviewZoom}px`
+}))
+const reportPreviewFrameStyle = computed(() => ({
+  width: `${reportPreviewDimensions.value.width}px`,
+  height: `${reportPreviewDimensions.value.height}px`,
+  transform: `scale(${reportPreviewZoom})`,
+  transformOrigin: 'top left'
+}))
 const iframeClass = computed(() => {
-  const orientation = activeTemplate.value?.page_orientation || 'portrait'
-  return orientation === 'landscape'
-    ? 'mx-auto block min-h-[790px] w-full max-w-[1120px] border-0 bg-white shadow-xl'
-    : 'mx-auto block min-h-[1120px] w-full max-w-[800px] border-0 bg-white shadow-xl'
+  return 'block border-0 bg-white shadow-xl'
 })
 
 const localToday = () => {
@@ -523,7 +537,9 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" />
+            <div v-else class="mx-auto" :style="reportPreviewContainerStyle">
+              <iframe ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" :style="reportPreviewFrameStyle" />
+            </div>
           </section>
         </div>
       </template>
