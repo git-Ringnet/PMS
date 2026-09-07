@@ -633,9 +633,18 @@ const hoverTooltip = ref({
 
 let tooltipTimeout = null
 
+function isLockedRoom(room) {
+  if (!room) return false
+  const hasLock = room.room_status_code === 'ooo' || room.room_status_code === 'oos' || !!room.lock_type
+  const hasBooking = room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'
+  return hasLock && !hasBooking
+}
+
 function showTooltip(event, room) {
   if (contextMenu.value?.show) return
-  if (!room || (room.booking_status !== 'occupied' && room.booking_status !== 'reserved' && room.booking_status !== 'checkout')) return
+  const isBooking = room && (room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout')
+  const isLocked = isLockedRoom(room)
+  if (!room || (!isBooking && !isLocked)) return
 
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout)
@@ -667,6 +676,18 @@ function cancelHide() {
     clearTimeout(tooltipTimeout)
     tooltipTimeout = null
   }
+}
+
+function formatLockTooltipDateTime(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`
 }
 
 function formatTooltipDate(dateStr) {
@@ -2944,85 +2965,108 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
             :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }" @mouseenter="cancelHide"
             @mouseleave="hideTooltip">
-            <!-- Header: Dates and Booking Code -->
-            <div
-              class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
-              <div class="flex items-center gap-1.5">
-                <span class="text-xs">🟢</span>
-                <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
-                <span class="text-neutral-500 font-normal">-</span>
-                <span class="text-xs">🔴</span>
-                <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
-              </div>
-              <div>
-                <span class="text-neutral-400 font-normal">Mã ĐK:</span>
-                <span class="ml-1 text-sky-400">{{ hoverTooltip.room.booking_code }}</span>
-              </div>
-            </div>
-
-            <!-- Details list -->
-            <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
-              <li class="flex items-start gap-1">
-                <span class="text-neutral-500">•</span>
-                <span>Tên ĐK: <strong class="text-white">{{ hoverTooltip.room.booking_name }}</strong></span>
-              </li>
-              <li class="flex items-start gap-1">
-                <span class="text-neutral-500">•</span>
-                <span>Tên: <strong class="text-white">{{ hoverTooltip.room.guest_name }}</strong></span>
-              </li>
-              <li class="flex items-start gap-1">
-                <span class="text-neutral-500">•</span>
-                <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
-              </li>
-              <li class="flex items-start gap-1">
-                <span class="text-neutral-500">•</span>
-                <span>Đêm: {{ hoverTooltip.room.nights }}</span>
-              </li>
-              <li class="flex items-center gap-2">
-                <span class="text-neutral-500">•</span>
-                <span class="flex items-center gap-1">
-                  {{ hoverTooltip.room.adults }} 🧑
-                  {{ hoverTooltip.room.children }} 🧒
-                  {{ hoverTooltip.room.babies }} 👶
-                </span>
-              </li>
-              <li class="flex items-center justify-between">
-                <span class="flex items-center gap-1">
-                  <span class="text-neutral-500">•</span>
-                  <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
-                </span>
-                <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
-              </li>
-            </ul>
-
-            <!-- Divider -->
-            <div class="h-px bg-neutral-700/60 my-2"></div>
-
-            <!-- Lower Section (Description/Company details) -->
-            <div class="text-neutral-400 space-y-1">
-              <div class="uppercase font-bold text-neutral-300">
-                1 {{ hoverTooltip.room.room_type_name }} - {{ hoverTooltip.room.adults > 2 ? 'TRPL' : 'DBL' }} ({{
-                  hoverTooltip.room.nights }} ĐÊM)*
-              </div>
-              <div>{{ formatTooltipPrice(hoverTooltip.room.rate) }}/R/N</div>
-              <div v-if="hoverTooltip.room.company_name" class="uppercase text-neutral-300">CTY: {{
-                hoverTooltip.room.company_name }}</div>
-              <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{
-                hoverTooltip.room.booking_note }}</div>
-              <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{
-                hoverTooltip.room.special_requests }}</div>
-
-              <div class="h-px bg-neutral-700/30 my-1.5"
-                v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
-
-              <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
-                <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
-                <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx"
-                  class="uppercase text-neutral-200 pl-1">
-                  • {{ gName }}
+            <!-- Mode 1: Khóa phòng (OOO / OOS) -->
+            <template v-if="isLockedRoom(hoverTooltip.room)">
+              <div
+                class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
+                <div class="flex items-center gap-1.5">
+                  <span :class="(hoverTooltip.room.lock_type || hoverTooltip.room.active_locks?.[0]?.lock_type)?.toUpperCase() === 'OOS' ? 'text-slate-400' : 'text-blue-400'">●</span>
+                  <span>{{ formatLockTooltipDateTime(hoverTooltip.room.lock_start_date || hoverTooltip.room.active_locks?.[0]?.lock_start_date) }}</span>
+                  <span class="mx-1 text-neutral-400">~</span>
+                  <span>{{ formatLockTooltipDateTime(hoverTooltip.room.lock_end_date || hoverTooltip.room.active_locks?.[0]?.lock_end_date) }}</span>
                 </div>
-              </template>
-            </div>
+                <div class="text-neutral-400 font-extrabold uppercase">
+                  {{ (hoverTooltip.room.lock_type || hoverTooltip.room.active_locks?.[0]?.lock_type || 'OOO').toUpperCase() }}
+                </div>
+              </div>
+              <div class="flex flex-col gap-1.5 font-semibold text-neutral-300">
+                <div>Ghi chú: <span class="text-white font-normal">{{ hoverTooltip.room.lock_reason || hoverTooltip.room.active_locks?.[0]?.lock_reason || '-' }}</span></div>
+                <div>Người khóa: <span class="text-white font-normal">{{ hoverTooltip.room.lock_username || hoverTooltip.room.active_locks?.[0]?.lock_username || 'Admin' }}</span></div>
+              </div>
+            </template>
+
+            <!-- Mode 2: Booking thông thường -->
+            <template v-else>
+              <!-- Header: Dates and Booking Code -->
+              <div
+                class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs">🟢</span>
+                  <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
+                  <span class="text-neutral-500 font-normal">-</span>
+                  <span class="text-xs">🔴</span>
+                  <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
+                </div>
+                <div>
+                  <span class="text-neutral-400 font-normal">Mã ĐK:</span>
+                  <span class="ml-1 text-sky-400">{{ hoverTooltip.room.booking_code }}</span>
+                </div>
+              </div>
+
+              <!-- Details list -->
+              <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
+                <li class="flex items-start gap-1">
+                  <span class="text-neutral-500">•</span>
+                  <span>Tên ĐK: <strong class="text-white">{{ hoverTooltip.room.booking_name }}</strong></span>
+                </li>
+                <li class="flex items-start gap-1">
+                  <span class="text-neutral-500">•</span>
+                  <span>Tên: <strong class="text-white">{{ hoverTooltip.room.guest_name }}</strong></span>
+                </li>
+                <li class="flex items-start gap-1">
+                  <span class="text-neutral-500">•</span>
+                  <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
+                </li>
+                <li class="flex items-start gap-1">
+                  <span class="text-neutral-500">•</span>
+                  <span>Đêm: {{ hoverTooltip.room.nights }}</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <span class="text-neutral-500">•</span>
+                  <span class="flex items-center gap-1">
+                    {{ hoverTooltip.room.adults }} 🧑
+                    {{ hoverTooltip.room.children }} 🧒
+                    {{ hoverTooltip.room.babies }} 👶
+                  </span>
+                </li>
+                <li class="flex items-center justify-between">
+                  <span class="flex items-center gap-1">
+                    <span class="text-neutral-500">•</span>
+                    <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
+                  </span>
+                  <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
+                </li>
+              </ul>
+
+              <!-- Divider -->
+              <div class="h-px bg-neutral-700/60 my-2"></div>
+
+              <!-- Lower Section (Description/Company details) -->
+              <div class="text-neutral-400 space-y-1">
+                <div class="uppercase font-bold text-neutral-300">
+                  1 {{ hoverTooltip.room.room_type_name }} - {{ hoverTooltip.room.adults > 2 ? 'TRPL' : 'DBL' }} ({{
+                    hoverTooltip.room.nights }} ĐÊM)*
+                </div>
+                <div>{{ formatTooltipPrice(hoverTooltip.room.rate) }}/R/N</div>
+                <div v-if="hoverTooltip.room.company_name" class="uppercase text-neutral-300">CTY: {{
+                  hoverTooltip.room.company_name }}</div>
+                <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{
+                  hoverTooltip.room.booking_note }}</div>
+                <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{
+                  hoverTooltip.room.special_requests }}</div>
+
+                <div class="h-px bg-neutral-700/30 my-1.5"
+                  v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
+
+                <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
+                  <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
+                  <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx"
+                    class="uppercase text-neutral-200 pl-1">
+                    • {{ gName }}
+                  </div>
+                </template>
+              </div>
+            </template>
 
             <!-- Triangle Pointer -->
             <div

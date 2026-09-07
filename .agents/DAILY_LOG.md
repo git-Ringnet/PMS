@@ -11,6 +11,30 @@
 - **Trạng thái hiện tại**: Đang dừng ở bước nào, cần lưu ý gì.
 - **Kế hoạch tiếp theo**: Việc cần làm tiếp khi mở lại dự án.
 
+## [2026-09-07] - Tinh Chỉnh Tooltip Khóa Phòng (Room Plan & Room Map) & Cấu Hình Role Mở Khóa OOO/OOS
+### Module: Reservation / Frontdesk / Khóa Phòng (Room Lock) & Cài đặt hệ thống (Hotel Config)
+
+- **Đã xử lý & hoàn thiện**:
+  - **1. Tinh Chỉnh Ghi Chú Khóa Phòng Trên Màn Hình Kế Hoạch Phòng ([`RoomPlanPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+    - Bỏ 2 dòng `Tên: ...` và `Loại khóa: ...` trong tooltip khi hover vào dải phòng khóa OOO/OOS.
+    - Giữ lại dòng `Ghi chú: [Nội dung ghi chú]`.
+    - Bổ sung dòng `Người khóa: [Tên người khóa]` lấy từ trường thông tin người tạo khóa.
+  - **2. Bổ Sung Tooltip Ghi Chú Khóa Phòng Trên Sơ Đồ Phòng ([`RoomMapPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Hỗ trợ sự kiện hover chuột vào phòng đang khóa (OOO/OOS) hiển thị tooltip tương tự màn hình Kế hoạch phòng: Thời gian khóa (`Từ ngày giờ ~ Đến ngày giờ`), Badge trạng thái khóa (`OOO`/`OOS`), `Ghi chú` và `Người khóa`.
+  - **3. Bổ Sung Cấu Hình Phân Quyền Mở Khóa Theo Role ([`HotelDefinitionSeeder.php`](file:///c:/xampp/htdocs/PMS/backend/database/seeders/HotelDefinitionSeeder.php), [`RoomLockController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/RoomLockController.php))**:
+    - Thêm tham số cấu hình:
+      - **Tên thông số**: `RoleUserUnlockRoomOOO/OOS`
+      - **Giá trị mặc định**: `Admin,FO,FOM,Sales,HK`
+      - **Mô tả**: `Danh sách Role user được phép mở khóa phòng OOO/OOS (vd: Admin,FO,FOM,Sales,HK)`
+      - Hiển thị trên giao diện cấu hình hệ thống (`is_visible = 1`).
+    - Nâng cấp hàm `checkUnlockRolePermission` trong [`RoomLockController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/RoomLockController.php) kiểm tra so khớp theo **Role/Vai trò** của user (`roles`, `job_title_code`, `job_title`, `department_code`, `department`), không dựa vào tên người dùng cá nhân (username).
+  - **4. Sửa Lỗi Hiển Thị Tooltip & Icon Khóa Trên Sơ Đồ Phòng ([`RoomMapPage.vue`](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [`RoomLockController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/RoomLockController.php), [`RoomController.php`](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/RoomController.php))**:
+    - **Hover Tooltip**: Sửa điều kiện `isLockedRoom` trên Sơ đồ phòng: Chỉ hiển thị tooltip khóa khi phòng thực sự đang ở trạng thái OOO/OOS vào ngày đang xem và không có khách đang lưu trú/đặt phòng. Nếu phòng có booking đang ở (như phòng 105 khóa ngày tương lai 13/08), khi hover trên ngày hiện tại vẫn hiển thị chính xác bảng thông tin Booking của khách.
+    - **Icon Khóa Phòng**: Sửa logic khi mở khóa phòng ở ngày hiện tại: Backend chỉ giữ trạng thái bảo trì nếu còn lịch khóa đang `Active` trong ngày hôm nay; các lịch khóa trong tương lai (`status = 'New'`) không còn làm kẹt icon ổ khóa ở ngày hiện tại. Đã làm sạch các trạng thái kẹt trong cơ sở dữ liệu.
+- **Trạng thái hiện tại**: Đã hoàn tất và kiểm tra build Vite thành công.
+
+---
+
 ## [2026-08-28] - Hoàn Thiện & Nâng Cấp Module Tìm Kiếm Chung Chuẩn Thiết Kế Mẫu
 ### Module: Frontdesk / Reservation - Tìm Kiếm Chung (`/frontdesk?tab=search`, `/reservation?tab=search`)
 
