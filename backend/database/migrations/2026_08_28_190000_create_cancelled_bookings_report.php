@@ -93,15 +93,15 @@ BEGIN
             1 AS RoomCount,
             COALESCE(r.is_internal, 0) AS IsInternal
         FROM booking_cancel_logs AS l
-        INNER JOIN booking_rooms AS br ON br.id = l.booking_room_id
-        INNER JOIN bookings AS b ON b.id = COALESCE(l.booking_id, br.booking_id)
+        INNER JOIN bookings AS b ON b.id = l.booking_id
+        INNER JOIN booking_rooms AS br ON br.booking_id = b.id
         LEFT JOIN rooms AS r ON r.room_number = br.room_number
         LEFT JOIN room_classes AS rc ON rc.id = br.room_class_id
         LEFT JOIN companies AS c ON c.id = b.company_id
         LEFT JOIN registration_statuses AS rs ON rs.id = b.registration_status_id
         LEFT JOIN cancel_reasons AS cr ON cr.id = l.cancel_reason_id
         LEFT JOIN hotel_settings AS hs ON hs.id = (SELECT MIN(id) FROM hotel_settings)
-        WHERE l.cancel_type = 'room'
+        WHERE l.cancel_type = 'booking'
           AND COALESCE(r.is_internal, 0) = 0
           AND (p_booking_id IS NULL OR b.id = p_booking_id)
           AND (
@@ -152,14 +152,12 @@ BEGIN
         LEFT JOIN hotel_settings AS hs ON hs.id = (SELECT MIN(id) FROM hotel_settings)
         LEFT JOIN (
             SELECT
-                room_logs.booking_id,
-                COUNT(DISTINCT room_logs.booking_room_id) AS RoomCount
-            FROM booking_cancel_logs AS room_logs
-            INNER JOIN booking_rooms AS counted_room ON counted_room.id = room_logs.booking_room_id
+                counted_room.booking_id,
+                COUNT(DISTINCT counted_room.id) AS RoomCount
+            FROM booking_rooms AS counted_room
             LEFT JOIN rooms AS physical_room ON physical_room.room_number = counted_room.room_number
-            WHERE room_logs.cancel_type = 'room'
-              AND COALESCE(physical_room.is_internal, 0) = 0
-            GROUP BY room_logs.booking_id
+            WHERE COALESCE(physical_room.is_internal, 0) = 0
+            GROUP BY counted_room.booking_id
         ) AS room_counts ON room_counts.booking_id = b.id
         WHERE l.cancel_type = 'booking'
           AND DATE(l.cancelled_at) BETWEEN p_from_date AND p_to_date

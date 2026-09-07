@@ -19,51 +19,96 @@ BEGIN
     DECLARE v_tach_foc TINYINT DEFAULT 1;
     SELECT DATE(system_date) INTO v_system_date FROM system_date_rolls ORDER BY id DESC LIMIT 1;
     SET v_system_date = COALESCE(v_system_date, CURRENT_DATE());
-    SELECT COALESCE(CAST(value AS UNSIGNED), 1) INTO v_tach_foc FROM hotel_configs WHERE name = 'TachFOC' LIMIT 1;
+    SELECT COALESCE(CAST(value AS UNSIGNED), 1) INTO v_tach_foc
+    FROM hotel_configs WHERE name = 'TachFOC' LIMIT 1;
+
     WITH RECURSIVE dates AS (
         SELECT p_from_date AS stay_date
-        UNION ALL SELECT DATE_ADD(stay_date, INTERVAL 1 DAY) FROM dates WHERE stay_date < p_to_date
-    ), room_days AS (
-        SELECT br.id, d.stay_date, COALESCE(rnb.rate, br.rate, 0) AS room_rate,
-               COALESCE(NULLIF(rnb.rate_code, ''), NULLIF(br.rate_code, ''), '') AS daily_rate_code,
-               EXISTS (SELECT 1 FROM service_bills sb JOIN room_night_bills rb ON rb.bill_id = sb.Ma
-                       WHERE sb.RentalRoomId1 = br.id AND DATE(sb.Date) = d.stay_date AND rb.is_room_night = 1) AS has_room_night
-               ,EXISTS (SELECT 1 FROM service_bills sb JOIN payments p ON p.id = sb.PaymentId
-                        JOIN payment_methods pm ON pm.code = p.payment_method_id
-                        WHERE sb.RentalRoomId1 = br.id AND DATE(sb.Date) = d.stay_date AND sb.Edit = 0
-                          AND (UPPER(p.payment_method_id) = 'CL' OR pm.is_free = 1)) AS has_free_payment
-        FROM booking_rooms br CROSS JOIN dates d
-        LEFT JOIN service_bills sb ON sb.RentalRoomId1 = br.id AND DATE(sb.Date) = d.stay_date AND sb.ServiceId = 'RM' AND sb.Edit = 0
-        LEFT JOIN room_night_bills rnb ON rnb.bill_id = sb.Ma AND rnb.is_room_night = 1
+        UNION ALL
+        SELECT DATE_ADD(stay_date, INTERVAL 1 DAY)
+        FROM dates
+        WHERE stay_date < p_to_date
+    ),
+    daily_rm AS (
+        SELECT sb.RentalRoomId1 AS rental_room_id, DATE(sb.Date) AS stay_date,
+               SUM(COALESCE(rnb.rate, sb.Amount, 0)) AS room_rate,
+               MAX(NULLIF(rnb.rate_code, '')) AS rate_code,
+               MAX(CASE WHEN UPPER(COALESCE(p.payment_method_id, '')) = 'CL'
+                          OR COALESCE(pm.is_free, 0) = 1 THEN 1 ELSE 0 END) AS has_free_payment,
+               1 AS has_room_night
+        FROM service_bills sb
+        INNER JOIN room_night_bills rnb ON rnb.bill_id = sb.Ma AND rnb.is_room_night = 1
+        LEFT JOIN payments p ON p.id = sb.PaymentId
+        LEFT JOIN payment_methods pm ON pm.code = p.payment_method_id
+        WHERE sb.ServiceId = 'RM'
+          AND sb.Edit = 0
+          AND DATE(sb.Date) BETWEEN p_from_date AND p_to_date
+        GROUP BY sb.RentalRoomId1, DATE(sb.Date)
+    ),
+    room_days AS (
+        SELECT br.id, d.stay_date,
+               CASE WHEN drm.has_room_night = 1 THEN drm.room_rate ELSE COALESCE(br.rate, 0) END AS room_rate,
+               UPPER(COALESCE(NULLIF(drm.rate_code, ''), NULLIF(br.rate_code, ''), '')) AS daily_rate_code,
+               COALESCE(drm.has_room_night, 0) AS has_room_night,
+               COALESCE(drm.has_free_payment, 0) AS has_free_payment
+        FROM booking_rooms br
+        CROSS JOIN dates d
+        LEFT JOIN daily_rm drm ON drm.rental_room_id = br.id AND drm.stay_date = d.stay_date
+    ),
+    eligible AS (
+        SELECT rd.*, br.booking_id, br.room_number, br.arrival_date, br.departure_date,
+               br.ActutalNumOfDays, br.is_day_use, br.status, br.rate, br.rate_code,
+               b.note, b.company_id
+        FROM room_days rd
+        INNER JOIN booking_rooms br ON br.id = rd.id
+        INNER JOIN bookings b ON b.id = br.booking_id AND b.deleted_at IS NULL
+        LEFT JOIN rooms r ON r.room_number = br.room_number
+        WHERE br.deleted_at IS NULL
+          AND (r.is_internal IS NULL OR r.is_internal = 0)
+          AND (br.room_number IS NULL OR br.room_number NOT LIKE '0%')
+          AND br.status IN (0, 1, 2, 4, 100)
+          AND (br.status <> 100 OR br.ActutalNumOfDays <> 0)
+          AND rd.stay_date >= br.arrival_date
+          AND rd.stay_date <= DATE_ADD(br.arrival_date, INTERVAL GREATEST(br.ActutalNumOfDays - IF(br.is_day_use = 1, 0, 1), 0) DAY)
+          AND (
+              (v_tach_foc = 1
+               AND (rd.stay_date >= v_system_date OR rd.has_room_night = 1)
+               AND (rd.room_rate = 0 OR rd.has_free_payment = 1))
+              OR
+              (v_tach_foc <> 1 AND (
+                  (rd.daily_rate_code LIKE 'FOC%' AND (rd.has_room_night = 0 OR rd.room_rate = 0))
+                  OR rd.daily_rate_code LIKE 'HU%'
+                  OR (rd.daily_rate_code NOT LIKE 'FOC%'
+                      AND rd.daily_rate_code NOT LIKE 'HU%'
+                      AND (rd.room_rate = 0 OR rd.has_free_payment = 1))
+              ))
+          )
     )
-    SELECT rd.stay_date AS StayDateGroup, br.booking_id AS BookingId, br.id AS RentalRoomId,
-           TRIM(CONCAT_WS(' ', NULLIF(g.title, ''), g.full_name)) AS GuestName, br.room_number AS Room,
-           DATE_FORMAT(br.arrival_date, '%d/%m/%Y') AS ArrivalDate,
-           DATE_FORMAT(br.departure_date, '%d/%m/%Y') AS DepartureDate,
+    SELECT e.stay_date AS StayDateGroup, e.booking_id AS BookingId, e.id AS RentalRoomId,
+           TRIM(CONCAT_WS(' ', NULLIF(g.title, ''), g.full_name)) AS GuestName,
+           e.room_number AS Room,
+           DATE_FORMAT(e.arrival_date, '%d/%m/%Y') AS ArrivalDate,
+           DATE_FORMAT(e.departure_date, '%d/%m/%Y') AS DepartureDate,
            c.name AS Company,
-           CASE WHEN UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) LIKE 'FOC%' THEN UPPER(COALESCE(rd.daily_rate_code, br.rate_code))
-                WHEN UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) LIKE 'HU%' THEN 'HU'
-                ELSE 'Compliment' END AS RoomRateCode,
-           rd.room_rate AS Rate, b.note AS Note, v_tach_foc AS TachFOCMode
-    FROM room_days rd
-    JOIN booking_rooms br ON br.id = rd.id
-    JOIN bookings b ON b.id = br.booking_id AND b.deleted_at IS NULL
-    JOIN booking_room_guests brg ON brg.booking_room_id = br.id AND brg.is_primary = 1 AND brg.status IN (0,1,2,4,100)
-    JOIN guests g ON g.id = brg.guest_id
-    LEFT JOIN companies c ON c.id = b.company_id
-    LEFT JOIN rooms r ON r.room_number = br.room_number
-    WHERE br.deleted_at IS NULL
-      AND (r.is_internal IS NULL OR r.is_internal = 0)
-      AND (br.room_number IS NULL OR br.room_number NOT LIKE '0%')
-      AND br.status IN (0,1,2,4,100) AND (br.status <> 100 OR br.ActutalNumOfDays <> 0)
-      AND rd.stay_date >= br.arrival_date
-      AND rd.stay_date <= DATE_ADD(br.arrival_date, INTERVAL GREATEST(br.ActutalNumOfDays - IF(br.is_day_use = 1, 0, 1), 0) DAY)
-      AND (rd.room_rate = 0 OR rd.has_free_payment = 1 OR UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) LIKE 'FOC%'
-           OR UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) LIKE 'HU%')
-      AND (p_room_rate_code IS NULL OR p_room_rate_code = ''
-           OR (UPPER(p_room_rate_code) = 'COMPLIMENT' AND UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) NOT LIKE 'FOC%' AND UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) NOT LIKE 'HU%')
-           OR UPPER(COALESCE(rd.daily_rate_code, br.rate_code, '')) = UPPER(p_room_rate_code))
-    ORDER BY rd.stay_date, br.booking_id, br.room_number;
+           CASE
+               WHEN e.daily_rate_code LIKE 'FOC OWN%' THEN 'FOC OWNER'
+               WHEN e.daily_rate_code LIKE 'FOC%' THEN 'FOC'
+               WHEN e.daily_rate_code LIKE 'HU%' THEN 'HU'
+               ELSE 'Compliment'
+           END AS RoomRateCode,
+           e.room_rate AS Rate, e.note AS Note, v_tach_foc AS TachFOCMode
+    FROM eligible e
+    INNER JOIN booking_room_guests brg ON brg.booking_room_id = e.id
+        AND brg.is_primary = 1 AND brg.status IN (0, 1, 2, 4, 100)
+    INNER JOIN guests g ON g.id = brg.guest_id
+    LEFT JOIN companies c ON c.id = e.company_id
+    WHERE p_room_rate_code IS NULL OR p_room_rate_code = ''
+       OR (UPPER(p_room_rate_code) = 'FOC' AND e.daily_rate_code = 'FOC')
+       OR (UPPER(p_room_rate_code) IN ('FOC OWN', 'FOC OWNER') AND e.daily_rate_code LIKE 'FOC OWN%')
+       OR (UPPER(p_room_rate_code) = 'HU' AND e.daily_rate_code LIKE 'HU%')
+       OR (UPPER(p_room_rate_code) = 'COMPLIMENT'
+           AND e.daily_rate_code NOT LIKE 'FOC%' AND e.daily_rate_code NOT LIKE 'HU%')
+    ORDER BY e.stay_date, e.booking_id, e.room_number;
 END
 SQL);
         $now = now(); $db = DB::connection()->getDatabaseName();

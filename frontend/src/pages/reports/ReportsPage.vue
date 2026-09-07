@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
@@ -22,11 +22,25 @@ const activeTemplate = computed(() => {
   return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
 })
 
+const reportPreviewZoom = 1.25
+const reportPreviewDimensions = computed(() => {
+  const landscape = activeTemplate.value?.page_orientation === 'landscape'
+  return landscape
+    ? { width: 1120, height: 790 }
+    : { width: 800, height: 1120 }
+})
+const reportPreviewContainerStyle = computed(() => ({
+  width: `${reportPreviewDimensions.value.width * reportPreviewZoom}px`,
+  height: `${reportPreviewDimensions.value.height * reportPreviewZoom}px`
+}))
+const reportPreviewFrameStyle = computed(() => ({
+  width: `${reportPreviewDimensions.value.width}px`,
+  height: `${reportPreviewDimensions.value.height}px`,
+  transform: `scale(${reportPreviewZoom})`,
+  transformOrigin: 'top left'
+}))
 const iframeClass = computed(() => {
-  const orientation = activeTemplate.value?.page_orientation || 'portrait'
-  return orientation === 'landscape'
-    ? 'mx-auto block min-h-[790px] w-full max-w-[1120px] border-0 bg-white shadow-xl'
-    : 'mx-auto block min-h-[1120px] w-full max-w-[800px] border-0 bg-white shadow-xl'
+  return 'block border-0 bg-white shadow-xl'
 })
 
 const localToday = () => {
@@ -214,6 +228,12 @@ const multiSelectLabel = (tab, parameter) => {
   return labels.length > 2 ? `${labels.slice(0, 2).join(', ')} (+${labels.length - 2})` : labels.join(', ')
 }
 
+const syncTemplateSummary = (tab, summary) => {
+  if (!tab || !summary?.id) return
+  const template = (tab.report.templates || []).find(item => Number(item.id) === Number(summary.id))
+  if (template) Object.assign(template, summary)
+}
+
 const executeTab = async (tab) => {
   if (!tab || !tab.selectedTemplateId) return
   normalizeReportParameters(tab)
@@ -228,6 +248,7 @@ const executeTab = async (tab) => {
     const response = await http.post(`/report-definitions/${tab.report.id}/execute`, {
       parameters: reportParametersPayload(tab), template_id: tab.selectedTemplateId
     })
+    syncTemplateSummary(tab, response.data.template)
     tab.dataset = response.data.data
     tab.renderedHtml = response.data.html
     uiStore.showToast(`Đã tải ${tab.dataset.summary?.row_count || 0} dòng dữ liệu từ Store`, 'success')
@@ -248,6 +269,7 @@ const changeTemplateForTab = async (tab) => {
       template_id: tab.selectedTemplateId,
       data: tab.dataset
     })
+    syncTemplateSummary(tab, response.data.template)
     tab.renderedHtml = response.data.html
   } catch (error) {
     uiStore.showToast(error.response?.data?.message || 'Không thể đổi mẫu đầu ra', 'error')
@@ -318,6 +340,38 @@ const downloadCsvForTab = (tab) => {
   URL.revokeObjectURL(url)
 }
 
+const refreshReportTab = async (tab) => {
+  const response = await http.get(`/report-definitions/${tab.report.id}`)
+  const report = response.data.data
+  const templates = report.templates || []
+  const selectedTemplate = templates.find(item => Number(item.id) === Number(tab.selectedTemplateId))
+
+  tab.report = report
+  tab.selectedTemplateId = selectedTemplate?.id
+    || templates.find(item => item.is_default)?.id
+    || templates[0]?.id
+    || null
+
+  const reportIndex = reports.value.findIndex(item => Number(item.id) === Number(report.id))
+  if (reportIndex !== -1) reports.value[reportIndex] = report
+  if (tab.dataset && tab.selectedTemplateId) await changeTemplateForTab(tab)
+}
+
+const handleTemplateSaved = async (event) => {
+  const templateId = Number(event.detail?.templateId)
+  if (!templateId) return
+
+  const affectedTabs = openTabs.value.filter(tab => (
+    tab.report.templates || []
+  ).some(template => Number(template.id) === templateId))
+
+  try {
+    await Promise.all(affectedTabs.map(refreshReportTab))
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật mẫu báo cáo vừa lưu', 'warning')
+  }
+}
+
 // Watch active tab template change
 watch(() => activeTab.value?.selectedTemplateId, (val, oldVal) => {
   if (val && oldVal && val !== oldVal) {
@@ -340,8 +394,13 @@ watch(() => route.query.report, code => {
 })
 
 onMounted(async () => {
+  window.addEventListener('pms:report-template-saved', handleTemplateSaved)
   await fetchSystemDate()
   await loadReports()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pms:report-template-saved', handleTemplateSaved)
 })
 </script>
 
@@ -478,7 +537,9 @@ onMounted(async () => {
               </div>
             </div>
 
-            <iframe v-else ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" />
+            <div v-else class="mx-auto" :style="reportPreviewContainerStyle">
+              <iframe ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" :style="reportPreviewFrameStyle" />
+            </div>
           </section>
         </div>
       </template>

@@ -19,9 +19,9 @@ class SupplementaryServicesReportTest extends TestCase
         }
         $this->assertStringContainsString('SP2102', file_get_contents(database_path('migrations/2026_07_08_100001_create_booking_room_services_table.php')));
         $this->assertStringNotContainsString('ALTER TABLE bookings', $migration);
-        $this->assertStringContainsString('GroupTotal', file_get_contents(database_path('migrations/2026_09_04_110000_fix_supplementary_services_report_layout.php')));
-        $this->assertStringContainsString('SUPPLEMENTARY_SERVICES_STANDARD', file_get_contents(database_path('migrations/2026_09_04_130000_seed_supplementary_services_bands.php')));
-        $this->assertStringContainsString('GroupTotal', file_get_contents(database_path('migrations/2026_09_04_110000_fix_supplementary_services_report_layout.php')));
+        $this->assertFileDoesNotExist(database_path('migrations/2026_09_04_110000_fix_supplementary_services_report_layout.php'));
+        $this->assertFileDoesNotExist(database_path('migrations/2026_09_04_120000_set_supplementary_services_single_service.php'));
+        $this->assertFileDoesNotExist(database_path('migrations/2026_09_04_130000_seed_supplementary_services_bands.php'));
     }
 
     public function test_reference_template_groups_by_service_and_renders_totals(): void

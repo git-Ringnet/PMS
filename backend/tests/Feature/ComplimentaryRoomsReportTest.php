@@ -15,7 +15,7 @@ class ComplimentaryRoomsReportTest extends TestCase
         $this->assertStringContainsString('rpt_complimentary_rooms', $migration);
         $this->assertStringContainsString("rd.room_rate = 0", $migration);
         $this->assertStringContainsString("LIKE 'FOC%'", $migration);
-        $this->assertStringContainsString("p.payment_method_id) = 'CL'", $migration);
+        $this->assertStringContainsString("p.payment_method_id, '')) = 'CL'", $migration);
         $this->assertStringContainsString("name = 'TachFOC'", $migration);
         $this->assertStringContainsString('room_night_bills', $migration);
         $this->assertStringContainsString('r.is_internal', $migration);
@@ -25,7 +25,7 @@ class ComplimentaryRoomsReportTest extends TestCase
 
     public function test_accuracy_migration_applies_tach_foc_and_groups_daily_room_bills(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_08_27_170000_fix_room_report_data_accuracy.php'));
+        $migration = file_get_contents(database_path('migrations/2026_08_27_150000_create_complimentary_rooms_report.php'));
 
         $this->assertStringContainsString('v_tach_foc = 1', $migration);
         $this->assertStringContainsString('v_tach_foc <> 1', $migration);
