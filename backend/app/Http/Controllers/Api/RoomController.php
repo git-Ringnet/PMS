@@ -357,6 +357,11 @@ class RoomController extends Controller
         $newCode = $validated['room_status_code'];
         $room->update(['room_status_code' => $newCode]);
 
+        try {
+            app(\App\Services\RoomStatusChangeLogService::class)
+                ->log($room->room_number, $oldCode, $newCode, $request);
+        } catch (\Throwable $e) {}
+
         // Nếu chuyển sang trạng thái thường (không phải ooo/oos/occupied_ooo) -> Tự động giải phóng các active lock của phòng này
         if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
             $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
@@ -418,9 +423,15 @@ class RoomController extends Controller
         $newCode = $validated['room_status_code'];
         $rooms = Room::whereIn('id', $validated['room_ids'])->get();
 
-        DB::transaction(function () use ($rooms, $newCode) {
-            $rooms->each(function (Room $room) use ($newCode) {
+        DB::transaction(function () use ($rooms, $newCode, $request) {
+            $rooms->each(function (Room $room) use ($newCode, $request) {
+                $oldCode = $room->getOriginal('room_status_code');
                 $room->update(['room_status_code' => $newCode]);
+
+                try {
+                    app(\App\Services\RoomStatusChangeLogService::class)
+                        ->log($room->room_number, $oldCode, $newCode, $request);
+                } catch (\Throwable $e) {}
 
                 if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
                     $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
