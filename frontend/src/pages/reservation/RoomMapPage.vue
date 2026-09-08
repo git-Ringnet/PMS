@@ -549,13 +549,28 @@ function isRoomNumberRed(room) {
   const isOccupied = room.status === ROOM_STATUSES.OCCUPIED || room.booking_status === 'occupied' || room.status === 1
   if (!isOccupied) return false
 
-  const checkinDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date
+  const checkinDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date || room.booking?.arrival_date
   if (!checkinDate) return false
 
-  const checkinStr = String(checkinDate).split('T')[0]
-  const currentStr = String(rawDate.value).split('T')[0]
+  const checkinStr = String(checkinDate).split('T')[0].split(' ')[0].trim()
+  const sysDateStr = String(systemDate.value || rawDate.value || '').split('T')[0].split(' ')[0].trim()
 
-  return moduleContext.value === 'frontdesk' && canCancelCheckIn.value && checkinStr === String(systemDate.value).split('T')[0]
+  return moduleContext.value === 'frontdesk' && checkinStr === sysDateStr
+}
+
+function canShowUndoCheckinForRoom(room) {
+  if (!room) return false
+  if (moduleContext.value !== 'frontdesk') return false
+
+  const checkinDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date || room.booking?.arrival_date
+  if (!checkinDate) return false
+
+  const checkinStr = String(checkinDate).split('T')[0].split(' ')[0].trim()
+  const sysDateStr = String(systemDate.value || rawDate.value || '').split('T')[0].split(' ')[0].trim()
+
+  if (!checkinStr || !sysDateStr) return false
+
+  return checkinStr === sysDateStr
 }
 
 function isArrivingTomorrow(room) {
@@ -3426,14 +3441,19 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <span>Thông báo</span>
             </button>
 
-            <!-- Nhận phòng -->
-            <button v-if="moduleContext === 'frontdesk'" @click="handleQuickCheckinFromMenu()"
+            <!-- Hủy nhận phòng (chỉ hiển thị khi phòng đang ở có ngày đến = ngày hệ thống) -->
+            <button v-if="moduleContext === 'frontdesk' && canShowUndoCheckinForRoom(contextMenu.room)"
+              @click="handleUndoCheckinFromMenu()"
               class="w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
               <svg class="w-4.5 h-4.5 text-[#38bdf8]" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                <path d="M22 2L11 13" />
+                <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+                <circle cx="7" cy="17" r="3.5" fill="#ef4444" stroke="white" stroke-width="1.2" />
+                <line x1="5.2" y1="15.2" x2="8.8" y2="18.8" stroke="white" stroke-width="1.5" />
+                <line x1="8.8" y1="15.2" x2="5.2" y2="18.8" stroke="white" stroke-width="1.5" />
               </svg>
-              <span>Nhận phòng</span>
+              <span>Hủy nhận phòng</span>
             </button>
 
             <!-- In phiếu ăn sáng -->
@@ -3461,23 +3481,6 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </svg>
               <span>In mẫu đăng ký</span>
             </button>
-
-            <!-- Huỷ nhận phòng (Button dạng pill xanh lam Ảnh 3 - chỉ phòng mới checkin trong ngày) -->
-            <div v-if="moduleContext === 'frontdesk' && isRoomNumberRed(contextMenu.room)" class="px-1.5 pt-1">
-              <button @click="handleUndoCheckinFromMenu()"
-                class="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold transition-all cursor-pointer select-none text-white rounded-xl shadow-xs border-none"
-                :style="{ background: 'var(--pms-custom-theme, #7bc4ff)' }">
-                <svg class="w-4.5 h-4.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 2L11 13" />
-                  <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-                  <circle cx="7" cy="17" r="3.5" fill="#ef4444" stroke="white" stroke-width="1.2" />
-                  <line x1="5.2" y1="15.2" x2="8.8" y2="18.8" stroke="white" stroke-width="1.5" />
-                  <line x1="8.8" y1="15.2" x2="5.2" y2="18.8" stroke="white" stroke-width="1.5" />
-                </svg>
-                <span>Huỷ nhận phòng</span>
-              </button>
-            </div>
 
             <!-- Chuyển tình trạng phòng (Button dạng pill xanh lam Ảnh 3) -->
             <div v-if="canChangeRoomStatus" class="relative group mt-1 px-1.5 pb-1">

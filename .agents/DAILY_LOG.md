@@ -11,6 +11,21 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-08] - Điều chỉnh menu chuột phải phòng đang ở trên Sơ đồ phòng (Room Map)
+### Module: Frontdesk / Reservation / Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Đã hoàn thành**:
+  - **Sửa nút thao tác khi chuột phải vào phòng có khách đang ở (In-house / Occupied)**:
+    - Loại bỏ nút "Nhận phòng" hiển thị sai lệch đối với phòng đang có khách lưu trú.
+    - Xóa nút pill "Huỷ nhận phòng" trùng lặp ở cuối menu.
+    - Hiển thị nút **"Hủy nhận phòng"** trực tiếp trên danh sách menu (giữa "Thông báo" và "In phiếu ăn sáng") khi ngày đến của phòng bằng ngày hệ thống (`canShowUndoCheckinForRoom`).
+    - Trường hợp ngày đến nhỏ hơn ngày hệ thống (`arrival_date < system_date`): ẩn hoàn toàn cả nút "Nhận phòng" và "Hủy nhận phòng".
+    - Chuẩn hóa hàm so khớp ngày `isRoomNumberRed`: so khớp chuẩn ngày đến với ngày hệ thống để đánh dấu màu đỏ cho phòng nhận trong ngày.
+- **Kiểm tra**:
+  - `npm run build`: Thành công 100%, không phát sinh lỗi template hay cú pháp.
+
+---
+
 ## [2026-09-07] - Tích hợp tự động RbacMatrixSeeder vào luồng Reset Multi-DB
 ### Module: Hệ thống / RBAC Seeder & Console Commands ([database_domains.php](file:///d:/PMS/backend/config/database_domains.php), [ResetMultiDbCommand.php](file:///d:/PMS/backend/app/Console/Commands/ResetMultiDbCommand.php))
 
