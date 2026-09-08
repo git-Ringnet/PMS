@@ -74,11 +74,8 @@
                   <label class="block text-xs font-semibold text-slate-600 mb-1">Loại khách</label>
                   <select v-model="form.guest_type" class="input-field">
                     <option value="">Loại khách</option>
-                    <option value="FIT">FIT</option>
-                    <option value="GIT">GIT</option>
-                    <option value="VIP">VIP</option>
-                    <option value="Crew">Crew</option>
-                    <option value="Long Stay">Long Stay</option>
+                    <option v-for="gt in guestTypes" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
+                    <option v-if="form.guest_type && !guestTypes.some(gt => getGuestTypeValue(gt) === form.guest_type || gt.name === form.guest_type)" :value="form.guest_type">{{ form.guest_type }}</option>
                   </select>
                 </div>
                 <!-- Quốc tịch -->
@@ -94,10 +91,8 @@
                   <label class="block text-xs font-semibold text-slate-600 mb-1">Loại giấy tờ</label>
                   <select v-model="form.id_type" class="input-field">
                     <option value="">Loại giấy tờ</option>
-                    <option value="CCCD">CCCD</option>
-                    <option value="CMND">CMND</option>
-                    <option value="Hộ chiếu">Hộ chiếu</option>
-                    <option value="Khác">Khác</option>
+                    <option v-for="it in idTypes" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
+                    <option v-if="form.id_type && !idTypes.some(it => getIdTypeValue(it) === form.id_type || it.name === form.id_type)" :value="form.id_type">{{ form.id_type }}</option>
                   </select>
                 </div>
 
@@ -186,7 +181,11 @@
                 <!-- Cửa khẩu -->
                 <div>
                   <label class="block text-xs font-semibold text-slate-600 mb-1">Cửa khẩu</label>
-                  <input v-model="form.border_gate" type="text" placeholder="Cửa khẩu" class="input-field" />
+                  <select v-model="form.border_gate" class="input-field">
+                    <option value="">-- Chọn cửa khẩu --</option>
+                    <option v-for="bg in borderGates" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
+                    <option v-if="form.border_gate && !borderGateNames.includes(form.border_gate)" :value="form.border_gate">{{ form.border_gate }}</option>
+                  </select>
                 </div>
 
                 <!-- Ngày nhập cảnh -->
@@ -205,12 +204,8 @@
                   <label class="block text-xs font-semibold text-slate-600 mb-1">Mục đích nhập cảnh</label>
                   <select v-model="form.entry_purpose" class="input-field">
                     <option value="">Mục đích nhập cảnh</option>
-                    <option value="Du lịch">Du lịch</option>
-                    <option value="Công tác">Công tác</option>
-                    <option value="Thăm thân">Thăm thân</option>
-                    <option value="Học tập">Học tập</option>
-                    <option value="Đầu tư">Đầu tư</option>
-                    <option value="Khác">Khác</option>
+                    <option v-for="ep in entryPurposes" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
+                    <option v-if="form.entry_purpose && !entryPurposes.some(ep => ep.name === form.entry_purpose)" :value="form.entry_purpose">{{ form.entry_purpose }}</option>
                   </select>
                 </div>
                 <!-- Công việc -->
@@ -242,7 +237,7 @@
 
 <script setup>
 import { ref, watch, computed, onMounted } from 'vue'
-import { updateBookingRoomGuest, updateBookingChild, fetchNationalities } from '@/services/booking-service'
+import { updateBookingRoomGuest, updateBookingChild, fetchNationalities, fetchGuestDefinitions } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 
 const props = defineProps({
@@ -265,7 +260,52 @@ const tabs = [
   { key: 'immigration', label: 'Thông tin xuất nhập cảnh' },
 ]
 
-const titles = ['Mr.', 'Mrs.', 'Ms.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
+// ==================== MASTER DATA ĐỊNH NGHĨA KHÁCH ====================
+const guestDefinitions = ref({
+  titles: [],
+  border_gates: [],
+  entry_purposes: [],
+  guest_types: [],
+  id_types: [],
+})
+
+const titles = computed(() => {
+  if (guestDefinitions.value.titles?.length > 0) {
+    return guestDefinitions.value.titles.map(t => t.name)
+  }
+  return ['Mr.', 'Mrs.', 'Ms.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
+})
+
+const borderGates = computed(() => guestDefinitions.value.border_gates || [])
+const borderGateNames = computed(() => borderGates.value.map(g => g.name))
+const entryPurposes = computed(() => guestDefinitions.value.entry_purposes || [])
+const guestTypes = computed(() => guestDefinitions.value.guest_types || [])
+const idTypes = computed(() => guestDefinitions.value.id_types || [])
+
+function getIdTypeValue(it) {
+  if (!it) return ''
+  if (it.code === 'PASSPORT') return 'Hộ chiếu'
+  if (it.code === 'OTHER') return 'Khác'
+  return it.code || it.name
+}
+
+function getGuestTypeValue(gt) {
+  if (!gt) return ''
+  if (gt.code === 'CREW') return 'Crew'
+  if (gt.code === 'LONGSTAY') return 'Long Stay'
+  return gt.code
+}
+
+async function loadGuestDefinitions() {
+  try {
+    const res = await fetchGuestDefinitions()
+    if (res.data?.success) {
+      guestDefinitions.value = res.data.data || {}
+    }
+  } catch (err) {
+    console.error('Lỗi tải danh mục thông tin khách:', err)
+  }
+}
 
 const nationalities = ref([])
 
@@ -287,6 +327,7 @@ async function loadNationalities() {
 
 onMounted(() => {
   loadNationalities()
+  loadGuestDefinitions()
 })
 
 const form = ref({})
@@ -367,6 +408,7 @@ watch(() => props.show, (v) => {
     modalPos.value = { x: 0, y: 0 }
     resetForm()
     loadNationalities()
+    loadGuestDefinitions()
   }
 })
 

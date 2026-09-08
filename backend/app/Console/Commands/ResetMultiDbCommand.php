@@ -91,6 +91,9 @@ class ResetMultiDbCommand extends Command
             // Gán quyền truy cập cho tất cả Super Admin
             $this->assignSuperAdminsToAllBranches();
 
+            // Đảm bảo ma trận phân quyền RBAC được backfill cho tất cả các chi nhánh (kể cả chi nhánh mới đồng bộ)
+            $this->seedRbacMatrix();
+
             if ($target === 'system') {
                 $this->info('✅ ĐÃ RESET SYSTEM DATABASE THÀNH CÔNG!');
                 return Command::SUCCESS;
@@ -390,5 +393,27 @@ class ResetMultiDbCommand extends Command
             ->map(fn ($file) => 'database/migrations/' . $file)
             ->values()
             ->all();
+    }
+
+    /**
+     * Nạp ma trận phân quyền RBAC đa chi nhánh
+     */
+    protected function seedRbacMatrix(): void
+    {
+        try {
+            $this->line('  🌱 Đang nạp ma trận phân quyền RBAC đa chi nhánh...');
+            $exitCode = Artisan::call('db:seed', [
+                '--database' => 'mysql_system',
+                '--class' => \Database\Seeders\RbacMatrixSeeder::class,
+                '--force' => true,
+            ]);
+            if ($exitCode === 0) {
+                $this->info('  ✓ Seeded ma trận phân quyền RBAC thành công cho tất cả chi nhánh.');
+            } else {
+                $this->warn('  ! Lỗi khi seed ma trận phân quyền: ' . Artisan::output());
+            }
+        } catch (\Throwable $e) {
+            $this->warn('  ! Lỗi khi seed ma trận phân quyền: ' . $e->getMessage());
+        }
     }
 }

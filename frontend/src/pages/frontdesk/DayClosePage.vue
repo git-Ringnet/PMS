@@ -214,7 +214,7 @@ function checkRoomStatus(r, b) {
     str === 'status_moved' ||
     str === 'chuyen_phong' ||
     Number(raw) === 100 ||
-    Boolean(r && Number(r.status) === 100)
+    Boolean(r && (Number(r.status) === 100 || r.status === 100 || r.status === '100' || r.move_room === 1 || r.move_room === true || r.move_room === '1'))
   )
 
   const isCheckedIn = !isMoved && (
@@ -264,26 +264,31 @@ function processRealBookings(bookings) {
     const rooms = b.booking_rooms || b.bookingRooms || []
     if (rooms.length > 0) {
       rooms.forEach(r => {
-        const { isCheckedIn, isCheckedOut, isCancelled, isMoved } = checkRoomStatus(r, b)
+        // Tuyệt đối không tính phòng có status = 100 (đã chuyển phòng)
+        if (r && (Number(r.status) === 100 || r.status === 100 || r.status === '100' || r.move_room === 1 || r.move_room === true || r.move_room === '1')) {
+          return
+        }
+
+        const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
         if (isCancelled || isCheckedOut || isMoved) return
 
         const arrDate = getEffectiveArrivalDate(r, b)
         const depDate = getEffectiveDepartureDate(r, b)
 
-        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in
-        if (arrDate === sysDateStr && !isCheckedIn) arrCount++
+        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100)
+        if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100) arrCount++
         // Phòng đi: Khách đang ở và đi vào ngày hệ thống
-        if (depDate === sysDateStr && isCheckedIn) depCount++
+        if (depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
       })
     } else {
-      const { isCheckedIn, isCheckedOut, isCancelled, isMoved } = checkRoomStatus(null, b)
+      const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(null, b)
       if (isCancelled || isCheckedOut || isMoved) return
 
       const arrDate = getEffectiveArrivalDate(null, b)
       const depDate = getEffectiveDepartureDate(null, b)
 
-      if (arrDate === sysDateStr && !isCheckedIn) arrCount++
-      if (depDate === sysDateStr && isCheckedIn) depCount++
+      if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved) arrCount++
+      if (depDate === sysDateStr && isCheckedIn && !isMoved) depCount++
     }
   })
 
@@ -304,7 +309,12 @@ function processRealBookings(bookings) {
     const rooms = b.booking_rooms || b.bookingRooms || []
 
     const processItem = (r, rIdx) => {
-      const { isCheckedIn, isCheckedOut, isCancelled, isMoved } = checkRoomStatus(r, b)
+      // Tuyệt đối không lấy phòng có status = 100 (đã chuyển phòng)
+      if (r && (Number(r.status) === 100 || r.status === 100 || r.status === '100' || r.move_room === 1 || r.move_room === true || r.move_room === '1')) {
+        return
+      }
+
+      const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
       if (isCancelled || isCheckedOut || isMoved) return
 
       const arrDate = getEffectiveArrivalDate(r, b)
@@ -313,17 +323,17 @@ function processRealBookings(bookings) {
       // Lọc theo tab hiện tại
       let matchesTab = false
       if (activeFilterTab.value === 'arrivals') {
-        // Phòng đến: Chưa check-in và đến hôm nay
-        matchesTab = (arrDate === sysDateStr && !isCheckedIn)
+        // Phòng đến: Tình trạng Đặt trước, chưa check-in, đến hôm nay, TUYỆT ĐỐI KHÔNG lấy status = 100
+        matchesTab = (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100)
       } else if (activeFilterTab.value === 'departures') {
         // Phòng đi: Đang ở (checked-in) và đi hôm nay
-        matchesTab = (depDate === sysDateStr && isCheckedIn)
+        matchesTab = (depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100)
       } else if (activeFilterTab.value === 'hourly') {
         const isSameDay = arrDate === depDate || b.is_hourly || b.is_day_use || (b.num_of_days === 0)
-        matchesTab = isSameDay && arrDate === sysDateStr
+        matchesTab = isSameDay && arrDate === sysDateStr && !isMoved && Number(r?.status) !== 100
       } else {
         // 'in-house': Phòng đang ở
-        matchesTab = isCheckedIn
+        matchesTab = isCheckedIn && !isMoved && Number(r?.status) !== 100
       }
 
       if (!matchesTab) return

@@ -6,12 +6,14 @@ use App\Models\Booking;
 use App\Models\BookingChild;
 use App\Models\BookingChildBreakfastDetail;
 use App\Models\BookingRoom;
+use App\Models\BookingRoomService;
 use App\Models\Guest;
 use App\Models\Permission;
 use App\Models\BookingRoomGuest;
 use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
+use App\Models\ServiceBill;
 use App\Models\Role;
 use App\Models\SystemDateRoll;
 use App\Models\User;
@@ -679,5 +681,150 @@ class RoomMoveTest extends TestCase
         // Target room 102 adults count increased by 1 (1 + 1 = 2)
         $room102->refresh();
         $this->assertEquals(2, $room102->adults);
+    }
+
+    public function test_merge_keeps_target_primary_guest_and_moves_only_source_guest_bills(): void
+    {
+        $sourceBooking = Booking::create([
+            'booking_name' => 'Booking phòng nguồn',
+            'booking_date' => '2026-07-10',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'created_by' => 'admin_test',
+            'updated_by' => 'admin_test',
+            'booking_code' => 'BK-SOURCE',
+            'status' => Booking::STATUS_CHECKIN,
+        ]);
+        $targetBooking = Booking::create([
+            'booking_name' => 'Booking phòng đích',
+            'booking_date' => '2026-07-10',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-18',
+            'created_by' => 'admin_test',
+            'updated_by' => 'admin_test',
+            'booking_code' => 'BK-TARGET',
+            'status' => Booking::STATUS_CHECKIN,
+        ]);
+        $sourceRoom = BookingRoom::create([
+            'booking_id' => $sourceBooking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => '101',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+            'adults' => 1,
+        ]);
+        $targetRoom = BookingRoom::create([
+            'booking_id' => $targetBooking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => '102',
+            'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-18',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+            'adults' => 1,
+        ]);
+        $sourceGuest = Guest::create(['full_name' => 'Khách phòng nguồn']);
+        $targetGuest = Guest::create(['full_name' => 'Khách chính phòng đích']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $sourceRoom->id,
+            'guest_id' => $sourceGuest->id,
+            'is_primary' => true,
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        BookingRoomGuest::create([
+            'booking_room_id' => $targetRoom->id,
+            'guest_id' => $targetGuest->id,
+            'is_primary' => true,
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        // Bill minibar của khách chuyển đang dùng chủ sở hữu gốc, chưa có thông tin chuyển bill.
+        $sourceBill = ServiceBill::create([
+            'Date' => '2026-07-14 00:00:00',
+            'OpenTime' => '10:00',
+            'Guest' => $sourceGuest->full_name,
+            'DepartmentId' => 'FO',
+            'ServiceId' => 'MB',
+            'DescriptionServive' => 'Minibar phòng 101',
+            'Quantity' => 1,
+            'Amount' => 264500,
+            'RentalRoomId1' => $sourceRoom->id,
+            'CustomerId1' => $sourceGuest->id,
+            'RentalRoomId2' => null,
+            'CustomerId2' => null,
+            'Status' => 1,
+            'Edit' => 0,
+            'Username' => 'admin_test',
+        ]);
+        BookingRoomService::create([
+            'booking_room_id' => $sourceRoom->id,
+            'guest_id' => $sourceGuest->id,
+            'service_bill_id' => $sourceBill->Ma,
+            'service_code' => 'MB',
+            'service_name' => 'Minibar',
+            'service_date' => '2026-07-14',
+            'quantity' => 1,
+            'rate' => 264500,
+            'total_amount' => 264500,
+            'folio' => 1,
+            'is_room' => 1,
+            'is_posted' => 1,
+        ]);
+
+        // Bill có sẵn của phòng đích phải giữ nguyên cặp cột chuyển là NULL.
+        $targetBill = ServiceBill::create([
+            'Date' => '2026-07-14 00:00:00',
+            'OpenTime' => '10:30',
+            'Guest' => $targetGuest->full_name,
+            'DepartmentId' => 'FO',
+            'ServiceId' => 'EI',
+            'DescriptionServive' => 'Dịch vụ phòng 102',
+            'Quantity' => 1,
+            'Amount' => 100000,
+            'RentalRoomId1' => $targetRoom->id,
+            'CustomerId1' => $targetGuest->id,
+            'RentalRoomId2' => null,
+            'CustomerId2' => null,
+            'Status' => 1,
+            'Edit' => 0,
+            'Username' => 'admin_test',
+        ]);
+
+        $this->postJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}/move", [
+            'move_type' => 'merge',
+            'target_room_number' => '102',
+            'reason' => 'Chuyển khách sang phòng đang ở',
+            'selected_guest_ids' => [$sourceGuest->id],
+        ])->assertSuccessful()->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $targetRoom->id,
+            'guest_id' => $targetGuest->id,
+            'is_primary' => 1,
+        ]);
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $targetRoom->id,
+            'guest_id' => $sourceGuest->id,
+            'is_primary' => 0,
+        ]);
+        $this->assertDatabaseHas('service_bills', [
+            'Ma' => $sourceBill->Ma,
+            'RentalRoomId1' => $sourceRoom->id,
+            'CustomerId1' => $sourceGuest->id,
+            'RentalRoomId2' => $targetRoom->id,
+            'CustomerId2' => $sourceGuest->id,
+        ]);
+        $this->assertDatabaseHas('service_bills', [
+            'Ma' => $targetBill->Ma,
+            'RentalRoomId1' => $targetRoom->id,
+            'CustomerId1' => $targetGuest->id,
+            'RentalRoomId2' => null,
+            'CustomerId2' => null,
+        ]);
+        $this->assertDatabaseHas('booking_room_services', [
+            'service_bill_id' => $sourceBill->Ma,
+            'booking_room_id' => $targetRoom->id,
+            'guest_id' => $sourceGuest->id,
+        ]);
     }
 }

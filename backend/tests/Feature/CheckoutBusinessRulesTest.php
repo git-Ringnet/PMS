@@ -13,6 +13,8 @@ use App\Models\RoomForm;
 use App\Models\Room;
 use App\Models\Payment;
 use App\Models\PaymentDebtSettlement;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
 use App\Models\HotelSetting;
@@ -33,7 +35,18 @@ class CheckoutBusinessRulesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->actingAs(User::factory()->create(['username' => 'checkout_rules_user']));
+        $user = User::factory()->create(['username' => 'checkout_rules_user']);
+        $role = Role::firstOrCreate(
+            ['code' => 'checkout_rules_test'],
+            ['name' => 'Checkout rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
+        );
+        $permission = Permission::firstOrCreate(
+            ['code' => 'fo.checkout'],
+            ['name' => 'Check-out / Trả phòng', 'module' => 'FO']
+        );
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $user->roles()->attach($role->id);
+        $this->actingAs($user);
         DB::table('booking_statuses')->insert([
             ['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out'],
         ]);
@@ -73,7 +86,15 @@ class CheckoutBusinessRulesTest extends TestCase
         }
 
         $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", ['guest_ids' => [$this->guest->id]])->assertSuccessful();
-        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT, 'CheckoutDate' => '2026-08-04 00:00:00']);
+        $this->assertDatabaseHas('booking_rooms', [
+            'id' => $this->room->id,
+            'status' => BookingRoom::STATUS_CHECKED_OUT,
+            'departure_date' => '2026-08-04 00:00:00',
+            'ActutalNumOfDays' => 3,
+            'CheckoutDate' => '2026-08-04 00:00:00',
+            'planned_departure_date' => '2026-08-06 00:00:00',
+            'NumOfDays' => 5,
+        ]);
     }
 
     public function test_early_room_checkout_can_proceed_without_charge_after_confirmation(): void

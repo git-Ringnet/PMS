@@ -21,6 +21,13 @@ class EnsureBranchAccess
             ], 403);
         }
 
+        if (!$user->is_active_user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tài khoản của bạn đã bị khóa hoặc ngừng sử dụng.',
+            ], 403);
+        }
+
         $branch = null;
         $branchId = $request->attributes->get('_branch_id') ?? $request->header('X-Branch-Id');
         if ($branchId) {
@@ -45,7 +52,8 @@ class EnsureBranchAccess
         }
 
         if (!$user->isSuperAdmin()) {
-            $hasAssignments = $user->userBranches()->exists();
+            $hasAssignments = $user->userBranchPositions()->exists()
+                || $user->userBranches()->exists();
 
             if ($hasAssignments && !$user->hasBranchAccess($branch->id)) {
                 return response()->json([

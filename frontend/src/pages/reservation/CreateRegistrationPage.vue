@@ -1414,13 +1414,13 @@ const filteredActiveRooms = computed(() => {
   if (!tab || !tab.rooms) return []
   let list = tab.rooms
 
-  // Check if ALL rooms in this registration are cancelled
-  const allRoomsCancelled = tab.status === 'CANCELLED' || 
-    (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3 || Number(r.bookingRoomStatus) === 100))
+  // Phòng chuyển (trạng thái 100) là lịch sử chuyển phòng nên luôn hiển thị trên màn Booking.
+  // Chỉ ẩn phòng hủy riêng lẻ khi đăng ký vẫn còn phòng hoạt động.
+  const allRoomsCancelled = tab.status === 'CANCELLED'
+    || (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3))
 
-  // If not all rooms are cancelled, hide individual cancelled/transferred rooms
   if (!allRoomsCancelled) {
-    list = list.filter(r => Number(r.bookingRoomStatus) !== 3 && Number(r.bookingRoomStatus) !== 100)
+    list = list.filter(r => Number(r.bookingRoomStatus) !== 3)
   }
 
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
@@ -1460,7 +1460,8 @@ const roomsTotalSummary = computed(() => {
   const tab = bookingContext.value
   if (!tab) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
   let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
-  const roomList = filteredActiveRooms.value
+  // Phòng chuyển chỉ hiển thị để truy vết lịch sử, không cộng lặp vào tổng tiền/phòng hiện tại.
+  const roomList = filteredActiveRooms.value.filter(r => Number(r.bookingRoomStatus) !== 100)
   roomList.forEach(r => {
     priceSum += getRoomChargeTotal(r)
     adults   += Number(r.adults) || 0
