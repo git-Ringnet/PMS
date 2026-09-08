@@ -11,6 +11,34 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-08] - Chuẩn hóa toàn bộ Master Data thông tin khách hàng theo file Excel chuẩn
+### Module: Khách hàng & Đặt phòng / Master Data & Multi-DB Seeders ([GuestDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/GuestDefinitionSeeder.php), [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php), [ResidenceType.php](file:///d:/PMS/backend/app/Models/ResidenceType.php), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+
+- **Đã hoàn thành**:
+  - **Tách riêng và chuẩn hóa đầy đủ các bảng danh mục khách hàng theo file Excel [ĐỊNH NGHĨA THÔNG TIN KHÁCH HÀNG.xlsx](file:///d:/PMS/ĐỊNH%20NGHĨA%20THÔNG%20TIN%20KHÁCH%20HÀNG.xlsx)**:
+    - **`residence_types` (THƯỜNG TRÚ TẠM TRÚ)**: Tạo migration `2026_09_08_120000_create_residence_types_table.php` và Model `ResidenceType.php`. Chạy migration tạo bảng riêng biệt trên tất cả chi nhánh. Nạp 3 bản ghi: `Địa chỉ thường trú (Thường trú)`, `Địa chỉ tạm trú (Tạm trú)`, `Địa chỉ khác (Khác)`.
+    - **`guest_titles` (DANH XƯNG)**: Đồng bộ chính xác 6 danh xưng (`Boy.`, `Girl.`, `Inf`, `Kid.`, `Mr.`, `Ms.`), dọn dẹp các mã mẫu cũ.
+    - **`border_gates` (CẢNG)**: Nạp đầy đủ 87 cảng biển, sân bay, cửa khẩu từ file Excel (`STS`, `SNB`, `CNT`, `CSG`,...).
+    - **`entry_purposes` (MỤC ĐÍCH)**: Nạp đầy đủ 14 mục đích lưu trú chuẩn (`DL`, `CT`, `TM`, `MK`, `HN`, `TT`, `VT`, `DT`, `BC`, `DC`, `HT`, `KH`, `LD`, `TH`).
+    - **`guest_types` (LOẠI KHÁCH)**: Nạp 5 cấp bậc phân loại khách chuẩn (`VIP1`, `VIP2`, `VIP3`, `VIP4`, `RegularGuest`). Đồng bộ tường minh ID khớp 100% file Excel (`id = 1, 2, 3, 4, 6`), giải quyết lỗi auto-increment làm lệch ID của `RegularGuest` thành 5.
+    - **`id_types` (LOẠI GIẤY TỜ)**: Nạp 4 loại giấy tờ chuẩn (`CCCD`, `Passport`, `GPLX`, `Other`).
+    - **`nationalities` (QUỐC TỊCH)**: Cập nhật nạp chính xác **252 bản ghi theo đúng số thứ tự và ID từ sheet QUỐC TỊCH** (bắt đầu bằng `id = 1`: `---` Người nước ngoài, `id = 245`: `VNM` Việt Nam, kết thúc ở `id = 252`: `ZWE` Zimbabwe), loại bỏ 256 dòng từ seeder merged countries cũ.
+  - **Backend Seeder & API**:
+    - Chuyển đổi [GuestDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/GuestDefinitionSeeder.php) sang **100% mảng PHP thuần (Hardcoded standard arrays)** tự đóng gói, không phụ thuộc file ngoài hay thư viện đọc Excel/JSON.
+    - Cập nhật [NationalitySeeder.php](file:///d:/PMS/backend/database/seeders/NationalitySeeder.php) và file dữ liệu [merged_countries.json](file:///d:/PMS/backend/database/seeders/data/merged_countries.json) đồng bộ 252 quốc tịch theo chuẩn file Excel.
+    - Chạy nạp đồng bộ thành công trên toàn bộ 8 database chi nhánh (`pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`, `pms_gkt6`, `pms_hkt5`, `pms_loloee`, `pms_hkt8`).
+    - Bổ sung `residence_types` vào API `GET /api/guest-definitions` và method `residenceTypes()` trong [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php).
+  - **Frontend ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Thay thế các tùy chọn hardcode bằng dữ liệu động `residence_types` trả về từ API (`Thường trú`, `Tạm trú`, `Khác`).
+    - Cập nhật danh sách danh xưng chuẩn (`Boy.`, `Girl.`, `Inf`, `Kid.`, `Mr.`, `Ms.`).
+    - Hỗ trợ fallback giữ nguyên dữ liệu lịch sử nếu khách hàng cũ có giá trị tùy chỉnh.
+- **Kiểm tra**:
+  - `php artisan test --filter=GuestDefinitionMasterDataTest`: 19/19 assertions đạt 100%.
+  - Kiểm tra trực tiếp trên Database 8 chi nhánh: `nationalities` có đúng 252 dòng (dòng 1 là "Người nước ngoài"), `guest_types` có đúng 5 dòng với `id = 1, 2, 3, 4, 6`.
+  - `npm run build`: Thành công 100%, không phát sinh lỗi template hay cú pháp.
+
+---
+
 ## [2026-09-08] - Điều chỉnh menu chuột phải phòng đang ở trên Sơ đồ phòng (Room Map)
 ### Module: Frontdesk / Reservation / Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 

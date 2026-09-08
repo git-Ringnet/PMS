@@ -130,8 +130,8 @@
                       <template v-if="col.key === 'residence_type'">
                         <select v-model="guest.residence_type" class="table-input">
                           <option value="">-- Chọn --</option>
-                          <option value="Thường trú">Thường trú</option>
-                          <option value="Tạm trú">Tạm trú</option>
+                          <option v-for="rt in residenceTypesList" :key="rt.code || rt.name" :value="rt.name_new_form || rt.name">{{ rt.name_new_form || rt.name }}</option>
+                          <option v-if="guest.residence_type && !residenceTypesList.some(rt => (rt.name_new_form || rt.name) === guest.residence_type)" :value="guest.residence_type">{{ guest.residence_type }}</option>
                         </select>
                       </template>
 
@@ -256,8 +256,8 @@
                       <template v-if="col.key === 'residence_type'">
                         <select v-model="child.residence_type" class="table-input">
                           <option value="">-- Chọn --</option>
-                          <option value="Thường trú">Thường trú</option>
-                          <option value="Tạm trú">Tạm trú</option>
+                          <option v-for="rt in residenceTypesList" :key="rt.code || rt.name" :value="rt.name_new_form || rt.name">{{ rt.name_new_form || rt.name }}</option>
+                          <option v-if="child.residence_type && !residenceTypesList.some(rt => (rt.name_new_form || rt.name) === child.residence_type)" :value="child.residence_type">{{ child.residence_type }}</option>
                         </select>
                       </template>
 
@@ -542,13 +542,14 @@ const guestDefinitions = ref({
   entry_purposes: [],
   guest_types: [],
   id_types: [],
+  residence_types: [],
 })
 
 const titlesList = computed(() => {
   if (guestDefinitions.value.titles?.length > 0) {
     return guestDefinitions.value.titles.map(t => t.name)
   }
-  return ['Mr.', 'Mrs.', 'Ms.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
+  return ['Boy.', 'Girl.', 'Inf', 'Kid.', 'Mr.', 'Ms.']
 })
 
 const borderGatesList = computed(() => guestDefinitions.value.border_gates || [])
@@ -556,11 +557,22 @@ const borderGateNames = computed(() => borderGatesList.value.map(g => g.name))
 const entryPurposesList = computed(() => guestDefinitions.value.entry_purposes || [])
 const guestTypesList = computed(() => guestDefinitions.value.guest_types || [])
 const idTypesList = computed(() => guestDefinitions.value.id_types || [])
+const residenceTypesList = computed(() => {
+  if (guestDefinitions.value.residence_types?.length > 0) {
+    return guestDefinitions.value.residence_types
+  }
+  return [
+    { code: '1', name: 'Địa chỉ thường trú', name_new_form: 'Thường trú' },
+    { code: '2', name: 'Địa chỉ tạm trú', name_new_form: 'Tạm trú' },
+    { code: '3', name: 'Địa chỉ khác', name_new_form: 'Khác' },
+  ]
+})
 
 function getIdTypeValue(it) {
   if (!it) return ''
-  if (it.code === 'PASSPORT') return 'Hộ chiếu'
-  if (it.code === 'OTHER') return 'Khác'
+  const upper = (it.code || '').toUpperCase()
+  if (upper === 'PASSPORT') return 'Hộ chiếu'
+  if (upper === 'OTHER') return 'Khác'
   return it.code || it.name
 }
 

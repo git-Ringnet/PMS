@@ -29,12 +29,15 @@ class NationalitySeeder extends Seeder
 
         $this->command->info("Seeding " . count($countries) . " nationalities with all original columns...");
 
+        Nationality::truncate();
+
         // Use chunk to insert to avoid too many placeholder limits
         $chunks = array_chunk($countries, 100);
         foreach ($chunks as $chunk) {
             $insertData = [];
             foreach ($chunk as $country) {
                 $insertData[] = [
+                    'id'                    => $country['id'],
                     'nationality_id'        => $country['nationality_id'] ?? null,
                     'nationality_id2'       => $country['nationality_id2'] ?? null,
                     'nationality_id_number' => $country['nationality_id_number'] ?? null,
