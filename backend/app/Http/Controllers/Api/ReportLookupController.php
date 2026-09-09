@@ -18,6 +18,7 @@ class ReportLookupController extends Controller
             'areas' => $this->areas(),
             'companies' => $this->companies($search),
             'bookings' => $this->bookings($search),
+            'rooms' => $this->rooms($search),
             'room-classes' => $this->roomClasses(),
             'registration-statuses' => $this->registrationStatuses(),
             'users' => $this->users($search),
@@ -87,6 +88,21 @@ class ReportLookupController extends Controller
             ->map(fn ($roomClass) => [
                 'value' => $roomClass->id,
                 'label' => trim("{$roomClass->code} - {$roomClass->name}", ' -'),
+            ])->all();
+    }
+
+    private function rooms(string $search): array
+    {
+        return DB::table('rooms')
+            ->whereNotNull('room_number')
+            ->where('room_number', '<>', '')
+            ->when($search !== '', fn ($query) => $query->where('room_number', 'like', "%{$search}%"))
+            ->orderBy('room_number')
+            ->limit(500)
+            ->pluck('room_number')
+            ->map(fn ($roomNumber) => [
+                'value' => $roomNumber,
+                'label' => $roomNumber,
             ])->all();
     }
 

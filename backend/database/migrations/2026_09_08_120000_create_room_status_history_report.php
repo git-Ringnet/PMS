@@ -166,7 +166,7 @@ SQL);
                 ['name' => 'p_from_date', 'label' => 'Từ ngày', 'control' => 'date-range', 'range_end_parameter' => 'p_to_date', 'default' => '$today', 'required' => true],
                 ['name' => 'p_to_date', 'label' => 'Đến ngày', 'control' => 'hidden', 'default' => '$today', 'required' => true],
                 ['name' => 'p_username', 'label' => 'Người dùng', 'control' => 'select', 'default' => '', 'required' => false, 'options_source' => 'users'],
-                ['name' => 'p_room', 'label' => 'Số phòng', 'control' => 'text', 'default' => '', 'required' => false],
+                ['name' => 'p_room', 'label' => 'Số phòng', 'control' => 'select', 'default' => '', 'required' => false, 'options_source' => 'rooms'],
             ], JSON_UNESCAPED_UNICODE),
             'sort_order' => 26,
             'is_active' => true,
