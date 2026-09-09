@@ -2341,14 +2341,11 @@ class BookingRoomServiceController extends Controller
 
     protected function canOperateOldDay(): bool
     {
-        $user = Auth::user();
-        if (!$user) return false;
-
-        return $user->canPerformHistoricalDateActions(
+        return app(\App\Services\HistoricalDateOperationPermissionService::class)->allows(
+            Auth::user(),
             request()->attributes->get('_branch_id')
         );
     }
-
     /**
      * Charge noshow cho 1 phòng noshow
      * POST /bookings/{bookingId}/rooms/{roomId}/charge-noshow

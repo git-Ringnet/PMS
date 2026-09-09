@@ -45,8 +45,8 @@
                         <select 
                           v-model="depositForm.bookingRoomId"
                           @change="handleRoomChange"
-                          :disabled="!!depositForm.id"
-                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': !!depositForm.id }"
+                          :disabled="isEditing"
+                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': isEditing }"
                           class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-medium bg-blue-50/70 text-slate-800 appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
                             <option :value="null">-- Đặt cọc cho toàn bộ phiếu đăng ký --</option>
@@ -68,11 +68,11 @@
                           :value="formatCurrencyInput(depositForm.amount)"
                           @input="e => depositForm.amount = cleanCurrencyValue(e.target.value)"
                           @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                          :disabled="!!depositForm.id"
-                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': !!depositForm.id }"
+                          :disabled="isEditing"
+                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': isEditing }"
                           class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-bold bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm"
                         >
-                        <div class="absolute right-1 top-0.5 flex flex-col" v-if="!depositForm.id">
+                        <div class="absolute right-1 top-0.5 flex flex-col" v-if="!isEditing">
                             <button type="button" @click="depositForm.amount++" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
                             <button type="button" @click="depositForm.amount = Math.max(0, depositForm.amount - 1)" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
                         </div>
@@ -99,6 +99,8 @@
                     <div class="relative">
                         <select 
                           v-model="depositForm.bankAccountId"
+                          :disabled="isEditing"
+                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': isEditing }"
                           class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs bg-white text-slate-800 appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
                             <option value="Tài khoản ngân hàng" disabled class="text-slate-400 font-normal bg-slate-100">Tài khoản ngân hàng</option>
@@ -114,18 +116,18 @@
                     <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Ngày <span class="text-rose-500">*</span></label>
                     <div 
                       class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative cursor-pointer"
-                      :class="{ 'opacity-60 bg-slate-100 cursor-not-allowed': !!depositForm.id }"
+                      :class="{ 'opacity-60 bg-slate-100 cursor-not-allowed': isEditing }"
                       @click="openDatePicker"
                     >
                         <input 
                           ref="dateInputRef"
                           type="date" 
                           v-model="depositForm.date" 
-                          :disabled="!!depositForm.id"
+                          :disabled="isEditing"
                           :min="minDepositDate"
                           class="date-span-input flex-1 text-left w-full border-none focus:outline-none bg-transparent cursor-pointer"
                         />
-                        <i class="fa-regular fa-calendar-days text-blue-500 cursor-pointer" @click.stop="openDatePicker" title="Chọn ngày"></i>
+                        <i class="fa-regular fa-calendar-days text-blue-500 cursor-pointer" :class="{ 'opacity-50 cursor-not-allowed': isEditing }" @click.stop="openDatePicker" title="Chọn ngày"></i>
                         <i @click.stop="copyToClipboard(depositForm.date)" class="fa-regular fa-copy text-slate-400 hover:text-slate-600 cursor-pointer" title="Sao chép ngày"></i>
                     </div>
                 </div>
@@ -142,8 +144,8 @@
                 </div>
                 <div>
                     <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Lưu hình ảnh (Chứng từ / Biên lai)</label>
-                    <div class="border border-dashed border-slate-300 rounded-lg h-[56px] bg-slate-50 flex items-center justify-center hover:bg-slate-100 hover:border-blue-400 transition cursor-pointer relative overflow-hidden group shadow-sm">
-                        <input v-if="!depositForm.image" :key="fileInputKey" type="file" @change="handleDepositImageUpload" class="absolute inset-0 opacity-0 cursor-pointer z-10" accept="image/*">
+                    <div class="border border-dashed border-slate-300 rounded-lg h-[56px] bg-slate-50 flex items-center justify-center hover:bg-slate-100 hover:border-blue-400 transition cursor-pointer relative overflow-hidden group shadow-sm" :class="{ 'cursor-not-allowed opacity-60': isEditing }">
+                        <input v-if="!depositForm.image && !isEditing" :key="fileInputKey" type="file" @change="handleDepositImageUpload" class="absolute inset-0 opacity-0 cursor-pointer z-10" accept="image/*">
                         <div class="flex flex-col items-center space-y-1" v-if="!depositForm.image">
                             <i class="fa-solid fa-cloud-arrow-up text-slate-400 group-hover:text-blue-500 transition text-xs"></i>
                             <span class="text-[10px] text-slate-500 font-medium group-hover:text-blue-600 transition">Nhấp để tải ảnh lên hoặc kéo thả vào đây</span>
@@ -152,7 +154,7 @@
                             <img :src="getImageUrl(depositForm.image)" class="h-10 w-10 object-cover rounded border cursor-pointer hover:opacity-85 transition z-20" @click.stop="openImage(getImageUrl(depositForm.image))" title="Nhấp để xem ảnh lớn" />
                             <div class="flex flex-col z-20">
                                 <span class="text-[10px] text-green-600 font-bold">Hình ảnh đã chọn</span>
-                                <button type="button" @click.stop="depositForm.image = null; selectedFile = null" class="text-[9px] text-rose-500 hover:text-rose-700 font-semibold underline mt-0.5 border-none bg-transparent cursor-pointer text-left">
+                                <button v-if="!isEditing" type="button" @click.stop="depositForm.image = null; selectedFile = null" class="text-[9px] text-rose-500 hover:text-rose-700 font-semibold underline mt-0.5 border-none bg-transparent cursor-pointer text-left">
                                     Xóa ảnh
                                 </button>
                             </div>
@@ -230,7 +232,7 @@
                             </td>
                             <td class="p-2 font-medium text-slate-800 align-middle">{{ dep.date }}</td>
                             <td class="p-2 text-slate-600 align-middle">{{ dep.time }}</td>
-                            <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.id === dep.paymentMethodId)?.name || 'BT' }}</td>
+                            <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.code === dep.paymentMethodId || String(x.id) === String(dep.paymentMethodId))?.name || dep.paymentMethodId || 'BT' }}</td>
                             <td class="p-2 text-slate-600 align-middle">
                                 <span v-if="dep.roomNumber" class="inline-block bg-blue-50 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-200 mr-1.5">
                                     Phòng {{ dep.roomNumber }}
@@ -296,7 +298,7 @@
                     <i class="fa-regular fa-floppy-disk text-[10px]"></i>
                     <span>Lưu</span>
                 </button>
-                <button type="button" v-if="!depositForm.id" @click="addDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition flex items-center space-x-1.5 shadow-md text-xs tracking-wide cursor-pointer border-none">
+                <button type="button" v-if="!isEditing" @click="addDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition flex items-center space-x-1.5 shadow-md text-xs tracking-wide cursor-pointer border-none">
                     <i class="fa-solid fa-plus text-[10px]"></i>
                     <span>Thêm</span>
                 </button>
@@ -560,7 +562,8 @@ import {
   splitPayment,
   transferPayment,
   fetchBookings,
-  fetchSystemDate
+  fetchSystemDate,
+  fetchHotelSettings
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -673,6 +676,7 @@ function openDatePicker() {
 
 // System date state
 const systemDate = ref(new Date().toISOString().split('T')[0])
+const oldDayRuleSubjects = ref('')
 
 // Custom Split Modal States
 const isSplitOpen = ref(false)
@@ -764,34 +768,44 @@ const activeCurrency = computed(() => {
   return props.currenciesList?.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
 })
 
-// Permisions & System Date
+// The rule value is a comma-separated list, e.g. admin,FOM,ACC.
 const canOperateOldDay = computed(() => {
-  const user = authStore.user
-  if (!user) return true
-  if (user.username === 'admin' || user.is_admin) return true
-  const userSettings = authStore.settings || {}
-  if (userSettings.RuleUserCorrectOrPostBillPaymentOldDay !== undefined) {
-    const val = userSettings.RuleUserCorrectOrPostBillPaymentOldDay
-    return val === true || val === 1 || val === '1' || val === 'true'
-  }
-  return false
-})
+  const allowed = String(oldDayRuleSubjects.value || '')
+    .split(/[,;|]+/)
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean)
+  const user = authStore.user || {}
+  const identifiers = [
+    user.username,
+    user.job_title_code,
+    user.job_title,
+    ...(authStore.roles || []).map(role => role.role_code)
+  ]
+    .filter(Boolean)
+    .map(value => String(value).trim().toLowerCase())
 
+  return allowed.some(value => identifiers.includes(value))
+})
+const isEditing = computed(() => Boolean(depositForm.value.id))
 const minDepositDate = computed(() => {
   return canOperateOldDay.value ? null : systemDate.value
 })
 
-async function loadSystemDate() {
+async function loadOperationalSettings() {
   try {
-    const res = await fetchSystemDate()
-    if (res.data?.data?.system_date) {
-      systemDate.value = res.data.data.system_date
+    const [systemDateResponse, hotelSettingsResponse] = await Promise.all([
+      fetchSystemDate(),
+      fetchHotelSettings()
+    ])
+    if (systemDateResponse.data?.data?.system_date) {
+      systemDate.value = systemDateResponse.data.data.system_date
     }
+    oldDayRuleSubjects.value = hotelSettingsResponse.data?.data?.RuleUserCorrectOrPostBillPaymentOldDay || ''
   } catch (err) {
-    console.error('Lỗi lấy ngày hệ thống:', err)
+    oldDayRuleSubjects.value = ''
+    console.error('Failed to load operational settings:', err)
   }
 }
-
 // Filter payment methods: not group 4, not group 5, not is_inactive
 const filteredPaymentMethods = computed(() => {
   return (props.paymentMethods || []).filter(pm => {
@@ -842,9 +856,14 @@ const visibleDeposits = computed(() => {
   if (depositForm.value.bookingRoomId) {
     list = list.filter(dep => String(dep.bookingRoomId) === String(depositForm.value.bookingRoomId))
   }
-  return list
+  // Keep the original positive line and its negative reversal adjacent.
+  return list.sort((a, b) => {
+    const aGroup = a.reversal_ref || a.id
+    const bGroup = b.reversal_ref || b.id
+    if (aGroup !== bGroup) return Number(aGroup) - Number(bGroup)
+    return Number(b.amount) - Number(a.amount)
+  })
 })
-
 const depositForm = ref({
   id: null,
   bookingRoomId: null,
@@ -890,7 +909,7 @@ watch(() => depositForm.value.paymentMethodId, (newPmId) => {
 watch(() => props.show, async (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
-    await loadSystemDate()
+    await loadOperationalSettings()
     resetForm()
     selectedDepositIds.value = []
     showDeleted.value = false
@@ -994,14 +1013,11 @@ function handleDepositImageUpload(event) {
 function getImageUrl(path) {
   if (!path) return ''
   if (path.startsWith('blob:') || path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) return path
-  const baseUrl = import.meta.env.VITE_PROXY_TARGET || 'http://localhost:8000'
   const cleanPath = path.startsWith('/') ? path : `/${path}`
-  if (cleanPath.startsWith('/storage/')) {
-    return `${baseUrl}${cleanPath}`
-  }
-  return `${baseUrl}/storage${cleanPath}`
+  // Use the same origin in deployed environments. Vite proxies /storage in
+  // development, avoiding a hard-coded localhost host for uploaded receipts.
+  return cleanPath.startsWith('/storage/') ? cleanPath : `/storage${cleanPath}`
 }
-
 function openImage(url) {
   if (url) previewImageUrl.value = url
 }

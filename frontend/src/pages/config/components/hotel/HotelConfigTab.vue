@@ -1,12 +1,16 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import http from '@/services/http'
+import { fetchRoles } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
 const uiStore = useUiStore()
 const loading = ref(false)
 const hotelConfigs = ref([])
 const searchConfigQuery = ref('')
+const roles = ref([])
+const selectedOldDayRoleCodes = ref([])
+const oldDayRuleConfigKey = 'RuleUserCorrectOrPostBillPaymentOldDay'
 
 const isEditMode = ref(false)
 const isConfigModalOpen = ref(false)
@@ -31,7 +35,23 @@ const fetchHotelConfigs = async () => {
   }
 }
 
+const fetchRoleOptions = async () => {
+  try {
+    const res = await fetchRoles()
+    const roleData = res.data?.data ?? res.data ?? []
+    roles.value = Array.isArray(roleData) ? roleData : []
+  } catch (err) {
+    console.error('Unable to load role options:', err)
+    roles.value = []
+  }
+}
+
+const syncOldDayRoleCodes = () => {
+  configFormState.value = selectedOldDayRoleCodes.value.join(',')
+}
+
 const openAddConfigModal = () => {
+  fetchRoleOptions()
   isEditMode.value = false
   Object.assign(configFormState, {
     id: null,
@@ -39,10 +59,12 @@ const openAddConfigModal = () => {
     value: '',
     description: ''
   })
+  selectedOldDayRoleCodes.value = []
   isConfigModalOpen.value = true
 }
 
 const openEditConfigModal = (config) => {
+  fetchRoleOptions()
   isEditMode.value = true
   Object.assign(configFormState, {
     id: config.id,
@@ -50,6 +72,9 @@ const openEditConfigModal = (config) => {
     value: config.value,
     description: config.description
   })
+  selectedOldDayRoleCodes.value = config.name === oldDayRuleConfigKey
+    ? String(config.value || '').split(',').map(code => code.trim()).filter(Boolean)
+    : []
   isConfigModalOpen.value = true
 }
 
@@ -57,6 +82,9 @@ const saveConfig = async () => {
   if (!configFormState.name) {
     uiStore.showToast('Vui lòng nhập tên cấu hình', 'warning')
     return
+  }
+  if (configFormState.name === oldDayRuleConfigKey) {
+    syncOldDayRoleCodes()
   }
   loading.value = true
   try {
@@ -101,6 +129,7 @@ const deleteConfig = async (configId) => {
 
 onMounted(() => {
   fetchHotelConfigs()
+  fetchRoleOptions()
 })
 </script>
 
@@ -193,9 +222,19 @@ onMounted(() => {
               placeholder="AllowChangeRoomStatus..."
               class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm disabled:bg-slate-100 disabled:cursor-not-allowed" />
           </div>
-          <div class="flex flex-col gap-1.5">
-            <span>Giá trị</span>
-            <input type="text" v-model="configFormState.value" placeholder="1 hoặc 0 hoặc bỏ trống"
+          <div v-if="configFormState.name === oldDayRuleConfigKey" class="flex flex-col gap-1.5">
+            <span>M&#227; vai tr&#242; &#273;&#432;&#7907;c ph&#233;p thao t&#225;c ng&#224;y c&#361;</span>
+            <select v-model="selectedOldDayRoleCodes" multiple size="5"
+              class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm bg-white">
+              <option v-for="role in roles" :key="role.id" :value="role.code">
+                {{ role.code }}{{ role.name ? ` - ${role.name}` : '' }}
+              </option>
+            </select>
+            <span class="text-xs font-medium text-slate-400">Ch&#7885;n m&#7897;t ho&#7863;c nhi&#7873;u m&#227; vai tr&#242;. Gi&#225; tr&#7883; s&#7869; &#273;&#432;&#7907;c l&#432;u d&#7841;ng FOM,ACC.</span>
+          </div>
+          <div v-else class="flex flex-col gap-1.5">
+            <span>Gi&#225; tr&#7883;</span>
+            <input type="text" v-model="configFormState.value" placeholder="1 ho&#7863;c 0 ho&#7863;c b&#7887; tr&#7889;ng"
               class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
           </div>
           <div class="flex flex-col gap-1.5">
