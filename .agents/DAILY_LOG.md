@@ -11,6 +11,85 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-09] - Fix 4 lỗi Room Map & Check-in Logic (Lễ Tân)
+### Module: Room Map / Check-in ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php), [booking-service.js](file:///d:/PMS/frontend/src/services/booking-service.js))
+
+- **Section 1 – Kiểm tra AllowCheckinVacantClean & Giữ trạng thái phòng khi check-in phòng chờ kiểm tra (vacant_clean / dirty)**:
+  - Backend: Kiểm tra trực tiếp `$physicalRoom->room_status_code` thay vì `$physicalRoom->status` (vốn bị accessor `Room.php` ánh xạ mặc định `vacant_clean` thành `available`).
+  - Khi `AllowCheckinVacantClean=0`: Chặn check-in đối với phòng `vacant_clean`, `vacant_dirty`, `turndown` → Trả về HTTP 422 ("Không được phép nhận phòng do cấu hình hệ thống").
+  - Khi `AllowCheckinVacantClean=1` & chưa có `confirmed`: Trả về HTTP 200 với `needs_confirmation: true` và message yêu cầu xác nhận.
+  - Khi `confirmed=true`: Cho phép check-in và **bảo lưu nguyên trạng thái phòng**: `vacant_clean` giữ nguyên `vacant_clean` (không đổi sang `occupied_ready`, giữ nguyên icon ngôi sao ✨ trên Room Map).
+  - Frontend `RoomMapPage.vue`: Cập nhật `handleQuickCheckIn()` để bắt `needs_confirmation` và mở dialog `uiStore.confirm`.
+  - Frontend `RoomPlanPage.vue`: Bổ sung xử lý `needs_confirmation` khi giao phòng.
+  - Frontend `CheckInPage.vue`: Đã có dialog xác nhận và gửi lại với `confirmed: true`.
+
+- **Section 2 – Hiện lại nút "Hủy nhận phòng" tại danh sách phòng đã đến của bộ phận Lễ tân**:
+  - **Nguyên nhân gốc (Root Cause)**: `RoomStatusPermissionService::canCancelCheckIn` kiểm tra cấu hình `RoleUserCancelCheckIn`. Trong DB giá trị mặc định là chuỗi rỗng `''`. Code cũ xử lý `if ($roleConfig === '') return false;` khiến 100% người dùng (kể cả Super Admin hay nhân viên Lễ tân) đều bị trả về `can_cancel_checkin: false`. Đồng thời ở frontend, `isArrivalMode` thiếu trường hợp `!props.displayMode`, và `canUndoForDate` bị ràng buộc thừa `searchDate === systemDate`.
+  - **Backend ([RoomStatusPermissionService.php](file:///d:/PMS/backend/app/Services/RoomStatusPermissionService.php))**:
+    - Khi `RoleUserCancelCheckIn` để trống (mặc định), hệ thống cho phép bộ phận lễ tân hủy nhận phòng (`return true`).
+    - Super Admin luôn được bypass quyền hủy nhận phòng.
+    - Khi cấu hình có danh sách chức danh cụ thể, kiểm tra theo `job_title_code` / `job_title`.
+  - **Frontend ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Chuẩn hóa `isFrontDesk` nhận diện thêm `route.path.startsWith('/frontdesk')`.
+    - `isArrivalMode` hỗ trợ cả `displayMode === 'arrivals'` và `!props.displayMode` (khi mở tab checkin trực tiếp).
+    - **Đồng bộ màn hình xác nhận Hủy nhận phòng**: Thay thế popup confirm 2 nút mặc định cũ bằng modal chuẩn 3 nút ("Đóng" / "Dơ" / "Có") đồng bộ 100% với Sơ đồ phòng:
+      - Nút "Đóng": Đóng modal, không thực hiện thao tác.
+      - Nút "Dơ": Hủy nhận phòng và chuyển trạng thái phòng vật lý thành Phòng bẩn (`vacant_dirty`).
+      - Nút "Có": Hủy nhận phòng và chuyển trạng thái phòng vật lý thành Phòng sạch (`vacant_clean`).
+    - Thêm watcher `watch([() => props.currentModule, isFrontDesk], loadPermissions)` để luôn nạp lại quyền khi chuyển module/route.
+    - Đồng bộ `moduleContext` trong `RoomMapPage.vue` nhận diện `route.path.startsWith('/frontdesk')`.
+
+- **Section 3 – Màu số phòng theo loại phòng + gạch chân ngày mai**:
+  - Thêm thông số mới `RoomMap_ColorRoomNumberByRoomClass` vào `HotelDefinitionSeeder.php` (value mặc định `'0'`) và expose qua API `GET /api/hotel-settings` ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php)).
+  - [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php): Trả về `room_class_color` lấy từ `room_classes.color`.
+  - [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue):
+    - Khi `RoomMap_ColorRoomNumberByRoomClass = 0`: Số phòng mặc định màu đen. Các phòng đang ở có ngày đến = ngày hệ thống (`checkinStr === sysDateStr`) hiển thị màu đỏ (`text-red-600 font-black`), áp dụng chuẩn cho cả module Lễ tân và Đặt phòng.
+    - Khi `RoomMap_ColorRoomNumberByRoomClass = 1`: Số phòng hiển thị theo màu `room_classes.color` qua `getRoomNumberStyle(room)`, không đổi sang màu đỏ khi check-in trong ngày. Nếu hạng phòng chưa cấu hình màu riêng hoặc đang mang màu trắng mặc định (`#ffffff`), số phòng tự động hiển thị màu đen chuẩn (`#000000`) thay vì màu trắng.
+    - Chức năng gạch chân số phòng khi ngày mai có khách (`isArrivingTomorrow` -> `underline font-black`): hoạt động đồng bộ trên cả Card View và cả 2 List/Table View.
+
+- **Section 4 – Filter "Danh sách phòng đã đến" chỉ theo ngày đang xem (Task #127)**:
+  - **Vấn đề**: Khi xem Room Map ngày 11/8/2026, danh sách "Phòng đã đến" hiển thị cả các phòng đang ở có ngày đến trước ngày 11 (như ngày 10/8 thuộc GAL2, GAL3) do điều kiện `isRoomInhouseOnDate` lọc theo `arrival <= date && departure >= date`.
+  - **Khắc phục ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - Chuẩn hóa điều kiện trong `daDenBookings`:
+      - Khi ở chế độ phòng đã đến (`isArrivalMode`): Chỉ hiển thị các phòng có `status === 1` VÀ `normalizeDate(room.arrival_date || room.actual_arrival_date) === normalizeDate(searchDate.value)`. Các phòng check-in từ ngày trước bị loại bỏ 100%.
+      - Khi ở chế độ phòng đang ở (`isOccupiedMode`): Giữ nguyên hiển thị tất cả các phòng đang lưu trú theo `isRoomInhouseOnDate`.
+      - Khi ở chế độ phòng đã trả (`isDepartureMode`): Lọc theo `room.status === 2` và `departure_date === searchDate.value`.
+    - Đồng bộ hiển thị ngày đến trên dòng cha (Parent Row) của bảng: Hiển thị theo ngày đến của các phòng thực tế đang hiển thị trong nhóm (`booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date`), tránh tình trạng phòng con đến ngày 11 nhưng dòng cha hiển thị ngày 10 của booking tổng.
+
+- **Đồng bộ Tooltip & Màu sắc trạng thái Kế Hoạch Phòng (Room Plan) với Sơ Đồ Phòng (Room Map) ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+  - **Tooltip chi tiết khi hover**:
+    - Thay thế modal trắng cũ bằng Tooltip Dark theme chuẩn (`bg-[#2e2e2e]`, text `#f1f5f9`, border `border-neutral-700/60`, rounded-xl, shadow-2xl, w-[320px]) đồng bộ 100% với Sơ đồ phòng.
+    - Hiển thị đầy đủ thông tin: 🟢 Ngày đến - 🔴 Ngày đi, Mã ĐK, Tên ĐK, Tên khách, Hạng phòng & Số phòng, Đêm, Số lượng khách (👤 👶), Giờ đến & Giá phòng (amber-400), Quy cách phòng & Đêm, Giá/R/N, Tên công ty, Ghi chú / Yêu cầu và Danh sách chi tiết tên từng khách lưu trú.
+  - **Màu sắc thanh đặt phòng (Booking Fill Color)**:
+    - Đồng bộ mã màu nền booking: Ưu tiên `booking_color` (hoặc `ColorDefaultBookingRoomMap` `#97D5FF`), giúp màu phòng trên Kế hoạch phòng liên kết đồng nhất với Sơ đồ phòng.
+  - **Màu sắc viền đáy trạng thái phòng (Status Bottom Indicators)**:
+    - Phòng đã nhận phòng (`InHouse` / `status === 1`): Hiển thị đồng thời cả 2 trạng thái: Nửa trái màu **Xanh (🟢 Đến / Check-in - `bg-emerald-500`)**, Nửa phải màu **Đỏ (🔴 Đi / Check-out - `bg-red-500`)** tương ứng với 2 chấm xanh và đỏ trên Sơ đồ phòng.
+    - Phòng chưa nhận phòng (`status === 0` / Đặt trước / Guaranteed): Hiển thị 100% màu **Xanh (🟢 Phòng đến - `bg-emerald-500`)**, không hiển thị màu đỏ do khách chưa làm thủ tục nhận phòng.
+    - Phòng đã trả phòng (`CheckedOut` / `status === 2`): Hiển thị màu **Xám (`bg-slate-400`)**.
+
+- **Fix hiển thị phòng có khách đến vào ngày mai trên Sơ đồ phòng (Room Map)**:
+  - **Vấn đề**: Đặt phòng đến vào ngày mai (VD: booking GAL2 nhận ngày 10/08/2026 khi ngày hệ thống là 09/08/2026) nhưng số phòng trên Sơ đồ phòng không được gạch chân (`101 (gạch chân) - Phòng khách đến vào ngày mai` theo Trợ giúp), không hiện tooltip và không mở được booking khi double click.
+  - **Backend ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php))**:
+    - Thêm truy vấn `$bookingRoomsTomorrow` với điều kiện `arrival_date = systemDate + 1` và `registrationStatus->is_availability = 1`.
+    - Gán `$room->is_arriving_tomorrow = true`, kèm payload `$room->tomorrow_booking`.
+    - Nếu phòng hôm nay trống, gán bổ sung các thông tin đặt phòng ngày mai (`booking_code`, `booking_id`, `guest_name`, `arrival_date`, `departure_date`, `rate`,...) để phục vụ hiển thị Tooltip và Double-click.
+    - Cập nhật `RoomResource.php` trả về `is_arriving_tomorrow` và `tomorrow_booking`.
+  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Sửa `isArrivingTomorrow(room)`: loại bỏ điều kiện chặn `if (!isReserved) return false` (do phòng trống chưa có khách hôm nay có `status === 'available'`), ưu tiên kiểm tra `room.is_arriving_tomorrow === true`.
+    - Cập nhật `showTooltip()` cho phép kích hoạt tooltip khi phòng có khách đến ngày mai hoặc có `booking_code`.
+    - Cập nhật chế độ xem dạng danh sách (List View / Table View) hiển thị gạch chân số phòng khi `isArrivingTomorrow(room)`.
+
+- **Fix trạng thái chấm xanh (🟢 Phòng đến) và chấm đỏ (🔴 Phòng đi) trên Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - **Khắc phục**:
+    - Khôi phục chuẩn màu gốc Tailwind (`bg-emerald-500` cho chấm xanh, `bg-red-500` cho chấm đỏ).
+    - **Phòng chưa nhận phòng (Đặt trước - 1005, 1006, 1105)**: Chỉ hiển thị chấm xanh (🟢 Phòng đến) ở góc trên-trái, tuyệt đối không hiển thị chấm đỏ (🔴 Phòng đi) do khách chưa làm thủ tục nhận phòng.
+    - **Phòng đã nhận phòng (Đang ở - 105, 106)**: Hiển thị đầy đủ cả 2 chấm ở hai bên (trái: chấm xanh đến hôm nay; phải: chấm đỏ đi).
+    - **Phòng trống đến ngày mai (205, 206)**: Không hiển thị chấm hôm nay mà giữ gạch chân số phòng theo quy ước.
+
+- **Verification**: `npm run build` ✅ | `db:seed HotelDefinitionSeeder` ✅
+
+---
+
 ## [2026-09-08] - Chuẩn hóa toàn bộ Master Data thông tin khách hàng theo file Excel chuẩn
 ### Module: Khách hàng & Đặt phòng / Master Data & Multi-DB Seeders ([GuestDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/GuestDefinitionSeeder.php), [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php), [ResidenceType.php](file:///d:/PMS/backend/app/Models/ResidenceType.php), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
 

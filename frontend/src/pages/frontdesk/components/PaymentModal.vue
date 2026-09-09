@@ -89,8 +89,9 @@ function todayDateStr() {
 }
 
 function formatMoney(num) {
-  const n = Number(num) || 0
-  return new Intl.NumberFormat('en-US').format(n)
+  const n = Number(num)
+  if (!Number.isFinite(n)) return '0'
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
 const isBankTransfer = computed(() => {
@@ -588,7 +589,7 @@ onMounted(() => {
                   <input 
                     type="text" 
                     v-model="displayPayAmount" 
-                    class="w-full px-2 py-1 bg-[#ffffcc] border border-gray-300 rounded font-mono font-bold text-gray-900 text-right text-sm" 
+                    class="w-full px-2 py-1 bg-[#ffffcc] border border-gray-300 rounded tabular-nums font-bold text-gray-900 text-right text-sm"
                   />
                 </div>
                 <div class="col-span-3">
@@ -607,7 +608,7 @@ onMounted(() => {
               <div class="grid grid-cols-12 gap-2 items-center">
                 <label class="col-span-3 font-bold text-gray-700 text-right pr-1">Đặt cọc</label>
                 <div class="col-span-6">
-                  <input type="text" :value="formatMoney(totalDepositAmount)" readonly class="w-full px-2 py-1 bg-gray-100 border border-gray-300 rounded font-mono font-bold text-gray-700 text-right text-xs" />
+                  <input type="text" :value="formatMoney(totalDepositAmount)" readonly class="w-full px-2 py-1 bg-gray-100 border border-gray-300 rounded tabular-nums font-bold text-gray-700 text-right text-xs" />
                 </div>
               </div>
 
@@ -615,7 +616,7 @@ onMounted(() => {
               <div class="grid grid-cols-12 gap-2 items-center">
                 <label class="col-span-3 font-bold text-gray-700 text-right pr-1">Còn Lại</label>
                 <div class="col-span-6">
-                  <input type="text" :value="formatMoney(remainingAmount)" readonly class="w-full px-2 py-1 bg-gray-100 border border-gray-300 rounded font-mono font-bold text-gray-900 text-right text-xs" />
+                  <input type="text" :value="formatMoney(remainingAmount)" readonly class="w-full px-2 py-1 bg-gray-100 border border-gray-300 rounded tabular-nums font-bold text-gray-900 text-right text-xs" />
                 </div>
               </div>
 
@@ -623,7 +624,7 @@ onMounted(() => {
               <div class="grid grid-cols-12 gap-2 items-center">
                 <label class="col-span-3 font-bold text-gray-700 text-right pr-1">Tổng tiền</label>
                 <div class="col-span-6">
-                  <input type="text" :value="formatMoney(netTotalAmount)" readonly class="w-full px-2 py-1 bg-gray-100 border border-gray-300 rounded font-mono font-bold text-sky-700 text-right text-xs" />
+                  <input type="text" :value="formatMoney(netTotalAmount)" readonly class="w-full px-2 py-1 bg-gray-100 border border-gray-300 rounded tabular-nums font-bold text-sky-700 text-right text-xs" />
                 </div>
               </div>
             </div>
@@ -656,10 +657,10 @@ onMounted(() => {
                 <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-800">{{ item.method_code }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 text-gray-700">{{ item.bank_account }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-800">{{ item.currency }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono">0</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
+                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
+                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
+                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums">{{ formatMoney(0) }}</td>
+                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
                 <td class="px-2.5 py-1.5 text-center">
                   <button @click="handleRemovePaymentItem(idx)" class="text-sky-500 hover:text-sky-700 p-1 rounded" title="Xóa dòng">
                     <Trash2 class="w-3.5 h-3.5" />

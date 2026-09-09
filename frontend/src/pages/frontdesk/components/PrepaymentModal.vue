@@ -65,12 +65,17 @@ const currency = ref('VND')
 const isSubmitting = ref(false)
 const errorMsg = ref('')
 
+function formatMoney(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '0'
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(number)
+}
+
 const displayAmount = computed({
   get() {
     if (amount.value === 0 || amount.value === '0' || !amount.value) return '0'
     const num = Number(amount.value)
-    if (isNaN(num)) return '0'
-    return num.toLocaleString('en-US')
+    return formatMoney(num)
   },
   set(val) {
     if (!val) {
@@ -116,7 +121,7 @@ const formatDepositDate = (value) => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value)
 }
 
-const formatDepositAmount = (value) => Number(value || 0).toLocaleString('en-US')
+const formatDepositAmount = (value) => formatMoney(value)
 
 const isBankTransfer = computed(() => {
   const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
@@ -340,7 +345,7 @@ onMounted(() => {
                   type="text" 
                   v-model="displayAmount" 
                   placeholder="0"
-                  class="w-full px-2.5 py-1.5 bg-[#ffffcc] border border-gray-300 rounded font-bold text-gray-900 focus:outline-none text-sm text-right font-mono tracking-wide" 
+                  class="w-full px-2.5 py-1.5 bg-[#ffffcc] border border-gray-300 rounded font-bold text-gray-900 focus:outline-none text-sm text-right tabular-nums tracking-wide"
                 />
               </div>
 
@@ -424,7 +429,7 @@ onMounted(() => {
                 <td class="px-2 py-1.5">{{ deposit.open_time || '--' }}</td>
                 <td class="px-2 py-1.5">{{ deposit.payment_method?.name || deposit.payment_method_id || '--' }}</td>
                 <td class="px-2 py-1.5">{{ deposit.description || '--' }}</td>
-                <td class="px-2 py-1.5 text-right font-mono font-semibold">{{ formatDepositAmount(deposit.amount) }}</td>
+                <td class="px-2 py-1.5 text-right tabular-nums font-semibold">{{ formatDepositAmount(deposit.amount) }}</td>
               </tr>
               <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400">Chưa có thanh toán trước.</td></tr>
             </tbody>
