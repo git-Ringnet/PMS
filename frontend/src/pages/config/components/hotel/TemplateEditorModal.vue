@@ -252,6 +252,20 @@ const normalizeBlock = (block) => {
         field: group.field || '',
         label: group.label ?? parsed.content ?? '',
         className: group.className ?? parsed.className ?? '',
+        headerCells: (Array.isArray(group.headerCells) ? group.headerCells : []).map((cell, cellIndex) => ({
+          id: cell.id || `group_cell_${index + 1}_${cellIndex + 1}`,
+          type: cell.type || 'text',
+          content: cell.content || '',
+          binding: cell.binding || '',
+          aggregateField: cell.aggregateField || '',
+          colspan: Math.max(1, Number(cell.colspan) || 1),
+          align: cell.align || 'left',
+          format: cell.format || '',
+          className: cell.className || '',
+          backgroundColor: cell.backgroundColor || '',
+          color: cell.color || '',
+          borderColor: cell.borderColor || ''
+        })),
         enabledBy: group.enabledBy || '',
         sort: String(group.sort || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
       }
@@ -506,6 +520,48 @@ const updateTableGroups = (block) => {
 
 const groupHeaderPreview = (group) => {
   return group.label || `Nhóm: ${'{{'}row.${group.field}${'}}'}`
+}
+
+const ensureGroupHeaderCells = (block, group) => {
+  if (Array.isArray(group.headerCells) && group.headerCells.length) return
+  group.headerCells = [{
+    id: `group_cell_${Date.now()}`,
+    type: 'text',
+    content: group.label || `NhÃ³m: {{row.${group.field}}}`,
+    binding: '',
+    aggregateField: '',
+    colspan: Math.max(1, block.columns?.length || 1),
+    align: 'left',
+    format: '',
+    className: group.className || '',
+    backgroundColor: '',
+    color: '',
+    borderColor: ''
+  }]
+}
+
+const addGroupHeaderCell = (block, group) => {
+  ensureGroupHeaderCells(block, group)
+  group.headerCells.push({
+    id: `group_cell_${Date.now()}`,
+    type: 'text',
+    content: '',
+    binding: '',
+    aggregateField: '',
+    colspan: 1,
+    align: 'left',
+    format: '',
+    className: '',
+    backgroundColor: '',
+    color: '',
+    borderColor: ''
+  })
+  updateTableGroups(block)
+}
+
+const removeGroupHeaderCell = (block, group, index) => {
+  group.headerCells.splice(index, 1)
+  updateTableGroups(block)
 }
 
 const customRowScopeLabel = (scope) => ({
@@ -1517,7 +1573,14 @@ const compileBlockToHtml = (b) => {
         const enabledBy = group.enabledBy ? ` data-group-enabled-by="${group.enabledBy}"` : ''
         const className = group.className ? ` class="${group.className}"` : ''
         const label = group.label || `Nhóm: {{row.${group.field}}}`
-        blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}><td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td></tr>\n`
+        const cells = Array.isArray(group.headerCells) && group.headerCells.length
+          ? group.headerCells.map(cell => {
+              const cellClass = cell.className ? ` class="${cell.className}"` : ''
+              const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
+              return `<td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>`
+            }).join('')
+          : `<td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td>`
+        blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}>${cells}</tr>\n`
       })
     } else {
       blockHtml += '    <tbody>\n'
@@ -2316,7 +2379,10 @@ const selectBand = (band) => {
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
-                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <template v-if="group.headerCells?.length">
+                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              </template>
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -2603,7 +2669,10 @@ const selectBand = (band) => {
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
-                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <template v-if="group.headerCells?.length">
+                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              </template>
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -2912,7 +2981,10 @@ const selectBand = (band) => {
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
-                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <template v-if="group.headerCells?.length">
+                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              </template>
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -3363,6 +3435,19 @@ const selectBand = (band) => {
                     </div>
 
                     <textarea v-model="group.label" @input="updateTableGroups(selectedBlock)" rows="2" class="w-full rounded-lg border border-slate-200 bg-white p-2 text-[11px] font-mono" :placeholder="`Nhóm: {{row.${group.field}}}`"></textarea>
+                  </div>
+                </div>
+
+                <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-2">
+                  <div class="mb-2 flex items-center justify-between">
+                    <span class="text-[10px] font-black uppercase text-slate-500">Các ô tiêu đề nhóm</span>
+                    <button type="button" @click="addGroupHeaderCell(selectedBlock, tableGroups(selectedBlock)[0])" class="rounded border border-amber-200 bg-white px-2 py-1 text-[10px] font-bold text-amber-700">+ Thêm ô</button>
+                  </div>
+                  <div v-for="(cell, cellIndex) in (tableGroups(selectedBlock)[0]?.headerCells || [])" :key="cell.id" class="mb-2 rounded border border-slate-200 bg-white p-2">
+                    <div class="mb-2 flex items-center justify-between"><span class="text-[10px] font-bold text-slate-500">Ô {{ cellIndex + 1 }}</span><button type="button" @click="removeGroupHeaderCell(selectedBlock, tableGroups(selectedBlock)[0], cellIndex)" class="text-xs text-red-600">Xóa</button></div>
+                    <textarea v-if="cell.type === 'text'" v-model="cell.content" @input="updateTableGroups(selectedBlock)" rows="2" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="Nội dung hoặc {{row.Field}}"></textarea>
+                    <input v-else v-model="cell.binding" @input="updateTableGroups(selectedBlock)" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="row.Field hoặc group.distinct.Field" />
+                    <div class="grid grid-cols-3 gap-2"><select v-model="cell.type" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="text">Văn bản</option><option value="binding">Binding</option><option value="count">Đếm</option><option value="distinct_count">Đếm khác nhau</option></select><input v-model.number="cell.colspan" @input="updateTableGroups(selectedBlock)" type="number" min="1" class="rounded border border-slate-200 p-1 text-[10px]" title="Colspan" /><select v-model="cell.align" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select></div>
                   </div>
                 </div>
 

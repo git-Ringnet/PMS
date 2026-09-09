@@ -810,7 +810,7 @@ class GuestController extends Controller
             'extra_bed_rate'    => 'nullable|numeric|min:0',
         ]);
 
-        $guest->update($request->only([
+        $guestData = $request->only([
             'full_name', 'title', 'id_type', 'id_number', 'id_issue_date',
             'passport_number', 'passport_expiry', 'dob', 'gender', 'nationality_code',
             'phone', 'email', 'address', 'guest_type',
@@ -818,7 +818,14 @@ class GuestController extends Controller
             'residence_type', 'temp_residence_to',
             'visa_no', 'entry_date', 'visa_expiry_date',
             'entry_purpose', 'border_gate', 'occupation', 'note', 'avatar',
-        ]));
+        ]);
+
+        $idType = mb_strtolower(trim((string) $request->input('id_type')));
+        if (str_contains($idType, 'passport') || str_contains($idType, 'hộ chiếu')) {
+            $guestData['passport_number'] = $request->input('id_number');
+        }
+
+        $guest->update($guestData);
 
         $this->syncGeoFromData([$request->all()]);
 
@@ -1198,7 +1205,7 @@ class GuestController extends Controller
                 if (empty($gData['id'])) continue;
                 $guest = Guest::find($gData['id']);
                 if ($guest) {
-                    $guest->update([
+                    $guestData = [
                         'full_name'         => $gData['full_name'] ?? '',
                         'title'             => $gData['title'] ?? null,
                         'dob'               => $gData['dob'] ?? null,
@@ -1223,7 +1230,16 @@ class GuestController extends Controller
                         'border_gate'       => $gData['border_gate'] ?? null,
                         'occupation'        => $gData['occupation'] ?? null,
                         'note'              => $gData['note'] ?? null,
-                    ]);
+                    ];
+
+                    $idType = mb_strtolower(trim((string) ($gData['id_type'] ?? '')));
+                    if (str_contains($idType, 'passport') || str_contains($idType, 'hộ chiếu')) {
+                        $guestData['passport_number'] = $gData['id_number'] ?? null;
+                    } else {
+                        $guestData['passport_number'] = $gData['passport_number'] ?? $guest->passport_number;
+                    }
+
+                    $guest->update($guestData);
                 }
             }
 
