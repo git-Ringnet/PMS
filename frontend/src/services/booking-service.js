@@ -52,7 +52,7 @@ export const revertBookingNoshow = (id, params = {}) => http.post(`/bookings/${i
 export const autoAssignRooms = (bookingId) => http.post(`/bookings/${bookingId}/auto-assign`)
 export const assignRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/assign`, data)
 export const unassignRoom = (bookingId, roomId) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/unassign`)
-export const checkInRoom = (bookingId, roomId) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/check-in`)
+export const checkInRoom = (bookingId, roomId, data = {}) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/check-in`, data)
 export const undoCheckInRoom = (bookingId, roomId, data = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/undo-checkin`, data)
 export const upgradeRoom = (bookingId, roomId, data) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/upgrade`, data)
 export const cancelBookingRoom = (bookingId, roomId, data = {}) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`, { data })

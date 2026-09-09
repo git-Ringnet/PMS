@@ -674,24 +674,54 @@ class BookingRoomController extends Controller
                     $physicalRoom->update(['room_status_code' => 'vacant_ready']);
                 }
 
-                if ($physicalRoom->status !== 'available') {
-                    $allowedWhenVacantClean = ['dirty', 'checkout'];
-                    if ($allowVacantClean == '1' && in_array($physicalRoom->status, $allowedWhenVacantClean)) {
-                        // Cho phép check-in khi AllowCheckinVacantClean = 1 và phòng đang dirty/checkout
+                $currentCode = $physicalRoom->room_status_code ?? 'vacant_ready';
+                if ($currentCode !== 'vacant_ready') {
+                    $inspectableStatuses = ['vacant_clean', 'vacant_dirty', 'turndown'];
+                    if (in_array($currentCode, $inspectableStatuses)) {
+                        $statusLabels = [
+                            'vacant_clean' => 'chờ kiểm tra (Vacant Clean)',
+                            'vacant_dirty' => 'chưa dọn (Vacant Dirty)',
+                            'turndown'     => 'chờ dọn (Turndown)',
+                        ];
+                        $label = $statusLabels[$currentCode] ?? 'chờ kiểm tra/chưa dọn';
+
+                        if ($allowVacantClean == '1') {
+                            // Cấu hình cho phép nhưng phải hỏi xác nhận nếu chưa confirmed
+                            if (!$request->boolean('confirmed')) {
+                                return response()->json([
+                                    'success'            => true,
+                                    'needs_confirmation' => true,
+                                    'room_status'        => $currentCode,
+                                    'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.',
+                                ], 200);
+                            }
+                            // confirmed=true: tiếp tục check-in, giữ nguyên trạng thái phòng
+                        } else {
+                            // Cấu hình không cho phép nhận phòng khi đang chờ kiểm tra / dirty
+                            return response()->json([
+                                'success'     => false,
+                                'message'     => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Không được phép nhận phòng do cấu hình hệ thống (AllowCheckinVacantClean = 0).',
+                                'room_status' => $currentCode,
+                            ], 422);
+                        }
                     } else {
                         $statusLabels = [
-                            'available' => 'Phòng sẵn sàng',
-                            'dirty'     => 'Phòng chưa dọn (dirty)',
-                            'occupied'  => 'Phòng đang có khách (occupied)',
-                            'maintenance' => 'Phòng sửa chữa (OOO)',
-                            'reserved'  => 'Phòng đã đặt trước',
-                            'checkout'  => 'Phòng chờ dọn (checkout)',
+                            'available'       => 'Phòng sẵn sàng',
+                            'occupied_ready'  => 'Phòng đang có khách (occupied)',
+                            'occupied_dirty'  => 'Phòng đang có khách (occupied dirty)',
+                            'occupied_clean'  => 'Phòng đang có khách (occupied clean)',
+                            'occupied_ooo'    => 'Phòng đang có khách & sửa chữa',
+                            'ooo'             => 'Phòng sửa chữa (OOO)',
+                            'oos'             => 'Phòng dịch vụ (OOS)',
+                            'housekeeping'    => 'Dịch vụ dọn phòng',
+                            'dnd'             => 'Phòng không làm phiền (DND)',
+                            'vacant_priority' => 'Phòng ưu tiên dọn',
                         ];
-                        $currentStatusLabel = $statusLabels[$physicalRoom->status] ?? $physicalRoom->status;
+                        $currentStatusLabel = $statusLabels[$currentCode] ?? $currentCode;
                         return response()->json([
                             'success'     => false,
                             'message'     => 'Phòng ' . $bookingRoom->room_number . ' hiện đang ở trạng thái "' . $currentStatusLabel . '". Vui lòng kiểm tra lại thông tin.',
-                            'room_status' => $physicalRoom->status,
+                            'room_status' => $currentCode,
                         ], 422);
                     }
                 }
@@ -725,8 +755,18 @@ class BookingRoomController extends Controller
             if ($bookingRoom->room_number) {
                 $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
                 if ($physicalRoom) {
-                    $newStatusCode = ($physicalRoom->room_status_code === 'vacant_dirty') ? 'occupied_dirty' : 'occupied_ready';
-                    $physicalRoom->update(['room_status_code' => $newStatusCode]);
+                    // Nếu phòng thuộc nhóm chờ kiểm tra (vacant_clean) hoặc chưa dọn (vacant_dirty/turndown)
+                    // và đã được xác nhận nhận phòng qua AllowCheckinVacantClean=1:
+                    // → Giữ nguyên trạng thái phòng (vacant_clean giữ nguyên vacant_clean để bảo lưu icon ngôi sao)
+                    $inspectableStatuses = ['vacant_clean', 'vacant_dirty', 'turndown'];
+                    if (in_array($physicalRoom->room_status_code, $inspectableStatuses)) {
+                        if ($physicalRoom->room_status_code === 'vacant_dirty' || $physicalRoom->room_status_code === 'turndown') {
+                            $physicalRoom->update(['room_status_code' => 'occupied_dirty']);
+                        }
+                        // Nếu là vacant_clean: giữ nguyên room_status_code để bảo lưu icon ngôi sao (chờ kiểm tra)
+                    } else {
+                        $physicalRoom->update(['room_status_code' => 'occupied_ready']);
+                    }
                 }
             }
 

@@ -1504,16 +1504,30 @@ async function loadBookings() {
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
 
+          const guestDetails = (br.guests || []).map(g => g.guest?.full_name || g.full_name).filter(Boolean)
+          if (guestDetails.length === 0 && guestName && guestName !== 'Guest') {
+            guestDetails.push(guestName)
+          }
+
           apiBookings.push({
             room: roomVal,
             checkIn: `${arrivalStr} ${arrivalTime}`,
             checkOut: `${departureStr} ${departureTime}`,
+            arrival_date: arrivalStr,
+            departure_date: departureStr,
+            arrival_time: arrivalTime,
+            departure_time: departureTime,
+            room_type_name: br.room_class?.name || br.room_type || typeClass,
+            status: Number(br.status),
             type,
             typeClass,
             code: b.booking_code,
             name: b.booking_name,
             company: b.company?.company_name || 'Khách lẻ',
             guestName,
+            guest_details: guestDetails,
+            booking_color: b.color || br.color || '',
+            note: b.note || br.note || '',
             registrationStatusId: registrationStatus.id || b.registration_status_id || null,
             registrationStatusName,
             registrationStatusColor: registrationStatus.color || registrationStatus.booking_status_color || '',
@@ -1530,6 +1544,7 @@ async function loadBookings() {
             extraBed: br.extra_bed_qty || 0,
             specialRequest: b.note || b.special_requests || br.note || '',
             price: priceStr,
+            rawRate: priceVal,
             label,
             isVirtual,
             bookingId: b.id,
@@ -2342,10 +2357,29 @@ function showTooltip(booking, event) {
   updateTooltipPosition(event)
 }
 
+function formatTooltipDate(dateStr) {
+  if (!dateStr) return ''
+  const clean = String(dateStr).split('T')[0].split(' ')[0].trim()
+  const parts = clean.split('-')
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}`
+  }
+  const slashParts = clean.split('/')
+  if (slashParts.length >= 2) {
+    return `${slashParts[0]}/${slashParts[1]}`
+  }
+  return dateStr
+}
+
+function formatTooltipPrice(price) {
+  const num = Math.round(Number(String(price || 0).replace(/[^0-9.-]+/g, '')) || 0)
+  return num.toLocaleString('en-US') + 'đ'
+}
+
 function updateTooltipPosition(event) {
   if (draggedBooking.value) return
-  const tooltipWidth = 360
-  const tooltipHeight = 420
+  const tooltipWidth = 320
+  const tooltipHeight = 360
   const minTop = 65 // Không bị khuất dưới thanh tabbar ở trên
   const padding = 10
 
@@ -2409,22 +2443,35 @@ function getBookingClass(type) {
   return 'bg-[#1e293b] text-black border-slate-700'
 }
 
-function getBookingStyle(type, registrationColor = '') {
+function getBookingStyle(type, registrationColor = '', bookingColor = '') {
+  if (type === 'OOO') {
+    const color = hotelSettings.value?.RoomPlan_ColorOOO || '#107eeb'
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
+  }
+  if (type === 'OOS') {
+    const color = hotelSettings.value?.RoomPlan_ColorOOS || '#107eeb'
+    return { backgroundColor: color, borderColor: color, color: '#000000' }
+  }
   if (type === 'CheckedOut') {
     return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#000000' }
   }
-  if (registrationColor && type !== 'OOO' && type !== 'OOS') {
+  // Đồng bộ màu fill liên kết với Room Map: Ưu tiên mã màu booking_color (hoặc ColorDefaultBookingRoomMap)
+  const effectiveBookingColor = bookingColor || hotelSettings.value?.ColorDefaultBookingRoomMap || ''
+  if (effectiveBookingColor) {
+    return { backgroundColor: effectiveBookingColor, borderColor: effectiveBookingColor, color: '#1e293b' }
+  }
+  if (registrationColor) {
     return { backgroundColor: registrationColor, borderColor: registrationColor, color: '#000000' }
   }
   if (!hotelSettings.value) return { color: '#000000' }
   
-  if (type === 'Reservation') {
+  if (type === 'Reservation' || type === 'Guaranteed') {
     const color = hotelSettings.value.RoomPlan_ColorRoomReservation || '#E3E8C4'
     return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   if (type === 'InHouse') {
-    const color = hotelSettings.value.RoomPlan_ColorRoomInhouse || '#4a90e2'
-    return { backgroundColor: color, borderColor: color, color: '#000000' }
+    const color = hotelSettings.value.RoomPlan_ColorRoomInhouse || hotelSettings.value.ColorDefaultBookingRoomMap || '#97D5FF'
+    return { backgroundColor: color, borderColor: color, color: '#1e293b' }
   }
   if (type === 'Late Checkout') {
     const color = hotelSettings.value.RoomPlan_ColorRoomLateCheckout || '#FCF55F'
@@ -2433,19 +2480,8 @@ function getBookingStyle(type, registrationColor = '') {
   if (type === 'Waiting') {
     return { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5', color: '#000000' }
   }
-  if (type === 'Guaranteed') {
-    return { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0', color: '#000000' }
-  }
   if (type === 'Allotment') {
     return { backgroundColor: '#FFEDD5', borderColor: '#FED7AA', color: '#000000' }
-  }
-  if (type === 'OOO') {
-    const color = hotelSettings.value.RoomPlan_ColorOOO || '#107eeb'
-    return { backgroundColor: color, borderColor: color, color: '#000000' }
-  }
-  if (type === 'OOS') {
-    const color = hotelSettings.value.RoomPlan_ColorOOS || '#107eeb'
-    return { backgroundColor: color, borderColor: color, color: '#000000' }
   }
   return { color: '#000000' }
 }
@@ -2975,6 +3011,30 @@ async function triggerMenuAction(actionName) {
           loadingBookings.value = true
           emit('loading', true)
           const res = await checkInRoom(booking.bookingId, booking.bookingRoomId)
+          if (res.data?.needs_confirmation) {
+            const dirtyConfirmed = await uiStore.confirm({
+              title: 'Phòng đang chờ kiểm tra',
+              message: res.data.message || `Phòng ${booking.room} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+              confirmText: 'Tiếp tục nhận phòng',
+              cancelText: 'Hủy'
+            })
+            if (!dirtyConfirmed) {
+              loadingBookings.value = false
+              emit('loading', false)
+              return
+            }
+            const res2 = await checkInRoom(booking.bookingId, booking.bookingRoomId, { confirmed: true })
+            if (res2 && res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
+              uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
+              await roomStore.fetchRooms()
+              await loadBookings()
+              notifyRoomUpdates()
+            } else {
+              uiStore.showToast(res2?.data?.message || 'Giao phòng thất bại.', 'error')
+            }
+            return
+          }
+
           if (res && res.data && res.data.success !== false) {
             uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
             await roomStore.fetchRooms()
@@ -4348,7 +4408,7 @@ function getRoomStatusIconName(item) {
                     :style="{
                       left: isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`,
                       width: isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 2px)`,
-                      ...(isBookingMatched(bk) ? getBookingStyle(bk.type) : {})
+                      ...(isBookingMatched(bk) ? getBookingStyle(bk.type, bk.registrationStatusColor, bk.booking_color || bk.color) : {})
                     }"
                   >
                     <!-- Left resize handle -->
@@ -4395,26 +4455,44 @@ function getRoomStatusIconName(item) {
                       </span>
                     </div>
 
-                    <!-- Green line for stay / arrival -->
-                    <div 
-                      v-if="bk.type !== 'OOO' && bk.type !== 'OOS'"
-                      class="absolute bottom-0 left-0 h-[3px]"
-                      :class="isBookingMatched(bk) ? '' : 'bg-slate-300'"
-                      :style="{
-                        backgroundColor: isBookingMatched(bk) ? getBookingStatusColor(bk) : undefined,
-                        right: bk.showCheckOutIndicator ? `${(0.5 / bk.span) * 100}%` : '0px'
-                      }"
-                    ></div>
+                    <!-- Bottom Status Indicator: Đồng bộ với Room Map (Xanh: Đến, Đỏ: Đi/Đang ở) -->
+                    <template v-if="bk.type !== 'OOO' && bk.type !== 'OOS'">
+                      <!-- Case 1: Đã nhận phòng (InHouse / status=1) -> Có cả trạng thái Đến và Đi -> Nửa trái Xanh, Nửa phải Đỏ -->
+                      <template v-if="bk.type === 'InHouse' || bk.status === 1">
+                        <!-- Nửa trái: Xanh (Phòng đến / Check-in) -->
+                        <div 
+                          class="absolute bottom-0 left-0 h-[3px] rounded-bl"
+                          :class="isBookingMatched(bk) ? 'bg-emerald-500' : 'bg-slate-300'"
+                          style="width: 50%;"
+                          title="Trạng thái: Phòng đến (Check-in)"
+                        ></div>
+                        <!-- Nửa phải: Đỏ (Phòng đi / Check-out) -->
+                        <div 
+                          class="absolute bottom-0 right-0 h-[3px] rounded-br"
+                          :class="isBookingMatched(bk) ? 'bg-red-500' : 'bg-slate-300'"
+                          style="width: 50%;"
+                          title="Trạng thái: Phòng đi (Check-out)"
+                        ></div>
+                      </template>
 
-                    <!-- Red line for check-out day -->
-                    <div 
-                      v-if="bk.type !== 'OOO' && bk.type !== 'OOS' && bk.showCheckOutIndicator"
-                      class="absolute bottom-0 right-0 h-[3px]"
-                      :class="isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300'"
-                      :style="{
-                        width: `${(0.5 / bk.span) * 100}%`
-                      }"
-                    ></div>
+                      <!-- Case 2: Đã trả phòng (CheckedOut / status=2) -> Xám -->
+                      <template v-else-if="bk.type === 'CheckedOut' || bk.status === 2">
+                        <div 
+                          class="absolute bottom-0 left-0 right-0 h-[3px] rounded-b"
+                          :class="isBookingMatched(bk) ? 'bg-slate-400' : 'bg-slate-300'"
+                          title="Trạng thái: Đã trả phòng"
+                        ></div>
+                      </template>
+
+                      <!-- Case 3: Chưa nhận phòng (Đặt trước / Guaranteed / Waiting) -> 100% Xanh (Phòng đến) -->
+                      <template v-else>
+                        <div 
+                          class="absolute bottom-0 left-0 right-0 h-[3px] rounded-b"
+                          :class="isBookingMatched(bk) ? 'bg-emerald-500' : 'bg-slate-300'"
+                          title="Trạng thái: Phòng đến (Chưa nhận phòng)"
+                        ></div>
+                      </template>
+                    </template>
 
                     <!-- Split Handle / Control -->
                     <div 
@@ -4528,123 +4606,117 @@ function getRoomStatusIconName(item) {
       </table>
     </div>
 
-    <!-- Custom Tooltip -->
+    <!-- Custom Tooltip (Đồng bộ Dark Theme và nội dung chi tiết 100% với Room Map) -->
     <div 
       v-if="hoveredBooking" 
-      class="fixed z-[9999] bg-white text-slate-800 text-[11px] rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none w-[360px] max-h-[calc(100vh-80px)] overflow-y-auto font-sans"
+      class="fixed z-[9999] pointer-events-none bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed max-h-[calc(100vh-80px)] overflow-y-auto font-sans"
       :style="{
         left: `${tooltipX}px`,
         top: `${tooltipY}px`
       }"
     >
-      <!-- Mode 1: OOO / OOS Locks -->
-      <template v-if="hoveredBooking.code === 'LOCK'">
-        <div class="flex items-center justify-between font-bold text-xs pb-2 border-b border-slate-100 mb-2">
+      <!-- Mode 1: Khóa phòng (OOO / OOS) -->
+      <template v-if="hoveredBooking.code === 'LOCK' || hoveredBooking.type === 'OOO' || hoveredBooking.type === 'OOS'">
+        <div class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
           <div class="flex items-center gap-1.5">
-            <span :class="hoveredBooking.type === 'OOS' ? 'text-slate-500' : 'text-blue-500'">●</span>
+            <span :class="hoveredBooking.type === 'OOS' ? 'text-slate-400' : 'text-blue-400'">●</span>
             <span>{{ hoveredBooking.checkInFull }}</span>
-            <span class="mx-1 text-slate-400">~</span>
+            <span class="mx-1 text-neutral-400">~</span>
             <span>{{ hoveredBooking.checkOutFull }}</span>
           </div>
-          <div class="text-slate-400 font-extrabold uppercase">
-            {{ hoveredBooking.type }}
+          <div class="text-neutral-400 font-extrabold uppercase">
+            {{ hoveredBooking.type || 'OOO' }}
           </div>
         </div>
-        <div class="flex flex-col gap-1.5 font-semibold text-slate-600">
-          <div>Ghi chú: <span class="text-slate-800 font-normal">{{ hoveredBooking.specialRequest || '-' }}</span></div>
-          <div>Người khóa: <span class="text-slate-800 font-normal">{{ hoveredBooking.lockUsername || 'Admin' }}</span></div>
+        <div class="flex flex-col gap-1.5 font-semibold text-neutral-300">
+          <div>Ghi chú: <span class="text-white font-normal">{{ hoveredBooking.specialRequest || '-' }}</span></div>
+          <div>Người khóa: <span class="text-white font-normal">{{ hoveredBooking.lockUsername || 'Admin' }}</span></div>
         </div>
       </template>
 
-      <!-- Mode 2: Regular Bookings (Matching Image 2) -->
+      <!-- Mode 2: Booking thông thường (đồng bộ 100% với Room Map) -->
       <template v-else>
-        <div class="flex flex-col gap-1.5">
-          <!-- Row 1: Mã ĐK -->
-          <div class="flex justify-between items-center border-b border-slate-100 pb-1.5">
-            <span class="font-extrabold text-slate-900 text-xs">Mã ĐK: {{ hoveredBooking.code }}</span>
-            <span
-              class="text-[9px] font-bold uppercase"
-              :style="{ color: getBookingStatusColor(hoveredBooking) }"
-            >{{ hoveredBooking.registrationStatusName || hoveredBooking.type }}</span>
+        <!-- Header: Dates and Booking Code -->
+        <div
+          class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs">🟢</span>
+            <span>{{ formatTooltipDate(hoveredBooking.arrival_date || hoveredBooking.checkIn) }}</span>
+            <span class="text-neutral-500 font-normal">-</span>
+            <span class="text-xs">🔴</span>
+            <span>{{ formatTooltipDate(hoveredBooking.departure_date || hoveredBooking.checkOut) }}</span>
+          </div>
+          <div>
+            <span class="text-neutral-400 font-normal">Mã ĐK:</span>
+            <span class="ml-1 text-sky-400">{{ hoveredBooking.code }}</span>
+          </div>
+        </div>
+
+        <!-- Details list -->
+        <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>Tên ĐK: <strong class="text-white">{{ hoveredBooking.name }}</strong></span>
+          </li>
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>Tên: <strong class="text-white">{{ hoveredBooking.guestName }}</strong></span>
+          </li>
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>{{ hoveredBooking.room_type_name }} (Phòng {{ hoveredBooking.room }})</span>
+          </li>
+          <li class="flex items-start gap-1">
+            <span class="text-neutral-500">•</span>
+            <span>Đêm: {{ hoveredBooking.nights }}</span>
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="text-neutral-500">•</span>
+            <span class="flex items-center gap-1">
+              {{ hoveredBooking.adults }} 🧑
+              {{ hoveredBooking.children }} 🧒
+              {{ hoveredBooking.babies }} 👶
+            </span>
+          </li>
+          <li class="flex items-center justify-between">
+            <span class="flex items-center gap-1">
+              <span class="text-neutral-500">•</span>
+              <span>Thời gian đến: {{ hoveredBooking.arrival_time || '14:00' }}</span>
+            </span>
+            <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoveredBooking.rawRate || hoveredBooking.price) }}</strong>
+          </li>
+        </ul>
+
+        <!-- Divider -->
+        <div class="h-px bg-neutral-700/60 my-2"></div>
+
+        <!-- Lower Section (Description/Company details) -->
+        <div class="text-neutral-400 space-y-1">
+          <div class="uppercase font-bold text-neutral-300">
+            1 {{ hoveredBooking.room_type_name }} - {{ hoveredBooking.adults > 2 ? 'TRPL' : 'DBL' }} ({{
+              hoveredBooking.nights }} ĐÊM)*
+          </div>
+          <div>{{ formatTooltipPrice(hoveredBooking.rawRate || hoveredBooking.price) }}/R/N</div>
+          <div v-if="hoveredBooking.company && hoveredBooking.company !== 'Khách lẻ'" class="uppercase text-neutral-300">
+            CTY: {{ hoveredBooking.company }}
+          </div>
+          <div v-if="hoveredBooking.note" class="text-neutral-400 italic">
+            Ghi chú: {{ hoveredBooking.note }}
+          </div>
+          <div v-if="hoveredBooking.specialRequest" class="text-neutral-400 italic">
+            Yêu cầu: {{ hoveredBooking.specialRequest }}
           </div>
 
-          <!-- Row 2: Ngày đến ~ Ngày đi -->
-          <div class="text-slate-600 font-semibold">
-            Ngày đến: <span class="font-bold text-slate-800">{{ hoveredBooking.checkInFull }}</span> ~ Ngày đi: <span class="font-bold text-slate-800">{{ hoveredBooking.checkOutFull }}</span>
-          </div>
+          <div class="h-px bg-neutral-700/30 my-1.5"
+            v-if="hoveredBooking.guest_details && hoveredBooking.guest_details.length > 0"></div>
 
-          <!-- Row 3: Tên ĐK -->
-          <div class="text-slate-600 font-semibold">
-            Tên ĐK: <span class="font-bold text-slate-800">{{ hoveredBooking.name }}{{ hoveredBooking.company !== 'Khách lẻ' ? `/${hoveredBooking.company}` : '' }}{{ hoveredBooking.phone ? `-${hoveredBooking.phone}` : '' }}</span>
-          </div>
-
-          <!-- Row 4: Công ty -->
-          <div class="text-slate-600 font-semibold">
-            Công ty: <span class="font-bold text-slate-800">{{ hoveredBooking.company }}</span>
-          </div>
-
-          <!-- Row 5: Số phòng, Đêm, Giá phòng -->
-          <div class="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 text-slate-600 font-semibold">
-            <div>Số phòng: <span class="font-bold text-slate-800">{{ hoveredBooking.room }}</span></div>
-            <div>Đêm: <span class="font-bold text-slate-800">{{ hoveredBooking.nights }}</span></div>
-            <div class="text-right">Giá phòng: <span class="font-bold text-slate-800">{{ hoveredBooking.price }}</span></div>
-          </div>
-
-          <!-- Row 6: Số khách & Thêm giường -->
-          <div class="flex justify-between items-center text-slate-600 font-semibold pb-2 border-b border-slate-100">
-            <div class="flex items-center gap-1">
-              <span>Số khách:</span>
-              <span class="flex items-center gap-2.5 ml-1.5">
-                <span class="flex items-center gap-0.5" title="Người lớn"><i class="fa-solid fa-user text-slate-400 text-[10px]"></i> {{ hoveredBooking.adults }}</span>
-                <span class="flex items-center gap-0.5" title="Trẻ em"><i class="fa-solid fa-child text-slate-400 text-[10px]"></i> {{ hoveredBooking.children }}</span>
-                <span class="flex items-center gap-0.5" title="Em bé"><i class="fa-solid fa-baby text-slate-400 text-[10px]"></i> {{ hoveredBooking.babies }}</span>
-              </span>
+          <template v-if="hoveredBooking.guest_details && hoveredBooking.guest_details.length > 0">
+            <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
+            <div v-for="(gName, idx) in hoveredBooking.guest_details" :key="idx"
+              class="uppercase text-neutral-200 pl-1">
+              • {{ gName }}
             </div>
-            <div>Thêm giường: <span class="font-bold text-slate-800">{{ hoveredBooking.extraBed }}</span></div>
-          </div>
-
-          <!-- Billing Info box -->
-          <div class="bg-blue-50/50 rounded-lg p-2.5 my-1 border border-blue-100/60 text-slate-600 font-semibold flex justify-between items-stretch">
-            <!-- Left Side: Breakdown -->
-            <div class="flex-1 flex flex-col gap-1 pr-3 border-r border-slate-200/50 justify-center">
-              <div class="flex justify-between items-center text-[10px]">
-                <span class="text-slate-500">Tiền phòng cần TT :</span>
-                <span class="font-extrabold text-slate-800 ml-2">{{ formatMoney(hoveredBooking.roomChargeDue) }} ₫</span>
-              </div>
-              <div class="flex justify-between items-center text-[10px]">
-                <span class="text-slate-500">Tiền DV cần TT :</span>
-                <span class="font-extrabold text-slate-800 ml-2">{{ formatMoney(hoveredBooking.serviceChargeDue) }} ₫</span>
-              </div>
-            </div>
-
-            <!-- Right Side: Total -->
-            <div class="pl-3 flex flex-col justify-center items-center shrink-0 min-w-[90px]">
-              <span class="text-[9px] text-slate-400 font-extrabold uppercase mb-0.5">Tổng cộng</span>
-              <span class="text-xs text-blue-600 font-black">{{ formatMoney(hoveredBooking.totalAmount) }} ₫</span>
-            </div>
-          </div>
-
-          <!-- Payment Info -->
-          <div class="flex flex-col gap-1 text-slate-600 font-semibold pt-1">
-            <div class="flex justify-between items-center text-[10px]">
-              <span>Tổng tiền BK:</span>
-              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.bookingTotalAmount) }} ₫</span>
-            </div>
-            <div class="flex justify-between items-center text-[10px]">
-              <span>Đã đặt cọc:</span>
-              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
-            </div>
-            <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 font-extrabold text-slate-900 text-xs">
-              <span>Còn lại:</span>
-              <span class="text-rose-600 font-black">{{ formatMoney(hoveredBooking.bookingBalance) }} ₫</span>
-            </div>
-          </div>
-
-          <!-- Notes -->
-          <div class="border-t border-slate-100 pt-1.5 mt-1 text-slate-600 font-semibold text-left">
-            <span>Ghi chú: </span>
-            <span class="text-slate-700 italic font-medium">{{ hoveredBooking.specialRequest || '—' }}</span>
-          </div>
+          </template>
         </div>
       </template>
     </div>
@@ -5389,7 +5461,7 @@ function getRoomStatusIconName(item) {
         top: `${dragGhostY}px`,
         height: '33px',
         transition: 'none',
-        ...(isBookingMatched(draggedBooking) ? getBookingStyle(draggedBooking.type) : {})
+        ...(isBookingMatched(draggedBooking) ? getBookingStyle(draggedBooking.type, draggedBooking.registrationStatusColor, draggedBooking.booking_color || draggedBooking.color) : {})
       }"
     >
       <div class="flex items-center gap-1 truncate block w-full pr-1 pb-1.5">

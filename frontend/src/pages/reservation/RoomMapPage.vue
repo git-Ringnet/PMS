@@ -6,7 +6,7 @@ import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } f
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePermission } from '@/composables/usePermission'
-import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies } from '@/services/booking-service'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies, fetchHotelSettings } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
@@ -46,13 +46,14 @@ const getQueryParam = (name) => {
 
 const currentTab = computed(() => route.query.tab || getQueryParam('tab') || 'room-map')
 const moduleContext = computed(() => {
-  if (route.path === '/housekeeping') return 'housekeeping'
-  if (route.path === '/frontdesk') return 'frontdesk'
+  if (typeof route?.path === 'string' && route.path.startsWith('/housekeeping')) return 'housekeeping'
+  if (typeof route?.path === 'string' && route.path.startsWith('/frontdesk')) return 'frontdesk'
   return 'reservation'
 })
 const canChangeRoomStatus = ref(false)
 const canCancelCheckIn = ref(false)
 const systemDate = ref('')
+const hotelSettings = ref({})
 const showRoomLockModal = ref(false)
 const roomLockForm = ref({ room: null, lockType: 'OOO', startDate: '', endDate: '', reason: '' })
 const lockEndDateInput = ref(null)
@@ -514,6 +515,31 @@ async function handleQuickCheckIn() {
   quickCheckinLoading.value = true
   try {
     const res = await checkInRoom(room.booking_id, room.booking_room_id)
+    if (res.data?.needs_confirmation) {
+      const dirtyConfirmed = await uiStore.confirm({
+        title: 'Phòng đang chờ kiểm tra',
+        message: res.data.message || `Phòng ${room.room_number} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+        confirmText: 'Tiếp tục nhận phòng',
+        cancelText: 'Hủy'
+      })
+      if (!dirtyConfirmed) {
+        quickCheckinLoading.value = false
+        return
+      }
+      const res2 = await checkInRoom(room.booking_id, room.booking_room_id, { confirmed: true })
+      if (res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
+        uiStore.showToast(`Nhận phòng nhanh ${room.room_number} thành công!`, 'success')
+        showQuickCheckinModal.value = false
+        quickCheckinRoom.value = null
+        await roomStore.fetchRooms({ date: rawDate.value, silent: true })
+        await roomStore.fetchStats(rawDate.value)
+      } else {
+        const msg = res2.data?.message || 'Không thể nhận phòng.'
+        uiStore.showToast(msg, 'error')
+      }
+      return
+    }
+
     if (res.data && res.data.success !== false) {
       uiStore.showToast(`Nhận phòng nhanh ${room.room_number} thành công!`, 'success')
       showQuickCheckinModal.value = false
@@ -545,6 +571,9 @@ function handleQuickCheckinFromMenu() {
 }
 
 function isRoomNumberRed(room) {
+  // Nếu RoomMap_ColorRoomNumberByRoomClass=1: không đổi màu đỏ (màu theo room_class)
+  if (String(hotelSettings.value?.RoomMap_ColorRoomNumberByRoomClass) === '1') return false
+
   if (!room) return false
   const isOccupied = room.status === ROOM_STATUSES.OCCUPIED || room.booking_status === 'occupied' || room.status === 1
   if (!isOccupied) return false
@@ -555,7 +584,22 @@ function isRoomNumberRed(room) {
   const checkinStr = String(checkinDate).split('T')[0].split(' ')[0].trim()
   const sysDateStr = String(systemDate.value || rawDate.value || '').split('T')[0].split(' ')[0].trim()
 
-  return moduleContext.value === 'frontdesk' && checkinStr === sysDateStr
+  return checkinStr === sysDateStr
+}
+
+// Trả về style màu cho số phòng dựa theo thông số RoomMap_ColorRoomNumberByRoomClass
+function getRoomNumberStyle(room) {
+  if (String(hotelSettings.value?.RoomMap_ColorRoomNumberByRoomClass) === '1') {
+    const rawColor = room?.room_class_color || room?.room_class?.color || room?.roomClass?.color || ''
+    const color = String(rawColor).trim().toLowerCase().replace(/\s+/g, '')
+    const isWhite = !color || ['#ffffff', '#fff', 'white', '#f8fafc', 'rgb(255,255,255)', 'rgba(255,255,255,1)', 'transparent'].includes(color)
+    if (!isWhite) {
+      return { color: rawColor }
+    }
+    // Mặc định màu đen bình thường nếu loại phòng chưa set màu hoặc đang để màu trắng mặc định
+    return { color: '#000000' }
+  }
+  return {}
 }
 
 function canShowUndoCheckinForRoom(room) {
@@ -575,10 +619,9 @@ function canShowUndoCheckinForRoom(room) {
 
 function isArrivingTomorrow(room) {
   if (!room) return false
-  const isReserved = room.status === ROOM_STATUSES.RESERVED || room.booking_status === 'reserved'
-  if (!isReserved) return false
+  if (room.is_arriving_tomorrow === true) return true
 
-  const arrivalDate = room.arrival_date || room.check_in || room.booking_arrival_date
+  const arrivalDate = room.arrival_date || room.check_in || room.booking_arrival_date || room.tomorrow_booking?.arrival_date
   if (!arrivalDate) return false
 
   const arrStr = String(arrivalDate).split('T')[0]
@@ -660,7 +703,7 @@ function isLockedRoom(room) {
 
 function showTooltip(event, room) {
   if (contextMenu.value?.show) return
-  const isBooking = room && (room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout')
+  const isBooking = room && (room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout' || isArrivingTomorrow(room) || room.booking_code)
   const isLocked = isLockedRoom(room)
   if (!room || (!isBooking && !isLocked)) return
 
@@ -856,13 +899,29 @@ function showDevelopmentToast(featureName) {
   uiStore.showToast(msg, 'warning')
 }
 
+function isRoomCheckedIn(room) {
+  if (!room) return false
+  return room.booking_status === 'occupied' || room.booking_status === 'checkout' || room.status === ROOM_STATUSES.OCCUPIED || room.status === 1
+}
+
 // Logic for status dots (Top Left - Green / Top Right - Red)
 function hasArrivalToday(room) {
+  if (!room || isLockedRoom(room)) return false
+  if (room.is_arriving_tomorrow && !room.booking_status) return false
+  const targetDate = String(rawDate.value || systemDate.value || '').split('T')[0].split(' ')[0].trim()
+  const arrDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date || room.booking?.arrival_date
+  if (arrDate) {
+    return String(arrDate).split('T')[0].split(' ')[0].trim() === targetDate
+  }
   return room.booking_status === 'reserved'
 }
 
 function hasDepartureToday(room) {
-  return room.booking_status === 'checkout'
+  if (!room || isLockedRoom(room)) return false
+  if (room.is_arriving_tomorrow && !room.booking_status) return false
+  // Phòng chưa nhận phòng -> Tuyệt đối không hiển thị chấm đỏ (phòng đi)
+  if (!isRoomCheckedIn(room)) return false
+  return !!(room.departure_date || room.actual_departure_date || room.check_out || room.booking_departure_date)
 }
 
 function getGuestCount(room) {
@@ -1647,6 +1706,14 @@ onMounted(async () => {
     }
   } catch (err) {
     console.error('Lỗi khi tải ngày hệ thống cho sơ đồ phòng:', err)
+  }
+
+  // Fetch hotel settings (thông số cấu hình: RoomMap_ColorRoomNumberByRoomClass,...)
+  try {
+    const settingsRes = await fetchHotelSettings()
+    hotelSettings.value = settingsRes?.data?.data || settingsRes?.data || {}
+  } catch (err) {
+    console.error('Lỗi khi tải cấu hình khách sạn:', err)
   }
 
   // Migration to set default roomWidth to 200px for existing local storage sessions
@@ -2645,15 +2712,15 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                        @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
                         @mousemove="showTooltip($event, room)" @mouseleave="hideTooltip">
                         <!-- Status Indicator Dot (Top Left - Check-in Today) -->
-                        <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5">
+                        <div v-if="hasArrivalToday(room)" class="absolute top-2.5 left-2.5 z-10" title="Phòng đến">
                           <span class="rounded-full block border border-white/20 shadow-sm bg-emerald-500 relative"
-                            :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
+                            :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
                         </div>
 
                         <!-- Status Indicator Dot (Top Right - Check-out Today) -->
-                        <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5">
+                        <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5 z-10" title="Phòng đi">
                           <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
-                            :style="{ width: (settings.iconSizes.group3 * cardScale) + 'px', height: (settings.iconSizes.group3 * cardScale) + 'px' }"></span>
+                            :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
                         </div>
 
                         <!-- Room Map special icons -->
@@ -2674,7 +2741,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
                             :style="{ fontSize: Math.max(10, settings.textSizes.roomNumber * cardScale) + 'px' }">
                             <span
-                              :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : (room.booking_color ? 'text-inherit' : 'text-gray-900'))">
+                              :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : (room.booking_color ? 'text-inherit' : 'text-gray-900'))"
+                              :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
                             </span>
                           </div>
@@ -2768,10 +2836,16 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     <tbody>
                       <tr v-for="room in roomStore.filteredRooms" :key="`list-${room.id}`" class="border-b border-slate-200 hover:brightness-95 transition-colors cursor-pointer select-none h-9" :class="lastFocusedRoom?.id === room.id ? 'room-row-selected' : ''" :style="getListRowStyle(room)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)" @contextmenu.prevent="handleContextMenu($event, room)">
                         <td class="p-2 border-r border-slate-200 text-center" @click.stop><input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" aria-label="Chọn phòng" /></td>
-                        <td class="p-2 border-r border-slate-200 text-center"><span v-if="hasArrivalToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1" title="Đến hôm nay"></span><span v-if="hasDepartureToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="Đi hôm nay"></span><span v-if="!hasArrivalToday(room) && !hasDepartureToday(room)">-</span></td>
+                        <td class="p-2 border-r border-slate-200 text-center"><span v-if="hasArrivalToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1" title="Phòng đến"></span><span v-if="hasDepartureToday(room)" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500" title="Phòng đi"></span><span v-if="!hasArrivalToday(room) && !hasDepartureToday(room)">-</span></td>
                         <td class="p-2 border-r border-slate-200 text-center"><RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" /><span v-else>-</span></td>
                         <td class="p-2 border-r border-slate-200 text-center">{{ room.floor }}</td>
-                        <td class="p-2 border-r border-slate-200 text-center font-bold">{{ room.room_number }}</td>
+                        <td class="p-2 border-r border-slate-200 text-center font-bold">
+                          <span
+                            :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : '')"
+                            :style="getRoomNumberStyle(room)">
+                            {{ room.room_number }}
+                          </span>
+                        </td>
                         <td class="p-2 border-r border-slate-200 text-center">{{ room.room_type || room.room_class?.code || '-' }}</td>
                         <td class="p-2 border-r border-slate-200 text-center">{{ getRoomTypeShape(room) || '-' }}</td>
                         <td class="p-2 border-r border-slate-200 truncate">{{ getMockGuestName(room) || '-' }}</td>
@@ -2828,9 +2902,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <td class="p-2 border-r border-slate-200 text-center">
                           <div class="flex items-center justify-center gap-1">
                             <span v-if="hasArrivalToday(room)"
-                              class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-emerald-500"></span>
+                              class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-emerald-500" title="Phòng đến"></span>
                             <span v-if="hasDepartureToday(room)"
-                              class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-red-500"></span>
+                              class="w-2.5 h-2.5 rounded-full block border border-white/20 shadow-sm bg-red-500" title="Phòng đi"></span>
                           </div>
                         </td>
                         <!-- Nhận phòng trễ -->
@@ -2859,7 +2933,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
                         <!-- Phòng -->
                         <td class="p-2 border-r border-slate-200 text-center text-[13px]" :class="TEXT_THEME.tableCell">
-                          <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : ''"
+                          <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : '')"
+                            :style="getRoomNumberStyle(room)"
                             class="flex items-center justify-center gap-1">
                             {{ room.room_number }}
                             <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500"
