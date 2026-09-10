@@ -1394,10 +1394,17 @@ async function openDepositForRoom(room) {
       amount: Number(payment.amount) || 0,
       currency: payment.currency || 'VND',
       recipient: payment.created_by || 'Admin',
-      images: payment.image_path ? [payment.image_path] : [],
+      images: payment.image_url || payment.image_path ? [payment.image_url || payment.image_path] : [],
       status: payment.status,
       edit_flag: payment.edit_flag,
       pack2: payment.pack2,
+      pack4: payment.pack4,
+      reversal_ref: payment.reversal_ref,
+      debit_account: payment.debit_account,
+      bankAccountId: payment.bank_account_id || payment.bank_account?.id || null,
+      bankAccount: payment.bank_account || null,
+      departmentId: payment.department_id || null,
+      outlet: payment.outlet || null,
       bookingRoomId: payment.booking_room_id || null,
     }))
 
@@ -4009,6 +4016,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
         :booking-code="depositBooking.code"
         :payment-methods="depositPaymentMethods"
         :currencies-list="depositCurrencies"
+        :department-id="moduleContext === 'frontdesk' ? 'FO' : 'MR'"
         :rooms="depositBooking.rooms"
         v-model:deposits="depositBooking.deposits"
       />

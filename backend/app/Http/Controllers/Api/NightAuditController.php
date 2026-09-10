@@ -182,11 +182,14 @@ class NightAuditController extends Controller
         $todayEnd = Carbon::today()->endOfDay();
         $alreadyRolledToday = SystemDateRoll::whereBetween('actual_date', [$todayStart, $todayEnd])->exists();
 
-        // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển)
+        // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển và phòng chưa gán phòng vật lý)
         $pendingCheckIns = BookingRoom::with(['booking', 'roomClass'])
             ->whereDate('arrival_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_BOOKED)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
+            ->whereNotNull('room_number')
+            ->where('room_number', '!=', '')
+            ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
             ->get();
 
         // 2. Phòng có lịch check out hôm nay/trước đây nhưng vẫn ở trạng thái in-house (departure_date <= system_date và status = 1, loại bỏ phòng chuyển)
@@ -194,6 +197,9 @@ class NightAuditController extends Controller
             ->whereDate('departure_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
+            ->whereNotNull('room_number')
+            ->where('room_number', '!=', '')
+            ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
             ->get();
 
         return response()->json([
@@ -460,15 +466,21 @@ class NightAuditController extends Controller
 
         try {
             DB::transaction(function () use ($systemDate, $nextDate, $username, $shift, $occupiedToDirty, $emptyToInspect) {
-                // 2. Kiểm tra lại điều kiện chặn (loại bỏ phòng đã chuyển STATUS_MOVED)
+                // 2. Kiểm tra lại điều kiện chặn (loại bỏ phòng đã chuyển STATUS_MOVED và phòng chưa gán phòng vật lý)
                 $pendingCheckIns = BookingRoom::whereDate('arrival_date', '<=', $systemDate->toDateString())
                     ->where('status', BookingRoom::STATUS_BOOKED)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
+                    ->whereNotNull('room_number')
+                    ->where('room_number', '!=', '')
+                    ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
                     ->count();
 
                 $pendingCheckOuts = BookingRoom::whereDate('departure_date', '<=', $systemDate->toDateString())
                     ->where('status', BookingRoom::STATUS_CHECKED_IN)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
+                    ->whereNotNull('room_number')
+                    ->where('room_number', '!=', '')
+                    ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
                     ->count();
 
                 if ($pendingCheckIns > 0 || $pendingCheckOuts > 0) {

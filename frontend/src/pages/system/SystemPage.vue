@@ -8,12 +8,13 @@ import EmployeeTab from './components/EmployeeTab.vue'
 import ActivityLogTab from './components/ActivityLogTab.vue'
 import OrgStructureTab from './components/OrgStructureTab.vue'
 import RoleManageTab from './components/RoleManageTab.vue'
+import BankAccountTab from './components/BankAccountTab.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 
-const activeTab = ref('company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log'
+const activeTab = ref('company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log', 'bank_accounts'
 const isDropdownOpen = ref(false)
 
 // Collapsible states for sidebar groups
@@ -57,7 +58,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen overflow-hidden bg-slate-50 font-sans select-none text-slate-800">
+  <div class="flex flex-col h-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
     <!-- Top Header Bar (Matching Admin System Layout) -->
     <header class="flex items-center justify-between h-12 bg-[#e0f2fe] border-b border-slate-200 px-4 shrink-0 z-50">
       <!-- Left: Back Button & Logo -->
@@ -225,8 +226,11 @@ onMounted(() => {
 
               <!-- Tài khoản ngân hàng -->
               <button 
-                disabled
-                class="w-full text-left px-4 py-2 border-none bg-transparent text-slate-400 cursor-not-allowed text-xs font-semibold opacity-60"
+                @click="selectTab('bank_accounts')"
+                class="w-full text-left px-4 py-2 border-none bg-transparent cursor-pointer transition-colors text-xs font-semibold"
+                :class="activeTab === 'bank_accounts'
+                  ? 'bg-sky-100 text-sky-700 font-bold border-l-2 border-sky-500'
+                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'"
               >
                 - Tài khoản ngân hàng
               </button>
@@ -290,7 +294,7 @@ onMounted(() => {
       </aside>
 
       <!-- Right: Main Content Area -->
-      <main class="flex-1 bg-slate-50 overflow-hidden flex flex-col">
+      <main class="flex-1 bg-slate-50 overflow-hidden flex flex-col select-text">
         <!-- Render Active Tab Component -->
         <transition name="fade" mode="out-in">
           <CompanyInfoTab v-if="activeTab === 'company'" />
@@ -299,6 +303,7 @@ onMounted(() => {
           <RoleManageTab v-else-if="activeTab === 'roles'" />
           <EmployeeTab v-else-if="activeTab === 'employee'" />
           <ActivityLogTab v-else-if="activeTab === 'activity_log'" />
+          <BankAccountTab v-else-if="activeTab === 'bank_accounts'" />
         </transition>
       </main>
     </div>

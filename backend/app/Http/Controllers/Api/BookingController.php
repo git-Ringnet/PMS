@@ -12,6 +12,8 @@ use App\Models\Guest;
 use App\Models\HotelConfig;
 use App\Models\HotelSetting;
 use App\Models\Payment;
+use App\Models\BankAccount;
+use App\Models\PaymentMethod;
 use App\Models\RegistrationStatus;
 use App\Models\RoomRateCode;
 use App\Models\StandardRate;
@@ -28,6 +30,24 @@ class BookingController extends Controller
 {
     private array $rateCodePricingCache = [];
     private array $roomClassPricingContextCache = [];
+
+    private function resolveDepositBankAccount($bankAccountId): ?BankAccount
+    {
+        if ($bankAccountId === null || $bankAccountId === '' || in_array(strtolower((string) $bankAccountId), ['null', 'undefined'], true)) {
+            return null;
+        }
+
+        $bankAccount = BankAccount::query()
+            ->whereKey($bankAccountId)
+            ->where('is_active', true)
+            ->where('is_intermediary', false)
+            ->first();
+        if (!$bankAccount) {
+            abort(422, 'Tài khoản ngân hàng không tồn tại hoặc đã ngừng sử dụng.');
+        }
+
+        return $bankAccount;
+    }
 
     /**
      * Lấy tất cả dữ liệu dropdown cần thiết cho màn tạo/sửa booking trong 1 request duy nhất.
@@ -98,7 +118,8 @@ class BookingController extends Controller
             'bookingRooms.specialRequests.specialRequest',
         ];
 
-        if ($request->boolean('with_billing') || $request->input('with_billing') === 'true') {
+        $withBilling = $request->boolean('with_billing') || $request->input('with_billing') === 'true';
+        if ($withBilling) {
             $relations[] = 'serviceBills.employeeOperator:id,employee_code,name';
             $relations[] = 'serviceBills.usernameOperator:id,username,name';
             $relations[] = 'serviceBills.user:id,name,username';
@@ -117,9 +138,31 @@ class BookingController extends Controller
             $relations[] = 'masterServiceBills.hotelService:id,code,name';
             $relations[] = 'payments.paymentMethod';
             $relations[] = 'payments.user';
+            $relations[] = 'payments.bankAccount';
         }
 
         $query = Booking::with($relations);
+        $query->withSum([
+            'payments as active_deposit_total' => function ($paymentQuery) {
+                $paymentQuery
+                    ->where('pack2', Payment::PACK2_DEPOSIT)
+                    ->where('edit_flag', 0)
+                    ->whereNull('deleted_at');
+            },
+        ], 'amount');
+        if (!$withBilling) {
+            // Booking cards need the active deposit rows and their aggregate,
+            // while the full history remains available from the payment modal.
+            $query->with([
+                'payments' => function ($paymentQuery) {
+                    $paymentQuery
+                        ->where('pack2', Payment::PACK2_DEPOSIT)
+                        ->where('edit_flag', 0)
+                        ->whereNull('deleted_at')
+                        ->with(['paymentMethod', 'bankAccount', 'bookingRoom.room', 'user']);
+                },
+            ]);
+        }
 
         // Filter theo ngày đến
         if ($request->arrival_date) {
@@ -536,6 +579,9 @@ class BookingController extends Controller
                 }
                 // 3. Tạo bản ghi cọc trong bảng payments nếu có
                 if ($request->has('deposit_details') && is_array($request->deposit_details)) {
+                    $depositDepartmentId = ModuleCode::normalize($validated['module'] ?? null) === ModuleCode::FRONTDESK
+                        ? ModuleCode::FRONTDESK
+                        : 'MR';
                     foreach ($request->deposit_details as $dep) {
                         if (empty($dep['amount']) || $dep['amount'] <= 0) continue;
                         
@@ -551,6 +597,13 @@ class BookingController extends Controller
                             }
                         }
 
+                        $paymentMethodInput = $dep['paymentMethodId'] ?? $booking->payment_method_id;
+                        $paymentMethod = is_numeric($paymentMethodInput)
+                            ? PaymentMethod::find($paymentMethodInput)
+                            : PaymentMethod::where('code', $paymentMethodInput)->first();
+                        $bankAccountId = $dep['bankAccountId'] ?? $dep['bank_account_id'] ?? null;
+                        $bankAccount = $this->resolveDepositBankAccount($bankAccountId);
+
                         \App\Models\Payment::create([
                             'booking_id'        => $booking->id,
                             'company_id'        => $booking->company_id,
@@ -559,10 +612,15 @@ class BookingController extends Controller
                             'guest_display'     => $booking->booking_code . ' - ' . $booking->booking_name,
                             'description'       => $dep['note'] ?? 'Đặt cọc',
                             'amount'            => $dep['amount'],
+                            'currency'          => $dep['currency'] ?? 'VND',
                             'pack2'             => \App\Models\Payment::PACK2_DEPOSIT,
                             // Cọc tạo cùng đăng ký luôn là cọc chung của Master tại Folio 1.
                             'folio_id'          => 1,
-                            'payment_method_id' => $dep['paymentMethodId'] ?? $booking->payment_method_id,
+                            'payment_method_id' => $paymentMethod?->code ?? $paymentMethodInput,
+                            'debit_account'     => $dep['debit_account'] ?? $bankAccount?->accounting_account,
+                            'bank_account_id'   => $bankAccount?->id,
+                            'department_id'     => $depositDepartmentId,
+                            'outlet'            => 'RC',
                             'status'            => \App\Models\Payment::STATUS_PENDING,
                             'edit_flag'         => 0,
                             'created_by'        => Auth::user()?->username ?? 'system',
@@ -573,6 +631,7 @@ class BookingController extends Controller
                     $totalDeposit = \App\Models\Payment::where('booking_id', $booking->id)
                         ->where('pack2', \App\Models\Payment::PACK2_DEPOSIT)
                         ->where('edit_flag', 0)
+                        ->whereNull('deleted_at')
                         ->sum('amount');
                     $booking->update(['payment_value' => $totalDeposit]);
                 }
@@ -604,6 +663,7 @@ class BookingController extends Controller
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
             'payments.user',
+            'payments.bankAccount',
         ]);
 
         try {
@@ -644,7 +704,15 @@ class BookingController extends Controller
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
             'payments.user',
-        ])->find($id);
+            'payments.bankAccount',
+        ])->withSum([
+            'payments as active_deposit_total' => function ($paymentQuery) {
+                $paymentQuery
+                    ->where('pack2', Payment::PACK2_DEPOSIT)
+                    ->where('edit_flag', 0)
+                    ->whereNull('deleted_at');
+            },
+        ], 'amount')->find($id);
 
         if (!$booking) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);

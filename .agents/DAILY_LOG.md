@@ -11,6 +11,37 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-10] - Fix lỗi Sang Ngày kiểm tra booking chưa gán phòng vật lý (chưa lấy phòng)
+### Module: Sang ngày / Night Audit ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Nguyên nhân**:
+  - Khi tạo booking mới mà chưa gán phòng vật lý (`room_number` là `null` hoặc `'Chưa gán'`), hoặc booking chưa có phòng (`booking_rooms` rỗng), màn hình Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue)) vẫn lấy booking đó đưa vào danh sách tab "Phòng đến" và đếm vào `arrivalCount`.
+  - Điều này làm `canRollDay` bị khóa (`arrivalCount > 0`), đồng thời backend [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php) trong `checkStatus()` và `runNightAudit()` quét `BookingRoom` theo ngày mà không kiểm tra phòng vật lý, dẫn đến quăng lỗi `Không thể sang ngày vì vẫn còn phòng chưa check-in hoặc chưa check-out`.
+- **Khắc phục**:
+  - **Backend ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))**:
+    - Cả 2 hàm `checkStatus()` và `runNightAudit()` bổ sung điều kiện lọc `whereNotNull('room_number')->where('room_number', '!=', '')->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")` cho cả `pendingCheckIns` và `pendingCheckOuts`.
+    - Bỏ qua các booking/phòng chưa gán phòng vật lý, không chặn tiến trình chuyển ngày hệ thống.
+  - **Frontend ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))**:
+    - Bổ sung hàm kiểm tra `hasAssignedRoom(r)` nhằm loại bỏ triệt để các phòng chưa gán (`null`, rỗng, `'Chưa gán'`).
+    - Trong `processRealBookings`: Chỉ tính vào số đếm `arrivalCount` đối với các phòng đã được gán phòng vật lý thực tế; loại bỏ hoàn toàn nhánh fallback đếm cả booking không có phòng (`rooms.length === 0`).
+    - Trong `processItem`: Bỏ qua các phòng chưa gán phòng vật lý, không đưa vào danh sách bảng dữ liệu của tab "Phòng đến", đảm bảo nút "Sang ngày" không bị chặn vô lý.
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-10] - Chuẩn hóa UI module Tài Khoản Ngân Hàng & Bật tính năng bôi đen / copy text trong System
+### Module: System / Tài Khoản Ngân Hàng ([BankAccountTab.vue](file:///d:/PMS/frontend/src/pages/system/components/BankAccountTab.vue), [SystemPage.vue](file:///d:/PMS/frontend/src/pages/system/SystemPage.vue))
+
+- **Đồng bộ chuẩn UI theo BranchManageTab & EmployeeTab**:
+  - Loại bỏ khung wrapper card cũ và tiêu đề lớn `<h1>`.
+  - Thanh Toolbar trên cùng: Ô tìm kiếm chuẩn `h-[30px]` kèm nút xóa nhanh `✕` và nút "Tìm Kiếm" (`bg-[#8dcbf4] hover:bg-[#70b2db]`).
+  - Cụm nút chức năng bên phải: Nút chuyển nhóm subtab (`[1. Ngân Hàng Thanh Toán | 2. Ngân Hàng Trung Gian]`), nút `+ Thêm`, nút Trợ giúp SVG và popover Thiết lập ẩn/hiện cột.
+  - Bảng dữ liệu: Bảng viền `border border-slate-200 rounded-lg shadow-2xs`, tiêu đề cố định `sticky top-0 bg-slate-100/90`, hỗ trợ sắp xếp các cột có thể sort (`sortable`), nút xóa tài khoản dùng SVG thùng rác chuẩn.
+  - Modal Thêm / Chỉnh sửa: Header màu xanh `bg-[#8dcbf4]`, subtabs phân chia rõ ràng, lưới form 2 cột nhập liệu gọn gàng (hỗ trợ nhập `opened_on` & `closed_on`), footer với các nút `Tiếp`, `Hủy`, `Lưu`.
+- **Khắc phục lỗi chặn copy text trong System**:
+  - Gỡ bỏ thuộc tính `select-none` thừa ở container gốc của [SystemPage.vue](file:///d:/PMS/frontend/src/pages/system/SystemPage.vue).
+  - Bổ sung `select-text` trên các dòng dữ liệu bảng, ô dữ liệu và modal trong [BankAccountTab.vue](file:///d:/PMS/frontend/src/pages/system/components/BankAccountTab.vue) để người dùng có thể bôi đen và sao chép (Ctrl+C) mã tài khoản, số tài khoản, tên ngân hàng thuận tiện.
+- **Dọn dẹp code**: Dọn dẹp khối menu lặp trong sidebar của [SystemPage.vue](file:///d:/PMS/frontend/src/pages/system/SystemPage.vue).
+- **Kiểm thử**: `npm run build` thành công 100%.
+
 ## [2026-09-09] - Fix 4 lỗi Room Map & Check-in Logic (Lễ Tân)
 ### Module: Room Map / Check-in ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php), [booking-service.js](file:///d:/PMS/frontend/src/services/booking-service.js))
 
@@ -1055,3 +1086,30 @@
 - Test: RBAC 15/15, 45 assertions; frontend build thành công; runtime local đúng 8 chi nhánh, 15 bộ phận, 18 Position, 3 ứng dụng và kho HKT1/HKT2.
 - Full backend suite: 108/171 passed; 61 lỗi 403 do test cũ thiếu fixture quyền, 2 lỗi môi trường thiếu Dompdf/GD. Không thêm bypass test vào production.
 - Chi tiết bằng chứng tại `RBAC_ORGANIZATION_IMPLEMENTATION_REVIEW.md`.
+
+## [2026-09-10] - Hoàn thiện các fix Đặt cọc và CRUD tài khoản ngân hàng
+
+- Triển khai ngữ cảnh cọc MR/FO và outlet RC cho cọc PMS; giữ nguyên outlet của Advance Payment hiện hành.
+- Chuẩn hóa URL/preview ảnh chứng từ, khóa Tách/Chuyển/Xóa/Sửa khi đang sửa cọc, và giới hạn payload sửa vào phương thức/mô tả.
+- Thêm form lý do xóa gửi đúng body DELETE, bảo toàn bộ phận/outlet/tài khoản/tiền tệ trên dòng đảo, tách và chuyển.
+- Đồng bộ tổng active DPR khi mở booking; card hiển thị tiêu đề `ĐẶT CỌC`, từng khoản và vùng cuộn; dropdown chuyển cọc được cập nhật theo booking nhận.
+- Thêm migration, API, phân quyền và UI CRUD tài khoản ngân hàng: hai nhóm, 10 cột, lookup kế toán/tiền tệ và nối dropdown cọc; tab thuế/phí cà thẻ giữ placeholder vì chưa có đặc tả.
+- Kiểm tra tĩnh, migration pretend, route list và frontend build đạt. Bộ `BookingTest|DebtSettlementTest` chưa chạy qua nghiệp vụ vì fixture quyền trả 403; chưa UAT hoặc backfill dữ liệu lịch sử.
+
+## [2026-09-10] - Chốt lại Section 7 theo booking nhận
+
+- Cập nhật `DepositModal` để dropdown chuyển cọc chỉ hiển thị một option cho mỗi booking Đăng ký/Inhouse hợp lệ, gồm mã booking và tên booking/khách; loại bỏ builder phòng, “Toàn bộ phòng” và Guest 1/Guest 2.
+- Khi chọn booking, state và payload chỉ giữ/gửi `target_booking_id`; không gửi `target_room_id` hoặc `target_guest_id`, không mở rộng sang chuyển phòng vật lý.
+- Cập nhật yêu cầu, nghiệm thu và kịch bản INT-05 trong `PLAN_FIX_LOI_DAT_COC.md`; compile/build frontend cần chạy lại sau thay đổi.
+
+## [2026-09-10] - Hoàn tác booking-only ở Section 7
+
+- Theo yêu cầu mới nhất, khôi phục dropdown chuyển cọc hiển thị booking và các phòng/khách tương ứng.
+- Khi chọn booking gửi `target_booking_id`; khi chọn phòng/khách gửi thêm đúng `target_room_id`/`target_guest_id`.
+- Cập nhật kế hoạch và INT-05 để đối chiếu danh sách đích với Hóa đơn → Chuyển phòng; chưa UAT danh sách thực tế.
+
+## [2026-09-10] - Ghi chú commit các Section Đặt cọc
+
+- Ghi lại phạm vi đã làm của Section 1–8 và phần chưa gồm UAT/backfill/tab thuế-phí trong `PLAN_FIX_LOI_DAT_COC.md`.
+- Commit đề xuất: `fix(deposit): complete deposit workflow and bank account management`.
+- Chưa tạo commit hoặc push GitHub; chờ người dùng commit.

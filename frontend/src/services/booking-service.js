@@ -108,7 +108,7 @@ export const updatePayment = (id, data) => {
   }
   return http.put(`/payments/${id}`, data)
 }
-export const deletePayment = (id) => http.delete(`/payments/${id}`)
+export const deletePayment = (id, data = {}) => http.delete(`/payments/${id}`, { data })
 export const transferPaymentFolio = (id, data) => http.patch(`/payments/${id}/folio`, data)
 export const splitPayment = (id, data) => http.post(`/payments/${id}/split`, data)
 export const transferPayment = (id, data) => http.post(`/payments/${id}/transfer`, data)
