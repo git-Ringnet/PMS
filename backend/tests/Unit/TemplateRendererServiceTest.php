@@ -7,6 +7,34 @@ use Tests\TestCase;
 
 class TemplateRendererServiceTest extends TestCase
 {
+    public function test_it_keeps_saved_page_settings_authoritative_over_custom_css(): void
+    {
+        $rendered = app(TemplateRendererService::class)->render(
+            '<p>Báo cáo</p>',
+            'body { max-width: 210mm; } @media print { @page { size: A4 portrait; margin: 99mm; } }',
+            [],
+            [
+                'page_size' => 'A4',
+                'page_orientation' => 'landscape',
+                'margin_top' => 0,
+                'margin_right' => 5,
+                'margin_bottom' => 8,
+                'margin_left' => 0,
+            ]
+        );
+
+        $this->assertStringContainsString('size: A4 landscape;', $rendered);
+        $this->assertStringContainsString('margin: 0mm 5mm 8mm 0mm;', $rendered);
+        $this->assertGreaterThan(
+            strpos($rendered, 'max-width: 210mm;'),
+            strrpos($rendered, 'max-width: none !important;')
+        );
+        $this->assertGreaterThan(
+            strpos($rendered, 'size: A4 portrait;'),
+            strrpos($rendered, 'size: A4 landscape;')
+        );
+    }
+
     public function test_it_renders_store_rows_with_row_bindings(): void
     {
         $html = <<<'HTML'

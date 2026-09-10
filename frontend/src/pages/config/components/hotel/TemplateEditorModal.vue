@@ -92,6 +92,12 @@ const pageDimensions = computed(() => {
   }
 })
 
+const pageMargin = (value) => value ?? 10
+
+const colorInputValue = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || ''))
+  ? value
+  : fallback
+
 // Visual Blocks structure
 const blocks = ref({
   header: [],
@@ -132,7 +138,7 @@ const scopedTemplateCss = computed(() => {
   const css = template.value?.css || ''
   if (!css.trim()) return ''
 
-  return css.replace(/([^{}]+)\{/g, (match, selectorText) => {
+  const scopedCss = css.replace(/([^{}]+)\{/g, (match, selectorText) => {
     const selectors = selectorText.trim()
     if (!selectors || selectors.startsWith('@')) return match
 
@@ -146,6 +152,11 @@ const scopedTemplateCss = computed(() => {
 
     return `${scoped}{`
   })
+
+  // Legacy templates may set body max-width: 210mm for A4 portrait. The
+  // canvas itself represents the saved paper metadata, so it must not be
+  // constrained when the user changes to landscape or another paper size.
+  return `${scopedCss}\n.template-preview-canvas { max-width: none !important; }`
 })
 
 const defaultBlockStyle = {
@@ -2201,7 +2212,7 @@ const selectBand = (band) => {
           </div>
 
           <!-- Column 2: Banded Design Canvas (Middle Panel) -->
-          <div class="flex-1 bg-slate-100 p-6 overflow-y-auto flex flex-col items-center">
+          <div class="flex-1 min-w-0 bg-slate-100 p-6 overflow-auto flex flex-col items-center">
             
             <!-- Band selector controls -->
             <div class="flex bg-white p-1 border border-slate-200 rounded-xl shadow-xs mb-4 gap-1 select-none">
@@ -2223,14 +2234,14 @@ const selectBand = (band) => {
             </div>
 
             <!-- Page Canvas Layout Representation -->
-            <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-6 relative flex flex-col"
+            <div class="template-preview-canvas shrink-0 bg-white shadow-lg border border-slate-300 relative flex flex-col"
               :style="{
                 width: pageDimensions.width,
                 minHeight: pageDimensions.height,
-                paddingTop: `${template?.margin_top || 10}mm`,
-                paddingBottom: `${template?.margin_bottom || 10}mm`,
-                paddingLeft: `${template?.margin_left || 10}mm`,
-                paddingRight: `${template?.margin_right || 10}mm`
+                paddingTop: `${pageMargin(template?.margin_top)}mm`,
+                paddingBottom: `${pageMargin(template?.margin_bottom)}mm`,
+                paddingLeft: `${pageMargin(template?.margin_left)}mm`,
+                paddingRight: `${pageMargin(template?.margin_right)}mm`
               }">
               <component :is="'style'" v-if="scopedTemplateCss">{{ scopedTemplateCss }}</component>
               <component :is="'style'" v-if="scopedBlockFontCss">{{ scopedBlockFontCss }}</component>
@@ -3196,7 +3207,7 @@ const selectBand = (band) => {
                 <div class="grid grid-cols-2 gap-2 mt-2">
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Màu chữ:</span>
-                    <input type="color" v-model="selectedBlock.style.color" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
+                    <input type="color" :value="colorInputValue(selectedBlock.style.color, '#1e293b')" @input="selectedBlock.style.color = $event.target.value; compileHtml()" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Đậm (Tất cả):</span>
@@ -3248,7 +3259,7 @@ const selectBand = (band) => {
                   <div class="flex items-center justify-between">
                     <span class="text-xs text-slate-500">Màu nền:</span>
                     <div class="flex items-center gap-1">
-                      <input type="color" v-model="selectedBlock.style.backgroundColor" @change="compileHtml" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
+                      <input type="color" :value="colorInputValue(selectedBlock.style.backgroundColor, '#ffffff')" @input="selectedBlock.style.backgroundColor = $event.target.value; compileHtml()" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
                       <button @click="selectedBlock.style.backgroundColor = ''; compileHtml()" class="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-500 rounded border-none cursor-pointer">Xóa</button>
                     </div>
                   </div>
@@ -3286,7 +3297,7 @@ const selectBand = (band) => {
                   <!-- Border color picker -->
                   <div class="flex items-center justify-between" v-if="selectedBlock.style.borderStyle && selectedBlock.style.borderStyle !== 'none'">
                     <span class="text-xs text-slate-500">Màu đường viền:</span>
-                    <input type="color" v-model="selectedBlock.style.borderColor" @change="compileHtml" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
+                    <input type="color" :value="colorInputValue(selectedBlock.style.borderColor, '#cbd5e1')" @input="selectedBlock.style.borderColor = $event.target.value; compileHtml()" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
                   </div>
 
                   <!-- Border radius input -->
@@ -3673,20 +3684,20 @@ const selectBand = (band) => {
         <template v-else-if="activeTab === 'preview'">
           <div class="flex-1 bg-slate-200 p-6 overflow-y-auto flex flex-col items-center">
             <!-- Iframe container with print simulation borders -->
-            <div class="flex justify-between items-center w-[210mm] max-w-full mb-3 shrink-0">
+            <div class="flex justify-between items-center max-w-full mb-3 shrink-0" :style="{ width: pageDimensions.width }">
               <span class="text-xs text-slate-500 font-bold">Xem trước thực tế (A4/A5 preview)</span>
               <button @click="loadPreview" class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-3xs">
                 <RefreshCw class="w-3.5 h-3.5" :class="loadingPreview ? 'animate-spin' : ''" /> Làm mới
               </button>
             </div>
             
-            <div v-if="loadingPreview" class="bg-white shadow-lg border border-slate-300 flex flex-col items-center justify-center gap-3" :style="{ width: pageDimensions.width, height: pageDimensions.height }">
+            <div v-if="loadingPreview" class="shrink-0 bg-white shadow-lg border border-slate-300 flex flex-col items-center justify-center gap-3" :style="{ width: pageDimensions.width, height: pageDimensions.height }">
               <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
               <p class="text-xs text-slate-400 italic">Đang biên dịch và render dữ liệu giả lập từ hệ thống...</p>
             </div>
             
             <iframe v-else-if="previewHtml" :srcdoc="previewHtml" 
-              class="bg-white shadow-lg border border-slate-300 rounded-sm transition-all"
+              class="shrink-0 bg-white shadow-lg border border-slate-300 rounded-sm transition-all"
               :style="{
                 width: pageDimensions.width,
                 minHeight: pageDimensions.height

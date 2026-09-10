@@ -5,6 +5,7 @@ import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { Database, Download, FileText, LoaderCircle, Play, Printer } from '@lucide/vue'
 import ReportDateRangePicker from '@/components/ReportDateRangePicker.vue'
+import HousekeepingInvoiceFilters from '@/pages/reports/components/HousekeepingInvoiceFilters.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +18,16 @@ const openTabs = ref([])
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 
+const housekeepingInvoiceCodes = new Set(['LAUNDRY_INVOICES', 'BREAKAGE_INVOICES', 'MINIBAR_INVOICES'])
+const isHousekeepingInvoiceReport = (tab) => housekeepingInvoiceCodes.has(tab?.code)
+const parameterOptions = (tab, name) => tab?.parameterOptions?.[name]
+  || tab?.report?.parameter_ui_schema?.find(parameter => parameter.name === name)?.options
+  || []
+const submitHousekeepingInvoice = (tab, parameters) => {
+  Object.assign(tab.parameters, parameters)
+  executeTab(tab)
+}
+
 const activeTemplate = computed(() => {
   if (!activeTab.value || !activeTab.value.selectedTemplateId) return null
   return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
@@ -24,10 +35,21 @@ const activeTemplate = computed(() => {
 
 const reportPreviewZoom = 1.25
 const reportPreviewDimensions = computed(() => {
+  const paperSizes = {
+    A4: [210, 297],
+    A5: [148, 210],
+    Letter: [215.9, 279.4],
+    Legal: [215.9, 355.6]
+  }
+  const [shortSide, longSide] = paperSizes[activeTemplate.value?.page_size] || paperSizes.A4
   const landscape = activeTemplate.value?.page_orientation === 'landscape'
-  return landscape
-    ? { width: 1120, height: 790 }
-    : { width: 800, height: 1120 }
+  const [width, height] = landscape ? [longSide, shortSide] : [shortSide, longSide]
+  const pixelsPerMillimetre = 96 / 25.4
+
+  return {
+    width: Math.round(width * pixelsPerMillimetre),
+    height: Math.round(height * pixelsPerMillimetre)
+  }
 })
 const reportPreviewContainerStyle = computed(() => ({
   width: `${reportPreviewDimensions.value.width * reportPreviewZoom}px`,
@@ -455,11 +477,25 @@ onBeforeUnmount(() => {
           <!-- Report parameters sidebar -->
           <aside class="w-[360px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4">
             <h3 class="mb-4 text-[11px] font-black uppercase tracking-wider text-slate-600">Điều kiện báo cáo</h3>
-            <div v-if="!(activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden').length" class="mb-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-400">
-              Báo cáo này không cần tham số.
-            </div>
+            <HousekeepingInvoiceFilters
+              v-if="isHousekeepingInvoiceReport(activeTab)"
+              v-model="activeTab.parameters"
+              :system-date="systemDate"
+              :shifts="parameterOptions(activeTab, 'p_shift')"
+              :departments="parameterOptions(activeTab, 'p_department')"
+              :users="parameterOptions(activeTab, 'p_user')"
+              :sort-options="parameterOptions(activeTab, 'p_order_by')"
+              :loading="activeTab.executing"
+              :disabled="!activeTab.selectedTemplateId"
+              @submit="submitHousekeepingInvoice(activeTab, $event)"
+            />
 
-            <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
+            <template v-else>
+              <div v-if="!(activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden').length" class="mb-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-400">
+                Báo cáo này không cần tham số.
+              </div>
+
+              <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => item.control !== 'hidden')" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
               <template v-if="parameter.control === 'checkbox'">
                 <div class="flex h-8 items-center gap-2">
                   <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
@@ -510,12 +546,13 @@ onBeforeUnmount(() => {
 
               <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
               <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
-            </div>
+              </div>
 
-            <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">
-              <LoaderCircle v-if="activeTab.executing" class="h-4 w-4 animate-spin" /><Play v-else class="h-4 w-4" />
-              {{ activeTab.executing ? 'Đang tải dữ liệu...' : 'Hiển thị báo cáo' }}
-            </button>
+              <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">
+                <LoaderCircle v-if="activeTab.executing" class="h-4 w-4 animate-spin" /><Play v-else class="h-4 w-4" />
+                {{ activeTab.executing ? 'Đang tải dữ liệu...' : 'Hiển thị báo cáo' }}
+              </button>
+            </template>
 
             <div v-if="activeTab.dataset" class="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-[10px] font-semibold text-emerald-700">
               {{ activeTab.dataset.summary?.row_count || 0 }} dòng · {{ activeTab.dataset.fields?.length || 0 }} cột

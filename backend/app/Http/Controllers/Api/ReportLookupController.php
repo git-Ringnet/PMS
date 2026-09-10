@@ -23,6 +23,8 @@ class ReportLookupController extends Controller
             'registration-statuses' => $this->registrationStatuses(),
             'users' => $this->users($search),
             'hotel-services' => $this->hotelServices($search),
+            'report-shifts' => $this->distinctServiceBillOptions('Ca'),
+            'service-departments' => $this->distinctServiceBillOptions('DepartmentId'),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -153,5 +155,18 @@ class ReportLookupController extends Controller
                 'value' => $service->code,
                 'label' => trim("{$service->code} - {$service->name}", ' -'),
             ])->all();
+    }
+
+    private function distinctServiceBillOptions(string $column): array
+    {
+        return DB::table('service_bills')
+            ->whereNotNull($column)
+            ->where($column, '<>', '')
+            ->distinct()
+            ->orderBy($column)
+            ->pluck($column)
+            ->map(fn ($value) => ['value' => $value, 'label' => $value])
+            ->values()
+            ->all();
     }
 }
