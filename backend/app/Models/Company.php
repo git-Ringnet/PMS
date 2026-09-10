@@ -28,12 +28,16 @@ class Company extends Model
         'rate_code',
         'branch_id',
         'is_active',
+        'legacy_id',
+        'legacy_re_credit_limit',
     ];
 
     protected $casts = [
         'sync_acc' => 'boolean',
         'is_active' => 'boolean',
         'max_debt' => 'decimal:2',
+        'legacy_id' => 'integer',
+        'legacy_re_credit_limit' => 'decimal:6',
     ];
 
     /**

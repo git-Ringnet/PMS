@@ -68,6 +68,10 @@ class Payment extends Model
         'user_id',
         'updated_by',
         'image_path',
+        'legacy_id',
+        'legacy_payment_total_amount0',
+        'legacy_payment_currency0',
+        'legacy_pack5',
     ];
 
     protected $casts = [
@@ -76,6 +80,8 @@ class Payment extends Model
         'total_amount_before_split'  => 'decimal:2',
         'status'                     => 'integer',
         'edit_flag'                  => 'integer',
+        'legacy_id'                  => 'integer',
+        'legacy_payment_total_amount0' => 'decimal:6',
     ];
 
     // =========================================
