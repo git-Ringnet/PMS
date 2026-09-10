@@ -801,12 +801,14 @@ class TemplateRendererService
      */
     private function buildFullHtmlDocument(string $bodyHtml, string $css, array $options = []): string
     {
-        $pageSize = $options['page_size'] ?? 'A4';
-        $pageOrientation = $options['page_orientation'] ?? 'portrait';
-        $marginTop = $options['margin_top'] ?? 10;
-        $marginBottom = $options['margin_bottom'] ?? 10;
-        $marginLeft = $options['margin_left'] ?? 10;
-        $marginRight = $options['margin_right'] ?? 10;
+        $pageSize = in_array($options['page_size'] ?? null, ['A4', 'A5', 'Letter', 'Legal'], true)
+            ? $options['page_size']
+            : 'A4';
+        $pageOrientation = ($options['page_orientation'] ?? null) === 'landscape' ? 'landscape' : 'portrait';
+        $marginTop = $this->printMargin($options['margin_top'] ?? 10);
+        $marginBottom = $this->printMargin($options['margin_bottom'] ?? 10);
+        $marginLeft = $this->printMargin($options['margin_left'] ?? 10);
+        $marginRight = $this->printMargin($options['margin_right'] ?? 10);
 
         return '<!DOCTYPE html>
 <html>
@@ -873,12 +875,29 @@ class TemplateRendererService
             margin-bottom: 0;
         }
         '.$css.'
+
+        /* The saved page metadata is authoritative over template CSS. */
+        body {
+            width: 100% !important;
+            max-width: none !important;
+        }
+        @media print {
+            @page {
+                size: '.$pageSize.' '.$pageOrientation.';
+                margin: '.$marginTop.'mm '.$marginRight.'mm '.$marginBottom.'mm '.$marginLeft.'mm;
+            }
+        }
     </style>
 </head>
 <body>
     '.$bodyHtml.'
 </body>
 </html>';
+    }
+
+    private function printMargin(mixed $value): int|float
+    {
+        return is_numeric($value) ? max(0, (float) $value) : 10;
     }
 
     private function normalizeAssetUrl(?string $url): string

@@ -376,7 +376,7 @@ class ReportDefinitionController extends Controller
             'parameter_ui_schema.*.required' => 'nullable|boolean',
             'parameter_ui_schema.*.default' => 'nullable',
             'parameter_ui_schema.*.options' => 'nullable|array',
-            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,room-classes,registration-statuses,users,hotel-services',
+            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments',
             'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
             'template_ids' => 'required|array|min:1',
             'template_ids.*' => 'integer|distinct|exists:templates,id',

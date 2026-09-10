@@ -438,10 +438,22 @@ function formatMoney(v) {
   return Number(v).toLocaleString('vi-VN')
 }
 
+function isPassportType(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return idTypes.value.some((item) => {
+    const code = String(item?.code || '').trim().toUpperCase()
+    const name = String(item?.name || '').trim().toLowerCase()
+    return code === 'PASSPORT' && (normalized === name || normalized === getIdTypeValue(item).toLowerCase())
+  }) || normalized === 'passport' || normalized === 'hộ chiếu'
+}
+
 async function handleSave() {
   saving.value = true
   try {
     const payload = { ...form.value }
+    if (isPassportType(payload.id_type)) {
+      payload.passport_number = payload.id_number
+    }
     let res
     if (props.guestType === 'adult') {
       res = await updateBookingRoomGuest(props.room.booking_room_id, props.guest.id, payload)

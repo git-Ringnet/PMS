@@ -18,10 +18,13 @@ class ReportLookupController extends Controller
             'areas' => $this->areas(),
             'companies' => $this->companies($search),
             'bookings' => $this->bookings($search),
+            'rooms' => $this->rooms($search),
             'room-classes' => $this->roomClasses(),
             'registration-statuses' => $this->registrationStatuses(),
             'users' => $this->users($search),
             'hotel-services' => $this->hotelServices($search),
+            'report-shifts' => $this->distinctServiceBillOptions('Ca'),
+            'service-departments' => $this->distinctServiceBillOptions('DepartmentId'),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -90,6 +93,21 @@ class ReportLookupController extends Controller
             ])->all();
     }
 
+    private function rooms(string $search): array
+    {
+        return DB::table('rooms')
+            ->whereNotNull('room_number')
+            ->where('room_number', '<>', '')
+            ->when($search !== '', fn ($query) => $query->where('room_number', 'like', "%{$search}%"))
+            ->orderBy('room_number')
+            ->limit(500)
+            ->pluck('room_number')
+            ->map(fn ($roomNumber) => [
+                'value' => $roomNumber,
+                'label' => $roomNumber,
+            ])->all();
+    }
+
     private function registrationStatuses(): array
     {
         return DB::table('registration_statuses')
@@ -137,5 +155,18 @@ class ReportLookupController extends Controller
                 'value' => $service->code,
                 'label' => trim("{$service->code} - {$service->name}", ' -'),
             ])->all();
+    }
+
+    private function distinctServiceBillOptions(string $column): array
+    {
+        return DB::table('service_bills')
+            ->whereNotNull($column)
+            ->where($column, '<>', '')
+            ->distinct()
+            ->orderBy($column)
+            ->pluck($column)
+            ->map(fn ($value) => ['value' => $value, 'label' => $value])
+            ->values()
+            ->all();
     }
 }
