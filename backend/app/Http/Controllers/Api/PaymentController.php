@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingRoom;
+use App\Models\BookingRoomGuest;
+use App\Models\BankAccount;
 use App\Models\Payment;
+use App\Models\PaymentSequence;
 use App\Models\PaymentDebtSettlement;
 use App\Models\PaymentMethod;
 use App\Services\RoomAvailabilityService;
@@ -41,10 +44,8 @@ class PaymentController extends Controller
 
     protected function canOperateOldDay(): bool
     {
-        $user = Auth::user();
-        if (!$user) return false;
-
-        return $user->canPerformHistoricalDateActions(
+        return app(\App\Services\HistoricalDateOperationPermissionService::class)->allows(
+            Auth::user(),
             request()->attributes->get('_branch_id')
         );
     }
@@ -54,9 +55,10 @@ class PaymentController extends Controller
         if (empty($input)) return null;
         if (is_numeric($input)) {
             $pm = PaymentMethod::find($input);
-            return $pm ? $pm->code : (string)$input;
+            return $pm ? $pm->code : (string) $input;
         }
-        return (string)$input;
+
+        return (string) $input;
     }
 
     private function assertActiveDebtPayment(Payment $payment): void
@@ -82,11 +84,78 @@ class PaymentController extends Controller
         return $method;
     }
 
+    /**
+     * Allocate one settlement number per confirmed payment operation.
+     * The sequence row is locked by the surrounding transaction so two
+     * concurrent checkouts cannot receive the same payment_id.
+     */
+    private function nextSettlementCode(): string
+    {
+        $sequence = PaymentSequence::where('sequence_key', 'settlement')
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        // Existing installations may already contain random settlement
+        // codes. Continue after the highest numeric code without rewriting
+        // any historical data.
+        if ((int) $sequence->current_value === 0) {
+            // payment_id is an unsigned numeric column, so let the database
+            // calculate the high-water mark instead of loading every legacy
+            // code into PHP on the first settlement after deployment.
+            $sequence->current_value = (int) (Payment::max('payment_id') ?? 0);
+        }
+
+        $sequence->current_value++;
+        $sequence->save();
+
+        return (string) $sequence->current_value;
+    }
+
     private function getDepartmentId(Request $request)
     {
         return $request->input('department_id') 
             ?? $request->header('X-Department-ID') 
             ?? 'MR';
+    }
+
+    private function resolveDepositDepartment(Request $request): string
+    {
+        $department = $request->input('department_id');
+        if ($department === null || trim((string) $department) === '' || strtolower((string) $department) === 'null') {
+            $department = $request->header('X-Department-ID');
+        }
+        if ($department === null || trim((string) $department) === '' || strtolower((string) $department) === 'null') {
+            return 'MR';
+        }
+
+        $department = strtoupper(trim((string) $department));
+        if (in_array($department, ['FO', 'FRONTDESK', 'RECEPTION'], true)) {
+            return 'FO';
+        }
+        if (in_array($department, ['MR', 'SALE', 'RESERVATION', 'BOOKING'], true)) {
+            return 'MR';
+        }
+
+        abort(422, 'Bộ phận tạo cọc không hợp lệ. Chỉ chấp nhận MR hoặc FO.');
+    }
+
+    private function resolveDepositBankAccount(Request $request): ?BankAccount
+    {
+        $bankAccountId = $request->input('bank_account_id');
+        if ($bankAccountId === null || $bankAccountId === '' || strtolower((string) $bankAccountId) === 'null') {
+            return null;
+        }
+
+        $bankAccount = BankAccount::query()
+            ->whereKey($bankAccountId)
+            ->where('is_active', true)
+            ->where('is_intermediary', false)
+            ->first();
+        if (!$bankAccount) {
+            abort(422, 'Tài khoản ngân hàng không tồn tại hoặc đã ngừng sử dụng.');
+        }
+
+        return $bankAccount;
     }
 
     // =========================================
@@ -98,7 +167,7 @@ class PaymentController extends Controller
 
         $payments = Payment::withTrashed()
             ->where('booking_id', $bookingId)
-            ->with(['paymentMethod', 'bookingRoom.room', 'user'])
+            ->with(['paymentMethod', 'bookingRoom.room', 'user', 'bankAccount'])
             ->orderBy('date')
             ->orderBy('id')
             ->get();
@@ -269,14 +338,16 @@ class PaymentController extends Controller
             'payment_method_id' => 'required',
             'description'       => 'nullable|string|max:255',
             'debit_account'     => 'nullable|string|max:100',
+            'bank_account_id'   => 'nullable|integer|exists:bank_accounts,id',
             'booking_room_id'   => 'nullable',
+            'image'             => 'nullable|file|image|max:4096',
             'guest_id'          => 'nullable|string|max:50',
             'folio_id'          => 'nullable|integer|between:1,3',
             'pack4'             => 'nullable|string|max:20',
             'open_time'         => 'nullable|string|max:20',
             'currency'          => 'nullable|string|max:10',
             'shift_id'          => 'nullable|string|max:20',
-            'image'             => 'nullable|file|image|max:4096',
+            'department_id'     => 'nullable|string|max:20',
         ]);
 
         // Kiểm tra quyền tạo cọc ngày cũ
@@ -295,7 +366,13 @@ class PaymentController extends Controller
 
         // Resolve payment_method code
         $pmCode = $this->resolvePaymentMethodCode($request->payment_method_id);
-        $departmentId = $this->getDepartmentId($request);
+        $departmentId = $this->resolveDepositDepartment($request);
+        $bankAccount = $this->resolveDepositBankAccount($request);
+        $bankAccountId = $bankAccount?->id;
+        $debitAccount = trim((string) $request->input('debit_account', ''));
+        if ($debitAccount === '' || $debitAccount === 'Tài khoản ngân hàng') {
+            $debitAccount = $bankAccount?->accounting_account;
+        }
 
         $method = PaymentMethod::where('code', $pmCode)->orWhere('id', $request->payment_method_id)->first();
         if (!$method) {
@@ -319,7 +396,7 @@ class PaymentController extends Controller
         // Tạo hiển thị guest: mã booking + tên
         $guestDisplay = $booking->booking_code . ' - ' . $booking->booking_name;
 
-        $payment = DB::transaction(function () use ($request, $bookingId, $booking, $description, $guestDisplay, $imagePath, $pmCode, $departmentId) {
+        $payment = DB::transaction(function () use ($request, $bookingId, $booking, $description, $guestDisplay, $imagePath, $pmCode, $departmentId, $bankAccountId, $debitAccount) {
             $payment = Payment::create([
                 'booking_id'        => $bookingId,
                 'booking_room_id'   => $request->booking_room_id,
@@ -332,12 +409,16 @@ class PaymentController extends Controller
                 'description'       => $description,
                 'amount'            => $request->amount,
                 'currency'          => $request->currency ?: 'VND',
+                'bank_account_id'   => $bankAccountId,
                 'pack2'             => $request->pack4 === 'AP' ? null : Payment::PACK2_DEPOSIT,
                 'pack4'             => $request->pack4 ?: null,
                 'folio_id'          => $request->folio_id ?? 1,
                 'payment_method_id' => $pmCode,
-                'debit_account'     => $request->debit_account,
+                'debit_account'     => $debitAccount,
                 'department_id'     => $departmentId,
+                // Advance Payment is an existing payment flow; keep its
+                // outlet semantics unchanged while PMS deposits use RC.
+                'outlet'            => $request->pack4 === Payment::PACK4_ADVANCE ? null : 'RC',
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
                 'shift'             => $request->shift_id ?: ($request->shift ?: '1'),
@@ -376,7 +457,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $payment->load('paymentMethod'),
+            'data'    => $payment->load(['paymentMethod', 'bankAccount']),
             'message' => $request->pack4 === Payment::PACK4_ADVANCE
                 ? 'Thanh toán trước thành công!'
                 : 'Tạo cọc thành công!',
@@ -400,20 +481,16 @@ class PaymentController extends Controller
 
         $request->validate([
             'payment_method_id' => 'sometimes',
-            'booking_room_id'   => 'nullable',
             'description'       => 'nullable|string|max:255',
-            'debit_account'     => 'nullable|string|max:100',
-            'image'             => 'nullable|file|image|max:4096',
         ]);
 
         DB::transaction(function () use ($request, $payment) {
             // Không cho sửa date và amount
-            $data = $request->only(['description', 'debit_account', 'booking_room_id']);
+            // A deposit correction may only change its payment method and note.
+            // Date, amount, room, account, and receipt stay immutable.
+            $data = $request->only(['description']);
             if ($request->has('payment_method_id')) {
                 $data['payment_method_id'] = $this->resolvePaymentMethodCode($request->payment_method_id);
-            }
-            if ($request->hasFile('image')) {
-                $data['image_path'] = $request->file('image')->store('payments', 'public');
             }
             $payment->update(array_merge(
                 $data,
@@ -432,7 +509,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => $payment->fresh()->load('paymentMethod'),
+            'data'    => $payment->fresh()->load(['paymentMethod', 'bankAccount']),
             'message' => 'Cập nhật cọc thành công!',
         ]);
     }
@@ -479,6 +556,14 @@ class PaymentController extends Controller
         $validated = $request->validate([
             'reason' => 'required|string|min:1|max:1000',
         ]);
+        $validated['reason'] = trim($validated['reason']);
+        if ($validated['reason'] === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vui lòng nhập lý do xóa cọc.',
+                'errors' => ['reason' => ['Vui lòng nhập lý do xóa cọc.']],
+            ], 422);
+        }
         $payment = Payment::findOrFail($id);
 
         if ($payment->edit_flag !== 0) {
@@ -497,9 +582,16 @@ class PaymentController extends Controller
             ], 403);
         }
 
-        $departmentId = $this->getDepartmentId($request);
+        $paymentId = (int) $payment->id;
+        DB::transaction(function () use ($paymentId, $systemDate, $validated) {
+            // Re-read and lock the source row inside the transaction. This
+            // prevents two concurrent requests from both creating a reversal
+            // for the same deposit after they passed the initial check.
+            $payment = Payment::withTrashed()->whereKey($paymentId)->lockForUpdate()->first();
+            if (!$payment || $payment->trashed() || (int) $payment->edit_flag !== 0) {
+                abort(422, 'Cọc / thanh toán này đã bị hủy hoặc đã được xử lý trước đó.');
+            }
 
-        DB::transaction(function () use ($payment, $systemDate, $departmentId, $validated) {
             // Tạo dòng âm đối trừ với ngày hệ thống hiện tại
             $reversal = Payment::create([
                 'booking_id'        => $payment->booking_id,
@@ -515,7 +607,10 @@ class PaymentController extends Controller
                 'pack2'             => $payment->pack2,
                 'pack4'             => $payment->pack4,
                 'payment_method_id' => $payment->payment_method_id,
-                'department_id'     => $departmentId,
+                'currency'          => $payment->currency,
+                'bank_account_id'   => $payment->bank_account_id,
+                'department_id'     => $payment->department_id,
+                'outlet'            => $payment->outlet,
                 'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_DELETED,
@@ -620,7 +715,19 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($request, $payment) {
+        $paymentId = (int) $payment->id;
+        DB::transaction(function () use ($request, $paymentId) {
+            // Serialize split operations on the source row. A second request
+            // must validate against the amount left by the first split.
+            $payment = Payment::whereKey($paymentId)->lockForUpdate()->first();
+            if (!$payment || (int) $payment->edit_flag !== 0 || (int) $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
+                abort(422, 'Chỉ có thể tách cọc đang chờ thanh toán.');
+            }
+            $currentAmount = (float) $payment->amount;
+            if (abs(array_sum($request->amounts) - $currentAmount) > 0.01) {
+                abort(422, 'Tổng số tiền sau khi tách phải bằng số tiền cọc hiện tại.');
+            }
+
             $originalAmount = $payment->total_amount_before_split ?? $payment->amount;
 
             // 1. Cập nhật dòng gốc: đổi amount thành số tiền phần 1, lưu total_amount_before_split
@@ -656,6 +763,9 @@ class PaymentController extends Controller
                     'debit_account'             => $payment->debit_account,
                     // Tách cọc giữ nguyên bộ phận của dòng gốc; chỉ dấu vết cập nhật là thời điểm thao tác.
                     'department_id'             => $payment->department_id,
+                    'currency'                  => $payment->currency,
+                    'bank_account_id'           => $payment->bank_account_id,
+                    'outlet'                    => $payment->outlet,
                     'image_path'                => $payment->image_path,
                     'reversal_ref'              => $payment->id,
                     'status'                    => Payment::STATUS_PENDING,
@@ -834,9 +944,17 @@ class PaymentController extends Controller
         }
 
         $systemDate = $this->getSystemDate();
-        $departmentId = $this->getDepartmentId($request);
 
-        DB::transaction(function () use ($request, $payment, $targetBooking, $targetRoom, $targetGuest, $systemDate, $departmentId) {
+        $paymentId = (int) $payment->id;
+        DB::transaction(function () use ($request, $paymentId, $targetBooking, $targetRoom, $targetGuest, $systemDate) {
+            // Lock the source payment before producing transfer-out and
+            // transfer-in rows so concurrent transfer/delete requests cannot
+            // consume the same deposit twice.
+            $payment = Payment::whereKey($paymentId)->lockForUpdate()->first();
+            if (!$payment || (int) $payment->edit_flag !== 0 || (int) $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
+                abort(422, 'Chỉ có thể chuyển cọc đang chờ thanh toán.');
+            }
+
             $sourceBookingId = $payment->booking_id;
             $sourceBooking = Booking::findOrFail($sourceBookingId);
             $sourceLocation = $payment->booking_room_id ? 'R_' . ($payment->bookingRoom?->room_number ?: $payment->booking_room_id) : 'BK_' . $sourceBookingId;
@@ -859,7 +977,10 @@ class PaymentController extends Controller
                 'folio_id'          => $payment->folio_id,
                 'payment_method_id' => $payment->payment_method_id,
                 'debit_account'     => $payment->debit_account,
-                'department_id'     => $departmentId,
+                'currency'          => $payment->currency,
+                'bank_account_id'   => $payment->bank_account_id,
+                'department_id'     => $payment->department_id,
+                'outlet'            => $payment->outlet,
                 'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_DELETED,
@@ -895,7 +1016,10 @@ class PaymentController extends Controller
                 'folio_id'          => 1,
                 'payment_method_id' => $payment->payment_method_id,
                 'debit_account'     => $payment->debit_account,
-                'department_id'     => $departmentId,
+                'currency'          => $payment->currency,
+                'bank_account_id'   => $payment->bank_account_id,
+                'department_id'     => $payment->department_id,
+                'outlet'            => $payment->outlet,
                 'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
                 'status'            => Payment::STATUS_PENDING,
@@ -941,9 +1065,9 @@ class PaymentController extends Controller
         $departmentId = $this->getDepartmentId($request);
 
         DB::transaction(function () use ($request, $booking, $bookingId, $folioId, $systemDate, $departmentId) {
-            // Sinh mã thanh toán settlement (ví dụ numeric string ID 5 chữ số e.g. "11575")
-            $maxPayment = Payment::max('id') ?? 11000;
-            $settlementCode = (string)($maxPayment + rand(100, 500));
+            // One sequential code is shared by all payment rows in this
+            // settlement (for example cash + transfer entered together).
+            $settlementCode = $this->nextSettlementCode();
             $invoiceCode = (string)rand(7000, 9999);
 
             $isFolioA = strtoupper((string) $folioId) === 'A';
@@ -951,6 +1075,39 @@ class PaymentController extends Controller
 
             $reqRoomId = $request->input('booking_room_id') ?? $request->input('bookingRoomId') ?? $request->input('room_id') ?? $request->input('roomId');
             $reqGuestId = $request->input('guest_id') ?? $request->input('guestId');
+
+            // Resolve the canonical room id and verify the guest belongs to
+            // that room/booking before any payment or bill is updated.
+            if ($reqRoomId !== null && $reqRoomId !== '') {
+                $room = BookingRoom::where('booking_id', $bookingId)
+                    ->where(function ($query) use ($reqRoomId) {
+                        $query->where('id', (string) $reqRoomId)
+                            ->orWhere('room_number', (string) $reqRoomId);
+                    })
+                    ->first();
+                if (!$room) {
+                    abort(422, 'Phòng thanh toán không thuộc booking đã chọn.');
+                }
+                $reqRoomId = (string) $room->id;
+
+                if ($reqGuestId !== null && $reqGuestId !== '') {
+                    $guestExists = $room->guests()
+                        ->whereNotIn('status', [BookingRoomGuest::STATUS_CANCELLED, BookingRoomGuest::STATUS_NOSHOW, 100])
+                        ->where('guest_id', (string) $reqGuestId)
+                        ->exists();
+                    if (!$guestExists) {
+                        abort(422, 'Khách thanh toán không thuộc phòng đã chọn.');
+                    }
+                    $reqGuestId = (string) $reqGuestId;
+                } else {
+                    $reqGuestId = null;
+                }
+            } elseif ($reqGuestId !== null && $reqGuestId !== '') {
+                abort(422, 'Thanh toán tại booking không được gắn khách hoặc phòng.');
+            } else {
+                $reqRoomId = null;
+                $reqGuestId = null;
+            }
             $selectedBillIds = collect($request->input('service_bill_ids', []))
                 ->map(fn ($id) => (int) $id)
                 ->filter(fn ($id) => $id > 0)
@@ -1069,8 +1226,8 @@ class PaymentController extends Controller
 
                 Payment::create([
                     'booking_id'        => $bookingId,
-                    'booking_room_id'   => $request->input('booking_room_id'),
-                    'guest_id'          => $request->input('guest_id'),
+                    'booking_room_id'   => $reqRoomId,
+                    'guest_id'          => $reqGuestId,
                     'company_id'        => $booking->company_id,
                     'date'              => $request->input('date', $systemDate),
                     'open_time'         => $request->input('open_time', now()->format('H:i:s')),
@@ -1084,6 +1241,10 @@ class PaymentController extends Controller
                     'payment_method_id' => $pmId,
                     'debit_account'     => $pItem['bank_account'] ?? null,
                     'department_id'     => $departmentId,
+                    // Invoice settlement from the Front Desk is still a PMS
+                    // payment row, so retain the FO/RC context alongside the
+                    // existing PY settlement marker.
+                    'outlet'            => in_array(strtoupper(trim((string) $departmentId)), ['FO', 'FRONTDESK', 'RECEPTION'], true) ? 'RC' : null,
                     'payment_id'        => $settlementCode,
                     'status'            => Payment::STATUS_PAID, // 2
                     'edit_flag'         => 0,

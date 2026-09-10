@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\HotelConfig;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -70,10 +71,31 @@ class RoleController extends Controller
             return response()->json(['success' => false, 'message' => 'Role đang được gán cho vị trí công việc.'], 422);
         }
 
+        $this->removeRoleFromOldDayOperationConfig($role->code);
+
         $role->delete();
         return response()->json(['success' => true, 'message' => 'Đã xóa vai trò']);
     }
 
+    private function removeRoleFromOldDayOperationConfig(string $roleCode): void
+    {
+        $config = HotelConfig::query()
+            ->where('name', 'RuleUserCorrectOrPostBillPaymentOldDay')
+            ->first();
+
+        if (!$config) {
+            return;
+        }
+
+        $roleCodes = collect(preg_split('/[,;|]+/', (string) $config->value) ?: [])
+            ->map(fn ($code) => trim($code))
+            ->filter()
+            ->reject(fn ($code) => strcasecmp($code, $roleCode) === 0)
+            ->unique(fn ($code) => strtolower($code))
+            ->values();
+
+        $config->update(['value' => $roleCodes->implode(',')]);
+    }
     public function getPermissions(int $id)
     {
         $role = Role::with('permissions')->findOrFail($id);

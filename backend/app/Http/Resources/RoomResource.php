@@ -22,6 +22,7 @@ class RoomResource extends JsonResource
             'room_class_id' => $this->room_class_id,
             'room_form' => new RoomFormResource($this->whenLoaded('roomForm')),
             'room_class' => new RoomClassResource($this->whenLoaded('roomClass')),
+            'room_class_color' => $this->roomClass?->color,
             'room_type' => $this->roomClass?->code,
             'room_type_name' => $this->roomClass?->name,
             'is_clean' => !in_array($this->room_status_code, ['vacant_dirty', 'occupied_dirty']),
@@ -98,6 +99,8 @@ class RoomResource extends JsonResource
             'is_do_not_move' => (int)($this->is_do_not_move ?? 0),
             'booking_room_id' => $this->booking_room_id ?? null,
             'booking_id' => $this->booking_id ?? null,
+            'is_arriving_tomorrow' => (bool) ($this->is_arriving_tomorrow ?? false),
+            'tomorrow_booking' => $this->tomorrow_booking ?? null,
         ];
     }
 }

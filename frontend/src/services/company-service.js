@@ -99,3 +99,10 @@ export const fetchWarehouses = (branch = null) => http.get('/warehouses', branch
 } : {})
 export const resetUserPassword = (userId) => http.post(`/users/${userId}/reset-password`)
 export const changeUserPassword = (data) => http.post('/me/change-password', data)
+
+// ==================== BANK ACCOUNTS (TÀI KHOẢN NGÂN HÀNG) ====================
+export const fetchBankAccounts = (params = {}) => http.get('/bank-accounts', { params })
+export const fetchBankAccountLookups = () => http.get('/bank-accounts/lookups')
+export const createBankAccount = (data) => http.post('/bank-accounts', data)
+export const updateBankAccount = (id, data) => http.put('/bank-accounts/' + id, data)
+export const deleteBankAccount = (id) => http.delete('/bank-accounts/' + id)

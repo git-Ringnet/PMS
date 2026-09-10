@@ -41,18 +41,23 @@ class RoomStatusPermissionService
             return false;
         }
 
-        $roleConfig = trim((string) HotelConfig::where('name', 'RoleUserCancelCheckIn')->value('value'));
-        if ($roleConfig === '') {
-            return false;
+        $user = $request->user();
+        if ($user?->is_super_admin) {
+            return true;
         }
 
-        $allowedRoles = preg_split('/[,;|]+/', strtolower($roleConfig), -1, PREG_SPLIT_NO_EMPTY);
-        $user = $request->user();
-        $userRoles = array_filter([
-            strtolower((string) ($user?->job_title_code ?? '')),
-            strtolower((string) ($user?->job_title ?? '')),
-        ]);
+        $roleConfig = trim((string) HotelConfig::where('name', 'RoleUserCancelCheckIn')->value('value'));
+        if (filled($roleConfig)) {
+            $allowedRoles = preg_split('/[,;|]+/', strtolower($roleConfig), -1, PREG_SPLIT_NO_EMPTY);
+            $userRoles = array_filter([
+                strtolower((string) ($user?->job_title_code ?? '')),
+                strtolower((string) ($user?->job_title ?? '')),
+            ]);
 
-        return count(array_intersect($allowedRoles, $userRoles)) > 0;
+            return count(array_intersect($allowedRoles, $userRoles)) > 0;
+        }
+
+        // Mặc định khi chưa cấu hình giới hạn chức danh cụ thể: cho phép bộ phận lễ tân hủy nhận phòng
+        return true;
     }
 }

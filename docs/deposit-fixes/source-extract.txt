@@ -1,0 +1,29 @@
+1: Fix lỗi ở Đặt cọc section 1 (Table payments) 
+2: Đặt cọc khi lưu xuống bảng Payment cọc DepartmentId đang mặc định lưu mã MR, cột Outlet= Null 
+3: ->Fix: đặt cọc tạo tại PMS Payment.outlet=RC 
+4: Department lưu theo module tạo, Tạo đặt cọc ở modun Đặt phòng => department= MR, outlet=RC 
+5: Tạo đặt cọc ở modun Lễ Tân ( màn hình booking hoặc hóa đơn) => department= FO, outlet=RC 
+6:   [IMAGES: media/image1.png]
+7: Section 2 (Chưa xem được hình ảnh đặt cọc )  [IMAGES: media/image2.png]
+9: Section 3  
+10: Khi chọn 1 dòng đặt cọc -> bấm sửa để sửa 1 dòng đặt cọc 
+11: => các nút tách, chuyển, xóa , sửa làm mờ đi không cho thao tác 
+12: => khi bấm sửa chỉ thao tác 2 nút quay lại và lưu 
+13:   [IMAGES: media/image3.png]
+19: Section 4 
+20: Màn hình booking , chỉnh lại giao diện chỗ đặt cọc 1 tí   [IMAGES: media/image4.png]
+22: Section 5 (Lỗi hiển thị) 
+23: Booking đã thêm đặt cọc không hiển thị tiền cọc 
+24: => màn hình booking chỗ đặt cọc không hiển thị tiền cọc , khi bào bấm vào nút thêm cọc rồi thoát ra mới hiển thị cọc 
+25: => Màn hình chi tiết booking không hiển thị đặt cọc 
+26:   [IMAGES: media/image5.png]
+28: Section 6 (xóa cọc) 
+29: Thực hiện xóa cọc tại màn hình booking -> đặt cọc 
+30: -> hệ thống không hiển thị màn hình nhập lý do xóa cọc nên không thao tác xóa cọc được  [IMAGES: media/image6.png]
+45: Section 7 (Chuyển cọc) 
+46: Màn hình booking -> đặt cọc-> chọn cọc để chuyển 
+47: - danh sách booking nhận chị che mất khúc dưới 
+48: - danh sách các phòng và booking có thể chuyển đến bị thiếu , không đầy đủ so với danh sách phòng ở có thể chuyển qua ở màn hình hóa đơn -> chuyển phòng ( bên này đúng hơn) 
+49:   [IMAGES: media/image7.png]
+51: Section 8  hiện tại phần tài khoản ngân hàng trong phần modal thêm đặt cọc ấy nó đang hardcode 3 ngân hàng á tôi muốn update thêm module trang quản lý tài khoản ngân hàng trong phần Cài đặt  system nhé  
+52:   [IMAGES: media/image8.png]

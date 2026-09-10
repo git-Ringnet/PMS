@@ -11,6 +11,159 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-10] - Fix lỗi Sang Ngày kiểm tra booking chưa gán phòng vật lý (chưa lấy phòng)
+### Module: Sang ngày / Night Audit ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Nguyên nhân**:
+  - Khi tạo booking mới mà chưa gán phòng vật lý (`room_number` là `null` hoặc `'Chưa gán'`), hoặc booking chưa có phòng (`booking_rooms` rỗng), màn hình Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue)) vẫn lấy booking đó đưa vào danh sách tab "Phòng đến" và đếm vào `arrivalCount`.
+  - Điều này làm `canRollDay` bị khóa (`arrivalCount > 0`), đồng thời backend [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php) trong `checkStatus()` và `runNightAudit()` quét `BookingRoom` theo ngày mà không kiểm tra phòng vật lý, dẫn đến quăng lỗi `Không thể sang ngày vì vẫn còn phòng chưa check-in hoặc chưa check-out`.
+- **Khắc phục**:
+  - **Backend ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))**:
+    - Cả 2 hàm `checkStatus()` và `runNightAudit()` bổ sung điều kiện lọc `whereNotNull('room_number')->where('room_number', '!=', '')->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")` cho cả `pendingCheckIns` và `pendingCheckOuts`.
+    - Bỏ qua các booking/phòng chưa gán phòng vật lý, không chặn tiến trình chuyển ngày hệ thống.
+  - **Frontend ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))**:
+    - Bổ sung hàm kiểm tra `hasAssignedRoom(r)` nhằm loại bỏ triệt để các phòng chưa gán (`null`, rỗng, `'Chưa gán'`).
+    - Trong `processRealBookings`: Chỉ tính vào số đếm `arrivalCount` đối với các phòng đã được gán phòng vật lý thực tế; loại bỏ hoàn toàn nhánh fallback đếm cả booking không có phòng (`rooms.length === 0`).
+    - Trong `processItem`: Bỏ qua các phòng chưa gán phòng vật lý, không đưa vào danh sách bảng dữ liệu của tab "Phòng đến", đảm bảo nút "Sang ngày" không bị chặn vô lý.
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-10] - Chuẩn hóa UI module Tài Khoản Ngân Hàng & Bật tính năng bôi đen / copy text trong System
+### Module: System / Tài Khoản Ngân Hàng ([BankAccountTab.vue](file:///d:/PMS/frontend/src/pages/system/components/BankAccountTab.vue), [SystemPage.vue](file:///d:/PMS/frontend/src/pages/system/SystemPage.vue))
+
+- **Đồng bộ chuẩn UI theo BranchManageTab & EmployeeTab**:
+  - Loại bỏ khung wrapper card cũ và tiêu đề lớn `<h1>`.
+  - Thanh Toolbar trên cùng: Ô tìm kiếm chuẩn `h-[30px]` kèm nút xóa nhanh `✕` và nút "Tìm Kiếm" (`bg-[#8dcbf4] hover:bg-[#70b2db]`).
+  - Cụm nút chức năng bên phải: Nút chuyển nhóm subtab (`[1. Ngân Hàng Thanh Toán | 2. Ngân Hàng Trung Gian]`), nút `+ Thêm`, nút Trợ giúp SVG và popover Thiết lập ẩn/hiện cột.
+  - Bảng dữ liệu: Bảng viền `border border-slate-200 rounded-lg shadow-2xs`, tiêu đề cố định `sticky top-0 bg-slate-100/90`, hỗ trợ sắp xếp các cột có thể sort (`sortable`), nút xóa tài khoản dùng SVG thùng rác chuẩn.
+  - Modal Thêm / Chỉnh sửa: Header màu xanh `bg-[#8dcbf4]`, subtabs phân chia rõ ràng, lưới form 2 cột nhập liệu gọn gàng (hỗ trợ nhập `opened_on` & `closed_on`), footer với các nút `Tiếp`, `Hủy`, `Lưu`.
+- **Khắc phục lỗi chặn copy text trong System**:
+  - Gỡ bỏ thuộc tính `select-none` thừa ở container gốc của [SystemPage.vue](file:///d:/PMS/frontend/src/pages/system/SystemPage.vue).
+  - Bổ sung `select-text` trên các dòng dữ liệu bảng, ô dữ liệu và modal trong [BankAccountTab.vue](file:///d:/PMS/frontend/src/pages/system/components/BankAccountTab.vue) để người dùng có thể bôi đen và sao chép (Ctrl+C) mã tài khoản, số tài khoản, tên ngân hàng thuận tiện.
+- **Dọn dẹp code**: Dọn dẹp khối menu lặp trong sidebar của [SystemPage.vue](file:///d:/PMS/frontend/src/pages/system/SystemPage.vue).
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-09] - Fix 4 lỗi Room Map & Check-in Logic (Lễ Tân)
+### Module: Room Map / Check-in ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php), [booking-service.js](file:///d:/PMS/frontend/src/services/booking-service.js))
+
+- **Section 1 – Kiểm tra AllowCheckinVacantClean & Giữ trạng thái phòng khi check-in phòng chờ kiểm tra (vacant_clean / dirty)**:
+  - Backend: Kiểm tra trực tiếp `$physicalRoom->room_status_code` thay vì `$physicalRoom->status` (vốn bị accessor `Room.php` ánh xạ mặc định `vacant_clean` thành `available`).
+  - Khi `AllowCheckinVacantClean=0`: Chặn check-in đối với phòng `vacant_clean`, `vacant_dirty`, `turndown` → Trả về HTTP 422 ("Không được phép nhận phòng do cấu hình hệ thống").
+  - Khi `AllowCheckinVacantClean=1` & chưa có `confirmed`: Trả về HTTP 200 với `needs_confirmation: true` và message yêu cầu xác nhận.
+  - Khi `confirmed=true`: Cho phép check-in và **bảo lưu nguyên trạng thái phòng**: `vacant_clean` giữ nguyên `vacant_clean` (không đổi sang `occupied_ready`, giữ nguyên icon ngôi sao ✨ trên Room Map).
+  - Frontend `RoomMapPage.vue`: Cập nhật `handleQuickCheckIn()` để bắt `needs_confirmation` và mở dialog `uiStore.confirm`.
+  - Frontend `RoomPlanPage.vue`: Bổ sung xử lý `needs_confirmation` khi giao phòng.
+  - Frontend `CheckInPage.vue`: Đã có dialog xác nhận và gửi lại với `confirmed: true`.
+
+- **Section 2 – Hiện lại nút "Hủy nhận phòng" tại danh sách phòng đã đến của bộ phận Lễ tân**:
+  - **Nguyên nhân gốc (Root Cause)**: `RoomStatusPermissionService::canCancelCheckIn` kiểm tra cấu hình `RoleUserCancelCheckIn`. Trong DB giá trị mặc định là chuỗi rỗng `''`. Code cũ xử lý `if ($roleConfig === '') return false;` khiến 100% người dùng (kể cả Super Admin hay nhân viên Lễ tân) đều bị trả về `can_cancel_checkin: false`. Đồng thời ở frontend, `isArrivalMode` thiếu trường hợp `!props.displayMode`, và `canUndoForDate` bị ràng buộc thừa `searchDate === systemDate`.
+  - **Backend ([RoomStatusPermissionService.php](file:///d:/PMS/backend/app/Services/RoomStatusPermissionService.php))**:
+    - Khi `RoleUserCancelCheckIn` để trống (mặc định), hệ thống cho phép bộ phận lễ tân hủy nhận phòng (`return true`).
+    - Super Admin luôn được bypass quyền hủy nhận phòng.
+    - Khi cấu hình có danh sách chức danh cụ thể, kiểm tra theo `job_title_code` / `job_title`.
+  - **Frontend ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Chuẩn hóa `isFrontDesk` nhận diện thêm `route.path.startsWith('/frontdesk')`.
+    - `isArrivalMode` hỗ trợ cả `displayMode === 'arrivals'` và `!props.displayMode` (khi mở tab checkin trực tiếp).
+    - **Đồng bộ màn hình xác nhận Hủy nhận phòng**: Thay thế popup confirm 2 nút mặc định cũ bằng modal chuẩn 3 nút ("Đóng" / "Dơ" / "Có") đồng bộ 100% với Sơ đồ phòng:
+      - Nút "Đóng": Đóng modal, không thực hiện thao tác.
+      - Nút "Dơ": Hủy nhận phòng và chuyển trạng thái phòng vật lý thành Phòng bẩn (`vacant_dirty`).
+      - Nút "Có": Hủy nhận phòng và chuyển trạng thái phòng vật lý thành Phòng sạch (`vacant_clean`).
+    - Thêm watcher `watch([() => props.currentModule, isFrontDesk], loadPermissions)` để luôn nạp lại quyền khi chuyển module/route.
+    - Đồng bộ `moduleContext` trong `RoomMapPage.vue` nhận diện `route.path.startsWith('/frontdesk')`.
+
+- **Section 3 – Màu số phòng theo loại phòng + gạch chân ngày mai**:
+  - Thêm thông số mới `RoomMap_ColorRoomNumberByRoomClass` vào `HotelDefinitionSeeder.php` (value mặc định `'0'`) và expose qua API `GET /api/hotel-settings` ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php)).
+  - [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php): Trả về `room_class_color` lấy từ `room_classes.color`.
+  - [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue):
+    - Khi `RoomMap_ColorRoomNumberByRoomClass = 0`: Số phòng mặc định màu đen. Các phòng đang ở có ngày đến = ngày hệ thống (`checkinStr === sysDateStr`) hiển thị màu đỏ (`text-red-600 font-black`), áp dụng chuẩn cho cả module Lễ tân và Đặt phòng.
+    - Khi `RoomMap_ColorRoomNumberByRoomClass = 1`: Số phòng hiển thị theo màu `room_classes.color` qua `getRoomNumberStyle(room)`, không đổi sang màu đỏ khi check-in trong ngày. Nếu hạng phòng chưa cấu hình màu riêng hoặc đang mang màu trắng mặc định (`#ffffff`), số phòng tự động hiển thị màu đen chuẩn (`#000000`) thay vì màu trắng.
+    - Chức năng gạch chân số phòng khi ngày mai có khách (`isArrivingTomorrow` -> `underline font-black`): hoạt động đồng bộ trên cả Card View và cả 2 List/Table View.
+
+- **Section 4 – Filter "Danh sách phòng đã đến" chỉ theo ngày đang xem (Task #127)**:
+  - **Vấn đề**: Khi xem Room Map ngày 11/8/2026, danh sách "Phòng đã đến" hiển thị cả các phòng đang ở có ngày đến trước ngày 11 (như ngày 10/8 thuộc GAL2, GAL3) do điều kiện `isRoomInhouseOnDate` lọc theo `arrival <= date && departure >= date`.
+  - **Khắc phục ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - Chuẩn hóa điều kiện trong `daDenBookings`:
+      - Khi ở chế độ phòng đã đến (`isArrivalMode`): Chỉ hiển thị các phòng có `status === 1` VÀ `normalizeDate(room.arrival_date || room.actual_arrival_date) === normalizeDate(searchDate.value)`. Các phòng check-in từ ngày trước bị loại bỏ 100%.
+      - Khi ở chế độ phòng đang ở (`isOccupiedMode`): Giữ nguyên hiển thị tất cả các phòng đang lưu trú theo `isRoomInhouseOnDate`.
+      - Khi ở chế độ phòng đã trả (`isDepartureMode`): Lọc theo `room.status === 2` và `departure_date === searchDate.value`.
+    - Đồng bộ hiển thị ngày đến trên dòng cha (Parent Row) của bảng: Hiển thị theo ngày đến của các phòng thực tế đang hiển thị trong nhóm (`booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date`), tránh tình trạng phòng con đến ngày 11 nhưng dòng cha hiển thị ngày 10 của booking tổng.
+
+- **Đồng bộ Tooltip & Màu sắc trạng thái Kế Hoạch Phòng (Room Plan) với Sơ Đồ Phòng (Room Map) ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+  - **Tooltip chi tiết khi hover**:
+    - Thay thế modal trắng cũ bằng Tooltip Dark theme chuẩn (`bg-[#2e2e2e]`, text `#f1f5f9`, border `border-neutral-700/60`, rounded-xl, shadow-2xl, w-[320px]) đồng bộ 100% với Sơ đồ phòng.
+    - Hiển thị đầy đủ thông tin: 🟢 Ngày đến - 🔴 Ngày đi, Mã ĐK, Tên ĐK, Tên khách, Hạng phòng & Số phòng, Đêm, Số lượng khách (👤 👶), Giờ đến & Giá phòng (amber-400), Quy cách phòng & Đêm, Giá/R/N, Tên công ty, Ghi chú / Yêu cầu và Danh sách chi tiết tên từng khách lưu trú.
+  - **Màu sắc thanh đặt phòng (Booking Fill Color)**:
+    - Đồng bộ mã màu nền booking: Ưu tiên `booking_color` (hoặc `ColorDefaultBookingRoomMap` `#97D5FF`), giúp màu phòng trên Kế hoạch phòng liên kết đồng nhất với Sơ đồ phòng.
+  - **Màu sắc viền đáy trạng thái phòng (Status Bottom Indicators)**:
+    - Phòng đã nhận phòng (`InHouse` / `status === 1`): Hiển thị đồng thời cả 2 trạng thái: Nửa trái màu **Xanh (🟢 Đến / Check-in - `bg-emerald-500`)**, Nửa phải màu **Đỏ (🔴 Đi / Check-out - `bg-red-500`)** tương ứng với 2 chấm xanh và đỏ trên Sơ đồ phòng.
+    - Phòng chưa nhận phòng (`status === 0` / Đặt trước / Guaranteed): Hiển thị 100% màu **Xanh (🟢 Phòng đến - `bg-emerald-500`)**, không hiển thị màu đỏ do khách chưa làm thủ tục nhận phòng.
+    - Phòng đã trả phòng (`CheckedOut` / `status === 2`): Hiển thị màu **Xám (`bg-slate-400`)**.
+
+- **Fix hiển thị phòng có khách đến vào ngày mai trên Sơ đồ phòng (Room Map)**:
+  - **Vấn đề**: Đặt phòng đến vào ngày mai (VD: booking GAL2 nhận ngày 10/08/2026 khi ngày hệ thống là 09/08/2026) nhưng số phòng trên Sơ đồ phòng không được gạch chân (`101 (gạch chân) - Phòng khách đến vào ngày mai` theo Trợ giúp), không hiện tooltip và không mở được booking khi double click.
+  - **Backend ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php))**:
+    - Thêm truy vấn `$bookingRoomsTomorrow` với điều kiện `arrival_date = systemDate + 1` và `registrationStatus->is_availability = 1`.
+    - Gán `$room->is_arriving_tomorrow = true`, kèm payload `$room->tomorrow_booking`.
+    - Nếu phòng hôm nay trống, gán bổ sung các thông tin đặt phòng ngày mai (`booking_code`, `booking_id`, `guest_name`, `arrival_date`, `departure_date`, `rate`,...) để phục vụ hiển thị Tooltip và Double-click.
+    - Cập nhật `RoomResource.php` trả về `is_arriving_tomorrow` và `tomorrow_booking`.
+  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Sửa `isArrivingTomorrow(room)`: loại bỏ điều kiện chặn `if (!isReserved) return false` (do phòng trống chưa có khách hôm nay có `status === 'available'`), ưu tiên kiểm tra `room.is_arriving_tomorrow === true`.
+    - Cập nhật `showTooltip()` cho phép kích hoạt tooltip khi phòng có khách đến ngày mai hoặc có `booking_code`.
+    - Cập nhật chế độ xem dạng danh sách (List View / Table View) hiển thị gạch chân số phòng khi `isArrivingTomorrow(room)`.
+
+- **Fix trạng thái chấm xanh (🟢 Phòng đến) và chấm đỏ (🔴 Phòng đi) trên Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - **Khắc phục**:
+    - Khôi phục chuẩn màu gốc Tailwind (`bg-emerald-500` cho chấm xanh, `bg-red-500` cho chấm đỏ).
+    - **Phòng chưa nhận phòng (Đặt trước - 1005, 1006, 1105)**: Chỉ hiển thị chấm xanh (🟢 Phòng đến) ở góc trên-trái, tuyệt đối không hiển thị chấm đỏ (🔴 Phòng đi) do khách chưa làm thủ tục nhận phòng.
+    - **Phòng đã nhận phòng (Đang ở - 105, 106)**: Hiển thị đầy đủ cả 2 chấm ở hai bên (trái: chấm xanh đến hôm nay; phải: chấm đỏ đi).
+    - **Phòng trống đến ngày mai (205, 206)**: Không hiển thị chấm hôm nay mà giữ gạch chân số phòng theo quy ước.
+
+- **Verification**: `npm run build` ✅ | `db:seed HotelDefinitionSeeder` ✅
+
+---
+
+## [2026-09-08] - Chuẩn hóa toàn bộ Master Data thông tin khách hàng theo file Excel chuẩn
+### Module: Khách hàng & Đặt phòng / Master Data & Multi-DB Seeders ([GuestDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/GuestDefinitionSeeder.php), [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php), [ResidenceType.php](file:///d:/PMS/backend/app/Models/ResidenceType.php), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+
+- **Đã hoàn thành**:
+  - **Tách riêng và chuẩn hóa đầy đủ các bảng danh mục khách hàng theo file Excel [ĐỊNH NGHĨA THÔNG TIN KHÁCH HÀNG.xlsx](file:///d:/PMS/ĐỊNH%20NGHĨA%20THÔNG%20TIN%20KHÁCH%20HÀNG.xlsx)**:
+    - **`residence_types` (THƯỜNG TRÚ TẠM TRÚ)**: Tạo migration `2026_09_08_120000_create_residence_types_table.php` và Model `ResidenceType.php`. Chạy migration tạo bảng riêng biệt trên tất cả chi nhánh. Nạp 3 bản ghi: `Địa chỉ thường trú (Thường trú)`, `Địa chỉ tạm trú (Tạm trú)`, `Địa chỉ khác (Khác)`.
+    - **`guest_titles` (DANH XƯNG)**: Đồng bộ chính xác 6 danh xưng (`Boy.`, `Girl.`, `Inf`, `Kid.`, `Mr.`, `Ms.`), dọn dẹp các mã mẫu cũ.
+    - **`border_gates` (CẢNG)**: Nạp đầy đủ 87 cảng biển, sân bay, cửa khẩu từ file Excel (`STS`, `SNB`, `CNT`, `CSG`,...).
+    - **`entry_purposes` (MỤC ĐÍCH)**: Nạp đầy đủ 14 mục đích lưu trú chuẩn (`DL`, `CT`, `TM`, `MK`, `HN`, `TT`, `VT`, `DT`, `BC`, `DC`, `HT`, `KH`, `LD`, `TH`).
+    - **`guest_types` (LOẠI KHÁCH)**: Nạp 5 cấp bậc phân loại khách chuẩn (`VIP1`, `VIP2`, `VIP3`, `VIP4`, `RegularGuest`). Đồng bộ tường minh ID khớp 100% file Excel (`id = 1, 2, 3, 4, 6`), giải quyết lỗi auto-increment làm lệch ID của `RegularGuest` thành 5.
+    - **`id_types` (LOẠI GIẤY TỜ)**: Nạp 4 loại giấy tờ chuẩn (`CCCD`, `Passport`, `GPLX`, `Other`).
+    - **`nationalities` (QUỐC TỊCH)**: Cập nhật nạp chính xác **252 bản ghi theo đúng số thứ tự và ID từ sheet QUỐC TỊCH** (bắt đầu bằng `id = 1`: `---` Người nước ngoài, `id = 245`: `VNM` Việt Nam, kết thúc ở `id = 252`: `ZWE` Zimbabwe), loại bỏ 256 dòng từ seeder merged countries cũ.
+  - **Backend Seeder & API**:
+    - Chuyển đổi [GuestDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/GuestDefinitionSeeder.php) sang **100% mảng PHP thuần (Hardcoded standard arrays)** tự đóng gói, không phụ thuộc file ngoài hay thư viện đọc Excel/JSON.
+    - Cập nhật [NationalitySeeder.php](file:///d:/PMS/backend/database/seeders/NationalitySeeder.php) và file dữ liệu [merged_countries.json](file:///d:/PMS/backend/database/seeders/data/merged_countries.json) đồng bộ 252 quốc tịch theo chuẩn file Excel.
+    - Chạy nạp đồng bộ thành công trên toàn bộ 8 database chi nhánh (`pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`, `pms_gkt6`, `pms_hkt5`, `pms_loloee`, `pms_hkt8`).
+    - Bổ sung `residence_types` vào API `GET /api/guest-definitions` và method `residenceTypes()` trong [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php).
+  - **Frontend ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Thay thế các tùy chọn hardcode bằng dữ liệu động `residence_types` trả về từ API (`Thường trú`, `Tạm trú`, `Khác`).
+    - Cập nhật danh sách danh xưng chuẩn (`Boy.`, `Girl.`, `Inf`, `Kid.`, `Mr.`, `Ms.`).
+    - Hỗ trợ fallback giữ nguyên dữ liệu lịch sử nếu khách hàng cũ có giá trị tùy chỉnh.
+- **Kiểm tra**:
+  - `php artisan test --filter=GuestDefinitionMasterDataTest`: 19/19 assertions đạt 100%.
+  - Kiểm tra trực tiếp trên Database 8 chi nhánh: `nationalities` có đúng 252 dòng (dòng 1 là "Người nước ngoài"), `guest_types` có đúng 5 dòng với `id = 1, 2, 3, 4, 6`.
+  - `npm run build`: Thành công 100%, không phát sinh lỗi template hay cú pháp.
+
+---
+
+## [2026-09-08] - Điều chỉnh menu chuột phải phòng đang ở trên Sơ đồ phòng (Room Map)
+### Module: Frontdesk / Reservation / Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Đã hoàn thành**:
+  - **Sửa nút thao tác khi chuột phải vào phòng có khách đang ở (In-house / Occupied)**:
+    - Loại bỏ nút "Nhận phòng" hiển thị sai lệch đối với phòng đang có khách lưu trú.
+    - Xóa nút pill "Huỷ nhận phòng" trùng lặp ở cuối menu.
+    - Hiển thị nút **"Hủy nhận phòng"** trực tiếp trên danh sách menu (giữa "Thông báo" và "In phiếu ăn sáng") khi ngày đến của phòng bằng ngày hệ thống (`canShowUndoCheckinForRoom`).
+    - Trường hợp ngày đến nhỏ hơn ngày hệ thống (`arrival_date < system_date`): ẩn hoàn toàn cả nút "Nhận phòng" và "Hủy nhận phòng".
+    - Chuẩn hóa hàm so khớp ngày `isRoomNumberRed`: so khớp chuẩn ngày đến với ngày hệ thống để đánh dấu màu đỏ cho phòng nhận trong ngày.
+- **Kiểm tra**:
+  - `npm run build`: Thành công 100%, không phát sinh lỗi template hay cú pháp.
+
+---
+
 ## [2026-09-07] - Tích hợp tự động RbacMatrixSeeder vào luồng Reset Multi-DB
 ### Module: Hệ thống / RBAC Seeder & Console Commands ([database_domains.php](file:///d:/PMS/backend/config/database_domains.php), [ResetMultiDbCommand.php](file:///d:/PMS/backend/app/Console/Commands/ResetMultiDbCommand.php))
 
@@ -933,3 +1086,30 @@
 - Test: RBAC 15/15, 45 assertions; frontend build thành công; runtime local đúng 8 chi nhánh, 15 bộ phận, 18 Position, 3 ứng dụng và kho HKT1/HKT2.
 - Full backend suite: 108/171 passed; 61 lỗi 403 do test cũ thiếu fixture quyền, 2 lỗi môi trường thiếu Dompdf/GD. Không thêm bypass test vào production.
 - Chi tiết bằng chứng tại `RBAC_ORGANIZATION_IMPLEMENTATION_REVIEW.md`.
+
+## [2026-09-10] - Hoàn thiện các fix Đặt cọc và CRUD tài khoản ngân hàng
+
+- Triển khai ngữ cảnh cọc MR/FO và outlet RC cho cọc PMS; giữ nguyên outlet của Advance Payment hiện hành.
+- Chuẩn hóa URL/preview ảnh chứng từ, khóa Tách/Chuyển/Xóa/Sửa khi đang sửa cọc, và giới hạn payload sửa vào phương thức/mô tả.
+- Thêm form lý do xóa gửi đúng body DELETE, bảo toàn bộ phận/outlet/tài khoản/tiền tệ trên dòng đảo, tách và chuyển.
+- Đồng bộ tổng active DPR khi mở booking; card hiển thị tiêu đề `ĐẶT CỌC`, từng khoản và vùng cuộn; dropdown chuyển cọc được cập nhật theo booking nhận.
+- Thêm migration, API, phân quyền và UI CRUD tài khoản ngân hàng: hai nhóm, 10 cột, lookup kế toán/tiền tệ và nối dropdown cọc; tab thuế/phí cà thẻ giữ placeholder vì chưa có đặc tả.
+- Kiểm tra tĩnh, migration pretend, route list và frontend build đạt. Bộ `BookingTest|DebtSettlementTest` chưa chạy qua nghiệp vụ vì fixture quyền trả 403; chưa UAT hoặc backfill dữ liệu lịch sử.
+
+## [2026-09-10] - Chốt lại Section 7 theo booking nhận
+
+- Cập nhật `DepositModal` để dropdown chuyển cọc chỉ hiển thị một option cho mỗi booking Đăng ký/Inhouse hợp lệ, gồm mã booking và tên booking/khách; loại bỏ builder phòng, “Toàn bộ phòng” và Guest 1/Guest 2.
+- Khi chọn booking, state và payload chỉ giữ/gửi `target_booking_id`; không gửi `target_room_id` hoặc `target_guest_id`, không mở rộng sang chuyển phòng vật lý.
+- Cập nhật yêu cầu, nghiệm thu và kịch bản INT-05 trong `PLAN_FIX_LOI_DAT_COC.md`; compile/build frontend cần chạy lại sau thay đổi.
+
+## [2026-09-10] - Hoàn tác booking-only ở Section 7
+
+- Theo yêu cầu mới nhất, khôi phục dropdown chuyển cọc hiển thị booking và các phòng/khách tương ứng.
+- Khi chọn booking gửi `target_booking_id`; khi chọn phòng/khách gửi thêm đúng `target_room_id`/`target_guest_id`.
+- Cập nhật kế hoạch và INT-05 để đối chiếu danh sách đích với Hóa đơn → Chuyển phòng; chưa UAT danh sách thực tế.
+
+## [2026-09-10] - Ghi chú commit các Section Đặt cọc
+
+- Ghi lại phạm vi đã làm của Section 1–8 và phần chưa gồm UAT/backfill/tab thuế-phí trong `PLAN_FIX_LOI_DAT_COC.md`.
+- Commit đề xuất: `fix(deposit): complete deposit workflow and bank account management`.
+- Chưa tạo commit hoặc push GitHub; chờ người dùng commit.

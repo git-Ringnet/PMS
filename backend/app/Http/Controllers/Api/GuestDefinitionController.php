@@ -9,6 +9,7 @@ use App\Models\BorderGate;
 use App\Models\EntryPurpose;
 use App\Models\GuestType;
 use App\Models\IdType;
+use App\Models\ResidenceType;
 use App\Models\Province;
 use App\Models\District;
 use App\Models\Ward;
@@ -24,13 +25,26 @@ class GuestDefinitionController extends Controller
         return response()->json([
             'success' => true,
             'data'    => [
-                'titles'         => GuestTitle::where('is_active', true)->orderBy('order_index')->get(),
-                'border_gates'   => BorderGate::where('is_active', true)->orderBy('order_index')->get(),
-                'entry_purposes' => EntryPurpose::where('is_active', true)->orderBy('order_index')->get(),
-                'guest_types'    => GuestType::where('is_active', true)->orderBy('order_index')->get(),
-                'id_types'       => IdType::where('is_active', true)->orderBy('order_index')->get(),
-                'provinces'      => Province::where('is_active', true)->orderBy('order_index')->get(),
+                'titles'          => GuestTitle::where('is_active', true)->orderBy('order_index')->get(),
+                'border_gates'    => BorderGate::where('is_active', true)->orderBy('order_index')->get(),
+                'entry_purposes'  => EntryPurpose::where('is_active', true)->orderBy('order_index')->get(),
+                'guest_types'     => GuestType::where('is_active', true)->orderBy('order_index')->get(),
+                'id_types'        => IdType::where('is_active', true)->orderBy('order_index')->get(),
+                'residence_types' => ResidenceType::where('is_active', true)->orderBy('order_index')->get(),
+                'provinces'       => Province::where('is_active', true)->orderBy('order_index')->get(),
             ],
+        ]);
+    }
+
+    /**
+     * Danh sách loại thường trú / tạm trú
+     * GET /api/residence-types
+     */
+    public function residenceTypes()
+    {
+        return response()->json([
+            'success' => true,
+            'data'    => ResidenceType::where('is_active', true)->orderBy('order_index')->get(),
         ]);
     }
 

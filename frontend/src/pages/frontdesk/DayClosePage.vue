@@ -253,6 +253,14 @@ function checkRoomStatus(r, b) {
   }
 }
 
+function hasAssignedRoom(r) {
+  if (!r) return false
+  const rNum = r.room_number || r.room?.room_number || r.room?.code
+  if (!rNum) return false
+  const s = String(rNum).trim().toLowerCase()
+  return s !== '' && s !== 'chưa gán' && s !== 'chua gan' && s !== 'null' && s !== 'undefined'
+}
+
 function processRealBookings(bookings) {
   const sysDateStr = getNormalizedDate(systemDate.value) || getNormalizedDate(new Date())
   
@@ -272,23 +280,17 @@ function processRealBookings(bookings) {
         const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
         if (isCancelled || isCheckedOut || isMoved) return
 
+        // Bỏ qua các booking / phòng chưa gán phòng vật lý (chưa lấy phòng)
+        if (!hasAssignedRoom(r)) return
+
         const arrDate = getEffectiveArrivalDate(r, b)
         const depDate = getEffectiveDepartureDate(r, b)
 
-        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100)
+        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100, và PHẢI ĐÃ GÁN PHÒNG)
         if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100) arrCount++
         // Phòng đi: Khách đang ở và đi vào ngày hệ thống
         if (depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
       })
-    } else {
-      const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(null, b)
-      if (isCancelled || isCheckedOut || isMoved) return
-
-      const arrDate = getEffectiveArrivalDate(null, b)
-      const depDate = getEffectiveDepartureDate(null, b)
-
-      if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved) arrCount++
-      if (depDate === sysDateStr && isCheckedIn && !isMoved) depCount++
     }
   })
 
@@ -309,6 +311,7 @@ function processRealBookings(bookings) {
     const rooms = b.booking_rooms || b.bookingRooms || []
 
     const processItem = (r, rIdx) => {
+      if (!r) return
       // Tuyệt đối không lấy phòng có status = 100 (đã chuyển phòng)
       if (r && (Number(r.status) === 100 || r.status === 100 || r.status === '100' || r.move_room === 1 || r.move_room === true || r.move_room === '1')) {
         return
@@ -317,13 +320,16 @@ function processRealBookings(bookings) {
       const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
       if (isCancelled || isCheckedOut || isMoved) return
 
+      // Bỏ qua các booking / phòng chưa gán phòng vật lý (chưa lấy phòng)
+      if (!hasAssignedRoom(r)) return
+
       const arrDate = getEffectiveArrivalDate(r, b)
       const depDate = getEffectiveDepartureDate(r, b)
 
       // Lọc theo tab hiện tại
       let matchesTab = false
       if (activeFilterTab.value === 'arrivals') {
-        // Phòng đến: Tình trạng Đặt trước, chưa check-in, đến hôm nay, TUYỆT ĐỐI KHÔNG lấy status = 100
+        // Phòng đến: Tình trạng Đặt trước, chưa check-in, đến hôm nay, TUYỆT ĐỐI KHÔNG lấy status = 100 và PHẢI ĐÃ GÁN PHÒNG
         matchesTab = (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100)
       } else if (activeFilterTab.value === 'departures') {
         // Phòng đi: Đang ở (checked-in) và đi hôm nay
@@ -353,30 +359,28 @@ function processRealBookings(bookings) {
         : (b.contact_name || b.booking_name || 'Khách Vãng Lai')
 
       groupsMap[companyName].items.push({
-        id: `real-row-${b.id}-${r ? (r.id || rIdx) : '0'}`,
+        id: `real-row-${b.id}-${r.id || rIdx}`,
         bookingCode: b.code || b.booking_code || `GAL${b.id}`,
         vat: b.has_vat ?? true,
-        roomNumber: r ? (r.room?.room_number || r.room?.code || r.room_number || 'Chưa gán') : 'Chưa gán',
-        roomType: r ? (r.room_class?.name || r.roomClass?.name || 'Standard') : 'Standard',
+        roomNumber: r.room?.room_number || r.room?.code || r.room_number,
+        roomType: r.room_class?.name || r.roomClass?.name || 'Standard',
         guestName: guestName,
         arrivalDate: formatDateVN(arrDate),
-        nights: (r && r.num_of_days) || b.num_of_days || calculateNights(arrDate, depDate),
+        nights: r.num_of_days || b.num_of_days || calculateNights(arrDate, depDate),
         departureDate: formatDateVN(depDate),
         breakfast: b.breakfast_included ?? true,
-        adults: (r && r.adults_count) || b.adults_count || 1,
-        children: (r && r.children_count) || b.children_count || 0,
+        adults: r.adults_count || b.adults_count || 1,
+        children: r.children_count || b.children_count || 0,
         rateCode: b.rate_code || '',
-        price: (r && (r.price || r.room_rate)) || b.total_amount || 500000,
-        extraBed: (r && r.extra_bed_count) || 0,
-        extraBedPrice: (r && r.extra_bed_price) || 0,
+        price: r.price || r.room_rate || b.total_amount || 500000,
+        extraBed: r.extra_bed_count || 0,
+        extraBedPrice: r.extra_bed_price || 0,
         selected: false
       })
     }
 
     if (rooms.length > 0) {
       rooms.forEach((r, rIdx) => processItem(r, rIdx))
-    } else {
-      processItem(null, 0)
     }
   })
 

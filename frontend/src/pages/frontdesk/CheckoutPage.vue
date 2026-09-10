@@ -521,19 +521,25 @@ function formatServiceDateTime(serviceDate, createdAt, openTime = null) {
 }
 
 function formatMoney(num) {
-  if (!num) return '0'
-  return new Intl.NumberFormat('vi-VN').format(num)
+  const value = Number(num)
+  if (!Number.isFinite(value)) return '0'
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 2
+  }).format(value)
 }
 
 function formatSummaryMoney(num) {
-  if (!num) return '0'
-  return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Math.round(Number(num) || 0))
+  const value = Number(num)
+  if (!Number.isFinite(value)) return '0'
+  // Keep decimal amounts visible in summary cells; this only changes display
+  // formatting and never changes the value used by the checkout calculations.
+  return formatMoney(value)
 }
 
 function formatInvoiceMoney(num) {
   const value = Number(num) || 0
   const hasFraction = Math.abs(value % 1) > 0.000001
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: hasFraction ? 2 : 0,
     maximumFractionDigits: 2
   }).format(value)
@@ -541,7 +547,7 @@ function formatInvoiceMoney(num) {
 
 function formatInvoiceQuantity(num) {
   const value = Number(num) || 0
-  return new Intl.NumberFormat('vi-VN', {
+  return new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 6
   }).format(value)
 }
@@ -2298,6 +2304,13 @@ const openPaymentModal = () => {
     return
   }
 
+  // A room-row payment must identify the guest selected in that row. Do not
+  // silently create an unattributed room payment when legacy data has no ID.
+  if (selectedRoomItem.value && !selectedGuestId.value) {
+    uiStore.showToast('Không xác định được khách của dòng đang chọn. Vui lòng chọn đúng khách trước khi thanh toán.', 'warning')
+    return
+  }
+
   showPaymentModal.value = true
 }
 
@@ -2398,7 +2411,8 @@ const selectRoomItemRow = (b, r, specificGuest = null) => {
   activeFolioTab.value = 'A'
   noteText.value = b.note || ''
   roomNumber.value = r.roomNumber
-  const guest = specificGuest || r.allGuests[0]
+  const guests = Array.isArray(r.allGuests) ? r.allGuests : []
+  const guest = specificGuest || guests.find(item => item?.isPrimary) || guests[0] || null
   selectedGuest.value = guest?.name || r.guestName
   selectedGuestId.value = guest?.id || null
   isNoPost.value = Boolean(r.rawRoom?.no_post)
@@ -2462,7 +2476,9 @@ const selectBookingFromSearch = (b, r = null, specificGuest = null) => {
   } else {
     selectBookingHeader(b)
   }
-  searchQuery.value = b.code || (r ? r.roomNumber : b.name)
+  // The selected booking remains in the detail table while the search box is
+  // reset for the next lookup. The search watcher must not clear the detail.
+  searchQuery.value = ''
   showSearchDropdown.value = false
 }
 
@@ -2530,10 +2546,9 @@ watch(() => [route.query.bookingCode, route.query.booking_code, route.query.book
 watch(searchQuery, (newVal) => {
   const q = String(newVal || '').trim()
   if (!q) {
-    displayedBookingsList.value = []
-    if (route.query.bookingCode) {
-      router.replace({ query: { ...route.query, bookingCode: undefined } })
-    }
+    // Clearing the input only clears the query/dropdown. Keep the selected
+    // booking and its room/guest context visible until another row is chosen.
+    showSearchDropdown.value = false
   }
 })
 
@@ -2787,7 +2802,7 @@ onUnmounted(() => {
     </aside>
 
     <!-- RIGHT MAIN SECTION -->
-    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(360px,380px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
+    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(410px,430px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
 
       <!-- TOP CONTROL BAR (Nằm trên cùng toàn chiều rộng, không thuộc panel nào) -->
       <div class="checkout-header col-span-2 flex items-center justify-between gap-2 px-4 py-1.5 bg-white border-b border-slate-300 text-xs">
@@ -2825,36 +2840,33 @@ onUnmounted(() => {
                 @click="selectBookingFromSearch(b)"
               >
                 <!-- Line 1: BKK:  <mã booking>    <tên đoàn / tên booking> -->
-                <div class="flex items-center gap-4">
-                  <span class="font-bold text-gray-900 shrink-0 min-w-[36px]">BKK:</span>
-                  <span class="font-bold text-gray-900 shrink-0 min-w-[75px]">{{ b.code }}</span>
-                  <span class="font-bold text-gray-800 truncate">{{ b.name }}</span>
+                <div class="grid min-w-0 grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3">
+                  <span class="font-bold text-gray-900">BKK:</span>
+                  <span class="font-bold text-gray-900">{{ b.code }}</span>
+                  <span class="min-w-0 truncate font-bold text-gray-800" :title="b.name">{{ b.name }}</span>
                 </div>
                 <!-- Sublines for each room in booking (Khớp chính xác Ảnh 1) -->
                 <template v-for="r in b.roomItems" :key="r.id">
-                  <template v-if="showAllGuestsInRoom && r.allGuests.length > 1">
+                  <template v-if="showAllGuestsInRoom && Array.isArray(r.allGuests) && r.allGuests.length > 1">
                     <div 
                       v-for="(guest, gIdx) in r.allGuests"
                       :key="gIdx"
                       @click.stop="selectBookingFromSearch(b, r, guest)"
-                      class="flex items-center gap-4 mt-1.5 text-gray-700 pl-[36px] hover:text-sky-600"
+                      class="grid min-w-0 grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 mt-1.5 text-gray-700 hover:text-sky-600"
                     >
-                      <span class="font-bold text-gray-800 shrink-0 min-w-[75px]">{{ r.roomNumber }}</span>
-                      <span class="text-gray-400">|</span>
-                      <span
-                        class="text-gray-800 truncate"
-                        :class="gIdx === 0 ? 'font-bold' : 'font-normal'"
-                      >{{ guest.name }}</span>
+                      <span aria-hidden="true"></span>
+                      <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
+                      <span class="min-w-0 truncate text-gray-800" :title="guest.name">{{ guest.name }}</span>
                     </div>
                   </template>
                   <template v-else>
                     <div 
                       @click.stop="selectBookingFromSearch(b, r)"
-                      class="flex items-center gap-4 mt-1.5 text-gray-700 pl-[36px] hover:text-sky-600"
+                      class="grid min-w-0 grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 mt-1.5 text-gray-700 hover:text-sky-600"
                     >
-                      <span class="font-bold text-gray-800 shrink-0 min-w-[75px]">{{ r.roomNumber }}</span>
-                      <span class="text-gray-400">|</span>
-                      <span class="font-bold text-gray-800 truncate">{{ r.guestName }}</span>
+                      <span aria-hidden="true"></span>
+                      <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
+                      <span class="min-w-0 truncate text-gray-800" :title="r.guestName">{{ r.guestName }}</span>
                     </div>
                   </template>
                 </template>
@@ -2919,7 +2931,14 @@ onUnmounted(() => {
         <div class="checkout-bookings-panel flex-[1.65] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none">
           <!-- Table Danh sách Phòng / Khách (Khớp chính xác Ảnh 2) -->
           <div class="flex-1 overflow-auto">
-            <table class="w-full border-collapse text-left text-xs">
+            <table class="w-full min-w-0 table-fixed border-collapse text-left text-xs">
+              <colgroup>
+                <col class="w-[25px]" />
+                <col class="w-[72px]" />
+                <col />
+                <col class="w-[92px]" />
+                <col class="w-[92px]" />
+              </colgroup>
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
                   <th class="p-1 w-[25px] text-center"></th>
@@ -2941,15 +2960,17 @@ onUnmounted(() => {
                     <td class="p-1 w-[25px] text-center">
                       <input type="checkbox" v-model="b.checked" @change="toggleBookingCheck(b)" @click.stop class="rounded border-gray-300 text-sky-600" />
                     </td>
-                    <td colspan="2" class="p-1 font-bold text-slate-900">
-                      <div class="flex items-center gap-1 whitespace-nowrap">
+                    <td class="min-w-0 p-1 font-bold text-slate-900">
+                      <div class="flex min-w-0 items-center gap-1 overflow-hidden">
                         <i class="fa-solid fa-layer-group text-[10px] text-indigo-500"></i>
-                        <span class="rounded bg-slate-200 px-1 text-[9px] font-bold">{{ b.code }}</span>
-                        <span class="truncate">{{ b.name }}</span>
+                        <span class="shrink-0 rounded bg-slate-200 px-1 text-[10px] font-bold">{{ b.code }}</span>
                       </div>
                     </td>
-                    <td class="p-1 text-right font-mono text-slate-900">{{ formatSummaryMoney(b.totalService) }}</td>
-                    <td class="p-1 text-right font-mono text-slate-900">{{ formatMoney(b.paidAmount) }}</td>
+                    <td class="min-w-0 p-1 font-bold text-slate-900">
+                      <span class="block w-full min-w-0 truncate" :title="b.name">{{ b.name }}</span>
+                    </td>
+                    <td class="p-1 text-right tabular-nums text-slate-900">{{ formatSummaryMoney(b.totalService) }}</td>
+                    <td class="p-1 text-right tabular-nums text-slate-900">{{ formatMoney(b.paidAmount) }}</td>
                   </tr>
 
                   <template v-for="r in b.roomItems" :key="r.id">
@@ -2966,10 +2987,10 @@ onUnmounted(() => {
                         <td class="p-1 w-[25px] text-center">
                           <input type="checkbox" v-model="r.checked" @click.stop class="rounded border-gray-300 text-sky-600" />
                         </td>
-                        <td class="p-1 font-bold text-slate-900">{{ r.roomNumber }}</td>
-                        <td class="p-1" :class="gIdx === 0 ? 'font-bold' : 'pl-4 italic text-slate-700'">{{ guest.name }}</td>
-                        <td class="p-1 text-right font-mono">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
-                        <td class="p-1 text-right font-mono">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 pl-10 text-slate-900 text-center">{{ r.roomNumber }}</td>
+                        <td class="min-w-0 p-1 truncate text-slate-700" :title="guest.name">{{ guest.name }}</td>
+                        <td class="p-1 text-right tabular-nums">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 text-right tabular-nums">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
                       </tr>
                     </template>
                     <template v-else>
@@ -2983,10 +3004,10 @@ onUnmounted(() => {
                         <td class="p-1 w-[25px] text-center">
                           <input type="checkbox" v-model="r.checked" @click.stop class="rounded border-gray-300 text-sky-600" />
                         </td>
-                        <td class="p-1 font-bold">{{ r.roomNumber }}</td>
-                        <td class="p-1 font-bold">{{ r.guestName }}</td>
-                        <td class="p-1 text-right font-mono">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
-                        <td class="p-1 text-right font-mono">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 pl-10 text-slate-900 text-center">{{ r.roomNumber }}</td>
+                        <td class="min-w-0 p-1 truncate text-slate-700" :title="r.guestName">{{ r.guestName }}</td>
+                        <td class="p-1 text-right tabular-nums">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 text-right tabular-nums">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
                       </tr>
                     </template>
                   </template>
@@ -3087,18 +3108,18 @@ onUnmounted(() => {
                       class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </td>
-                  <td class="px-2.5 py-1.5 font-mono">{{ group.dateTime }}</td>
-                  <td class="px-2.5 py-1.5 font-bold text-sky-600">{{ group.code }}</td>
+                  <td class="px-2.5 py-1.5 tabular-nums">{{ group.dateTime }}</td>
+                  <td class="px-2.5 py-1.5 font-bold text-slate-900">{{ group.code }}</td>
                   <td class="px-2.5 py-1.5">{{ group.name }}</td>
                   <td class="px-2.5 py-1.5">{{ group.department }}</td>
-                  <td class="px-2.5 py-1.5 text-right font-mono font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
-                  <td class="px-2.5 py-1.5 text-center font-mono">{{ group.quantity }}</td>
-                  <td class="px-2.5 py-1.5 font-mono font-bold text-red-600">{{ group.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
+                  <td class="px-2.5 py-1.5 text-center tabular-nums">{{ group.quantity }}</td>
+                  <td class="px-2.5 py-1.5 tabular-nums font-bold text-red-600">{{ group.paymentCode }}</td>
                   <td class="px-2.5 py-1.5 text-center font-bold">
                     <span class="px-2 py-0.5 text-xs font-bold inline-block">{{ group.folio }}</span>
                   </td>
-                  <td class="px-2.5 py-1.5 text-right font-mono">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
-                  <td class="px-2.5 py-1.5 text-right font-mono">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
                   <td class="px-2.5 py-1.5">{{ group.items[0]?.vatNo }}</td>
                   <td class="px-2.5 py-1.5">{{ group.items[0]?.userName }}</td>
                 </tr>
@@ -3124,7 +3145,7 @@ onUnmounted(() => {
               />
               <span class="uppercase text-[10px] text-slate-500 tracking-wide">Tổng dịch vụ:</span>
             </div>
-            <span class="font-mono text-xs pr-2 text-blue-600 font-bold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
+            <span class="tabular-nums text-xs pr-2 text-blue-600 font-bold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
           </div>
         </div>
 
@@ -3175,13 +3196,13 @@ onUnmounted(() => {
                       class="rounded border-gray-300"
                     />
                   </td>
-                  <td class="px-2.5 py-1.5 font-mono">{{ p.dateTime }}</td>
+                  <td class="px-2.5 py-1.5 tabular-nums">{{ p.dateTime }}</td>
                   <td class="px-2.5 py-1.5">{{ p.department }}</td>
                   <td class="px-2.5 py-1.5" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'">{{ p.description }}</td>
                   <td class="px-2.5 py-1.5 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
-                  <td class="px-2.5 py-1.5 text-right font-mono font-bold" :class="p.paymentCode ? 'text-red-600' : 'text-emerald-700'">{{ formatMoney(p.amount) }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900">{{ formatMoney(p.amount) }}</td>
                   <td class="px-2.5 py-1.5 text-center font-bold"><span class="inline-block px-2 py-0.5 text-xs">{{ p.folio }}</span></td>
-                  <td class="px-2.5 py-1.5 font-mono font-bold text-red-600">{{ p.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 tabular-nums font-bold text-red-600">{{ p.paymentCode }}</td>
                   <td class="px-2.5 py-1.5">{{ p.vatNo }}</td>
                   <td class="px-2.5 py-1.5">{{ p.accounting }}</td>
                   <td class="px-2.5 py-1.5">{{ p.userName }}</td>
@@ -3208,7 +3229,7 @@ onUnmounted(() => {
               />
               <span class="uppercase text-[10px] text-slate-500 tracking-wide">Tổng thanh toán:</span>
             </div>
-            <span class="font-mono text-xs pr-2 text-emerald-600 font-bold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
+            <span class="tabular-nums text-xs pr-2 text-emerald-600 font-bold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
           </div>
         </div>
 
@@ -3268,14 +3289,14 @@ onUnmounted(() => {
                     <td class="border border-gray-200 px-3 py-2 text-center">{{ index + 1 }}</td>
                     <td class="border border-gray-200 px-3 py-2">{{ formatInvoiceProductName(item.serviceName) }}</td>
                     <td class="border border-gray-200 px-3 py-2 text-center">{{ formatInvoiceQuantity(item.quantity) }}</td>
-                    <td class="border border-gray-200 px-3 py-2 text-right font-mono">{{ formatInvoiceMoney(item.amount) }}</td>
-                    <td class="border border-gray-200 px-3 py-2 text-right font-mono font-semibold">{{ formatInvoiceMoney(item.totalAmount) }}</td>
+                    <td class="border border-gray-200 px-3 py-2 text-right tabular-nums">{{ formatInvoiceMoney(item.amount) }}</td>
+                    <td class="border border-gray-200 px-3 py-2 text-right tabular-nums font-semibold">{{ formatInvoiceMoney(item.totalAmount) }}</td>
                   </tr>
                 </tbody>
                 <tfoot>
                   <tr class="font-semibold text-gray-900">
                     <td colspan="4" class="border border-gray-200 px-3 py-3 text-right">Tổng tiền</td>
-                    <td class="border border-gray-200 px-3 py-3 text-right font-mono">{{ formatInvoiceMoney(invoiceTotalAmount) }}</td>
+                    <td class="border border-gray-200 px-3 py-3 text-right tabular-nums">{{ formatInvoiceMoney(invoiceTotalAmount) }}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -3599,9 +3620,11 @@ onUnmounted(() => {
 .checkout-service-title i { color: #0f172a; }
 /* Booking list: exact 5-column layout from the reference HTML. */
 .checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.checkout-bookings-panel table { table-layout: auto; width: 100%; border-collapse: collapse; }
+.checkout-bookings-panel table { table-layout: fixed !important; width: 100%; border-collapse: collapse; }
 .checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
-.checkout-bookings-panel table td { padding: 6px 6px; font-size: 11px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; }
+.checkout-bookings-panel table td { padding: 6px 6px; font-size: 11px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; overflow: hidden; }
+.checkout-bookings-panel table td:nth-child(3),
+.checkout-bookings-panel table td:nth-child(3) > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .checkout-bookings-panel table th:first-child,
 .checkout-bookings-panel table td:first-child { width: 25px !important; }
 .checkout-bookings-panel table tr:hover { background: #f1f5f9; }
@@ -3631,7 +3654,7 @@ onUnmounted(() => {
 .checkout-actions .menu-title { font-size: 9px; color: #94a3b8; padding: 4px 8px 2px; }
 .checkout-actions button { border-radius: 4px; }
 /* Correct 3-column grid: header spans all columns, sidebar occupies column 3 below it. */
-.checkout-shell { display: grid !important; grid-template-columns: minmax(360px, 380px) minmax(0, 1fr) 170px; grid-template-rows: 45px minmax(0, 1fr); width: 100%; height: calc(100vh - 48px); min-width: 1024px; }
+.checkout-shell { display: grid !important; grid-template-columns: minmax(410px, 430px) minmax(0, 1fr) 170px; grid-template-rows: 45px minmax(0, 1fr); width: 100%; height: calc(100vh - 48px); min-width: 1024px; }
 .checkout-main { display: contents !important; width: auto !important; height: auto !important; margin: 0 !important; }
 .checkout-header { grid-column: 1 / 4; grid-row: 1; width: auto !important; height: 45px !important; min-width: 0; }
 .checkout-left-pane { grid-column: 1; grid-row: 2; min-width: 0; }

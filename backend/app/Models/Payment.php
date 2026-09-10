@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Model Payment — Đặt cọc & Thanh toán
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\Auth;
 class Payment extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected $appends = ['image_url'];
 
     protected static function booted(): void
     {
@@ -47,6 +50,7 @@ class Payment extends Model
         'description',
         'reason',
         'amount',
+        'currency',
         'total_amount_before_split',
         'pack2',
         'pack4',
@@ -55,6 +59,7 @@ class Payment extends Model
         'reversal_ref',
         'payment_method_id',
         'debit_account',
+        'bank_account_id',
         'vat_number',
         'serial',
         'invoice_number',
@@ -116,6 +121,46 @@ class Payment extends Model
     public function debtSettlements()
     {
         return $this->hasMany(PaymentDebtSettlement::class);
+    }
+
+    public function bankAccount()
+    {
+        return $this->belongsTo(BankAccount::class, 'bank_account_id')->withTrashed();
+    }
+
+    /** Stable public URL for receipt images, while retaining image_path for legacy clients. */
+    public function getImageUrlAttribute(): ?string
+    {
+        if (empty($this->image_path)) {
+            return null;
+        }
+
+        $path = (string) $this->image_path;
+        if (preg_match('/^https?:\/\//i', $path)) {
+            // Older rows may already contain the public URL. Keep external
+            // URLs intact, but collapse local /storage URLs to a relative
+            // path so a development APP_URL cannot send the browser to port
+            // 80 instead of the API/storage origin.
+            $parsed = parse_url($path);
+            if (!empty($parsed['path']) && preg_match('#^/(?:storage|uploads)/#i', $parsed['path'])) {
+                return $parsed['path'] . (!empty($parsed['query']) ? '?' . $parsed['query'] : '');
+            }
+
+            return $path;
+        }
+
+        $path = ltrim(str_replace('\\', '/', $path), '/');
+        $path = preg_replace('#^(?:storage|public)/#i', '', $path);
+
+        $url = Storage::disk('public')->url($path);
+        if ((string) config('filesystems.disks.public.driver') === 'local') {
+            $parsed = parse_url($url);
+            if (!empty($parsed['path'])) {
+                return $parsed['path'] . (!empty($parsed['query']) ? '?' . $parsed['query'] : '');
+            }
+        }
+
+        return $url;
     }
 
     // =========================================

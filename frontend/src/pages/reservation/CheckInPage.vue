@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
 import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -31,16 +31,17 @@ const props = defineProps({
   }
 })
 
+const route = useRoute()
 const router = useRouter()
-const isFrontDesk = computed(() => props.currentModule === 'frontdesk')
-const isReservation = computed(() => props.currentModule === 'reservation')
+const isFrontDesk = computed(() => props.currentModule === 'frontdesk' || (typeof route?.path === 'string' && route.path.startsWith('/frontdesk')))
+const isReservation = computed(() => !isFrontDesk.value && (props.currentModule === 'reservation' || (typeof route?.path === 'string' && route.path.startsWith('/reservation'))))
 const isReadOnlyModule = computed(() => isReservation.value || props.currentModule === 'housekeeping')
-const isArrivalMode = computed(() => props.displayMode === 'arrivals')
+const isArrivalMode = computed(() => props.displayMode === 'arrivals' || !props.displayMode)
 const isDepartureMode = computed(() => props.displayMode === 'departures')
 const isOccupiedMode = computed(() => props.displayMode === 'occupied')
 const systemDate = ref('')
 const canCancelCheckIn = ref(false)
-const canUndoForDate = computed(() => isArrivalMode.value && isFrontDesk.value && canCancelCheckIn.value && searchDate.value === systemDate.value)
+const canUndoForDate = computed(() => isArrivalMode.value && isFrontDesk.value && canCancelCheckIn.value)
 
 // State
 const bookings = ref([])
@@ -183,7 +184,8 @@ const chuaDenBookings = computed(() => {
         return Number(room.status) === 1 && normalizeDate(room.departure_date) <= normalizeDate(systemDate.value || searchDate.value)
       }
       if (!isArrivalMode.value) return false
-      return Number(room.status) === 0 && normalizeDate(room.arrival_date) === normalizeDate(searchDate.value)
+      const roomArrival = normalizeDate(room.arrival_date || room.actual_arrival_date)
+      return Number(room.status) === 0 && roomArrival === normalizeDate(searchDate.value)
     })
     if (pendingRooms.length === 0) return null
     return {
@@ -198,13 +200,19 @@ const chuaDenRoomsCount = computed(() => {
 })
 
 // Section 2: PHÒNG ĐÃ ĐẾN (booking_room status === 1)
+// Chỉ hiển thị phòng có arrival_date = ngày đang xem (không hiển thị phòng check-in từ ngày trước)
 const daDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
-    const checkedInRooms = (booking.booking_rooms || []).filter(room => 
-      isDepartureMode.value
-        ? Number(room.status) === 2 && normalizeDate(room.departure_date) === normalizeDate(searchDate.value)
-        : Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
-    )
+    const checkedInRooms = (booking.booking_rooms || []).filter(room => {
+      if (isDepartureMode.value) {
+        return Number(room.status) === 2 && normalizeDate(room.departure_date) === normalizeDate(searchDate.value)
+      }
+      if (isOccupiedMode.value) {
+        return Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
+      }
+      const roomArrival = normalizeDate(room.arrival_date || room.actual_arrival_date)
+      return Number(room.status) === 1 && roomArrival === normalizeDate(searchDate.value)
+    })
     if (checkedInRooms.length === 0) return null
     return {
       ...booking,
@@ -346,8 +354,25 @@ const handleCheckIn = async () => {
 
   for (const item of selectedRoomsToProcess) {
     try {
+      // Lần gọi đầu: chưa có confirmed
       const res = await checkInRoom(item.bookingId, item.roomId)
-      if (res.data && res.data.success !== false) {
+      if (res.data?.needs_confirmation) {
+        // Backend yêu cầu xác nhận thêm (phòng đang dirty, AllowCheckinVacantClean=1)
+        const dirtyConfirmed = await uiStore.confirm({
+          title: 'Phòng đang chờ kiểm tra',
+          message: res.data.message || `Phòng ${item.roomNumber} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+          confirmText: 'Tiếp tục nhận phòng',
+          cancelText: 'Hủy'
+        })
+        if (!dirtyConfirmed) continue
+        // Gửi lại với confirmed=true
+        const res2 = await checkInRoom(item.bookingId, item.roomId, { confirmed: true })
+        if (res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
+          successCount++
+        } else {
+          errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${res2.data?.message || 'Lỗi không xác định'}`)
+        }
+      } else if (res.data && res.data.success !== false) {
         successCount++
       } else {
         errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${res.data?.message || 'Lỗi không xác định'}`)
@@ -375,8 +400,12 @@ const handleCheckIn = async () => {
   }
 }
 
-// Cancel Check-in action (Hủy nhận phòng)
-const handleUndoCheckIn = async () => {
+// Undo Check-in Modal State (3 Nút: Đóng / Dơ / Có) đồng bộ với Sơ đồ phòng
+const showUndoCheckinModal = ref(false)
+const undoCheckinLoading = ref(false)
+const selectedUndoRooms = ref([])
+
+const handleUndoCheckIn = () => {
   if (!canUndoForDate.value) return
   if (checkedInSelectedCount.value === 0) return
 
@@ -389,32 +418,47 @@ const handleUndoCheckIn = async () => {
     })
   })
 
-  const confirmed = await uiStore.confirm({
-    title: 'Xác nhận hủy nhận phòng',
-    message: `Bạn có chắc chắn muốn hủy nhận phòng cho ${selectedRoomsToProcess.length} phòng đã chọn không?`,
-    confirmText: 'Hủy nhận phòng',
-    cancelText: 'Hủy'
-  })
-  if (!confirmed) return
+  if (selectedRoomsToProcess.length === 0) return
 
-  loading.value = true
+  selectedUndoRooms.value = selectedRoomsToProcess
+  showUndoCheckinModal.value = true
+}
+
+const closeUndoCheckinModal = () => {
+  if (undoCheckinLoading.value) return
+  showUndoCheckinModal.value = false
+  selectedUndoRooms.value = []
+}
+
+const executeUndoCheckIn = async (mode = 'clean') => {
+  if (selectedUndoRooms.value.length === 0) return
+  undoCheckinLoading.value = true
+
   let successCount = 0
   let errorMessages = []
+  const statusCode = mode === 'dirty' ? 'vacant_dirty' : 'vacant_clean'
 
-  for (const item of selectedRoomsToProcess) {
+  for (const item of selectedUndoRooms.value) {
     try {
-    const res = await undoCheckInRoom(item.bookingId, item.roomId, { current_module: 'frontdesk', room_status_code: 'vacant_clean' })
+      const res = await undoCheckInRoom(item.bookingId, item.roomId, {
+        current_module: 'frontdesk',
+        room_status_code: statusCode,
+      })
       if (res.data && res.data.success !== false) {
         successCount++
       } else {
-        errorMessages.push(`Phòng ${item.roomNumber}: ${res.data?.message || 'Lỗi không xác định'}`)
+        errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${res.data?.message || 'Lỗi không xác định'}`)
       }
     } catch (err) {
       console.error(err)
       const msg = err.response?.data?.message || 'Lỗi kết nối máy chủ'
-      errorMessages.push(`Phòng ${item.roomNumber}: ${msg}`)
+      errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${msg}`)
     }
   }
+
+  undoCheckinLoading.value = false
+  closeUndoCheckinModal()
+  selectedRooms.value = []
 
   // Reload room status, stats & bookings
   await roomStore.fetchRooms({ silent: true })
@@ -423,7 +467,11 @@ const handleUndoCheckIn = async () => {
   if (pmsBc) pmsBc.postMessage('rooms-updated')
 
   if (successCount > 0) {
-    uiStore.showToast(`Đã hủy nhận phòng thành công cho ${successCount} phòng!`, 'success')
+    if (mode === 'dirty') {
+      uiStore.showToast(`Hủy nhận phòng và chuyển sang phòng bẩn cho ${successCount} phòng thành công!`, 'success')
+    } else {
+      uiStore.showToast(`Hủy nhận phòng cho ${successCount} phòng thành công!`, 'success')
+    }
   }
   if (errorMessages.length > 0) {
     errorMessages.forEach(msg => {
@@ -672,7 +720,7 @@ async function loadPermissions() {
   }
 }
 
-watch(() => props.currentModule, loadPermissions)
+watch([() => props.currentModule, isFrontDesk], loadPermissions)
 
 watch(searchDate, async () => {
   await roomStore.fetchStats(searchDate.value)
@@ -852,8 +900,8 @@ watch(() => props.displayMode, async () => {
                       {{ booking.registration_status?.name || 'Guaranteed' }}
                     </span>
                   </td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.arrival_date) }}</td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.departure_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
@@ -995,8 +1043,8 @@ watch(() => props.displayMode, async () => {
                       {{ booking.registration_status?.name || 'Guaranteed' }}
                     </span>
                   </td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.arrival_date) }}</td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.departure_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
@@ -1045,6 +1093,87 @@ watch(() => props.displayMode, async () => {
       </div>
 
     </div>
+
+    <!-- Modal Xác nhận Hủy nhận phòng (3 Nút: Đóng / Dơ / Có) -->
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0 scale-95"
+        enter-to-class="opacity-100 scale-100"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100 scale-100"
+        leave-to-class="opacity-0 scale-95"
+      >
+        <div
+          v-if="showUndoCheckinModal"
+          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+          @click.self="closeUndoCheckinModal"
+        >
+          <div
+            class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-modal-slide"
+          >
+            <!-- Header -->
+            <div
+              class="px-5 py-3.5 flex items-center justify-between text-white"
+              :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+            >
+              <h3 class="text-base font-extrabold text-white tracking-wide">Xác nhận</h3>
+              <button
+                @click="closeUndoCheckinModal"
+                class="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
+              >
+                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Body -->
+            <div class="px-6 py-7 text-center">
+              <p class="text-sm font-bold text-slate-800 leading-relaxed">
+                Bạn có muốn dọn phòng này sau khi hủy đăng ký không?
+              </p>
+            </div>
+
+            <!-- Action Buttons (3 Nút: Đóng / Dơ / Có) -->
+            <div class="px-6 pb-6 flex items-center justify-center gap-2.5">
+              <button
+                @click="closeUndoCheckinModal"
+                :disabled="undoCheckinLoading"
+                class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
+                :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+              >
+                Đóng
+              </button>
+              <button
+                @click="executeUndoCheckIn('dirty')"
+                :disabled="undoCheckinLoading"
+                class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
+                :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+              >
+                Dơ
+              </button>
+              <button
+                @click="executeUndoCheckIn('clean')"
+                :disabled="undoCheckinLoading"
+                class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs flex items-center justify-center gap-1.5"
+                :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
+              >
+                <svg v-if="undoCheckinLoading" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                {{ undoCheckinLoading ? 'Đang...' : 'Có' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -1054,5 +1183,20 @@ watch(() => props.displayMode, async () => {
 }
 .shadow-2xs {
   box-shadow: 0 1px 1px 0 rgba(0, 0, 0, 0.03);
+}
+
+@keyframes modalSlide {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-modal-slide {
+  animation: modalSlide 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 </style>
