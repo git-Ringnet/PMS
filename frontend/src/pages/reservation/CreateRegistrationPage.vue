@@ -455,11 +455,30 @@ const isTopBarThemeDark = computed(() => {
 
 const activeDepositsList = computed(() => {
   if (!modalForm.value || !modalForm.value.deposits) return []
-  return modalForm.value.deposits.filter(d => d.edit_flag === 0 && (d.pack2 === 'DPR' || d.pack2 === undefined))
+  return modalForm.value.deposits.filter(d =>
+    Number(d.edit_flag ?? 0) === 0
+      && !d.deleted_at
+      && String(d.pack2 || 'DPR').toUpperCase() === 'DPR'
+  )
 })
 
 const hasActiveDeposits = computed(() => {
   return activeDepositsList.value.length > 0 && modalForm.value.paymentValue > 0
+})
+
+const activeDepositRows = computed(() => {
+  return [...activeDepositsList.value].sort((a, b) => {
+    const dateKey = value => {
+      const raw = String(value || '')
+      return raw.includes('/') ? raw.split('/').reverse().join('-') : raw
+    }
+    const dateCompare = dateKey(a.date).localeCompare(dateKey(b.date))
+    return dateCompare || Number(a.id || 0) - Number(b.id || 0)
+  })
+})
+
+const activeDepositTotal = computed(() => {
+  return activeDepositRows.value.reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0)
 })
 
 const firstDepositDate = computed(() => {
@@ -2141,8 +2160,12 @@ function bookingToTab(b) {
     })
   }
 
-  const activePayments = b.payments ? b.payments.filter(p => p.edit_flag === 0 && p.pack2 === 'DPR') : []
-  const totalDeposit = activePayments.reduce((sum, p) => sum + Number(p.amount), 0)
+  const activePayments = b.payments
+    ? b.payments.filter(p => Number(p.edit_flag ?? 0) === 0 && String(p.pack2 || '').toUpperCase() === 'DPR' && !p.deleted_at)
+    : []
+  const totalDeposit = b.active_deposit_total !== undefined && b.active_deposit_total !== null
+    ? Number(b.active_deposit_total)
+    : activePayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
 
   return {
     id: b.booking_code,
@@ -2186,14 +2209,20 @@ function bookingToTab(b) {
       paymentMethodId: p.payment_method_id,
       note: p.description || '',
       amount: Number(p.amount) || 0,
-      currency: activeCurrency.value.code || 'VND',
+      currency: p.currency || activeCurrency.value.code || 'VND',
       recipient: p.created_by || 'Admin',
-      images: p.image_path ? [p.image_path] : [],
+      images: p.image_url || p.image_path ? [p.image_url || p.image_path] : [],
       status: p.status,
       edit_flag: p.edit_flag,
+      deleted_at: p.deleted_at || null,
       reversal_ref: p.reversal_ref,
       debit_account: p.debit_account,
-      pack2: p.pack2
+      bankAccountId: p.bank_account_id || p.bank_account?.id || null,
+      bankAccount: p.bank_account || null,
+      departmentId: p.department_id || null,
+      outlet: p.outlet || null,
+      pack2: p.pack2,
+      pack4: p.pack4
     })) : [],
     rooms: rooms,
     createdBy: b.created_by || '',
@@ -7162,7 +7191,7 @@ defineExpose({
                   <div class="flex justify-between items-center pb-2 mb-2.5 border-b border-slate-100">
                     <div class="flex items-center gap-2">
                       <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
-                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Đặt cọc & Thanh toán</h3>
+                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">ĐẶT CỌC</h3>
                     </div>
                     <button 
                       @click="openDepositModal" 
@@ -7175,12 +7204,12 @@ defineExpose({
                     </button>
                   </div>
 
-                  <!-- Khối hiển thị tiền cọc thanh lịch, giảm saturation -->
+                  <!-- Tổng và từng dòng cọc theo cùng định nghĩa active DPR -->
                   <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
                     <div class="flex flex-col">
                       <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tổng tiền đặt cọc</span>
                       <div class="text-base font-black text-slate-800 tracking-tight mt-0.5">
-                        {{ formatCurrencyInput(modalForm.paymentValue) }} <span class="text-xs font-bold text-slate-500">VND</span>
+                        {{ formatCurrencyInput(activeDepositTotal) }} <span class="text-xs font-bold text-slate-500">{{ activeCurrency.code || 'VND' }}</span>
                       </div>
                     </div>
                     <div class="w-8 h-8 rounded-lg bg-slate-200/70 text-slate-500 flex items-center justify-center text-sm shrink-0">
@@ -7188,15 +7217,28 @@ defineExpose({
                     </div>
                   </div>
 
-                  <!-- Thông tin chi tiết lần cọc nếu có -->
-                  <div v-if="hasActiveDeposits" class="mt-2.5 bg-slate-50 border border-slate-200 rounded-lg p-2 flex flex-col gap-1 text-xs">
-                    <div class="flex items-center justify-between text-slate-700">
-                      <span class="font-medium text-[11px]"><i class="fa-regular fa-calendar-days text-slate-400 mr-1"></i> Ngày: <strong>{{ firstDepositDate }}</strong></span>
-                      <span class="font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-300 text-[11px]">{{ firstDepositMethodName }}</span>
+                  <div v-if="activeDepositRows.length > 0" class="mt-2.5 max-h-[180px] overflow-y-auto border border-slate-200 rounded-lg">
+                    <div class="px-2 py-1.5 bg-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Chi tiết đặt cọc
                     </div>
-                    <div v-if="firstDepositNote" class="text-slate-500 italic text-[11px] truncate mt-0.5">
-                      <i class="fa-solid fa-comment-dots text-slate-400 mr-1"></i> {{ firstDepositNote }}
+                    <div
+                      v-for="deposit in activeDepositRows"
+                      :key="deposit.id"
+                      class="grid grid-cols-[minmax(76px,auto)_auto_minmax(0,1fr)_auto_auto] gap-2 items-center px-2 py-1.5 border-t border-slate-100 text-[11px]"
+                    >
+                      <span class="font-semibold text-slate-600 whitespace-nowrap">{{ deposit.date || '—' }}</span>
+                      <span class="text-slate-300">|</span>
+                      <span class="truncate text-slate-700">
+                        {{ paymentMethods.find(method => method.code === deposit.paymentMethodId || String(method.id) === String(deposit.paymentMethodId))?.name || deposit.paymentMethodId || '—' }}
+                      </span>
+                      <span class="text-slate-300">|</span>
+                      <span class="font-mono font-bold text-slate-900 whitespace-nowrap">
+                        {{ formatCurrencyInput(deposit.amount) }} {{ deposit.currency || activeCurrency.code || 'VND' }}
+                      </span>
                     </div>
+                  </div>
+                  <div v-else class="mt-2.5 px-2 py-2 border border-dashed border-slate-200 rounded-lg text-[11px] text-slate-400 text-center">
+                    Chưa có khoản đặt cọc đang hiệu lực.
                   </div>
                 </div>
 
@@ -7762,6 +7804,7 @@ defineExpose({
         :bookingCode="modalForm?.bookingCode" 
         :paymentMethods="paymentMethods" 
         :currenciesList="currenciesList" 
+        :department-id="currentBookingModule === 'FO' ? 'FO' : 'MR'"
         :rooms="modalForm?.rooms || activeTab?.rooms || []"
         v-model:deposits="modalForm.deposits" 
         @update:paymentValue="modalForm.paymentValue = $event"

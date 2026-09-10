@@ -99,6 +99,22 @@ class RoomController extends Controller
             ])
             ->get();
 
+        $tomorrowDate = $systemDate->copy()->addDay()->toDateString();
+        $bookingRoomsTomorrow = \App\Models\BookingRoom::whereNotNull('room_number')
+            ->whereHas('booking.registrationStatus', fn ($query) => $query->where('is_availability', 1))
+            ->whereIn('status', [
+                \App\Models\BookingRoom::STATUS_BOOKED,
+                \App\Models\BookingRoom::STATUS_CHECKED_IN
+            ])
+            ->whereDate('arrival_date', $tomorrowDate)
+            ->with([
+                'booking.company',
+                'booking.customerSource',
+                'booking.registrationStatus',
+                'guests.guest',
+            ])
+            ->get();
+
         /** @var Room $room */
         foreach ($rooms as $room) {
             $room->booking_status = null;
@@ -204,6 +220,39 @@ class RoomController extends Controller
                 $room->booking_id = $br->booking_id ?? null;
             }
 
+            // Gắn thông tin khách đến vào ngày mai
+            $brTomorrow = $bookingRoomsTomorrow->where('room_number', $room->room_number)->first();
+            $room->is_arriving_tomorrow = (bool) $brTomorrow;
+            if ($brTomorrow) {
+                $primaryGuestTomorrow = $brTomorrow->guests->firstWhere('is_primary', true) ?? $brTomorrow->guests->first();
+                $room->tomorrow_booking = [
+                    'booking_id' => $brTomorrow->booking_id,
+                    'booking_room_id' => $brTomorrow->id,
+                    'booking_code' => $brTomorrow->booking?->booking_code ?? '',
+                    'booking_name' => $brTomorrow->booking?->booking_name ?? '',
+                    'guest_name' => $primaryGuestTomorrow?->guest?->full_name ?? '',
+                    'arrival_date' => $brTomorrow->arrival_date?->toDateString(),
+                    'departure_date' => $brTomorrow->departure_date?->toDateString(),
+                    'company_name' => $brTomorrow->booking?->company?->name ?? '',
+                    'room_number' => $brTomorrow->room_number,
+                    'nights' => $brTomorrow->arrival_date && $brTomorrow->departure_date ? $brTomorrow->arrival_date->diffInDays($brTomorrow->departure_date) : 1,
+                    'rate' => $brTomorrow->rate ?? 0,
+                ];
+
+                // Nếu phòng chưa có khách/booking hôm nay, gán thêm thông tin đặt phòng ngày mai để tooltip và double-click hiển thị được
+                if (!$br) {
+                    $room->arrival_date = $room->tomorrow_booking['arrival_date'];
+                    $room->departure_date = $room->tomorrow_booking['departure_date'];
+                    $room->booking_code = $room->tomorrow_booking['booking_code'];
+                    $room->booking_name = $room->tomorrow_booking['booking_name'];
+                    $room->guest_name = $room->tomorrow_booking['guest_name'];
+                    $room->company_name = $room->tomorrow_booking['company_name'];
+                    $room->nights = $room->tomorrow_booking['nights'];
+                    $room->rate = $room->tomorrow_booking['rate'];
+                    $room->booking_id = $room->tomorrow_booking['booking_id'];
+                    $room->booking_room_id = $room->tomorrow_booking['booking_room_id'];
+                }
+            }
 
             // Legacy $room->status được tự động tính qua getStatusAttribute() trên Room model
         }

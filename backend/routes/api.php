@@ -210,6 +210,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('geo/sync', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'syncGeo']);
     Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
     Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
+    Route::get('bank-accounts/lookups', [\App\Http\Controllers\Api\BankAccountController::class, 'lookups'])
+        ->middleware('permission:system.user.view,fo.payment.create');
+    Route::apiResource('bank-accounts', \App\Http\Controllers\Api\BankAccountController::class)
+        ->only(['index', 'show'])
+        ->middleware('permission:system.user.view,fo.payment.create');
+    Route::apiResource('bank-accounts', \App\Http\Controllers\Api\BankAccountController::class)
+        ->only(['store', 'update', 'destroy'])
+        ->middleware('permission:system.user.manage');
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
     Route::apiResource('room-rate-codes', RoomRateCodeController::class);
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
