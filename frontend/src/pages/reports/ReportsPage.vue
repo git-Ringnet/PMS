@@ -24,6 +24,8 @@ const housekeepingInvoiceCodes = new Set([
   'MINIBAR_INVOICES',
   'LAUNDRY_INVOICES_BY_PRODUCT',
   'LAUNDRY_FREE_INVOICES',
+  'BREAKAGE_INVOICES_BY_PRODUCT',
+  'BREAKAGE_FREE_INVOICES',
 ])
 const isHousekeepingInvoiceReport = (tab) => housekeepingInvoiceCodes.has(tab?.code)
 const parameterOptions = (tab, name) => tab?.parameterOptions?.[name]
