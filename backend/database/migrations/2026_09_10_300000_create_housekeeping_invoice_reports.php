@@ -417,12 +417,12 @@ SQL;
                 ['value' => 'all', 'label' => 'All'], ['value' => 'post', 'label' => 'Post'],
                 ['value' => 'correct', 'label' => 'Correct'], ['value' => 'free', 'label' => 'Free'],
             ]],
-            ['name' => 'p_order_by', 'label' => 'Sắp xếp theo', 'control' => 'select', 'default' => 'Ma', 'required' => true, 'options' => [
+            ['name' => 'p_order_by', 'label' => 'Sắp xếp theo', 'control' => 'select', 'layout' => 'inline', 'default' => 'Ma', 'required' => true, 'options' => [
                 ['value' => 'Ma', 'label' => 'Mã'], ['value' => 'Room', 'label' => 'Phòng'],
                 ['value' => 'Date', 'label' => 'Ngày'], ['value' => 'ServiceId', 'label' => 'Dịch vụ'],
                 ['value' => 'RefId', 'label' => 'Mã tham chiếu'],
             ]],
-            ['name' => 'p_order_type', 'label' => 'Thứ tự', 'control' => 'select', 'default' => 'ASC', 'required' => true, 'options' => [
+            ['name' => 'p_order_type', 'label' => 'Thứ tự', 'control' => 'select', 'layout' => 'inline', 'default' => 'ASC', 'required' => true, 'options' => [
                 ['value' => 'ASC', 'label' => 'ASC'], ['value' => 'DESC', 'label' => 'DESC'],
             ]],
             ['name' => 'p_show_details', 'label' => 'Xem chi tiết', 'control' => 'checkbox', 'default' => false, 'required' => false],

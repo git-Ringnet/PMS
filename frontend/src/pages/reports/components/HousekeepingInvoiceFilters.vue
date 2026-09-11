@@ -12,6 +12,8 @@ const FILTER_KEYS = [
   'p_order_by',
   'p_order_type',
   'p_show_details',
+  'p_freeitem',
+  'p_group_by_date',
 ]
 
 const DEFAULTS = Object.freeze({
@@ -24,9 +26,12 @@ const DEFAULTS = Object.freeze({
   p_order_by: 'Ma',
   p_order_type: 'ASC',
   p_show_details: false,
+  p_freeitem: 0,
+  p_group_by_date: false,
 })
 
 const props = defineProps({
+  parameterSchema: { type: Array, default: () => [] },
   modelValue: { type: Object, default: () => ({}) },
   systemDate: { type: String, default: '' },
   shifts: { type: Array, default: () => [] },
@@ -36,6 +41,15 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
 })
+
+const configuredParameters = computed(() => props.parameterSchema.filter((item) => item?.configured !== false))
+const parameterNames = computed(() => new Set(configuredParameters.value.map((item) => item?.name).filter(Boolean)))
+const hasParameter = (name) => parameterNames.value.has(name)
+const parameterLabel = (name, fallback) => configuredParameters.value.find((item) => item?.name === name)?.label || fallback
+const parameterPlaceholder = (name, fallback) => configuredParameters.value.find((item) => item?.name === name)?.placeholder || fallback
+const checkboxParameters = computed(() => configuredParameters.value.filter((item) => item?.control === 'checkbox' && item.name !== 'p_show_details'))
+const sortInline = computed(() => configuredParameters.value.find((item) => item?.name === 'p_order_by')?.layout === 'inline'
+  && configuredParameters.value.find((item) => item?.name === 'p_order_type')?.layout === 'inline')
 
 const emit = defineEmits(['update:modelValue', 'submit'])
 
@@ -156,7 +170,7 @@ const availableSortOptions = computed(() => props.sortOptions.length
         </div>
       </div>
 
-      <div class="mb-3 block text-[11px] font-bold text-slate-600">
+      <div v-if="hasParameter('p_shift')" class="mb-3 block text-[11px] font-bold text-slate-600">
         <label :for="shiftId">Ca làm việc</label>
         <select
           :id="shiftId"
@@ -164,14 +178,14 @@ const availableSortOptions = computed(() => props.sortOptions.length
           :value="draft.p_shift"
           @change="updateField('p_shift', $event.target.value)"
         >
-          <option value="">-- Chọn --</option>
+          <option value="">{{ parameterPlaceholder('p_shift', '-- Chọn --') }}</option>
           <option v-for="(option, index) in shifts" :key="optionKey(option, index)" :value="optionValue(option)">
             {{ optionLabel(option) }}
           </option>
         </select>
       </div>
 
-      <div class="mb-3 block text-[11px] font-bold text-slate-600">
+      <div v-if="hasParameter('p_department')" class="mb-3 block text-[11px] font-bold text-slate-600">
         <label :for="departmentId">Chọn bộ phận</label>
         <select
           :id="departmentId"
@@ -179,14 +193,14 @@ const availableSortOptions = computed(() => props.sortOptions.length
           :value="draft.p_department"
           @change="updateField('p_department', $event.target.value)"
         >
-          <option value="">-- Chọn --</option>
+          <option value="">{{ parameterPlaceholder('p_department', '-- Chọn --') }}</option>
           <option v-for="(option, index) in departments" :key="optionKey(option, index)" :value="optionValue(option)">
             {{ optionLabel(option) }}
           </option>
         </select>
       </div>
 
-      <div class="mb-3 block text-[11px] font-bold text-slate-600">
+      <div v-if="hasParameter('p_user')" class="mb-3 block text-[11px] font-bold text-slate-600">
         <label :for="userId">Chọn người dùng</label>
         <select
           :id="userId"
@@ -194,16 +208,37 @@ const availableSortOptions = computed(() => props.sortOptions.length
           :value="draft.p_user"
           @change="updateField('p_user', $event.target.value)"
         >
-          <option value="">-- Chọn --</option>
+          <option value="">{{ parameterPlaceholder('p_user', '-- Chọn --') }}</option>
           <option v-for="(option, index) in users" :key="optionKey(option, index)" :value="optionValue(option)">
             {{ optionLabel(option) }}
           </option>
         </select>
       </div>
 
-      <div class="mb-3 block text-[11px] font-bold text-slate-600">
+      <label
+        v-for="parameter in checkboxParameters"
+        :key="parameter.name"
+        class="mb-3 flex h-8 cursor-pointer items-center gap-2 text-[11px] font-bold text-slate-600"
+      >
+        <input
+          type="checkbox"
+          class="sr-only"
+          :checked="parameter.name === 'p_freeitem' ? !isTrue(draft[parameter.name]) : isTrue(draft[parameter.name])"
+          @change="updateField(parameter.name, parameter.name === 'p_freeitem' ? ($event.target.checked ? 0 : 1) : $event.target.checked)"
+        />
+        <span
+          class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+          :class="(parameter.name === 'p_freeitem' ? !isTrue(draft[parameter.name]) : isTrue(draft[parameter.name])) ? 'bg-sky-500' : 'bg-slate-300'"
+          aria-hidden="true"
+        >
+          <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform" :class="(parameter.name === 'p_freeitem' ? !isTrue(draft[parameter.name]) : isTrue(draft[parameter.name])) ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+        </span>
+        <span>{{ parameter.label || parameter.name }}</span>
+      </label>
+
+      <div v-if="hasParameter('p_order_by') && hasParameter('p_order_type')" class="mb-3 block text-[11px] font-bold text-slate-600">
         <span>Sắp xếp theo</span>
-        <div class="mt-1 grid grid-cols-[minmax(0,1fr)_96px] gap-2">
+        <div class="mt-1" :class="sortInline ? 'grid grid-cols-[minmax(0,1fr)_96px] gap-2' : 'space-y-2'">
           <label class="sr-only" :for="orderById">Trường sắp xếp</label>
           <select
             :id="orderById"
@@ -229,7 +264,7 @@ const availableSortOptions = computed(() => props.sortOptions.length
         </div>
       </div>
 
-      <fieldset class="mb-3 border-0 p-0">
+      <fieldset v-if="hasParameter('p_view_type')" class="mb-3 border-0 p-0">
         <legend class="sr-only">Loại dữ liệu</legend>
         <div class="mt-1 flex flex-wrap items-center gap-4 text-xs font-normal text-slate-700">
           <label v-for="option in viewTypes" :key="option.value" class="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
@@ -246,7 +281,7 @@ const availableSortOptions = computed(() => props.sortOptions.length
         </div>
       </fieldset>
 
-      <label class="mb-3 flex h-8 cursor-pointer items-center gap-2 text-[11px] font-bold text-slate-600" :for="detailsId">
+      <label v-if="hasParameter('p_show_details')" class="mb-3 flex h-8 cursor-pointer items-center gap-2 text-[11px] font-bold text-slate-600" :for="detailsId">
         <input
           :id="detailsId"
           :checked="draft.p_show_details"
@@ -265,7 +300,7 @@ const availableSortOptions = computed(() => props.sortOptions.length
             :class="draft.p_show_details ? 'translate-x-[18px]' : 'translate-x-1'"
           ></span>
         </span>
-        <span>Xem chi tiết</span>
+        <span>{{ parameterLabel('p_show_details', 'Xem chi tiết') }}</span>
       </label>
 
       <button

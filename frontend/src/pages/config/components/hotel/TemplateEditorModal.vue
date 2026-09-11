@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { 
@@ -76,6 +76,11 @@ const openCategories = ref({
   summary: true
 })
 const dataSources = ref([])
+const showLeftPanel = ref(true)
+const showRightPanel = ref(true)
+const canvasViewport = ref(null)
+const canvasZoomMode = ref('fit')
+const canvasZoom = ref(1)
 
 const pageDimensions = computed(() => {
   const dimensions = {
@@ -86,13 +91,64 @@ const pageDimensions = computed(() => {
   }
   const [shortSide, longSide] = dimensions[template.value?.page_size] || dimensions.A4
   const landscape = template.value?.page_orientation === 'landscape'
+  const widthMm = landscape ? longSide : shortSide
+  const heightMm = landscape ? shortSide : longSide
   return {
-    width: `${landscape ? longSide : shortSide}mm`,
-    height: `${landscape ? shortSide : longSide}mm`
+    width: `${widthMm}mm`,
+    height: `${heightMm}mm`,
+    widthMm,
+    heightMm
   }
 })
 
 const pageMargin = (value) => value ?? 10
+
+const canvasFrameStyle = computed(() => ({
+  width: `${pageDimensions.value.widthMm * canvasZoom.value}mm`,
+  minHeight: `${pageDimensions.value.heightMm * canvasZoom.value}mm`
+}))
+
+const canvasStyle = computed(() => ({
+  width: pageDimensions.value.width,
+  minHeight: pageDimensions.value.height,
+  transform: `scale(${canvasZoom.value})`,
+  transformOrigin: 'top left',
+  paddingTop: `${pageMargin(template.value?.margin_top)}mm`,
+  paddingBottom: `${pageMargin(template.value?.margin_bottom)}mm`,
+  paddingLeft: `${pageMargin(template.value?.margin_left)}mm`,
+  paddingRight: `${pageMargin(template.value?.margin_right)}mm`
+}))
+
+const fitCanvasToViewport = () => {
+  if (canvasZoomMode.value !== 'fit' || !canvasViewport.value) return
+
+  const pageWidthPx = pageDimensions.value.widthMm * (96 / 25.4)
+  const availableWidth = Math.max(0, canvasViewport.value.clientWidth - 48)
+  canvasZoom.value = Math.min(1, Math.max(0.2, availableWidth / pageWidthPx))
+}
+
+const setCanvasZoom = (value) => {
+  if (value === 'fit') {
+    canvasZoomMode.value = 'fit'
+    nextTick(fitCanvasToViewport)
+    return
+  }
+
+  canvasZoomMode.value = 'manual'
+  canvasZoom.value = value
+}
+
+const adjustCanvasZoom = (delta) => {
+  canvasZoomMode.value = 'manual'
+  canvasZoom.value = Math.min(1.25, Math.max(0.2, Math.round((canvasZoom.value + delta) * 100) / 100))
+}
+
+const toggleDesignerPanel = async (panel) => {
+  if (panel === 'left') showLeftPanel.value = !showLeftPanel.value
+  if (panel === 'right') showRightPanel.value = !showRightPanel.value
+  await nextTick()
+  fitCanvasToViewport()
+}
 
 const colorInputValue = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || ''))
   ? value
@@ -655,12 +711,16 @@ const loadTemplate = async () => {
       // Keep the runtime HTML synchronized with the loaded designer structure.
       // The designer is driven by content_json, while report preview/render uses content_html.
       compileHtml()
+      await nextTick()
+      fitCanvasToViewport()
     }
   } catch (err) {
     console.error('Lỗi tải mẫu in:', err)
     uiStore.showToast('Không thể tải dữ liệu mẫu in', 'error')
   } finally {
     loading.value = false
+    await nextTick()
+    fitCanvasToViewport()
   }
 }
 
@@ -1973,7 +2033,16 @@ watch(activeTab, (newVal) => {
   if (newVal === 'preview') {
     loadPreview()
   }
+  if (newVal === 'design') {
+    nextTick(fitCanvasToViewport)
+  }
 })
+
+watch(
+  () => [template.value?.page_size, template.value?.page_orientation],
+  () => nextTick(fitCanvasToViewport),
+  { flush: 'post' }
+)
 
 watch(selectedBlockId, (newId) => {
   if (newId) {
@@ -1984,6 +2053,14 @@ watch(selectedBlockId, (newId) => {
   } else {
     editingContent.value = ''
   }
+})
+
+onMounted(() => {
+  window.addEventListener('resize', fitCanvasToViewport)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', fitCanvasToViewport)
 })
 
 // Trigger close
@@ -2090,7 +2167,15 @@ const selectBand = (band) => {
             <History class="w-4 h-4" /> Lịch sử phiên bản
           </button>
         </div>
-        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">DevExpress Report Mode</span>
+        <div class="flex items-center gap-2">
+          <button @click="toggleDesignerPanel('left')" class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-500 hover:bg-slate-100 cursor-pointer border border-slate-200" :title="showLeftPanel ? 'Ẩn nguồn dữ liệu và hộp công cụ' : 'Hiện nguồn dữ liệu và hộp công cụ'">
+            {{ showLeftPanel ? 'Ẩn panel trái' : 'Panel trái' }}
+          </button>
+          <button @click="toggleDesignerPanel('right')" class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-500 hover:bg-slate-100 cursor-pointer border border-slate-200" :title="showRightPanel ? 'Ẩn bảng thuộc tính' : 'Hiện bảng thuộc tính'">
+            {{ showRightPanel ? 'Ẩn thuộc tính' : 'Thuộc tính' }}
+          </button>
+          <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">DevExpress Report Mode</span>
+        </div>
       </div>
 
       <!-- 3. Loading Spinner -->
@@ -2105,7 +2190,7 @@ const selectBand = (band) => {
         <!-- ================== TAB 1: DESIGNER ================== -->
         <template v-if="activeTab === 'design'">
           <!-- Column 1: Field List (Left Panel) -->
-          <div class="w-1/4 bg-slate-50 border-r border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
+          <div v-if="showLeftPanel" class="w-1/4 min-w-[240px] max-w-[360px] bg-slate-50 border-r border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
 
             <!-- DYNAMIC MYSQL STORED PROCEDURE DATA SOURCE -->
             <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-emerald-200 shadow-3xs">
@@ -2212,10 +2297,11 @@ const selectBand = (band) => {
           </div>
 
           <!-- Column 2: Banded Design Canvas (Middle Panel) -->
-          <div class="flex-1 min-w-0 bg-slate-100 p-6 overflow-auto flex flex-col items-center">
+          <div ref="canvasViewport" class="flex-1 min-w-0 bg-slate-100 p-6 overflow-auto flex flex-col items-center">
             
             <!-- Band selector controls -->
-            <div class="flex bg-white p-1 border border-slate-200 rounded-xl shadow-xs mb-4 gap-1 select-none">
+            <div class="flex flex-wrap items-center justify-center gap-2 mb-4 select-none">
+              <div class="flex bg-white p-1 border border-slate-200 rounded-xl shadow-xs gap-1">
               <button @click="selectBand('header')" 
                 class="px-4 py-2 rounded-lg font-bold text-xs border-none cursor-pointer transition-all flex items-center gap-1.5"
                 :class="selectedBand === 'header' ? 'bg-amber-100 text-amber-800' : 'text-slate-500 hover:bg-slate-50'">
@@ -2231,18 +2317,21 @@ const selectBand = (band) => {
                 :class="selectedBand === 'footer' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-50'">
                 Report Footer Band
               </button>
+              </div>
+              <div class="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xs">
+                <span class="px-1 text-[10px] font-bold uppercase text-slate-400">Thu phóng</span>
+                <button @click="adjustCanvasZoom(-0.1)" class="h-7 w-7 rounded-md text-sm font-bold text-slate-600 hover:bg-slate-100 cursor-pointer border-none bg-transparent" title="Thu nhỏ">−</button>
+                <button @click="setCanvasZoom('fit')" class="h-7 rounded-md px-2 text-[10px] font-bold cursor-pointer border-none" :class="canvasZoomMode === 'fit' ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'">Vừa trang</button>
+                <button v-for="zoom in [0.5, 0.75, 1]" :key="zoom" @click="setCanvasZoom(zoom)" class="h-7 rounded-md px-1.5 text-[10px] font-bold cursor-pointer border-none" :class="canvasZoomMode === 'manual' && canvasZoom === zoom ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'">{{ Math.round(zoom * 100) }}%</button>
+                <button @click="adjustCanvasZoom(0.1)" class="h-7 w-7 rounded-md text-sm font-bold text-slate-600 hover:bg-slate-100 cursor-pointer border-none bg-transparent" title="Phóng to">+</button>
+                <span class="min-w-9 text-center text-[10px] font-bold text-slate-500">{{ Math.round(canvasZoom * 100) }}%</span>
+              </div>
             </div>
 
             <!-- Page Canvas Layout Representation -->
-            <div class="template-preview-canvas shrink-0 bg-white shadow-lg border border-slate-300 relative flex flex-col"
-              :style="{
-                width: pageDimensions.width,
-                minHeight: pageDimensions.height,
-                paddingTop: `${pageMargin(template?.margin_top)}mm`,
-                paddingBottom: `${pageMargin(template?.margin_bottom)}mm`,
-                paddingLeft: `${pageMargin(template?.margin_left)}mm`,
-                paddingRight: `${pageMargin(template?.margin_right)}mm`
-              }">
+            <div class="canvas-scale-frame shrink-0" :style="canvasFrameStyle">
+            <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 relative flex flex-col"
+              :style="canvasStyle">
               <component :is="'style'" v-if="scopedTemplateCss">{{ scopedTemplateCss }}</component>
               <component :is="'style'" v-if="scopedBlockFontCss">{{ scopedBlockFontCss }}</component>
               
@@ -3150,10 +3239,11 @@ const selectBand = (band) => {
               </div>
 
             </div>
+            </div>
           </div>
 
           <!-- Column 3: Properties Inspector Sidebar (Right Panel) -->
-          <div class="w-1/4 bg-slate-50 border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
+          <div v-if="showRightPanel" class="w-1/4 min-w-[240px] max-w-[360px] bg-slate-50 border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-200 block">Bảng Thuộc Tính (Properties)</span>
             
             <div v-if="!selectedBlock" class="text-center py-8 text-slate-400 text-xs italic">
