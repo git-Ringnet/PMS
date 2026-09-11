@@ -39,8 +39,8 @@ class HotelSettingController extends Controller
         $data['RoomPlan_ColorRoomReservation'] = $configs->get('RoomPlan_ColorRoomReservation', '#E3E8C4');
         $data['RoomPlan_ColorRoomInhouse'] = $configs->get('RoomPlan_ColorRoomInhouse', '#4a90e2');
         $data['RoomPlan_ColorRoomLateCheckout'] = $configs->get('RoomPlan_ColorRoomLateCheckout', '#FCF55F');
-        $data['RoomPlan_ColorOOO'] = $configs->get('RoomPlan_ColorOOO', '#107eeb');
-        $data['RoomPlan_ColorOOS'] = $configs->get('RoomPlan_ColorOOS', '#107eeb');
+        $data['RoomPlan_ColorOOO'] = $configs->get('RoomPlan_ColorOOO', '#3b82f6');
+        $data['RoomPlan_ColorOOS'] = $configs->get('RoomPlan_ColorOOS', '#94a3b8');
         $data['RoomPlan_AllowChangeArrivalDate'] = $configs->get('RoomPlan_AllowChangeArrivalDate', '0');
         $data['AllowOverRoomTypeRoomKind'] = $configs->get('AllowOverRoomTypeRoomKind', '0');
         $data['AllowLockRoomCauseUnassignableRoomBK'] = $configs->get('AllowLockRoomCauseUnassignableRoomBK', '0');

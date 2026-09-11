@@ -921,7 +921,12 @@ function hasDepartureToday(room) {
   if (room.is_arriving_tomorrow && !room.booking_status) return false
   // Phòng chưa nhận phòng -> Tuyệt đối không hiển thị chấm đỏ (phòng đi)
   if (!isRoomCheckedIn(room)) return false
-  return !!(room.departure_date || room.actual_departure_date || room.check_out || room.booking_departure_date)
+  const targetDate = String(rawDate.value || systemDate.value || '').split('T')[0].split(' ')[0].trim()
+  const depDate = room.actual_departure_date || room.departure_date || room.check_out || room.booking_departure_date || room.booking?.departure_date
+  if (depDate) {
+    return String(depDate).split('T')[0].split(' ')[0].trim() === targetDate
+  }
+  return room.booking_status === 'checkout'
 }
 
 function getGuestCount(room) {
@@ -2748,7 +2753,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
                             :style="{ fontSize: Math.max(10, settings.textSizes.roomNumber * cardScale) + 'px' }">
                             <span
-                              :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : (room.booking_color ? 'text-inherit' : 'text-gray-900'))"
+                              :class="[
+                                isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-gray-900'),
+                                isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                              ]"
                               :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
                             </span>
@@ -2848,7 +2856,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <td class="p-2 border-r border-slate-200 text-center">{{ room.floor }}</td>
                         <td class="p-2 border-r border-slate-200 text-center font-bold">
                           <span
-                            :class="isRoomNumberRed(room) ? 'text-red-600 font-black' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : '')"
+                            :class="[
+                              isRoomNumberRed(room) ? 'text-red-600 font-black' : '',
+                              isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                            ]"
                             :style="getRoomNumberStyle(room)">
                             {{ room.room_number }}
                           </span>
@@ -2940,7 +2951,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
                         <!-- Phòng -->
                         <td class="p-2 border-r border-slate-200 text-center text-[13px]" :class="TEXT_THEME.tableCell">
-                          <span :class="isRoomNumberRed(room) ? 'text-red-500 font-bold' : (isArrivingTomorrow(room) ? 'underline font-black text-slate-800' : '')"
+                          <span
+                            :class="[
+                              isRoomNumberRed(room) ? 'text-red-500 font-bold' : '',
+                              isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                            ]"
                             :style="getRoomNumberStyle(room)"
                             class="flex items-center justify-center gap-1">
                             {{ room.room_number }}
@@ -3121,6 +3136,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
         :show="showQuickAssignModal"
         :room="quickAssignTargetRoom"
         :initial-date="rawDate"
+        :hotel-settings="hotelSettings"
         @close="showQuickAssignModal = false"
         @success="onQuickAssignSuccess"
       />
