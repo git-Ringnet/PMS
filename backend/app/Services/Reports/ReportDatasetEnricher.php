@@ -25,6 +25,8 @@ class ReportDatasetEnricher
         $code = $this->reportCode($reportDefinition);
         $outlet = match ($code) {
             'LAUNDRY_INVOICES' => 'LA',
+            'LAUNDRY_FREE_INVOICES' => 'LA',
+            'BREAKAGE_FREE_INVOICES' => 'BR',
             'BREAKAGE_INVOICES' => 'BR',
             'MINIBAR_INVOICES' => 'MB',
             default => null,

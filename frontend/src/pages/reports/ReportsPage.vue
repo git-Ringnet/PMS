@@ -18,7 +18,15 @@ const openTabs = ref([])
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 
-const housekeepingInvoiceCodes = new Set(['LAUNDRY_INVOICES', 'BREAKAGE_INVOICES', 'MINIBAR_INVOICES'])
+const housekeepingInvoiceCodes = new Set([
+  'LAUNDRY_INVOICES',
+  'BREAKAGE_INVOICES',
+  'MINIBAR_INVOICES',
+  'LAUNDRY_INVOICES_BY_PRODUCT',
+  'LAUNDRY_FREE_INVOICES',
+  'BREAKAGE_INVOICES_BY_PRODUCT',
+  'BREAKAGE_FREE_INVOICES',
+])
 const isHousekeepingInvoiceReport = (tab) => housekeepingInvoiceCodes.has(tab?.code)
 const parameterOptions = (tab, name) => tab?.parameterOptions?.[name]
   || tab?.report?.parameter_ui_schema?.find(parameter => parameter.name === name)?.options
@@ -480,6 +488,7 @@ onBeforeUnmount(() => {
             <HousekeepingInvoiceFilters
               v-if="isHousekeepingInvoiceReport(activeTab)"
               v-model="activeTab.parameters"
+              :parameter-schema="activeTab.report.parameter_ui_schema || []"
               :system-date="systemDate"
               :shifts="parameterOptions(activeTab, 'p_shift')"
               :departments="parameterOptions(activeTab, 'p_department')"

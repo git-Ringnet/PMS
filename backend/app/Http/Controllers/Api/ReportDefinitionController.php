@@ -503,8 +503,11 @@ class ReportDefinitionController extends Controller
                 'default' => $ui['default'] ?? null,
                 'options' => $ui['options'] ?? [],
                 'options_source' => $ui['options_source'] ?? null,
+                'placeholder' => $ui['placeholder'] ?? null,
+                'layout' => $ui['layout'] ?? null,
                 'range_end_parameter' => $ui['range_end_parameter'] ?? null,
                 'required' => $ui['required'] ?? ($parameter['required'] ?? true),
+                'configured' => $configured->has($parameter['name']),
             ];
         })->values()->all();
 

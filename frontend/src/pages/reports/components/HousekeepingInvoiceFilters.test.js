@@ -129,6 +129,13 @@ const mountFilters = (modelValue, lists = {}) => {
   const Root = {
     setup: () => () => h(HousekeepingInvoiceFilters, {
       ...props,
+      reportCode: lists.reportCode || '',
+      parameterSchema: lists.parameterSchema || [
+        { name: 'p_from_date', label: 'Chọn ngày' }, { name: 'p_shift', label: 'Ca làm việc' },
+        { name: 'p_department', label: 'Chọn bộ phận' }, { name: 'p_user', label: 'Chọn người dùng' },
+        { name: 'p_view_type', label: 'Loại dữ liệu' }, { name: 'p_order_by', label: 'Sắp xếp theo' },
+        { name: 'p_order_type', label: 'Thứ tự' }, { name: 'p_show_details', label: 'Xem chi tiết', control: 'checkbox' },
+      ],
       'onUpdate:modelValue': (value) => updates.push(value),
       onSubmit: (value) => submissions.push(value),
     }),
@@ -248,6 +255,8 @@ test('emits a complete cloned model for controls, date range, and explicit submi
     p_order_type: 'DESC',
     p_view_type: 'correct',
     p_show_details: true,
+    p_freeitem: 0,
+    p_group_by_date: false,
   })
   assert.deepEqual(original, {
     p_from_date: '2026-09-09',
@@ -288,6 +297,8 @@ test('parent changes reset the draft and empty dropdown values remain defined', 
     p_from_date: '2026-09-09', p_to_date: '2026-09-09', p_shift: '',
     p_department: '', p_user: '', p_view_type: 'post', p_order_by: 'Ma',
     p_order_type: 'ASC', p_show_details: false,
+    p_freeitem: 0,
+    p_group_by_date: false,
   })
   props.modelValue = { p_from_date: '2026-09-01', p_to_date: '2026-09-03', p_view_type: 'FREE', p_shift: '2' }
   await nextTick()
@@ -305,7 +316,7 @@ test('parent changes reset the draft and empty dropdown values remain defined', 
 test('two filter panels within one app have independent control IDs and radio groups', () => {
   const container = host.createElement('root')
   const app = renderer.createApp({
-    setup: () => () => h('div', [h(HousekeepingInvoiceFilters), h(HousekeepingInvoiceFilters)]),
+    setup: () => () => h('div', [h(HousekeepingInvoiceFilters, { parameterSchema: [{ name: 'p_view_type' }] }), h(HousekeepingInvoiceFilters, { parameterSchema: [{ name: 'p_view_type' }] })]),
   })
   app.mount(container)
   const ids = walk(container).map((node) => node.props.id).filter(Boolean)
@@ -314,4 +325,37 @@ test('two filter panels within one app have independent control IDs and radio gr
   assert.equal(radios.length, 8)
   assert.equal(new Set(radios.map((node) => node.props.name)).size, 2)
   app.unmount()
+})
+
+test('matches legacy control sets for product and free laundry reports', () => {
+  const product = mountFilters({}, { reportCode: 'LAUNDRY_INVOICES_BY_PRODUCT', parameterSchema: [
+    { name: 'p_from_date', label: 'Ngày' }, { name: 'p_shift', label: 'Ca làm việc' },
+    { name: 'p_department', label: 'Chọn bộ phận' }, { name: 'p_user', label: 'Chọn người dùng' },
+    { name: 'p_freeitem', label: 'Hàng bán', control: 'checkbox' }, { name: 'p_group_by_date', label: 'Nhóm theo ngày', control: 'checkbox' },
+  ] })
+  const productText = textContent(product.container)
+  assert.match(productText, /Chọn ngày/)
+  assert.match(productText, /Ca làm việc/)
+  assert.match(productText, /Chọn bộ phận/)
+  assert.match(productText, /Chọn người dùng/)
+  assert.match(productText, /Hàng bán/)
+  assert.match(productText, /Nhóm theo ngày/)
+  assert.doesNotMatch(productText, /Sắp xếp theo/)
+  assert.doesNotMatch(productText, /Xem chi tiết/)
+
+  const free = mountFilters({}, { reportCode: 'LAUNDRY_FREE_INVOICES', parameterSchema: [
+    { name: 'p_from_date', label: 'Ngày' }, { name: 'p_user', label: 'Chọn người dùng' },
+    { name: 'p_order_by', label: 'Sắp xếp theo' }, { name: 'p_order_type', label: 'Thứ tự' },
+    { name: 'p_show_details', label: 'Detail' },
+  ] })
+  const freeText = textContent(free.container)
+  assert.match(freeText, /Chọn ngày/)
+  assert.match(freeText, /Chọn người dùng/)
+  assert.match(freeText, /Sắp xếp theo/)
+  assert.match(freeText, /Detail/)
+  assert.doesNotMatch(freeText, /Ca làm việc/)
+  assert.doesNotMatch(freeText, /Chọn bộ phận/)
+
+  product.app.unmount()
+  free.app.unmount()
 })
