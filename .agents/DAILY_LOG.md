@@ -11,6 +11,35 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-11] - Tích hợp Thẻ thông tin khách dạng Popup khi Double Click từ Màn hình Thông tin khách Booking
+### Module: Đặt phòng / Thông tin khách lưu trú ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+
+- **Đã hoàn thành**:
+  - **Giữ màn hình chính là bảng tổng hợp khách trong phòng ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue))**:
+    - Header Navy chuẩn phong cách PMS với các nút chức năng: Chỉnh sửa, Quét CCCD (Scan), Xuất Excel, Cài đặt, Đóng.
+    - Hiển thị danh sách khách nhóm theo từng phòng (Khách người lớn, Trẻ em).
+  - **Tương tác Double Click mở Thẻ khách chi tiết ([GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Khi **nhấp đúp chuột (Double click)** vào bất kỳ dòng khách nào trong bảng (hoặc bấm nút "Thẻ khách" / "Thẻ trẻ"), hệ thống mở ngay modal **Thẻ thông tin khách** hiển thị toàn bộ thông tin chi tiết của riêng khách đó.
+    - Bổ sung cột "Thao tác" với nút bấm nhanh "Thẻ khách" để người dùng tiện click 1 chạm ngoài thao tác double click.
+    - Bổ sung dòng gợi ý thao tác ở chân modal: `💡 Mẹo: Nhấp đúp chuột (Double click) vào bất kỳ dòng nào để mở Thẻ thông tin khách`.
+  - **Giao diện Thẻ khách chi tiết chuẩn 100% theo mẫu [thong-tin-khach (1).html](file:///d:/PMS/UI/thong-tin-khach%20(1).html)**:
+    - Thanh Header Navy (`#1E2D4A`) hiển thị tiêu đề và tên khách.
+    - Dải thông tin phòng lưu trú (`.stay`): Số phòng, hạng phòng, đơn giá, ngày đến, ngày đi, số đêm badge.
+    - Cột nhận diện (`.side`): Kéo thả ảnh, chọn file, chụp webcam, danh sách thumbnail, xóa ảnh, đếm ảnh.
+    - 4 khối trường nhập liệu (`.main`): Thông tin cá nhân, Giấy tờ tùy thân (kèm tự động mờ trường visa nếu là khách VN), Thông tin liên hệ & địa chỉ (dropdown cascading Tỉnh/Quận/Xã), Ghi chú.
+  - **Khắc phục lỗi tải ảnh đại diện ("The avatar field must not be greater than 255 characters")**:
+    - Khi người dùng tải ảnh lên hoặc kéo thả, tự động gọi API `POST /guests/{id}/avatar` với `FormData` để lưu file vào thư mục máy chủ và nhận về đường dẫn file ngắn (`uploads/avatars/...`).
+    - Lọc bỏ chuỗi Base64 / Blob URL trước khi gửi API cập nhật thông tin khách, tránh vượt quá giới hạn độ dài trường `avatar` (255 ký tự).
+  - **Mở khóa các trường thị thực / nhập cảnh bị xám ([GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Gỡ bỏ logic làm mờ/khóa `pointer-events: none` cho các ô Ngày nhập cảnh, Cửa khẩu, Mục đích nhập cảnh, Số Visa. Nhân viên có thể linh hoạt nhập thông tin bất kể quốc tịch của khách.
+  - **Bật lịch chọn ngày (Date Picker dialog) trực quan**:
+    - Bổ sung sự kiện gọi `showPicker()` khi click vào ô hoặc icon lịch tại các trường Ngày sinh, Ngày cấp, Ngày hết hạn, Ngày nhập cảnh, Tạm trú đến, giúp mở popup chọn lịch ngay lập tức thay vì chỉ nhập text.
+  - **Hiển thị thông tin lịch sử và người cập nhật ở chân Modal**:
+    - Hiển thị chuẩn theo template: `Cập nhật: dd/mm/yyyy HH:mm · bởi [Tên nhân viên]`.
+- **Kiểm thử**: `npm run build` thành công 100%, không phát sinh lỗi.
+
+---
+
 ## [2026-09-11] - Chặn triệt để việc gán phòng và tạo booking khi AllowCheckinVacantClean = 0
 ### Module: Frontdesk / Sơ đồ phòng ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))
 
