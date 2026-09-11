@@ -1,52 +1,58 @@
 <template>
   <Teleport to="body">
-    <div v-if="show" class="fixed inset-0 z-[9990] flex items-start justify-center pt-6">
+    <div v-if="show" class="fixed inset-0 z-[9990] flex items-start justify-center pt-6 overflow-y-auto pb-6">
       <!-- Overlay -->
-      <div class="absolute inset-0 bg-black/45" @click="$emit('close')"></div>
+      <div class="fixed inset-0 bg-black/45 backdrop-blur-[1px]" @click="$emit('close')"></div>
 
       <!-- Modal -->
-      <div class="relative bg-white rounded-lg shadow-2xl w-[98vw] max-w-[1600px] max-h-[90vh] flex flex-col z-10 border border-slate-300"
+      <div class="modal relative z-10 w-[98vw] max-w-[1550px] max-h-[92vh] flex flex-col font-sans text-[13px] my-auto bg-white rounded-lg shadow-2xl border border-slate-300"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-4 py-2 bg-[#243c5a] text-white rounded-t-lg cursor-move"
+        
+        <!-- ==================== HEADER ==================== -->
+        <div class="flex items-center justify-between px-4 py-2.5 bg-[#1E2D4A] text-white rounded-t-lg select-none cursor-move"
           @mousedown="startDragModal">
-          <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
-            <i class="fa-solid fa-users text-blue-300"></i>
+          <div class="flex items-center gap-2 font-bold text-xs tracking-wider uppercase">
+            <i class="fa-solid fa-users text-[#B9CDF8] text-sm"></i>
             <span>THÔNG TIN KHÁCH TRONG PHÒNG</span>
           </div>
-          <div class="flex items-center gap-1.5">
-            <!-- Quay lại (Cancel Edit) -->
-            <button v-if="isEditing" @click="cancelEditing" class="header-btn bg-slate-600 text-white border-slate-500 hover:bg-slate-500">
-              <i class="fa-solid fa-rotate-left mr-1"></i>Quay lại
-            </button>
-            <!-- Lưu (Save Edit) -->
-            <button v-if="isEditing" @click="saveChanges" :disabled="saving" class="header-btn bg-sky-600 text-white border-sky-500 hover:bg-sky-500">
-              <i class="fa-solid fa-floppy-disk mr-1"></i>{{ saving ? 'Đang lưu...' : 'Lưu' }}
-            </button>
 
-            <!-- Chỉnh sửa -->
-            <button v-if="!isEditing" @click="startEditing" class="header-btn">
+          <div class="flex items-center gap-1.5">
+            <!-- Chỉnh sửa trực tiếp trên bảng -->
+            <button v-if="!isEditing" @click="startEditing" type="button" class="header-btn" title="Chỉnh sửa trực tiếp trên bảng">
               <i class="fa-solid fa-pen-to-square mr-1"></i>Chỉnh sửa
             </button>
-            <!-- Scan -->
-            <button v-if="!isEditing" @click="handleScan" class="header-btn">
+            <button v-if="isEditing" @click="cancelEditing" type="button" class="header-btn bg-slate-600 text-white hover:bg-slate-500">
+              <i class="fa-solid fa-rotate-left mr-1"></i>Quay lại
+            </button>
+            <button v-if="isEditing" @click="saveChanges" :disabled="saving" type="button" class="header-btn bg-[#2F6FED] text-white hover:bg-[#2560D6]">
+              <i class="fa-solid fa-floppy-disk mr-1"></i>{{ saving ? 'Đang lưu...' : 'Lưu bảng' }}
+            </button>
+
+            <!-- Scan CCCD / VNeID -->
+            <button v-if="!isEditing" @click="handleScan" type="button" class="header-btn" title="Quét CCCD / VNeID">
               <i class="fa-solid fa-camera mr-1"></i>Scan
             </button>
+
             <!-- Xuất Excel -->
-            <button v-if="!isEditing" @click="handleExportExcel" class="header-btn">
+            <button v-if="!isEditing" @click="handleExportExcel" type="button" class="header-btn" title="Xuất file Excel">
               <i class="fa-solid fa-file-excel mr-1"></i>Xuất Excel
             </button>
+
             <!-- Cài đặt cột -->
-            <button v-if="!isEditing" @click="showColSettings = !showColSettings" class="header-btn" title="Cài đặt cột">
+            <button v-if="!isEditing" @click="showColSettings = !showColSettings" type="button" class="header-btn" title="Hiển thị / ẩn cột">
               <i class="fa-solid fa-sliders mr-1"></i>Cài đặt
             </button>
-            <button @click="$emit('close')" class="hover:text-white ml-2 bg-red-500/20 px-1.5 py-0.5 rounded cursor-pointer border-none"><i class="fa-solid fa-xmark text-red-400"></i></button>
+
+            <!-- Nút đóng [X] -->
+            <button @click="$emit('close')" type="button" class="hover:bg-red-500/30 ml-2 px-1.5 py-0.5 rounded cursor-pointer border-none bg-transparent text-red-300 hover:text-white transition-colors">
+              <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
           </div>
         </div>
 
-        <!-- Column Settings Dropdown -->
-        <div v-if="showColSettings" class="absolute top-10 right-4 z-50 bg-white border border-slate-200 rounded shadow-lg p-3 w-72">
-          <div class="text-[11px] font-semibold text-slate-700 mb-2">Hiển thị / Ẩn cột</div>
+        <!-- Dropdown Cài đặt ẩn / hiện cột -->
+        <div v-if="showColSettings" class="absolute top-11 right-4 z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-3 w-72">
+          <div class="text-[11px] font-semibold text-slate-700 mb-2">Hiển thị / Ẩn cột dữ liệu</div>
           <div class="grid grid-cols-2 gap-1 max-h-72 overflow-y-auto">
             <label v-for="col in allColumns" :key="col.key" class="flex items-center gap-1.5 text-[11px] cursor-pointer py-0.5 text-slate-600 hover:text-slate-800">
               <input type="checkbox" v-model="col.visible" class="rounded border-slate-300 text-blue-600" />
@@ -57,18 +63,20 @@
         </div>
 
         <!-- Loading -->
-        <div v-if="loading" class="flex items-center justify-center py-16 text-slate-500 text-xs">
-          <i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải thông tin khách...
+        <div v-if="loading" class="flex flex-col items-center justify-center py-24 text-slate-500 bg-white">
+          <i class="fa-solid fa-spinner fa-spin text-2xl text-[#2F6FED] mb-2"></i>
+          <span class="text-xs font-medium">Đang tải thông tin khách...</span>
         </div>
 
-        <!-- Table -->
-        <div v-else class="overflow-auto flex-1">
-          <table class="w-full text-[13px] border-collapse min-w-max">
-            <thead class="sticky top-0 z-10 bg-slate-50">
+        <!-- ==================== TABLE VIEW (MÀN HÌNH CHÍNH) ==================== -->
+        <div v-else class="overflow-auto flex-1 bg-white">
+          <table class="w-full text-[12.5px] border-collapse min-w-max">
+            <thead class="sticky top-0 z-10 bg-slate-100/90 border-b border-slate-200 text-slate-700">
               <tr>
-                <th class="py-3 px-3 border-b border-r border-slate-200 text-center font-semibold text-slate-600 bg-slate-100/80 w-12">STT</th>
+                <th class="py-2.5 px-3 border-r border-slate-200 text-center font-semibold w-12 bg-slate-100">STT</th>
+                <th class="py-2.5 px-3 border-r border-slate-200 text-center font-semibold w-24 bg-slate-100">Thao tác</th>
                 <th v-for="col in visibleColumns" :key="col.key"
-                  class="py-3 px-3 border-b border-r border-slate-200 text-left font-semibold text-slate-600 bg-slate-100/80 whitespace-nowrap"
+                  class="py-2.5 px-3 border-r border-slate-200 text-left font-semibold whitespace-nowrap bg-slate-100"
                   :style="col.width ? `width:${col.width}` : ''">
                   {{ col.label }}
                 </th>
@@ -77,32 +85,48 @@
             <tbody>
               <template v-for="(roomGroup, gi) in (isEditing ? editData : guestData)" :key="gi">
                 <!-- Room group header -->
-                <tr class="bg-slate-100/60 font-bold border-b border-slate-200">
-                  <td :colspan="visibleColumns.length + 1" class="py-2.5 px-4 text-[13px] text-slate-800 bg-[#f1f5f9]">
-                    <i class="fa-solid fa-hotel mr-1.5 text-slate-500"></i>Room: {{ roomGroup.room_number || '(Chưa gán số)' }}
-                    ({{ roomGroup.guests.length + roomGroup.children.length }} khách)
+                <tr class="bg-slate-100/80 font-bold border-b border-slate-200">
+                  <td :colspan="visibleColumns.length + 2" class="py-2 px-4 text-[12.5px] text-[#1E2D4A] bg-[#eef2f6]">
+                    <i class="fa-solid fa-hotel mr-1.5 text-slate-500"></i>Room: {{ roomGroup.room_number || '(Chưa gán)' }}
+                    ({{ (roomGroup.guests || []).length + (roomGroup.children || []).length }} khách)
                     - {{ roomGroup.room_class_name }}
                   </td>
                 </tr>
+
                 <!-- Adult guests -->
                 <tr
                   v-for="(guest, idx) in roomGroup.guests"
                   :key="'g-' + guest.id"
-                  @click="!isEditing && openGuestDetail(roomGroup, guest, 'adult')"
-                  class="border-b border-slate-150 transition-colors"
+                  @dblclick="!isEditing && openGuestDetail(roomGroup, guest, 'adult')"
+                  class="border-b border-slate-200 transition-colors"
                   :class="[
-                    idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30',
-                    isEditing ? '' : 'hover:bg-slate-50 cursor-pointer'
+                    idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
+                    isEditing ? '' : 'hover:bg-blue-50/70 cursor-pointer'
                   ]"
+                  title="Nhấp đúp chuột (Double click) để mở thẻ thông tin chi tiết khách"
                 >
-                  <td class="py-2.5 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold">{{ idx + 1 }}</td>
-                  <td v-for="col in visibleColumns" :key="col.key" class="py-2 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700">
-                    <!-- KHI ĐANG CHỈNH SỬA -->
+                  <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold">{{ idx + 1 }}</td>
+                  
+                  <!-- Cột thao tác: Thẻ khách -->
+                  <td class="py-1 px-2 border-r border-slate-200 text-center">
+                    <button
+                      type="button"
+                      @click.stop="openGuestDetail(roomGroup, guest, 'adult')"
+                      class="px-2 py-0.5 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200 cursor-pointer inline-flex items-center gap-1 font-medium transition-colors"
+                      title="Mở Thẻ thông tin khách"
+                    >
+                      <i class="fa-solid fa-id-card text-xs"></i>
+                      <span>Thẻ khách</span>
+                    </button>
+                  </td>
+
+                  <td v-for="col in visibleColumns" :key="col.key" class="py-1.5 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700">
+                    <!-- Khi đang chỉnh sửa trực tiếp trên bảng -->
                     <template v-if="isEditing">
                       <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
                       
                       <!-- Title dropdown -->
-                      <template v-if="col.key === 'title'">
+                      <template v-else-if="col.key === 'title'">
                         <select v-model="guest.title" class="table-input">
                           <option value="">-- Chọn --</option>
                           <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
@@ -110,7 +134,7 @@
                       </template>
 
                       <!-- Nationality dropdown -->
-                      <template v-if="col.key === 'nationality_code'">
+                      <template v-else-if="col.key === 'nationality_code'">
                         <select v-model="guest.nationality_code" class="table-input">
                           <option value="">-- Chọn --</option>
                           <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
@@ -118,7 +142,7 @@
                       </template>
 
                       <!-- ID type dropdown -->
-                      <template v-if="col.key === 'id_type'">
+                      <template v-else-if="col.key === 'id_type'">
                         <select v-model="guest.id_type" class="table-input">
                           <option value="">Loại</option>
                           <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
@@ -127,7 +151,7 @@
                       </template>
 
                       <!-- Residence type dropdown -->
-                      <template v-if="col.key === 'residence_type'">
+                      <template v-else-if="col.key === 'residence_type'">
                         <select v-model="guest.residence_type" class="table-input">
                           <option value="">-- Chọn --</option>
                           <option v-for="rt in residenceTypesList" :key="rt.code || rt.name" :value="rt.name_new_form || rt.name">{{ rt.name_new_form || rt.name }}</option>
@@ -136,16 +160,16 @@
                       </template>
 
                       <!-- Guest type dropdown -->
-                      <template v-if="col.key === 'guest_type'">
+                      <template v-else-if="col.key === 'guest_type'">
                         <select v-model="guest.guest_type" class="table-input">
-                          <option value="">Loại khách</option>
+                          <option value="">Loại</option>
                           <option v-for="gt in guestTypesList" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
                           <option v-if="guest.guest_type && !guestTypesList.some(gt => getGuestTypeValue(gt) === guest.guest_type || gt.name === guest.guest_type)" :value="guest.guest_type">{{ guest.guest_type }}</option>
                         </select>
                       </template>
 
                       <!-- Entry purpose dropdown -->
-                      <template v-if="col.key === 'entry_purpose'">
+                      <template v-else-if="col.key === 'entry_purpose'">
                         <select v-model="guest.entry_purpose" class="table-input">
                           <option value="">Mục đích</option>
                           <option v-for="ep in entryPurposesList" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
@@ -154,7 +178,7 @@
                       </template>
 
                       <!-- Border gate dropdown -->
-                      <template v-if="col.key === 'border_gate'">
+                      <template v-else-if="col.key === 'border_gate'">
                         <select v-model="guest.border_gate" class="table-input">
                           <option value="">-- Cửa khẩu --</option>
                           <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
@@ -163,7 +187,7 @@
                       </template>
 
                       <!-- Province dropdown -->
-                      <template v-if="col.key === 'province'">
+                      <template v-else-if="col.key === 'province'">
                         <select v-model="guest.province" @change="handleProvinceChange(`g-${guest.id}`, guest, guest.province)" class="table-input select-geo">
                           <option value="">-- Chọn --</option>
                           <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
@@ -171,7 +195,7 @@
                       </template>
 
                       <!-- District dropdown -->
-                      <template v-if="col.key === 'district'">
+                      <template v-else-if="col.key === 'district'">
                         <select v-model="guest.district" @change="handleDistrictChange(`g-${guest.id}`, guest, guest.district)" class="table-input select-geo" :disabled="!guest.province">
                           <option value="">-- Chọn --</option>
                           <option v-for="d in (districtsForLine[`g-${guest.id}`] || [])" :key="d.code" :value="d.name">{{ d.name }}</option>
@@ -179,7 +203,7 @@
                       </template>
 
                       <!-- Ward dropdown -->
-                      <template v-if="col.key === 'ward'">
+                      <template v-else-if="col.key === 'ward'">
                         <select v-model="guest.ward" class="table-input select-geo" :disabled="!guest.district">
                           <option value="">-- Chọn --</option>
                           <option v-for="w in (wardsForLine[`g-${guest.id}`] || [])" :key="w.code" :value="w.name">{{ w.name }}</option>
@@ -187,19 +211,19 @@
                       </template>
 
                       <!-- Date Fields -->
-                      <template v-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
-                        <input v-model="guest[col.key]" type="date" class="table-input py-0.5" />
+                      <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
+                        <input v-model="guest[col.key]" type="date" class="table-input" />
                       </template>
 
                       <!-- Text fields -->
-                      <template v-if="['full_name', 'id_number', 'phone', 'email', 'visa_no', 'note', 'address'].includes(col.key)">
+                      <template v-else>
                         <input v-model="guest[col.key]" type="text" class="table-input" />
                       </template>
                     </template>
 
-                    <!-- KHI CHỈ XEM -->
+                    <!-- Khi chỉ xem -->
                     <template v-else>
-                      <div class="truncate-cell text-[12.5px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(guest, col)">
+                      <div class="truncate-cell text-[12px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(guest, col)">
                         <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
                         <template v-else-if="col.key === 'nationality_code'">{{ getNationalityLabel(guest.nationality_code) }}</template>
                         <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
@@ -210,125 +234,55 @@
                     </template>
                   </td>
                 </tr>
-                <!-- Children -->
+
+                <!-- Child guests -->
                 <tr
                   v-for="(child, cidx) in roomGroup.children"
                   :key="'c-' + child.id"
-                  @click="!isEditing && openGuestDetail(roomGroup, child, 'child')"
-                  class="border-b border-slate-150 transition-colors"
+                  @dblclick="!isEditing && openGuestDetail(roomGroup, child, 'child')"
+                  class="border-b border-slate-200 transition-colors"
                   :class="[
-                    (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-slate-50/30',
-                    isEditing ? '' : 'hover:bg-slate-50 cursor-pointer'
+                    (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
+                    isEditing ? '' : 'hover:bg-blue-50/70 cursor-pointer'
                   ]"
+                  title="Nhấp đúp chuột (Double click) để mở thẻ thông tin chi tiết trẻ em"
                 >
-                  <td class="py-2.5 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold">{{ roomGroup.guests.length + cidx + 1 }}</td>
-                  <td v-for="col in visibleColumns" :key="col.key" class="py-2 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700">
-                    <!-- KHI ĐANG CHỈNH SỬA TRẺ EM -->
+                  <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold">{{ roomGroup.guests.length + cidx + 1 }}</td>
+                  
+                  <!-- Cột thao tác: Thẻ trẻ em -->
+                  <td class="py-1 px-2 border-r border-slate-200 text-center">
+                    <button
+                      type="button"
+                      @click.stop="openGuestDetail(roomGroup, child, 'child')"
+                      class="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 hover:bg-purple-100 rounded border border-purple-200 cursor-pointer inline-flex items-center gap-1 font-medium transition-colors"
+                      title="Mở Thẻ thông tin trẻ em"
+                    >
+                      <i class="fa-solid fa-child text-xs"></i>
+                      <span>Thẻ trẻ</span>
+                    </button>
+                  </td>
+
+                  <td v-for="col in visibleColumns" :key="col.key" class="py-1.5 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700">
                     <template v-if="isEditing">
                       <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
-                      
-                      <!-- Title dropdown -->
-                      <template v-if="col.key === 'title'">
+                      <template v-else-if="col.key === 'title'">
                         <select v-model="child.title" class="table-input">
                           <option value="">-- Chọn --</option>
                           <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
                         </select>
                       </template>
-
-                      <!-- Nationality dropdown -->
-                      <template v-if="col.key === 'nationality_code'">
-                        <select v-model="child.nationality_code" class="table-input">
-                          <option value="">-- Chọn --</option>
-                          <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
-                        </select>
+                      <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to'].includes(col.key)">
+                        <input v-model="child[col.key]" type="date" class="table-input" />
                       </template>
-
-                      <!-- ID type dropdown -->
-                      <template v-if="col.key === 'id_type'">
-                        <select v-model="child.id_type" class="table-input">
-                          <option value="">Loại</option>
-                          <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
-                          <option v-if="child.id_type && !idTypesList.some(it => getIdTypeValue(it) === child.id_type || it.name === child.id_type)" :value="child.id_type">{{ child.id_type }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Residence type dropdown -->
-                      <template v-if="col.key === 'residence_type'">
-                        <select v-model="child.residence_type" class="table-input">
-                          <option value="">-- Chọn --</option>
-                          <option v-for="rt in residenceTypesList" :key="rt.code || rt.name" :value="rt.name_new_form || rt.name">{{ rt.name_new_form || rt.name }}</option>
-                          <option v-if="child.residence_type && !residenceTypesList.some(rt => (rt.name_new_form || rt.name) === child.residence_type)" :value="child.residence_type">{{ child.residence_type }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Guest type dropdown -->
-                      <template v-if="col.key === 'guest_type'">
-                        <select v-model="child.guest_type" class="table-input">
-                          <option value="">Loại khách</option>
-                          <option v-for="gt in guestTypesList" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
-                          <option v-if="child.guest_type && !guestTypesList.some(gt => getGuestTypeValue(gt) === child.guest_type || gt.name === child.guest_type)" :value="child.guest_type">{{ child.guest_type }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Entry purpose dropdown -->
-                      <template v-if="col.key === 'entry_purpose'">
-                        <select v-model="child.entry_purpose" class="table-input">
-                          <option value="">Mục đích</option>
-                          <option v-for="ep in entryPurposesList" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
-                          <option v-if="child.entry_purpose && !entryPurposesList.some(ep => ep.name === child.entry_purpose)" :value="child.entry_purpose">{{ child.entry_purpose }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Border gate dropdown -->
-                      <template v-if="col.key === 'border_gate'">
-                        <select v-model="child.border_gate" class="table-input">
-                          <option value="">-- Cửa khẩu --</option>
-                          <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
-                          <option v-if="child.border_gate && !borderGateNames.includes(child.border_gate)" :value="child.border_gate">{{ child.border_gate }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Province dropdown -->
-                      <template v-if="col.key === 'province'">
-                        <select v-model="child.province" @change="handleProvinceChange(`c-${child.id}`, child, child.province)" class="table-input select-geo">
-                          <option value="">-- Chọn --</option>
-                          <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
-                        </select>
-                      </template>
-
-                      <!-- District dropdown -->
-                      <template v-if="col.key === 'district'">
-                        <select v-model="child.district" @change="handleDistrictChange(`c-${child.id}`, child, child.district)" class="table-input select-geo" :disabled="!child.province">
-                          <option value="">-- Chọn --</option>
-                          <option v-for="d in (districtsForLine[`c-${child.id}`] || [])" :key="d.code" :value="d.name">{{ d.name }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Ward dropdown -->
-                      <template v-if="col.key === 'ward'">
-                        <select v-model="child.ward" class="table-input select-geo" :disabled="!child.district">
-                          <option value="">-- Chọn --</option>
-                          <option v-for="w in (wardsForLine[`c-${child.id}`] || [])" :key="w.code" :value="w.name">{{ w.name }}</option>
-                        </select>
-                      </template>
-
-                      <!-- Date Fields -->
-                      <template v-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
-                        <input v-model="child[col.key]" type="date" class="table-input py-0.5" />
-                      </template>
-
-                      <!-- Text fields -->
-                      <template v-if="['full_name', 'id_number', 'phone', 'email', 'visa_no', 'note', 'address'].includes(col.key)">
+                      <template v-else>
                         <input v-model="child[col.key]" type="text" class="table-input" />
                       </template>
                     </template>
-
-                    <!-- KHI CHỈ XEM -->
                     <template v-else>
-                      <div class="truncate-cell text-[12.5px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(child, col)">
+                      <div class="truncate-cell text-[12px]">
                         <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
                         <template v-else-if="col.key === 'nationality_code'">{{ getNationalityLabel(child.nationality_code) }}</template>
-                        <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
+                        <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to'].includes(col.key)">
                           {{ formatDate(child[col.key]) }}
                         </template>
                         <template v-else>{{ child[col.key] || '—' }}</template>
@@ -336,16 +290,18 @@
                     </template>
                   </td>
                 </tr>
-                <!-- Empty row if no guests -->
-                <tr v-if="roomGroup.guests.length === 0 && roomGroup.children.length === 0">
-                  <td :colspan="visibleColumns.length + 1" class="py-3 px-4 text-center text-slate-400 text-[13px] italic border-b border-slate-200">
-                    Chưa có thông tin khách
+
+                <!-- Trống -->
+                <tr v-if="(roomGroup.guests || []).length === 0 && (roomGroup.children || []).length === 0">
+                  <td :colspan="visibleColumns.length + 2" class="py-3 px-4 text-center text-slate-400 text-[13px] italic border-b border-slate-200">
+                    Chưa có thông tin khách trong phòng này
                   </td>
                 </tr>
               </template>
+
               <!-- Overall empty -->
               <tr v-if="guestData.length === 0">
-                <td :colspan="visibleColumns.length + 1" class="py-16 text-center text-slate-400 text-[13px]">
+                <td :colspan="visibleColumns.length + 2" class="py-16 text-center text-slate-400 text-[13px]">
                   Chưa có dữ liệu. Vui lòng lưu thông tin đăng ký trước.
                 </td>
               </tr>
@@ -353,46 +309,59 @@
           </table>
         </div>
 
-        <!-- Footer -->
-        <div class="flex justify-end px-4 py-2.5 border-t border-slate-200 bg-slate-50 rounded-b-lg">
-          <button @click="$emit('close')" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-[13px] rounded-md hover:bg-slate-50 transition-colors shadow-xs cursor-pointer font-medium">
-            <i class="fa-solid fa-xmark mr-1.5"></i>Đóng
+        <!-- ==================== FOOTER ==================== -->
+        <div class="flex items-center justify-between px-4 py-2.5 border-t border-slate-200 bg-slate-50 rounded-b-lg select-none">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium text-[11.5px] border border-blue-200/60">
+              💡 Mẹo: Nhấp đúp chuột (Double click) vào bất kỳ dòng nào để mở Thẻ thông tin khách
+            </span>
+          </div>
+
+          <button @click="$emit('close')" type="button" class="px-4 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs rounded-md hover:bg-slate-50 transition-colors shadow-xs cursor-pointer font-medium flex items-center gap-1.5">
+            <i class="fa-solid fa-xmark"></i>Đóng
           </button>
         </div>
+
       </div>
     </div>
   </Teleport>
 
-  <!-- Scan Modal -->
+  <!-- ==================== GUEST DETAIL MODAL (THẺ CHI TIẾT THEO MẪU HTML) ==================== -->
+  <GuestDetailModal
+    :show="showDetailModal"
+    :room="selectedRoom"
+    :guest="selectedGuest"
+    :guest-type="selectedGuestType"
+    @close="showDetailModal = false"
+    @saved="handleGuestSaved"
+  />
+
+  <!-- ==================== SCAN MODAL (CCCD / VNeID) ==================== -->
   <Teleport to="body">
     <div v-if="showScanModal" class="fixed inset-0 z-[10000] flex items-center justify-center">
-      <!-- Overlay -->
       <div class="absolute inset-0 bg-black/45" @click="closeScanModal"></div>
 
-      <!-- Content -->
-      <div class="relative bg-white rounded shadow-2xl w-[450px] flex flex-col z-10 overflow-hidden font-sans border border-slate-200">
+      <div class="relative bg-white rounded-lg shadow-2xl w-[460px] flex flex-col z-10 overflow-hidden font-sans border border-slate-200">
         <!-- Header -->
-        <div class="flex items-center justify-between px-4 py-2.5 bg-[#243c5a] text-white select-none">
-          <div class="flex items-center gap-1.5 font-semibold text-xs tracking-wider">
-            <i class="fa-solid fa-camera text-blue-300"></i>
+        <div class="flex items-center justify-between px-4 py-2.5 bg-[#1E2D4A] text-white select-none">
+          <div class="flex items-center gap-2 font-semibold text-xs tracking-wider">
+            <i class="fa-solid fa-camera text-[#B9CDF8]"></i>
             <span>QUÉT CCCD / VNeID</span>
           </div>
-          <button @click="closeScanModal" class="text-slate-300 hover:text-white border-none bg-transparent cursor-pointer">
-            <i class="fa-solid fa-xmark text-base"></i>
+          <button @click="closeScanModal" class="text-slate-300 hover:text-white border-none bg-transparent cursor-pointer text-lg leading-none">
+            ×
           </button>
         </div>
 
         <!-- Tab header -->
         <div class="border-b border-slate-200 bg-slate-50 px-4 pt-1 flex">
-          <div class="px-4 py-2 text-[12.5px] font-bold text-[#0f7d8c] border-b-2 border-[#0f7d8c] cursor-pointer">
+          <div class="px-4 py-2 text-[12.5px] font-bold text-[#2F6FED] border-b-2 border-[#2F6FED] cursor-pointer">
             QR Scanner
           </div>
         </div>
 
         <!-- Body -->
         <div class="p-4 flex flex-col gap-3 text-slate-800 text-[12.5px] overflow-y-auto max-h-[75vh]">
-          
-          <!-- Scan Input Box -->
           <div class="relative">
             <input 
               ref="scanInputRef"
@@ -400,15 +369,15 @@
               @keydown.enter="handleScanSubmit"
               type="text"
               placeholder="Nhấp vào đây và quét mã CCCD..."
-              class="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-[#0f7d8c] focus:ring-1 focus:ring-[#0f7d8c] shadow-inner bg-slate-50/50"
+              class="w-full border border-slate-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-[#2F6FED] focus:ring-2 focus:ring-[#2F6FED]/20 bg-slate-50/60 font-mono"
             />
           </div>
 
           <!-- Target Guest Selection -->
-          <div class="bg-slate-50 border border-slate-200 p-2.5 rounded flex flex-col gap-2">
+          <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex flex-col gap-2">
             <div>
               <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Điền thông tin vào khách hàng:</label>
-              <select v-model="targetScanGuestKey" class="w-full border border-slate-300 rounded px-2 py-1 text-xs bg-white text-slate-700 focus:outline-none focus:border-[#0f7d8c]">
+              <select v-model="targetScanGuestKey" class="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:border-[#2F6FED]">
                 <option v-for="opt in getScanTargetOptions()" :key="opt.key" :value="opt.key">
                   {{ opt.label }}
                 </option>
@@ -417,11 +386,11 @@
             
             <div class="flex items-center justify-between mt-1">
               <label class="flex items-center gap-1.5 cursor-pointer text-slate-600 select-none">
-                <input type="checkbox" v-model="scanContinuous" class="rounded text-[#0f7d8c] focus:ring-[#0f7d8c] accent-[#0f7d8c]" />
+                <input type="checkbox" v-model="scanContinuous" class="rounded text-[#2F6FED] focus:ring-[#2F6FED]" />
                 <span>Quét liên tục</span>
               </label>
               
-              <div class="flex items-center gap-1">
+              <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                 <span class="text-[11px] text-emerald-600 font-semibold">ASM Scanner đang chạy</span>
               </div>
@@ -431,41 +400,21 @@
           <!-- Device Selector -->
           <div class="flex flex-col gap-1">
             <div class="font-bold text-slate-700 text-xs">Thiết bị</div>
-            <select v-model="selectedScanDevice" class="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:border-[#0f7d8c]">
+            <select v-model="selectedScanDevice" class="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:border-[#2F6FED]">
               <option value="barcode">Máy quét mã vạch USB (Giả lập bàn phím)</option>
               <option value="camera" disabled>Camera máy tính (Chưa kết nối)</option>
             </select>
           </div>
 
-          <!-- Instruction Text -->
+          <!-- Guideline -->
           <p class="text-slate-500 text-[11.5px] leading-relaxed italic bg-slate-50 p-2 border border-slate-200 rounded">
-            Sử dụng máy quét mã vạch để thực hiện quét mã CCCD trên CCCD vật lý hoặc trên thẻ căn cước điện tử, hoặc quét mã CCCD trên ứng dụng VNeID của khách. Nhấn để thực hiện.
+            Sử dụng máy quét mã vạch để thực hiện quét mã QR trên thẻ CCCD hoặc trên ứng dụng VNeID của khách. Nhấn Enter sau khi quét.
           </p>
-
-          <!-- Guideline Steps -->
-          <div class="flex flex-col gap-2.5 mt-1 border-t border-slate-100 pt-3">
-            <div class="flex items-center gap-3">
-              <span class="w-6 h-6 flex items-center justify-center bg-[#0f7d8c] text-white rounded-full font-bold text-xs shrink-0">1</span>
-              <span>Cắm thiết bị quét mã với máy tính.</span>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="w-6 h-6 flex items-center justify-center bg-[#0f7d8c] text-white rounded-full font-bold text-xs shrink-0">2</span>
-              <span>Thiết lập cài đặt thiết bị lần đầu tiên: <a href="#" class="text-[#0f7d8c] hover:underline font-semibold">Xem hướng dẫn</a></span>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="w-6 h-6 flex items-center justify-center bg-[#0f7d8c] text-white rounded-full font-bold text-xs shrink-0">3</span>
-              <span>Cài đặt và khởi động <a href="#" class="text-[#0f7d8c] hover:underline font-bold">ứng dụng ASM Scanner</a></span>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="w-6 h-6 flex items-center justify-center bg-[#0f7d8c] text-white rounded-full font-bold text-xs shrink-0">4</span>
-              <span>Quét mã CCCD hoặc mã định danh điện tử</span>
-            </div>
-          </div>
         </div>
 
         <!-- Footer -->
         <div class="flex justify-end px-4 py-2.5 border-t border-slate-200 bg-slate-50">
-          <button @click="closeScanModal" class="px-4 py-1.5 bg-[#0f7d8c] hover:bg-[#0b5c67] text-white text-xs font-bold rounded shadow-sm transition-colors cursor-pointer border-none flex items-center gap-1.5">
+          <button @click="closeScanModal" class="px-4 py-1.5 bg-[#2F6FED] hover:bg-[#2560D6] text-white text-xs font-semibold rounded-md transition-colors cursor-pointer border-none flex items-center gap-1.5">
             <i class="fa-solid fa-circle-xmark"></i> Đóng
           </button>
         </div>
@@ -476,7 +425,14 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { fetchBookingGuests, initBookingGuests, bulkUpdateBookingGuests, fetchNationalities, fetchGuestDefinitions, syncGeoData } from '@/services/booking-service'
+import {
+  fetchBookingGuests,
+  initBookingGuests,
+  bulkUpdateBookingGuests,
+  fetchNationalities,
+  fetchGuestDefinitions,
+  syncGeoData
+} from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import GuestDetailModal from './GuestDetailModal.vue'
 
@@ -494,19 +450,21 @@ const isEditing = ref(false)
 const guestData = ref([])
 const editData = ref([])
 const showColSettings = ref(false)
+
+// State Thẻ chi tiết khách
 const showDetailModal = ref(false)
 const selectedRoom = ref(null)
 const selectedGuest = ref(null)
 const selectedGuestType = ref('adult')
 
-// Tỉnh/quận/xã cache cho từng dòng
+// Tỉnh/quận/xã cache cho từng dòng khi chỉnh sửa inline
 const provincesList = ref([])
 const districtsCache = ref({})
 const wardsCache = ref({})
 const districtsForLine = ref({})
 const wardsForLine = ref({})
 
-// ==================== CỘT ====================
+// Columns
 const allColumns = ref([
   { key: 'room_number',      label: 'Số phòng',         visible: true,  width: '70px' },
   { key: 'title',            label: 'Danh xưng',        visible: true,  width: '75px' },
@@ -535,7 +493,7 @@ const allColumns = ref([
 
 const visibleColumns = computed(() => allColumns.value.filter(c => c.visible))
 
-// ==================== MASTER DATA ĐỊNH NGHĨA KHÁCH ====================
+// Master Data Definitions
 const guestDefinitions = ref({
   titles: [],
   border_gates: [],
@@ -594,7 +552,7 @@ async function loadGuestDefinitions() {
   }
 }
 
-// ==================== NATIONALITIES ====================
+// Nationalities
 const nationalitiesList = ref([])
 const nationalityMap = ref({})
 
@@ -612,9 +570,7 @@ async function loadNationalities() {
       const map = {}
       list.forEach(item => {
         const c = item.asm_code || item.nationality_id
-        if (c) {
-          map[c] = item.asm_name || item.nationality_name
-        }
+        if (c) map[c] = item.asm_name || item.nationality_name
       })
       nationalityMap.value = map
     }
@@ -622,11 +578,6 @@ async function loadNationalities() {
     console.error('Lỗi tải danh sách quốc tịch:', err)
   }
 }
-
-onMounted(() => {
-  loadNationalities()
-  loadGuestDefinitions()
-})
 
 function getNationalityLabel(code) {
   if (!code) return '—'
@@ -640,12 +591,19 @@ function formatDate(d) {
   } catch { return d }
 }
 
-// ==================== LOAD DATA ====================
+function getDisplayTitle(row, col) {
+  if (col.key === 'nationality_code') return getNationalityLabel(row.nationality_code)
+  if (['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)) {
+    return formatDate(row[col.key])
+  }
+  return row[col.key] || ''
+}
+
+// Load Guests
 async function loadGuests() {
   if (!props.bookingId) return
   loading.value = true
   try {
-    // Tự động init guests nếu chưa có
     await initBookingGuests(props.bookingId)
     const res = await fetchBookingGuests(props.bookingId)
     if (res.data?.success) {
@@ -659,55 +617,43 @@ async function loadGuests() {
   }
 }
 
-// ==================== DRAGGABLE MODAL POSITION ====================
-const modalPos = ref({ x: 0, y: 0 })
-const isDraggingModal = ref(false)
-let dragStart = { x: 0, y: 0 }
-let rafId = null
-
-function startDragModal(e) {
-  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
-  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
-  
-  isDraggingModal.value = true
-  dragStart.x = e.clientX - modalPos.value.x
-  dragStart.y = e.clientY - modalPos.value.y
-  
-  document.addEventListener('mousemove', dragModal)
-  document.addEventListener('mouseup', stopDragModal)
+// ==================== MỞ THẺ CHI TIẾT KHÁCH ====================
+function openGuestDetail(roomGroup, guest, type) {
+  selectedRoom.value = roomGroup
+  selectedGuest.value = guest
+  selectedGuestType.value = type
+  showDetailModal.value = true
 }
 
-function dragModal(e) {
-  if (!isDraggingModal.value) return
-  if (rafId) return
-  
-  rafId = requestAnimationFrame(() => {
-    modalPos.value.x = e.clientX - dragStart.x
-    modalPos.value.y = e.clientY - dragStart.y
-    rafId = null
-  })
-}
-
-function stopDragModal() {
-  isDraggingModal.value = false
-  if (rafId) {
-    cancelAnimationFrame(rafId)
-    rafId = null
+function handleGuestSaved(updatedGuest) {
+  showDetailModal.value = false
+  for (const group of guestData.value) {
+    if (selectedGuestType.value === 'adult') {
+      const idx = (group.guests || []).findIndex(g => g.id === updatedGuest.id)
+      if (idx !== -1) {
+        Object.assign(group.guests[idx], updatedGuest)
+        break
+      }
+    } else {
+      const idx = (group.children || []).findIndex(c => c.id === updatedGuest.id)
+      if (idx !== -1) {
+        Object.assign(group.children[idx], updatedGuest)
+        break
+      }
+    }
   }
-  document.removeEventListener('mousemove', dragModal)
-  document.removeEventListener('mouseup', stopDragModal)
+  emit('saved')
+  notifyBroadcast()
 }
 
-watch(() => props.show, (v) => {
-  if (v) {
-    modalPos.value = { x: 0, y: 0 }
-    if (props.bookingId) loadGuests()
-    loadNationalities()
-    loadGuestDefinitions()
-  }
-})
+function notifyBroadcast() {
+  const bc1 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-room-updates') : null
+  if (bc1) bc1.postMessage('rooms-updated')
+  const bc2 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-channel') : null
+  if (bc2) bc2.postMessage('rooms-updated')
+}
 
-// ==================== GEOGRAPHY API CALLS ====================
+// ==================== GEOGRAPHY API ====================
 async function loadProvinces() {
   if (provincesList.value.length > 0) return
   try {
@@ -733,10 +679,8 @@ async function loadProvinces() {
 async function fetchDistricts(provinceName) {
   if (!provinceName) return []
   if (districtsCache.value[provinceName]) return districtsCache.value[provinceName]
-  
   const prov = provincesList.value.find(p => p.name === provinceName)
   if (!prov) return []
-  
   try {
     const res = await fetch(`https://provinces.open-api.vn/api/p/${prov.code}?depth=2`)
     const data = await res.json()
@@ -753,11 +697,9 @@ async function fetchWards(provinceName, districtName) {
   if (!districtName) return []
   const cacheKey = `${provinceName}_${districtName}`
   if (wardsCache.value[cacheKey]) return wardsCache.value[cacheKey]
-  
   const dists = districtsCache.value[provinceName] || []
   const dist = dists.find(d => d.name === districtName)
   if (!dist) return []
-  
   try {
     const res = await fetch(`https://provinces.open-api.vn/api/d/${dist.code}?depth=2`)
     const data = await res.json()
@@ -804,29 +746,24 @@ async function handleDistrictChange(lineKey, row, newDistrictName) {
 function fixDateFields(row) {
   const dateFields = ['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date']
   dateFields.forEach(f => {
-    if (row[f]) {
-      row[f] = row[f].substring(0, 10)
-    } else {
-      row[f] = ''
-    }
+    if (row[f]) row[f] = row[f].substring(0, 10)
+    else row[f] = ''
   })
 }
 
-// ==================== ACTIONS ====================
+// Inline edit actions
 async function startEditing() {
   loading.value = true
   try {
     await loadProvinces()
     editData.value = JSON.parse(JSON.stringify(guestData.value))
-    
-    // Khởi tạo geo data cho từng dòng
     for (const group of editData.value) {
-      for (const guest of group.guests) {
+      for (const guest of group.guests || []) {
         const key = `g-${guest.id}`
         fixDateFields(guest)
         await initGeoForLine(key, guest.province, guest.district)
       }
-      for (const child of group.children) {
+      for (const child of group.children || []) {
         const key = `c-${child.id}`
         fixDateFields(child)
         await initGeoForLine(key, child.province, child.district)
@@ -851,27 +788,20 @@ async function saveChanges() {
   try {
     const allGuests = []
     const allChildren = []
-    
     for (const group of editData.value) {
-      allGuests.push(...group.guests)
-      allChildren.push(...group.children)
+      allGuests.push(...(group.guests || []))
+      allChildren.push(...(group.children || []))
     }
-    
     const res = await bulkUpdateBookingGuests(props.bookingId, {
       guests: allGuests,
       children: allChildren
     })
-    
     if (res.data?.success) {
       uiStore.showToast('Cập nhật thông tin khách thành công!', 'success')
-      // Đồng bộ về guestData
       guestData.value = JSON.parse(JSON.stringify(editData.value))
       isEditing.value = false
       emit('saved')
-      const bc1 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-room-updates') : null
-      if (bc1) bc1.postMessage('rooms-updated')
-      const bc2 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-channel') : null
-      if (bc2) bc2.postMessage('rooms-updated')
+      notifyBroadcast()
     } else {
       uiStore.showToast(res.data?.message || 'Lưu thất bại!', 'error')
     }
@@ -883,34 +813,7 @@ async function saveChanges() {
   }
 }
 
-function openGuestDetail(room, guest, type) {
-  selectedRoom.value = room
-  selectedGuest.value = guest
-  selectedGuestType.value = type
-  showDetailModal.value = true
-}
-
-function handleGuestSaved(updatedGuest) {
-  showDetailModal.value = false
-  for (const group of guestData.value) {
-    if (selectedGuestType.value === 'adult') {
-      const idx = group.guests.findIndex(g => g.id === updatedGuest.id)
-      if (idx !== -1) { 
-        group.guests[idx] = { ...group.guests[idx], ...updatedGuest }
-        emit('saved')
-        break 
-      }
-    } else {
-      const idx = group.children.findIndex(c => c.id === updatedGuest.id)
-      if (idx !== -1) { 
-        group.children[idx] = { ...group.children[idx], ...updatedGuest }
-        emit('saved')
-        break 
-      }
-    }
-  }
-}
-
+// ==================== SCAN MODAL ====================
 const showScanModal = ref(false)
 const scanRawText = ref('')
 const targetScanGuestKey = ref('')
@@ -921,7 +824,6 @@ const scanInputRef = ref(null)
 function handleScan() {
   scanRawText.value = ''
   showScanModal.value = true
-  
   const opts = getScanTargetOptions()
   const emptyOpt = opts.find(o => o.isEmpty)
   if (emptyOpt) {
@@ -929,11 +831,8 @@ function handleScan() {
   } else if (opts.length > 0) {
     targetScanGuestKey.value = opts[0].key
   }
-  
   nextTick(() => {
-    if (scanInputRef.value) {
-      scanInputRef.value.focus()
-    }
+    if (scanInputRef.value) scanInputRef.value.focus()
   })
 }
 
@@ -945,9 +844,8 @@ function closeScanModal() {
 function getScanTargetOptions() {
   const options = []
   const data = isEditing.value ? editData.value : guestData.value
-  
   data.forEach(group => {
-    group.guests.forEach((guest, index) => {
+    (group.guests || []).forEach((guest, index) => {
       options.push({
         key: `g-${guest.id}`,
         label: `Room ${group.room_number || '—'} | Adult - ${guest.full_name || `Khách ${index + 1} (Trống)`}`,
@@ -956,8 +854,8 @@ function getScanTargetOptions() {
         row: guest,
         type: 'adult'
       })
-    })
-    group.children.forEach((child, index) => {
+    });
+    (group.children || []).forEach((child, index) => {
       options.push({
         key: `c-${child.id}`,
         label: `Room ${group.room_number || '—'} | Child - ${child.full_name || `Trẻ em ${index + 1} (Trống)`}`,
@@ -966,7 +864,7 @@ function getScanTargetOptions() {
         row: child,
         type: 'child'
       })
-    })
+    });
   })
   return options
 }
@@ -983,51 +881,45 @@ function parseAddressDetails(addressStr) {
   if (!addressStr) return { province: '', district: '', ward: '', address: '' }
   const cleanStr = addressStr.trim()
   const parts = cleanStr.split(',').map(s => s.trim())
-  
   let province = ''
   let district = ''
   let ward = ''
-  
   if (parts.length >= 1) province = parts[parts.length - 1]
   if (parts.length >= 2) district = parts[parts.length - 2]
   if (parts.length >= 3) ward = parts[parts.length - 3]
-  
   return { province, district, ward, address: cleanStr }
 }
 
 async function handleScanSubmit() {
   const rawText = scanRawText.value.trim()
   scanRawText.value = ''
-  
   if (!rawText) return
-  
+
   const parts = rawText.split('|')
   if (parts.length < 5) {
     uiStore.showToast('Mã quét không đúng định dạng CCCD Việt Nam!', 'warning')
     return
   }
-  
+
   const idNumber = parts[0]
   const fullName = parts[2]
   const dobRaw = parts[3]
   const gender = parts[4]
   const addressRaw = parts[5]
   const idIssueRaw = parts[6]
-  
+
   const dob = parseCccdDate(dobRaw)
   const idIssueDate = parseCccdDate(idIssueRaw)
   const title = gender === 'Nam' ? 'Mr.' : (gender === 'Nữ' ? 'Mrs.' : 'Mr.')
-  
   const { province, district, ward, address } = parseAddressDetails(addressRaw)
-  
+
   const options = getScanTargetOptions()
   const targetOpt = options.find(o => o.key === targetScanGuestKey.value)
-  
   if (!targetOpt) {
     uiStore.showToast('Không tìm thấy dòng khách để điền dữ liệu!', 'error')
     return
   }
-  
+
   const row = targetOpt.row
   row.full_name = fullName
   row.id_number = idNumber
@@ -1040,9 +932,9 @@ async function handleScanSubmit() {
   row.district = district
   row.ward = ward
   if (idIssueDate) row.id_issue_date = idIssueDate
-  
+
   await initGeoForLine(targetOpt.key, province, district)
-  
+
   if (!isEditing.value) {
     try {
       const isAdult = targetOpt.type === 'adult'
@@ -1051,6 +943,7 @@ async function handleScanSubmit() {
         children: !isAdult ? [row] : []
       })
       emit('saved')
+      notifyBroadcast()
       uiStore.showToast(`Quét CCCD của khách ${fullName} thành công!`, 'success')
     } catch (err) {
       console.error(err)
@@ -1059,32 +952,30 @@ async function handleScanSubmit() {
   } else {
     uiStore.showToast(`Đã điền thông tin quét của khách ${fullName} vào bảng.`, 'success')
   }
-  
+
   if (scanContinuous.value) {
     const nextEmptyOpt = options.find(o => o.isEmpty && o.key !== targetScanGuestKey.value)
     if (nextEmptyOpt) {
       targetScanGuestKey.value = nextEmptyOpt.key
     }
   }
-  
+
   nextTick(() => {
-    if (scanInputRef.value) {
-      scanInputRef.value.focus()
-    }
+    if (scanInputRef.value) scanInputRef.value.focus()
   })
 }
 
+// ==================== EXPORT EXCEL ====================
 function handleExportExcel() {
   try {
-    let html = `<meta charset="utf-8"><table>`
-    html += `<tr>`
+    let html = `<meta charset="utf-8"><table><tr>`
     visibleColumns.value.forEach(col => {
-      html += `<th style="background-color: #38bdf8; color: #000000; font-weight: bold; padding: 6px; border: 1px solid #cbd5e1;">${col.label}</th>`
+      html += `<th style="background-color: #1E2D4A; color: #ffffff; font-weight: bold; padding: 8px; border: 1px solid #cbd5e1;">${col.label}</th>`
     })
     html += `</tr>`
     
     guestData.value.forEach(group => {
-      group.guests.forEach(guest => {
+      (group.guests || []).forEach(guest => {
         html += `<tr>`
         visibleColumns.value.forEach(col => {
           let val = ''
@@ -1093,12 +984,12 @@ function handleExportExcel() {
           else if (['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)) {
             val = formatDate(guest[col.key])
           } else val = guest[col.key] || ''
-          html += `<td style="padding: 4px; border: 1px solid #e2e8f0;">${val}</td>`
+          html += `<td style="padding: 6px; border: 1px solid #e2e8f0;">${val}</td>`
         })
         html += `</tr>`
-      })
-      
-      group.children.forEach(child => {
+      });
+
+      (group.children || []).forEach(child => {
         html += `<tr>`
         visibleColumns.value.forEach(col => {
           let val = ''
@@ -1107,14 +998,13 @@ function handleExportExcel() {
           else if (['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)) {
             val = formatDate(child[col.key])
           } else val = child[col.key] || ''
-          html += `<td style="padding: 4px; border: 1px solid #e2e8f0;">${val}</td>`
+          html += `<td style="padding: 6px; border: 1px solid #e2e8f0;">${val}</td>`
         })
         html += `</tr>`
-      })
+      });
     })
     
     html += `</table>`
-    
     const blob = new Blob([html], { type: 'application/vnd.ms-excel' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1129,26 +1019,70 @@ function handleExportExcel() {
   }
 }
 
-function getDisplayTitle(row, col) {
-  if (col.key === 'nationality_code') return getNationalityLabel(row.nationality_code)
-  if (['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)) {
-    return formatDate(row[col.key])
-  }
-  return row[col.key] || ''
+// Draggable Modal
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
 }
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+watch(() => props.show, (v) => {
+  if (v) {
+    modalPos.value = { x: 0, y: 0 }
+    loadNationalities()
+    loadGuestDefinitions()
+    if (props.bookingId) loadGuests()
+  }
+})
+
+onMounted(() => {
+  loadNationalities()
+  loadGuestDefinitions()
+})
 </script>
 
 <style scoped>
 .header-btn {
-  padding: 4px 10px;
+  padding: 4px 9px;
   background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border-radius: 5px;
   font-size: 11px;
   font-weight: 500;
   color: #e2e8f0;
   transition: all 150ms ease;
   border: 1px solid rgba(255, 255, 255, 0.15);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
 }
 .header-btn:hover {
   background-color: rgba(255, 255, 255, 0.2);
@@ -1158,21 +1092,18 @@ function getDisplayTitle(row, col) {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
-  padding: 2.5px 5px;
-  font-size: 12.5px;
+  padding: 2px 5px;
+  font-size: 12px;
   background-color: #ffffff;
   color: #1e293b;
   min-height: 25px;
   height: 25px;
   box-sizing: border-box;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
 }
 .table-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  border-color: #2F6FED;
+  box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.15);
 }
 .select-geo {
   max-width: 130px;
@@ -1183,10 +1114,5 @@ function getDisplayTitle(row, col) {
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
-}
-.scan-box-wrapper {
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 12px;
 }
 </style>

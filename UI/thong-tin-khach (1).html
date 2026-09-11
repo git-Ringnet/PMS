@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thông tin khách</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#1E2D4A;--blue:#2F6FED;--blue-soft:#EAF1FF;--blue-line:#B9CDF8;
+  --bg:#F3F5F9;--card:#fff;--line:#DDE3EC;--line-strong:#C5CDDA;
+  --txt:#1B2433;--muted:#6B7686;--label:#4A5568;
+  --red:#D93025;--green:#188A4B;--amber:#B5730E;
+  --r:6px;--fs:13px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:var(--fs)/1.4 Inter,system-ui,sans-serif;color:var(--txt);background:var(--navy);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+body::before{content:"";position:fixed;inset:0;background:
+  repeating-linear-gradient(0deg,transparent 0 31px,rgba(255,255,255,.04) 31px 32px),
+  repeating-linear-gradient(90deg,transparent 0 119px,rgba(255,255,255,.04) 119px 120px)}
+
+/* ===== Modal ===== */
+.modal{position:relative;width:960px;max-width:100%;background:var(--bg);border-radius:10px;box-shadow:0 24px 60px rgba(0,0,0,.45);display:grid;grid-template-rows:auto 1fr auto;max-height:calc(100vh - 48px)}
+.m-head{background:var(--navy);color:#fff;padding:12px 18px;border-radius:10px 10px 0 0;display:flex;align-items:center;gap:14px}
+.m-head h1{font-size:15px;font-weight:600;letter-spacing:.2px}
+.m-head .chips{display:flex;gap:6px;margin-left:8px}
+.chip{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:rgba(255,255,255,.12);color:#DCE6FF}
+.chip.b{background:var(--blue)}
+.m-head .x{margin-left:auto;width:28px;height:28px;border:0;border-radius:6px;background:rgba(255,255,255,.1);color:#fff;font-size:18px;cursor:pointer;line-height:1}
+.m-head .x:hover{background:rgba(255,255,255,.22)}
+
+
+/* ===== Body ===== */
+.m-body{overflow:auto;padding:14px 18px;display:grid;grid-template-columns:200px 1fr;gap:14px;align-items:start}
+
+/* Booking strip */
+.stay{grid-column:1/-1;background:var(--navy);color:#fff;border-radius:var(--r);padding:8px 14px;display:grid;grid-template-columns:auto 1fr auto auto auto auto;gap:22px;align-items:center}
+.stay .room{font-size:22px;font-weight:700;letter-spacing:-.5px;line-height:1}
+.stay .room small{display:block;font-size:10px;font-weight:500;color:#9FB2D6;letter-spacing:.6px;text-transform:uppercase;margin-bottom:2px}
+.stay .st{font-size:11px;color:#9FB2D6}
+.stay .kv{font-size:11px;color:#9FB2D6;text-transform:uppercase;letter-spacing:.5px}
+.stay .kv b{display:block;font-size:13px;color:#fff;font-weight:600;text-transform:none;letter-spacing:0;margin-top:1px}
+.stay .arrow{color:#5C7BB8}
+.stay .badge{background:var(--blue);padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600}
+
+/* Photo column */
+.side{display:flex;flex-direction:column;gap:10px;position:sticky;top:0}
+.photo{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px}
+.photo .drop{position:relative;aspect-ratio:3/4;border:1.5px dashed var(--blue-line);border-radius:5px;background:var(--blue-soft);overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s}
+.photo .drop:hover,.photo .drop.over{border-color:var(--blue);background:#DFE9FF}
+.photo .drop img{width:100%;height:100%;object-fit:cover;display:none}
+.photo .drop.has img{display:block}
+.photo .drop.has .ph{display:none}
+.photo .ph{text-align:center;color:var(--blue);font-size:11px;line-height:1.4;padding:10px}
+.photo .ph svg{width:34px;height:34px;margin-bottom:6px;stroke:var(--blue);fill:none;stroke-width:1.5}
+.photo .drop .rm{position:absolute;top:6px;right:6px;width:22px;height:22px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:14px;cursor:pointer;display:none;line-height:1}
+.photo .drop.has:hover .rm{display:block}
+.photo .drop .cnt{position:absolute;left:6px;bottom:6px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,.55);color:#fff;display:none}
+.photo .drop.has .cnt{display:block}
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:6px}
+.thumbs:empty{display:none}
+.th{position:relative;aspect-ratio:1;border-radius:4px;overflow:hidden;border:2px solid transparent;cursor:pointer;background:var(--bg)}
+.th img{width:100%;height:100%;object-fit:cover;display:block}
+.th.on{border-color:var(--blue)}
+.th.add{display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--line-strong);color:var(--muted);font-size:18px}
+.th.add:hover{border-color:var(--blue);color:var(--blue)}
+.photo .acts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.photo .acts button{font:inherit;font-size:11px;font-weight:500;padding:6px 4px;border:1px solid var(--line-strong);border-radius:4px;background:#fff;color:var(--label);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px}
+.photo .acts button:hover{border-color:var(--blue);color:var(--blue)}
+.photo .acts svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8}
+.photo .hint{font-size:10px;color:var(--muted);margin-top:6px;text-align:center}
+
+/* Sections */
+.main{display:flex;flex-direction:column;gap:10px;min-width:0}
+.sec{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px 12px}
+.sec>h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--navy);display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.sec>h3::after{content:"";flex:1;height:1px;background:var(--line)}
+.sec>h3 .req{color:var(--red);font-weight:700}
+.sec>h3 .tag{font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);background:var(--bg);padding:1px 7px;border-radius:99px}
+.g{display:grid;gap:8px 12px}
+.c12{grid-template-columns:repeat(12,1fr)}
+.f{display:flex;flex-direction:column;gap:3px;min-width:0}
+.f label{font-size:11px;font-weight:500;color:var(--label);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f label .req{color:var(--red)}
+.f input,.f select,.f textarea{font:inherit;color:var(--txt);height:30px;border:1px solid var(--line-strong);border-radius:4px;padding:0 9px;background:#fff;width:100%;outline:0;transition:.12s}
+.f textarea{height:auto;padding:6px 9px;resize:vertical;min-height:58px}
+.f input:focus,.f select:focus,.f textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,111,237,.15)}
+.f input::placeholder{color:#A6AFBD}
+.f input:read-only{background:#F7F9FC;color:var(--label)}
+.f select{appearance:none;padding-right:26px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236B7686' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center}
+.f .wi{position:relative}
+.f .wi input{padding-left:30px}
+.f .wi svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:14px;height:14px;stroke:#8A94A6;fill:none;stroke-width:1.7;pointer-events:none}
+.f .wi.d input{padding-left:9px;padding-right:30px}
+.f .wi.d svg{left:auto;right:9px}
+.s2{grid-column:span 2}.s3{grid-column:span 3}.s4{grid-column:span 4}.s5{grid-column:span 5}.s6{grid-column:span 6}.s8{grid-column:span 8}.s12{grid-column:span 12}
+.seg{display:flex;height:30px;border:1px solid var(--line-strong);border-radius:4px;overflow:hidden}
+.seg label{flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--label);cursor:pointer;white-space:nowrap;overflow:visible}
+.seg input{display:none}
+.seg label:has(input:checked){background:var(--blue);color:#fff;font-weight:500}
+.seg label+label{border-left:1px solid var(--line-strong)}
+.msg{font-size:10.5px;color:var(--muted);margin-top:2px}
+.msg.err{color:var(--red)}
+
+.vn .vf{opacity:.45;pointer-events:none}
+
+/* Footer */
+.m-foot{background:#fff;border-top:1px solid var(--line);padding:10px 18px;border-radius:0 0 10px 10px;display:flex;align-items:center;gap:8px}
+.m-foot .meta{font-size:11px;color:var(--muted);margin-right:auto}
+.btn{font:inherit;font-weight:500;height:32px;padding:0 16px;border-radius:5px;border:1px solid var(--line-strong);background:#fff;color:var(--label);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--blue);color:var(--blue)}
+.btn.p{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.p:hover{background:#2560D6}
+.btn.g{color:var(--navy)}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+kbd{font:10px/1 Inter;padding:2px 5px;border:1px solid rgba(255,255,255,.35);border-radius:3px;opacity:.75}
+
+@media(max-width:760px){.m-body{grid-template-columns:1fr}.side{position:static;flex-direction:row}.photo{flex:1}.stay{grid-template-columns:1fr 1fr;gap:10px}}
+</style>
+</head>
+<body>
+
+<div class="modal" role="dialog" aria-labelledby="ttl">
+  <!-- Header -->
+  <div class="m-head">
+    <h1 id="ttl">Thông tin khách</h1>
+    <button class="x" aria-label="Đóng">×</button>
+  </div>
+  <!-- Body -->
+  <div class="m-body">
+    <!-- Booking strip -->
+    <div class="stay">
+      <div class="room"><small>Phòng</small>801</div>
+      <div class="st">DLX King</div>
+      <div class="kv">Rate<b>900,000 <span style="font-size:10px;color:#9FB2D6">VND</span></b></div>
+      <div class="kv">Arrival<b>11/08/2026</b></div>
+      <div class="kv">Departure<b>20/08/2026</b></div>
+      <span class="badge">9 đêm</span>
+    </div>
+
+    <!-- Photo column -->
+    <aside class="side">
+      <div class="photo">
+        <div class="drop" id="drop" title="Kéo thả hoặc bấm để thêm ảnh">
+          <img id="img" alt="Ảnh khách">
+          <div class="ph">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            <div><b>Ảnh khách</b><br>Kéo thả hoặc bấm để chọn<br><span style="opacity:.7">JPG · PNG · ≤ 5 MB / ảnh</span></div>
+          </div>
+          <span class="cnt" id="cnt"></span>
+          <button class="rm" id="rm" title="Xoá ảnh này">×</button>
+          <input type="file" id="file" accept="image/*" multiple hidden>
+        </div>
+        <div class="thumbs" id="thumbs"></div>
+        <div class="acts">
+          <button id="cam"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Chụp</button>
+          <button id="pick"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 16l5-5 4 4 3-3 4 4"/><circle cx="16" cy="8" r="1.5"/></svg>Tải lên</button>
+        </div>
+        <div class="hint">Bấm ảnh nhỏ để xem lớn ·</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      
+      
+        <!-- Cá nhân -->
+        <section class="sec">
+          <h3>Thông tin cá nhân <span class="req">*</span></h3>
+          <div class="g c12">
+            <div class="f s2"><label>Danh xưng</label>
+              <select><option>Mr.</option><option>Mrs.</option><option>Ms.</option><option>Dr.</option></select></div>
+            <div class="f s6"><label>Họ và tên <span class="req">*</span></label><input value="VALITOV ILDAR" style="text-transform:uppercase"></div>
+            <div class="f s4"><label>Loại khách</label>
+              <select><option>RegularGuest</option><option>VIP</option><option>Corporate</option><option>Travel Agent</option></select></div>
+
+            <div class="f s4"><label>Ngày sinh</label><div class="wi d"><input id="dob" value="15/08/1973" placeholder="dd/mm/yyyy"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div></div>
+            <div class="f s8"><label>Quốc tịch <span class="req">*</span></label>
+              <select id="nat"><option value="RUS">RUS – Russia (Liên bang Nga)</option><option value="VNM">VNM – Việt Nam</option><option value="KOR">KOR – Korea</option><option value="USA">USA – United States</option><option value="CHN">CHN – China</option></select></div>
+          </div>
+        </section>
+
+        <!-- Giấy tờ -->
+        <section class="sec">
+          <h3>Giấy tờ tùy thân <span class="req">*</span></h3>
+          <div class="g c12">
+            <div class="f s3"><label>Loại giấy tờ</label>
+              <select><option>Passport – Hộ chiếu</option><option>CCCD – Căn cước</option><option>Giấy phép lái xe</option><option>Khác</option></select></div>
+            <div class="f s3"><label>Số giấy tờ <span class="req">*</span></label><input value="672485864"></div>
+            <div class="f s3"><label>Ngày cấp</label><div class="wi d"><input placeholder="dd/mm/yyyy"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div></div>
+            <div class="f s3"><label>Ngày hết hạn</label><div class="wi d"><input id="exp" placeholder="dd/mm/yyyy"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div>
+              <div class="msg err" id="expMsg" hidden>Giấy tờ hết hạn trước ngày trả phòng</div></div>
+
+            <div class="f s3 vf"><label>Ngày nhập cảnh</label><div class="wi d"><input placeholder="dd/mm/yyyy"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div></div>
+            <div class="f s3 vf"><label>Cửa khẩu</label>
+              <select><option value="">— Chọn —</option><option>Cam Ranh (CXR)</option><option>Tân Sơn Nhất (SGN)</option><option>Nội Bài (HAN)</option><option>Đà Nẵng (DAD)</option></select></div>
+            <div class="f s3 vf"><label>Mục đích nhập cảnh</label>
+              <select><option value="">— Chọn —</option><option>Du lịch</option><option>Công tác</option><option>Thăm thân</option><option>Hội nghị</option><option>Khác</option></select></div>
+            <div class="f s3"><label>Hình thức cư trú</label>
+              <select><option>Tạm trú</option><option>Thường trú</option></select></div>
+
+            <div class="f s3"><label>Tạm trú đến</label><div class="wi d"><input value="20/08/2026"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div></div>
+            <div class="f s3 vf"><label>Số Visa</label><input placeholder="Số visa / thẻ tạm trú"></div>
+          </div>
+        </section>
+
+        <!-- Liên hệ & địa chỉ -->
+        <section class="sec">
+          <h3>Liên hệ &amp; địa chỉ</h3>
+          <div class="g c12">
+            <div class="f s4"><label>Điện thoại</label><div class="wi"><input type="tel" placeholder="+84 …"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></div></div>
+            <div class="f s8"><label>Email</label><div class="wi"><input type="email" placeholder="name@mail.com"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></div></div>
+
+            <div class="f s12"><label>Địa chỉ</label><input placeholder="Số nhà, đường…"></div>
+            <div class="f s3"><label>Tỉnh / Thành phố</label><select><option value="">— Chọn —</option><option>Khánh Hòa</option><option>TP. Hồ Chí Minh</option><option>Hà Nội</option></select></div>
+            <div class="f s3"><label>Quận / Huyện</label><select><option value="">— Chọn —</option></select></div>
+            <div class="f s3"><label>Phường / Xã</label><select><option value="">— Chọn —</option></select></div>
+          </div>
+        </section>
+
+        <!-- Ghi chú -->
+        <section class="sec">
+          <h3>Ghi chú</h3>
+          <div class="f"><textarea placeholder="Yêu cầu đặc biệt, lưu ý phục vụ…"></textarea></div>
+        </section>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="m-foot">
+    <span class="meta">Cập nhật: 10/09/2026 14:22 · bởi <b>FO.Lan</b></span>
+    <button class="btn p"><svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>Lưu</button>
+  </div>
+</div>
+
+<script>
+// ---- photo gallery
+const drop=document.getElementById('drop'),img=document.getElementById('img'),file=document.getElementById('file'),
+      thumbs=document.getElementById('thumbs'),cnt=document.getElementById('cnt');
+let pics=[],cur=0;
+const render=()=>{
+  drop.classList.toggle('has',pics.length>0);
+  img.src=pics[cur]||'';cnt.textContent=pics.length?`${cur+1}/${pics.length}`:'';
+  thumbs.innerHTML=pics.map((p,i)=>`<div class="th${i===cur?' on':''}" data-i="${i}"><img src="${p}"></div>`).join('')
+    +(pics.length?'<div class="th add" title="Thêm ảnh">＋</div>':'');
+};
+const add=files=>{[...files].filter(f=>f.type.startsWith('image/')).forEach(f=>{
+  if(f.size>5e6)return alert(f.name+' vượt quá 5 MB');
+  const r=new FileReader();r.onload=e=>{pics.push(e.target.result);cur=pics.length-1;render()};r.readAsDataURL(f)})};
+drop.onclick=e=>{if(e.target.id!=='rm'){if(pics.length)cur=(cur+1)%pics.length,render();else file.click()}};
+thumbs.onclick=e=>{const t=e.target.closest('.th');if(!t)return;if(t.classList.contains('add'))return file.click();cur=+t.dataset.i;render()};
+document.getElementById('pick').onclick=()=>file.click();
+file.onchange=()=>{add(file.files);file.value=''};
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',e=>add(e.dataTransfer.files));
+document.getElementById('rm').onclick=e=>{e.stopPropagation();pics.splice(cur,1);cur=Math.max(0,Math.min(cur,pics.length-1));render()};
+document.getElementById('cam').onclick=()=>alert('Mở webcam chụp ảnh khách (tích hợp sau)');
+
+// ---- nationality → visa section
+const nat=document.getElementById('nat'),gt=document.getElementById('exp').closest('.sec');
+const syncNat=()=>gt.classList.toggle('vn',nat.value==='VNM');
+nat.onchange=syncNat;syncNat();
+
+// ---- expiry check
+const p=s=>{const[d,m,y]=s.split('/').map(Number);return d&&m&&y?new Date(y,m-1,d):null};
+const exp=document.getElementById('exp'),expMsg=document.getElementById('expMsg');
+exp.oninput=()=>{const d=p(exp.value);expMsg.hidden=!(d&&d<new Date(2026,7,20))};
+
+// ---- shortcut
+addEventListener('keydown',e=>{if(e.ctrlKey&&e.key==='s'){e.preventDefault();document.querySelector('.btn.p').click()}});
+</script>
+</body>
+</html>

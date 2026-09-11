@@ -362,6 +362,10 @@ const props = defineProps({
   initialDate: {
     type: String,
     default: ''
+  },
+  hotelSettings: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -746,6 +750,69 @@ async function handleSave() {
   isSubmitting.value = true
 
   try {
+    // 1. Kiểm tra trạng thái phòng vật lý TRƯỚC KHI tạo booking hoặc gán phòng
+    const targetRoom = roomStore.rooms.find(r => String(r.room_number) === String(selectedRoomNumber.value)) || props.room
+    const statusCode = targetRoom?.room_status_code || ''
+
+    if (statusCode === 'ooo' || statusCode === 'oos') {
+      const lockType = statusCode === 'oos' ? 'Dịch vụ (OOS)' : 'Sửa chữa (OOO)'
+      uiStore.showToast(`Phòng ${selectedRoomNumber.value} hiện đang ở trạng thái ${lockType}. Không thể nhận phòng hay gán phòng!`, 'error')
+      isSubmitting.value = false
+      return
+    }
+
+    if (['occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo'].includes(statusCode)) {
+      uiStore.showToast(`Phòng ${selectedRoomNumber.value} hiện đang có khách lưu trú. Không thể nhận phòng hay gán phòng!`, 'error')
+      isSubmitting.value = false
+      return
+    }
+
+    const inspectableStatuses = ['vacant_clean', 'vacant_dirty', 'turndown']
+    let confirmedCheckIn = false
+    if (inspectableStatuses.includes(statusCode)) {
+      const statusLabels = {
+        vacant_clean: 'chờ kiểm tra (Vacant Clean)',
+        vacant_dirty: 'chưa dọn (Vacant Dirty)',
+        turndown: 'chờ dọn (Turndown)'
+      }
+      const label = statusLabels[statusCode] || 'chờ kiểm tra/chưa dọn'
+
+      // Lấy giá trị AllowCheckinVacantClean thời gian thực từ Database
+      let allowVacantClean = '0'
+      try {
+        const cfgRes = await http.get('/hotel-configs', { params: { name: 'AllowCheckinVacantClean' } })
+        if (cfgRes?.data?.data?.[0]?.value !== undefined) {
+          allowVacantClean = String(cfgRes.data.data[0].value)
+        } else if (props.hotelSettings?.AllowCheckinVacantClean !== undefined) {
+          allowVacantClean = String(props.hotelSettings.AllowCheckinVacantClean)
+        }
+      } catch (e) {
+        if (props.hotelSettings?.AllowCheckinVacantClean !== undefined) {
+          allowVacantClean = String(props.hotelSettings.AllowCheckinVacantClean)
+        }
+      }
+
+      if (allowVacantClean === '0') {
+        uiStore.showToast(`Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Không được phép nhận phòng do cấu hình hệ thống (AllowCheckinVacantClean = 0).`, 'error')
+        isSubmitting.value = false
+        return // Dừng ngay lập tức, không tạo booking, không gán phòng
+      }
+
+      // AllowCheckinVacantClean = 1: Yêu cầu người dùng xác nhận trước khi tạo booking và gán phòng
+      const confirmed = await uiStore.confirm({
+        title: 'Phòng đang chờ kiểm tra',
+        message: `Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+        confirmText: 'Tiếp tục nhận phòng',
+        cancelText: 'Hủy'
+      })
+
+      if (!confirmed) {
+        isSubmitting.value = false
+        return // Người dùng bấm Hủy -> Dừng ngay, không tạo booking, không gán phòng
+      }
+      confirmedCheckIn = true
+    }
+
     const defaultCompany = companies.value[0]?.id || 1
     const defaultMarket = markets.value[0]?.id || 1
     const defaultSource = customerSources.value[0]?.id || 1
@@ -754,6 +821,7 @@ async function handleSave() {
 
     if (!defaultRegStatus) {
       uiStore.showToast('Chưa tải được Tình trạng đăng ký hợp lệ.', 'error')
+      isSubmitting.value = false
       return
     }
 
@@ -799,7 +867,7 @@ async function handleSave() {
       const createdBooking = res.data.data
       const bRoom = createdBooking?.booking_rooms?.[0] || createdBooking?.bookingRooms?.[0]
 
-      // Nếu ngày đến bằng ngày nghiệp vụ -> tự động Check-in ngay
+      // Tự động Check-in ngay
       if (bRoom && bRoom.id) {
         if (specialRequestsList.value.length > 0) {
           const specialRequestIds = specialRequestsList.value.map(r => r.id || r.special_request_id || r).filter(Boolean)
@@ -813,9 +881,39 @@ async function handleSave() {
         }
 
         try {
-          await checkInRoom(createdBooking.id, bRoom.id)
+          const checkinRes = await checkInRoom(createdBooking.id, bRoom.id, { confirmed: confirmedCheckIn })
+          if (checkinRes.data?.needs_confirmation && !confirmedCheckIn) {
+            const confirmed = await uiStore.confirm({
+              title: 'Phòng đang chờ kiểm tra',
+              message: checkinRes.data.message || `Phòng ${selectedRoomNumber.value} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+              confirmText: 'Tiếp tục nhận phòng',
+              cancelText: 'Hủy'
+            })
+            if (confirmed) {
+              await checkInRoom(createdBooking.id, bRoom.id, { confirmed: true })
+            } else {
+              // Người dùng không muốn check-in -> Rollback xóa booking để không gán phòng
+              try {
+                await http.delete(`/bookings/${createdBooking.id}`)
+              } catch (delErr) {
+                console.warn('Rollback booking error:', delErr)
+              }
+              uiStore.showToast(`Đã hủy nhận phòng cho phòng ${selectedRoomNumber.value}.`, 'info')
+              isSubmitting.value = false
+              return
+            }
+          }
         } catch (checkinErr) {
-          console.warn('Auto checkin skipped or deferred:', checkinErr)
+          // Lỗi check-in -> Rollback xóa booking vừa tạo để không gán phòng vào sơ đồ
+          try {
+            await http.delete(`/bookings/${createdBooking.id}`)
+          } catch (delErr) {
+            console.warn('Rollback booking error:', delErr)
+          }
+          const msg = checkinErr.response?.data?.message || 'Lỗi khi nhận phòng.'
+          uiStore.showToast(msg, 'error')
+          isSubmitting.value = false
+          return
         }
       }
 
