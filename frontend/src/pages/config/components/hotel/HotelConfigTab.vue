@@ -97,6 +97,11 @@ const saveConfig = async () => {
     }
     isConfigModalOpen.value = false
     fetchHotelConfigs()
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bcNotify = new BroadcastChannel('pms-room-updates')
+      bcNotify.postMessage('settings-updated')
+      bcNotify.close()
+    }
   } catch (err) {
     console.error(err)
     const errorMsg = err.response?.data?.message || 'Có lỗi xảy ra khi lưu cấu hình'

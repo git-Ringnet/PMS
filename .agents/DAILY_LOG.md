@@ -11,6 +11,105 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-11] - Tích hợp Thẻ thông tin khách dạng Popup khi Double Click từ Màn hình Thông tin khách Booking
+### Module: Đặt phòng / Thông tin khách lưu trú ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+
+- **Đã hoàn thành**:
+  - **Giữ màn hình chính là bảng tổng hợp khách trong phòng ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue))**:
+    - Header Navy chuẩn phong cách PMS với các nút chức năng: Chỉnh sửa, Quét CCCD (Scan), Xuất Excel, Cài đặt, Đóng.
+    - Hiển thị danh sách khách nhóm theo từng phòng (Khách người lớn, Trẻ em).
+  - **Tương tác Double Click mở Thẻ khách chi tiết ([GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Khi **nhấp đúp chuột (Double click)** vào bất kỳ dòng khách nào trong bảng (hoặc bấm nút "Thẻ khách" / "Thẻ trẻ"), hệ thống mở ngay modal **Thẻ thông tin khách** hiển thị toàn bộ thông tin chi tiết của riêng khách đó.
+    - Bổ sung cột "Thao tác" với nút bấm nhanh "Thẻ khách" để người dùng tiện click 1 chạm ngoài thao tác double click.
+    - Bổ sung dòng gợi ý thao tác ở chân modal: `💡 Mẹo: Nhấp đúp chuột (Double click) vào bất kỳ dòng nào để mở Thẻ thông tin khách`.
+  - **Giao diện Thẻ khách chi tiết chuẩn 100% theo mẫu [thong-tin-khach (1).html](file:///d:/PMS/UI/thong-tin-khach%20(1).html)**:
+    - Thanh Header Navy (`#1E2D4A`) hiển thị tiêu đề và tên khách.
+    - Dải thông tin phòng lưu trú (`.stay`): Số phòng, hạng phòng, đơn giá, ngày đến, ngày đi, số đêm badge.
+    - Cột nhận diện (`.side`): Kéo thả ảnh, chọn file, chụp webcam, danh sách thumbnail, xóa ảnh, đếm ảnh.
+    - 4 khối trường nhập liệu (`.main`): Thông tin cá nhân, Giấy tờ tùy thân (kèm tự động mờ trường visa nếu là khách VN), Thông tin liên hệ & địa chỉ (dropdown cascading Tỉnh/Quận/Xã), Ghi chú.
+  - **Khắc phục lỗi tải ảnh đại diện ("The avatar field must not be greater than 255 characters")**:
+    - Khi người dùng tải ảnh lên hoặc kéo thả, tự động gọi API `POST /guests/{id}/avatar` với `FormData` để lưu file vào thư mục máy chủ và nhận về đường dẫn file ngắn (`uploads/avatars/...`).
+    - Lọc bỏ chuỗi Base64 / Blob URL trước khi gửi API cập nhật thông tin khách, tránh vượt quá giới hạn độ dài trường `avatar` (255 ký tự).
+  - **Mở khóa các trường thị thực / nhập cảnh bị xám ([GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Gỡ bỏ logic làm mờ/khóa `pointer-events: none` cho các ô Ngày nhập cảnh, Cửa khẩu, Mục đích nhập cảnh, Số Visa. Nhân viên có thể linh hoạt nhập thông tin bất kể quốc tịch của khách.
+  - **Bật lịch chọn ngày (Date Picker dialog) trực quan**:
+    - Bổ sung sự kiện gọi `showPicker()` khi click vào ô hoặc icon lịch tại các trường Ngày sinh, Ngày cấp, Ngày hết hạn, Ngày nhập cảnh, Tạm trú đến, giúp mở popup chọn lịch ngay lập tức thay vì chỉ nhập text.
+  - **Hiển thị thông tin lịch sử và người cập nhật ở chân Modal**:
+    - Hiển thị chuẩn theo template: `Cập nhật: dd/mm/yyyy HH:mm · bởi [Tên nhân viên]`.
+- **Kiểm thử**: `npm run build` thành công 100%, không phát sinh lỗi.
+
+---
+
+## [2026-09-11] - Chặn triệt để việc gán phòng và tạo booking khi AllowCheckinVacantClean = 0
+### Module: Frontdesk / Sơ đồ phòng ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))
+
+- **Bối cảnh & Vấn đề**:
+  - Khi phòng ở trạng thái `vacant_clean` (hoặc `vacant_dirty`, `turndown`) và `AllowCheckinVacantClean = 0`, khi bấm Lưu ở modal Nhận phòng nhanh (Walk-in), hệ thống hiện cảnh báo lỗi đỏ nhưng phòng vẫn bị gán vào sơ đồ phòng (tạo booking và gán phòng vật lý trước khi check-in).
+- **Khắc phục**:
+  - **Kiểm tra trạng thái phòng & cấu hình trước khi tạo booking ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))**:
+    - Chuyển toàn bộ bước kiểm tra trạng thái phòng vật lý (`vacant_clean`, `vacant_dirty`, `turndown`, `ooo`, `oos`, `occupied_...`) và đọc cấu hình `AllowCheckinVacantClean` thời gian thực lên **TRƯỚC KHI** gọi API `createBooking()`.
+    - **Khi `AllowCheckinVacantClean = 0`**: Bắn cảnh báo lỗi đỏ ngay lập tức và `return` dừng xử lý. Tuyệt đối không tạo booking, không gán phòng vào database, giữ nguyên trạng thái phòng trên Sơ đồ phòng.
+    - **Khi `AllowCheckinVacantClean = 1`**: Mở popup xác nhận nhận phòng trước (`uiStore.confirm`). Nếu người dùng bấm "Hủy" thì dừng ngay (không tạo booking, không gán phòng). Nếu người dùng bấm "Tiếp tục" mới tiến hành tạo booking và check-in với `{ confirmed: true }`.
+    - **Cơ chế Rollback an toàn**: Nếu có bất kỳ lỗi nào trong quá trình check-in sau khi tạo booking, tự động gọi xóa booking vừa tạo (`http.delete('/bookings/' + createdBooking.id)`), đảm bảo phòng không bị gán sai lệch.
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-11] - Chuẩn hóa quy trình kiểm tra trạng thái phòng khi bấm Lưu / Nhận phòng nhanh
+### Module: Frontdesk / Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))
+
+- **Bối cảnh & Phản hồi**:
+  - Người dùng yêu cầu không hiển thị banner cảnh báo tĩnh chặn trước khi mở modal, mà việc kiểm tra trạng thái phòng phải diễn ra **tại thời điểm bấm "Lưu" / "Nhận phòng"** theo đúng giá trị cấu hình `AllowCheckinVacantClean` thời gian thực từ Backend.
+- **Khắc phục**:
+  - **Gỡ bỏ banner cảnh báo tĩnh & khôi phục nút Lưu ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))**:
+    - Xóa bỏ banner cảnh báo sớm và mở lại nút "Lưu" bình thường để người dùng thao tác nhập liệu tự nhiên.
+  - **Kiểm tra trạng thái thời gian thực khi bấm Lưu ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))**:
+    - Khi bấm Lưu: Hệ thống gọi API Backend kiểm tra trực tiếp với Database.
+    - **Trường hợp `AllowCheckinVacantClean = 1`** (phòng đang Chờ kiểm tra / Vacant Clean):
+      - Backend trả về `needs_confirmation = true`.
+      - Frontend mở popup xác nhận (`uiStore.confirm`): *"Phòng [Số phòng] đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên."*
+      - Người dùng bấm "Tiếp tục nhận phòng": Gửi `{ confirmed: true }` $\rightarrow$ Nhận phòng thành công.
+    - **Trường hợp `AllowCheckinVacantClean = 0`**:
+      - Backend trả về lỗi 422: *"Phòng [Số phòng] đang ở trạng thái chờ kiểm tra (Vacant Clean). Không được phép nhận phòng do cấu hình hệ thống (AllowCheckinVacantClean = 0)."*
+      - Frontend hiển thị toast báo lỗi đỏ chi tiết ngay tại thời điểm bấm Lưu, loại bỏ triệt để lỗi nuốt exception báo thành công giả.
+  - **Đồng bộ Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Khôi phục Modal xác nhận nhận phòng nhanh gọn, kiểm tra trực tiếp qua Backend khi bấm nút "Nhận phòng".
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-11] - Sửa lỗi Màu sắc, Tooltip và Vạch trạng thái Kế Hoạch Phòng (Room Plan) & Chuẩn hóa Sơ Đồ Phòng
+### Module: Đặt phòng / Kế hoạch phòng & Sơ đồ phòng ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Khôi phục logic màu sắc Kế Hoạch Phòng (Room Plan)**:
+  - Loại bỏ hoàn toàn việc lấy mã màu mặc định `ColorDefaultBookingRoomMap` (#97D5FF) của Sơ đồ phòng đè lên Kế hoạch phòng.
+  - Khôi phục màu sắc độc lập theo cấu hình riêng của Room Plan trong DB (`RoomPlan_ColorRoomReservation`, `RoomPlan_ColorRoomInhouse`, `RoomPlan_ColorRoomLateCheckout`, `RoomPlan_ColorOOO`, `RoomPlan_ColorOOS`).
+  - Cả `Reservation` và `Guaranteed` đều ăn theo cấu hình `RoomPlan_ColorRoomReservation` (#E3E8C4), loại bỏ việc màu DB registration_statuses (#4ce410) đè lên phòng đặt trước.
+  - Khôi phục thanh Legend trên cùng hiển thị đúng màu riêng từng trạng thái thay vì bị đồng màu xanh ngọc.
+- **Khôi phục giao diện Tooltip màu trắng chuẩn ban đầu đầy đủ thông số**:
+  - Trả lại theme nền trắng (`bg-white text-slate-800 border-slate-200/80 p-4 shadow-2xl w-[360px]`).
+  - Khôi phục đầy đủ 2 khối thông số tài chính và công nợ:
+    - Khối 1: *Tiền phòng cần TT*, *Tiền DV cần TT*, *Tổng cộng*.
+    - Khối 2: *Tổng tiền BK*, *Đã đặt cọc*, *Còn lại* (`text-rose-600 font-black`).
+  - Khôi phục ngày đến ~ ngày đi đầy đủ ngày giờ, lưới 3 cột (Số phòng - Đêm - Giá phòng), số khách (🧑 🧒 👶) và giường phụ.
+- **Chuẩn hóa hiển thị thanh booking trên Kế Hoạch Phòng**:
+  - Gỡ bỏ icon cọc tiền (`deposit-money.png`) và thuộc tính `pr-9` trên thanh booking, giúp tên booking, công ty và giá phòng hiển thị đầy đủ, không còn bị co cụm hay che khuất trên các booking ngắn ngày (1 đêm).
+- **Chuẩn hóa vạch trạng thái đáy thanh phòng Kế Hoạch Phòng**:
+  - Giai đoạn lưu trú / ngày đến: Hiển thị vạch màu **Xanh lá 🟢** (`#22c55e`) đại diện cho **Phòng đến**.
+  - Tại ngày trả phòng (`showCheckOutIndicator`): Hiển thị vạch màu **Đỏ 🔴** (`#ef4444`) đại diện cho **Phòng đi**.
+- **Đồng bộ Sơ Đồ Phòng (Room Map)**:
+  - Tách riêng điều kiện gạch chân `isArrivingTomorrow(room)` độc lập với màu sắc số phòng, đảm bảo mọi phòng ngày mai có khách đến đều được gạch chân (`underline font-black decoration-2`) trên cả Card View và cả 2 Table Views.
+  - Hoạt động chuẩn xác theo thông số cấu hình `RoomMap_ColorRoomNumberByRoomClass` (0: màu đen mặc định, check-in hôm nay màu đỏ; 1: màu theo `room_classes.color`, không đổi đỏ khi check-in).
+- **Đồng bộ màu sắc hai chiều giữa Cấu hình & Kế hoạch phòng (Two-way Color Sync)**:
+  - Cả tab **Cấu hình khách sạn** ([HotelConfigTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelConfigTab.vue)) và **Kế hoạch phòng** ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue)) đều đọc/ghi chung một bảng `hotel_configs` trong Database.
+  - Tích hợp `fetchHotelSettings()` vào nút "View" (`handleViewClick`) trên Kế hoạch phòng, giúp cập nhật ngay màu cấu hình mới nhất mà không cần tải lại toàn bộ trang (F5).
+- **Khôi phục họa tiết sọc chéo (Stripes) chuẩn cho OOO & OOS**:
+  - Khắc phục lỗi OOO, OOS và InHouse đều bị đồng màu xanh dương đặc.
+  - **OOO**: Khôi phục họa tiết sọc chéo xanh dương (`repeating-linear-gradient(-45deg, #3b82f6, #3b82f6 5px, #60a5fa 5px, #60a5fa 10px)`).
+  - **OOS**: Khôi phục họa tiết sọc chéo xám (`repeating-linear-gradient(-45deg, #94a3b8, #94a3b8 5px, #cbd5e1 5px, #cbd5e1 10px)`), sửa triệt để giá trị mặc định của OOS trong DB và seeder về màu xám `#94a3b8` (thay vì bị nhầm `#107eeb` của màu xanh).
+  - Đổi chiều góc nghiêng sọc sang `-45deg` chuẩn theo yêu cầu người dùng trên cả thanh dải màu Legend, các khối khóa phòng trên Timeline Grid, và bóng kéo rê (drag ghost).
+- **Sửa lỗi hiển thị chấm trạng thái (Status Dots) trên Sơ Đồ Phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - **Hiện tượng**: Phòng khách ở 1, 2 đêm sau khi bấm check-in lại hiển thị cả 2 chấm cùng lúc: vừa chấm xanh 🟢 (Phòng đến) vừa chấm đỏ 🔴 (Phòng đi).
+  - **Nguyên nhân**: Hàm [hasDepartureToday](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue#L919) kiểm tra phòng đã check-in nhưng không so sánh ngày đi (`departure_date`) với ngày hiện tại (`targetDate`), khiến bất kỳ phòng nào đã nhận phòng đều bị hiển thị chấm đỏ (phòng đi) sai lệch.
+  - **Khắc phục**: Bổ sung điều kiện so sánh chính xác `departure_date === targetDate`. Chấm đỏ 🔴 chỉ hiển thị đúng vào ngày khách trả phòng (check-out). Các ngày lưu trú bình thường (ở 1 hay nhiều đêm) không còn bị hiện chấm đỏ.
+- **Kiểm thử**: `npm run build` thành công 100%.
+
 ## [2026-09-10] - Fix lỗi Sang Ngày kiểm tra booking chưa gán phòng vật lý (chưa lấy phòng)
 ### Module: Sang ngày / Night Audit ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
 
