@@ -19,7 +19,8 @@ class TemplateRendererService
         // 1. Flatten the structured data array to key-value pairs (e.g., customer.name => 'John')
         $flatData = $this->flattenData($data);
 
-        // 2. Handle conditional custom rows, grouped report bodies, then ordinary detail rows.
+        // 2. Handle conditional blocks/rows, grouped report bodies, then ordinary detail rows.
+        $html = $this->renderConditionalBlocks($html, $data);
         $html = $this->renderConditionalCustomRows($html, $data);
         $html = $this->renderGroupedRows($html, $data);
 
@@ -80,6 +81,27 @@ class TemplateRendererService
         }
 
         return $result;
+    }
+
+    private function renderConditionalBlocks(string $html, array $data): string
+    {
+        $pattern = '/<section\b([^>]*class="[^"]*\bpms-conditional-block\b[^"]*"[^>]*data-condition-id="([^"]+)"[^>]*)>(.*?)<\/section><!--pms-condition-end:\2-->/is';
+
+        do {
+            $previous = $html;
+            $html = preg_replace_callback($pattern, function (array $matches) use ($data): string {
+                $path = $this->attributeValue($matches[1], 'data-visible-by');
+                $mode = $this->attributeValue($matches[1], 'data-visible-when') === 'falsy' ? 'falsy' : 'truthy';
+                $visible = $path ? $this->isTruthy($this->getValueByPath($data, $path)) : true;
+                if ($mode === 'falsy') {
+                    $visible = ! $visible;
+                }
+
+                return $visible ? $matches[3] : '';
+            }, $html);
+        } while ($html !== $previous && str_contains($html, 'pms-conditional-block'));
+
+        return $html;
     }
 
     private function renderConditionalCustomRows(string $html, array $data): string
@@ -356,8 +378,13 @@ class TemplateRendererService
         $rendered = preg_replace_callback('/\{\{group\.distinct\.([A-Za-z0-9_]+)\}\}/', function ($matches) use ($groupRows) {
             return (string) collect($groupRows)->pluck($matches[1])->filter(fn ($value) => $value !== null && $value !== '')->unique()->count();
         }, $rendered);
-        $rendered = preg_replace_callback('/\{\{group\.sum\.([A-Za-z0-9_]+)\}\}/', function ($matches) use ($groupRows) {
-            return (string) collect($groupRows)->sum(fn ($row) => is_numeric($row[$matches[1]] ?? null) ? (float) $row[$matches[1]] : 0);
+        $rendered = preg_replace_callback('/\{\{group\.sum\.([A-Za-z0-9_]+)(?:\|([^}]+))?\}\}/', function ($matches) use ($groupRows) {
+            $sum = collect($groupRows)->sum(fn ($row) => is_numeric($row[$matches[1]] ?? null) ? (float) $row[$matches[1]] : 0);
+            $modifier = $matches[2] ?? null;
+            if ($modifier === 'number') {
+                return number_format((float) $sum, 0, ',', '.');
+            }
+            return (string) $sum;
         }, $rendered);
 
         return '<tr>'.$rendered."</tr>\n";
@@ -870,6 +897,78 @@ class TemplateRendererService
         }
         
         /* Dynamic User Injected CSS */
+        /* Standard report header band; aligned with MINIBAR_INVOICES_BY_PRODUCT. */
+        .report-header-band,
+        .report-header {
+            margin: 0 !important;
+        }
+        .report-header-band .hotel-header,
+        .report-header .hotel-header {
+            display: grid;
+            grid-template-columns: 175px 1fr;
+            align-items: center;
+            min-height: 65px;
+        }
+        .report-header-band .hotel-logo,
+        .report-header .hotel-logo {
+            display: flex;
+            align-items: center;
+            min-height: 55px;
+        }
+        .report-header-band .hotel-logo img,
+        .report-header .hotel-logo img {
+            max-width: 120px;
+            max-height: 55px;
+            object-fit: contain;
+        }
+        .report-header-band .hotel-information,
+        .report-header .hotel-information {
+            font-size: 9.5px !important;
+            line-height: 1.8 !important;
+            text-align: right !important;
+        }
+        .report-header-band .hotel-meta,
+        .report-header .hotel-meta,
+        .report-header-band .hotel-header > div:not(.hotel-logo),
+        .report-header .hotel-header > div:not(.hotel-logo) {
+            font-size: 9.5px !important;
+            line-height: 1.8 !important;
+            text-align: right !important;
+        }
+        .report-header-band .header-divider,
+        .report-header .header-divider,
+        .report-header-band hr,
+        .report-header hr {
+            margin: 0 0 6px !important;
+            border: 0 !important;
+            border-top: 1px solid #cbd5e1 !important;
+        }
+        .report-header-band h1,
+        .report-header h1 {
+            margin: 0 !important;
+            text-align: center !important;
+            font-size: 18px !important;
+            font-weight: 700 !important;
+            line-height: 1.25 !important;
+        }
+        .report-header-band .period,
+        .report-header-band .report-period,
+        .report-header .period,
+        .report-header .report-period {
+            margin: 4px 0 14px !important;
+            text-align: center !important;
+            font-size: 11px !important;
+            font-weight: 400 !important;
+            line-height: 1.25 !important;
+        }
+        .report-header-band p,
+        .report-header p {
+            margin: 4px 0 14px !important;
+            text-align: center !important;
+            font-size: 11px !important;
+            font-weight: 400 !important;
+            line-height: 1.25 !important;
+        }
         .report-header-band table, .report-detail-band table, .report-footer-band table {
             margin-top: 0;
             margin-bottom: 0;
