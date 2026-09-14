@@ -227,16 +227,29 @@ class RoomOccupancyStatisticsService
 
     private function lockedRoomNumbers($physicalRoomNumbers, Carbon $date, string $lockType)
     {
-        return RoomLock::query()
+        $dateStr = $date->toDateString();
+        $defineLockTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->value('value') ?? '12:00';
+
+        $locks = RoomLock::query()
             ->whereIn('room_number', $physicalRoomNumbers)
             ->where('lock_type', $lockType)
             ->where('start_date', '<=', $date->copy()->endOfDay())
             ->where('end_date', '>=', $date->copy()->startOfDay())
-            ->where(function ($query) use ($date) {
-                $query->where('is_active', RoomLock::STATUS_ACTIVE)
-                    ->orWhere('unlocked_at', '>', $date->copy()->endOfDay());
-            })
-            ->distinct()
-            ->pluck('room_number');
+            ->whereIn('is_active', [RoomLock::STATUS_ACTIVE, RoomLock::STATUS_UNLOCKED])
+            ->get(['room_number', 'start_date', 'end_date', 'is_active']);
+
+        return $locks->filter(function ($lock) use ($dateStr, $defineLockTime) {
+            $lockStart = Carbon::parse($lock->start_date)->toDateString();
+            $lockEnd = Carbon::parse($lock->end_date)->toDateString();
+
+            // Nếu phòng đã mở khóa (is_active = 2) và ngày xét là ngày kết thúc của khóa phòng
+            if ($lock->is_active == RoomLock::STATUS_UNLOCKED && $dateStr === $lockEnd && $lockStart !== $lockEnd) {
+                $endTime = Carbon::parse($lock->end_date)->format('H:i');
+                if ($endTime < $defineLockTime) {
+                    return false;
+                }
+            }
+            return true;
+        })->pluck('room_number')->unique();
     }
 }

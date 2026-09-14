@@ -688,12 +688,18 @@ const submitBulkLock = async (force = false) => {
   }
 
   const minAllowedDate = systemDate.value || getTodayString()
-  if (bulkForm.value.start_date < minAllowedDate) {
-    uiStore.showToast(`Ngày bắt đầu khóa không được nhỏ hơn Ngày hệ thống (${minAllowedDate})!`, 'warning')
-    return
+  if (!editingLockId.value || !isEditingActiveLock.value) {
+    if (bulkForm.value.start_date < minAllowedDate) {
+      uiStore.showToast(`Ngày bắt đầu khóa không được nhỏ hơn Ngày hệ thống (${minAllowedDate})!`, 'warning')
+      return
+    }
   }
   if (bulkForm.value.end_date < bulkForm.value.start_date) {
     uiStore.showToast('Ngày kết thúc khóa không được nhỏ hơn Ngày bắt đầu khóa!', 'warning')
+    return
+  }
+  if (isEditingActiveLock.value && bulkForm.value.end_date < minAllowedDate) {
+    uiStore.showToast(`Ngày kết thúc khóa không được nhỏ hơn Ngày hệ thống (${minAllowedDate})!`, 'warning')
     return
   }
 
@@ -749,6 +755,134 @@ const submitBulkLock = async (force = false) => {
       const errMsg = err.response?.data?.message || 'Không thể lưu thông tin khóa phòng'
       uiStore.showToast(errMsg, 'error')
     }
+  }
+}
+
+// ==================== BATCH / INLINE EDITING ====================
+const isBatchEditing = ref(false)
+const savingBatch = ref(false)
+const editedLocks = ref({})
+
+const isLockStartDateDisabled = (lock) => {
+  if (!lock || !lock.lock_start_date) return true
+  const startDateStr = lock.lock_start_date.split(' ')[0]
+  const sysDate = systemDate.value || getTodayString()
+  return startDateStr <= sysDate
+}
+
+const startBatchEdit = () => {
+  const newEdited = {}
+  flatRows.value.forEach(r => {
+    if (r.currentLock) {
+      const lock = r.currentLock
+      const startParts = lock.lock_start_date ? lock.lock_start_date.split(' ') : []
+      const endParts = lock.lock_end_date ? lock.lock_end_date.split(' ') : []
+      newEdited[lock.lock_id] = {
+        lock_id: lock.lock_id,
+        room_number: r.room_number,
+        start_date: startParts[0] || '',
+        start_time: startParts[1] ? startParts[1].substring(0, 5) : '00:00',
+        end_date: endParts[0] || '',
+        end_time: endParts[1] ? endParts[1].substring(0, 5) : defaultLockEndTime.value,
+        reason: lock.lock_reason || '',
+        maintenance_percent: lock.lock_maintenance_percent ?? 0,
+        original_start_date: startParts[0] || '',
+      }
+    }
+  })
+
+  if (Object.keys(newEdited).length === 0) {
+    uiStore.showToast('Không có phòng nào đang khóa để chỉnh sửa!', 'warning')
+    return
+  }
+
+  editedLocks.value = newEdited
+  isBatchEditing.value = true
+}
+
+const cancelBatchEdit = () => {
+  isBatchEditing.value = false
+  editedLocks.value = {}
+}
+
+const submitBatchSave = async (force = false) => {
+  const locksArray = Object.values(editedLocks.value)
+  if (locksArray.length === 0) {
+    isBatchEditing.value = false
+    return
+  }
+
+  const sysDate = systemDate.value || getTodayString()
+
+  // Validate all records before sending
+  for (const item of locksArray) {
+    if (!item.start_date) {
+      uiStore.showToast(`Phòng ${item.room_number}: Vui lòng chọn Ngày bắt đầu!`, 'warning')
+      return
+    }
+    // Nếu start_date ban đầu > sysDate thì không được đổi thành < sysDate
+    if (item.original_start_date > sysDate && item.start_date < sysDate) {
+      uiStore.showToast(`Phòng ${item.room_number}: Ngày bắt đầu không được nhỏ hơn ngày hệ thống (${sysDate})!`, 'warning')
+      return
+    }
+    if (!item.end_date) {
+      uiStore.showToast(`Phòng ${item.room_number}: Vui lòng chọn Ngày kết thúc!`, 'warning')
+      return
+    }
+    if (item.end_date < item.start_date) {
+      uiStore.showToast(`Phòng ${item.room_number}: Ngày kết thúc không được nhỏ hơn Ngày bắt đầu!`, 'warning')
+      return
+    }
+    // Nếu phòng active (start_date <= sysDate), end_date không được < sysDate
+    if (item.original_start_date <= sysDate && item.end_date < sysDate) {
+      uiStore.showToast(`Phòng ${item.room_number}: Ngày kết thúc không được nhỏ hơn Ngày hệ thống (${sysDate})!`, 'warning')
+      return
+    }
+    if (!item.reason || !item.reason.trim()) {
+      uiStore.showToast(`Phòng ${item.room_number}: Vui lòng nhập lý do/mô tả!`, 'warning')
+      return
+    }
+  }
+
+  savingBatch.value = true
+  try {
+    const payload = {
+      locks: locksArray.map(item => ({
+        lock_id: item.lock_id,
+        start_date: `${item.start_date} ${item.start_time || '00:00'}:00`,
+        end_date: `${item.end_date} ${item.end_time || '23:59'}:00`,
+        reason: item.reason,
+        maintenance_percent: parseInt(item.maintenance_percent) || 0,
+      })),
+      force: force
+    }
+
+    const res = await http.post('/room-locks/bulk-update', payload)
+    if (res.data && res.data.success) {
+      uiStore.showToast(res.data.message || 'Cập nhật danh sách phòng khóa thành công!', 'success')
+      isBatchEditing.value = false
+      editedLocks.value = {}
+      fetchRooms()
+      if (bc) bc.postMessage('rooms-updated')
+    }
+  } catch (err) {
+    console.error('Lỗi khi lưu hàng loạt phòng khóa:', err)
+    if (err.response?.data?.require_confirm) {
+      const confirmed = await uiStore.confirm({
+        title: 'Cảnh báo phòng âm',
+        message: err.response.data.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
+        confirmText: 'Tiếp tục',
+        cancelText: 'Hủy'
+      })
+      if (confirmed) {
+        await submitBatchSave(true)
+      }
+    } else {
+      const errMsg = err.response?.data?.message || 'Không thể cập nhật danh sách phòng khóa'
+      uiStore.showToast(errMsg, 'error')
+    }
+  } finally {
+    savingBatch.value = false
   }
 }
 // Toggle active row menu
@@ -808,10 +942,44 @@ const toggleRowMenu = (rowKey, event) => {
 
         <!-- Right Bulk Action Buttons -->
         <div class="flex items-center gap-2">
+          <!-- Sửa hàng loạt (Inline Edit) -->
+          <button 
+            v-if="!isBatchEditing"
+            @click="startBatchEdit"
+            class="px-3.5 py-1.5 border border-sky-500 hover:bg-sky-50 text-sky-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs"
+            title="Bật chế độ sửa trực tiếp danh sách phòng khóa"
+          >
+            <svg class="w-3.5 h-3.5 text-sky-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.83 20.013a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+            </svg>
+            Sửa
+          </button>
+
+          <template v-else>
+            <button 
+              @click="cancelBatchEdit"
+              :disabled="savingBatch"
+              class="px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-600 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-50"
+            >
+              Hủy
+            </button>
+            <button 
+              @click="() => submitBatchSave(false)"
+              :disabled="savingBatch"
+              class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-50"
+            >
+              <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              {{ savingBatch ? 'Đang lưu...' : 'Lưu' }}
+            </button>
+          </template>
+
           <!-- Unlock -->
           <button 
+            :disabled="isBatchEditing"
             @click="submitBulkUnlock"
-            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs"
+            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="unlock-outline" class="w-3.5 h-3.5 text-emerald-600" />
             Mở khóa
@@ -819,8 +987,9 @@ const toggleRowMenu = (rowKey, event) => {
 
           <!-- Lock OOS -->
           <button 
+            :disabled="isBatchEditing"
             @click="openBulkLockModal('OOS')"
-            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs"
+            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="oos" class="w-3.5 h-3.5 text-white" />
             Khóa phòng OOS
@@ -828,8 +997,9 @@ const toggleRowMenu = (rowKey, event) => {
 
           <!-- Lock OOO -->
           <button 
+            :disabled="isBatchEditing"
             @click="openBulkLockModal('OOO')"
-            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs"
+            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="ooo-outline" class="w-3.5 h-3.5 text-white" />
             Khóa phòng OOO
@@ -943,18 +1113,50 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- Start Date -->
-                <td class="p-2.5 border-r border-slate-200 text-center font-normal text-slate-500">
-                  {{ formatDateDisplay(room.lock_start_date) || '-' }}
+                <td class="p-2 border-r border-slate-200 text-center font-normal text-slate-500">
+                  <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
+                    <input 
+                      type="date" 
+                      v-model="editedLocks[room.currentLock.lock_id].start_date" 
+                      :disabled="isLockStartDateDisabled(room.currentLock)"
+                      :min="isLockStartDateDisabled(room.currentLock) ? undefined : (systemDate || getTodayString())"
+                      :title="isLockStartDateDisabled(room.currentLock) ? 'Ngày bắt đầu <= ngày hệ thống nên không được sửa' : ''"
+                      class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-700 bg-white w-full max-w-[125px] disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-sky-400"
+                    />
+                  </template>
+                  <template v-else>
+                    {{ formatDateDisplay(room.lock_start_date) || '-' }}
+                  </template>
                 </td>
 
                 <!-- End Date -->
-                <td class="p-2.5 border-r border-slate-200 text-center font-normal text-slate-500">
-                  {{ formatDateDisplay(room.lock_end_date) || '-' }}
+                <td class="p-2 border-r border-slate-200 text-center font-normal text-slate-500">
+                  <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
+                    <input 
+                      type="date" 
+                      v-model="editedLocks[room.currentLock.lock_id].end_date" 
+                      :min="isLockStartDateDisabled(room.currentLock) ? (systemDate || getTodayString()) : (editedLocks[room.currentLock.lock_id].start_date || systemDate || getTodayString())"
+                      class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-700 bg-white w-full max-w-[125px] focus:outline-sky-400"
+                    />
+                  </template>
+                  <template v-else>
+                    {{ formatDateDisplay(room.lock_end_date) || '-' }}
+                  </template>
                 </td>
 
                 <!-- Lock Reason -->
-                <td class="p-2.5 border-r border-slate-200 font-normal text-slate-600 truncate max-w-[200px]" :title="room.lock_reason">
-                  {{ room.lock_reason || '-' }}
+                <td class="p-2 border-r border-slate-200 font-normal text-slate-600 truncate max-w-[200px]" :title="room.lock_reason">
+                  <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
+                    <input 
+                      type="text" 
+                      v-model="editedLocks[room.currentLock.lock_id].reason" 
+                      placeholder="Lý do/mô tả..."
+                      class="border border-slate-300 rounded px-2 py-0.5 text-xs font-normal text-slate-700 bg-white w-full focus:outline-sky-400"
+                    />
+                  </template>
+                  <template v-else>
+                    {{ room.lock_reason || '-' }}
+                  </template>
                 </td>
 
                 <!-- Username -->
@@ -963,8 +1165,22 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- Maintenance Percent -->
-                <td class="p-2.5 border-r border-slate-200 text-center font-normal text-slate-500">
-                  {{ room.lock_type ? room.lock_maintenance_percent + '%' : '-' }}
+                <td class="p-2 border-r border-slate-200 text-center font-normal text-slate-500">
+                  <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
+                    <div class="flex items-center justify-center gap-1">
+                      <input 
+                        type="number" 
+                        min="0" 
+                        max="100" 
+                        v-model.number="editedLocks[room.currentLock.lock_id].maintenance_percent" 
+                        class="border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-700 bg-white w-[50px] text-center focus:outline-sky-400"
+                      />
+                      <span class="text-[11px] text-slate-400 font-bold">%</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    {{ room.lock_type ? room.lock_maintenance_percent + '%' : '-' }}
+                  </template>
                 </td>
 
                 <!-- Maintenance status -->
@@ -1221,8 +1437,9 @@ const toggleRowMenu = (rowKey, event) => {
                   ref="startDateInputRef"
                   type="date" 
                   v-model="bulkForm.start_date" 
-                  :min="systemDate || getTodayString()"
+                  :min="isEditingActiveLock ? undefined : (systemDate || getTodayString())"
                   :disabled="isEditingActiveLock"
+                  :title="isEditingActiveLock ? 'Ngày bắt đầu <= ngày hệ thống nên không được sửa' : ''"
                   class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full disabled:opacity-60 disabled:cursor-not-allowed" 
                 />
                 <button
@@ -1256,7 +1473,7 @@ const toggleRowMenu = (rowKey, event) => {
                   ref="endDateInputRef"
                   type="date" 
                   v-model="bulkForm.end_date" 
-                  :min="bulkForm.start_date || systemDate || getTodayString()"
+                  :min="isEditingActiveLock ? (systemDate || getTodayString()) : (bulkForm.start_date || systemDate || getTodayString())"
                   class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full" 
                 />
                 <button

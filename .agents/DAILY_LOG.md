@@ -11,6 +11,44 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-14] - Hoàn thiện toàn diện các nghiệp vụ Khóa phòng theo tài liệu Lỗi liên quan tới khóa phòng.docx
+### Module: Quản lý Khóa phòng (Room Lock) ([RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php), [LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue), [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php))
+
+- **Section 1: Cập nhật thời gian khi mở khóa phòng & đồng bộ thống kê OOO/OOS**:
+  - **Cập nhật ngày kết thúc khi mở khóa**: Khi mở khóa phòng (cả đơn lẻ qua `destroy` và hàng loạt qua `bulkUnlock`), hệ thống cập nhật `end_date` của phòng khóa thành ngày hệ thống (`system_date`) và giờ thao tác thực tế (`H:i:s`), đồng thời chuyển `is_active = 2` (STATUS_UNLOCKED) và `status = 'Done'`.
+  - **Giữ lịch sử khóa qua đêm trên màn hình Kế hoạch phòng & Phòng trống**: Cập nhật các truy vấn và service tính công suất ([RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php)) lấy các bản ghi khóa phòng `is_active in [1, 2]`.
+  - **So khớp cấu hình `FrmOOO_DefineLockByTime`**: Các ngày trước đó (đã khóa qua đêm) giữ nguyên số liệu thống kê OOO/OOS. Riêng ngày thực hiện mở khóa: nếu mở trước giờ quy định `FrmOOO_DefineLockByTime` (mặc định 12:00) thì không tính ngày đó bị khóa (trừ số liệu OOO/OOS); nếu mở sau giờ quy định thì vẫn tính ngày đó bị khóa.
+
+- **Section 2: Kiểm tra cấu hình `AllowLockRoomCauseUnassignableRoomBK`**:
+  - Bổ sung helper `checkUnassignableBookingsAvailability(...)` trong [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php) để kiểm tra xem sau khi khóa phòng vật lý này, các booking chưa gán phòng (`room_number is null`) thuộc cùng hạng phòng đó có còn ít nhất 1 phòng vật lý trống liên tục toàn bộ kỳ lưu trú để gán hay không.
+  - **Tối ưu hóa thuật toán giữ chỗ liên tục cho nhiều booking (Interval Occupancy Tracking)**: Xây dựng bản đồ phân khoảng thời gian đã chiếm dụng (`roomOccupancies`) cho từng phòng vật lý (bao gồm phòng đang khóa, phòng có lịch OOO/OOS khác và phòng đã gán booking). Khi kiểm tra nhiều booking chưa gán phòng cùng lúc, hệ thống tự động trừ dần (giữ chỗ tạm thời) các phòng đã khớp, ngăn chặn trường hợp nhiều booking chưa gán cùng tính trùng vào 1 phòng trống còn lại.
+  - Tích hợp kiểm tra vào `store()`, `bulkLock()`, `update()`, `bulkUpdate()` (đặt trước bước kiểm tra AV phòng âm để ưu tiên bảo vệ tính liên tục của booking):
+    - Nếu `AllowLockRoomCauseUnassignableRoomBK = '0'`: Chặn không cho khóa phòng và trả về lỗi 422 giải thích chi tiết.
+    - Nếu `AllowLockRoomCauseUnassignableRoomBK = '1'`: Trả về cảnh báo yêu cầu xác nhận (`require_confirm: true`). Khi người dùng đồng ý (`force: true`), cho phép khóa phòng.
+
+- **Section 3: Sửa form chỉnh sửa khóa phòng đơn lẻ**:
+  - **Quy tắc ngày bắt đầu**:
+    - Khi `start_date <= system_date`: Khóa/disable ô ngày bắt đầu trên form modal ([LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue)); backend kiểm tra chặn không cho sửa ngày bắt đầu và báo lỗi nếu người dùng cố tình thay đổi.
+    - Khi `start_date > system_date`: Cho phép sửa ngày bắt đầu (với điều kiện `>= system_date`).
+    - Cho phép sửa ngày kết thúc, ghi chú/lý do, % tiến độ bảo trì.
+  - **Khắc phục lỗi so sánh với ngày hệ thống**: Thay thế việc so sánh với thời gian thực tế máy chủ `now()` bằng ngày nghiệp vụ của hệ thống (`SystemDateRoll::getSystemDate()`), tránh lỗi báo "Khóa phòng đã kết thúc trong quá khứ..." đối với các phòng khóa đang hoạt động trong ngày hệ thống.
+
+- **Section 4: Thêm 2 nút "Sửa" và "Lưu" ngoài Toolbar để sửa trực tiếp nhiều phòng khóa**:
+  - **Giao diện Toolbar & Inline Table Edit ([LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue))**:
+    - Bổ sung 2 nút "Sửa" (bật chế độ inline edit trên bảng) và "Lưu" (kèm nút "Hủy") cạnh nút "Mở khóa".
+    - Khi ở chế độ sửa, các cột Ngày bắt đầu, Ngày mở khóa, Lý do/Mô tả, % Bảo trì trở thành các ô input có thể chỉnh sửa trực tiếp.
+    - Cột ngày bắt đầu tự động bị disable nếu `start_date <= system_date` theo đúng quy tắc Section 3.
+  - **API `bulkUpdate` và Giao dịch nguyên tử (Atomic Transaction)**:
+    - Tạo API `POST /api/room-locks/bulk-update` trong [routes/api.php](file:///d:/PMS/backend/routes/api.php) và [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php).
+    - Toàn bộ các cập nhật được bọc trong `DB::transaction()`. Nếu có bất kỳ phòng nào bị lỗi kiểm tra (thời gian, trùng lịch, AV âm, hoặc vi phạm `AllowLockRoomCauseUnassignableRoomBK`), toàn bộ thay đổi sẽ rollback 100% và không có phòng nào bị thay đổi sai lệch.
+
+- **Kiểm thử tự động**:
+  - Viết và chạy thành công 13 test cases trong [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php) (13/13 passed, 40 assertions), bao trùm toàn bộ các điều kiện của cả 4 Section (Section 1 Unlock date/stats, Section 2 Unassignable bookings rule, Section 3 Single edit date logic, Section 4 Toolbar bulk update & atomic rollback).
+  - Chạy test kiểm tra công suất phòng [RoomOccupancyStatisticsTest.php](file:///d:/PMS/backend/tests/Feature/RoomOccupancyStatisticsTest.php) (passed 100%).
+  - Chạy test nghiệp vụ booking [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) (24/24 passed).
+  - Build frontend bằng `npm run build` thành công 100%, không phát sinh lỗi.
+
+
 ## [2026-09-14] - Chuẩn hóa tên file template báo cáo hàng bể vỡ trong DB migration (Tương thích Linux)
 ### Module: Báo cáo dịch vụ / Migrations ([2026_09_11_170000_create_breakage_invoice_product_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_170000_create_breakage_invoice_product_report.php), [2026_09_11_171000_create_breakage_free_invoice_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_171000_create_breakage_free_invoice_report.php))
 

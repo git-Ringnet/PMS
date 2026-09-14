@@ -141,6 +141,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('/room-locks/history/{room_id}', [\App\Http\Controllers\Api\RoomLockController::class, 'history']);
     Route::post('/room-locks/bulk-lock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkLock']);
     Route::post('/room-locks/bulk-unlock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUnlock']);
+    Route::post('/room-locks/bulk-update', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUpdate']);
     Route::apiResource('room-locks', \App\Http\Controllers\Api\RoomLockController::class);
 
     // Company settings
