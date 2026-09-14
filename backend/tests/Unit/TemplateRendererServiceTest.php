@@ -7,6 +7,34 @@ use Tests\TestCase;
 
 class TemplateRendererServiceTest extends TestCase
 {
+    public function test_it_renders_opt_in_conditional_designer_blocks(): void
+    {
+        $html = '<section class="pms-conditional-block" data-condition-id="deposit" data-visible-by="parameters.show_deposit" data-visible-when="truthy"><div>Tiền đặt cọc</div></section><!--pms-condition-end:deposit-->';
+
+        $hidden = app(TemplateRendererService::class)->render($html, '', [
+            'parameters' => ['show_deposit' => 0],
+        ]);
+        $visible = app(TemplateRendererService::class)->render($html, '', [
+            'parameters' => ['show_deposit' => 1],
+        ]);
+
+        $this->assertStringNotContainsString('Tiền đặt cọc', $hidden);
+        $this->assertStringContainsString('<div>Tiền đặt cọc</div>', $visible);
+        $this->assertStringNotContainsString('pms-conditional-block', $visible);
+    }
+
+    public function test_it_supports_falsy_and_nested_conditional_designer_blocks(): void
+    {
+        $html = '<section class="pms-conditional-block" data-condition-id="outer" data-visible-by="parameters.outer" data-visible-when="truthy"><div>A<section class="pms-conditional-block" data-condition-id="inner" data-visible-by="parameters.inner" data-visible-when="falsy"><span>B</span></section><!--pms-condition-end:inner--></div></section><!--pms-condition-end:outer-->';
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', [
+            'parameters' => ['outer' => true, 'inner' => false],
+        ]);
+
+        $this->assertStringContainsString('<div>A<span>B</span></div>', $rendered);
+        $this->assertStringNotContainsString('pms-conditional-block', $rendered);
+    }
+
     public function test_it_keeps_saved_page_settings_authoritative_over_custom_css(): void
     {
         $rendered = app(TemplateRendererService::class)->render(
@@ -33,6 +61,21 @@ class TemplateRendererServiceTest extends TestCase
             strpos($rendered, 'size: A4 portrait;'),
             strrpos($rendered, 'size: A4 landscape;')
         );
+    }
+
+    public function test_it_emits_the_standard_minibar_header_band_style_for_all_report_headers(): void
+    {
+        $rendered = app(TemplateRendererService::class)->render(
+            '<div class="report-header-band"><div class="hotel-header"><div class="hotel-logo">Logo</div><div class="hotel-meta">Thông tin</div></div><hr><h1>Báo cáo</h1><p>Ngày</p></div>',
+            '',
+            []
+        );
+
+        $this->assertStringContainsString('.report-header-band .hotel-header', $rendered);
+        $this->assertStringContainsString('.report-header-band .hotel-meta', $rendered);
+        $this->assertStringContainsString('font-size: 9.5px !important;', $rendered);
+        $this->assertStringContainsString('font-size: 18px !important;', $rendered);
+        $this->assertStringContainsString('margin: 4px 0 14px !important;', $rendered);
     }
 
     public function test_it_renders_store_rows_with_row_bindings(): void
@@ -166,5 +209,27 @@ HTML;
         $data['parameters']['show_note'] = true;
         $visible = app(TemplateRendererService::class)->render($html, '', $data);
         $this->assertStringContainsString('Ghi chú', $visible);
+    }
+
+    public function test_it_formats_group_sum_aggregates_with_number_modifier(): void
+    {
+        $html = <<<'HTML'
+<table>
+<tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1" data-group-by="Category">
+<tr class="pms-group-header" data-group-level="0" data-group-field="Category"><td>{{row.Category}}</td></tr>
+<tr class="pms-detail-row"><td>{{row.Item}}</td><td>{{row.Total|number}}</td></tr>
+<tr class="pms-group-custom-row" data-group-level="0"><td>Tổng nhóm</td><td>{{group.sum.Total|number}}</td></tr>
+</tbody>
+</table>
+HTML;
+        $data = [
+            'rows' => [
+                ['Category' => 'Minibar', 'Item' => 'Aqua', 'Total' => 175000],
+                ['Category' => 'Minibar', 'Item' => 'Sting', 'Total' => 87900],
+            ],
+        ];
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertStringContainsString('<td>Tổng nhóm</td><td>262.900</td>', $rendered);
     }
 }

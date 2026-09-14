@@ -2,6 +2,20 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import {
+  contentForTextStyle,
+  mergeConfiguredStyles,
+  normalizeElementTextStyle,
+  scopedBlockTextStyleCss,
+  styleObjectToCss,
+} from '@/utils/report-designer-styles'
+import {
+  cloneDesignerBlock,
+  createDesignerSnapshot,
+  moveDesignerHistory,
+  parseDesignerSnapshot,
+  pushDesignerSnapshot,
+} from '@/utils/report-designer-history'
 import { 
   X, Save, Play, RefreshCw, FileText, Layers, History, Settings,
   Plus, Trash2, ArrowUp, ArrowDown, ChevronRight, Check, RotateCcw,
@@ -39,6 +53,11 @@ const editorMode = ref('visual') // 'visual' | 'code'
 // Active cell editing states for static tables to prevent cursor jumps
 const activeCell = ref(null)
 const editingCellContent = ref('')
+const quickFormatTarget = ref(null)
+const selectedStaticCellKeys = ref([])
+const staticStyleScope = ref('cell')
+const staticStyleClipboard = ref(null)
+const staticCellContextMenu = ref(null)
 
 const onCellFocus = (cell) => {
   activeCell.value = cell
@@ -81,6 +100,18 @@ const showRightPanel = ref(true)
 const canvasViewport = ref(null)
 const canvasZoomMode = ref('fit')
 const canvasZoom = ref(1)
+const blockClipboard = ref(null)
+const historyEntries = ref([])
+const historyIndex = ref(-1)
+const historyReady = ref(false)
+const restoringHistory = ref(false)
+let historyTimer = null
+let generatedIdSequence = 0
+
+const canUndo = computed(() => historyIndex.value > 0)
+const canRedo = computed(() => historyIndex.value >= 0 && historyIndex.value < historyEntries.value.length - 1)
+
+const createDesignerId = type => `${String(type || 'block').replace(/[^a-z0-9-]/gi, '-')}_${Date.now()}_${++generatedIdSequence}`
 
 const pageDimensions = computed(() => {
   const dimensions = {
@@ -161,6 +192,87 @@ const blocks = ref({
   footer: []
 })
 
+const designerState = () => ({
+  schemaVersion: 2,
+  blocks: blocks.value,
+  page: {
+    size: template.value?.page_size || 'A4',
+    orientation: template.value?.page_orientation || 'portrait',
+    marginTop: template.value?.margin_top ?? 10,
+    marginBottom: template.value?.margin_bottom ?? 10,
+    marginLeft: template.value?.margin_left ?? 10,
+    marginRight: template.value?.margin_right ?? 10,
+  },
+  css: template.value?.css || '',
+  dataSourceId: template.value?.report_data_source_id || null,
+  parameterDefaults: template.value?.parameter_defaults || {},
+})
+
+const resetDesignerHistory = () => {
+  if (!template.value) return
+  clearTimeout(historyTimer)
+  historyEntries.value = [createDesignerSnapshot(designerState())]
+  historyIndex.value = 0
+  historyReady.value = true
+}
+
+const recordDesignerHistory = () => {
+  if (!historyReady.value || restoringHistory.value || !template.value) return
+  const result = pushDesignerSnapshot(
+    historyEntries.value,
+    historyIndex.value,
+    createDesignerSnapshot(designerState()),
+  )
+  if (!result.changed) return
+  historyEntries.value = result.entries
+  historyIndex.value = result.index
+}
+
+const scheduleDesignerHistory = () => {
+  if (!historyReady.value || restoringHistory.value) return
+  clearTimeout(historyTimer)
+  historyTimer = setTimeout(recordDesignerHistory, 350)
+}
+
+const restoreDesignerSnapshot = snapshot => {
+  if (!snapshot || !template.value) return
+  restoringHistory.value = true
+  const state = parseDesignerSnapshot(snapshot)
+  blocks.value = {
+    header: (state.blocks?.header || []).map(normalizeBlock),
+    detail: (state.blocks?.detail || []).map(normalizeBlock),
+    footer: (state.blocks?.footer || []).map(normalizeBlock),
+  }
+  template.value.page_size = state.page?.size || 'A4'
+  template.value.page_orientation = state.page?.orientation || 'portrait'
+  template.value.margin_top = state.page?.marginTop ?? 10
+  template.value.margin_bottom = state.page?.marginBottom ?? 10
+  template.value.margin_left = state.page?.marginLeft ?? 10
+  template.value.margin_right = state.page?.marginRight ?? 10
+  template.value.css = state.css || ''
+  template.value.report_data_source_id = state.dataSourceId || null
+  template.value.parameter_defaults = state.parameterDefaults || {}
+  selectedBlockId.value = null
+  quickFormatTarget.value = null
+  compileHtml()
+  nextTick(() => {
+    restoringHistory.value = false
+    fitCanvasToViewport()
+  })
+}
+
+const navigateDesignerHistory = direction => {
+  clearTimeout(historyTimer)
+  recordDesignerHistory()
+  const result = moveDesignerHistory(historyEntries.value, historyIndex.value, direction)
+  if (!result.changed) return
+  historyIndex.value = result.index
+  restoreDesignerSnapshot(result.snapshot)
+}
+
+const undoDesigner = () => navigateDesignerHistory(-1)
+const redoDesigner = () => navigateDesignerHistory(1)
+
 const getBlockScopeClass = (block) => {
   const safeId = String(block?.id || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '-')
   return `pms-template-block-${safeId}`
@@ -174,6 +286,26 @@ const collectBlocks = (items) => items.flatMap((block) => {
   return [block, ...nestedBlocks]
 })
 
+const blockTypeLabel = type => ({
+  text: 'Văn bản',
+  image: 'Hình ảnh',
+  table: 'Bảng chi tiết',
+  'static-table': 'Bảng tĩnh',
+  columns: 'Bố cục cột',
+  divider: 'Đường kẻ',
+  spacer: 'Khoảng trống',
+  shape: 'Hình khối',
+  'page-break': 'Ngắt trang',
+})[type] || type
+
+const explorerBlocks = band => {
+  const flatten = (items, depth = 0) => items.flatMap(block => [
+    { block, depth },
+    ...(block.columns || []).flatMap(column => flatten(column.blocks || [], depth + 1)),
+  ])
+  return flatten(blocks.value[band])
+}
+
 const scopedBlockFontCss = computed(() => {
   const allBlocks = collectBlocks([
     ...blocks.value.header,
@@ -182,17 +314,96 @@ const scopedBlockFontCss = computed(() => {
   ])
 
   return allBlocks
-    .filter(block => block.style?.fontSize)
     .map(block => {
       const selector = `.template-preview-canvas .${getBlockScopeClass(block)}`
-      return `${selector}, ${selector} * { font-size: ${block.style.fontSize} !important; }`
+      const fontSizeCss = block.style?.fontSize
+        ? `${selector}, ${selector} * { font-size: ${block.style.fontSize} !important; }`
+        : ''
+      const configuredTextCss = block.type === 'text'
+        ? scopedBlockTextStyleCss(selector, block.style, block.textStyleOverrides)
+        : ''
+      return [fontSizeCss, configuredTextCss].filter(Boolean).join('\n')
     })
+    .filter(Boolean)
     .join('\n')
 })
 
+const standardHeaderBandCss = `
+.template-preview-canvas .report-header-band,
+.template-preview-canvas .report-header { margin: 0 !important; }
+.template-preview-canvas .report-header-band .hotel-header,
+.template-preview-canvas .report-header .hotel-header {
+  display: grid;
+  grid-template-columns: 175px 1fr;
+  align-items: center;
+  min-height: 65px;
+}
+.template-preview-canvas .report-header-band .hotel-logo,
+.template-preview-canvas .report-header .hotel-logo {
+  display: flex;
+  align-items: center;
+  min-height: 55px;
+}
+.template-preview-canvas .report-header-band .hotel-logo img,
+.template-preview-canvas .report-header .hotel-logo img {
+  max-width: 120px;
+  max-height: 55px;
+  object-fit: contain;
+}
+.template-preview-canvas .report-header-band .hotel-information,
+.template-preview-canvas .report-header .hotel-information {
+  font-size: 9.5px !important;
+  line-height: 1.8 !important;
+  text-align: right !important;
+}
+.template-preview-canvas .report-header-band .hotel-meta,
+.template-preview-canvas .report-header .hotel-meta,
+.template-preview-canvas .report-header-band .hotel-header > div:not(.hotel-logo),
+.template-preview-canvas .report-header .hotel-header > div:not(.hotel-logo) {
+  font-size: 9.5px !important;
+  line-height: 1.8 !important;
+  text-align: right !important;
+}
+.template-preview-canvas .report-header-band .header-divider,
+.template-preview-canvas .report-header .header-divider,
+.template-preview-canvas .report-header-band hr,
+.template-preview-canvas .report-header hr {
+  margin: 0 0 6px !important;
+  border: 0 !important;
+  border-top: 1px solid #cbd5e1 !important;
+}
+.template-preview-canvas .report-header-band h1,
+.template-preview-canvas .report-header h1 {
+  margin: 0 !important;
+  text-align: center !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+}
+.template-preview-canvas .report-header-band .period,
+.template-preview-canvas .report-header-band .report-period,
+.template-preview-canvas .report-header .period,
+.template-preview-canvas .report-header .report-period {
+  margin: 4px 0 14px !important;
+  text-align: center !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.25 !important;
+}
+.template-preview-canvas .report-header-band p,
+.template-preview-canvas .report-header p {
+  margin: 4px 0 14px !important;
+  text-align: center !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.25 !important;
+}
+`
+
 const scopedTemplateCss = computed(() => {
   const css = template.value?.css || ''
-  if (!css.trim()) return ''
+  const canvasReset = '.template-preview-canvas { max-width: none !important; }'
+  if (!css.trim()) return `${standardHeaderBandCss}\n${canvasReset}`
 
   const scopedCss = css.replace(/([^{}]+)\{/g, (match, selectorText) => {
     const selectors = selectorText.trim()
@@ -212,7 +423,7 @@ const scopedTemplateCss = computed(() => {
   // Legacy templates may set body max-width: 210mm for A4 portrait. The
   // canvas itself represents the saved paper metadata, so it must not be
   // constrained when the user changes to landscape or another paper size.
-  return `${scopedCss}\n.template-preview-canvas { max-width: none !important; }`
+  return `${scopedCss}\n${standardHeaderBandCss}\n${canvasReset}`
 })
 
 const defaultBlockStyle = {
@@ -234,6 +445,215 @@ const defaultBlockStyle = {
   borderColor: '#cbd5e1',
   borderRadius: '0px'
 }
+
+const fontSizeOptions = Array.from({ length: 99 }, (_, index) => 1 + index * 0.5)
+
+const selectQuickFormatTarget = target => {
+  if (target.kind !== 'static-cell') selectedStaticCellKeys.value = []
+  quickFormatTarget.value = target
+}
+
+const closeQuickToolbar = () => {
+  quickFormatTarget.value = null
+  selectedBlockId.value = null
+}
+
+const staticCellPosition = target => ({
+  row: Math.max(0, target?.block?.rows?.indexOf(target.row) ?? -1) + 1,
+  column: Math.max(0, target?.row?.cells?.indexOf(target.cell) ?? -1) + 1,
+})
+
+const staticCellKey = (block, row, cell) => `${block?.id || 'static'}:${block?.rows?.indexOf(row) ?? -1}:${row?.cells?.indexOf(cell) ?? -1}`
+
+const isStaticCellSelected = (block, row, cell) => selectedStaticCellKeys.value.includes(staticCellKey(block, row, cell))
+
+const selectStaticCell = (event, block, row, cell) => {
+  const key = staticCellKey(block, row, cell)
+  const multiSelect = event?.ctrlKey || event?.metaKey
+  if (multiSelect) {
+    selectedStaticCellKeys.value = isStaticCellSelected(block, row, cell)
+      ? selectedStaticCellKeys.value.filter(item => item !== key)
+      : [...selectedStaticCellKeys.value, key]
+  } else {
+    selectedStaticCellKeys.value = [key]
+  }
+  quickFormatTarget.value = { kind: 'static-cell', block, row, cell }
+}
+
+const staticStyleTargets = () => {
+  const target = quickFormatTarget.value
+  if (!target || target.kind !== 'static-cell') return []
+  const rows = target.block.rows || []
+  const rowIndex = rows.indexOf(target.row)
+  const columnIndex = target.row.cells.indexOf(target.cell)
+  if (staticStyleScope.value === 'row') return target.row.cells.map(cell => ({ row: target.row, cell }))
+  if (staticStyleScope.value === 'column') return rows.map(row => ({ row, cell: row.cells[columnIndex] })).filter(item => item.cell)
+  if (staticStyleScope.value === 'table') return rows.flatMap(row => row.cells.map(cell => ({ row, cell })))
+  if (staticStyleScope.value === 'selection') {
+    return rows.flatMap(row => row.cells
+      .filter(cell => isStaticCellSelected(target.block, row, cell))
+      .map(cell => ({ row, cell })))
+  }
+  return [{ row: target.row, cell: target.cell }]
+}
+
+const staticStyleValue = (property) => {
+  const target = quickFormatTarget.value
+  if (!target?.cell) return ''
+  target.cell.style = normalizeStaticTextStyle(target.cell.style)
+  return target.cell.style[property] || ''
+}
+
+const applyStaticStyle = (property, value) => {
+  staticStyleTargets().forEach(({ cell }) => {
+    cell.style = normalizeStaticTextStyle(cell.style)
+    cell.style[property] = value
+  })
+  compileHtml()
+}
+
+const applyStaticBorder = (property, value) => {
+  ;['Top', 'Right', 'Bottom', 'Left'].forEach(side => applyStaticStyle(`border${side}${property}`, value))
+}
+
+const resetStaticStyle = () => {
+  staticStyleTargets().forEach(({ cell }) => { cell.style = normalizeStaticTextStyle() })
+  compileHtml()
+}
+
+const copyStaticStyle = () => {
+  const target = quickFormatTarget.value
+  if (!target?.cell) return
+  staticStyleClipboard.value = { ...normalizeStaticTextStyle(target.cell.style) }
+  uiStore.showToast('Đã sao chép định dạng ô', 'success')
+}
+
+const pasteStaticStyle = () => {
+  if (!staticStyleClipboard.value) return
+  staticStyleTargets().forEach(({ cell }) => {
+    cell.style = { ...normalizeStaticTextStyle(), ...staticStyleClipboard.value }
+  })
+  compileHtml()
+}
+
+const isStaticCellCovered = (block, rowIndex, columnIndex) => (block.rows || []).some((row, sourceRowIndex) => row.cells?.some((cell, sourceColumnIndex) => {
+  const rowSpan = Math.max(1, Number(cell.rowspan) || 1)
+  const colSpan = Math.max(1, Number(cell.colspan) || 1)
+  return (sourceRowIndex !== rowIndex || sourceColumnIndex !== columnIndex)
+    && sourceRowIndex <= rowIndex && sourceColumnIndex <= columnIndex
+    && sourceRowIndex + rowSpan > rowIndex && sourceColumnIndex + colSpan > columnIndex
+}))
+
+const selectedStaticCoordinates = () => {
+  const target = quickFormatTarget.value
+  if (!target?.block) return []
+  return target.block.rows.flatMap((row, rowIndex) => row.cells.map((cell, columnIndex) => ({ row, cell, rowIndex, columnIndex }))
+    .filter(item => isStaticCellSelected(target.block, item.row, item.cell)))
+}
+
+const mergeStaticCells = () => {
+  const target = quickFormatTarget.value
+  const selected = selectedStaticCoordinates()
+  if (!target?.block || selected.length < 2) return uiStore.showToast('Chọn từ hai ô liền kề để gộp', 'warning')
+  const rows = [...new Set(selected.map(item => item.rowIndex))]
+  const columns = [...new Set(selected.map(item => item.columnIndex))]
+  const isRectangle = selected.length === rows.length * columns.length
+    && Math.max(...rows) - Math.min(...rows) + 1 === rows.length
+    && Math.max(...columns) - Math.min(...columns) + 1 === columns.length
+  if (!isRectangle || selected.some(item => (item.cell.colspan || 1) > 1 || (item.cell.rowspan || 1) > 1)) return uiStore.showToast('Vùng gộp phải là hình chữ nhật, chưa có ô gộp', 'warning')
+  const anchor = selected.find(item => item.rowIndex === Math.min(...rows) && item.columnIndex === Math.min(...columns))
+  anchor.cell.colspan = columns.length
+  anchor.cell.rowspan = rows.length
+  selectedStaticCellKeys.value = [staticCellKey(target.block, anchor.row, anchor.cell)]
+  quickFormatTarget.value = { kind: 'static-cell', block: target.block, row: anchor.row, cell: anchor.cell }
+  compileHtml()
+}
+
+const splitStaticCell = () => {
+  const cell = quickFormatTarget.value?.cell
+  if (!cell || ((cell.colspan || 1) === 1 && (cell.rowspan || 1) === 1)) return
+  cell.colspan = 1
+  cell.rowspan = 1
+  compileHtml()
+}
+
+const openStaticCellContextMenu = (event, block, row, cell) => {
+  event.preventDefault()
+  selectStaticCell(event, block, row, cell)
+  staticCellContextMenu.value = { x: event.clientX, y: event.clientY }
+}
+
+const closeStaticCellContextMenu = () => { staticCellContextMenu.value = null }
+
+const captureTextSelection = () => {
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed && selection.toString().trim()) {
+    quickFormatTarget.value = { kind: 'text-selection' }
+  }
+}
+
+const applyInlineSelectionStyle = (property, value) => {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return
+  const range = selection.getRangeAt(0)
+  const editable = range.commonAncestorContainer.parentElement?.closest?.('[contenteditable="true"]')
+  if (!editable) return
+  const span = document.createElement('span')
+  span.style[property] = value
+  span.appendChild(range.extractContents())
+  range.insertNode(span)
+  selection.removeAllRanges()
+  const nextRange = document.createRange()
+  nextRange.selectNodeContents(span)
+  selection.addRange(nextRange)
+  editable.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+const quickStyleObject = () => {
+  const target = quickFormatTarget.value
+  if (!target) return null
+  if (target.kind === 'static-cell') {
+    target.cell.style = normalizeStaticTextStyle(target.cell.style)
+    return target.cell.style
+  }
+  if (target.kind === 'table-header') {
+    target.column.headerStyle = normalizeElementTextStyle(target.column.headerStyle)
+    return target.column.headerStyle
+  }
+  if (target.kind === 'table-cell') {
+    target.column.cellStyle = normalizeElementTextStyle(target.column.cellStyle)
+    return target.column.cellStyle
+  }
+  if (target.kind === 'custom-cell') return target.cell
+  return null
+}
+
+const applyQuickStyle = (property, value) => {
+  const style = quickStyleObject()
+  if (!style) {
+    if (['fontSize', 'color', 'backgroundColor'].includes(property)) {
+      return applyInlineSelectionStyle(property, value)
+    }
+    const command = property === 'color' ? 'foreColor' : property === 'backgroundColor' ? 'hiliteColor' : property
+    return formatText(command, value)
+  }
+  const styleProperty = { bold: 'fontWeight', italic: 'fontStyle', underline: 'textDecoration' }[property] || property
+  style[styleProperty] = value || ({ bold: 'bold', italic: 'italic', underline: 'underline' }[property] || '')
+  compileHtml()
+}
+
+const resetQuickStyle = () => {
+  const style = quickStyleObject()
+  if (!style) return
+  if (quickFormatTarget.value.kind === 'custom-cell') {
+    ;['fontSize', 'fontWeight', 'fontStyle', 'textDecoration', 'color', 'backgroundColor'].forEach(property => { style[property] = '' })
+  } else {
+    Object.assign(style, normalizeElementTextStyle())
+  }
+  compileHtml()
+}
+
+const normalizeStaticTextStyle = normalizeElementTextStyle
 
 const parseGroupHeader = (html) => {
   const match = String(html || '').match(/^\s*<td\b([^>]*)>([\s\S]*)<\/td>\s*$/i)
@@ -257,6 +677,19 @@ const normalizeBlock = (block) => {
       blocks: Array.isArray(column.blocks)
         ? column.blocks.map(normalizeBlock)
         : []
+    }))
+  }
+
+  if (normalized.type === 'static-table') {
+    normalized.rows = (Array.isArray(normalized.rows) ? normalized.rows : []).map(row => ({
+      ...row,
+      style: normalizeStaticTextStyle(row.style),
+      cells: (Array.isArray(row.cells) ? row.cells : []).map(cell => ({
+        ...cell,
+        colspan: Math.max(1, Number(cell.colspan) || 1),
+        rowspan: Math.max(1, Number(cell.rowspan) || 1),
+        style: normalizeStaticTextStyle(cell.style)
+      }))
     }))
   }
 
@@ -289,7 +722,9 @@ const normalizeBlock = (block) => {
         className: cell.className || '',
         backgroundColor: cell.backgroundColor || '',
         color: cell.color || '',
-        borderColor: cell.borderColor || ''
+        borderColor: cell.borderColor || '',
+        fontSize: cell.fontSize || '',
+        fontWeight: cell.fontWeight || ''
       }))
     }))
     normalized.columns = (normalized.columns || []).map(column => {
@@ -299,7 +734,9 @@ const normalizeBlock = (block) => {
       return {
         ...column,
         value: hasNumberModifier ? value.slice(0, -7) : value,
-        format: column.format || (hasNumberModifier ? 'number' : '')
+        format: column.format || (hasNumberModifier ? 'number' : ''),
+        headerStyle: normalizeElementTextStyle(column.headerStyle),
+        cellStyle: normalizeElementTextStyle(column.cellStyle)
       }
     })
 
@@ -331,7 +768,9 @@ const normalizeBlock = (block) => {
           className: cell.className || '',
           backgroundColor: cell.backgroundColor || '',
           color: cell.color || '',
-          borderColor: cell.borderColor || ''
+          borderColor: cell.borderColor || '',
+          fontSize: cell.fontSize || '',
+          fontWeight: cell.fontWeight || ''
         })),
         enabledBy: group.enabledBy || '',
         sort: String(group.sort || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
@@ -509,7 +948,9 @@ const addTableCustomRow = (block) => {
       className: '',
       backgroundColor: '',
       color: '',
-      borderColor: ''
+      borderColor: '',
+      fontSize: '',
+      fontWeight: ''
     }))
   })
   selectedBlockId.value = block.id
@@ -517,7 +958,7 @@ const addTableCustomRow = (block) => {
 }
 
 const addTableCustomCell = (row) => {
-  row.cells.push({ id: `custom_cell_${Date.now()}`, type: 'text', content: '', binding: '', aggregateField: '', colspan: 1, align: 'left', format: '', className: '', backgroundColor: '', color: '', borderColor: '' })
+  row.cells.push({ id: `custom_cell_${Date.now()}`, type: 'text', content: '', binding: '', aggregateField: '', colspan: 1, align: 'left', format: '', className: '', backgroundColor: '', color: '', borderColor: '', fontSize: '', fontWeight: '' })
   compileHtml()
 }
 
@@ -603,7 +1044,9 @@ const ensureGroupHeaderCells = (block, group) => {
     className: group.className || '',
     backgroundColor: '',
     color: '',
-    borderColor: ''
+    borderColor: '',
+    fontSize: '',
+    fontWeight: ''
   }]
 }
 
@@ -621,7 +1064,9 @@ const addGroupHeaderCell = (block, group) => {
     className: '',
     backgroundColor: '',
     color: '',
-    borderColor: ''
+    borderColor: '',
+    fontSize: '',
+    fontWeight: ''
   })
   updateTableGroups(block)
 }
@@ -673,6 +1118,7 @@ const stripHtml = (html) => {
 // Fetch template data
 const loadTemplate = async () => {
   loading.value = true
+  historyReady.value = false
   try {
     const res = await http.get(`/templates/${props.templateId}`)
     if (res.data && res.data.data) {
@@ -711,6 +1157,7 @@ const loadTemplate = async () => {
       // Keep the runtime HTML synchronized with the loaded designer structure.
       // The designer is driven by content_json, while report preview/render uses content_html.
       compileHtml()
+      resetDesignerHistory()
       await nextTick()
       fitCanvasToViewport()
     }
@@ -765,27 +1212,81 @@ const loadPreview = async () => {
 
 // Selected block getter & setter helper
 // Selected block getter & setter helper (with recursive search for sub-blocks inside columns layout)
-const selectedBlock = computed(() => {
-  if (!selectedBlockId.value) return null
-  const bandBlocks = blocks.value[selectedBand.value]
-  
-  // 1. Check top-level blocks
-  const topBlock = bandBlocks.find(b => b.id === selectedBlockId.value)
-  if (topBlock) return topBlock
-  
-  // 2. Check nested blocks inside column grids
-  for (const b of bandBlocks) {
-    if (b.type === 'columns' && b.columns) {
-      for (const col of b.columns) {
-        if (col.blocks) {
-          const foundSub = col.blocks.find(sb => sb.id === selectedBlockId.value)
-          if (foundSub) return foundSub
-        }
+const findBlockLocation = id => {
+  const findIn = (items, band, parent = null) => {
+    for (let index = 0; index < items.length; index++) {
+      const block = items[index]
+      if (block.id === id) return { band, container: items, index, block, parent }
+      for (const column of block.columns || []) {
+        if (!Array.isArray(column.blocks)) continue
+        const nested = findIn(column.blocks, band, block)
+        if (nested) return nested
       }
     }
+    return null
+  }
+
+  for (const band of ['header', 'detail', 'footer']) {
+    const found = findIn(blocks.value[band], band)
+    if (found) return found
   }
   return null
-})
+}
+
+const selectedBlockLocation = computed(() => selectedBlockId.value
+  ? findBlockLocation(selectedBlockId.value)
+  : null)
+
+const selectedBlock = computed(() => selectedBlockLocation.value?.block || null)
+
+const selectDesignerBlock = (band, block) => {
+  selectedBand.value = band
+  selectedBlockId.value = block.id
+}
+
+const copySelectedBlock = () => {
+  if (!selectedBlock.value) return
+  blockClipboard.value = cloneDesignerBlock(selectedBlock.value, createDesignerId)
+  uiStore.showToast('Đã sao chép phần tử', 'success')
+}
+
+const pasteDesignerBlock = () => {
+  if (!blockClipboard.value) return
+  const copy = cloneDesignerBlock(blockClipboard.value, createDesignerId)
+  const location = selectedBlockLocation.value
+  const target = location?.band === selectedBand.value ? location.container : blocks.value[selectedBand.value]
+  const index = location?.band === selectedBand.value ? location.index + 1 : target.length
+  target.splice(index, 0, copy)
+  selectedBlockId.value = copy.id
+  compileHtml()
+}
+
+const duplicateSelectedBlock = () => {
+  if (!selectedBlock.value) return
+  blockClipboard.value = cloneDesignerBlock(selectedBlock.value, createDesignerId)
+  pasteDesignerBlock()
+}
+
+const deleteSelectedBlock = () => {
+  const location = selectedBlockLocation.value
+  if (!location || location.block.locked) return
+  location.container.splice(location.index, 1)
+  selectedBlockId.value = null
+  quickFormatTarget.value = null
+  compileHtml()
+}
+
+const toggleSelectedBlockVisibility = () => {
+  if (!selectedBlock.value) return
+  selectedBlock.value.visible = selectedBlock.value.visible === false
+  compileHtml()
+}
+
+const toggleSelectedBlockLock = () => {
+  if (!selectedBlock.value) return
+  selectedBlock.value.locked = !selectedBlock.value.locked
+  scheduleDesignerHistory()
+}
 
 // Columns Layout Sub-block helpers
 const addSubBlock = (parentBlock, colIdx, type) => {
@@ -989,6 +1490,17 @@ const addBlock = (type) => {
     newBlock.content = '<hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 10px 0;">'
   } else if (type === 'spacer') {
     newBlock.height = 20 // mm or px
+  } else if (type === 'shape') {
+    newBlock.height = 40
+    newBlock.style.backgroundColor = '#ffffff'
+    newBlock.style.borderStyle = 'solid'
+    newBlock.style.borderWidth = '1px'
+    newBlock.style.borderColor = '#94a3b8'
+    newBlock.style.borderRadius = '0px'
+  } else if (type === 'page-break') {
+    newBlock.style.paddingTop = '0px'
+    newBlock.style.paddingBottom = '0px'
+    newBlock.style.marginBottom = '0px'
   } else if (type === 'table') {
     newBlock.isNew = true
     newBlock.dataSource = selectedDataSource.value ? 'rows' : 'booking.services'
@@ -1058,6 +1570,7 @@ const addBlock = (type) => {
 const moveBlock = (index, direction) => {
   const band = selectedBand.value
   const bandBlocks = blocks.value[band]
+  if (bandBlocks[index]?.locked) return
   if (direction === 'up' && index > 0) {
     const temp = bandBlocks[index]
     bandBlocks[index] = bandBlocks[index - 1]
@@ -1067,9 +1580,14 @@ const moveBlock = (index, direction) => {
     bandBlocks[index] = bandBlocks[index + 1]
     bandBlocks[index + 1] = temp
   }
+  compileHtml()
 }
 
 const onBlockDragStart = (event, band, index) => {
+  if (blocks.value[band]?.[index]?.locked) {
+    event.preventDefault()
+    return
+  }
   draggedBlock.value = { band, index }
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData('application/x-pms-report-block', 'true')
@@ -1146,10 +1664,13 @@ const addFieldBlock = (band, field, index = blocks.value[band].length) => {
 
 // Remove block
 const deleteBlock = (band, id) => {
+  const target = blocks.value[band].find(b => b.id === id)
+  if (target?.locked) return
   blocks.value[band] = blocks.value[band].filter(b => b.id !== id)
   if (selectedBlockId.value === id) {
     selectedBlockId.value = null
   }
+  compileHtml()
 }
 
 const onTextareaFocus = (e) => {
@@ -1500,7 +2021,10 @@ const addTableColumn = (block) => {
   block.columns.push({
     header: 'Cột mới',
     value: fields[0]?.value || '',
-    width: 'auto'
+    width: 'auto',
+    align: 'left',
+    headerStyle: normalizeElementTextStyle(),
+    cellStyle: normalizeElementTextStyle()
   })
   compileHtml()
 }
@@ -1542,9 +2066,11 @@ const compileHtml = () => {
   if (template.value) {
     template.value.content_html = html
   }
+  scheduleDesignerHistory()
 }
 
 const compileBlockToHtml = (b) => {
+  if (b.visible === false) return ''
   const originalStyles = b.style || {}
   const compiledStyles = { ...originalStyles }
   
@@ -1585,13 +2111,27 @@ const compileBlockToHtml = (b) => {
   const fontSizeOverride = b.style?.fontSize
     ? `<style>.${blockScopeClass}, .${blockScopeClass} * { font-size: ${b.style.fontSize} !important; }</style>\n`
     : ''
+  const configuredTextOverride = b.type === 'text'
+    ? scopedBlockTextStyleCss(`.${blockScopeClass}`, b.style, b.textStyleOverrides)
+    : ''
+  const configuredTextOverrideTag = configuredTextOverride
+    ? `<style>${configuredTextOverride}</style>\n`
+    : ''
 
-  let blockHtml = `${fontSizeOverride}<div id="${b.id}" class="${blockScopeClass}" style="${styles}">\n`
+  const conditionId = String(b.id || createDesignerId('condition')).replace(/[^a-zA-Z0-9_-]/g, '-')
+  const conditionOpen = b.visibleWhen
+    ? `<section class="pms-conditional-block" data-condition-id="${conditionId}" data-visible-by="${b.visibleWhen}" data-visible-when="${b.visibleWhenMode === 'falsy' ? 'falsy' : 'truthy'}">\n`
+    : ''
+  let blockHtml = `${conditionOpen}${fontSizeOverride}${configuredTextOverrideTag}<div id="${b.id}" class="${blockScopeClass}" style="${styles}">\n`
   
   if (b.type === 'text' || b.type === 'divider') {
     blockHtml += `  ${b.content || ''}\n`
   } else if (b.type === 'spacer') {
     blockHtml += `  <div style="height: ${b.height || 20}px;"></div>\n`
+  } else if (b.type === 'shape') {
+    blockHtml += `  <div aria-hidden="true" style="height: ${Math.max(1, Number(b.height) || 40)}px;"></div>\n`
+  } else if (b.type === 'page-break') {
+    blockHtml += '  <div class="pms-page-break" style="break-after: page; page-break-after: always; height: 0;"></div>\n'
   } else if (b.type === 'image') {
     if (b.imageUrl) {
       blockHtml += `  <img src="${b.imageUrl}" style="max-height: 80px; max-width: 100%;" alt="Image">\n`
@@ -1602,7 +2142,7 @@ const compileBlockToHtml = (b) => {
     }
   } else if (b.type === 'table') {
     const tableStyle = b.tableStyle || 'grid'
-    let thStyle = 'padding: 6px 8px; font-weight: bold;'
+    let thStyle = 'padding: 6px 8px;'
     let tdStyle = 'padding: 6px 8px;'
     
     if (tableStyle === 'grid') {
@@ -1619,7 +2159,8 @@ const compileBlockToHtml = (b) => {
     blockHtml += '  <table style="width: 100%; border-collapse: collapse; border: none;">\n'
     blockHtml += '    <thead>\n      <tr>\n'
     b.columns.forEach(col => {
-      blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; text-align: ${col.align || 'left'};">${col.header}</th>\n`
+      const headerStyle = mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle)
+      blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; ${styleObjectToCss(headerStyle, true)}">${contentForTextStyle(col.header, headerStyle)}</th>\n`
     })
     blockHtml += '      </tr>\n    </thead>\n'
     const groups = tableGroups(b).filter(group => group.field)
@@ -1633,8 +2174,8 @@ const compileBlockToHtml = (b) => {
       let rowHtml = `      <tr class="${className}${rowClass}"${attributes}${visibleBy}>\n`
       row.cells.forEach(cell => {
         const cellClass = cell.className ? ` class="${cell.className}"` : ''
-        const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
-        rowHtml += `        <td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>\n`
+        const resolvedStyle = mergeConfiguredStyles({ textAlign: cell.align || 'left', fontWeight: 'bold' }, customTableCellTextStyle(cell))
+        rowHtml += `        <td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>\n`
       })
       return rowHtml + '      </tr>\n'
     }
@@ -1647,8 +2188,8 @@ const compileBlockToHtml = (b) => {
         const cells = Array.isArray(group.headerCells) && group.headerCells.length
           ? group.headerCells.map(cell => {
               const cellClass = cell.className ? ` class="${cell.className}"` : ''
-              const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
-              return `<td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>`
+              const resolvedStyle = mergeConfiguredStyles({ textAlign: cell.align || 'left', fontWeight: 'bold' }, customTableCellTextStyle(cell))
+              return `<td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>`
             }).join('')
           : `<td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td>`
         blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}>${cells}</tr>\n`
@@ -1660,7 +2201,8 @@ const compileBlockToHtml = (b) => {
     blockHtml += `      <tr class="pms-detail-row"${groups.length ? '' : ` data-source="${b.dataSource}"`}>\n`
     b.columns.forEach(col => {
       const modifier = col.format === 'number' ? '|number' : ''
-      blockHtml += `        <td style="${tdStyle} text-align: ${col.align || 'left'};">{{${col.value}${modifier}}}</td>\n`
+      const detailStyle = mergeConfiguredStyles({ textAlign: col.align || 'left' }, col.cellStyle)
+      blockHtml += `        <td style="${tdStyle} ${styleObjectToCss(detailStyle, true)}">{{${col.value}${modifier}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
     detailCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-detail-custom-row') })
@@ -1689,12 +2231,18 @@ const compileBlockToHtml = (b) => {
     blockHtml += '  <table style="width: 100%; border-collapse: collapse; border: none;">\n'
     blockHtml += '    <tbody>\n'
     if (b.rows) {
-      b.rows.forEach(row => {
-        blockHtml += '      <tr>\n'
+      b.rows.forEach((row, rowIndex) => {
+        blockHtml += `      <tr style="${styleObjectToCss(row.style, true)}">\n`
         if (row.cells) {
           row.cells.forEach((cell, colIdx) => {
+            if (isStaticCellCovered(b, rowIndex, colIdx)) return
             const col = b.columns && b.columns[colIdx] ? b.columns[colIdx] : {}
-            blockHtml += `        <td style="${tdStyle} width: ${col.width || 'auto'};">${cell.content || ''}</td>\n`
+            const resolvedStyle = mergeConfiguredStyles(row.style, cell.style)
+            const cellStyle = styleObjectToCss(resolvedStyle, true)
+            const content = contentForTextStyle(cell.content, resolvedStyle)
+            const colspan = Math.max(1, Number(cell.colspan) || 1)
+            const rowspan = Math.max(1, Number(cell.rowspan) || 1)
+            blockHtml += `        <td colspan="${colspan}" rowspan="${rowspan}" style="${tdStyle} width: ${col.width || 'auto'}; ${cellStyle}">${content}</td>\n`
           })
         }
         blockHtml += '      </tr>\n'
@@ -1719,6 +2267,7 @@ const compileBlockToHtml = (b) => {
   }
   
   blockHtml += '</div>\n'
+  if (conditionOpen) blockHtml += `</section><!--pms-condition-end:${conditionId}-->\n`
   return blockHtml
 }
 
@@ -1765,33 +2314,85 @@ const getTableCellStyle = (block, col) => {
   if (borderStyle === 'horizontal') {
     return {
       textAlign: align,
-      borderBottom: '1px solid #e2e8f0',
+      borderBottom: '1px solid #cbd5e1',
       borderRight: 'none',
-      padding: '8px'
+      padding: '6px 8px'
     }
   } else if (borderStyle === 'none') {
     return {
       textAlign: align,
       border: 'none',
-      padding: '8px'
+      padding: '6px 8px'
     }
   } else {
     return {
       textAlign: align,
-      borderBottom: '1px solid #cbd5e1',
-      borderRight: '1px solid #cbd5e1',
-      padding: '8px'
+      border: '1px solid #cbd5e1',
+      padding: '6px 8px'
     }
   }
 }
 
-const getCustomTableCellStyle = (block, cell, column = {}) => ({
+const applyBlockTextStyle = (property, value) => {
+  const block = selectedBlock.value
+  if (!block) return
+
+  block.style[property] = value
+  block.textStyleOverrides = {
+    ...(block.textStyleOverrides || {}),
+    [property]: true
+  }
+  compileHtml()
+}
+
+const resetSelectedBlockToolbar = () => {
+  const block = selectedBlock.value
+  if (!block) return
+  block.style = { ...defaultBlockStyle }
+  block.textStyleOverrides = {}
+  compileHtml()
+}
+
+const selectedBlockToolbarLabel = block => ({
+  text: 'đoạn chữ',
+  image: 'hình ảnh',
+  divider: 'đường kẻ',
+  shape: 'hình khối',
+  spacer: 'khoảng trống',
+  'page-break': 'ngắt trang',
+  table: 'bảng chi tiết',
+  'static-table': 'bảng tĩnh',
+  columns: 'bố cục cột',
+}[block?.type] || 'phần tử')
+
+const getStaticTableCellStyle = (block, row, cell, column = {}) => styleObjectToCss({
   ...getTableCellStyle(block, column),
-  textAlign: cell.align || column.align || 'left',
+  ...mergeConfiguredStyles(row?.style, cell?.style)
+}, true)
+
+const staticCellContent = (cell, row) => {
+  const content = String(cell?.content || '')
+  return contentForTextStyle(content, mergeConfiguredStyles(row?.style, cell?.style))
+}
+
+const customTableCellTextStyle = cell => ({
+  textAlign: cell.align || 'left',
   backgroundColor: cell.backgroundColor || undefined,
   color: cell.color || undefined,
-  borderColor: cell.borderColor || undefined
+  borderColor: cell.borderColor || undefined,
+  fontSize: cell.fontSize || undefined,
+  fontWeight: cell.fontWeight || undefined
 })
+
+const getCustomTableCellStyle = (block, cell, column = {}) => styleObjectToCss({
+  ...getTableCellStyle(block, column),
+  ...customTableCellTextStyle({ ...cell, align: cell.align || column.align || 'left' })
+}, true)
+
+const getTableDetailStyle = (block, col) => styleObjectToCss({
+  ...getTableCellStyle(block, col),
+  ...mergeConfiguredStyles({ textAlign: col.align || 'left' }, col.cellStyle)
+}, true)
 
 const getTableHeaderStyle = (block, col) => {
   const align = col.align || 'left'
@@ -1803,14 +2404,14 @@ const getTableHeaderStyle = (block, col) => {
       borderBottom: '2px solid #cbd5e1',
       borderRight: 'none',
       padding: '8px',
-      fontWeight: 'bold'
+      ...mergeConfiguredStyles({ fontWeight: 'bold' }, col.headerStyle)
     }
   } else if (borderStyle === 'none') {
     return {
       textAlign: align,
       border: 'none',
       padding: '8px',
-      fontWeight: 'bold'
+      ...mergeConfiguredStyles({ fontWeight: 'bold' }, col.headerStyle)
     }
   } else {
     return {
@@ -1818,7 +2419,7 @@ const getTableHeaderStyle = (block, col) => {
       borderBottom: '2px solid #cbd5e1',
       borderRight: '1px solid #cbd5e1',
       padding: '8px',
-      fontWeight: 'bold'
+      ...mergeConfiguredStyles({ fontWeight: 'bold' }, col.headerStyle)
     }
   }
 }
@@ -1845,11 +2446,13 @@ const confirmTableSetup = (block) => {
         header: found ? found.label : 'Cột',
         value: val,
         width: 'auto',
-        align: 'left'
+        align: 'left',
+        headerStyle: normalizeElementTextStyle(),
+        cellStyle: normalizeElementTextStyle()
       }
     })
     if (block.columns.length === 0) {
-      block.columns = [{ header: 'Cột mới', value: '', width: 'auto', align: 'left' }]
+      block.columns = [{ header: 'Cột mới', value: '', width: 'auto', align: 'left', headerStyle: normalizeElementTextStyle(), cellStyle: normalizeElementTextStyle() }]
     }
     block.customRows = Array.isArray(block.customRows) ? block.customRows : []
   } else {
@@ -1858,8 +2461,10 @@ const confirmTableSetup = (block) => {
       width: `${Math.round(100 / block.colsCount)}%`
     }))
     block.rows = Array.from({ length: block.rowsCount }, () => ({
+      style: normalizeStaticTextStyle(),
       cells: Array.from({ length: block.colsCount }, () => ({
-        content: 'Nội dung ô...'
+        content: 'Nội dung ô...',
+        style: normalizeStaticTextStyle()
       }))
     }))
   }
@@ -1870,7 +2475,11 @@ const confirmTableSetup = (block) => {
 const addStaticRow = (block) => {
   const colsCount = block.columns.length
   block.rows.push({
-    cells: Array.from({ length: colsCount }, () => ({ content: 'Nội dung ô...' }))
+    style: normalizeStaticTextStyle(),
+    cells: Array.from({ length: colsCount }, () => ({
+      content: 'Nội dung ô...',
+      style: normalizeStaticTextStyle()
+    }))
   })
   compileHtml()
 }
@@ -1891,7 +2500,7 @@ const addStaticColumn = (block) => {
     col.width = `${Math.round(100 / newColsCount)}%`
   })
   block.rows.forEach(row => {
-    row.cells.push({ content: 'Nội dung ô...' })
+    row.cells.push({ content: 'Nội dung ô...', style: normalizeStaticTextStyle() })
   })
   compileHtml()
 }
@@ -2044,6 +2653,22 @@ watch(
   { flush: 'post' }
 )
 
+watch(
+  () => [
+    template.value?.page_size,
+    template.value?.page_orientation,
+    template.value?.margin_top,
+    template.value?.margin_bottom,
+    template.value?.margin_left,
+    template.value?.margin_right,
+    template.value?.css,
+    template.value?.report_data_source_id,
+    template.value?.parameter_defaults,
+  ],
+  scheduleDesignerHistory,
+  { deep: true },
+)
+
 watch(selectedBlockId, (newId) => {
   if (newId) {
     const block = selectedBlock.value
@@ -2055,12 +2680,50 @@ watch(selectedBlockId, (newId) => {
   }
 })
 
+const isEditableTarget = target => target instanceof HTMLElement
+  && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+
+const onDesignerKeydown = event => {
+  if (!props.isOpen || activeTab.value !== 'design') return
+  const modifier = event.ctrlKey || event.metaKey
+  const key = event.key.toLowerCase()
+
+  if (modifier && key === 's') {
+    event.preventDefault()
+    showSaveModal.value = true
+    return
+  }
+  if (isEditableTarget(event.target)) return
+  if (modifier && key === 'z') {
+    event.preventDefault()
+    event.shiftKey ? redoDesigner() : undoDesigner()
+  } else if (modifier && key === 'y') {
+    event.preventDefault()
+    redoDesigner()
+  } else if (modifier && key === 'c' && selectedBlock.value) {
+    event.preventDefault()
+    copySelectedBlock()
+  } else if (modifier && key === 'v' && blockClipboard.value) {
+    event.preventDefault()
+    pasteDesignerBlock()
+  } else if (modifier && key === 'd' && selectedBlock.value) {
+    event.preventDefault()
+    duplicateSelectedBlock()
+  } else if (['delete', 'backspace'].includes(key) && selectedBlock.value) {
+    event.preventDefault()
+    deleteSelectedBlock()
+  }
+}
+
 onMounted(() => {
   window.addEventListener('resize', fitCanvasToViewport)
+  window.addEventListener('keydown', onDesignerKeydown)
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(historyTimer)
   window.removeEventListener('resize', fitCanvasToViewport)
+  window.removeEventListener('keydown', onDesignerKeydown)
 })
 
 // Trigger close
@@ -2087,7 +2750,7 @@ const selectBand = (band) => {
       <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center shrink-0">
         <div class="flex items-center gap-4">
           <div class="w-10 h-10 rounded-xl bg-sky-600 flex items-center justify-center text-white font-extrabold shadow-sm">
-            DEV
+            PDF
           </div>
           <div>
             <h2 class="text-base font-bold text-slate-800 flex items-center gap-2" v-if="template">
@@ -2174,7 +2837,7 @@ const selectBand = (band) => {
           <button @click="toggleDesignerPanel('right')" class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-500 hover:bg-slate-100 cursor-pointer border border-slate-200" :title="showRightPanel ? 'Ẩn bảng thuộc tính' : 'Hiện bảng thuộc tính'">
             {{ showRightPanel ? 'Ẩn thuộc tính' : 'Thuộc tính' }}
           </button>
-          <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">DevExpress Report Mode</span>
+          <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">PMS Report Designer</span>
         </div>
       </div>
 
@@ -2191,6 +2854,25 @@ const selectBand = (band) => {
         <template v-if="activeTab === 'design'">
           <!-- Column 1: Field List (Left Panel) -->
           <div v-if="showLeftPanel" class="w-1/4 min-w-[240px] max-w-[360px] bg-slate-50 border-r border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
+
+            <!-- REPORT EXPLORER -->
+            <div class="flex flex-col gap-2 rounded-xl border border-indigo-200 bg-white p-3 shadow-3xs">
+              <span class="block border-b border-indigo-100 pb-1 text-[10px] font-black uppercase tracking-widest text-indigo-700">Report Explorer</span>
+              <div v-for="band in ['header', 'detail', 'footer']" :key="band" class="flex flex-col gap-0.5">
+                <button type="button" @click="selectBand(band)" class="flex w-full items-center justify-between rounded px-2 py-1 text-left text-[10px] font-black uppercase text-slate-600 hover:bg-indigo-50">
+                  <span>▾ {{ band === 'header' ? 'Report Header' : band === 'detail' ? 'Detail' : 'Report Footer' }}</span>
+                  <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[9px]">{{ explorerBlocks(band).length }}</span>
+                </button>
+                <button v-for="item in explorerBlocks(band)" :key="item.block.id" type="button" @click="selectDesignerBlock(band, item.block)"
+                  class="flex w-full items-center gap-1 rounded py-1 pr-1 text-left text-[10px] hover:bg-sky-50"
+                  :class="selectedBlockId === item.block.id ? 'bg-sky-100 font-bold text-sky-800' : 'text-slate-600'"
+                  :style="{ paddingLeft: `${10 + item.depth * 14}px` }">
+                  <span class="w-3 text-center">{{ item.block.visible === false ? '○' : item.block.locked ? '▣' : '▪' }}</span>
+                  <span class="min-w-0 flex-1 truncate">{{ blockTypeLabel(item.block.type) }}</span>
+                  <span class="max-w-20 truncate font-mono text-[8px] text-slate-400">{{ item.block.id }}</span>
+                </button>
+              </div>
+            </div>
 
             <!-- DYNAMIC MYSQL STORED PROCEDURE DATA SOURCE -->
             <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-emerald-200 shadow-3xs">
@@ -2234,6 +2916,12 @@ const selectBand = (band) => {
                 </button>
                 <button @click="addBlock('spacer')" class="flex flex-col items-center justify-center p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all">
                   <span class="text-base mb-0.5">↕</span> Khoảng Trống
+                </button>
+                <button @click="addBlock('shape')" class="flex flex-col items-center justify-center p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all">
+                  <span class="text-base mb-0.5">□</span> Hình Khối
+                </button>
+                <button @click="addBlock('page-break')" class="flex flex-col items-center justify-center p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all">
+                  <span class="text-base mb-0.5">↵</span> Ngắt Trang
                 </button>
                 <button @click="addBlock('columns')" class="flex flex-col items-center justify-center p-2 border border-slate-200 rounded-lg hover:border-sky-300 hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-[10px] cursor-pointer transition-all col-span-2">
                   <span class="text-base mb-0.5">◫</span> Bố Cục Cột (Columns Layout)
@@ -2328,6 +3016,77 @@ const selectBand = (band) => {
               </div>
             </div>
 
+            <div v-if="quickFormatTarget || selectedBlock" class="sticky top-2 z-30 flex max-w-full flex-wrap items-center justify-start gap-1 rounded-xl border border-sky-200 bg-white/95 p-2 shadow-lg backdrop-blur-sm" @mousedown.stop>
+              <template v-if="quickFormatTarget?.kind === 'static-cell'">
+                <span class="mr-1 text-[10px] font-bold text-sky-700">Ô {{ staticCellPosition(quickFormatTarget).row }}.{{ staticCellPosition(quickFormatTarget).column }}</span>
+                <select :value="staticStyleValue('fontWeight')" @change="applyStaticStyle('fontWeight', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Độ đậm"><option value="">Kế thừa</option><option value="normal">Chữ thường</option><option value="bold">In đậm</option></select>
+                <select :value="staticStyleValue('textAlign')" @change="applyStaticStyle('textAlign', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Căn lề"><option value="">Căn lề kế thừa</option><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select>
+                <input :value="staticStyleValue('fontSize')" @input="applyStaticStyle('fontSize', $event.target.value)" class="h-7 w-24 rounded border border-slate-200 px-1 text-[10px]" placeholder="Cỡ chữ: 10px" title="Cỡ chữ" />
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]">Chữ<input type="color" :value="colorInputValue(staticStyleValue('color'), '#1e293b')" @input="applyStaticStyle('color', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]">Nền<input type="color" :value="colorInputValue(staticStyleValue('backgroundColor'), '#ffffff')" @input="applyStaticStyle('backgroundColor', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <select v-model="staticStyleScope" class="h-7 rounded border border-sky-200 bg-sky-50 px-1 text-[10px] font-bold text-sky-700" title="Phạm vi áp dụng"><option value="cell">Ô</option><option value="selection">Vùng chọn</option><option value="row">Hàng</option><option value="column">Cột</option><option value="table">Toàn bảng</option></select>
+                <select :value="staticStyleValue('fontFamily')" @change="applyStaticStyle('fontFamily', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Phông chữ"><option value="">Phông kế thừa</option><option>Arial</option><option>Tahoma</option><option>Times New Roman</option><option>Verdana</option><option>Courier New</option></select>
+                <button type="button" @click="applyStaticStyle('fontStyle', staticStyleValue('fontStyle') === 'italic' ? '' : 'italic')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs italic hover:bg-sky-50" title="In nghiêng">I</button>
+                <button type="button" @click="applyStaticStyle('textDecoration', staticStyleValue('textDecoration') === 'underline' ? '' : 'underline')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs underline hover:bg-sky-50" title="Gạch chân">U</button>
+                <select :value="staticStyleValue('verticalAlign')" @change="applyStaticStyle('verticalAlign', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Căn dọc"><option value="">Căn dọc</option><option value="top">Trên</option><option value="middle">Giữa</option><option value="bottom">Dưới</option></select>
+                <input :value="staticStyleValue('lineHeight')" @input="applyStaticStyle('lineHeight', $event.target.value)" class="h-7 w-16 rounded border border-slate-200 px-1 text-[10px]" placeholder="Dòng" title="Chiều cao dòng" />
+                <select :value="staticStyleValue('whiteSpace')" @change="applyStaticStyle('whiteSpace', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Ngắt dòng"><option value="">Ngắt dòng</option><option value="normal">Tự động</option><option value="nowrap">Không ngắt</option><option value="pre-wrap">Giữ xuống dòng</option></select>
+                <input :value="staticStyleValue('paddingTop')" @input="applyStaticStyle('paddingTop', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="Đệm trên" title="Đệm trên" />
+                <input :value="staticStyleValue('paddingRight')" @input="applyStaticStyle('paddingRight', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="Đệm phải" title="Đệm phải" />
+                <input :value="staticStyleValue('paddingBottom')" @input="applyStaticStyle('paddingBottom', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="Đệm dưới" title="Đệm dưới" />
+                <input :value="staticStyleValue('paddingLeft')" @input="applyStaticStyle('paddingLeft', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="Đệm trái" title="Đệm trái" />
+                <select :value="staticStyleValue('borderTopStyle')" @change="applyStaticBorder('Style', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Kiểu đường viền"><option value="">Viền</option><option value="none">Không</option><option value="solid">Nét liền</option><option value="dashed">Nét đứt</option><option value="dotted">Nét chấm</option><option value="double">Nét đôi</option></select>
+                <input :value="staticStyleValue('borderTopWidth')" @input="applyStaticBorder('Width', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="1px" title="Độ dày viền" />
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu viền">V<input type="color" :value="colorInputValue(staticStyleValue('borderTopColor'), '#cbd5e1')" @input="applyStaticBorder('Color', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <button type="button" @click="copyStaticStyle" class="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] hover:bg-sky-50">Chép kiểu</button>
+                <button type="button" :disabled="!staticStyleClipboard" @click="pasteStaticStyle" class="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] hover:bg-sky-50 disabled:opacity-40">Dán kiểu</button>
+                <button type="button" @click="mergeStaticCells" class="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] hover:bg-sky-50">Gộp ô</button>
+                <button type="button" @click="splitStaticCell" class="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] hover:bg-sky-50">Tách ô</button>
+              </template>
+              <template v-else-if="quickFormatTarget">
+                <span class="mr-1 text-[10px] font-bold text-sky-700">Đang chọn: {{ quickFormatTarget.kind === 'table-header' ? 'tiêu đề cột' : quickFormatTarget.kind === 'table-cell' ? 'ô dữ liệu' : quickFormatTarget.kind === 'custom-cell' ? 'ô tổng/nhóm' : 'đoạn chữ' }}</span>
+                <button type="button" @mousedown.prevent="applyQuickStyle('bold')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs font-black hover:bg-sky-50" title="In đậm">B</button>
+                <button type="button" @mousedown.prevent="applyQuickStyle('italic')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs italic hover:bg-sky-50" title="In nghiêng">I</button>
+                <button type="button" @mousedown.prevent="applyQuickStyle('underline')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs underline hover:bg-sky-50" title="Gạch chân">U</button>
+                <select @change="applyQuickStyle('fontSize', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Cỡ chữ"><option value="">Cỡ chữ</option><option v-for="size in fontSizeOptions" :key="size" :value="`${size}px`">{{ size }}px</option></select>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu chữ">A<input type="color" @input="applyQuickStyle('color', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu nền">N<input type="color" @input="applyQuickStyle('backgroundColor', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+              </template>
+              <template v-else-if="selectedBlock">
+                <span class="mr-1 text-[10px] font-bold text-sky-700">Đang chọn {{ selectedBlockToolbarLabel(selectedBlock) }}</span>
+                <button type="button" @click="applyBlockTextStyle('fontWeight', selectedBlock.style.fontWeight === 'bold' ? 'normal' : 'bold')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs font-black hover:bg-sky-50" :class="selectedBlock.style.fontWeight === 'bold' ? 'bg-sky-50 text-sky-700' : ''" title="In đậm">B</button>
+                <button type="button" @click="applyBlockTextStyle('fontStyle', selectedBlock.style.fontStyle === 'italic' ? 'normal' : 'italic')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs italic hover:bg-sky-50" title="In nghiêng">I</button>
+                <button type="button" @click="applyBlockTextStyle('textDecoration', selectedBlock.style.textDecoration === 'underline' ? 'none' : 'underline')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs underline hover:bg-sky-50" title="Gạch chân">U</button>
+                <select :value="selectedBlock.style.fontFamily || ''" @change="applyBlockTextStyle('fontFamily', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Phông chữ"><option value="">Phông chữ</option><option>Arial</option><option>Tahoma</option><option>Times New Roman</option><option>Verdana</option><option>Courier New</option></select>
+                <select :value="selectedBlock.style.fontSize || ''" @change="applyBlockTextStyle('fontSize', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Cỡ chữ"><option value="">Cỡ chữ</option><option v-for="size in fontSizeOptions" :key="size" :value="`${size}px`">{{ size }}px</option></select>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu chữ">A<input type="color" :value="colorInputValue(selectedBlock.style.color, '#1e293b')" @input="applyBlockTextStyle('color', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu nền">N<input type="color" :value="colorInputValue(selectedBlock.style.backgroundColor, '#ffffff')" @input="applyBlockTextStyle('backgroundColor', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <select v-if="!['image', 'spacer', 'divider', 'shape', 'page-break'].includes(selectedBlock.type)" :value="selectedBlock.style.textAlign || 'left'" @change="applyBlockTextStyle('textAlign', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Căn ngang"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option><option value="justify">Đều</option></select>
+                <select v-if="!['image', 'spacer', 'divider', 'shape', 'page-break'].includes(selectedBlock.type)" :value="selectedBlock.style.verticalAlign || 'top'" @change="applyBlockTextStyle('verticalAlign', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Căn dọc"><option value="top">Trên</option><option value="middle">Giữa</option><option value="bottom">Dưới</option></select>
+                <input v-if="!['image', 'spacer', 'divider', 'shape', 'page-break'].includes(selectedBlock.type)" :value="selectedBlock.style.lineHeight || ''" @input="applyBlockTextStyle('lineHeight', $event.target.value)" class="h-7 w-16 rounded border border-slate-200 px-1 text-[10px]" placeholder="Dòng" title="Chiều cao dòng" />
+                <input v-if="['shape', 'spacer'].includes(selectedBlock.type)" type="number" min="1" :value="selectedBlock.height || 20" @input="selectedBlock.height = Number($event.target.value); compileHtml()" class="h-7 w-16 rounded border border-slate-200 px-1 text-[10px]" placeholder="Cao" title="Chiều cao" />
+                <input :value="selectedBlock.style.paddingTop || ''" @input="applyBlockTextStyle('paddingTop', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="P trên" title="Padding trên" />
+                <input :value="selectedBlock.style.paddingRight || ''" @input="applyBlockTextStyle('paddingRight', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="P phải" title="Padding phải" />
+                <input :value="selectedBlock.style.paddingBottom || ''" @input="applyBlockTextStyle('paddingBottom', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="P dưới" title="Padding dưới" />
+                <input :value="selectedBlock.style.paddingLeft || ''" @input="applyBlockTextStyle('paddingLeft', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="P trái" title="Padding trái" />
+                <select :value="selectedBlock.style.borderStyle || 'none'" @change="applyBlockTextStyle('borderStyle', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Kiểu viền"><option value="none">Không viền</option><option value="solid">Nét liền</option><option value="dashed">Nét đứt</option><option value="dotted">Nét chấm</option><option value="double">Nét đôi</option></select>
+                <input :value="selectedBlock.style.borderWidth || ''" @input="applyBlockTextStyle('borderWidth', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="Viền" title="Độ dày viền" />
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu viền">V<input type="color" :value="colorInputValue(selectedBlock.style.borderColor, '#cbd5e1')" @input="applyBlockTextStyle('borderColor', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <input :value="selectedBlock.style.borderRadius || ''" @input="applyBlockTextStyle('borderRadius', $event.target.value)" class="h-7 w-14 rounded border border-slate-200 px-1 text-[10px]" placeholder="Bo góc" title="Bo góc" />
+                <button type="button" @click="resetSelectedBlockToolbar" class="h-7 rounded border border-slate-200 bg-slate-50 px-2 text-[10px] text-slate-600 hover:bg-slate-100">Đặt lại</button>
+              </template>
+              <button v-if="quickFormatTarget" type="button" @click="resetQuickStyle" class="h-7 rounded border border-slate-200 bg-slate-50 px-2 text-[10px] text-slate-600 hover:bg-slate-100">Đặt lại</button>
+              <button type="button" @click="closeQuickToolbar" class="h-7 rounded border-none bg-transparent px-1 text-xs text-slate-400 hover:text-red-500" title="Đóng thanh thuộc tính">×</button>
+            </div>
+
+            <div v-if="staticCellContextMenu" class="fixed z-50 w-40 rounded-lg border border-slate-200 bg-white p-1 text-xs shadow-xl" :style="{ left: `${staticCellContextMenu.x}px`, top: `${staticCellContextMenu.y}px` }" @mouseleave="closeStaticCellContextMenu">
+              <button type="button" @click="copyStaticStyle(); closeStaticCellContextMenu()" class="w-full rounded px-2 py-1.5 text-left hover:bg-sky-50">Chép định dạng</button>
+              <button type="button" :disabled="!staticStyleClipboard" @click="pasteStaticStyle(); closeStaticCellContextMenu()" class="w-full rounded px-2 py-1.5 text-left hover:bg-sky-50 disabled:opacity-40">Dán định dạng</button>
+              <button type="button" @click="mergeStaticCells(); closeStaticCellContextMenu()" class="w-full rounded px-2 py-1.5 text-left hover:bg-sky-50">Gộp ô đã chọn</button>
+              <button type="button" @click="splitStaticCell(); closeStaticCellContextMenu()" class="w-full rounded px-2 py-1.5 text-left hover:bg-sky-50">Tách ô</button>
+              <button type="button" @click="resetStaticStyle(); closeStaticCellContextMenu()" class="w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Đặt lại định dạng</button>
+            </div>
+
             <!-- Page Canvas Layout Representation -->
             <div class="canvas-scale-frame shrink-0" :style="canvasFrameStyle">
             <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 relative flex flex-col"
@@ -2355,16 +3114,16 @@ const selectBand = (band) => {
                 
                 <!-- Blocks inside Header -->
                 <div v-else class="flex flex-col gap-2">
-                  <div v-for="(b, idx) in blocks.header" :key="b.id" draggable="true"
+                  <div v-for="(b, idx) in blocks.header" :key="b.id" :draggable="!b.locked"
                     @dragstart="onBlockDragStart($event, 'header', idx)" @dragend="onBlockDragEnd"
                     @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'header', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'header'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
-                    :class="selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white'">
+                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']">
                     
                     <!-- Block Type Tag -->
                     <span class="absolute -top-1.5 left-2 bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-1.5 rounded-md border border-slate-200">
-                      {{ b.type }}
+                      {{ b.type }}{{ b.locked ? ' · khóa' : '' }}{{ b.visible === false ? ' · ẩn khi in' : '' }}
                     </span>
 
                     <!-- Block drag/edit overlay handles -->
@@ -2386,6 +3145,7 @@ const selectBand = (band) => {
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
                         @focus="onTextareaFocus"
+                        @mouseup="captureTextSelection"
                         class="w-full focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[20px] outline-none"
                         v-html="editingContent"></div>
                       <div v-else class="min-h-[20px]" v-html="b.content"></div>
@@ -2468,8 +3228,8 @@ const selectBand = (band) => {
                         <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
-                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" class="relative group/th" :style="getTableHeaderStyle(b, col)">
-                                <input type="text" v-model="col.header" class="w-full bg-transparent border-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" :class="col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'" />
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                                <input type="text" v-model="col.header" :style="styleObjectToCss(mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle), true)" class="w-full bg-transparent border-none text-slate-800 focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" />
                                 <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
                               </th>
                               <th class="p-1 text-center w-8 bg-slate-100 select-none" style="border-bottom: 2px solid #cbd5e1;">
@@ -2480,14 +3240,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
                               <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-[10px] text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -2495,7 +3255,7 @@ const selectBand = (band) => {
                           </tbody>
                           <tfoot>
                             <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
-                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
                             </tr>
                             <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
@@ -2509,21 +3269,26 @@ const selectBand = (band) => {
                       <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
-                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx"
-                              :style="getTableCellStyle(b, b.columns[cIdx] || {})"
-                              class="relative group/td p-0">
+                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
+                              :colspan="cell.colspan || 1" :rowspan="cell.rowspan || 1"
+                              :style="getStaticTableCellStyle(b, row, cell, b.columns[cIdx] || {})"
+                              :class="['relative group/td p-0', isStaticCellSelected(b, row, cell) ? 'ring-2 ring-inset ring-sky-500' : '']">
                               <!-- ContentEditable Cell directly on Canvas -->
                               <div contenteditable="true"
                                 @focus="onCellFocus(cell)"
+                                @click.stop="selectStaticCell($event, b, row, cell)"
+                                @contextmenu.stop="openStaticCellContextMenu($event, b, row, cell)"
                                 @blur="onCellBlur"
                                 @input="cell.content = $event.target.innerHTML; compileHtml()"
-                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-slate-700"
-                                v-html="activeCell === cell ? editingCellContent : cell.content"></div>
+                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-inherit"
+                                v-html="activeCell === cell ? editingCellContent : staticCellContent(cell, row)"></div>
                             </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
+                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b), height: `${b.height || 40}px` }" class="min-h-px"></div>
+                    <div v-else-if="b.type === 'page-break'" class="flex h-5 items-center gap-2 text-[9px] font-bold uppercase text-rose-500"><span class="h-px flex-1 border-t border-dashed border-rose-300"></span>Ngắt trang<span class="h-px flex-1 border-t border-dashed border-rose-300"></span></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
                     </div>
@@ -2586,7 +3351,8 @@ const selectBand = (band) => {
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
-                              @focus="onTextareaFocus"
+                         @focus="onTextareaFocus"
+                         @mouseup="captureTextSelection"
                               class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 min-h-[30px] bg-white outline-none font-sans font-medium"
                               v-html="editingContent"></div>
                             <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px] font-sans" v-html="subBlock.content"></div>
@@ -2656,16 +3422,16 @@ const selectBand = (band) => {
                 
                 <!-- Blocks inside Detail -->
                 <div v-else class="flex flex-col gap-2">
-                  <div v-for="(b, idx) in blocks.detail" :key="b.id" draggable="true"
+                  <div v-for="(b, idx) in blocks.detail" :key="b.id" :draggable="!b.locked"
                     @dragstart="onBlockDragStart($event, 'detail', idx)" @dragend="onBlockDragEnd"
                     @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'detail', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'detail'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
-                    :class="selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white'">
+                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']">
                     
                     <!-- Block Type Tag -->
                     <span class="absolute -top-1.5 left-2 bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-1.5 rounded-md border border-slate-200">
-                      {{ b.type === 'table' ? 'Detail Table' : b.type }}
+                      {{ b.type === 'table' ? 'Detail Table' : b.type }}{{ b.locked ? ' · khóa' : '' }}{{ b.visible === false ? ' · ẩn khi in' : '' }}
                     </span>
 
                     <!-- Overlay handles -->
@@ -2758,8 +3524,8 @@ const selectBand = (band) => {
                         <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
-                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" class="relative group/th" :style="getTableHeaderStyle(b, col)">
-                                <input type="text" v-model="col.header" class="w-full bg-transparent border-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" :class="col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'" />
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                                <input type="text" v-model="col.header" :style="styleObjectToCss(mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle), true)" class="w-full bg-transparent border-none text-slate-800 focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" />
                                 <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
                               </th>
                               <th class="p-1 text-center w-8 bg-slate-100 select-none" style="border-bottom: 2px solid #cbd5e1;">
@@ -2770,14 +3536,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
                               <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-[10px] text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -2785,7 +3551,7 @@ const selectBand = (band) => {
                           </tbody>
                           <tfoot>
                             <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
-                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
                             </tr>
                             <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
@@ -2800,6 +3566,7 @@ const selectBand = (band) => {
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
                         @focus="onTextareaFocus"
+                        @mouseup="captureTextSelection"
                         class="w-full focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[20px] outline-none"
                         v-html="editingContent"></div>
                       <div v-else class="min-h-[20px]" v-html="b.content"></div>
@@ -2810,21 +3577,26 @@ const selectBand = (band) => {
                       <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
-                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx"
-                              :style="getTableCellStyle(b, b.columns[cIdx] || {})"
-                              class="relative group/td p-0">
+                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
+                              :colspan="cell.colspan || 1" :rowspan="cell.rowspan || 1"
+                              :style="getStaticTableCellStyle(b, row, cell, b.columns[cIdx] || {})"
+                              :class="['relative group/td p-0', isStaticCellSelected(b, row, cell) ? 'ring-2 ring-inset ring-sky-500' : '']">
                               <!-- ContentEditable Cell directly on Canvas -->
                               <div contenteditable="true"
                                 @focus="onCellFocus(cell)"
+                                @click.stop="selectStaticCell($event, b, row, cell)"
+                                @contextmenu.stop="openStaticCellContextMenu($event, b, row, cell)"
                                 @blur="onCellBlur"
                                 @input="cell.content = $event.target.innerHTML; compileHtml()"
-                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-slate-700"
-                                v-html="activeCell === cell ? editingCellContent : cell.content"></div>
+                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-inherit"
+                                v-html="activeCell === cell ? editingCellContent : staticCellContent(cell, row)"></div>
                             </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
+                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b), height: `${b.height || 40}px` }" class="min-h-px"></div>
+                    <div v-else-if="b.type === 'page-break'" class="flex h-5 items-center gap-2 text-[9px] font-bold uppercase text-rose-500"><span class="h-px flex-1 border-t border-dashed border-rose-300"></span>Ngắt trang<span class="h-px flex-1 border-t border-dashed border-rose-300"></span></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
                     </div>
@@ -2887,7 +3659,8 @@ const selectBand = (band) => {
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
-                              @focus="onTextareaFocus"
+                         @focus="onTextareaFocus"
+                         @mouseup="captureTextSelection"
                               class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 min-h-[30px] bg-white outline-none font-sans font-medium"
                               v-html="editingContent"></div>
                             <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px] font-sans" v-html="subBlock.content"></div>
@@ -2957,16 +3730,16 @@ const selectBand = (band) => {
                 
                 <!-- Blocks inside Footer -->
                 <div v-else class="flex flex-col gap-2">
-                  <div v-for="(b, idx) in blocks.footer" :key="b.id" draggable="true"
+                  <div v-for="(b, idx) in blocks.footer" :key="b.id" :draggable="!b.locked"
                     @dragstart="onBlockDragStart($event, 'footer', idx)" @dragend="onBlockDragEnd"
                     @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'footer', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'footer'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
-                    :class="selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white'">
+                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']">
                     
                     <!-- Block Type Tag -->
                     <span class="absolute -top-1.5 left-2 bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-1.5 rounded-md border border-slate-200">
-                      {{ b.type }}
+                      {{ b.type }}{{ b.locked ? ' · khóa' : '' }}{{ b.visible === false ? ' · ẩn khi in' : '' }}
                     </span>
 
                     <!-- Overlay handles -->
@@ -2987,7 +3760,8 @@ const selectBand = (band) => {
                       <div v-if="selectedBlockId === b.id" 
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
-                        @focus="onTextareaFocus"
+                         @focus="onTextareaFocus"
+                         @mouseup="captureTextSelection"
                         class="w-full focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[20px] outline-none"
                         v-html="editingContent"></div>
                       <div v-else class="min-h-[20px]" v-html="b.content"></div>
@@ -3070,8 +3844,8 @@ const selectBand = (band) => {
                         <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
-                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" class="relative group/th" :style="getTableHeaderStyle(b, col)">
-                                <input type="text" v-model="col.header" class="w-full bg-transparent border-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" :class="col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'" />
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                                <input type="text" v-model="col.header" :style="styleObjectToCss(mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle), true)" class="w-full bg-transparent border-none text-slate-800 focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" />
                                 <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
                               </th>
                               <th class="p-1 text-center w-8 bg-slate-100 select-none" style="border-bottom: 2px solid #cbd5e1;">
@@ -3082,14 +3856,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
                               <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" :style="getTableCellStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-[10px] text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3097,7 +3871,7 @@ const selectBand = (band) => {
                           </tbody>
                           <tfoot>
                             <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
-                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
                             </tr>
                             <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
@@ -3111,21 +3885,26 @@ const selectBand = (band) => {
                       <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
-                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx"
-                              :style="getTableCellStyle(b, b.columns[cIdx] || {})"
-                              class="relative group/td p-0">
+                            <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
+                              :colspan="cell.colspan || 1" :rowspan="cell.rowspan || 1"
+                              :style="getStaticTableCellStyle(b, row, cell, b.columns[cIdx] || {})"
+                              :class="['relative group/td p-0', isStaticCellSelected(b, row, cell) ? 'ring-2 ring-inset ring-sky-500' : '']">
                               <!-- ContentEditable Cell directly on Canvas -->
                               <div contenteditable="true"
                                 @focus="onCellFocus(cell)"
+                                @click.stop="selectStaticCell($event, b, row, cell)"
+                                @contextmenu.stop="openStaticCellContextMenu($event, b, row, cell)"
                                 @blur="onCellBlur"
                                 @input="cell.content = $event.target.innerHTML; compileHtml()"
-                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-slate-700"
-                                v-html="activeCell === cell ? editingCellContent : cell.content"></div>
+                                class="w-full min-h-[24px] focus:outline-none focus:ring-1 focus:ring-sky-500 rounded px-1.5 py-1 outline-none text-inherit"
+                                v-html="activeCell === cell ? editingCellContent : staticCellContent(cell, row)"></div>
                             </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
+                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b), height: `${b.height || 40}px` }" class="min-h-px"></div>
+                    <div v-else-if="b.type === 'page-break'" class="flex h-5 items-center gap-2 text-[9px] font-bold uppercase text-rose-500"><span class="h-px flex-1 border-t border-dashed border-rose-300"></span>Ngắt trang<span class="h-px flex-1 border-t border-dashed border-rose-300"></span></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
                     </div>
@@ -3188,7 +3967,8 @@ const selectBand = (band) => {
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
-                              @focus="onTextareaFocus"
+                         @focus="onTextareaFocus"
+                         @mouseup="captureTextSelection"
                               class="w-full text-[11px] border border-sky-300 rounded p-1 text-slate-700 min-h-[30px] bg-white outline-none font-sans font-medium"
                               v-html="editingContent"></div>
                             <div v-else class="text-slate-700 leading-relaxed font-semibold text-[11px] min-h-[15px] font-sans" v-html="subBlock.content"></div>
@@ -3258,50 +4038,75 @@ const selectBand = (band) => {
                 <p class="text-xs font-black text-slate-700 mt-0.5 capitalize">{{ selectedBlock.type }} ({{ selectedBlock.id }})</p>
               </div>
 
+              <div class="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-3xs">
+                <button type="button" @click="toggleSelectedBlockVisibility" class="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-bold hover:bg-sky-50">
+                  {{ selectedBlock.visible === false ? 'Hiện khi in' : 'Ẩn khi in' }}
+                </button>
+                <button type="button" @click="toggleSelectedBlockLock" class="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-bold hover:bg-amber-50">
+                  {{ selectedBlock.locked ? 'Mở khóa' : 'Khóa vị trí' }}
+                </button>
+                <button type="button" @click="duplicateSelectedBlock" class="rounded-lg border border-slate-200 px-2 py-1.5 text-[10px] font-bold hover:bg-sky-50">Nhân bản</button>
+                <button type="button" @click="deleteSelectedBlock" :disabled="selectedBlock.locked" class="rounded-lg border border-red-200 px-2 py-1.5 text-[10px] font-bold text-red-600 hover:bg-red-50 disabled:opacity-35">Xóa</button>
+                <label class="col-span-2 flex flex-col gap-1 border-t border-slate-100 pt-2 text-[10px] font-bold text-slate-500">
+                  Điều kiện hiển thị khi in
+                  <select v-model="selectedBlock.visibleWhen" @change="compileHtml" class="rounded-lg border border-slate-200 p-1.5 text-[10px] font-semibold">
+                    <option value="">Luôn hiển thị</option>
+                    <option v-for="parameter in conditionalParameterOptions" :key="parameter.value" :value="parameter.value">{{ parameter.label }}</option>
+                  </select>
+                </label>
+                <label v-if="selectedBlock.visibleWhen" class="col-span-2 flex items-center justify-between text-[10px] font-bold text-slate-500">
+                  Trạng thái điều kiện
+                  <select v-model="selectedBlock.visibleWhenMode" @change="compileHtml" class="rounded-lg border border-slate-200 p-1.5 text-[10px] font-semibold">
+                    <option value="truthy">Đúng / Có / 1</option>
+                    <option value="falsy">Sai / Không / 0</option>
+                  </select>
+                </label>
+              </div>
+
               <!-- Alignment & Font properties -->
               <div class="flex flex-col gap-2.5 bg-white p-3 border border-slate-200 rounded-xl shadow-3xs">
                 <span class="text-[10px] font-bold text-slate-400 uppercase">Định dạng kiểu chữ (Styles)</span>
                 
                 <!-- Align text -->
-                <div class="flex items-center justify-between mt-1.5">
+                <div v-if="!['spacer', 'divider', 'shape', 'page-break'].includes(selectedBlock.type)" class="flex items-center justify-between mt-1.5">
                   <span class="text-xs text-slate-500">Căn lề:</span>
                   <div class="flex bg-slate-100 p-0.5 rounded-lg">
-                    <button @click="selectedBlock.style.textAlign = 'left'" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'left' ? 'bg-white shadow-3xs text-sky-600' : ''">
+                    <button @click="applyBlockTextStyle('textAlign', 'left')" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'left' ? 'bg-white shadow-3xs text-sky-600' : ''">
                       <AlignLeft class="w-3.5 h-3.5" />
                     </button>
-                    <button @click="selectedBlock.style.textAlign = 'center'" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'center' ? 'bg-white shadow-3xs text-sky-600' : ''">
+                    <button @click="applyBlockTextStyle('textAlign', 'center')" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'center' ? 'bg-white shadow-3xs text-sky-600' : ''">
                       <AlignCenter class="w-3.5 h-3.5" />
                     </button>
-                    <button @click="selectedBlock.style.textAlign = 'right'" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'right' ? 'bg-white shadow-3xs text-sky-600' : ''">
+                    <button @click="applyBlockTextStyle('textAlign', 'right')" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'right' ? 'bg-white shadow-3xs text-sky-600' : ''">
                       <AlignRight class="w-3.5 h-3.5" />
                     </button>
-                    <button @click="selectedBlock.style.textAlign = 'justify'" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'justify' ? 'bg-white shadow-3xs text-sky-600' : ''">
+                    <button @click="applyBlockTextStyle('textAlign', 'justify')" class="p-1.5 rounded-md hover:bg-white border-none cursor-pointer text-slate-600" :class="selectedBlock.style.textAlign === 'justify' ? 'bg-white shadow-3xs text-sky-600' : ''">
                       <AlignJustify class="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
                 <!-- Font size slider -->
-                <div class="flex flex-col gap-1 mt-2">
+                <div v-if="!['spacer', 'divider', 'image', 'shape', 'page-break'].includes(selectedBlock.type)" class="flex flex-col gap-1 mt-2">
                   <div class="flex justify-between items-center text-xs text-slate-500">
                     <span>Cỡ chữ:</span>
                     <span class="font-bold text-slate-700">{{ selectedBlock.style.fontSize }}</span>
                   </div>
-                  <input type="range" min="1" max="50" step="1"
-                    :value="parseInt(selectedBlock.style.fontSize)" 
-                    @input="selectedBlock.style.fontSize = `${$event.target.value}px`; compileHtml()"
+                  <input type="range" min="1" max="50" step="0.5"
+                    :value="parseFloat(selectedBlock.style.fontSize) || 13"
+                    @input="applyBlockTextStyle('fontSize', `${$event.target.value}px`)"
                     class="w-full accent-sky-600" />
                 </div>
 
                 <!-- Color & Font-Weight -->
-                <div class="grid grid-cols-2 gap-2 mt-2">
+                <div v-if="!['spacer', 'divider', 'image', 'shape', 'page-break'].includes(selectedBlock.type)" class="grid grid-cols-2 gap-2 mt-2">
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Màu chữ:</span>
-                    <input type="color" :value="colorInputValue(selectedBlock.style.color, '#1e293b')" @input="selectedBlock.style.color = $event.target.value; compileHtml()" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
+                    <input type="color" :value="colorInputValue(selectedBlock.style.color, '#1e293b')" @input="applyBlockTextStyle('color', $event.target.value)" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Đậm (Tất cả):</span>
-                    <button @click="selectedBlock.style.fontWeight = selectedBlock.style.fontWeight === 'bold' ? 'normal' : 'bold'"
+                    <button @click="applyBlockTextStyle('fontWeight', selectedBlock.style.fontWeight === 'bold' ? 'normal' : 'bold')"
                       class="h-8 rounded-lg border font-bold text-xs flex items-center justify-center cursor-pointer transition-colors"
                       :class="selectedBlock.style.fontWeight === 'bold' ? 'bg-sky-50 border-sky-300 text-sky-700' : 'bg-slate-50 border-slate-200 text-slate-600'">
                       <Bold class="w-4 h-4" />
@@ -3310,7 +4115,7 @@ const selectBand = (band) => {
                 </div>
 
                 <!-- Formatting Toolbar for Highlighted Selection -->
-                <div class="flex flex-col gap-1.5 mt-2 pt-2 border-t border-slate-100">
+                <div v-if="['text', 'static-table'].includes(selectedBlock.type)" class="flex flex-col gap-1.5 mt-2 pt-2 border-t border-slate-100">
                   <span class="text-[10px] text-slate-400 font-bold uppercase">Định dạng chữ bôi đen:</span>
                   <div class="flex flex-wrap gap-1 bg-slate-100 p-1.5 rounded-lg border border-slate-200 select-none">
                     <button @mousedown.prevent="formatText('bold')" class="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs font-bold cursor-pointer text-slate-700 active:scale-95 transition-transform" title="In đậm (Ctrl+B)">B</button>
@@ -3332,12 +4137,28 @@ const selectBand = (band) => {
                     <input type="text" v-model="selectedBlock.style.paddingBottom" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Left:</span>
+                    <input type="text" v-model="selectedBlock.style.paddingLeft" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Right:</span>
+                    <input type="text" v-model="selectedBlock.style.paddingRight" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                  <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Top:</span>
                     <input type="text" v-model="selectedBlock.style.marginTop" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Bottom:</span>
                     <input type="text" v-model="selectedBlock.style.marginBottom" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Left:</span>
+                    <input type="text" v-model="selectedBlock.style.marginLeft" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Right:</span>
+                    <input type="text" v-model="selectedBlock.style.marginRight" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                 </div>
 
@@ -3429,21 +4250,31 @@ const selectBand = (band) => {
                   contenteditable="true"
                   @input="selectedBlock.content = $event.target.innerHTML; compileHtml()"
                   @focus="onTextareaFocus"
+                  @mouseup="captureTextSelection"
                   class="w-full text-xs border border-slate-200 rounded-xl p-3 focus:outline-sky-500 font-sans leading-relaxed min-h-[200px] bg-white outline-none"
                   v-html="editingContent"
                 ></div>
 
                 <!-- Source HTML Code Editor -->
-                <textarea v-else v-model="selectedBlock.content" rows="10" 
+                <textarea v-else v-model="selectedBlock.content" rows="10" @input="compileHtml"
                   @focus="onTextareaFocus"
                   class="w-full text-xs border border-slate-200 rounded-xl p-3 focus:outline-sky-500 font-mono leading-relaxed" 
                   placeholder="Viết nội dung văn bản (hỗ trợ các thẻ <b>, <i>, <p>...)"></textarea>
               </div>
 
+              <div v-else-if="selectedBlock.type === 'shape'" class="flex flex-col gap-1">
+                <span class="text-[10px] font-bold uppercase text-slate-400">Chiều cao hình khối (px):</span>
+                <input type="number" min="1" v-model.number="selectedBlock.height" @input="compileHtml" class="w-full rounded-lg border border-slate-200 p-2 text-xs font-bold focus:outline-sky-500" />
+              </div>
+
+              <div v-else-if="selectedBlock.type === 'page-break'" class="rounded-lg border border-rose-200 bg-rose-50 p-2 text-[10px] text-rose-700">
+                Nội dung sau phần tử này sẽ bắt đầu ở trang in kế tiếp.
+              </div>
+
               <!-- 2. Spacer height editor -->
               <div v-else-if="selectedBlock.type === 'spacer'" class="flex flex-col gap-1">
                 <span class="text-[10px] font-bold text-slate-400 uppercase">Chiều cao khoảng trống (px):</span>
-                <input type="number" v-model.number="selectedBlock.height" class="w-full text-xs border border-slate-200 rounded-lg p-2 focus:outline-sky-500 font-bold" />
+                <input type="number" v-model.number="selectedBlock.height" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg p-2 focus:outline-sky-500 font-bold" />
               </div>
 
               <!-- 3. Image block settings -->
@@ -3549,6 +4380,7 @@ const selectBand = (band) => {
                     <textarea v-if="cell.type === 'text'" v-model="cell.content" @input="updateTableGroups(selectedBlock)" rows="2" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="Nội dung hoặc {{row.Field}}"></textarea>
                     <input v-else v-model="cell.binding" @input="updateTableGroups(selectedBlock)" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="row.Field hoặc group.distinct.Field" />
                     <div class="grid grid-cols-3 gap-2"><select v-model="cell.type" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="text">Văn bản</option><option value="binding">Binding</option><option value="count">Đếm</option><option value="distinct_count">Đếm khác nhau</option></select><input v-model.number="cell.colspan" @input="updateTableGroups(selectedBlock)" type="number" min="1" class="rounded border border-slate-200 p-1 text-[10px]" title="Colspan" /><select v-model="cell.align" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select></div>
+                    <div class="mt-2 grid grid-cols-2 gap-2"><input v-model="cell.fontSize" @input="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]" placeholder="Cỡ chữ: 12px" /><select v-model="cell.fontWeight" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="">Mặc định (đậm)</option><option value="normal">Thường</option><option value="bold">Đậm</option></select></div>
                   </div>
                 </div>
 
@@ -3614,6 +4446,10 @@ const selectBand = (band) => {
                         <label class="flex flex-col gap-1 text-[9px] font-bold text-slate-500">Màu chữ<input type="color" :value="cell.color || '#1e293b'" @input="cell.color = $event.target.value; compileHtml()" class="h-7 w-full rounded border border-slate-200 bg-white p-0.5" /></label>
                         <label class="flex flex-col gap-1 text-[9px] font-bold text-slate-500">Màu viền<input type="color" :value="cell.borderColor || '#cbd5e1'" @input="cell.borderColor = $event.target.value; compileHtml()" class="h-7 w-full rounded border border-slate-200 bg-white p-0.5" /></label>
                       </div>
+                      <div class="grid grid-cols-2 gap-1.5">
+                        <input v-model="cell.fontSize" @input="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px]" placeholder="Cỡ chữ: 12px" />
+                        <select v-model="cell.fontWeight" @change="compileHtml" class="rounded border border-slate-200 bg-white p-1.5 text-[11px]"><option value="">Mặc định (đậm)</option><option value="normal">Thường</option><option value="bold">Đậm</option></select>
+                      </div>
                       <button type="button" @click="cell.backgroundColor = ''; cell.color = ''; cell.borderColor = ''; compileHtml()" class="self-end border-none bg-transparent text-[9px] font-bold text-slate-500 underline">Đặt lại màu</button>
                     </div>
                     <button type="button" @click="addTableCustomCell(customRow)" class="rounded border border-dashed border-sky-300 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">+ Thêm ô</button>
@@ -3634,7 +4470,7 @@ const selectBand = (band) => {
                 <div class="flex flex-col gap-2">
                   <div class="flex justify-between items-center pb-1 border-b border-slate-200">
                     <span class="text-[10px] font-bold text-slate-400 uppercase">Cột của bảng</span>
-                    <button @click="selectedBlock.columns.push({ header: 'Mới', value: '', width: 'auto' })" 
+                    <button @click="addTableColumn(selectedBlock)"
                       class="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-600 text-[10px] font-black border-none rounded-lg cursor-pointer">
                       Thêm Cột
                     </button>
@@ -3651,7 +4487,7 @@ const selectBand = (band) => {
                       <!-- Col Header -->
                       <div class="flex flex-col gap-0.5">
                         <span class="text-[9px] font-bold text-slate-400">Tiêu đề cột:</span>
-                        <input type="text" v-model="col.header" class="text-xs border border-slate-200 rounded px-1.5 py-0.5 font-bold" />
+                        <input type="text" v-model="col.header" @input="compileHtml" class="text-xs border border-slate-200 rounded px-1.5 py-0.5 font-bold" />
                       </div>
                       
                       <!-- Alignment -->
@@ -3667,7 +4503,7 @@ const selectBand = (band) => {
                       <!-- Col Value binding selector -->
                       <div class="flex flex-col gap-0.5">
                         <span class="text-[9px] font-bold text-slate-400">Biến dữ liệu ánh xạ:</span>
-                        <select v-model="col.value" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-mono">
+                        <select v-model="col.value" @change="compileHtml" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-mono">
                           <option v-for="f in getListFields(selectedBlock.dataSource)" :key="f.value" :value="f.value">
                             {{ f.label }} [{{ f.value }}]
                           </option>
@@ -3685,7 +4521,26 @@ const selectBand = (band) => {
                       <!-- Col Width -->
                       <div class="flex flex-col gap-0.5">
                         <span class="text-[9px] font-bold text-slate-400">Độ rộng (%):</span>
-                        <input type="text" v-model="col.width" class="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 font-mono" placeholder="20% hoặc auto" />
+                        <input type="text" v-model="col.width" @input="compileHtml" class="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 font-mono" placeholder="20% hoặc auto" />
+                      </div>
+
+                      <div class="mt-1 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+                        <div class="flex flex-col gap-1 rounded border border-slate-100 p-1.5">
+                          <span class="text-[9px] font-bold text-slate-500">STYLE TIÊU ĐỀ</span>
+                          <select v-model="col.headerStyle.fontWeight" @change="compileHtml" class="rounded border border-slate-200 p-1 text-[10px]"><option value="">Mặc định (đậm)</option><option value="normal">Thường</option><option value="bold">Đậm</option></select>
+                          <select v-model="col.headerStyle.textAlign" @change="compileHtml" class="rounded border border-slate-200 p-1 text-[10px]"><option value="">Căn lề theo cột</option><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select>
+                          <input v-model="col.headerStyle.fontSize" @input="compileHtml" class="rounded border border-slate-200 p-1 text-[10px]" placeholder="Cỡ chữ: 12px" />
+                          <div class="flex gap-1"><input type="color" :value="colorInputValue(col.headerStyle.color, '#1e293b')" @input="col.headerStyle.color = $event.target.value; compileHtml()" class="h-7 min-w-0 flex-1 rounded border" title="Màu chữ" /><input type="color" :value="colorInputValue(col.headerStyle.backgroundColor, '#ffffff')" @input="col.headerStyle.backgroundColor = $event.target.value; compileHtml()" class="h-7 min-w-0 flex-1 rounded border" title="Màu nền" /></div>
+                          <button type="button" @click="col.headerStyle = normalizeElementTextStyle(); compileHtml()" class="border-none bg-transparent text-[9px] text-slate-500 underline">Đặt lại</button>
+                        </div>
+                        <div class="flex flex-col gap-1 rounded border border-slate-100 p-1.5">
+                          <span class="text-[9px] font-bold text-slate-500">STYLE DỮ LIỆU</span>
+                          <select v-model="col.cellStyle.fontWeight" @change="compileHtml" class="rounded border border-slate-200 p-1 text-[10px]"><option value="">Mặc định</option><option value="normal">Thường</option><option value="bold">Đậm</option></select>
+                          <select v-model="col.cellStyle.textAlign" @change="compileHtml" class="rounded border border-slate-200 p-1 text-[10px]"><option value="">Căn lề theo cột</option><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select>
+                          <input v-model="col.cellStyle.fontSize" @input="compileHtml" class="rounded border border-slate-200 p-1 text-[10px]" placeholder="Cỡ chữ: 12px" />
+                          <div class="flex gap-1"><input type="color" :value="colorInputValue(col.cellStyle.color, '#1e293b')" @input="col.cellStyle.color = $event.target.value; compileHtml()" class="h-7 min-w-0 flex-1 rounded border" title="Màu chữ" /><input type="color" :value="colorInputValue(col.cellStyle.backgroundColor, '#ffffff')" @input="col.cellStyle.backgroundColor = $event.target.value; compileHtml()" class="h-7 min-w-0 flex-1 rounded border" title="Màu nền" /></div>
+                          <button type="button" @click="col.cellStyle = normalizeElementTextStyle(); compileHtml()" class="border-none bg-transparent text-[9px] text-slate-500 underline">Đặt lại</button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3727,15 +4582,8 @@ const selectBand = (band) => {
                   </div>
                 </div>
 
-                <!-- Rows delete helper -->
-                <div class="flex flex-col gap-2 mt-2">
-                  <span class="text-[10px] font-bold text-slate-400 uppercase">Danh sách các hàng:</span>
-                  <div class="flex flex-col gap-2 max-h-[150px] overflow-y-auto">
-                    <div v-for="(row, rIdx) in selectedBlock.rows" :key="rIdx" class="flex justify-between items-center p-2 bg-white border border-slate-200 rounded-lg text-xs">
-                      <span class="font-bold text-slate-600">Hàng {{ rIdx + 1 }}:</span>
-                      <button @click="deleteStaticRow(selectedBlock, rIdx)" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-[10px] border border-red-200 cursor-pointer">Xóa hàng</button>
-                    </div>
-                  </div>
+                <div class="mt-2 rounded-lg border border-sky-200 bg-sky-50 p-2 text-[11px] text-sky-800">
+                  Click trực tiếp vào ô trên canvas để chỉnh thuộc tính ô tại thanh công cụ phía trên. Danh sách hàng/ô không hiển thị ở đây để hỗ trợ bảng lớn.
                 </div>
               </div>
 
