@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { 
@@ -76,6 +76,11 @@ const openCategories = ref({
   summary: true
 })
 const dataSources = ref([])
+const showLeftPanel = ref(true)
+const showRightPanel = ref(true)
+const canvasViewport = ref(null)
+const canvasZoomMode = ref('fit')
+const canvasZoom = ref(1)
 
 const pageDimensions = computed(() => {
   const dimensions = {
@@ -86,11 +91,68 @@ const pageDimensions = computed(() => {
   }
   const [shortSide, longSide] = dimensions[template.value?.page_size] || dimensions.A4
   const landscape = template.value?.page_orientation === 'landscape'
+  const widthMm = landscape ? longSide : shortSide
+  const heightMm = landscape ? shortSide : longSide
   return {
-    width: `${landscape ? longSide : shortSide}mm`,
-    height: `${landscape ? shortSide : longSide}mm`
+    width: `${widthMm}mm`,
+    height: `${heightMm}mm`,
+    widthMm,
+    heightMm
   }
 })
+
+const pageMargin = (value) => value ?? 10
+
+const canvasFrameStyle = computed(() => ({
+  width: `${pageDimensions.value.widthMm * canvasZoom.value}mm`,
+  minHeight: `${pageDimensions.value.heightMm * canvasZoom.value}mm`
+}))
+
+const canvasStyle = computed(() => ({
+  width: pageDimensions.value.width,
+  minHeight: pageDimensions.value.height,
+  transform: `scale(${canvasZoom.value})`,
+  transformOrigin: 'top left',
+  paddingTop: `${pageMargin(template.value?.margin_top)}mm`,
+  paddingBottom: `${pageMargin(template.value?.margin_bottom)}mm`,
+  paddingLeft: `${pageMargin(template.value?.margin_left)}mm`,
+  paddingRight: `${pageMargin(template.value?.margin_right)}mm`
+}))
+
+const fitCanvasToViewport = () => {
+  if (canvasZoomMode.value !== 'fit' || !canvasViewport.value) return
+
+  const pageWidthPx = pageDimensions.value.widthMm * (96 / 25.4)
+  const availableWidth = Math.max(0, canvasViewport.value.clientWidth - 48)
+  canvasZoom.value = Math.min(1, Math.max(0.2, availableWidth / pageWidthPx))
+}
+
+const setCanvasZoom = (value) => {
+  if (value === 'fit') {
+    canvasZoomMode.value = 'fit'
+    nextTick(fitCanvasToViewport)
+    return
+  }
+
+  canvasZoomMode.value = 'manual'
+  canvasZoom.value = value
+}
+
+const adjustCanvasZoom = (delta) => {
+  canvasZoomMode.value = 'manual'
+  canvasZoom.value = Math.min(1.25, Math.max(0.2, Math.round((canvasZoom.value + delta) * 100) / 100))
+}
+
+const toggleDesignerPanel = async (panel) => {
+  if (panel === 'left') showLeftPanel.value = !showLeftPanel.value
+  if (panel === 'right') showRightPanel.value = !showRightPanel.value
+  await nextTick()
+  fitCanvasToViewport()
+}
+
+const colorInputValue = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || ''))
+  ? value
+  : fallback
 
 // Visual Blocks structure
 const blocks = ref({
@@ -132,7 +194,7 @@ const scopedTemplateCss = computed(() => {
   const css = template.value?.css || ''
   if (!css.trim()) return ''
 
-  return css.replace(/([^{}]+)\{/g, (match, selectorText) => {
+  const scopedCss = css.replace(/([^{}]+)\{/g, (match, selectorText) => {
     const selectors = selectorText.trim()
     if (!selectors || selectors.startsWith('@')) return match
 
@@ -146,6 +208,11 @@ const scopedTemplateCss = computed(() => {
 
     return `${scoped}{`
   })
+
+  // Legacy templates may set body max-width: 210mm for A4 portrait. The
+  // canvas itself represents the saved paper metadata, so it must not be
+  // constrained when the user changes to landscape or another paper size.
+  return `${scopedCss}\n.template-preview-canvas { max-width: none !important; }`
 })
 
 const defaultBlockStyle = {
@@ -252,6 +319,20 @@ const normalizeBlock = (block) => {
         field: group.field || '',
         label: group.label ?? parsed.content ?? '',
         className: group.className ?? parsed.className ?? '',
+        headerCells: (Array.isArray(group.headerCells) ? group.headerCells : []).map((cell, cellIndex) => ({
+          id: cell.id || `group_cell_${index + 1}_${cellIndex + 1}`,
+          type: cell.type || 'text',
+          content: cell.content || '',
+          binding: cell.binding || '',
+          aggregateField: cell.aggregateField || '',
+          colspan: Math.max(1, Number(cell.colspan) || 1),
+          align: cell.align || 'left',
+          format: cell.format || '',
+          className: cell.className || '',
+          backgroundColor: cell.backgroundColor || '',
+          color: cell.color || '',
+          borderColor: cell.borderColor || ''
+        })),
         enabledBy: group.enabledBy || '',
         sort: String(group.sort || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
       }
@@ -508,6 +589,48 @@ const groupHeaderPreview = (group) => {
   return group.label || `Nhóm: ${'{{'}row.${group.field}${'}}'}`
 }
 
+const ensureGroupHeaderCells = (block, group) => {
+  if (Array.isArray(group.headerCells) && group.headerCells.length) return
+  group.headerCells = [{
+    id: `group_cell_${Date.now()}`,
+    type: 'text',
+    content: group.label || `NhÃ³m: {{row.${group.field}}}`,
+    binding: '',
+    aggregateField: '',
+    colspan: Math.max(1, block.columns?.length || 1),
+    align: 'left',
+    format: '',
+    className: group.className || '',
+    backgroundColor: '',
+    color: '',
+    borderColor: ''
+  }]
+}
+
+const addGroupHeaderCell = (block, group) => {
+  ensureGroupHeaderCells(block, group)
+  group.headerCells.push({
+    id: `group_cell_${Date.now()}`,
+    type: 'text',
+    content: '',
+    binding: '',
+    aggregateField: '',
+    colspan: 1,
+    align: 'left',
+    format: '',
+    className: '',
+    backgroundColor: '',
+    color: '',
+    borderColor: ''
+  })
+  updateTableGroups(block)
+}
+
+const removeGroupHeaderCell = (block, group, index) => {
+  group.headerCells.splice(index, 1)
+  updateTableGroups(block)
+}
+
 const customRowScopeLabel = (scope) => ({
   table: 'Toàn bảng',
   group: 'Theo cấp nhóm',
@@ -588,12 +711,16 @@ const loadTemplate = async () => {
       // Keep the runtime HTML synchronized with the loaded designer structure.
       // The designer is driven by content_json, while report preview/render uses content_html.
       compileHtml()
+      await nextTick()
+      fitCanvasToViewport()
     }
   } catch (err) {
     console.error('Lỗi tải mẫu in:', err)
     uiStore.showToast('Không thể tải dữ liệu mẫu in', 'error')
   } finally {
     loading.value = false
+    await nextTick()
+    fitCanvasToViewport()
   }
 }
 
@@ -1517,7 +1644,14 @@ const compileBlockToHtml = (b) => {
         const enabledBy = group.enabledBy ? ` data-group-enabled-by="${group.enabledBy}"` : ''
         const className = group.className ? ` class="${group.className}"` : ''
         const label = group.label || `Nhóm: {{row.${group.field}}}`
-        blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}><td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td></tr>\n`
+        const cells = Array.isArray(group.headerCells) && group.headerCells.length
+          ? group.headerCells.map(cell => {
+              const cellClass = cell.className ? ` class="${cell.className}"` : ''
+              const cellColors = `${cell.backgroundColor ? ` background-color: ${cell.backgroundColor};` : ''}${cell.color ? ` color: ${cell.color};` : ''}${cell.borderColor ? ` border-color: ${cell.borderColor};` : ''}`
+              return `<td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} text-align: ${cell.align || 'left'}; font-weight: bold;${cellColors}">${customCellContent(cell, b.dataSource || 'rows')}</td>`
+            }).join('')
+          : `<td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td>`
+        blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}>${cells}</tr>\n`
       })
     } else {
       blockHtml += '    <tbody>\n'
@@ -1899,7 +2033,16 @@ watch(activeTab, (newVal) => {
   if (newVal === 'preview') {
     loadPreview()
   }
+  if (newVal === 'design') {
+    nextTick(fitCanvasToViewport)
+  }
 })
+
+watch(
+  () => [template.value?.page_size, template.value?.page_orientation],
+  () => nextTick(fitCanvasToViewport),
+  { flush: 'post' }
+)
 
 watch(selectedBlockId, (newId) => {
   if (newId) {
@@ -1910,6 +2053,14 @@ watch(selectedBlockId, (newId) => {
   } else {
     editingContent.value = ''
   }
+})
+
+onMounted(() => {
+  window.addEventListener('resize', fitCanvasToViewport)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', fitCanvasToViewport)
 })
 
 // Trigger close
@@ -2016,7 +2167,15 @@ const selectBand = (band) => {
             <History class="w-4 h-4" /> Lịch sử phiên bản
           </button>
         </div>
-        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">DevExpress Report Mode</span>
+        <div class="flex items-center gap-2">
+          <button @click="toggleDesignerPanel('left')" class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-500 hover:bg-slate-100 cursor-pointer border border-slate-200" :title="showLeftPanel ? 'Ẩn nguồn dữ liệu và hộp công cụ' : 'Hiện nguồn dữ liệu và hộp công cụ'">
+            {{ showLeftPanel ? 'Ẩn panel trái' : 'Panel trái' }}
+          </button>
+          <button @click="toggleDesignerPanel('right')" class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-500 hover:bg-slate-100 cursor-pointer border border-slate-200" :title="showRightPanel ? 'Ẩn bảng thuộc tính' : 'Hiện bảng thuộc tính'">
+            {{ showRightPanel ? 'Ẩn thuộc tính' : 'Thuộc tính' }}
+          </button>
+          <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">DevExpress Report Mode</span>
+        </div>
       </div>
 
       <!-- 3. Loading Spinner -->
@@ -2031,7 +2190,7 @@ const selectBand = (band) => {
         <!-- ================== TAB 1: DESIGNER ================== -->
         <template v-if="activeTab === 'design'">
           <!-- Column 1: Field List (Left Panel) -->
-          <div class="w-1/4 bg-slate-50 border-r border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
+          <div v-if="showLeftPanel" class="w-1/4 min-w-[240px] max-w-[360px] bg-slate-50 border-r border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
 
             <!-- DYNAMIC MYSQL STORED PROCEDURE DATA SOURCE -->
             <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-emerald-200 shadow-3xs">
@@ -2138,10 +2297,11 @@ const selectBand = (band) => {
           </div>
 
           <!-- Column 2: Banded Design Canvas (Middle Panel) -->
-          <div class="flex-1 bg-slate-100 p-6 overflow-y-auto flex flex-col items-center">
+          <div ref="canvasViewport" class="flex-1 min-w-0 bg-slate-100 p-6 overflow-auto flex flex-col items-center">
             
             <!-- Band selector controls -->
-            <div class="flex bg-white p-1 border border-slate-200 rounded-xl shadow-xs mb-4 gap-1 select-none">
+            <div class="flex flex-wrap items-center justify-center gap-2 mb-4 select-none">
+              <div class="flex bg-white p-1 border border-slate-200 rounded-xl shadow-xs gap-1">
               <button @click="selectBand('header')" 
                 class="px-4 py-2 rounded-lg font-bold text-xs border-none cursor-pointer transition-all flex items-center gap-1.5"
                 :class="selectedBand === 'header' ? 'bg-amber-100 text-amber-800' : 'text-slate-500 hover:bg-slate-50'">
@@ -2157,18 +2317,21 @@ const selectBand = (band) => {
                 :class="selectedBand === 'footer' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-50'">
                 Report Footer Band
               </button>
+              </div>
+              <div class="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xs">
+                <span class="px-1 text-[10px] font-bold uppercase text-slate-400">Thu phóng</span>
+                <button @click="adjustCanvasZoom(-0.1)" class="h-7 w-7 rounded-md text-sm font-bold text-slate-600 hover:bg-slate-100 cursor-pointer border-none bg-transparent" title="Thu nhỏ">−</button>
+                <button @click="setCanvasZoom('fit')" class="h-7 rounded-md px-2 text-[10px] font-bold cursor-pointer border-none" :class="canvasZoomMode === 'fit' ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'">Vừa trang</button>
+                <button v-for="zoom in [0.5, 0.75, 1]" :key="zoom" @click="setCanvasZoom(zoom)" class="h-7 rounded-md px-1.5 text-[10px] font-bold cursor-pointer border-none" :class="canvasZoomMode === 'manual' && canvasZoom === zoom ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'">{{ Math.round(zoom * 100) }}%</button>
+                <button @click="adjustCanvasZoom(0.1)" class="h-7 w-7 rounded-md text-sm font-bold text-slate-600 hover:bg-slate-100 cursor-pointer border-none bg-transparent" title="Phóng to">+</button>
+                <span class="min-w-9 text-center text-[10px] font-bold text-slate-500">{{ Math.round(canvasZoom * 100) }}%</span>
+              </div>
             </div>
 
             <!-- Page Canvas Layout Representation -->
-            <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 w-[210mm] min-h-[297mm] p-6 relative flex flex-col"
-              :style="{
-                width: pageDimensions.width,
-                minHeight: pageDimensions.height,
-                paddingTop: `${template?.margin_top || 10}mm`,
-                paddingBottom: `${template?.margin_bottom || 10}mm`,
-                paddingLeft: `${template?.margin_left || 10}mm`,
-                paddingRight: `${template?.margin_right || 10}mm`
-              }">
+            <div class="canvas-scale-frame shrink-0" :style="canvasFrameStyle">
+            <div class="template-preview-canvas bg-white shadow-lg border border-slate-300 relative flex flex-col"
+              :style="canvasStyle">
               <component :is="'style'" v-if="scopedTemplateCss">{{ scopedTemplateCss }}</component>
               <component :is="'style'" v-if="scopedBlockFontCss">{{ scopedBlockFontCss }}</component>
               
@@ -2316,7 +2479,10 @@ const selectBand = (band) => {
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
-                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <template v-if="group.headerCells?.length">
+                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              </template>
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -2603,7 +2769,10 @@ const selectBand = (band) => {
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
-                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <template v-if="group.headerCells?.length">
+                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              </template>
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -2912,7 +3081,10 @@ const selectBand = (band) => {
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
-                              <td :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <template v-if="group.headerCells?.length">
+                                <td v-for="cell in group.headerCells" :key="cell.id" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              </template>
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -3067,10 +3239,11 @@ const selectBand = (band) => {
               </div>
 
             </div>
+            </div>
           </div>
 
           <!-- Column 3: Properties Inspector Sidebar (Right Panel) -->
-          <div class="w-1/4 bg-slate-50 border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
+          <div v-if="showRightPanel" class="w-1/4 min-w-[240px] max-w-[360px] bg-slate-50 border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-4 select-none shrink-0">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest pb-1 border-b border-slate-200 block">Bảng Thuộc Tính (Properties)</span>
             
             <div v-if="!selectedBlock" class="text-center py-8 text-slate-400 text-xs italic">
@@ -3124,7 +3297,7 @@ const selectBand = (band) => {
                 <div class="grid grid-cols-2 gap-2 mt-2">
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Màu chữ:</span>
-                    <input type="color" v-model="selectedBlock.style.color" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
+                    <input type="color" :value="colorInputValue(selectedBlock.style.color, '#1e293b')" @input="selectedBlock.style.color = $event.target.value; compileHtml()" class="w-full h-8 border border-slate-200 rounded-lg cursor-pointer" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Đậm (Tất cả):</span>
@@ -3176,7 +3349,7 @@ const selectBand = (band) => {
                   <div class="flex items-center justify-between">
                     <span class="text-xs text-slate-500">Màu nền:</span>
                     <div class="flex items-center gap-1">
-                      <input type="color" v-model="selectedBlock.style.backgroundColor" @change="compileHtml" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
+                      <input type="color" :value="colorInputValue(selectedBlock.style.backgroundColor, '#ffffff')" @input="selectedBlock.style.backgroundColor = $event.target.value; compileHtml()" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
                       <button @click="selectedBlock.style.backgroundColor = ''; compileHtml()" class="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-500 rounded border-none cursor-pointer">Xóa</button>
                     </div>
                   </div>
@@ -3214,7 +3387,7 @@ const selectBand = (band) => {
                   <!-- Border color picker -->
                   <div class="flex items-center justify-between" v-if="selectedBlock.style.borderStyle && selectedBlock.style.borderStyle !== 'none'">
                     <span class="text-xs text-slate-500">Màu đường viền:</span>
-                    <input type="color" v-model="selectedBlock.style.borderColor" @change="compileHtml" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
+                    <input type="color" :value="colorInputValue(selectedBlock.style.borderColor, '#cbd5e1')" @input="selectedBlock.style.borderColor = $event.target.value; compileHtml()" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
                   </div>
 
                   <!-- Border radius input -->
@@ -3363,6 +3536,19 @@ const selectBand = (band) => {
                     </div>
 
                     <textarea v-model="group.label" @input="updateTableGroups(selectedBlock)" rows="2" class="w-full rounded-lg border border-slate-200 bg-white p-2 text-[11px] font-mono" :placeholder="`Nhóm: {{row.${group.field}}}`"></textarea>
+                  </div>
+                </div>
+
+                <div class="rounded-lg border border-amber-200 bg-amber-50/50 p-2">
+                  <div class="mb-2 flex items-center justify-between">
+                    <span class="text-[10px] font-black uppercase text-slate-500">Các ô tiêu đề nhóm</span>
+                    <button type="button" @click="addGroupHeaderCell(selectedBlock, tableGroups(selectedBlock)[0])" class="rounded border border-amber-200 bg-white px-2 py-1 text-[10px] font-bold text-amber-700">+ Thêm ô</button>
+                  </div>
+                  <div v-for="(cell, cellIndex) in (tableGroups(selectedBlock)[0]?.headerCells || [])" :key="cell.id" class="mb-2 rounded border border-slate-200 bg-white p-2">
+                    <div class="mb-2 flex items-center justify-between"><span class="text-[10px] font-bold text-slate-500">Ô {{ cellIndex + 1 }}</span><button type="button" @click="removeGroupHeaderCell(selectedBlock, tableGroups(selectedBlock)[0], cellIndex)" class="text-xs text-red-600">Xóa</button></div>
+                    <textarea v-if="cell.type === 'text'" v-model="cell.content" @input="updateTableGroups(selectedBlock)" rows="2" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="Nội dung hoặc {{row.Field}}"></textarea>
+                    <input v-else v-model="cell.binding" @input="updateTableGroups(selectedBlock)" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="row.Field hoặc group.distinct.Field" />
+                    <div class="grid grid-cols-3 gap-2"><select v-model="cell.type" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="text">Văn bản</option><option value="binding">Binding</option><option value="count">Đếm</option><option value="distinct_count">Đếm khác nhau</option></select><input v-model.number="cell.colspan" @input="updateTableGroups(selectedBlock)" type="number" min="1" class="rounded border border-slate-200 p-1 text-[10px]" title="Colspan" /><select v-model="cell.align" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select></div>
                   </div>
                 </div>
 
@@ -3588,20 +3774,20 @@ const selectBand = (band) => {
         <template v-else-if="activeTab === 'preview'">
           <div class="flex-1 bg-slate-200 p-6 overflow-y-auto flex flex-col items-center">
             <!-- Iframe container with print simulation borders -->
-            <div class="flex justify-between items-center w-[210mm] max-w-full mb-3 shrink-0">
+            <div class="flex justify-between items-center max-w-full mb-3 shrink-0" :style="{ width: pageDimensions.width }">
               <span class="text-xs text-slate-500 font-bold">Xem trước thực tế (A4/A5 preview)</span>
               <button @click="loadPreview" class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-3xs">
                 <RefreshCw class="w-3.5 h-3.5" :class="loadingPreview ? 'animate-spin' : ''" /> Làm mới
               </button>
             </div>
             
-            <div v-if="loadingPreview" class="bg-white shadow-lg border border-slate-300 flex flex-col items-center justify-center gap-3" :style="{ width: pageDimensions.width, height: pageDimensions.height }">
+            <div v-if="loadingPreview" class="shrink-0 bg-white shadow-lg border border-slate-300 flex flex-col items-center justify-center gap-3" :style="{ width: pageDimensions.width, height: pageDimensions.height }">
               <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
               <p class="text-xs text-slate-400 italic">Đang biên dịch và render dữ liệu giả lập từ hệ thống...</p>
             </div>
             
             <iframe v-else-if="previewHtml" :srcdoc="previewHtml" 
-              class="bg-white shadow-lg border border-slate-300 rounded-sm transition-all"
+              class="shrink-0 bg-white shadow-lg border border-slate-300 rounded-sm transition-all"
               :style="{
                 width: pageDimensions.width,
                 minHeight: pageDimensions.height

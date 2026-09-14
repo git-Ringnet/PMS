@@ -275,20 +275,24 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
               <input v-model="parameter.label" placeholder="Nhãn hiển thị" class="rounded border border-slate-200 px-2 py-1.5 text-xs" />
               <select v-model="parameter.control" class="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
                 <option value="text">Chữ</option><option value="number">Số</option><option value="date">Ngày</option><option value="date-range">Phạm vi ngày</option><option value="multi-select">Nhiều lựa chọn</option>
-                <option value="datetime-local">Ngày giờ</option><option value="select">Danh sách</option><option value="checkbox">Bật / tắt</option><option value="hidden">Ẩn</option>
+                <option value="datetime-local">Ngày giờ</option><option value="select">Danh sách</option><option value="radio">Chọn một</option><option value="checkbox">Bật / tắt</option><option value="hidden">Ẩn</option>
               </select>
               <input v-model="parameter.default" placeholder="Mặc định" class="rounded border border-slate-200 px-2 py-1.5 text-xs" />
               <label class="text-[10px] text-slate-500"><input v-model="parameter.required" type="checkbox" /> Bắt buộc</label>
-              <div v-if="parameter.control === 'select' || parameter.control === 'multi-select'" class="col-span-5 rounded-lg bg-slate-50 p-2">
+              <div v-if="['select', 'multi-select', 'radio'].includes(parameter.control)" class="col-span-5 rounded-lg bg-slate-50 p-2">
                 <label class="mb-2 block text-[10px] font-bold text-slate-500">Lấy lựa chọn từ danh mục PMS
                   <select v-model="parameter.options_source" class="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
                     <option value="">Nhập danh sách tĩnh bên dưới</option>
                     <option value="areas">Khu vực phòng</option>
                     <option value="companies">Công ty / lữ hành</option>
                     <option value="bookings">Đăng ký phòng</option>
+                    <option value="rooms">Phòng</option>
                     <option value="room-classes">Loại phòng</option>
                     <option value="registration-statuses">Tình trạng đăng ký</option>
+                    <option value="users">Người dùng</option>
                     <option value="hotel-services">Dịch vụ khách sạn</option>
+                    <option value="report-shifts">Ca làm việc</option>
+                    <option value="service-departments">Bộ phận dịch vụ</option>
                   </select>
                 </label>
                 <label class="text-[10px] font-bold text-slate-500">Các lựa chọn cho dropdown

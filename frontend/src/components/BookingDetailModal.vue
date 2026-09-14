@@ -96,6 +96,7 @@ const formGuest = ref({
   stay_count: 1,
   id_type: 'CCCD',
   id_number: '',
+  passport_number: '',
   id_issue_date: '',
   residence_type: 'Thường trú',
   address: '',
@@ -309,6 +310,7 @@ async function loadGuests(autoSelectId = null) {
       email:         p.guest?.email ?? '',
       id_type:       p.guest?.id_type ?? 'CCCD',
       id_number:     p.guest?.id_number || p.guest?.passport_number || '',
+      passport_number:p.guest?.passport_number || '',
       id_issue_date: formatDateForInput(p.guest?.id_issue_date) || '',
       residence_type:p.guest?.residence_type ?? 'Thường trú',
       address:       p.guest?.address ?? '',
@@ -445,6 +447,7 @@ function selectGuest(g) {
       stay_count: Number(g.stay_count || 1),
       id_type: g.id_type || 'CCCD',
       id_number: g.id_number || '',
+      passport_number: g.passport_number || '',
       id_issue_date: formatDateForInput(g.id_issue_date) || '',
       residence_type: g.residence_type || 'Thường trú',
       address: g.address || '',
@@ -478,11 +481,17 @@ function selectChild(c) {
     stay_count: 1,
     id_type: 'CCCD',
     id_number: '',
+    passport_number: '',
     id_issue_date: '',
     residence_type: 'Thường trú',
     address: '',
     avatar: '',
   }
+}
+
+function isPassportType(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized.includes('passport') || normalized.includes('hộ chiếu')
 }
 
 const avatarInput = ref(null)
@@ -648,6 +657,9 @@ async function handleSave() {
         email: formGuest.value.email,
         id_type: formGuest.value.id_type,
         id_number: formGuest.value.id_number,
+        passport_number: isPassportType(formGuest.value.id_type)
+          ? formGuest.value.id_number
+          : formGuest.value.passport_number,
         id_issue_date: formGuest.value.id_issue_date,
         residence_type: formGuest.value.residence_type,
         address: formGuest.value.address,

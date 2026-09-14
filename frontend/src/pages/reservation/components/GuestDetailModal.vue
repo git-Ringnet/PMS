@@ -791,6 +791,15 @@ function formatMoney(v) {
   return Number(v).toLocaleString('vi-VN')
 }
 
+function isPassportType(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return idTypes.value.some((item) => {
+    const code = String(item?.code || '').trim().toUpperCase()
+    const name = String(item?.name || '').trim().toLowerCase()
+    return code === 'PASSPORT' && (normalized === name || normalized === getIdTypeValue(item).toLowerCase())
+  }) || normalized === 'passport' || normalized === 'hộ chiếu'
+}
+
 function calculateNights(room) {
   if (!room?.arrival_date || !room?.departure_date) return 1
   const a = new Date(room.arrival_date)
@@ -803,6 +812,10 @@ async function handleSave() {
   saving.value = true
   try {
     const payload = { ...form.value }
+    if (isPassportType(payload.id_type)) {
+      payload.passport_number = payload.id_number
+    }
+
     if (props.guestType === 'child') {
       delete payload.avatar
     } else {

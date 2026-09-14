@@ -11,6 +11,17 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-14] - Chuẩn hóa tên file template báo cáo hàng bể vỡ trong DB migration (Tương thích Linux)
+### Module: Báo cáo dịch vụ / Migrations ([2026_09_11_170000_create_breakage_invoice_product_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_170000_create_breakage_invoice_product_report.php), [2026_09_11_171000_create_breakage_free_invoice_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_171000_create_breakage_free_invoice_report.php))
+
+- **Bối cảnh & Vấn đề**:
+  - Trên Windows chạy `php artisan db:reset-all --seed-all` thành công do NTFS không phân biệt chữ hoa/thường.
+  - Trên máy chủ Linux, lệnh bị crash với lỗi `ErrorException: require(.../BREAKAGE_INVOICES_BY_PRODUCT_reference.php): Failed to open stream: No such file or directory` do Linux phân biệt chữ hoa/thường (case-sensitive) trong khi file thực tế trên disk là chữ thường (`breakage_...`).
+- **Khắc phục**:
+  - Sửa tên require template sang chữ thường trong [2026_09_11_170000_create_breakage_invoice_product_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_170000_create_breakage_invoice_product_report.php) (`breakage_invoices_by_product_reference.php`).
+  - Sửa tên require template sang chữ thường trong [2026_09_11_171000_create_breakage_free_invoice_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_171000_create_breakage_free_invoice_report.php) (`breakage_free_invoices_reference.php`).
+- **Kiểm thử**: `php -l` kiểm tra cú pháp thành công 100%.
+
 ## [2026-09-11] - Tích hợp Thẻ thông tin khách dạng Popup khi Double Click từ Màn hình Thông tin khách Booking
 ### Module: Đặt phòng / Thông tin khách lưu trú ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
 

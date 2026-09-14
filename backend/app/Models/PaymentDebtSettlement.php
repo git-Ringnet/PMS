@@ -14,6 +14,7 @@ class PaymentDebtSettlement extends Model
         'amount', 'currency', 'description', 'edit_flag', 'created_by',
         'updated_by', 'deleted_by', 'deleted_at',
         'user_id',
+        'legacy_id', 'legacy_payment_table_id',
     ];
 
     protected $casts = [
@@ -22,6 +23,8 @@ class PaymentDebtSettlement extends Model
         'amount' => 'decimal:2',
         'edit_flag' => 'integer',
         'deleted_at' => 'datetime',
+        'legacy_id' => 'integer',
+        'legacy_payment_table_id' => 'integer',
     ];
 
     protected static function booted(): void
