@@ -11,6 +11,66 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-14] - Chuẩn hóa Báo cáo đặt cọc (Module Sale) theo legacy sp_039
+### Module: Báo cáo Lễ tân & Đặt phòng / Báo cáo đặt cọc ([2026_09_14_231000_standardize_deposits_sale_sp039.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_14_231000_standardize_deposits_sale_sp039.php), [deposits_sale_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/deposits_sale_reference.php), [ReportLookupController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ReportLookupController.php))
+
+- **Đã hoàn thành**:
+  - **Khảo sát Database & Xác định mã bộ phận Sale**:
+    - Kiểm tra database hệ thống (`pms_system.organization_departments`): Tìm thấy chính xác mã bộ phận Sale/Reservation là `MR` với tên "Reservation / Kinh Doanh".
+    - Đồng bộ bổ sung phòng ban `MR` vào bảng `departments` trên tất cả các database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Cập nhật lookup danh mục bộ phận ([ReportLookupController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ReportLookupController.php))**:
+    - Viết lại hàm xử lý lookup `service-departments`: Ưu tiên truy vấn từ danh mục `departments` (`show = 1`) và bổ sung các mã phòng ban phát sinh trong `service_bills`. Đảm bảo danh mục dropdown hiển thị đầy đủ các phòng ban hệ thống (đặc biệt là `MR - Reservation / Kinh Doanh`).
+  - **Chuẩn hóa Stored Procedure rpt_deposits_sale theo sp_039**:
+    - Lọc theo ngày đặt cọc `p.date BETWEEN p_from_date AND p_to_date` (`payments.date`).
+    - Bổ sung trường `GroupHeader = CONCAT(base.ShowDeposit, ' / Thanh Toán: ', base.PaymentMethod)` để gom nhóm theo định dạng legacy (ví dụ: `Đặt Cọc / Thanh Toán: CA`, `Đặt Cọc / Thanh Toán: BT`).
+    - Chuẩn hóa các trường tính toán và ánh xạ: `DepositAmount`, `CashAmount`, `PositiveAmount`, `RefundAmount`, `CompanyTotal`.
+  - **Cập nhật Template tham chiếu ([deposits_sale_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/deposits_sale_reference.php))**:
+    - Đổi cấu hình gom nhóm sang trường `GroupHeader` hiển thị `{{row.GroupHeader}}`.
+    - Bảo toàn 3 dòng tổng tiền cuối bảng: `Tổng Theo C.ty` (`CompanyTotal`), `Tổng Tiền Đặt Cọc` (`aggregate.rows.sum.DepositAmount`), và `Tổng` (`aggregate.rows.sum.Amount`).
+    - Bảo toàn định dạng bảng tĩnh Phân Bổ Tiền Tệ (`deposits_sale_allocation`) và 3 cột chữ ký.
+  - **Migration độc lập ([2026_09_14_231000_standardize_deposits_sale_sp039.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_14_231000_standardize_deposits_sale_sp039.php))**:
+    - Đã chạy thành công migration trên toàn bộ các database chi nhánh.
+    - Cập nhật schema tham số và giá trị mặc định cho báo cáo: `p_department = 'MR'` (Reservation / Kinh Doanh).
+    - Cập nhật sắp xếp thứ tự bộ lọc UI theo chuẩn ảnh legacy: Ngày -> Ca làm việc -> Giờ -> Chọn bộ phận (mặc định MR) -> Chọn công ty -> Chọn người dùng -> Phương thức thanh toán -> Hiển thị tiền cọc (bật) -> Hiển thị tiền = 0 (tắt).
+  - **Kiểm thử**:
+    - Chạy test PHPUnit `DepositsSaleStaticTableStyleTest`: Kết quả 100% Passed.
+
+## [2026-09-14] - Triển khai Báo cáo hóa đơn minibar (Theo sản phẩm) theo legacy sp_206
+### Module: Báo cáo Buồng phòng / Minibar ([2026_09_14_220000_create_minibar_invoice_product_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_14_220000_create_minibar_invoice_product_report.php), [minibar_invoices_by_product_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_invoices_by_product_reference.php), [MinibarInvoicesByProductReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/MinibarInvoicesByProductReportTest.php))
+
+- **Đã hoàn thành**:
+  - **Stored Procedure rpt_minibar_invoices_by_product**:
+    - Chuẩn hóa theo legacy `sp_206` với bộ lọc `Outlet = 'MB'`.
+    - Lọc theo ngày, ca làm việc, bộ phận, người dùng, `FOCType` (cho switch Hàng bán / Miễn phí `freeitem`), và trạng thái hóa đơn `Status = 1`.
+    - Sinh cột `ID` tăng dần bằng `ROW_NUMBER() OVER (...)`, gom nhóm theo `ProductType` (nhóm sản phẩm: ví dụ `Minibar`), `Product`, `Currency`, `Rate`, `Quantity`, `Amount` (Thành tiền: `Quantity * Rate`), `DiscountAmount` (Giảm giá), `Total` (Tổng tiền).
+  - **Mẫu báo cáo tham chiếu chuẩn A4 portrait theo đúng ảnh giao diện cũ ([minibar_invoices_by_product_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_invoices_by_product_reference.php))**:
+    - Header: Logo Smart Hotel, địa chỉ, Người Dùng, Ngày in, tiêu đề `BÁO CÁO HÓA ĐƠN MINIBAR(THEO SẢN PHẨM)`, khoảng ngày.
+    - Lưới 8 cột: `ID | Sản phẩm | Đơn vị | Đơn Giá | Số lượng | Thành tiền | Giảm Giá | Tổng tiền`.
+    - Dòng tiêu đề nhóm `Loại | Minibar` với chữ đỏ in đậm chuẩn xác theo ảnh mẫu.
+    - Hai dòng tổng tiền ở chân bảng: dòng 1 là tổng theo nhóm loại hàng (`group.sum.Total`), dòng 2 là tổng cộng toàn bộ báo cáo (`totals.Total`).
+  - **Migration độc lập ([2026_09_14_220000_create_minibar_invoice_product_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_14_220000_create_minibar_invoice_product_report.php))**:
+    - Đăng ký nguồn dữ liệu `MINIBAR_INVOICES_BY_PRODUCT`, template `MINIBAR_INVOICES_BY_PRODUCT_STANDARD` và định nghĩa báo cáo với đầy đủ schema UI (Chọn ngày, Ca làm việc, Chọn bộ phận, Chọn người dùng, Hàng bán, Nhóm theo ngày).
+  - **Đảm bảo cách ly và không ảnh hưởng file dùng chung**:
+    - Không chạm vào file dùng chung [ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue) khi đang có agent khác hoạt động.
+  - **Khắc phục lỗi HTTP 422 khi thực thi báo cáo (execute)**:
+    - Nguyên nhân: Trong stored procedure `rpt_minibar_invoices_by_product`, câu lệnh SQL truy vấn `MIN(d.Currency)` trong khi bảng chi tiết `housekeeping_service_bill_details` không có cột `Currency` (cột `Currency` nằm ở bảng hóa đơn `housekeeping_service_bills` `h.Currency`).
+    - Xử lý: Sửa thành `COALESCE(MIN(h.Currency), '') AS Currency`, cập nhật lại stored procedure trên tất cả database chi nhánh (`mysql_hkt1` đến `mysql_hkt4`).
+  - **Đồng bộ kiến trúc Designer Blocks & Khắc phục lệch giao diện khi Lưu ở Designer**:
+    - Chuẩn hóa [minibar_invoices_by_product_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_invoices_by_product_reference.php) sang cơ chế sinh `content_html` từ chính `blocks()` qua hàm compile của Designer, đồng bộ 100% style màu chữ đỏ nhóm `#dc2626`, độ rộng cột, hàng tổng nhóm `product-subtotal-row` và tổng bảng `product-total-row`.
+    - Bổ sung migration [2026_09_14_221000_sync_minibar_designer_template.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_14_221000_sync_minibar_designer_template.php) cập nhật template runtime v1.1.
+    - Cập nhật file dùng chung [TemplateRendererService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/TemplateRendererService.php) (được sự phê duyệt của người dùng): hỗ trợ modifier `|number` cho `{{group.sum.Field|number}}` giúp định dạng số tiền nhóm có dấu chấm phân cách chuẩn xác.
+  - **Khắc phục nút "Nhóm theo ngày" và "Hàng bán"**:
+    - **Nút "Hàng bán" (`p_freeitem`)**: Được người dùng duyệt bổ sung `'MINIBAR_INVOICES_BY_PRODUCT'` vào `housekeepingInvoiceCodes` trong [ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue), giúp báo cáo sử dụng component filter chuyên dụng [HousekeepingInvoiceFilters.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/components/HousekeepingInvoiceFilters.vue) với đầy đủ dropdown ca, bộ phận, người dùng và switch đảo chiều chuẩn logic legacy: Bật "Hàng bán" gửi `0` (`FOCType = 0`), Tắt "Hàng bán" gửi `1` (`FOCType <> 0` FOC).
+    - **Nút "Nhóm theo ngày" (`p_group_by_date`)**: Cập nhật Stored Procedure và template tham chiếu [minibar_invoices_by_product_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_invoices_by_product_reference.php) bổ sung cấp nhóm `DateGroup` có thuộc tính `data-group-enabled-by="parameters.p_group_by_date"`. Khi bật, báo cáo tự động nhóm theo ngày trước, sau đó đến nhóm loại sản phẩm và chi tiết sản phẩm.
+    - Đã đồng bộ procedure lên toàn bộ các chi nhánh (`mysql_hkt1` đến `mysql_hkt4`) và cập nhật template runtime `MINIBAR_INVOICES_BY_PRODUCT_STANDARD` trong CSDL.
+- **Kiểm thử**:
+  - `php artisan test --filter=MinibarInvoicesByProductReportTest`: 3/3 tests đạt (36 assertions bao gồm kiểm thử render có và không có `p_group_by_date`).
+  - `php artisan test --filter=TemplateRendererServiceTest`: 10/10 tests đạt (30 assertions).
+  - `php artisan test --filter=InvoicesByProduct`: 7/7 tests đạt (74 assertions).
+  - `npm run build`: Thành công không lỗi.
+
+---
+
 ## [2026-09-11] - Tích hợp Thẻ thông tin khách dạng Popup khi Double Click từ Màn hình Thông tin khách Booking
 ### Module: Đặt phòng / Thông tin khách lưu trú ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
 
