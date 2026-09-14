@@ -105,7 +105,7 @@ SQL);
             ]);
         }
 
-        $provider = require database_path('report_templates/BREAKAGE_FREE_INVOICES_reference.php');
+        $provider = require database_path('report_templates/breakage_free_invoices_reference.php');
         $definition = $provider->definition();
         DB::table('templates')->where('report', 'BREAKAGE_FREE_INVOICES_STANDARD')->update([
             'content_html' => $definition['content_html'],
