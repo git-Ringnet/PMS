@@ -7,10 +7,6 @@ use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
-use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Converter;
 use PhpOffice\PhpWord\Writer\Word2007;
@@ -18,13 +14,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportExportService
 {
+    public function __construct(private readonly ReportSpreadsheetExportService $spreadsheetExporter) {}
+
     public function download(string $format, Template $template, array $data, string $html, string $reportCode): Response|StreamedResponse
     {
         $fileBase = Str::lower($reportCode).'_'.now()->format('Ymd_His');
 
         return match ($format) {
             'pdf' => $this->pdf($template, $html, $fileBase),
-            'xlsx' => $this->spreadsheet($template, $data, $fileBase),
+            'xlsx' => $this->spreadsheet($template, $data, $html, $fileBase),
             'docx' => $this->word($template, $data, $fileBase),
         };
     }
@@ -45,18 +43,35 @@ class ReportExportService
         ]);
     }
 
-    private function spreadsheet(Template $template, array $data, string $fileBase): StreamedResponse
+    private function spreadsheet(Template $template, array $data, string $html, string $fileBase): StreamedResponse
     {
-        $spreadsheet = new Spreadsheet();
+        if (trim($html) !== '') {
+            try {
+                return $this->spreadsheetExporter->download($template, $html, $fileBase);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $this->legacySpreadsheet($template, $data, $fileBase);
+    }
+
+    /**
+     * Compatibility fallback for templates without rendered HTML or a legacy
+     * malformed template. Existing Excel downloads remain available.
+     */
+    private function legacySpreadsheet(Template $template, array $data, string $fileBase): StreamedResponse
+    {
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Report');
         $sheet->getPageSetup()
-            ->setOrientation($template->page_orientation === 'landscape' ? PageSetup::ORIENTATION_LANDSCAPE : PageSetup::ORIENTATION_PORTRAIT)
+            ->setOrientation($template->page_orientation === 'landscape' ? \PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE : \PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_PORTRAIT)
             ->setPaperSize(match (strtoupper((string) $template->page_size)) {
-                'A5' => PageSetup::PAPERSIZE_A5,
-                'LETTER' => PageSetup::PAPERSIZE_LETTER,
-                'LEGAL' => PageSetup::PAPERSIZE_LEGAL,
-                default => PageSetup::PAPERSIZE_A4,
+                'A5' => \PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A5,
+                'LETTER' => \PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_LETTER,
+                'LEGAL' => \PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_LEGAL,
+                default => \PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A4,
             });
         $sheet->getPageMargins()
             ->setTop(($template->margin_top ?? 10) / 25.4)
@@ -70,22 +85,22 @@ class ReportExportService
         $fields = $this->fields($data);
         foreach ($fields as $index => $field) {
             $column = $index + 1;
-            $cell = Coordinate::stringFromColumnIndex($column).'3';
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column).'3';
             $sheet->setCellValue($cell, $field);
             $sheet->getStyle($cell)->getFont()->setBold(true);
         }
         foreach ($data['rows'] ?? [] as $rowIndex => $row) {
             foreach ($fields as $columnIndex => $field) {
-                $cell = Coordinate::stringFromColumnIndex($columnIndex + 1).($rowIndex + 4);
+                $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex + 1).($rowIndex + 4);
                 $sheet->setCellValue($cell, (string) ($row[$field] ?? ''));
             }
         }
         foreach (range(1, max(1, count($fields))) as $column) {
-            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column))->setAutoSize(true);
+            $sheet->getColumnDimension(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column))->setAutoSize(true);
         }
 
         return response()->streamDownload(function () use ($spreadsheet) {
-            (new Xlsx($spreadsheet))->save('php://output');
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
         }, $fileBase.'.xlsx', ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
     }
 
