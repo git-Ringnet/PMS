@@ -2,6 +2,14 @@
 
 Tài liệu này tổng hợp toàn bộ các mã trạng thái (`status` & `room_status_code`) được lưu trong Database, các hằng số (Constants) trong Backend Laravel và nghĩa hiển thị ở Frontend Vue.js.
 
+### Cập nhật Booking ngày 14/09/2026
+
+- `bookings.status` là trạng thái vận hành: có ít nhất một `booking_rooms.status = 1` thì header phải là 1, kể cả còn phòng chưa check-in. Những tổ hợp không còn phòng đang ở vẫn theo quy tắc từng thao tác hiện có.
+- Sau migration `2026_09_14_120000_use_booking_registration_status_codes`, `bookings.registration_status_id` lưu **mã nghiệp vụ** `registration_statuses.booking_status_id`, không lưu PK `registration_statuses.id`. Ví dụ None Guaranteed lưu 20 thay vì id danh mục 2.
+- API danh mục vẫn trả cả `id` và `booking_status_id`; sửa/xóa dòng danh mục dùng `id`, chọn trạng thái cho booking và bộ lọc báo cáo dùng `booking_status_id`.
+- Màn Thông tin khách chỉ hiển thị phòng có trạng thái 0,1,2,4; phòng chuyển 100 và phòng hủy 3 chỉ còn trong lịch sử phù hợp.
+- Migration chưa được chạy trên dữ liệu vận hành trong đợt sửa code này. Quy trình chuyển đổi và đối soát nằm trong `docs/booking-fix-plan/IMPLEMENTATION.md`.
+
 ---
 
 ## 1. Bảng Trạng Thái Phòng Thực Tế (`room_status_code` - Bảng `room_statuses`)

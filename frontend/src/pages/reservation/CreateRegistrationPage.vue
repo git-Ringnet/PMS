@@ -4,6 +4,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
 import { buildRateCodeDailyPrices, resolveRateCodePrice } from '@/utils/rate-code-pricing'
+import {
+  allocationCandidateRooms,
+  countAllocatableRooms,
+  countProtectedAllocationRooms,
+  hasBookingRoomId,
+  isEditableAllocationRoom,
+  isRoomAllocationCandidate,
+  normalizeAllocationQuantity,
+  sameRoomClass,
+} from '@/utils/booking-room-allocations'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
 import CopyModal from './components/CopyModal.vue'
@@ -30,6 +40,7 @@ import {
 import {
   fetchBookings,
   createBooking,
+  addBookingRooms,
   updateBooking,
   deleteBooking,
   copyBooking,
@@ -208,6 +219,9 @@ function stopDragModal() {
 
 function closeModal() {
   isModalOpen.value = false
+  // Closing or cancelling discards unsaved add-room drafts. Successful saves
+  // also call this after the server refetch.
+  roomAddDraft.value = []
 }
 
 // ==================== UI STATES ====================
@@ -315,9 +329,30 @@ const emptyForm = () => ({
 })
 
 const modalForm = ref(emptyForm())
+// The "Lấy phòng" tab is an append-only draft. It is deliberately separate
+// from modalForm.rooms and the active booking tab so editing this form cannot
+// mutate persisted room details before the add-only save succeeds.
+const roomAddDraft = ref([])
 const isColorChanged = ref(false)
 const isColorPickerOpen = ref(false)
 const initialModalSnapshot = ref('')
+
+// A rate-code request can finish after a newer selection. Keep the latest
+// choice authoritative so an old response cannot overwrite the quantity or
+// pricing state that the user just selected.
+const rateCodeRequestVersions = new WeakMap()
+let roomRateCodesRefreshVersion = 0
+
+function nextRateCodeRequestVersion(target) {
+  const version = (rateCodeRequestVersions.get(target) || 0) + 1
+  rateCodeRequestVersions.set(target, version)
+  return version
+}
+
+function isLatestRateCodeRequest(target, version, selectedValue) {
+  return rateCodeRequestVersions.get(target) === version
+    && String(target?.rateCode || '').trim() === String(selectedValue || '').trim()
+}
 
 function getModalFormSnapshot() {
   if (!modalForm.value) return ''
@@ -343,7 +378,7 @@ function getModalFormSnapshot() {
     specialRequests: modalForm.value.specialRequests || '',
     isMasterRoomRate: modalForm.value.isMasterRoomRate,
     shuttleInfo: modalForm.value.shuttleInfo || [],
-    roomAllocations: (modalForm.value.roomAllocations || []).map(a => ({
+    roomAddDraft: (roomAddDraft.value || []).map(a => ({
       roomClassId: a.roomClassId,
       quantity: a.quantity,
       price: a.price,
@@ -353,20 +388,19 @@ function getModalFormSnapshot() {
       babies: a.babies,
       breakfastIncluded: a.breakfastIncluded,
       upgradeClassId: a.upgradeClassId,
+      rooms: (a.rooms || []).map(r => ({
+        roomClassId: r.roomClassId,
+        roomNumber: r.roomNumber,
+        price: r.price,
+        rateCode: r.rateCode,
+        arrivalDate: r.arrivalDate,
+        departureDate: r.departureDate,
+        adults: r.adults,
+        children: r.children,
+        babies: r.babies,
+        breakfast: r.breakfast,
+      })),
     })),
-    rooms: (modalForm.value.rooms || []).map(r => ({
-      id: r.id,
-      roomClassId: r.roomClassId,
-      roomId: r.roomId,
-      roomNumber: r.roomNumber,
-      price: r.price,
-      rateCode: r.rateCode,
-      checkIn: r.checkIn,
-      checkOut: r.checkOut,
-      adults: r.adults,
-      children: r.children,
-      breakfast: r.breakfast,
-    }))
   })
 }
 
@@ -1382,6 +1416,9 @@ const isInlineEditLocked = computed(() => {
 })
 
 function isRoomEditLocked(room) {
+  // Checked-in, checked-out, cancelled and moved rows are persisted history or
+  // current stay records. No-show rows stay clickable so the restore/charge
+  // actions can still target them; their mutation handlers remain guarded.
   return isEditing.value && [1, 2, 3, 100].includes(Number(room?.bookingRoomStatus))
 }
 
@@ -1498,7 +1535,7 @@ const activeTabStatusName = computed(() => {
   const tab = bookingContext.value
   if (!tab) return '—'
   if (tab.registrationStatusId) {
-    const s = registrationStatuses.value.find(rs => Number(rs.id) === Number(tab.registrationStatusId))
+    const s = registrationStatuses.value.find(rs => Number(rs.booking_status_id) === Number(tab.registrationStatusId))
     if (s) return s.name
   }
   return tab.statusLabel || '—'
@@ -1511,8 +1548,8 @@ const allocationsSummary = computed(() => {
   let babySum = 0
   let childSum = 0
   
-  if (modalForm.value && modalForm.value.roomAllocations) {
-    modalForm.value.roomAllocations.forEach(row => {
+  if (roomAddDraft.value) {
+    roomAddDraft.value.forEach(row => {
       availSum += Number(row.availableRooms) || 0
       qtySum += Number(row.quantity) || 0
       adultSum += Number(row.adults) || 0
@@ -1522,7 +1559,7 @@ const allocationsSummary = computed(() => {
   }
 
   return {
-    count: modalForm.value?.roomAllocations?.length || 0,
+    count: roomAddDraft.value?.length || 0,
     availableRooms: availSum,
     quantity: qtySum,
     adults: adultSum,
@@ -1662,8 +1699,11 @@ function toggleGroupCollapse(typeName) {
 function syncRoomsToAllocations(tab) {
   if (!tab.roomAllocations || !tab.rooms) return tab.roomAllocations
   return tab.roomAllocations.map(alloc => {
-    const matchingRooms = tab.rooms.filter(r => r.roomClassId === alloc.roomClassId)
+    // Quantity is the target number of current rooms. Cancelled, no-show and
+    // moved rows stay in the tab for history but are never sent as demand.
+    const matchingRooms = allocationCandidateRooms(tab.rooms, alloc.roomClassId)
     const roomsDetail = matchingRooms.map(r => ({
+      roomClassId: r.roomClassId,
       roomNumber: r.roomNumber || '',
       rateCode: (r.rateCode && r.rateCode !== 'Vui lòng chọn giá phòng') ? r.rateCode : null,
       guestName: r.guestName || '',
@@ -1705,7 +1745,7 @@ function syncRoomsToAllocations(tab) {
     }))
     return {
       ...alloc,
-      quantity: Math.max(Number(alloc.quantity) || 0, matchingRooms.length),
+      quantity: matchingRooms.length,
       rooms: roomsDetail,
     }
   })
@@ -1714,8 +1754,9 @@ function syncRoomsToAllocations(tab) {
 // ==================== LIFECYCLE ====================
 onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
-  window.addEventListener('booking-updated', loadBookings)
+  window.addEventListener('booking-updated', handleBookingUpdatedEvent)
   window.addEventListener('deposit-updated', loadBookings)
+  if (pmsBc) pmsBc.addEventListener('message', handleBookingUpdatedBroadcast)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -1791,8 +1832,13 @@ function notificationRoomLabel(notification) {
 onBeforeUnmount(() => {
   activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
-  window.removeEventListener('booking-updated', loadBookings)
+  window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
   window.removeEventListener('deposit-updated', loadBookings)
+  if (pmsBc) {
+    pmsBc.removeEventListener('message', handleBookingUpdatedBroadcast)
+    pmsBc.close()
+    pmsBc = null
+  }
 })
 
 watch(() => route.query, async (newQuery) => {
@@ -1826,7 +1872,13 @@ async function loadDropdowns() {
     bookers.value              = data.bookers || []
     companies.value            = (data.companies || []).filter(c => c.is_active || c.is_active === undefined)
     paymentMethods.value       = data.payment_methods || []
-    registrationStatuses.value = data.registration_statuses || []
+    // The booking stores the business status code. A catalogue row without a
+    // code cannot be selected or resolved safely after the status cutover.
+    registrationStatuses.value = (data.registration_statuses || []).filter(status =>
+      status.booking_status_id !== null
+      && status.booking_status_id !== undefined
+      && status.booking_status_id !== ''
+    )
     users.value                = (data.users || []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
     roomClasses.value          = (data.room_classes || []).filter(c => c.is_active !== false)
     roomForms.value            = data.room_forms || []
@@ -1860,17 +1912,55 @@ async function loadDropdowns() {
 }
 
 async function refreshRoomRateCodes() {
+  const refreshVersion = ++roomRateCodesRefreshVersion
   try {
     const res = await http.get('/room-rate-codes', {
       params: { _refresh: Date.now() },
     })
-    roomRateCodes.value = res.data?.data || res.data || []
+    // Several room-level and allocation-level selectors can refresh this list
+    // concurrently. Only the newest response may replace the shared options.
+    if (refreshVersion === roomRateCodesRefreshVersion) {
+      roomRateCodes.value = res.data?.data || res.data || []
+    }
     return true
   } catch (err) {
     console.error('Không thể tải lại Rate Code:', err)
-    uiStore.showToast('Không thể tải lại dữ liệu Mã giá phòng.', 'error')
+    if (refreshVersion === roomRateCodesRefreshVersion) {
+      uiStore.showToast('Không thể tải lại dữ liệu Mã giá phòng.', 'error')
+    }
     return false
   }
+}
+
+function externalBookingId(value) {
+  if (value === undefined || value === null || value === '') return null
+  return String(value)
+}
+
+async function refreshMatchingBooking(bookingId = null) {
+  // A background update must never replace a form containing local edits or
+  // drafts. This covers both the modal and the inline tab editor. A closed
+  // modal is safe to refresh, including for events without a booking id
+  // emitted by older callers.
+  if (isEditing.value || (isModalOpen.value && isModalFormDirty.value)) return
+
+  const targetId = externalBookingId(bookingId)
+  if (targetId) {
+    const knownBooking = tabs.value.some(tab => externalBookingId(tab.dbId) === targetId)
+    if (!knownBooking) return
+  }
+
+  await loadBookings()
+}
+
+function handleBookingUpdatedEvent(event) {
+  return refreshMatchingBooking(event?.detail?.bookingId)
+}
+
+function handleBookingUpdatedBroadcast(event) {
+  const message = event?.data
+  if (!message || typeof message !== 'object' || message.type !== 'booking-updated') return
+  return refreshMatchingBooking(message.bookingId)
 }
 
 async function loadBookings() {
@@ -2119,7 +2209,12 @@ function bookingToTab(b) {
           breakfastIncluded: br.breakfast !== undefined ? !!br.breakfast : isBfChecked,
         }
       }
-      grouped[classId].quantity++
+      if (isRoomAllocationCandidate({
+        bookingRoomId: br.id,
+        bookingRoomStatus: br.status,
+      })) {
+        grouped[classId].quantity++
+      }
       const childCount = br.children ? br.children.filter(c => c.age_group === 'child').length : 0
       const babyCount = br.children ? br.children.filter(c => c.age_group === 'baby').length : 0
       grouped[classId].children = Math.max(grouped[classId].children || 0, childCount)
@@ -2370,10 +2465,117 @@ function initRoomAllocations(existing = [], checkInDate, checkOutDate) {
   })
 }
 
+function createRoomAddDraftRow(rc, checkInDate, checkOutDate) {
+  const price = rc.room_price !== undefined
+    ? Number(rc.room_price)
+    : Number(rc.price ?? rc.standard_rate ?? 0)
+
+  return {
+    roomClassId: rc.id,
+    roomClassCode: rc.code,
+    roomClassName: rc.name,
+    shape: resolveRoomFormName(rc.id),
+    arrivalDate: checkInDate,
+    departureDate: checkOutDate,
+    nights: Math.max(1, Math.ceil((new Date(checkOutDate) - new Date(checkInDate)) / 86400000) || 1),
+    availableRooms: 0,
+    // This quantity is always the number of additional rooms in this draft.
+    quantity: 0,
+    price,
+    rateCode: '',
+    discount: 'Tăng/Giảm giá',
+    discountType: 'down',
+    discountValue: 0,
+    discountUnit: 'percent',
+    basePrice: price,
+    upgradeClassId: null,
+    adults: rc.max_adults || 2,
+    babies: 0,
+    children: 0,
+    childBreakfastRate: Number(hotelSettings.value?.breakfast_child_rate) || 90000,
+    breakfastIncluded: getDefaultBreakfastSetting(),
+    extraBedPrice: rc.extra_bed_price !== undefined
+      ? Number(rc.extra_bed_price)
+      : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
+    rooms: [],
+  }
+}
+
+function initRoomAddDraft(checkInDate, checkOutDate) {
+  return roomClasses.value.map(rc => createRoomAddDraftRow(rc, checkInDate, checkOutDate))
+}
+
+function resetRoomAddDraft(checkInDate = modalForm.value?.checkIn, checkOutDate = modalForm.value?.checkOut) {
+  roomAddDraft.value = initRoomAddDraft(checkInDate, checkOutDate)
+}
+
+function serializeRoomAddDraft() {
+  return (roomAddDraft.value || [])
+    .map(row => {
+      const quantity = normalizeAllocationQuantity(row.quantity)
+      if (quantity <= 0) return null
+
+      const rooms = (row.rooms || []).slice(0, quantity).map(room => ({
+        roomClassId: row.roomClassId,
+        roomNumber: room.roomNumber || '',
+        rateCode: room.rateCode || (row.rateCode || null),
+        guestName: room.guestName || '',
+        adults: Number(room.adults ?? row.adults) || 2,
+        babies: Number(room.babies ?? row.babies) || 0,
+        children: Number(room.children ?? row.children) || 0,
+        breakfast: room.breakfast !== undefined ? !!room.breakfast : !!row.breakfastIncluded,
+        extraBedPrice: Number(room.extraBedPrice ?? row.extraBedPrice) || 0,
+        extraBedQty: Number(room.extraBedQty) || 0,
+        arrivalTime: room.arrivalTime || '14:00',
+        hoursOut: room.hoursOut || '12:00',
+        arrivalDate: room.checkIn || row.arrivalDate,
+        departureDate: room.checkOut || row.departureDate,
+        price: Number(room.price ?? row.price) || 0,
+        basePrice: Number(room.basePrice ?? row.basePrice ?? row.price) || 0,
+        discount: room.discount ?? row.discount ?? null,
+        discountType: room.discountType ?? row.discountType ?? 'down',
+        discountValue: Number(room.discountValue ?? row.discountValue) || 0,
+        discountUnit: room.discountUnit ?? row.discountUnit ?? 'percent',
+        dailyRoomPrices: room.dailyRoomPrices || null,
+        dailyExtraBeds: room.dailyExtraBeds || null,
+      }))
+
+      return {
+        roomClassId: row.roomClassId,
+        roomClassCode: row.roomClassCode,
+        roomClassName: row.roomClassName,
+        quantity,
+        price: Number(row.price) || 0,
+        basePrice: Number(row.basePrice ?? row.price) || 0,
+        rateCode: row.rateCode || null,
+        discount: row.discount || null,
+        discountType: row.discountType || 'down',
+        discountValue: Number(row.discountValue) || 0,
+        discountUnit: row.discountUnit || 'percent',
+        upgradeClassId: row.upgradeClassId || null,
+        adults: Number(row.adults) || 2,
+        babies: Number(row.babies) || 0,
+        children: Number(row.children) || 0,
+        breakfastIncluded: !!row.breakfastIncluded,
+        arrivalDate: row.arrivalDate,
+        departureDate: row.departureDate,
+        rooms,
+      }
+    })
+    .filter(Boolean)
+}
+
+function roomAddDraftRooms() {
+  return (roomAddDraft.value || []).flatMap(row => row.rooms || [])
+}
+
 function syncAllocationToRooms(row, { forceRate = false } = {}) {
-  if (!modalForm.value.rooms) return
-  modalForm.value.rooms.forEach(r => {
-    if (r.roomClassId === row.roomClassId || r.type === row.roomClassName || r.shape === row.roomClassCode) {
+  if (!row) return
+  ;(row.rooms || []).forEach(r => {
+    const matchesAllocation = sameRoomClass(r, row.roomClassId)
+      || r.type === row.roomClassName
+      || r.shape === row.roomClassCode
+    if (matchesAllocation && isEditableAllocationRoom(r)) {
       if (forceRate || !r._preserveAgreedRate) {
         r.price = Number(row.price) || 0
         r.basePrice = Number(row.basePrice ?? row.price) || 0
@@ -2404,10 +2606,12 @@ function syncRoomToAllocation(room) {
 
 async function handleRateCodeChange(row, selectedValue = row?.rateCode) {
   if (!row) return
+  const requestVersion = nextRateCodeRequestVersion(row)
   const selectedRateCode = String(selectedValue || '').trim()
   row.rateCode = selectedRateCode
   if (selectedRateCode) {
     await refreshRoomRateCodes()
+    if (!isLatestRateCodeRequest(row, requestVersion, selectedRateCode)) return
     row.rateCode = selectedRateCode
     row.shape = resolveRoomFormName(row.roomClassId, row.shape)
     const rcObj = roomRateCodes.value.find(rc => String(rc.Ma || '').trim() === selectedRateCode)
@@ -2463,10 +2667,23 @@ async function handleRateCodeChange(row, selectedValue = row?.rateCode) {
 }
 
 async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
-  room.rateCode = String(selectedValue || '').trim()
+  if (!room) return
+  const previousRateCode = room.rateCode
+  const requestVersion = nextRateCodeRequestVersion(room)
+  const selectedRateCode = String(selectedValue || '').trim()
+
+  // Historical rows are immutable in this editor. Keep their visible rate
+  // and prevent a late selector response from changing them.
+  if (hasBookingRoomId(room) && !isRoomAllocationCandidate(room)) {
+    room.rateCode = previousRateCode
+    return
+  }
+
+  room.rateCode = selectedRateCode
   if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
     await refreshRoomRateCodes()
-    const rcObj = roomRateCodes.value.find(rc => rc.Ma === room.rateCode)
+    if (!isLatestRateCodeRequest(room, requestVersion, selectedRateCode)) return
+    const rcObj = roomRateCodes.value.find(rc => String(rc.Ma || '').trim() === selectedRateCode)
     if (rcObj) {
       // Check expiration dates
       if (rcObj.BeginDate || rcObj.EndDate) {
@@ -2510,7 +2727,7 @@ async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
       }
 
       // Sync back to allocation row
-      if (modalForm.value.roomAllocations) {
+      if (modalForm.value.roomAllocations && isEditableAllocationRoom(room)) {
         const alloc = modalForm.value.roomAllocations.find(a => a.roomClassId === room.roomClassId)
         if (alloc) {
           alloc.rateCode = room.rateCode
@@ -2572,11 +2789,12 @@ async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
     }
     room.total = calculateRoomTotal(room)
 
-    if (modalForm.value.roomAllocations) {
+    if (modalForm.value.roomAllocations && isEditableAllocationRoom(room)) {
       const alloc = modalForm.value.roomAllocations.find(a => a.roomClassId === room.roomClassId)
       const siblingsWithRateCode = (modalForm.value.rooms || []).some(other =>
         other !== room
-        && other.roomClassId === room.roomClassId
+        && sameRoomClass(other, room.roomClassId)
+        && isRoomAllocationCandidate(other)
         && other.rateCode
         && other.rateCode !== 'Vui lòng chọn giá phòng'
       )
@@ -2730,15 +2948,7 @@ function getDiscountLabel(row) {
 }
 
 function getOccupancyCount(row) {
-  if (modalForm.value.status === 3 || modalForm.value.status === 100) {
-    return 0
-  }
-  if (!modalForm.value.rooms) return 0
-  return modalForm.value.rooms.filter(r => 
-    r.roomClassId === row.roomClassId && 
-    r.bookingRoomStatus !== 3 && 
-    r.bookingRoomStatus !== 100
-  ).length
+  return (row?.rooms || []).length
 }
 
 function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId, roomForm = '') {
@@ -2796,13 +3006,13 @@ function applyRateCodeDailyPricesToRoom(room) {
 }
 
 function applyAllocationRateCodeDailyPrices(row) {
-  if (!modalForm.value.rooms) return
+  if (!row) return
 
-  modalForm.value.rooms.forEach(room => {
-    const matchesAllocation = String(room.roomClassId) === String(row.roomClassId)
+  ;(row.rooms || []).forEach(room => {
+    const matchesAllocation = sameRoomClass(room, row.roomClassId)
       || room.type === row.roomClassName
       || room.shape === row.roomClassCode
-    if (!matchesAllocation) return
+    if (!matchesAllocation || !isEditableAllocationRoom(room)) return
 
     room.rateCode = row.rateCode
     applyRateCodeDailyPricesToRoom(room)
@@ -2834,7 +3044,12 @@ async function handleAddTabClick() {
     checkIn: today,
     checkOut: tomorrow,
     nights: 1,
-    registrationStatusId: registrationStatuses.value.find(s => !s.is_hidden)?.id || null,
+    registrationStatusId: registrationStatuses.value.find(s =>
+      !s.is_hidden
+      && s.booking_status_id !== null
+      && s.booking_status_id !== undefined
+      && s.booking_status_id !== ''
+    )?.booking_status_id || null,
     paymentMethodId: null,
     marketId: null,
     customerSourceId: null,
@@ -2844,8 +3059,9 @@ async function handleAddTabClick() {
     shuttleInfo: [
       { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: today, time: '00:00', price: 0, location: '', note: '' }
     ],
-    roomAllocations: initRoomAllocations([], today, tomorrow),
+    roomAllocations: [],
   }
+  roomAddDraft.value = initRoomAddDraft(today, tomorrow)
   await updateRoomAvailability()
   modalSubTab.value = 'info'
   isModalOpen.value = true
@@ -2892,17 +3108,14 @@ async function openEditModal() {
     shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
       ? JSON.parse(JSON.stringify(tab.shuttleInfo))
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
-    roomAllocations: initRoomAllocations(tab.roomAllocations || [], tab.checkIn, tab.checkOut),
+    // Existing booking rooms never seed the independent add-room draft.
+    roomAllocations: [],
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
-    rooms: JSON.parse(JSON.stringify(tab.rooms || [])).map(r => ({
-      ...r,
-      shape: resolveRoomFormName(r.roomClassId, r.shape),
-      initialType: r.initialType || r.type,
-      initialRoomClassId: r.initialRoomClassId || r.roomClassId
-    })),
+    rooms: [],
     createdBy: tab.createdBy || '',
     createdAt: tab.createdAt || '',
   }
+  roomAddDraft.value = initRoomAddDraft(tab.checkIn, tab.checkOut)
   await updateRoomAvailability()
   modalSubTab.value = 'info'
   isModalOpen.value = true
@@ -2954,7 +3167,7 @@ function handleCompanyChange() {
 
 watch(() => modalForm.value.registrationStatusId, (newId) => {
   if (newId) {
-    const st = registrationStatuses.value.find(rs => rs.id === Number(newId))
+    const st = registrationStatuses.value.find(rs => Number(rs.booking_status_id) === Number(newId))
     if (st && st.is_availability === false) {
       uiStore.showToast('Chú ý: Tình trạng đăng ký này không giữ phòng trống (is_availability = 0)', 'info')
     }
@@ -2984,7 +3197,7 @@ function addDaysToDateStr(dateStr, days) {
 function handleConfirmDateCalculation() {
   const statusId = modalForm.value.registrationStatusId
   if (!statusId) return
-  const status = registrationStatuses.value.find(s => s.id === Number(statusId))
+  const status = registrationStatuses.value.find(s => Number(s.booking_status_id) === Number(statusId))
   if (!status) return
 
   const sysDate = systemDate.value || parseApiDate(new Date())
@@ -3039,8 +3252,8 @@ async function updateRoomAvailability() {
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) return
 
   if (modalForm.value.checkIn > modalForm.value.checkOut) {
-    if (modalForm.value.roomAllocations) {
-      modalForm.value.roomAllocations.forEach(alloc => {
+    if (roomAddDraft.value) {
+      roomAddDraft.value.forEach(alloc => {
         alloc.availableRooms = 0
       })
     }
@@ -3066,8 +3279,8 @@ async function updateRoomAvailability() {
       }
     }
 
-    if (modalForm.value.roomAllocations) {
-      modalForm.value.roomAllocations.forEach(alloc => {
+    if (roomAddDraft.value) {
+      roomAddDraft.value.forEach(alloc => {
         const classCode = alloc.roomClassCode
         const dayData = grid[classCode] || {}
         
@@ -3093,44 +3306,16 @@ async function updateRoomAvailability() {
   }
 }
 
-function getPersistedRoomCount(row) {
-  return (modalForm.value.rooms || []).filter(room =>
-    room.roomClassId === row.roomClassId && room.bookingRoomId
-  ).length
-}
-
-function getProtectedRoomCount(row) {
-  return (modalForm.value.rooms || []).filter(room =>
-    room.roomClassId === row.roomClassId
-    && room.bookingRoomId
-    && [1, 2, 3, 100].includes(Number(room.bookingRoomStatus))
-  ).length
-}
-
 function updateAllocatedRooms(row) {
-  if (row.quantity === undefined || row.quantity === null || row.quantity < 0) {
-    row.quantity = 0
-  }
-
-  const protectedRoomCount = getProtectedRoomCount(row)
-  if (row.quantity < protectedRoomCount) {
-    row.quantity = protectedRoomCount
-  }
-
+  row.quantity = normalizeAllocationQuantity(row.quantity)
   validateRoomQuantity(row)
 
-  if (!modalForm.value.rooms) {
-    modalForm.value.rooms = []
-  }
-
-  const persistedRoomCount = getPersistedRoomCount(row)
-  const currentRooms = modalForm.value.rooms.filter(r => r.roomClassId === row.roomClassId && !r.bookingRoomId)
-  const desiredNewRoomCount = Math.max(Number(row.quantity) - persistedRoomCount, 0)
-  const diff = desiredNewRoomCount - currentRooms.length
+  if (!Array.isArray(row.rooms)) row.rooms = []
+  const diff = row.quantity - row.rooms.length
 
   if (diff > 0) {
     for (let i = 0; i < diff; i++) {
-      modalForm.value.rooms.push({
+      row.rooms.push({
         id: Date.now() + Math.random(),
         roomClassId: row.roomClassId,
         initialRoomClassId: row.roomClassId,
@@ -3170,15 +3355,7 @@ function updateAllocatedRooms(row) {
       })
     }
   } else if (diff < 0) {
-    const toRemoveCount = Math.abs(diff)
-    let removed = 0
-    modalForm.value.rooms = modalForm.value.rooms.filter(r => {
-      if (r.roomClassId === row.roomClassId && !r.bookingRoomId && removed < toRemoveCount) {
-        removed++
-        return false
-      }
-      return true
-    })
+    row.rooms.splice(row.quantity)
   }
 
   if (row.rateCode) {
@@ -3186,49 +3363,10 @@ function updateAllocatedRooms(row) {
   }
 }
 
-watch(() => modalForm.value.roomAllocations, (newAllocations) => {
-  if (!newAllocations || !modalForm.value.rooms) return
-  newAllocations.forEach(alloc => {
-    modalForm.value.rooms.forEach(r => {
-      if (r.roomClassId === alloc.roomClassId && !r.bookingRoomId) {
-        if (!r._preserveAgreedRate && r.price !== alloc.price) {
-          r.price = alloc.price
-          r.total = (alloc.price || 0) * (r.nights || 1)
-        }
-        r.adults = alloc.adults
-        r.babies = alloc.babies
-        r.children = alloc.children
-        r.breakfast = !!alloc.breakfastIncluded
-      }
-    })
-  })
-}, { deep: true })
-
-watch(() => modalForm.value.rooms, (newRooms) => {
-  if (!modalForm.value.roomAllocations) return
-  const counts = {}
-  if (newRooms) {
-    newRooms.forEach(r => {
-      if (r.roomClassId && !r.bookingRoomId) {
-        counts[r.roomClassId] = (counts[r.roomClassId] || 0) + 1
-      }
-    })
-  }
-  modalForm.value.roomAllocations.forEach(alloc => {
-    const actualQty = counts[alloc.roomClassId] || 0
-    if (alloc.quantity !== actualQty) {
-      alloc.quantity = actualQty
-    }
-  })
-}, { deep: true, immediate: true })
-
 function validateRoomQuantity(alloc) {
   if (hotelSettings.value?.allow_over_room_type === 0 || hotelSettings.value?.allow_over_room_type === false) {
     if (alloc.quantity > alloc.availableRooms) {
       uiStore.showToast('Cảnh báo: Đã vượt quá số lượng phòng trống cho phép!', 'error')
-      if (alloc.availableRooms === 0) {
-        alloc.quantity = 0
-      }
     }
   }
 }
@@ -3253,16 +3391,17 @@ async function handleDateChange() {
     const diff = Math.ceil((co - ci) / 86400000)
     modalForm.value.nights = diff >= 0 ? diff : 0
     
-    // Đồng bộ ngày check-in/check-out cho tất cả các phòng & allocations
-    if (modalForm.value.roomAllocations) {
-      modalForm.value.roomAllocations.forEach(alloc => {
+    // The add-room draft owns its dates; persisted booking rooms are not part
+    // of this form and are intentionally untouched.
+    if (roomAddDraft.value) {
+      roomAddDraft.value.forEach(alloc => {
         alloc.arrivalDate = modalForm.value.checkIn
         alloc.departureDate = modalForm.value.checkOut
         alloc.nights = modalForm.value.nights
       })
     }
-    if (modalForm.value.rooms) {
-      modalForm.value.rooms.forEach(r => {
+    roomAddDraft.value.forEach(alloc => {
+      ;(alloc.rooms || []).forEach(r => {
         r.checkIn = modalForm.value.checkIn
         r.checkOut = modalForm.value.checkOut
         r.nights = modalForm.value.nights
@@ -3283,7 +3422,7 @@ async function handleDateChange() {
         }
         applyRateCodeDailyPricesToRoom(r)
       })
-    }
+    })
     
     handleConfirmDateCalculation()
     await updateRoomAvailability()
@@ -3314,6 +3453,7 @@ async function handleMainDateChange() {
     }
     if (tab.rooms) {
       tab.rooms.forEach(r => {
+        if (!isEditableAllocationRoom(r)) return
         r.checkIn = tab.checkIn
         r.checkOut = tab.checkOut
         r.nights = tab.nights
@@ -3358,6 +3498,7 @@ async function handleMainNightsChange() {
     }
     if (tab.rooms) {
       tab.rooms.forEach(r => {
+        if (!isEditableAllocationRoom(r)) return
         r.checkOut = tab.checkOut
         r.nights = Number(tab.nights)
         r.total = (r.price || 0) * (r.nights || 1)
@@ -3397,16 +3538,14 @@ async function handleRowDateChange(row) {
       }
     }
 
-    if (modalForm.value.rooms) {
-      modalForm.value.rooms.forEach(r => {
-        if (r.roomClassId === row.roomClassId && !r.bookingRoomId) {
+    ;(row.rooms || []).forEach(r => {
+        if (sameRoomClass(r, row.roomClassId) && isEditableAllocationRoom(r)) {
           r.checkIn = row.arrivalDate
           r.checkOut = row.departureDate
           r.nights = row.nights
           r.total = (r.price || 0) * (r.nights || 1)
         }
       })
-    }
     syncAllocationToRooms(row)
     if (row.rateCode) {
       applyAllocationRateCodeDailyPrices(row)
@@ -3431,7 +3570,7 @@ function syncBookingDatesFromRooms(tab) {
   let maxCheckOut = null
   let minCheckIn = null
   
-  tab.rooms.forEach(r => {
+  tab.rooms.filter(isRoomAllocationCandidate).forEach(r => {
     if (r.checkIn) {
       if (!minCheckIn || r.checkIn < minCheckIn) {
         minCheckIn = r.checkIn
@@ -3456,6 +3595,7 @@ function syncBookingDatesFromRooms(tab) {
 }
 
 async function handleRowDateChangeInline(room) {
+  if (!isEditableAllocationRoom(room)) return
   if (room.checkIn && room.checkOut) {
     const ci = new Date(room.checkIn)
     const co = new Date(room.checkOut)
@@ -3497,6 +3637,7 @@ async function handleRowDateChangeInline(room) {
 }
 
 async function handleRowNightsChangeInline(room) {
+  if (!isEditableAllocationRoom(room)) return
   if (room.checkIn && room.nights > 0) {
     const ci = new Date(room.checkIn)
     if (!isNaN(ci)) {
@@ -3522,6 +3663,7 @@ async function handleRowNightsChangeInline(room) {
 }
 
 async function handleHourlyToggle(room) {
+  if (!isEditableAllocationRoom(room)) return
   if (room.hourly) {
     room.checkOut = room.checkIn
     room.nights = 0
@@ -3581,6 +3723,7 @@ function getRoomFormId(room) {
 }
 
 function handleRoomFormChange(room, formId) {
+  if (!isEditableAllocationRoom(room)) return
   const currentClass = roomClasses.value.find(c => c.id === room.roomClassId)
   if (!currentClass) return
   
@@ -3597,6 +3740,12 @@ function handleRoomFormChange(room, formId) {
 }
 
 function handleRoomClassChange(room, oldClassId) {
+  if (!isEditableAllocationRoom(room)) {
+    if (oldClassId !== undefined && oldClassId !== null) {
+      room.roomClassId = oldClassId
+    }
+    return
+  }
   const newClass = roomClasses.value.find(c => c.id === Number(room.roomClassId))
   if (newClass) {
     room.type = newClass.name
@@ -3660,16 +3809,16 @@ async function handleNightsChange() {
     co.setDate(ci.getDate() + Number(modalForm.value.nights))
     modalForm.value.checkOut = co.toISOString().split('T')[0]
     
-    // Đồng bộ ngày check-in/check-out cho tất cả các phòng & allocations
-    if (modalForm.value.roomAllocations) {
-      modalForm.value.roomAllocations.forEach(alloc => {
+    // Keep only the isolated add-room draft in sync with the modal dates.
+    if (roomAddDraft.value) {
+      roomAddDraft.value.forEach(alloc => {
         alloc.arrivalDate = modalForm.value.checkIn
         alloc.departureDate = modalForm.value.checkOut
         alloc.nights = Number(modalForm.value.nights)
       })
     }
-    if (modalForm.value.rooms) {
-      modalForm.value.rooms.forEach(r => {
+    roomAddDraft.value.forEach(alloc => {
+      ;(alloc.rooms || []).forEach(r => {
         r.checkIn = modalForm.value.checkIn
         r.checkOut = modalForm.value.checkOut
         r.nights = Number(modalForm.value.nights)
@@ -3688,8 +3837,9 @@ async function handleNightsChange() {
             return s.service_date < modalForm.value.checkOut
           })
         }
+        applyRateCodeDailyPricesToRoom(r)
       })
-    }
+    })
     
     await updateRoomAvailability()
   }
@@ -3735,18 +3885,20 @@ async function handleSaveNewBooking() {
     return
   }
 
-  const dupError = validateRoomsDuplication(modalForm.value.rooms)
+  const dupError = validateRoomsDuplication(roomAddDraftRooms())
   if (dupError) {
     uiStore.showToast(dupError, 'error')
     return
   }
 
   const confirmed = await uiStore.confirm({
-    title: isEditModal.value ? 'Xác nhận cập nhật đăng ký' : 'Xác nhận tạo mới đăng ký',
+    title: isEditModal.value
+      ? (modalSubTab.value === 'rooms' ? 'Xác nhận thêm phòng mới' : 'Xác nhận cập nhật đăng ký')
+      : 'Xác nhận tạo mới đăng ký',
     message: isEditModal.value 
       ? `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
       : `Bạn có chắc chắn muốn tạo đơn đặt phòng mới ${modalForm.value.bookingName} với ${modalForm.value.nights} đêm?`,
-    confirmText: isEditModal.value ? 'Cập nhật' : 'Tạo mới',
+    confirmText: isEditModal.value ? (modalSubTab.value === 'rooms' ? 'Thêm phòng' : 'Cập nhật') : 'Tạo mới',
     cancelText: 'Hủy'
   })
   if (!confirmed) return
@@ -3779,19 +3931,31 @@ async function handleSaveNewBooking() {
       note:                   modalForm.value.note || null,
       special_requests:       modalForm.value.specialRequests || null,
       shuttle_info:           modalForm.value.shuttleInfo || [],
-      room_allocations:       syncRoomsToAllocations(modalForm.value),
       deposit_details:        modalForm.value.deposits || [],
       module:                 currentBookingModule.value,
       created_module:         currentBookingModule.value,
     }
     if (isEditModal.value && modalForm.value.dbId) {
-      const res = await updateBooking(modalForm.value.dbId, payload)
-      const updated = res.data?.data || res.data
-      await loadBookings()
-      const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
-      if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
-      uiStore.showToast(`Cập nhật đăng ký ${updated.booking_code} thành công!`, 'success')
+      if (modalSubTab.value === 'rooms') {
+        // The add-room tab has an explicit append-only API. It never sends
+        // existing booking-room ids or the persisted room list.
+        await addBookingRooms(modalForm.value.dbId, {
+          intent: 'add_only',
+          room_allocations: serializeRoomAddDraft(),
+        })
+        await loadBookings()
+        resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
+        uiStore.showToast('Thêm phòng mới vào đăng ký thành công!', 'success')
+      } else {
+        const res = await updateBooking(modalForm.value.dbId, payload)
+        const updated = res.data?.data || res.data
+        await loadBookings()
+        const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
+        if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
+        uiStore.showToast(`Cập nhật đăng ký ${updated.booking_code} thành công!`, 'success')
+      }
     } else {
+      payload.room_allocations = serializeRoomAddDraft()
       const res = await createBooking(payload)
       const created = res.data?.data || res.data
       await loadBookings()
@@ -3898,7 +4062,9 @@ function getVacantRoomsList(room) {
 
 function validateRoomsDuplication(rooms) {
   if (!rooms) return null
-  const roomsWithNumber = rooms.filter(r => r.roomNumber && String(r.roomNumber).trim() !== '')
+  const roomsWithNumber = rooms
+    .filter(isRoomAllocationCandidate)
+    .filter(r => r.roomNumber && String(r.roomNumber).trim() !== '')
   for (let i = 0; i < roomsWithNumber.length; i++) {
     for (let j = i + 1; j < roomsWithNumber.length; j++) {
       const r1 = roomsWithNumber[i]
@@ -3977,7 +4143,7 @@ function validateRoomDatesAgainstBooking(tab) {
     return 'Ngày đến/ngày đi của đăng ký không hợp lệ.'
   }
 
-  const invalidRoom = (tab.rooms || []).find(room => {
+  const invalidRoom = (tab.rooms || []).filter(isEditableAllocationRoom).find(room => {
     const roomArrival = parseApiDate(room.checkIn)
     const roomDeparture = parseApiDate(room.checkOut)
     return !roomArrival || !roomDeparture || roomArrival < bookingArrival || roomDeparture > bookingDeparture || roomArrival > roomDeparture
@@ -6869,7 +7035,7 @@ defineExpose({
                     class="w-full bg-white border border-slate-300 text-slate-900 rounded-lg pl-2.5 pr-8 text-xs focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 appearance-none font-bold h-[34px] shadow-2xs cursor-pointer"
                   >
                     <option :value="null" disabled>— Chọn tình trạng —</option>
-                    <option v-for="rs in registrationStatuses.filter(s => !s.is_hidden || s.id === modalForm.registrationStatusId)" :key="rs.id" :value="rs.id">{{ rs.name }}</option>
+                    <option v-for="rs in registrationStatuses.filter(s => s.booking_status_id !== null && s.booking_status_id !== undefined && s.booking_status_id !== '' && (!s.is_hidden || Number(s.booking_status_id) === Number(modalForm.registrationStatusId)))" :key="rs.id" :value="rs.booking_status_id">{{ rs.name }}</option>
                   </select>
                   <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity">
                     <i class="fa-solid fa-chevron-down text-[10px]"></i>
@@ -7381,6 +7547,9 @@ defineExpose({
 
             <!-- Tab 3: Lấy phòng -->
             <div v-else-if="modalSubTab === 'rooms'" class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-4 relative animate-in">
+              <div class="text-[11px] text-sky-700 bg-sky-50 border border-sky-100 rounded-md px-3 py-2">
+                Chỉ khai báo số phòng mới cần thêm. Các phòng đã lưu không hiển thị và không bị thay đổi từ tab này.
+              </div>
               
               <!-- Column Selector Icon at Top Right -->
               <div class="flex justify-end items-center relative z-20 shrink-0">
@@ -7483,7 +7652,7 @@ defineExpose({
                   </thead>
                   
                   <tbody class="text-[11px] text-slate-700 font-medium select-none">
-                    <tr v-for="(row, idx) in modalForm.roomAllocations" :key="row.roomClassId" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
+                    <tr v-for="(row, idx) in roomAddDraft" :key="row.roomClassId" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
                       
                       <!-- Loại/Dạng -->
                       <td v-if="visibleColumns.roomType" class="py-2 px-2 font-bold text-slate-900">{{ row.roomClassCode }}</td>
@@ -7522,7 +7691,7 @@ defineExpose({
                       <!-- Số lượng -->
                       <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.quantity" :min="getProtectedRoomCount(row)" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
                             <button @click.prevent="row.quantity++; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                             <button @click.prevent="row.quantity > 0 ? (row.quantity--, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
@@ -7765,7 +7934,7 @@ defineExpose({
                   >
                       <i v-if="isSavingModal" class="fa-solid fa-circle-notch animate-spin"></i>
                       <i v-else class="fa-regular fa-floppy-disk"></i>
-                      <span>{{ isSavingModal ? 'Đang lưu...' : (modalForm.dbId ? 'Cập nhật Booking' : 'Lưu Booking') }}</span>
+                      <span>{{ isSavingModal ? 'Đang lưu...' : (modalForm.dbId ? (modalSubTab === 'rooms' ? 'Thêm phòng' : 'Cập nhật Booking') : 'Lưu Booking') }}</span>
                   </button>
               </div>
           </div>

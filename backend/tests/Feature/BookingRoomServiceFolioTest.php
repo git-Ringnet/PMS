@@ -35,9 +35,22 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->artisan('db:seed', ['--class' => 'BookingStatusSeeder']);
     }
 
-    public function test_folio_drag_updates_only_the_selected_room_service_and_its_linked_bill(): void
+    private function createFolioUser(): User
     {
         $user = User::factory()->create();
+        $role = \App\Models\Role::firstOrCreate(['code' => 'folio_test'], ['name' => 'Folio test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
+        foreach (['fo.service.create', 'fo.payment.create'] as $code) {
+            $permission = \App\Models\Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
+        $user->roles()->attach($role->id);
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'RuleUserCorrectOrPostBillPaymentOldDay'], ['value' => 'folio_test']);
+        return $user;
+    }
+
+    public function test_folio_drag_updates_only_the_selected_room_service_and_its_linked_bill(): void
+    {
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -63,7 +76,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_folio_drag_rejects_a_service_from_another_room(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -82,7 +95,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_folio_drag_rejects_a_paid_service(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -104,7 +117,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_folio_drag_rejects_a_paid_housekeeping_bill_without_service_payment_code(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -128,7 +141,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_front_desk_deposit_uses_dpr_without_advance_payment_code(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
@@ -149,7 +162,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_front_desk_advance_payment_keeps_the_selected_folio(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
@@ -173,7 +186,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_folio_drag_moves_multiple_unused_deposits_only(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
@@ -195,7 +208,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_folio_drag_rejects_a_used_deposit(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
@@ -211,7 +224,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_service_bill_details_endpoint_returns_all_invoice_lines(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $bill = $this->makeBill('Minibar chuyá»ƒn phÃ²ng');
         ServiceBillDetail::create([
             'BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'HK', 'ServiceId' => 'MB',
@@ -232,7 +245,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_front_desk_service_bill_keeps_the_selected_secondary_guest(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -283,7 +296,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_front_desk_room_charge_keeps_the_selected_secondary_guest(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -320,7 +333,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_room_charge_update_preserves_existing_room_owner_after_flag_is_enabled(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -366,7 +379,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_front_desk_git_service_is_owned_by_master_while_preserving_source_room(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -400,7 +413,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_master_auto_room_charge_posts_only_inhouse_rooms_with_assigned_room_numbers(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -462,7 +475,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_room_charge_posts_pending_booking_services_for_selected_dates_once(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $user->update(['name' => 'Test User', 'employee_code' => 'NV001']);
         SystemDateRoll::create([
             'system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username,
@@ -550,7 +563,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_quick_transfer_from_master_keeps_the_negative_audit_line(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -607,7 +620,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_quick_transfer_candidates_group_by_bill_service_and_use_fo_description(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $booking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
@@ -664,7 +677,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_fo_service_list_only_returns_services_assigned_to_fo(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         $fo = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
         $fb = Department::firstOrCreate(['code' => 'FB'], ['name' => 'Restaurant']);
         $foService = HotelService::create([
@@ -690,7 +703,7 @@ class BookingRoomServiceFolioTest extends TestCase
 
     public function test_housekeeping_bill_uses_each_product_tax_profile_from_database(): void
     {
-        $user = User::factory()->create();
+        $user = $this->createFolioUser();
         SystemDateRoll::create([
             'system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username,
         ]);

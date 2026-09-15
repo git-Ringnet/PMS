@@ -46,6 +46,12 @@ class BookingBusinessRulesTest extends TestCase
         parent::setUp();
 
         $this->user = User::factory()->create(['username' => 'test_user']);
+        $role = Role::create(['code' => 'booking_rules_test', 'name' => 'Booking rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
+        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.checkin', 'fo.checkout', 'fo.room.move', 'fo.service.create'] as $code) {
+            $permission = Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
+        $this->user->roles()->attach($role->id);
         $this->actingAs($this->user);
 
         // Seed booking statuses
@@ -159,7 +165,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-08',
             'num_of_days' => 1,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -185,7 +191,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-08',
             'num_of_days' => 1,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -244,7 +250,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-08',
             'num_of_days' => 1,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -544,7 +550,7 @@ class BookingBusinessRulesTest extends TestCase
      * TC-07: Room Move đồng bộ dữ liệu (booking_child_breakfast_details).
      * Past breakfast details are left under the old child/room ID, while current/future ones are synchronized.
      */
-    public function test_room_move_sync_leaves_orphaned_breakfast_details(): void
+    public function test_room_move_preserves_child_identity_and_breakfast_history(): void
     {
         // 1. Create a Checked-In booking room with a child and breakfast details on 2026-08-06 and 2026-08-07
         $booking = $this->createBooking([
@@ -609,28 +615,34 @@ class BookingBusinessRulesTest extends TestCase
             'amount' => 90000,
         ]);
 
+        // Reject leaving children behind without leaking the transaction opened by moveRoom.
+        $transactionLevel = DB::transactionLevel();
+        $this->postJson("/api/bookings/{$booking->id}/rooms/{$bRoom->id}/move", [
+            'move_type' => 'available', 'target_room_number' => '102', 'reason' => 'Missing child selection',
+        ])->assertStatus(422);
+        $this->assertSame($transactionLevel, DB::transactionLevel());
+
         // 2. Perform a Room Move from room 101 to room 102 on system_date = 2026-08-07
         $response = $this->postJson("/api/bookings/{$booking->id}/rooms/{$bRoom->id}/move", [
             'move_type' => 'available',
             'target_room_number' => '102',
             'reason' => 'Room move child sync test',
+            'selected_child_ids' => [$child->id],
         ]);
         $response->assertSuccessful();
 
-        // 3. Inspect child records.
-        // Old child is marked status 100.
+        // Child identity is retained; the room assignment pivot holds transfer history.
         $child->refresh();
-        $this->assertEquals(100, $child->child_status);
+        $this->assertEquals(1, $child->child_status);
+        $this->assertNotEquals($bRoom->id, $child->booking_room_id);
+        $this->assertDatabaseHas('booking_room_children', ['booking_child_id' => $child->id, 'booking_room_id' => $bRoom->id, 'status' => 100]);
+        $this->assertDatabaseHas('booking_room_children', ['booking_child_id' => $child->id, 'booking_room_id' => $child->booking_room_id, 'status' => 1]);
 
-        // A new child should have been cloned for the new room.
-        $newChild = BookingChild::where('booking_room_id', '!=', $bRoom->id)->first();
-        $this->assertNotNull($newChild);
-
-        // Breakfast details >= 2026-08-07 (bf2, bf3) are transferred to $newChild->id.
+        // Breakfast dates remain attached to that same child across the room move.
         $bf2->refresh();
         $bf3->refresh();
-        $this->assertEquals($newChild->id, $bf2->booking_child_id);
-        $this->assertEquals($newChild->id, $bf3->booking_child_id);
+        $this->assertEquals($child->id, $bf2->booking_child_id);
+        $this->assertEquals($child->id, $bf3->booking_child_id);
 
         // Breakfast details < 2026-08-07 (bf1) remain under the old child ($child->id)
         $bf1->refresh();
@@ -707,7 +719,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-07', // Same date
             'num_of_days' => 1,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -748,7 +760,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-09',
             'num_of_days' => 2,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -814,7 +826,7 @@ class BookingBusinessRulesTest extends TestCase
             'booking_name' => 'Updated Booking Name',
             'arrival_date' => '2026-08-22',
             'departure_date' => '2026-08-25',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -866,7 +878,7 @@ class BookingBusinessRulesTest extends TestCase
             'booking_name' => 'Blocked Update',
             'arrival_date' => '2026-08-22',
             'departure_date' => '2026-08-25',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -905,7 +917,7 @@ class BookingBusinessRulesTest extends TestCase
             'booking_name' => 'Succeeds Update Checked In',
             'arrival_date' => '2026-08-22',
             'departure_date' => '2026-08-25',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -954,7 +966,7 @@ class BookingBusinessRulesTest extends TestCase
             'booking_name' => 'Clear one room rate code',
             'arrival_date' => '2026-08-21',
             'departure_date' => '2026-08-25',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -1031,7 +1043,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-09',
             'departure_date' => '2026-08-14',
             'num_of_days' => 5,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -1093,7 +1105,7 @@ class BookingBusinessRulesTest extends TestCase
             'booking_name' => 'Daily rate code prices updated',
             'arrival_date' => '2026-08-09',
             'departure_date' => '2026-08-14',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -1150,7 +1162,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-09',
             'departure_date' => '2026-08-11',
             'num_of_days' => 2,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -1229,7 +1241,7 @@ class BookingBusinessRulesTest extends TestCase
             'booking_name' => $booking->booking_name,
             'arrival_date' => '2026-08-21',
             'departure_date' => '2026-08-25',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
@@ -1256,7 +1268,7 @@ class BookingBusinessRulesTest extends TestCase
         $bookingA = $this->createBooking([
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-07',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
         ]);
         $bRoomA = BookingRoom::create([
             'id' => 'G0000001',
@@ -1277,7 +1289,7 @@ class BookingBusinessRulesTest extends TestCase
         $bookingB = $this->createBooking([
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-07',
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
         ]);
         $bRoomB = BookingRoom::create([
             'id' => 'G0000002',
@@ -1317,7 +1329,7 @@ class BookingBusinessRulesTest extends TestCase
             'arrival_date' => '2026-08-07',
             'departure_date' => '2026-08-09',
             'num_of_days' => 2,
-            'registration_status_id' => $this->regStatus->id,
+            'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,

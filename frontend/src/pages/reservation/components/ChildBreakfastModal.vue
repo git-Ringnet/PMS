@@ -453,6 +453,11 @@ import { fetchBookingChildren, updateChildBreakfastDetail } from '@/services/boo
 import { fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
+import {
+  applyDetailBreakfastField,
+  applyParentBreakfastField,
+  normalizeBreakfastAmount,
+} from '@/utils/child-breakfast-amounts'
 
 const props = defineProps({
   show: Boolean,
@@ -562,10 +567,14 @@ async function loadData() {
     const res = await fetchBookingChildren(props.bookingId)
     if (res.data?.success) {
       const targetRoomId = props.room?.bookingRoomId
-      const filtered = (res.data.data || []).filter(c => c.booking_room_id === targetRoomId)
+        ?? props.room?.booking_room_id
+        ?? props.room?.id
+      const children = Array.isArray(res.data.data) ? res.data.data : []
+      const filtered = children.filter(c => String(c.booking_room_id) === String(targetRoomId))
       
       localChildren.value = filtered.map(c => {
-        const details = (c.breakfast_details || []).map(d => {
+        const rawDetails = Array.isArray(c.breakfast_details) ? c.breakfast_details : []
+        const details = rawDetails.map(d => {
           const isBaby = c.age_group === 'baby'
           const is_free = isBaby ? true : (!!d.is_free)
           const is_extra_charge = isBaby ? false : (!!d.is_extra_charge)
@@ -579,7 +588,7 @@ async function loadData() {
             is_room: d.is_room !== undefined && d.is_room !== null
               ? !!d.is_room
               : !is_extra_charge,
-            amount: isBaby ? 0 : (Number(d.amount) || 0)
+            amount: isBaby ? 0 : normalizeBreakfastAmount(d.amount)
           }
         })
         
@@ -593,7 +602,9 @@ async function loadData() {
           is_free: first.is_free !== undefined ? first.is_free : false,
           is_extra_charge: first.is_extra_charge !== undefined ? first.is_extra_charge : false,
           is_room: first.is_room !== undefined ? first.is_room : true,
-          amount: first.amount !== undefined ? first.amount : 90000,
+          amount: first.amount !== undefined
+            ? normalizeBreakfastAmount(first.amount)
+            : normalizeBreakfastAmount(priceNoCharge.value),
           breakfast_details: details
         }
       })
@@ -628,99 +639,28 @@ function isExpanded(childId) {
   return expandedChildren.value.includes(childId)
 }
 
-function getBreakfastDetailAmount(d, ageGroup) {
-  if (!d.breakfast) return 0
-  if (ageGroup === 'baby' || d.is_free) return 0
-  return d.is_extra_charge ? priceExtraCharge.value : priceNoCharge.value
-}
-
 function onParentFieldChange(child, field, value) {
-  child[field] = value
-
-  // Nếu là em bé thì luôn khóa ở trạng thái Miễn phí và không Phụ phí
-  if (child.age_group === 'baby') {
-    child.is_free = true
-    child.is_extra_charge = false
-  } else {
-    // Loại trừ tương hỗ ở cấp cha (nhóm) cho trẻ em
-    if (field === 'is_extra_charge' && value) {
-      child.is_free = false;
-    }
-    if (field === 'is_free' && value) {
-      child.is_extra_charge = false;
-    }
-  }
-
-  child.breakfast_details.forEach(d => {
-    d[field] = value
-    
-    if (child.age_group === 'baby') {
-      d.is_free = true
-      d.is_extra_charge = false
-    } else {
-      // Loại trừ tương hỗ ở cấp chi tiết ngày cho trẻ em
-      if (field === 'is_extra_charge' && value) {
-        d.is_free = false;
-      }
-      if (field === 'is_free' && value) {
-        d.is_extra_charge = false;
-      }
-    }
-
-    d.amount = getBreakfastDetailAmount(d, child.age_group)
+  applyParentBreakfastField(child, field, value, {
+    extraCharge: priceExtraCharge.value,
+    noCharge: priceNoCharge.value,
   })
-
-  // Đồng bộ giá trị hiển thị ở ô đại diện cha (dòng đầu tiên)
-  const first = child.breakfast_details[0]
-  if (first) {
-    child.amount = first.amount
-    child.breakfast = first.breakfast
-    child.is_free = first.is_free
-    child.is_extra_charge = first.is_extra_charge
-    child.is_room = first.is_room
-  }
 }
 
 function onDetailFieldChange(child, detail, field, value) {
-  detail[field] = value
-
-  if (child.age_group === 'baby') {
-    detail.is_free = true
-    detail.is_extra_charge = false
-  } else {
-    // Loại trừ tương hỗ ở cấp chi tiết ngày cho trẻ em
-    if (field === 'is_extra_charge' && value) {
-      detail.is_free = false;
-    }
-    if (field === 'is_free' && value) {
-      detail.is_extra_charge = false;
-    }
-  }
-
-  detail.amount = getBreakfastDetailAmount(detail, child.age_group)
-
-  // Đồng bộ giá trị hiển thị ở ô đại diện cha (dòng đầu tiên)
-  const first = child.breakfast_details[0]
-  if (first) {
-    child.amount = first.amount
-    child.breakfast = first.breakfast
-    child.is_free = first.is_free
-    child.is_extra_charge = first.is_extra_charge
-    child.is_room = first.is_room
-  }
+  applyDetailBreakfastField(child, detail, field, value, {
+    extraCharge: priceExtraCharge.value,
+    noCharge: priceNoCharge.value,
+  })
 }
 
 
 function formatCurrency(val) {
   if (!val && val !== 0) return ''
-  const num = Number(String(val).replace(/[^0-9.]/g, ''))
-  if (isNaN(num)) return ''
-  return num.toLocaleString('en-US')
+  return normalizeBreakfastAmount(val).toLocaleString('en-US')
 }
 
 function cleanCurrency(val) {
-  if (!val) return 0
-  return Number(String(val).replace(/,/g, '')) || 0
+  return normalizeBreakfastAmount(val)
 }
 
 function formatDateVi(dateStr) {

@@ -416,6 +416,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('bookings', [\App\Http\Controllers\Api\BookingController::class, 'index']);
     // Các action ghi cần quyền
     Route::post('bookings', [\App\Http\Controllers\Api\BookingController::class, 'store'])->middleware('permission:fo.booking.create');
+    Route::post('bookings/{booking}/add-rooms', [\App\Http\Controllers\Api\BookingController::class, 'addRooms'])->middleware('permission:fo.booking.edit');
     Route::put('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'update'])->middleware('permission:fo.booking.edit');
     Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
     Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware('permission:fo.booking.edit');

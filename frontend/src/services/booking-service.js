@@ -28,6 +28,9 @@ export const deleteBookingNotification = (bookingId, notificationId) => http.del
  * @param {Object} data - Thông tin booking
  */
 export const createBooking = (data) => http.post('/bookings', data)
+// Add-room tab contract: the backend inserts only new booking_rooms and never
+// treats the payload as a replacement for the booking's existing rooms.
+export const addBookingRooms = (bookingId, data) => http.post(`/bookings/${bookingId}/add-rooms`, data)
 
 /**
  * Cập nhật booking

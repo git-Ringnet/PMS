@@ -35,7 +35,7 @@ class GeneralSearchController extends Controller
             'users' => User::where('is_active_user', true)->orderBy('name')->get(['id', 'name', 'username']),
             'companies' => Company::orderBy('name')->get(['id', 'name']),
             'markets' => Market::orderBy('name')->get(['id', 'name']),
-            'registration_statuses' => RegistrationStatus::orderBy('name')->get(['id', 'name']),
+            'registration_statuses' => RegistrationStatus::orderBy('name')->get(['id', 'booking_status_id', 'name']),
             'customer_sources' => CustomerSource::orderBy('name')->get(['id', 'name']),
             'bookers' => Booker::orderBy('name')->get(['id', 'name']),
         ]]);

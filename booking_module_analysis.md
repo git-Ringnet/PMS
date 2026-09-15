@@ -201,7 +201,7 @@ Lưu trữ thông tin đầu bảng (Header) của một lượt đặt phòng:
 *   `num_of_days` (SMALLINT): Tổng số đêm lưu trú.
 *   `booking_date` (DATE): Ngày tạo booking, ghi nhận theo `system_date`.
 *   `status` (TINYINT): Trạng thái vận hành tổng (0=Reservation, 1=CheckedIn, 2=CheckedOut, 3=Deleted, 4=NoShow).
-*   `registration_status_id` (FK): Trỏ sang bảng tình trạng đặt phòng `registration_statuses` (Guaranteed, Tentative, ...).
+*   `registration_status_id` (FK): Sau migration ngày 14/09/2026, trỏ sang mã nghiệp vụ `registration_statuses.booking_status_id` (Guaranteed=1, None Guaranteed=20, ...), không phải PK danh mục. API quản lý danh mục vẫn dùng `registration_statuses.id` để sửa/xóa dòng.
 *   `company_id` (FK, Nullable): Trỏ sang `companies` (lữ hành/đối tác).
 *   `market_id` (FK), `customer_source_id` (FK): Segment thị trường và nguồn khách.
 *   `is_git` (BOOLEAN): Phân loại đoàn GIT (1) hay khách lẻ FIT (0).

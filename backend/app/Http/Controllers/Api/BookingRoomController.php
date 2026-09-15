@@ -14,6 +14,8 @@ use App\Models\BookingRoomGuest;
 use App\Models\Guest;
 use App\Models\BookingChild;
 use App\Services\RoomAvailabilityService;
+use App\Services\RoomAssignmentService;
+use App\Services\BookingStatusSyncService;
 use App\Services\RegistrationStatusMapper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -23,7 +25,11 @@ use Illuminate\Support\Facades\DB;
 
 class BookingRoomController extends Controller
 {
-    public function __construct(protected RoomAvailabilityService $avService) {}
+    public function __construct(
+        protected RoomAvailabilityService $avService,
+        protected RoomAssignmentService $roomAssignmentService,
+        protected BookingStatusSyncService $bookingStatusSyncService,
+    ) {}
 
     // =========================================
     // HELPER: get AllowOverRoomTypeRoomKind config
@@ -777,14 +783,10 @@ class BookingRoomController extends Controller
             ]);
             app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bookingRoom->guests()->pluck('guest_id'));
 
-            // Nếu tất cả phòng trong booking đều đã check-in → cập nhật booking header
-            $allCheckedIn = $booking->bookingRooms()
-                ->whereIn('status', [BookingRoom::STATUS_BOOKED])
-                ->doesntExist();
-
-            if ($allCheckedIn) {
-                $booking->update(['status' => Booking::STATUS_CHECKIN]);
-            }
+            // Chỉ cần một phòng in-house là booking đã bắt đầu lưu trú.
+            // Service đọc lại status trong transaction để cả check-in từng
+            // phòng và check-in một phần dùng cùng một invariant.
+            $this->bookingStatusSyncService->sync($booking);
 
             DB::commit();
         } catch (\Exception $e) {
@@ -846,14 +848,9 @@ class BookingRoomController extends Controller
             ]);
             app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bookingRoom->guests()->pluck('guest_id'));
 
-            // Cập nhật booking status về STATUS_RESERVATION (0) nếu trước đó là STATUS_CHECKIN (1)
-            $hasOtherInhouse = $booking->bookingRooms()
-                ->where('id', '!=', $bookingRoom->getKey())
-                ->where('status', BookingRoom::STATUS_CHECKED_IN)
-                ->exists();
-            if ($booking->status === Booking::STATUS_CHECKIN && !$hasOtherInhouse) {
-                $booking->update(['status' => Booking::STATUS_RESERVATION]);
-            }
+            // Có phòng in-house khác thì vẫn giữ header = 1; nếu đây là
+            // phòng in-house cuối cùng, giữ quy tắc cũ quay về reservation.
+            $this->bookingStatusSyncService->sync($booking, Booking::STATUS_RESERVATION);
 
             DB::commit();
         } catch (\Exception $e) {
@@ -1161,12 +1158,7 @@ class BookingRoomController extends Controller
             $departureDate = request('departure_date') ?? $bookingRoom->departure_date->toDateString();
 
             // Lấy danh sách phòng vật lý cùng loại (không lấy phòng ảo: is_internal = 0), sắp xếp theo tầng thấp→cao
-            $candidates = \App\Models\Room::where('room_class_id', $bookingRoom->room_class_id)
-                ->where('is_internal', false)
-                ->orderBy('floor', 'asc')
-                ->orderBy('room_number', 'asc')
-                ->lockForUpdate()
-                ->get();
+            $candidates = $this->roomAssignmentService->lockedCandidates($bookingRoom->room_class_id);
 
             $assignedRoom = null;
             foreach ($candidates as $room) {
@@ -1291,60 +1283,7 @@ class BookingRoomController extends Controller
      */
     private function upsertRoomChargeServices(BookingRoom $room): void
     {
-        $sysDateStr = $this->avService->getSystemDate()->toDateString();
-        $arrivalDate   = $room->arrival_date->toDateString();
-        $departureDate = $room->departure_date->toDateString();
-
-        // 1. Tạo danh sách ngày lưu trú
-        $current = Carbon::parse($arrivalDate);
-        $end     = Carbon::parse($departureDate);
-        $stayDates = [];
-        while ($current->lt($end)) {
-            $stayDates[] = $current->toDateString();
-            $current = $current->addDay();
-        }
-
-        // 2. Xóa các dịch vụ RM chưa post nằm ngoài thời gian ở
-        $room->services()
-            ->where('service_code', 'RM')
-            ->whereNotIn('service_date', $stayDates)
-            ->where('is_posted', 0)
-            ->delete();
-
-        // 3. Upsert dịch vụ RM cho từng đêm
-        foreach ($stayDates as $dateStr) {
-            // Đối với phòng Inhouse, không ghi đè các đêm quá khứ
-            if ($room->status === BookingRoom::STATUS_CHECKED_IN && $dateStr < $sysDateStr) {
-                continue;
-            }
-
-            $existing = $room->services()
-                ->where('service_code', 'RM')
-                ->where('service_date', $dateStr)
-                ->first();
-
-            if ($existing && $existing->is_posted == 1) {
-                continue;
-            }
-
-            BookingRoomService::withTrashed()->updateOrCreate(
-                [
-                    'booking_room_id' => $room->id,
-                    'service_code'    => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM),
-                    'service_date'    => $dateStr,
-                ],
-                [
-                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
-                    'quantity'     => 1,
-                    'rate'         => $room->rate,
-                    'department'   => 'FO',
-                    'is_room'      => 1,
-                    'is_posted'    => 0,
-                    'deleted_at'   => null,
-                    'created_by'   => Auth::user()?->username ?? 'system',
-                ]
-            );
-        }
+        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room, (float) $room->rate, true);
     }
 
     /**
@@ -1864,6 +1803,7 @@ class BookingRoomController extends Controller
             $movedRegularChildrenCount = $movedChildrenCount - $movedBabiesCount;
 
                 if ($activeChildren->isNotEmpty() && $movedGuestPivots->count() === $allGuestsCount && $movedChildrenCount < $activeChildren->count()) {
+                    DB::rollBack();
                     return response()->json(['success' => false, 'message' => 'Không thể chuyển toàn bộ người lớn mà để trẻ em ở lại phòng cũ.'], 422);
                 }
 
@@ -2026,6 +1966,11 @@ class BookingRoomController extends Controller
                         ->update(['booking_room_id' => $newRoom->id]);
 
                     }
+                    // A room move keeps the stay in-house. Re-read the room
+                    // statuses so a stale reservation header cannot survive
+                    // the move, and so the header never drops to 0 mid-flow.
+                    $this->bookingStatusSyncService->sync($bookingRoom->booking_id);
+
                     DB::commit();
 
                     try {
@@ -2299,6 +2244,13 @@ class BookingRoomController extends Controller
                         ->update(['booking_room_id' => $targetBookingRoom->id]);
 
                 }
+                // The target room is already in-house. Synchronize both
+                // booking headers when a merge crosses booking records.
+                $this->bookingStatusSyncService->sync($bookingRoom->booking_id);
+                if ((string) $targetBookingRoom->booking_id !== (string) $bookingRoom->booking_id) {
+                    $this->bookingStatusSyncService->sync($targetBookingRoom->booking_id);
+                }
+
                 DB::commit();
 
                 return response()->json([
@@ -2396,15 +2348,21 @@ class BookingRoomController extends Controller
                 ->where('child_status', 4)
                 ->update(['child_status' => 0]);
 
-            // Khôi phục booking nếu booking đang bị Noshow (status = 4)
+            // Khôi phục booking nếu booking đang bị Noshow (status = 4).
+            // Sau đó luôn chạy bộ tổng hợp header để một phòng in-house khác
+            // (nếu có) không bị ghi đè nhầm về reservation.
             $booking = Booking::find($bookingId);
             if ($booking && intval($booking->status) === Booking::STATUS_NO_SHOW) {
-                $newStatusId = RegistrationStatusMapper::idFromLegacyCode(1);
+                $newStatusId = RegistrationStatusMapper::codeFromLegacyCode(1);
                 $booking->update([
                     'status'                 => Booking::STATUS_RESERVATION,
                     'registration_status_id' => $newStatusId ?? $booking->registration_status_id,
                     'updated_by'             => Auth::user()?->username ?? 'system',
                 ]);
+            }
+
+            if ($booking) {
+                $this->bookingStatusSyncService->sync($booking);
             }
         });
 

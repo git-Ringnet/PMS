@@ -21,6 +21,7 @@ import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequests
 import ChildBreakfastModal from '@/pages/reservation/components/ChildBreakfastModal.vue'
 import ExtraBedModal from '@/pages/reservation/components/ExtraBedModal.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 
 const props = defineProps({
@@ -397,6 +398,16 @@ watch(() => props.room, (newRoom) => {
   loadNationalities()
 }, { immediate: true })
 
+watch(() => [stayInfo.value.arrival_date, stayInfo.value.departure_date], ([arr, dep]) => {
+  if (arr && dep) {
+    const dArr = new Date(arr)
+    const dDep = new Date(dep)
+    const diffTime = dDep.getTime() - dArr.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    stayInfo.value.nights = diffDays > 0 ? diffDays : 1
+  }
+})
+
 const UNIT_EXTRA_BED_PRICE = 300000
 
 function handleExtraBedQtyChange(delta) {
@@ -636,13 +647,17 @@ async function handleSave() {
 
   submitting.value = true
   try {
+    const validRateCode = pricingInfo.value.rate_code && pricingInfo.value.rate_code !== 'Vui lòng chọn giá phòng'
+      ? pricingInfo.value.rate_code
+      : null
+
     const roomFields = {
       arrival_date: stayInfo.value.arrival_date,
       arrival_time: stayInfo.value.arrival_time,
       departure_date: stayInfo.value.departure_date,
       departure_time: stayInfo.value.departure_time,
       rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
-      rate_code: pricingInfo.value.rate_code || null,
+      rate_code: validRateCode,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
       extra_bed_rate: pricingInfo.value.extra_bed_price ? Number(String(pricingInfo.value.extra_bed_price).replace(/\D/g, '')) : 0,
     }
@@ -681,7 +696,16 @@ async function handleSave() {
     await loadGuests(selectedGuest.value?.id || selectedChild.value?.id)
     emit('refresh')
   } catch (e) {
-    uiStore.showToast('Đã xảy ra lỗi khi lưu thông tin.', 'error')
+    console.error('Lỗi khi lưu thông tin:', e)
+    const errData = e.response?.data
+    let msg = errData?.message || 'Đã xảy ra lỗi khi lưu thông tin.'
+    if (errData?.errors) {
+      const firstKey = Object.keys(errData.errors)[0]
+      if (firstKey && errData.errors[firstKey]?.[0]) {
+        msg = errData.errors[firstKey][0]
+      }
+    }
+    uiStore.showToast(msg, 'error')
   } finally {
     submitting.value = false
   }
@@ -963,7 +987,11 @@ function parseNumber(val) {
                     </div>
                     <div class="f">
                       <label>Sinh nhật</label>
-                      <input type="date" v-model="formGuest.dob" :disabled="!isEditingMode">
+                      <SingleDatePicker
+                        v-model="formGuest.dob"
+                        :disabled="!isEditingMode"
+                        placeholder="dd/mm/yyyy"
+                      />
                     </div>
                   </div>
 
@@ -1012,7 +1040,11 @@ function parseNumber(val) {
                 </div>
                 <div class="f">
                   <label>Ngày phát hành</label>
-                  <input type="date" v-model="formGuest.id_issue_date" :disabled="!isEditingMode">
+                  <SingleDatePicker
+                    v-model="formGuest.id_issue_date"
+                    :disabled="!isEditingMode"
+                    placeholder="dd/mm/yyyy"
+                  />
                 </div>
                 <div class="f">
                   <label>Thường trú / Tạm trú</label>
@@ -1040,7 +1072,11 @@ function parseNumber(val) {
                 <!-- NGÀY ĐẾN: ALWAYS DISABLED / XÁM -->
                 <div class="f">
                   <label>Ngày đến <span class="req">*</span></label>
-                  <input type="date" v-model="stayInfo.arrival_date" disabled class="always-gray">
+                  <SingleDatePicker
+                    v-model="stayInfo.arrival_date"
+                    disabled
+                    placeholder="dd/mm/yyyy"
+                  />
                 </div>
                 <!-- GIỜ ĐẾN (24H FORMAT HH:mm): ALWAYS DISABLED / XÁM -->
                 <div class="f">
@@ -1050,7 +1086,12 @@ function parseNumber(val) {
                 <!-- NGÀY ĐỊ -->
                 <div class="f">
                   <label>Ngày đi <span class="req">*</span></label>
-                  <input type="date" v-model="stayInfo.departure_date" :disabled="!isEditingMode">
+                  <SingleDatePicker
+                    v-model="stayInfo.departure_date"
+                    :min-date="stayInfo.arrival_date"
+                    :disabled="!isEditingMode"
+                    placeholder="dd/mm/yyyy"
+                  />
                 </div>
                 <!-- GIỜ ĐỊ (CUSTOM 24H PICKER COMPONENT: 00 -> 23 HOURS) -->
                 <div class="f">
@@ -1616,5 +1657,17 @@ input.always-gray:disabled {
 @keyframes modalIn {
   0% { opacity: 0; transform: scale(0.98); }
   100% { opacity: 1; transform: scale(1); }
+}
+
+.f :deep(.custom-single-datepicker div[class*="border"]) {
+  height: 35px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.f :deep(.custom-single-datepicker div[class*="bg-slate-100"]) {
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+  border-color: #cbd5e1 !important;
 }
 </style>

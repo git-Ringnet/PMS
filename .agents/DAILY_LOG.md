@@ -11,6 +11,20 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-15] - Cải tiến DatePicker và sửa lỗi cập nhật ngày đi phòng Inhouse trên Sơ đồ phòng
+### Module: Đặt phòng / Sơ đồ phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
+
+- **Chuyển đổi các ô ngày sang component `SingleDatePicker` trực quan**:
+  - Thay thế toàn bộ `<input type="date">` mặc định của trình duyệt tại 4 trường: `Sinh nhật`, `Ngày phát hành` (Giấy tờ tùy thân), `Ngày đến` và `Ngày đi` sang component [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue) đồng bộ với toàn hệ thống PMS.
+  - Tích hợp popup lịch chọn ngày trực quan (`dd/MM/yyyy`), hỗ trợ `:min-date` tự động ràng buộc `Ngày đi >= Ngày đến`.
+  - Tự động tính lại số đêm (`stayInfo.nights`) thông qua watcher ngay khi người dùng đổi ngày đến/ngày đi.
+  - Định dạng kích thước `height: 35px`, viền và nền xám chuẩn PMS cho các ô disabled (`Ngày đến`).
+- **Sửa lỗi lưu thông tin phòng Inhouse (Section 8)**:
+  - Khắc phục lỗi 422 (`exists:room_rate_codes,Ma`) khi lưu phòng do `rate_code` mang giá trị placeholder `'Vui lòng chọn giá phòng'`.
+  - Làm sạch `rate_code` (gán về `null` nếu không có hoặc là placeholder) trước khi gửi payload lên API `updateBookingRoomGuest`.
+  - Bổ sung hiển thị thông báo lỗi chi tiết từ backend thay vì câu thông báo chung chung.
+- **Kiểm thử**: `npm run build` thành công 100%.
+
 ## [2026-09-14] - Hoàn thiện toàn diện các nghiệp vụ Khóa phòng theo tài liệu Lỗi liên quan tới khóa phòng.docx
 ### Module: Quản lý Khóa phòng (Room Lock) ([RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php), [LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue), [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php))
 

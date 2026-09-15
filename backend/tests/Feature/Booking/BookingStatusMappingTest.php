@@ -24,7 +24,7 @@ class BookingStatusMappingTest extends TestCase
         ]);
     }
 
-    public function test_booking_stores_registration_status_primary_key_not_legacy_code(): void
+    public function test_booking_stores_business_code_not_catalogue_primary_key(): void
     {
         $registrationStatus = RegistrationStatus::create([
             'booking_status_id' => 20,
@@ -39,12 +39,12 @@ class BookingStatusMappingTest extends TestCase
             'num_of_days' => 1,
             'booking_date' => '2026-08-21',
             'status' => Booking::STATUS_RESERVATION,
-            'registration_status_id' => $registrationStatus->id,
+            'registration_status_id' => $registrationStatus->booking_status_id,
             'created_by' => 'test',
         ]);
 
-        $this->assertSame($registrationStatus->id, $booking->registration_status_id);
-        $this->assertNotSame($registrationStatus->booking_status_id, $booking->registration_status_id);
+        $this->assertSame($registrationStatus->booking_status_id, $booking->registration_status_id);
+        $this->assertNotSame($registrationStatus->id, $booking->registration_status_id);
         $this->assertTrue($booking->registrationStatus->is($registrationStatus));
     }
 
@@ -57,9 +57,9 @@ class BookingStatusMappingTest extends TestCase
         ]);
 
         $legacyStatusCode = 24;
-        $mappedStatusId = RegistrationStatusMapper::idFromLegacyCode($legacyStatusCode);
-        $this->assertSame($registrationStatus->id, $mappedStatusId);
-        $mappedStatus = RegistrationStatus::findOrFail($mappedStatusId);
+        $mappedStatusId = RegistrationStatusMapper::codeFromLegacyCode($legacyStatusCode);
+        $this->assertSame($registrationStatus->booking_status_id, $mappedStatusId);
+        $mappedStatus = RegistrationStatus::where('booking_status_id', $mappedStatusId)->firstOrFail();
 
         $booking = Booking::create([
             'booking_name' => 'Legacy mapping test',
@@ -68,11 +68,11 @@ class BookingStatusMappingTest extends TestCase
             'num_of_days' => 1,
             'booking_date' => '2026-08-21',
             'status' => Booking::STATUS_RESERVATION,
-            'registration_status_id' => $mappedStatus->id,
+            'registration_status_id' => $mappedStatus->booking_status_id,
             'created_by' => 'test',
         ]);
 
-        $this->assertSame($registrationStatus->id, $booking->registration_status_id);
+        $this->assertSame($registrationStatus->booking_status_id, $booking->registration_status_id);
         $this->assertSame($legacyStatusCode, $booking->registrationStatus->booking_status_id);
     }
 
@@ -91,7 +91,7 @@ class BookingStatusMappingTest extends TestCase
             'num_of_days' => 1,
             'booking_date' => '2026-08-21',
             'status' => Booking::STATUS_RESERVATION,
-            'registration_status_id' => $registrationStatus->id,
+            'registration_status_id' => $registrationStatus->booking_status_id,
             'created_by' => 'test',
         ]);
 
@@ -99,7 +99,7 @@ class BookingStatusMappingTest extends TestCase
         $booking->refresh();
 
         $this->assertSame(Booking::STATUS_CHECKIN, $booking->status);
-        $this->assertSame($registrationStatus->id, $booking->registration_status_id);
+        $this->assertSame($registrationStatus->booking_status_id, $booking->registration_status_id);
     }
 
     public function test_registration_status_resource_keeps_new_id_and_legacy_code_separate(): void
@@ -116,5 +116,17 @@ class BookingStatusMappingTest extends TestCase
         $this->assertSame(29, $payload['booking_status_id']);
         $this->assertSame(29, $payload['BookingStatusId']);
         $this->assertNotSame($payload['id'], $payload['booking_status_id']);
+    }
+
+    public function test_catalogue_requires_a_unique_business_code(): void
+    {
+        $this->actingAs(\App\Models\User::factory()->create());
+        $this->postJson('/api/registration-statuses', ['name' => 'Missing code'])
+            ->assertUnprocessable()->assertJsonValidationErrors('booking_status_id');
+        $response = $this->postJson('/api/registration-statuses', ['name' => 'None Guaranteed', 'booking_status_id' => 20]);
+        $response->assertCreated()->assertJsonPath('data.booking_status_id', 20);
+        $this->postJson('/api/registration-statuses', ['name' => 'Duplicate', 'booking_status_id' => 20])
+            ->assertUnprocessable()->assertJsonValidationErrors('booking_status_id');
+        $this->assertNotEquals(20, $response->json('data.id'));
     }
 }

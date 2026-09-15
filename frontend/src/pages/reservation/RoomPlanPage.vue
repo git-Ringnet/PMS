@@ -1528,7 +1528,7 @@ async function loadBookings() {
             guest_details: guestDetails,
             booking_color: b.color || br.color || '',
             note: b.note || br.note || '',
-            registrationStatusId: registrationStatus.id || b.registration_status_id || null,
+            registrationStatusId: registrationStatus.booking_status_id ?? b.registration_status_id ?? null,
             registrationStatusName,
             registrationStatusColor: registrationStatus.color || registrationStatus.booking_status_color || '',
             isAvailability: registrationStatus.is_availability === undefined
@@ -5171,7 +5171,7 @@ function getRoomStatusIconName(item) {
             <label class="font-bold text-slate-700 text-left w-full block">Tình trạng đăng ký:</label>
             <select v-model="quickBookingForm.registrationStatusId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
               <option :value="null" disabled>— Chọn tình trạng đăng ký —</option>
-              <option v-for="status in registrationStatuses.filter(s => !s.is_hidden)" :key="status.id" :value="status.id">
+              <option v-for="status in registrationStatuses.filter(s => !s.is_hidden && s.booking_status_id != null)" :key="status.id" :value="status.booking_status_id">
                 {{ status.name }}
               </option>
             </select>

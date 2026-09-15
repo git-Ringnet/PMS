@@ -429,7 +429,10 @@ async function initDefaultDates() {
 // Helper lấy options theo optionsKey
 function getSelectOptions(key) {
   if (key === 'statuses') return statusOptions
-  if (key === 'registration_statuses') return options.value.registration_statuses || []
+  if (key === 'registration_statuses') return (options.value.registration_statuses || []).filter(status => status.booking_status_id != null).map(status => ({
+    value: status.booking_status_id,
+    name: status.name,
+  }))
   if (key === 'companies') return options.value.companies || []
   if (key === 'markets') return options.value.markets || []
   if (key === 'customer_sources') return options.value.customer_sources || []

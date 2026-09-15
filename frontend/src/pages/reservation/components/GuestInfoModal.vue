@@ -435,6 +435,7 @@ import {
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import GuestDetailModal from './GuestDetailModal.vue'
+import { normalizeGuestInfoGroups } from '@/utils/guest-info'
 
 const props = defineProps({
   show: Boolean,
@@ -607,7 +608,7 @@ async function loadGuests() {
     await initBookingGuests(props.bookingId)
     const res = await fetchBookingGuests(props.bookingId)
     if (res.data?.success) {
-      guestData.value = res.data.data || []
+      guestData.value = normalizeGuestInfoGroups(res.data.data)
     }
   } catch (err) {
     console.error(err)
