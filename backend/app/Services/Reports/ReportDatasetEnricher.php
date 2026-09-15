@@ -29,6 +29,7 @@ class ReportDatasetEnricher
             'BREAKAGE_FREE_INVOICES' => 'BR',
             'BREAKAGE_INVOICES' => 'BR',
             'MINIBAR_INVOICES' => 'MB',
+            'MINIBAR_FREE_INVOICES' => 'MB',
             default => null,
         };
         if ($outlet !== null) {

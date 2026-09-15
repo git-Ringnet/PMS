@@ -11,6 +11,28 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-15] - Triển khai Báo cáo hóa đơn minibar miễn phí (MINIBAR_FREE_INVOICES) theo chuẩn legacy sp_202
+### Module: Báo cáo buồng phòng / Minibar ([minibar_free_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_free_invoices_reference.php), [2026_09_15_110000_create_minibar_free_invoice_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_110000_create_minibar_free_invoice_report.php))
+
+- **Đã hoàn thành**:
+  - **Khảo sát & Đối chiếu dữ liệu thật**:
+    - Truy vấn trực tiếp SSMS SQL Server `.\MSSQLSERVER01` -> database `ProVistaDTXHotel` qua `sqlcmd` kiểm tra logic và output của stored procedure `sp_202` với tham số `@outlet = 'MB'`.
+    - Xác nhận các hóa đơn minibar miễn phí gắn với phương thức thanh toán `CL` (Complementary / Miễn phí).
+  - **Template tham chiếu & Header Band chuẩn hóa**:
+    - Chuẩn hóa template [minibar_free_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_free_invoices_reference.php) theo đúng cấu trúc canonical report header band của hệ thống (dạng `columns` 30% logo / 70% thông tin khách sạn + divider + title + period và wrapper `<div class="report-header-band">`).
+    - Bảng chi tiết gồm 13 cột (có cột HTTT) và bảng kê tổng hợp số lượng sản phẩm minibar miễn phí.
+  - **Stored Procedure & Migration**:
+    - Tạo migration [2026_09_15_110000_create_minibar_free_invoice_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_110000_create_minibar_free_invoice_report.php) tạo stored procedure `rpt_minibar_free_invoices` lọc `housekeeping_service_bills` có `Outlet = 'MB'` và phương thức thanh toán `CL`.
+    - Đồng bộ `content_json` và `content_html` chứa report header band chuẩn hóa vào bảng `templates` trên toàn bộ các database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Data Enrichment & UI Integration**:
+    - Cập nhật [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php) hỗ trợ mã `MINIBAR_FREE_INVOICES` trích xuất `product_summary`.
+    - Cập nhật [ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue) thêm `MINIBAR_FREE_INVOICES` vào nhóm filter hóa đơn buồng phòng.
+  - **Kiểm thử**:
+    - Tạo unit test [MinibarFreeInvoicesTemplateTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/MinibarFreeInvoicesTemplateTest.php), kiểm tra layout, metadata và rendering (đạt 2/2 tests, 14 assertions).
+    - Cập nhật [ReportDatasetEnricherHousekeepingTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ReportDatasetEnricherHousekeepingTest.php) (đạt 1/1 test, 10 assertions).
+    - Chạy toàn bộ test Reports backend (43/43 tests, 444 assertions).
+    - Chạy `npm run build` frontend thành công 100%.
+
 ## [2026-09-14] - Chuẩn hóa tên file template báo cáo hàng bể vỡ trong DB migration (Tương thích Linux)
 ### Module: Báo cáo dịch vụ / Migrations ([2026_09_11_170000_create_breakage_invoice_product_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_170000_create_breakage_invoice_product_report.php), [2026_09_11_171000_create_breakage_free_invoice_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_171000_create_breakage_free_invoice_report.php))
 

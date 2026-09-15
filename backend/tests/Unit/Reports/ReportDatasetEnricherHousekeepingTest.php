@@ -23,6 +23,7 @@ class ReportDatasetEnricherHousekeepingTest extends TestCase
             'LAUNDRY_INVOICES' => 'LA',
             'BREAKAGE_INVOICES' => 'BR',
             'MINIBAR_INVOICES' => 'MB',
+            'MINIBAR_FREE_INVOICES' => 'MB',
         ] as $code => $outlet) {
             $report = new ReportDefinition(['code' => $code]);
             $data = $enricher->enrich($report, ['rows' => [], 'hotel' => ['name' => 'Hotel']]);
