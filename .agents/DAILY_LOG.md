@@ -11,6 +11,29 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-15] - Ràng buộc nghiệp vụ Xóa khách trong Thông tin đặt phòng
+### Module: Đặt phòng / Quản lý Khách ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestDeleteRestrictionsTest.php](file:///d:/PMS/backend/tests/Feature/GuestDeleteRestrictionsTest.php))
+
+- **Chặn xóa khách khi đã phát sinh hóa đơn hoặc thanh toán**:
+  - **Backend ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))**:
+    - Trong cả hai hàm `removeGuest` (khách người lớn) và `removeChild` (khách trẻ em):
+      - Kiểm tra phát sinh hóa đơn trong bảng `service_bills` (`CustomerId1` hoặc `CustomerId2`) với tình trạng `Edit = 0` hoặc `Status = 0`.
+      - Kiểm tra phát sinh đặt cọc/thanh toán trong bảng `payments` (`guest_id`) với tình trạng `edit_flag = 0` hoặc `status = 0` (chưa bị xóa mềm `deleted_at is null`).
+      - Nếu phát sinh bất kỳ bill hoặc payment nào: Chặn xóa và trả về mã lỗi 422 kèm cảnh báo đúng yêu cầu: `"Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách."`
+- **Ràng buộc thời gian check-in trong ngày**:
+  - Chỉ cho phép xóa khách khi vừa mới check-in trong ngày (`actual_arrival_date == system_date`).
+  - Đối với khách/phòng đang lưu trú (`status = 1` - Checked in): Nếu ngày đến thực tế nhỏ hơn ngày hệ thống (`actual_arrival_date < system_date` - đã qua ngày) thì chặn xóa và trả về mã lỗi 422: `"Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa."`
+  - Áp dụng chặt chẽ cho cả người lớn (`BookingRoomGuest`) và trẻ em (`BookingChild` / `BookingRoomChild`).
+- **Cải tiến giao diện ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))**:
+  - Hàm `handleDeleteGuest()`: Loại bỏ hành vi xóa lạc quan trên giao diện trước khi gọi API (tránh việc khách biến mất trên UI nhưng backend báo lỗi chặn xóa).
+  - Bắt lỗi chi tiết từ backend (`e.response?.data?.message`) và hiển thị thông báo chính xác cho người dùng qua `uiStore.showToast(errorMsg, 'error')`.
+  - Tự động nạp lại danh sách khách (`loadGuests()`) trong block `catch` để luôn đồng bộ trạng thái dữ liệu thực tế.
+- **Kiểm thử**:
+  - Tạo mới bộ test `GuestDeleteRestrictionsTest.php` gồm 8 test cases bao phủ 100% các kịch bản: chặn khi có bill `CustomerId1`, `CustomerId2`, payment, check-in qua ngày (cả người lớn và trẻ em); cho phép xóa khi check-in cùng ngày không có bill/payment.
+  - Chạy `php artisan test tests/Feature/GuestDeleteRestrictionsTest.php`: 8/8 tests PASSED (18 assertions).
+  - Chạy `php artisan test tests/Feature/GuestControllerFixesTest.php`: 3/3 tests PASSED (27 assertions).
+  - Chạy `npm run build`: compile frontend thành công 100%.
+
 ## [2026-09-15] - Cải tiến DatePicker và sửa lỗi cập nhật ngày đi phòng Inhouse trên Sơ đồ phòng
 ### Module: Đặt phòng / Sơ đồ phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
 

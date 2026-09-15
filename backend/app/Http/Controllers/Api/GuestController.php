@@ -10,7 +10,10 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\CancelReason;
 use App\Models\Guest;
+use App\Models\Payment;
 use App\Models\RoomLock;
+use App\Models\ServiceBill;
+use App\Models\SystemDateRoll;
 use App\Services\BookingRoomStayChargeService;
 use App\Services\BookingStatusSyncService;
 use Carbon\Carbon;
@@ -993,9 +996,57 @@ class GuestController extends Controller
     // DELETE /booking-rooms/{roomId}/guests/{guestId}
     public function removeGuest($roomId, $guestId)
     {
-        BookingRoomGuest::where('booking_room_id', $roomId)
+        $room = BookingRoom::find($roomId);
+        $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
             ->where('guest_id', $guestId)
-            ->delete();
+            ->first();
+
+        // 1. Kiểm tra ngày check-in: Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Đã qua ngày thì không cho phép xóa.
+        $isStayed = ($room && $room->status === BookingRoom::STATUS_CHECKED_IN)
+            || ($pivot && $pivot->status === BookingRoomGuest::STATUS_CHECKED_IN);
+
+        if ($isStayed) {
+            $arrivalDate = $pivot?->actual_arrival_date ?: ($room?->actual_arrival_date ?: $room?->arrival_date);
+            if ($arrivalDate) {
+                $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate();
+                if (Carbon::parse($arrivalDate)->startOfDay()->lt($systemDate)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa.',
+                    ], 422);
+                }
+            }
+        }
+
+        // 2. Kiểm tra phát sinh hóa đơn hoặc thanh toán
+        $hasBills = ServiceBill::where(function ($q) use ($guestId) {
+                $q->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $guestId])
+                  ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $guestId]);
+            })
+            ->where(function ($q) {
+                $q->where('Edit', 0)
+                  ->orWhere('Status', 0);
+            })
+            ->exists();
+
+        $hasPayments = Payment::where('guest_id', (string) $guestId)
+            ->where(function ($q) {
+                $q->where('edit_flag', 0)
+                  ->orWhere('status', 0);
+            })
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($hasBills || $hasPayments) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách.',
+            ], 422);
+        }
+
+        if ($pivot) {
+            $pivot->delete();
+        }
 
         // Xóa hẳn bản ghi trong bảng guests nếu khách không còn gán ở phòng nào khác
         $otherCount = BookingRoomGuest::where('guest_id', $guestId)->count();
@@ -1200,7 +1251,57 @@ class GuestController extends Controller
     {
         $child = BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
         $roomId = $child->booking_room_id;
+        $room = $roomId ? BookingRoom::find($roomId) : null;
+        $childAssignment = $roomId ? \App\Models\BookingRoomChild::where('booking_room_id', $roomId)->where('booking_child_id', $childId)->first() : null;
+
+        // 1. Kiểm tra ngày check-in: Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Đã qua ngày thì không cho phép xóa.
+        $isStayed = ($room && $room->status === BookingRoom::STATUS_CHECKED_IN)
+            || ((int) $child->child_status === BookingRoomGuest::STATUS_CHECKED_IN)
+            || ($childAssignment && (int) $childAssignment->status === BookingRoomGuest::STATUS_CHECKED_IN);
+
+        if ($isStayed) {
+            $arrivalDate = $childAssignment?->actual_arrival_date ?: ($room?->actual_arrival_date ?: $room?->arrival_date);
+            if ($arrivalDate) {
+                $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate();
+                if (Carbon::parse($arrivalDate)->startOfDay()->lt($systemDate)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa.',
+                    ], 422);
+                }
+            }
+        }
+
+        // 2. Kiểm tra phát sinh hóa đơn hoặc thanh toán
+        $hasBills = ServiceBill::where(function ($q) use ($childId) {
+                $q->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $childId])
+                  ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $childId]);
+            })
+            ->where(function ($q) {
+                $q->where('Edit', 0)
+                  ->orWhere('Status', 0);
+            })
+            ->exists();
+
+        $hasPayments = Payment::where('guest_id', (string) $childId)
+            ->where(function ($q) {
+                $q->where('edit_flag', 0)
+                  ->orWhere('status', 0);
+            })
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($hasBills || $hasPayments) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách.',
+            ], 422);
+        }
+
         $child->breakfastDetails()->delete();
+        if ($childAssignment) {
+            $childAssignment->delete();
+        }
         $child->delete();
 
         // Xóa các dịch vụ ăn sáng trẻ em tương ứng trong booking_room_services

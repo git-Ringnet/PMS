@@ -729,13 +729,14 @@ async function handleDeleteGuest() {
   try {
     if (selectedGuest.value) {
       const guestIdToDelete = selectedGuest.value.id
-      adults.value = adults.value.filter(a => a.id !== guestIdToDelete)
-      if (bookingRoomId.value) await removeRoomGuest(bookingRoomId.value, guestIdToDelete)
+      if (bookingRoomId.value) {
+        await removeRoomGuest(bookingRoomId.value, guestIdToDelete)
+      }
     } else if (selectedChild.value) {
       const childIdToDelete = selectedChild.value.id
-      children.value = children.value.filter(c => c.id !== childIdToDelete)
-      babies.value = babies.value.filter(b => b.id !== childIdToDelete)
-      if (bookingId.value) await removeBookingChild(bookingId.value, childIdToDelete)
+      if (bookingId.value) {
+        await removeBookingChild(bookingId.value, childIdToDelete)
+      }
     }
     selectedGuest.value = null
     selectedChild.value = null
@@ -744,7 +745,9 @@ async function handleDeleteGuest() {
     await loadGuests()
     emit('refresh')
   } catch (e) {
-    uiStore.showToast('Lỗi khi xóa khách.', 'error')
+    const errorMsg = e.response?.data?.message || e.message || 'Lỗi khi xóa khách.'
+    uiStore.showToast(errorMsg, 'error')
+    await loadGuests()
   } finally {
     submitting.value = false
   }
