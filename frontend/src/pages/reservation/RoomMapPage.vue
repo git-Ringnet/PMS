@@ -908,6 +908,12 @@ function isRoomCheckedIn(room) {
 function hasArrivalToday(room) {
   if (!room || isLockedRoom(room)) return false
   if (room.is_arriving_tomorrow && !room.booking_status) return false
+  // Phòng đã nhận phòng -> Tuyệt đối không hiển thị chấm xanh (phòng có khách đến)
+  if (isRoomCheckedIn(room)) return false
+
+  const hasBooking = room.booking_status === 'reserved' || Boolean(room.booking_id || room.booking_code || room.booking)
+  if (!hasBooking && !room.booking_status) return false
+
   const targetDate = String(rawDate.value || systemDate.value || '').split('T')[0].split(' ')[0].trim()
   const arrDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date || room.booking?.arrival_date
   if (arrDate) {

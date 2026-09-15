@@ -11,6 +11,14 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-15] - Sửa lỗi hiển thị icon "Phòng đến" trên Sơ đồ phòng khi đã nhận phòng
+### Module: Sơ đồ phòng / Room Map ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Khắc phục lỗi hiển thị sai icon "Phòng đến" (chấm xanh lá cây) sau khi nhận phòng**:
+  - **Nguyên nhân**: Hàm `hasArrivalToday(room)` trước đó chỉ so sánh ngày đến `arrDate === targetDate`. Vì phòng vừa nhận phòng trong ngày nên ngày đến bằng ngày hệ thống hiện tại, dẫn đến việc phòng đã chuyển sang trạng thái Đang ở (Occupied - màu xanh dương) nhưng trên góc trên bên trái thẻ phòng (Card View) và cột Đến/Đi (List View) vẫn tiếp tục hiển thị chấm tròn màu xanh lá cây 🟢 ("Phòng đến").
+  - **Khắc phục**: Bổ sung điều kiện kiểm tra `if (isRoomCheckedIn(room)) return false` trong `hasArrivalToday(room)` để tuyệt đối không hiển thị icon/chấm xanh khách đến một khi phòng đã được nhận phòng. Đồng thời kiểm tra phòng phải có thông tin đặt phòng hợp lệ (`hasBooking`).
+- **Kiểm thử**: `npm run build` thành công 100%.
+
 ## [2026-09-15] - Ràng buộc nghiệp vụ Xóa khách trong Thông tin đặt phòng
 ### Module: Đặt phòng / Quản lý Khách ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestDeleteRestrictionsTest.php](file:///d:/PMS/backend/tests/Feature/GuestDeleteRestrictionsTest.php))
 
