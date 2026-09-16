@@ -675,9 +675,10 @@ async function executeUndoCheckin(mode = 'clean') {
       if (mode === 'dirty') {
         // Chuyển tình trạng phòng bẩn (VACANT_DIRTY)
         await roomStore.updateRoomStatus(room.id, ROOM_STATUS_CODES.VACANT_DIRTY, moduleContext.value)
-        uiStore.showToast(`Hủy nhận phòng ${room.room_number} và chuyển sang phòng bẩn thành công!`, 'success')
+        uiStore.showToast(`Hủy nhận phòng ${room.room_number} và chuyển sang phòng Dơ thành công!`, 'success')
       } else {
-        uiStore.showToast(`Hủy nhận phòng ${room.room_number} thành công!`, 'success')
+        await roomStore.updateRoomStatus(room.id, ROOM_STATUS_CODES.VACANT_CLEAN, moduleContext.value)
+        uiStore.showToast(`Hủy nhận phòng ${room.room_number} và chuyển sang phòng Chờ kiểm tra thành công!`, 'success')
       }
       closeUndoCheckinModal()
       await roomStore.fetchRooms({ date: rawDate.value, silent: true })
@@ -1827,7 +1828,48 @@ function triggerMenuItem(actionName) {
     return
   }
 
-  if (['Đăng ký', 'Hóa đơn', 'Nhóm hóa đơn', 'In mẫu đăng ký'].includes(actionName)) {
+  if (actionName === 'Hóa đơn') {
+    const room = contextMenu.value.room
+    if (room && room.booking_code) {
+      router.push({
+        path: '/frontdesk',
+        query: {
+          tab: 'checkout',
+          bookingCode: room.booking_code,
+          roomId: room.booking_room_id || room.room_number || room.id
+        }
+      })
+      uiStore.showToast(`Chuyển đến Hóa đơn phòng ${room.room_number} (Đăng ký ${room.booking_code})`, 'success')
+      closeContextMenu()
+      return
+    } else {
+      uiStore.showToast('Phòng trống chưa có hóa đơn!', 'warning')
+      closeContextMenu()
+      return
+    }
+  }
+
+  if (actionName === 'Nhóm hóa đơn') {
+    const room = contextMenu.value.room
+    if (room && room.booking_code) {
+      router.push({
+        path: '/frontdesk',
+        query: {
+          tab: 'checkout',
+          bookingCode: room.booking_code
+        }
+      })
+      uiStore.showToast(`Chuyển đến Nhóm hóa đơn của Đăng ký ${room.booking_code}`, 'success')
+      closeContextMenu()
+      return
+    } else {
+      uiStore.showToast('Phòng trống chưa có thông tin đăng ký!', 'warning')
+      closeContextMenu()
+      return
+    }
+  }
+
+  if (['Đăng ký', 'In mẫu đăng ký'].includes(actionName)) {
     const room = contextMenu.value.room
     if (room && room.booking_code) {
       router.push({
@@ -3081,19 +3123,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
                         </div>
 
-                        <!-- Room Map special icons -->
-                        <div v-if="shouldShowBirthday(room) || shouldShowHoneymoon(room) || hasExtraBed(room)"
-                          class="absolute top-1 left-1/2 -translate-x-1/2 flex items-center gap-1 pointer-events-none z-10">
-                          <RoomIcon v-if="shouldShowBirthday(room)" name="birthday" class="text-pink-500"
-                            :style="{ width: (settings.iconSizes.group1 * cardScale) + 'px', height: (settings.iconSizes.group1 * cardScale) + 'px' }" />
-                          <RoomIcon v-if="shouldShowHoneymoon(room)" name="honeymoon" class="text-red-500"
-                            :style="{ width: (settings.iconSizes.group1 * cardScale) + 'px', height: (settings.iconSizes.group1 * cardScale) + 'px' }" />
-                          <RoomIcon v-if="hasExtraBed(room)" name="extra-bed" class="text-slate-600"
-                            :style="{ width: (settings.iconSizes.group1 * cardScale) + 'px', height: (settings.iconSizes.group1 * cardScale) + 'px' }" />
-                        </div>
-
-                        <!-- Room Content (Centered) -->
-                        <div class="absolute inset-x-2 top-1/2 flex max-h-[calc(100%-8px)] -translate-y-1/2 flex-col items-center justify-center overflow-hidden text-center">
+                        <!-- Room Content (Centered, shifted slightly up to leave safe space for bottom icons) -->
+                        <div class="absolute inset-x-1.5 top-[44%] flex max-h-[calc(100%-10px)] -translate-y-1/2 flex-col items-center justify-center overflow-hidden text-center pointer-events-none">
                           <!-- Room Number -->
                           <div
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
@@ -3109,7 +3140,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
 
                           <!-- Room Type (e.g. SUPT) -->
-                          <div class="font-bold uppercase text-center w-full mt-0.5"
+                          <div class="font-bold uppercase text-center w-full mt-0.5 leading-none"
                             :style="{ fontSize: Math.max(8, settings.textSizes.roomType * cardScale) + 'px' }"
                             :class="room.booking_color ? 'text-inherit opacity-80' : 'text-gray-500'">
                             {{ room.room_type || room.room_class?.code }}
@@ -3118,32 +3149,38 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Guest Name (if occupied or reserved) -->
                           <div
                             v-if="room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'"
-                            class="font-bold leading-tight text-center w-full truncate max-w-full"
-                            :style="{ fontSize: Math.max(8, settings.textSizes.guestName * cardScale) + 'px' }"
+                            class="font-bold leading-tight text-center w-full truncate max-w-full px-1"
+                            :style="{ fontSize: Math.max(7.5, (settings.textSizes.guestName - 0.5) * cardScale) + 'px' }"
                             :class="[
                               room.booking_color ? 'text-inherit' : 'text-gray-900',
-                              settings.roomHeight < 70 ? 'mt-0' : 'mt-1'
+                              settings.roomHeight < 70 ? 'mt-0' : 'mt-0.5'
                             ]">
                             {{ getMockGuestName(room) }}
                           </div>
                         </div>
 
                         <!-- Bottom row: Icons (Absolute Positioned to allow overflow boundaries) -->
-                        <!-- Bottom Left Corner: Guest Count and Extra Bed -->
-                        <div class="absolute flex items-center gap-1.5 pointer-events-none overflow-visible shrink-0"
+                        <!-- Bottom Left Corner: Guest Count, Birthday, Honeymoon, Extra Bed (All in single row) -->
+                        <div class="absolute flex items-center gap-1 pointer-events-none overflow-visible shrink-0 z-10"
                           :style="{
-                            left: (10 - (settings.iconSizes.group4 - 16) * cardScale) + 'px',
-                            bottom: (6 - (settings.iconSizes.group4 - 16) * cardScale) + 'px'
+                            left: '7px',
+                            bottom: '4px'
                           }" :class="room.booking_color ? 'text-inherit opacity-85' : 'text-slate-500'">
                           <template v-if="getGuestCount(room) > 0">
-                            <span class="flex items-center gap-0.5 font-bold text-[10.5px] leading-none"
+                            <span class="flex items-center gap-0.5 font-bold text-[10px] leading-none shrink-0"
                               :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
                               <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'"
                                 :class="room.booking_color ? 'text-inherit' : 'text-gray-600'"
-                                :style="{ width: (settings.iconSizes.group4 * cardScale) + 'px', height: (settings.iconSizes.group4 * cardScale) + 'px' }" />
+                                :style="{ width: Math.max(11, settings.iconSizes.group4 * cardScale) + 'px', height: Math.max(11, settings.iconSizes.group4 * cardScale) + 'px' }" />
                               {{ getGuestCount(room) }}
                             </span>
                           </template>
+                          <RoomIcon v-if="shouldShowBirthday(room)" name="birthday" class="text-pink-500 shrink-0"
+                            :style="{ width: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
+                          <RoomIcon v-if="shouldShowHoneymoon(room)" name="honeymoon" class="text-red-500 shrink-0"
+                            :style="{ width: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
+                          <RoomIcon v-if="hasExtraBed(room)" name="extra-bed" class="text-slate-600 shrink-0"
+                            :style="{ width: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
                         </div>
 
                         <!-- Bottom Right Corner: Status Icon -->
@@ -4671,19 +4708,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             </div>
 
             <!-- Body -->
-            <div class="px-6 py-7 text-center">
+            <div class="px-6 py-6 text-center">
               <p class="text-sm font-bold text-slate-800 leading-relaxed">
-                Bạn có muốn dọn phòng này sau khi hủy đăng ký không?
+                Vui lòng chọn tình trạng phòng sau khi thực hiện "Hủy nhận phòng"
               </p>
             </div>
 
-            <!-- Action Buttons (3 Nút: Đóng / Dơ / Có) -->
-            <div class="px-6 pb-6 flex items-center justify-center gap-2.5">
-              <button @click="closeUndoCheckinModal" :disabled="undoCheckinLoading"
-                class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
-                :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
-                Đóng
-              </button>
+            <!-- Action Buttons (2 Nút: Dơ / Chờ kiểm tra) -->
+            <div class="px-6 pb-6 flex items-center justify-center gap-3">
               <button @click="executeUndoCheckin('dirty')" :disabled="undoCheckinLoading"
                 class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
                 :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
@@ -4698,7 +4730,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
                   </path>
                 </svg>
-                {{ undoCheckinLoading ? 'Đang...' : 'Có' }}
+                {{ undoCheckinLoading ? 'Đang...' : 'Chờ kiểm tra' }}
               </button>
             </div>
           </div>

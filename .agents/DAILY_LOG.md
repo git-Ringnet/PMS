@@ -9,6 +9,31 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-16] - Hoàn thiện 3 nghiệp vụ Room Map & Lễ tân: Icon đặc biệt, Ràng buộc Hủy nhận phòng & Điều hướng Hóa đơn
+### Module: Sơ đồ phòng & Lễ tân ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+
+- **1. Nghiệp vụ 1 - Vị trí Icon Birthday, Honeymoon, Extra Bed ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - Gỡ bỏ khối icon nằm ở `top-1 left-1/2 -translate-x-1/2` gây đè lên số phòng (101, 105,...).
+  - Chuyển toàn bộ các icon đặc biệt (`birthday`, `honeymoon`, `extra-bed`) xuống hàng dưới cùng góc trái, đặt chung flex container ngang hàng với icon số lượng khách (`getGuestCount`).
+  - Cân chỉnh container trung tâm chứa thông tin phòng và tên khách (`top-[44%] -translate-y-1/2`, `truncate px-1`), tạo khoảng đệm an toàn phía dưới để tên khách không bao giờ đè lên các icon dưới đáy thẻ phòng.
+
+- **2. Nghiệp vụ 2 - Ràng buộc Hủy nhận phòng (Undo Check-in) & Chuẩn hóa Modal**:
+  - **Backend ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))**:
+    + Thêm điều kiện chặn hủy nhận phòng khi phòng đang thao tác đã phát sinh hóa đơn dịch vụ (`service_bills` có `Edit = 0`) hoặc thanh toán/đặt cọc (`payments` có `edit_flag = 0` và chưa xóa).
+    + Trả về cảnh báo 422: `"Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin"`.
+    + Chỉ cho phép hủy nhận phòng đối với những phòng vừa mới nhận trong ngày hệ thống (`actual_arrival_date == systemDate`); qua ngày chặn với thông báo `"Chỉ được hủy nhận phòng cho những phòng vừa mới nhận trong ngày."`.
+  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    + Cập nhật nội dung câu hỏi modal xác nhận: `"Vui lòng chọn tình trạng phòng sau khi thực hiện \"Hủy nhận phòng\""`.
+    + Loại bỏ nút **Đóng**, cung cấp 2 lựa chọn rõ ràng: **Dơ** (chuyển sang `vacant_dirty`) và **Chờ kiểm tra** (chuyển sang `vacant_clean`).
+    + Cập nhật toast thông báo thành công tương ứng với tình trạng phòng đã chọn.
+  - **Kiểm thử tự động ([UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php))**: 6/6 tests passed (15 assertions) bao phủ đầy đủ tất cả các trường hợp chặn và cho phép hủy nhận phòng.
+
+- **3. Nghiệp vụ 3 - Điều hướng Menu chuột phải "Hóa đơn" và "Nhóm hóa đơn" ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - Chuột phải vào phòng trên Room Map:
+    + Chọn **"Hóa đơn"**: Điều hướng vào đúng màn hình Trả phòng kèm mã booking và ID phòng (`/frontdesk?tab=checkout&bookingCode=...&roomId=...`). [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) tự động focus và chọn đúng phòng của hóa đơn.
+    + Chọn **"Nhóm hóa đơn"**: Điều hướng vào màn hình Trả phòng kèm mã booking (`/frontdesk?tab=checkout&bookingCode=...`) để mở toàn bộ hóa đơn của đăng ký.
+    + Phòng trống chưa có booking: Hiển thị cảnh báo nhắc nhở phù hợp thay vì chuyển trang sai nghiệp vụ.
+
 ## [2026-09-16] - Chuẩn hóa Bảng Hóa đơn bán hàng sales_invoices & Loại bỏ hoàn toàn các view legacy (sp3000, sp3002, sp3003)
 ### Module: Thu ngân / Quản lý Hóa đơn bán hàng & Doanh thu ([PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php), [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php))
 

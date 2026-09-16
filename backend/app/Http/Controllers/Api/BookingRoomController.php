@@ -820,13 +820,51 @@ class BookingRoomController extends Controller
         $booking     = $bookingRoom->booking;
 
         $systemDate = $this->avService->getSystemDate()->toDateString();
-        if ($bookingRoom->arrival_date->toDateString() !== $systemDate) {
-            return response()->json(['success' => false, 'message' => 'Chỉ được hủy nhận phòng trong ngày hệ thống.'], 422);
+        $checkinDate = ($bookingRoom->actual_arrival_date ?? $bookingRoom->arrival_date)?->toDateString();
+        if ($checkinDate !== $systemDate) {
+            return response()->json(['success' => false, 'message' => 'Chỉ được hủy nhận phòng cho những phòng vừa mới nhận trong ngày.'], 422);
         }
 
         // Chỉ cho phép hủy check-in nếu phòng đang Checked In (status = 1)
         if ($bookingRoom->status !== BookingRoom::STATUS_CHECKED_IN) {
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái đã check-in.'], 422);
+        }
+
+        // Không cho phép hủy nhận phòng đối với các phòng đã phát sinh hóa đơn, thanh toán hoặc thanh toán trước (Edit = 0)
+        $hasServiceBills = \App\Models\ServiceBill::where(function ($q) use ($bookingRoom, $booking) {
+            $q->where('RentalRoomId2', (string) $bookingRoom->id)
+              ->orWhere('RentalRoomId1', (string) $bookingRoom->id);
+            if ($booking && $booking->bookingRooms()->count() <= 1) {
+                $q->orWhere(function ($q2) use ($booking) {
+                    $q2->where(function ($mb) use ($booking) {
+                        $mb->where('RegisterID2', (string) $booking->id)
+                           ->orWhere('RegisterId1', (string) $booking->id);
+                    })->where(function ($r) {
+                        $r->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
+                    });
+                });
+            }
+        })
+        ->where('Edit', 0)
+        ->exists();
+
+        $hasPayments = \App\Models\Payment::where('booking_id', $booking->id)
+            ->where(function ($q) use ($bookingRoom, $booking) {
+                $q->where('booking_room_id', $bookingRoom->id);
+                if ($booking && $booking->bookingRooms()->count() <= 1) {
+                    $q->orWhereNull('booking_room_id');
+                }
+            })
+            ->where('edit_flag', 0)
+            ->whereNull('deleted_at')
+            ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
+            ->exists();
+
+        if ($hasServiceBills || $hasPayments) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin',
+            ], 422);
         }
 
         DB::beginTransaction();
