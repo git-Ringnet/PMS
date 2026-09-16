@@ -11,6 +11,52 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-16] - Hoàn thiện 3 yêu cầu Sơ đồ phòng (Room Map): Phòng Back-to-back, Giao diện danh sách & Đóng menu HK
+### Module: Sơ đồ phòng / Room Map ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **1. Xử lý hiển thị icon phòng Back-to-back**:
+  - **Khái niệm**: Phòng Back-to-back là phòng có khách trả phòng (check-out) hôm nay và ngay lập tức có đoàn khách tiếp theo nhận phòng (check-in) hôm nay vào đúng phòng đó mà không để trống.
+  - **Backend ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php))**:
+    - Nhận diện cả booking đang ở (`$checkedInBr`, `status = 1`, `departure_date = sysDateStr`) và booking mới đến (`$bookedBr`, `status = 0`, `arrival_date = sysDateStr`) cho cùng một phòng vật lý.
+    - Trả về cờ `has_arrival_today`, `has_departure_today`, `is_back_to_back = true` và đính kèm `arriving_booking` trong payload Room Resource.
+  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Cập nhật hàm `hasArrivalToday(room)` ưu tiên cờ `room.has_arrival_today` và bỏ chặn nếu là phòng `is_back_to_back`.
+    - Trên Card view: Phòng Back-to-back hiển thị đồng thời cả icon chấm xanh lá 🟢 (khách đến hôm nay bên trái) và icon đỏ 🔴 (khách đi hôm nay bên phải).
+    - Cập nhật Tooltip hover: Thêm khối thông tin chi tiết của khách tiếp theo sắp nhận phòng (Tên khách, mã đặt phòng, giờ đến,...).
+
+- **2. Chuẩn hóa Room Map dạng danh sách (List / Table View)**:
+  - **Màu nền phòng**: Hàm `getListRowStyle(room)` chỉ áp dụng màu nền khi phòng đã inhouse (`isRoomCheckedIn(room)`). Phòng chưa check-in giữ nền trắng mặc định (`#ffffff`).
+  - **Click chọn dòng**: Thay đổi class `.room-row-selected` sử dụng viền đậm (`outline: 2px solid #0284c7`, box-shadow tint nhẹ) tương tự như Card view khi active, không làm mất hoặc ghi đè màu nền của phòng.
+  - **Hiển thị Ngày đến / Ngày đi**: Sửa hàm `formatDateShort` xử lý chuẩn định dạng `dd-MM-yyyy`, lấy từ `room.arrival_date || room.actual_arrival_date` và `room.departure_date || room.actual_departure_date`.
+  - **Bộ lọc các cột tiêu đề bảng dạng Popover (Header Popover Filters - Khớp 100% Mockup Ảnh 1 & 2)**:
+    - Bố trí đúng thứ tự 17 cột: `Checkbox/STT`, `TTĐK`, `Nhận phòng trễ`, `Chuyển phòng kế hoạch`, `TT Phòng`, `Thêm giường`, `Yêu cầu ĐB`, `Loại phòng`, `Dạng phòng`, `Phòng`, `Tên khách`, `Mã ĐK`, `Tên đăng ký`, `Ngày đến`, `Ngày đi`, `Công ty`, `Tầng`.
+    - **Cột Lọc Checkbox (Icon ▾)**: Gồm `TTĐK` (Khách lẻ, Phòng ở, Phòng đến, Phòng đi), `Nhận phòng trễ`, `Chuyển phòng kế hoạch`, `TT Phòng`, `Thêm giường`, `Yêu cầu ĐB`, `Loại phòng`, `Dạng phòng`, `Công ty`, `Tầng`. Khi click mở popover chọn checkbox kèm 2 nút `Reset` và `OK` (màu xanh `#7ec1e8`).
+    - **Cột Tìm Kiếm (Icon 🔍)**: Gồm `Phòng`, `Tên khách` (placeholder: "Search guest name" đúng Ảnh 2), `Mã ĐK`, `Tên đăng ký`, `Ngày đến`, `Ngày đi`. Khi click mở popover input text kèm 2 nút `🔍 Search` (màu xanh `#7ec1e8`) và `Reset`.
+    - Tự động đóng popover khi click ra ngoài (`handleClickOutsideSettings`).
+    - Bổ sung thanh trạng thái số lượng phòng hiển thị và nút "Xóa tất cả lọc" khi có bộ lọc hoạt động.
+
+- **3. Sửa lỗi click vào icon đổi tình trạng buồng phòng (HK) & Đóng khi click ra ngoài**:
+  - **Nguyên nhân lỗi**: Khối container trên Toolbar thiếu class `.bulk-status-container` và nút chưa dùng `@click.stop`, dẫn đến khi click mở menu thì sự kiện click lan truyền (bubble) lên `window` và bị `handleClickOutsideSettings` đóng lại ngay lập tức. Ngoài ra, nút bị gán thuộc tính `:disabled` khi chưa chọn phòng làm trình duyệt nuốt sự kiện click.
+    - Cấu hình hiển thị 2 nút chức năng ("Cập nhật tình trạng phòng" và "In Worksheet") **chỉ hiển thị ở Room Map dạng danh sách** (`!isGridMode`), ẩn hoàn toàn khi ở dạng lưới/card.
+    - Tự động đóng popup menu đổi tình trạng phòng khi người dùng chuyển đổi chế độ xem.
+    - Bỏ thuộc tính `:disabled` chặn click khi chưa chọn phòng, thay vào đó hiển thị thông báo toast cảnh báo hướng dẫn người dùng (*"Vui lòng chọn phòng cần cập nhật."* hoặc *"Bạn không có quyền..."*).
+    - Tự động đóng menu khi click ra bất kỳ đâu bên ngoài vùng `.bulk-status-container`.
+    - **Đồng bộ hóa icon "Sẵn sàng"**: Chuyển đổi icon của trạng thái `vacant_ready` trong `bulkStatusOptions` từ icon `available` (tròn xanh lá) sang icon `double-check` (`text-[#38bdf8]`), đồng bộ 100% với menu ngữ cảnh (Context Menu "Chuyển tình trạng phòng > Sẵn sàng").
+
+- **Kiểm thử**: `npm run build` thành công 100%, không phát sinh lỗi.
+
+## [2026-09-16] - Khắc phục lỗi kết nối MariaDB (SQLSTATE[HY000] [1130] Host 'localhost' is not allowed to connect)
+### Module: Database / Hạ tầng MariaDB (XAMPP)
+
+- **Nguyên nhân**:
+  - Bảng hệ thống lưu trữ tài khoản và phân quyền của MariaDB (`mysql.global_priv` sử dụng storage engine Aria) bị crash checksum (`ERROR 1030: Got error 176 "Read page with wrong checksum" from storage engine Aria`).
+  - Khi client kết nối, MariaDB không đọc được bảng quyền nên tự động từ chối mọi kết nối handshake từ `localhost` / `127.0.0.1` với mã lỗi `1130`. Tiến trình `mysqld` vẫn chạy nên XAMPP Control Panel không báo lỗi.
+- **Khắc phục**:
+  - Tạm thời khởi động mysqld với `skip-grant-tables`.
+  - Thực hiện sửa chữa toàn bộ bảng hệ thống bằng `REPAIR TABLE mysql.global_priv;` và `mysqlcheck --repair --databases mysql`.
+  - Khôi phục lại file cấu hình `my.ini` về trạng thái chuẩn và khởi động lại MariaDB bình thường.
+- **Kiểm thử**: Kết nối PHP PDO và phpMyAdmin hoạt động 100%, query bảng `hotel_settings` thành công.
+
 ## [2026-09-15] - Sửa lỗi hiển thị icon "Phòng đến" trên Sơ đồ phòng khi đã nhận phòng
 ### Module: Sơ đồ phòng / Room Map ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
