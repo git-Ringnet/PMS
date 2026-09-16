@@ -542,6 +542,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'storeDebtSettlement'])->middleware('permission:fo.payment.create');
     Route::delete('/payments/{id}/debt-settlements/{settlementId}', [\App\Http\Controllers\Api\PaymentController::class, 'destroyDebtSettlement'])->middleware('permission:fo.payment.create');
 
+    // =====================================================================
+    // HÓA ĐƠN BÁN HÀNG (Sales Invoices) routes
+    // =====================================================================
+    Route::get('/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'index']);
+    Route::get('/sales-invoices/stats', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'stats']);
+    Route::get('/sales-invoices/{id}', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'show']);
+    Route::get('/sales-invoices/{id}/print', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'printData']);
+    Route::get('/bookings/{bookingId}/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'byBooking']);
+
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
 

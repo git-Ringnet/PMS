@@ -64,4 +64,9 @@ class ServiceBill extends Model
     {
         return $this->belongsTo(HotelService::class, 'ServiceId', 'code');
     }
+
+    public function salesInvoice()
+    {
+        return $this->belongsTo(SalesInvoice::class, 'InvoiceId', 'id');
+    }
 }

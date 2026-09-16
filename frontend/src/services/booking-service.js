@@ -182,3 +182,10 @@ export const checkoutChild = (roomId, childId) => http.post(`/booking-rooms/${ro
 export const restoreRoomCheckout = (roomId) => http.post(`/booking-rooms/${roomId}/restore-checkout`)
 export const restoreBookingCheckout = (bookingId) => http.post(`/bookings/${bookingId}/restore-checkout`)
 
+// ==================== SALES INVOICES (HÓA ĐƠN BÁN HÀNG) ====================
+export const fetchSalesInvoices = (params = {}) => http.get('/sales-invoices', { params })
+export const fetchSalesInvoiceDetail = (id) => http.get(`/sales-invoices/${id}`)
+export const fetchSalesInvoicePrint = (id) => http.get(`/sales-invoices/${id}/print`)
+export const fetchBookingSalesInvoices = (bookingId) => http.get(`/bookings/${bookingId}/sales-invoices`)
+
+

@@ -1,7 +1,5 @@
 # Nhật Ký Tiến Độ Dự Án (Project Dev Log)
 
-# Nhật Ký Tiến Độ Dự Án (Project Dev Log)
-
 > File này ghi nhận tiến độ công việc, các tính năng/nghiệp vụ đã hoàn thành, trạng thái hiện tại và kế hoạch tiếp theo để tiếp nối công việc giữa các phiên làm việc.
 
 ---
@@ -10,6 +8,48 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
+
+## [2026-09-16] - Chuẩn hóa Bảng Hóa đơn bán hàng sales_invoices & Loại bỏ hoàn toàn các view legacy (sp3000, sp3002, sp3003)
+### Module: Thu ngân / Quản lý Hóa đơn bán hàng & Doanh thu ([PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php), [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php))
+
+- **1. Nghiệp vụ & Bối cảnh**:
+  - Chuẩn hóa tên 3 bảng riêng biệt trực tiếp trong MySQL (không dùng các tên prefix `sp...` của SQL Server cũ):
+    + **Bảng thanh toán (`payments`)**: Quản lý dòng tiền thu vào (cash-in) theo ngày giao dịch thực tế (cọc, tạm ứng, thanh toán).
+    + **Bảng hóa đơn dịch vụ (`service_bills`)**: Quản lý doanh thu phát sinh theo từng bill dịch vụ khách sử dụng thực tế.
+    + **Bảng hóa đơn bán hàng (`sales_invoices`)**: Quản lý tổng doanh thu bán hàng theo ngày lễ tân thực hiện thanh toán/quyết toán cấn trừ cọc và dịch vụ.
+  - Mối quan hệ liên kết 3 bảng chuẩn: `service_bills.InvoiceId = payments.invoice_id = sales_invoices.id`.
+
+- **2. Cơ sở dữ liệu & Kiến trúc bảng**:
+  - **Bảng vật lý**: Bảng riêng `sales_invoices` (Hóa đơn bán hàng) được mở rộng chuẩn cấu trúc PMS với `id` auto-increment, `bill_id`, các cột bóc tách thuế phí (`original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `amount`), ngày giờ thanh toán, phòng, khách, booking, ca, bộ phận, mã thanh toán (`payment_code`),...
+  - **Bảng thanh toán**: Bổ sung cột `invoice_id` (bigint unsigned nullable indexed) vào bảng `payments`.
+  - **Dọn dẹp DB**: Drop sạch toàn bộ các views và bảng legacy `sp3000`, `sp3002`, `sp3003` trên toàn bộ 8 database chi nhánh MySQL; xóa bỏ model `SP3003.php` và code SQLite.
+  - Migration [2026_09_16_120000_expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php): Đã chạy thành công 100% trên toàn bộ 8 chi nhánh database (`pms_gkt6`, `pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`, `pms_hkt5`, `pms_hkt8`, `pms_loloee`).
+  - Model [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php): Model chính đại diện cho hóa đơn bán hàng, quan hệ chuẩn Eloquent `booking`, `payments`, `serviceBills`, `company`.
+  - Model [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php): Bổ sung `invoice_id` và relation `salesInvoice()`.
+
+- **3. Logic nghiệp vụ & APIs ([SalesInvoiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/SalesInvoiceController.php), [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php))**:
+  - Tạo Controller mới [SalesInvoiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/SalesInvoiceController.php):
+    + `GET /api/sales-invoices`: Tra cứu danh sách hóa đơn theo ngày (`from_date` ~ `to_date`), phòng (`room`), mã HĐ (`bill_id`), mã booking (`booking_id`), mã thanh toán (`payment_code`), tên khách (`guest_name`), trạng thái (`status`). Phân trang kèm khối `summary` tổng hợp doanh thu và thuế phí (`total_amount`, `total_original_rate`, `total_service_charge`, `total_tax`, `total_discount`).
+    + `GET /api/sales-invoices/{id}`: Chi tiết 1 hóa đơn đầy đủ nạp kèm `booking`, `company`, danh sách dịch vụ `serviceBills`, và các khoản thanh toán/cọc `payments`.
+    + `GET /api/bookings/{bookingId}/sales-invoices`: Lấy danh sách toàn bộ hóa đơn của 1 booking.
+    + `GET /api/sales-invoices/{id}/print`: Cung cấp dữ liệu mẫu in hóa đơn gồm thông tin khách sạn (`hotel_settings`), thông tin khách, chi tiết phòng/dịch vụ, bóc tách thuế VAT, phí dịch vụ, hình thức thanh toán và số tiền bằng chữ tiếng Việt (`numberToVietnameseWords`).
+    + `GET /api/sales-invoices/stats`: Thống kê nhanh doanh thu hóa đơn bán hàng theo ngày hệ thống.
+  - Quan hệ Eloquent Models:
+    + [Booking.php](file:///d:/PMS/backend/app/Models/Booking.php): Bổ sung quan hệ `salesInvoices()`.
+    + [BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php): Bổ sung quan hệ `salesInvoices()`.
+    + [ServiceBill.php](file:///d:/PMS/backend/app/Models/ServiceBill.php): Bổ sung quan hệ `salesInvoice()`.
+    + [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php): Quan hệ `salesInvoice()`.
+  - [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php):
+    + Lưu ca làm việc (`ca`), khóa tra cứu báo cáo (`legacy_booking_id`, `legacy_rental_room_id`, `legacy_payment_id`) vào `SalesInvoice::create()`.
+    + `destroy()`: Hủy hóa đơn bán hàng (`status = 0`) và nhả liên kết khi hủy thanh toán.
+  - Frontend [booking-service.js](file:///d:/PMS/frontend/src/services/booking-service.js): Xuất các hàm API helper `fetchSalesInvoices`, `fetchSalesInvoiceDetail`, `fetchSalesInvoicePrint`, `fetchBookingSalesInvoices`.
+
+- **4. Kiểm thử**:
+  - Feature Test [SalesInvoiceApiTest.php](file:///d:/PMS/backend/tests/Feature/SalesInvoiceApiTest.php): 6/6 tests passed (79 assertions) bao phủ danh sách, bộ lọc, chi tiết, in ấn, đọc số tiền bằng chữ.
+  - Feature Test [SalesInvoiceSettlementTest.php](file:///d:/PMS/backend/tests/Feature/SalesInvoiceSettlementTest.php): 2/2 tests passed (22 assertions).
+  - Kiểm tra hồi quy [PaymentSequenceTest.php](file:///d:/PMS/backend/tests/Unit/PaymentSequenceTest.php) & [BookingRoomServiceFolioTest.php](file:///d:/PMS/backend/tests/Feature/BookingRoomServiceFolioTest.php): 20/20 tests passed.
+  - Tổng cộng 28/28 tests passed (195 assertions).
+  - Build frontend `npm run build`: Thành công 100%.
 
 ## [2026-09-16] - Hoàn thiện 3 yêu cầu Sơ đồ phòng (Room Map): Phòng Back-to-back, Giao diện danh sách & Đóng menu HK
 ### Module: Sơ đồ phòng / Room Map ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
