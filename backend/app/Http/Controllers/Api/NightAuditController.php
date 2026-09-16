@@ -372,7 +372,7 @@ class NightAuditController extends Controller
 
             $allNoShow = $booking->bookingRooms()->where('status', '!=', 4)->count() === 0;
             if ($allNoShow) {
-                $noshowRegStatusId = RegistrationStatusMapper::idFromLegacyCode(25);
+                $noshowRegStatusId = RegistrationStatusMapper::codeFromLegacyCode(25);
 
                 if ($chargeOption === 'no_charge') {
                     $booking->update([

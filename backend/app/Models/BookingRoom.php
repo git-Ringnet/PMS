@@ -366,6 +366,11 @@ class BookingRoom extends Model
         return $this->hasMany(BookingCancelLog::class);
     }
 
+    public function salesInvoices()
+    {
+        return $this->hasMany(SalesInvoice::class, 'booking_room_id');
+    }
+
     /**
      * Lock hiện tại đang active (chưa unlock).
      */

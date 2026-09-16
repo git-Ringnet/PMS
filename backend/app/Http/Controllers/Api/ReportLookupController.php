@@ -111,12 +111,13 @@ class ReportLookupController extends Controller
     private function registrationStatuses(): array
     {
         return DB::table('registration_statuses')
+            ->whereNotNull('booking_status_id')
             ->where('is_hidden', false)
             ->orderBy('order_index')
             ->orderBy('name')
-            ->get(['id', 'name', 'vietnamese'])
+            ->get(['booking_status_id', 'name', 'vietnamese'])
             ->map(fn ($status) => [
-                'value' => $status->id,
+                'value' => $status->booking_status_id,
                 'label' => $status->vietnamese ?: $status->name,
             ])->all();
     }

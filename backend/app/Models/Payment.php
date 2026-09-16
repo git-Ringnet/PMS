@@ -73,6 +73,7 @@ class Payment extends Model
         'user_id',
         'updated_by',
         'image_path',
+        'invoice_id',
         'legacy_id',
         'legacy_payment_total_amount0',
         'legacy_payment_currency0',
@@ -83,6 +84,7 @@ class Payment extends Model
         'date'                       => 'date',
         'amount'                     => 'decimal:2',
         'total_amount_before_split'  => 'decimal:2',
+        'invoice_id'                 => 'integer',
         'status'                     => 'integer',
         'edit_flag'                  => 'integer',
         'legacy_id'                  => 'integer',
@@ -126,6 +128,11 @@ class Payment extends Model
     public function bankAccount()
     {
         return $this->belongsTo(BankAccount::class, 'bank_account_id')->withTrashed();
+    }
+
+    public function salesInvoice()
+    {
+        return $this->belongsTo(SalesInvoice::class, 'invoice_id');
     }
 
     /** Stable public URL for receipt images, while retaining image_path for legacy clients. */

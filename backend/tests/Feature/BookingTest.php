@@ -32,9 +32,13 @@ class BookingTest extends TestCase
     public function test_booking_creation_automatically_creates_guest_and_generates_g_prefixed_ids()
     {
         $user = User::factory()->create();
+        $role = \App\Models\Role::create(['code' => 'booking_create_test', 'name' => 'Booking create test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
+        $permission = \App\Models\Permission::firstOrCreate(['code' => 'fo.booking.create'], ['name' => 'Create booking', 'module' => 'FO']);
+        $role->permissions()->attach($permission->id);
+        $user->roles()->attach($role->id);
         $this->withoutExceptionHandling();
         
-        $status = RegistrationStatus::first();
+        $status = RegistrationStatus::where('booking_status_id', 20)->firstOrFail();
         $company = \App\Models\Company::create(['name' => 'Test Company']);
         $market = \App\Models\Market::first() ?? \App\Models\Market::create(['name' => 'Test Market', 'code' => 'TM']);
         $customerSource = \App\Models\CustomerSource::first() ?? \App\Models\CustomerSource::create(['name' => 'Test Source', 'code' => 'TS']);
@@ -47,7 +51,7 @@ class BookingTest extends TestCase
             'arrival_date' => now()->toDateString(),
             'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1,
-            'registration_status_id' => $status->id,
+            'registration_status_id' => $status->booking_status_id,
             'room_allocations' => [
                 [
                     'roomClassId' => 1,
@@ -75,6 +79,8 @@ class BookingTest extends TestCase
         $booking = Booking::first();
         $this->assertNotNull($booking);
         $this->assertEquals('NGUYEN VAN A', $booking->booking_name);
+        $this->assertEquals(20, $booking->registration_status_id);
+        $this->assertNotEquals($status->id, $booking->registration_status_id);
         $this->assertEquals($user->id, $booking->created_by_user_id);
         $this->assertEquals($user->username, $booking->created_by);
 

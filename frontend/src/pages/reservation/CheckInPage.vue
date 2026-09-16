@@ -468,9 +468,9 @@ const executeUndoCheckIn = async (mode = 'clean') => {
 
   if (successCount > 0) {
     if (mode === 'dirty') {
-      uiStore.showToast(`Hủy nhận phòng và chuyển sang phòng bẩn cho ${successCount} phòng thành công!`, 'success')
+      uiStore.showToast(`Hủy nhận phòng và chuyển sang phòng Dơ cho ${successCount} phòng thành công!`, 'success')
     } else {
-      uiStore.showToast(`Hủy nhận phòng cho ${successCount} phòng thành công!`, 'success')
+      uiStore.showToast(`Hủy nhận phòng và chuyển sang phòng Chờ kiểm tra cho ${successCount} phòng thành công!`, 'success')
     }
   }
   if (errorMessages.length > 0) {
@@ -1129,22 +1129,14 @@ watch(() => props.displayMode, async () => {
             </div>
 
             <!-- Body -->
-            <div class="px-6 py-7 text-center">
+            <div class="px-6 py-6 text-center">
               <p class="text-sm font-bold text-slate-800 leading-relaxed">
-                Bạn có muốn dọn phòng này sau khi hủy đăng ký không?
+                Vui lòng chọn tình trạng phòng sau khi thực hiện "Hủy nhận phòng"
               </p>
             </div>
 
-            <!-- Action Buttons (3 Nút: Đóng / Dơ / Có) -->
-            <div class="px-6 pb-6 flex items-center justify-center gap-2.5">
-              <button
-                @click="closeUndoCheckinModal"
-                :disabled="undoCheckinLoading"
-                class="flex-1 py-2.5 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer disabled:opacity-50 shadow-xs"
-                :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }"
-              >
-                Đóng
-              </button>
+            <!-- Action Buttons (2 Nút: Dơ / Chờ kiểm tra) -->
+            <div class="px-6 pb-6 flex items-center justify-center gap-3">
               <button
                 @click="executeUndoCheckIn('dirty')"
                 :disabled="undoCheckinLoading"
@@ -1167,7 +1159,7 @@ watch(() => props.displayMode, async () => {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   ></path>
                 </svg>
-                {{ undoCheckinLoading ? 'Đang...' : 'Có' }}
+                {{ undoCheckinLoading ? 'Đang...' : 'Chờ kiểm tra' }}
               </button>
             </div>
           </div>

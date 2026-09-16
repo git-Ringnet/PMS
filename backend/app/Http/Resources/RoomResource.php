@@ -101,6 +101,10 @@ class RoomResource extends JsonResource
             'booking_id' => $this->booking_id ?? null,
             'is_arriving_tomorrow' => (bool) ($this->is_arriving_tomorrow ?? false),
             'tomorrow_booking' => $this->tomorrow_booking ?? null,
+            'has_arrival_today' => (bool) ($this->has_arrival_today ?? false),
+            'has_departure_today' => (bool) ($this->has_departure_today ?? false),
+            'is_back_to_back' => (bool) ($this->is_back_to_back ?? false),
+            'arriving_booking' => $this->arriving_booking ?? null,
         ];
     }
 }

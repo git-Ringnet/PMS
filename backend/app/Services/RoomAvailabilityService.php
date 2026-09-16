@@ -104,11 +104,28 @@ class RoomAvailabilityService
 
         if ($roomNumbers->isEmpty()) return 0;
 
-        return RoomLock::whereIn('room_number', $roomNumbers)
-            ->where('is_active', 1)
-            ->where('start_date', '<', $departureDate)
-            ->where('end_date', '>', $arrivalDate)
-            ->count();
+        $locks = RoomLock::whereIn('room_number', $roomNumbers)
+            ->whereIn('is_active', [1, 2])
+            ->where('start_date', '<', $departureDate . ' 23:59:59')
+            ->where('end_date', '>', $arrivalDate . ' 00:00:00')
+            ->get(['room_number', 'start_date', 'end_date', 'is_active']);
+
+        $defineLockTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->value('value') ?? '12:00';
+
+        $activeLockedRooms = $locks->filter(function ($lk) use ($arrivalDate, $defineLockTime) {
+            $lockStart = Carbon::parse($lk->start_date)->toDateString();
+            $lockEnd = Carbon::parse($lk->end_date)->toDateString();
+
+            if ($lk->is_active == 2 && $lockStart !== $lockEnd) {
+                $endTime = Carbon::parse($lk->end_date)->format('H:i');
+                if ($endTime < $defineLockTime && $lockEnd <= $arrivalDate) {
+                    return false;
+                }
+            }
+            return true;
+        })->pluck('room_number')->unique();
+
+        return $activeLockedRooms->count();
     }
 
     /**
@@ -263,10 +280,12 @@ class RoomAvailabilityService
 
         // Lấy locks
         $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId)->where('is_internal', false))
-            ->where('is_active', true)
+            ->whereIn('is_active', [1, 2])
             ->where('start_date', '<', $endDate)
             ->where('end_date', '>', $startDate)
-            ->get(['start_date', 'end_date']);
+            ->get(['room_number', 'start_date', 'end_date', 'is_active']);
+
+        $defineLockTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->value('value') ?? '12:00';
 
         $current = Carbon::parse($startDate);
         $end     = Carbon::parse($endDate);
@@ -282,10 +301,21 @@ class RoomAvailabilityService
             )->count();
 
             // Count locked rooms occupying this date
-            $locked = $locks->filter(fn($lk) =>
-                Carbon::parse($lk->start_date)->toDateString() <= $dateStr &&
-                Carbon::parse($lk->end_date)->toDateString() >= $dateStr
-            )->count();
+            $locked = $locks->filter(function ($lk) use ($dateStr, $defineLockTime) {
+                $lockStart = Carbon::parse($lk->start_date)->toDateString();
+                $lockEnd = Carbon::parse($lk->end_date)->toDateString();
+
+                if ($lockStart <= $dateStr && $lockEnd >= $dateStr) {
+                    if ($lk->is_active == 2 && $dateStr === $lockEnd && $lockStart !== $lockEnd) {
+                        $endTime = Carbon::parse($lk->end_date)->format('H:i');
+                        if ($endTime < $defineLockTime) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                return false;
+            })->pluck('room_number')->unique()->count();
 
             $result[$dateStr] = max(0, $total - $locked - $booked);
             $current = $current->addDay();

@@ -114,11 +114,14 @@ class AvailabilityController extends Controller
         }
 
         // 3. Tính OOO/OOS per class per date
-        $locks = RoomLock::where('is_active', true)
+        $locks = RoomLock::whereIn('is_active', [1, 2])
             ->where('start_date', '<', $endStr)
             ->where('end_date', '>', $startStr)
             ->with('room.roomClass')
             ->get();
+
+        $defaultEndTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->first()?->value ?? '12:00';
+        $defaultEndHourMin = strlen($defaultEndTime) >= 5 ? substr($defaultEndTime, 0, 5) : '12:00';
 
         $lockCounts = [];
         $lockRooms = []; // $lockRooms[$classCode][$dStr][$lockType][] = $room_number
@@ -126,12 +129,19 @@ class AvailabilityController extends Controller
             if (!$lock->room || !$lock->room->roomClass) continue;
             $classCode = $lock->room->roomClass->code;
             $lockType  = strtoupper($lock->lock_type);
-            $lockStart = Carbon::parse($lock->start_date)->startOfDay();
-            $lockEnd   = Carbon::parse($lock->end_date)->endOfDay();
+            $lockStart = Carbon::parse($lock->start_date);
+            $lockEnd   = Carbon::parse($lock->end_date);
+            $lockStartDateStr = $lockStart->toDateString();
+            $lockEndDateStr   = $lockEnd->toDateString();
+            $lockEndTimeStr   = $lockEnd->format('H:i');
 
             foreach ($dates as $dStr) {
-                $dateObj = Carbon::parse($dStr)->startOfDay();
-                if ($dateObj->gte($lockStart) && $dateObj->lte($lockEnd)) {
+                if ($dStr >= $lockStartDateStr && $dStr <= $lockEndDateStr) {
+                    if ($dStr === $lockEndDateStr) {
+                        if ($lockEndTimeStr < $defaultEndHourMin) {
+                            continue;
+                        }
+                    }
                     $lockCounts[$classCode][$dStr][$lockType] = ($lockCounts[$classCode][$dStr][$lockType] ?? 0) + 1;
                     $lockRooms[$classCode][$dStr][$lockType][] = $lock->room_number;
                 }
@@ -526,12 +536,26 @@ class AvailabilityController extends Controller
         $rooms = $roomsQuery->get();
         $roomNumbers = $rooms->pluck('room_number')->values();
 
-        $locks = RoomLock::query()
-            ->where('is_active', true)
+        $defaultEndTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->first()?->value ?? '12:00';
+        $defaultEndHourMin = strlen($defaultEndTime) >= 5 ? substr($defaultEndTime, 0, 5) : '12:00';
+
+        $rawLocks = RoomLock::query()
+            ->whereIn('is_active', [1, 2])
             ->whereDate('start_date', '<=', $date)
             ->whereDate('end_date', '>=', $date)
             ->when($roomNumbers->isNotEmpty(), fn ($q) => $q->whereIn('room_number', $roomNumbers))
-            ->get(['room_number', 'lock_type']);
+            ->get(['room_number', 'lock_type', 'start_date', 'end_date']);
+
+        $locks = $rawLocks->filter(function ($lock) use ($date, $defaultEndHourMin) {
+            $lockEnd = Carbon::parse($lock->end_date);
+            $eDate = $lockEnd->toDateString();
+            $eTime = $lockEnd->format('H:i');
+
+            if ($date === $eDate && $eTime < $defaultEndHourMin) {
+                return false;
+            }
+            return true;
+        });
 
         $lockedNumbers = $locks->pluck('room_number')->unique()->values();
 

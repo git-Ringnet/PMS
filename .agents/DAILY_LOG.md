@@ -1,7 +1,5 @@
 # Nhật Ký Tiến Độ Dự Án (Project Dev Log)
 
-# Nhật Ký Tiến Độ Dự Án (Project Dev Log)
-
 > File này ghi nhận tiến độ công việc, các tính năng/nghiệp vụ đã hoàn thành, trạng thái hiện tại và kế hoạch tiếp theo để tiếp nối công việc giữa các phiên làm việc.
 
 ---
@@ -10,6 +8,202 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
+
+## [2026-09-16] - Hoàn thiện 3 nghiệp vụ Room Map & Lễ tân: Icon đặc biệt, Ràng buộc Hủy nhận phòng & Điều hướng Hóa đơn
+### Module: Sơ đồ phòng & Lễ tân ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+
+- **1. Nghiệp vụ 1 - Vị trí Icon Birthday, Honeymoon, Extra Bed ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - Gỡ bỏ khối icon nằm ở `top-1 left-1/2 -translate-x-1/2` gây đè lên số phòng (101, 105,...).
+  - Chuyển toàn bộ các icon đặc biệt (`birthday`, `honeymoon`, `extra-bed`) xuống hàng dưới cùng góc trái, đặt chung flex container ngang hàng với icon số lượng khách (`getGuestCount`).
+  - Cân chỉnh container trung tâm chứa thông tin phòng và tên khách (`top-[44%] -translate-y-1/2`, `truncate px-1`), tạo khoảng đệm an toàn phía dưới để tên khách không bao giờ đè lên các icon dưới đáy thẻ phòng.
+
+- **2. Nghiệp vụ 2 - Ràng buộc Hủy nhận phòng (Undo Check-in) & Chuẩn hóa Modal**:
+  - **Backend ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))**:
+    + Thêm điều kiện chặn hủy nhận phòng khi phòng đang thao tác đã phát sinh hóa đơn dịch vụ (`service_bills` có `Edit = 0`) hoặc thanh toán/đặt cọc (`payments` có `edit_flag = 0` và chưa xóa).
+    + Trả về cảnh báo 422: `"Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin"`.
+    + Chỉ cho phép hủy nhận phòng đối với những phòng vừa mới nhận trong ngày hệ thống (`actual_arrival_date == systemDate`); qua ngày chặn với thông báo `"Chỉ được hủy nhận phòng cho những phòng vừa mới nhận trong ngày."`.
+  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    + Cập nhật nội dung câu hỏi modal xác nhận: `"Vui lòng chọn tình trạng phòng sau khi thực hiện \"Hủy nhận phòng\""`.
+    + Loại bỏ nút **Đóng**, cung cấp 2 lựa chọn rõ ràng: **Dơ** (chuyển sang `vacant_dirty`) và **Chờ kiểm tra** (chuyển sang `vacant_clean`).
+    + Cập nhật toast thông báo thành công tương ứng với tình trạng phòng đã chọn.
+  - **Kiểm thử tự động ([UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php))**: 6/6 tests passed (15 assertions) bao phủ đầy đủ tất cả các trường hợp chặn và cho phép hủy nhận phòng.
+
+- **3. Nghiệp vụ 3 - Điều hướng Menu chuột phải "Hóa đơn" và "Nhóm hóa đơn" ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+  - Chuột phải vào phòng trên Room Map:
+    + Chọn **"Hóa đơn"**: Điều hướng vào đúng màn hình Trả phòng kèm mã booking và ID phòng (`/frontdesk?tab=checkout&bookingCode=...&roomId=...`). [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) tự động focus và chọn đúng phòng của hóa đơn.
+    + Chọn **"Nhóm hóa đơn"**: Điều hướng vào màn hình Trả phòng kèm mã booking (`/frontdesk?tab=checkout&bookingCode=...`) để mở toàn bộ hóa đơn của đăng ký.
+    + Phòng trống chưa có booking: Hiển thị cảnh báo nhắc nhở phù hợp thay vì chuyển trang sai nghiệp vụ.
+
+## [2026-09-16] - Chuẩn hóa Bảng Hóa đơn bán hàng sales_invoices & Loại bỏ hoàn toàn các view legacy (sp3000, sp3002, sp3003)
+### Module: Thu ngân / Quản lý Hóa đơn bán hàng & Doanh thu ([PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php), [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php))
+
+- **1. Nghiệp vụ & Bối cảnh**:
+  - Chuẩn hóa tên 3 bảng riêng biệt trực tiếp trong MySQL (không dùng các tên prefix `sp...` của SQL Server cũ):
+    + **Bảng thanh toán (`payments`)**: Quản lý dòng tiền thu vào (cash-in) theo ngày giao dịch thực tế (cọc, tạm ứng, thanh toán).
+    + **Bảng hóa đơn dịch vụ (`service_bills`)**: Quản lý doanh thu phát sinh theo từng bill dịch vụ khách sử dụng thực tế.
+    + **Bảng hóa đơn bán hàng (`sales_invoices`)**: Quản lý tổng doanh thu bán hàng theo ngày lễ tân thực hiện thanh toán/quyết toán cấn trừ cọc và dịch vụ.
+  - Mối quan hệ liên kết 3 bảng chuẩn: `service_bills.InvoiceId = payments.invoice_id = sales_invoices.id`.
+
+- **2. Cơ sở dữ liệu & Kiến trúc bảng**:
+  - **Bảng vật lý**: Bảng riêng `sales_invoices` (Hóa đơn bán hàng) được mở rộng chuẩn cấu trúc PMS với `id` auto-increment, `bill_id`, các cột bóc tách thuế phí (`original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `amount`), ngày giờ thanh toán, phòng, khách, booking, ca, bộ phận, mã thanh toán (`payment_code`),...
+  - **Bảng thanh toán**: Bổ sung cột `invoice_id` (bigint unsigned nullable indexed) vào bảng `payments`.
+  - **Dọn dẹp DB**: Drop sạch toàn bộ các views và bảng legacy `sp3000`, `sp3002`, `sp3003` trên toàn bộ 8 database chi nhánh MySQL; xóa bỏ model `SP3003.php` và code SQLite.
+  - Migration [2026_09_16_120000_expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php): Đã chạy thành công 100% trên toàn bộ 8 chi nhánh database (`pms_gkt6`, `pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`, `pms_hkt5`, `pms_hkt8`, `pms_loloee`).
+  - Model [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php): Model chính đại diện cho hóa đơn bán hàng, quan hệ chuẩn Eloquent `booking`, `payments`, `serviceBills`, `company`.
+  - Model [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php): Bổ sung `invoice_id` và relation `salesInvoice()`.
+
+- **3. Logic nghiệp vụ & APIs ([SalesInvoiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/SalesInvoiceController.php), [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php))**:
+  - Tạo Controller mới [SalesInvoiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/SalesInvoiceController.php):
+    + `GET /api/sales-invoices`: Tra cứu danh sách hóa đơn theo ngày (`from_date` ~ `to_date`), phòng (`room`), mã HĐ (`bill_id`), mã booking (`booking_id`), mã thanh toán (`payment_code`), tên khách (`guest_name`), trạng thái (`status`). Phân trang kèm khối `summary` tổng hợp doanh thu và thuế phí (`total_amount`, `total_original_rate`, `total_service_charge`, `total_tax`, `total_discount`).
+    + `GET /api/sales-invoices/{id}`: Chi tiết 1 hóa đơn đầy đủ nạp kèm `booking`, `company`, danh sách dịch vụ `serviceBills`, và các khoản thanh toán/cọc `payments`.
+    + `GET /api/bookings/{bookingId}/sales-invoices`: Lấy danh sách toàn bộ hóa đơn của 1 booking.
+    + `GET /api/sales-invoices/{id}/print`: Cung cấp dữ liệu mẫu in hóa đơn gồm thông tin khách sạn (`hotel_settings`), thông tin khách, chi tiết phòng/dịch vụ, bóc tách thuế VAT, phí dịch vụ, hình thức thanh toán và số tiền bằng chữ tiếng Việt (`numberToVietnameseWords`).
+    + `GET /api/sales-invoices/stats`: Thống kê nhanh doanh thu hóa đơn bán hàng theo ngày hệ thống.
+  - Quan hệ Eloquent Models:
+    + [Booking.php](file:///d:/PMS/backend/app/Models/Booking.php): Bổ sung quan hệ `salesInvoices()`.
+    + [BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php): Bổ sung quan hệ `salesInvoices()`.
+    + [ServiceBill.php](file:///d:/PMS/backend/app/Models/ServiceBill.php): Bổ sung quan hệ `salesInvoice()`.
+    + [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php): Quan hệ `salesInvoice()`.
+  - [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php):
+    + Lưu ca làm việc (`ca`), khóa tra cứu báo cáo (`legacy_booking_id`, `legacy_rental_room_id`, `legacy_payment_id`) vào `SalesInvoice::create()`.
+    + `destroy()`: Hủy hóa đơn bán hàng (`status = 0`) và nhả liên kết khi hủy thanh toán.
+  - Frontend [booking-service.js](file:///d:/PMS/frontend/src/services/booking-service.js): Xuất các hàm API helper `fetchSalesInvoices`, `fetchSalesInvoiceDetail`, `fetchSalesInvoicePrint`, `fetchBookingSalesInvoices`.
+
+- **4. Kiểm thử**:
+  - Feature Test [SalesInvoiceApiTest.php](file:///d:/PMS/backend/tests/Feature/SalesInvoiceApiTest.php): 6/6 tests passed (79 assertions) bao phủ danh sách, bộ lọc, chi tiết, in ấn, đọc số tiền bằng chữ.
+  - Feature Test [SalesInvoiceSettlementTest.php](file:///d:/PMS/backend/tests/Feature/SalesInvoiceSettlementTest.php): 2/2 tests passed (22 assertions).
+  - Kiểm tra hồi quy [PaymentSequenceTest.php](file:///d:/PMS/backend/tests/Unit/PaymentSequenceTest.php) & [BookingRoomServiceFolioTest.php](file:///d:/PMS/backend/tests/Feature/BookingRoomServiceFolioTest.php): 20/20 tests passed.
+  - Tổng cộng 28/28 tests passed (195 assertions).
+  - Build frontend `npm run build`: Thành công 100%.
+
+## [2026-09-16] - Hoàn thiện 3 yêu cầu Sơ đồ phòng (Room Map): Phòng Back-to-back, Giao diện danh sách & Đóng menu HK
+### Module: Sơ đồ phòng / Room Map ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **1. Xử lý hiển thị icon phòng Back-to-back**:
+  - **Khái niệm**: Phòng Back-to-back là phòng có khách trả phòng (check-out) hôm nay và ngay lập tức có đoàn khách tiếp theo nhận phòng (check-in) hôm nay vào đúng phòng đó mà không để trống.
+  - **Backend ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php))**:
+    - Nhận diện cả booking đang ở (`$checkedInBr`, `status = 1`, `departure_date = sysDateStr`) và booking mới đến (`$bookedBr`, `status = 0`, `arrival_date = sysDateStr`) cho cùng một phòng vật lý.
+    - Trả về cờ `has_arrival_today`, `has_departure_today`, `is_back_to_back = true` và đính kèm `arriving_booking` trong payload Room Resource.
+  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Cập nhật hàm `hasArrivalToday(room)` ưu tiên cờ `room.has_arrival_today` và bỏ chặn nếu là phòng `is_back_to_back`.
+    - Trên Card view: Phòng Back-to-back hiển thị đồng thời cả icon chấm xanh lá 🟢 (khách đến hôm nay bên trái) và icon đỏ 🔴 (khách đi hôm nay bên phải).
+    - Cập nhật Tooltip hover: Thêm khối thông tin chi tiết của khách tiếp theo sắp nhận phòng (Tên khách, mã đặt phòng, giờ đến,...).
+
+- **2. Chuẩn hóa Room Map dạng danh sách (List / Table View)**:
+  - **Màu nền phòng**: Hàm `getListRowStyle(room)` chỉ áp dụng màu nền khi phòng đã inhouse (`isRoomCheckedIn(room)`). Phòng chưa check-in giữ nền trắng mặc định (`#ffffff`).
+  - **Click chọn dòng**: Thay đổi class `.room-row-selected` sử dụng viền đậm (`outline: 2px solid #0284c7`, box-shadow tint nhẹ) tương tự như Card view khi active, không làm mất hoặc ghi đè màu nền của phòng.
+  - **Hiển thị Ngày đến / Ngày đi**: Sửa hàm `formatDateShort` xử lý chuẩn định dạng `dd-MM-yyyy`, lấy từ `room.arrival_date || room.actual_arrival_date` và `room.departure_date || room.actual_departure_date`.
+  - **Bộ lọc các cột tiêu đề bảng dạng Popover (Header Popover Filters - Khớp 100% Mockup Ảnh 1 & 2)**:
+    - Bố trí đúng thứ tự 17 cột: `Checkbox/STT`, `TTĐK`, `Nhận phòng trễ`, `Chuyển phòng kế hoạch`, `TT Phòng`, `Thêm giường`, `Yêu cầu ĐB`, `Loại phòng`, `Dạng phòng`, `Phòng`, `Tên khách`, `Mã ĐK`, `Tên đăng ký`, `Ngày đến`, `Ngày đi`, `Công ty`, `Tầng`.
+    - **Cột Lọc Checkbox (Icon ▾)**: Gồm `TTĐK` (Khách lẻ, Phòng ở, Phòng đến, Phòng đi), `Nhận phòng trễ`, `Chuyển phòng kế hoạch`, `TT Phòng`, `Thêm giường`, `Yêu cầu ĐB`, `Loại phòng`, `Dạng phòng`, `Công ty`, `Tầng`. Khi click mở popover chọn checkbox kèm 2 nút `Reset` và `OK` (màu xanh `#7ec1e8`).
+    - **Cột Tìm Kiếm (Icon 🔍)**: Gồm `Phòng`, `Tên khách` (placeholder: "Search guest name" đúng Ảnh 2), `Mã ĐK`, `Tên đăng ký`, `Ngày đến`, `Ngày đi`. Khi click mở popover input text kèm 2 nút `🔍 Search` (màu xanh `#7ec1e8`) và `Reset`.
+    - Tự động đóng popover khi click ra ngoài (`handleClickOutsideSettings`).
+    - Bổ sung thanh trạng thái số lượng phòng hiển thị và nút "Xóa tất cả lọc" khi có bộ lọc hoạt động.
+
+- **3. Sửa lỗi click vào icon đổi tình trạng buồng phòng (HK) & Đóng khi click ra ngoài**:
+  - **Nguyên nhân lỗi**: Khối container trên Toolbar thiếu class `.bulk-status-container` và nút chưa dùng `@click.stop`, dẫn đến khi click mở menu thì sự kiện click lan truyền (bubble) lên `window` và bị `handleClickOutsideSettings` đóng lại ngay lập tức. Ngoài ra, nút bị gán thuộc tính `:disabled` khi chưa chọn phòng làm trình duyệt nuốt sự kiện click.
+    - Cấu hình hiển thị 2 nút chức năng ("Cập nhật tình trạng phòng" và "In Worksheet") **chỉ hiển thị ở Room Map dạng danh sách** (`!isGridMode`), ẩn hoàn toàn khi ở dạng lưới/card.
+    - Tự động đóng popup menu đổi tình trạng phòng khi người dùng chuyển đổi chế độ xem.
+    - Bỏ thuộc tính `:disabled` chặn click khi chưa chọn phòng, thay vào đó hiển thị thông báo toast cảnh báo hướng dẫn người dùng (*"Vui lòng chọn phòng cần cập nhật."* hoặc *"Bạn không có quyền..."*).
+    - Tự động đóng menu khi click ra bất kỳ đâu bên ngoài vùng `.bulk-status-container`.
+    - **Đồng bộ hóa icon "Sẵn sàng"**: Chuyển đổi icon của trạng thái `vacant_ready` trong `bulkStatusOptions` từ icon `available` (tròn xanh lá) sang icon `double-check` (`text-[#38bdf8]`), đồng bộ 100% với menu ngữ cảnh (Context Menu "Chuyển tình trạng phòng > Sẵn sàng").
+
+- **Kiểm thử**: `npm run build` thành công 100%, không phát sinh lỗi.
+
+## [2026-09-16] - Khắc phục lỗi kết nối MariaDB (SQLSTATE[HY000] [1130] Host 'localhost' is not allowed to connect)
+### Module: Database / Hạ tầng MariaDB (XAMPP)
+
+- **Nguyên nhân**:
+  - Bảng hệ thống lưu trữ tài khoản và phân quyền của MariaDB (`mysql.global_priv` sử dụng storage engine Aria) bị crash checksum (`ERROR 1030: Got error 176 "Read page with wrong checksum" from storage engine Aria`).
+  - Khi client kết nối, MariaDB không đọc được bảng quyền nên tự động từ chối mọi kết nối handshake từ `localhost` / `127.0.0.1` với mã lỗi `1130`. Tiến trình `mysqld` vẫn chạy nên XAMPP Control Panel không báo lỗi.
+- **Khắc phục**:
+  - Tạm thời khởi động mysqld với `skip-grant-tables`.
+  - Thực hiện sửa chữa toàn bộ bảng hệ thống bằng `REPAIR TABLE mysql.global_priv;` và `mysqlcheck --repair --databases mysql`.
+  - Khôi phục lại file cấu hình `my.ini` về trạng thái chuẩn và khởi động lại MariaDB bình thường.
+- **Kiểm thử**: Kết nối PHP PDO và phpMyAdmin hoạt động 100%, query bảng `hotel_settings` thành công.
+
+## [2026-09-15] - Sửa lỗi hiển thị icon "Phòng đến" trên Sơ đồ phòng khi đã nhận phòng
+### Module: Sơ đồ phòng / Room Map ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Khắc phục lỗi hiển thị sai icon "Phòng đến" (chấm xanh lá cây) sau khi nhận phòng**:
+  - **Nguyên nhân**: Hàm `hasArrivalToday(room)` trước đó chỉ so sánh ngày đến `arrDate === targetDate`. Vì phòng vừa nhận phòng trong ngày nên ngày đến bằng ngày hệ thống hiện tại, dẫn đến việc phòng đã chuyển sang trạng thái Đang ở (Occupied - màu xanh dương) nhưng trên góc trên bên trái thẻ phòng (Card View) và cột Đến/Đi (List View) vẫn tiếp tục hiển thị chấm tròn màu xanh lá cây 🟢 ("Phòng đến").
+  - **Khắc phục**: Bổ sung điều kiện kiểm tra `if (isRoomCheckedIn(room)) return false` trong `hasArrivalToday(room)` để tuyệt đối không hiển thị icon/chấm xanh khách đến một khi phòng đã được nhận phòng. Đồng thời kiểm tra phòng phải có thông tin đặt phòng hợp lệ (`hasBooking`).
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-15] - Ràng buộc nghiệp vụ Xóa khách trong Thông tin đặt phòng
+### Module: Đặt phòng / Quản lý Khách ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestDeleteRestrictionsTest.php](file:///d:/PMS/backend/tests/Feature/GuestDeleteRestrictionsTest.php))
+
+- **Chặn xóa khách khi đã phát sinh hóa đơn hoặc thanh toán**:
+  - **Backend ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))**:
+    - Trong cả hai hàm `removeGuest` (khách người lớn) và `removeChild` (khách trẻ em):
+      - Kiểm tra phát sinh hóa đơn trong bảng `service_bills` (`CustomerId1` hoặc `CustomerId2`) với tình trạng `Edit = 0` hoặc `Status = 0`.
+      - Kiểm tra phát sinh đặt cọc/thanh toán trong bảng `payments` (`guest_id`) với tình trạng `edit_flag = 0` hoặc `status = 0` (chưa bị xóa mềm `deleted_at is null`).
+      - Nếu phát sinh bất kỳ bill hoặc payment nào: Chặn xóa và trả về mã lỗi 422 kèm cảnh báo đúng yêu cầu: `"Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách."`
+- **Ràng buộc thời gian check-in trong ngày**:
+  - Chỉ cho phép xóa khách khi vừa mới check-in trong ngày (`actual_arrival_date == system_date`).
+  - Đối với khách/phòng đang lưu trú (`status = 1` - Checked in): Nếu ngày đến thực tế nhỏ hơn ngày hệ thống (`actual_arrival_date < system_date` - đã qua ngày) thì chặn xóa và trả về mã lỗi 422: `"Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa."`
+  - Áp dụng chặt chẽ cho cả người lớn (`BookingRoomGuest`) và trẻ em (`BookingChild` / `BookingRoomChild`).
+- **Cải tiến giao diện ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))**:
+  - Hàm `handleDeleteGuest()`: Loại bỏ hành vi xóa lạc quan trên giao diện trước khi gọi API (tránh việc khách biến mất trên UI nhưng backend báo lỗi chặn xóa).
+  - Bắt lỗi chi tiết từ backend (`e.response?.data?.message`) và hiển thị thông báo chính xác cho người dùng qua `uiStore.showToast(errorMsg, 'error')`.
+  - Tự động nạp lại danh sách khách (`loadGuests()`) trong block `catch` để luôn đồng bộ trạng thái dữ liệu thực tế.
+- **Kiểm thử**:
+  - Tạo mới bộ test `GuestDeleteRestrictionsTest.php` gồm 8 test cases bao phủ 100% các kịch bản: chặn khi có bill `CustomerId1`, `CustomerId2`, payment, check-in qua ngày (cả người lớn và trẻ em); cho phép xóa khi check-in cùng ngày không có bill/payment.
+  - Chạy `php artisan test tests/Feature/GuestDeleteRestrictionsTest.php`: 8/8 tests PASSED (18 assertions).
+  - Chạy `php artisan test tests/Feature/GuestControllerFixesTest.php`: 3/3 tests PASSED (27 assertions).
+  - Chạy `npm run build`: compile frontend thành công 100%.
+
+## [2026-09-15] - Cải tiến DatePicker và sửa lỗi cập nhật ngày đi phòng Inhouse trên Sơ đồ phòng
+### Module: Đặt phòng / Sơ đồ phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
+
+- **Chuyển đổi các ô ngày sang component `SingleDatePicker` trực quan**:
+  - Thay thế toàn bộ `<input type="date">` mặc định của trình duyệt tại 4 trường: `Sinh nhật`, `Ngày phát hành` (Giấy tờ tùy thân), `Ngày đến` và `Ngày đi` sang component [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue) đồng bộ với toàn hệ thống PMS.
+  - Tích hợp popup lịch chọn ngày trực quan (`dd/MM/yyyy`), hỗ trợ `:min-date` tự động ràng buộc `Ngày đi >= Ngày đến`.
+  - Tự động tính lại số đêm (`stayInfo.nights`) thông qua watcher ngay khi người dùng đổi ngày đến/ngày đi.
+  - Định dạng kích thước `height: 35px`, viền và nền xám chuẩn PMS cho các ô disabled (`Ngày đến`).
+- **Sửa lỗi lưu thông tin phòng Inhouse (Section 8)**:
+  - Khắc phục lỗi 422 (`exists:room_rate_codes,Ma`) khi lưu phòng do `rate_code` mang giá trị placeholder `'Vui lòng chọn giá phòng'`.
+  - Làm sạch `rate_code` (gán về `null` nếu không có hoặc là placeholder) trước khi gửi payload lên API `updateBookingRoomGuest`.
+  - Bổ sung hiển thị thông báo lỗi chi tiết từ backend thay vì câu thông báo chung chung.
+- **Kiểm thử**: `npm run build` thành công 100%.
+
+## [2026-09-14] - Hoàn thiện toàn diện các nghiệp vụ Khóa phòng theo tài liệu Lỗi liên quan tới khóa phòng.docx
+### Module: Quản lý Khóa phòng (Room Lock) ([RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php), [LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue), [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php))
+
+- **Section 1: Cập nhật thời gian khi mở khóa phòng & đồng bộ thống kê OOO/OOS**:
+  - **Cập nhật ngày kết thúc khi mở khóa**: Khi mở khóa phòng (cả đơn lẻ qua `destroy` và hàng loạt qua `bulkUnlock`), hệ thống cập nhật `end_date` của phòng khóa thành ngày hệ thống (`system_date`) và giờ thao tác thực tế (`H:i:s`), đồng thời chuyển `is_active = 2` (STATUS_UNLOCKED) và `status = 'Done'`.
+  - **Giữ lịch sử khóa qua đêm trên màn hình Kế hoạch phòng & Phòng trống**: Cập nhật các truy vấn và service tính công suất ([RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php)) lấy các bản ghi khóa phòng `is_active in [1, 2]`.
+  - **So khớp cấu hình `FrmOOO_DefineLockByTime`**: Các ngày trước đó (đã khóa qua đêm) giữ nguyên số liệu thống kê OOO/OOS. Riêng ngày thực hiện mở khóa: nếu mở trước giờ quy định `FrmOOO_DefineLockByTime` (mặc định 12:00) thì không tính ngày đó bị khóa (trừ số liệu OOO/OOS); nếu mở sau giờ quy định thì vẫn tính ngày đó bị khóa.
+
+- **Section 2: Kiểm tra cấu hình `AllowLockRoomCauseUnassignableRoomBK`**:
+  - Bổ sung helper `checkUnassignableBookingsAvailability(...)` trong [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php) để kiểm tra xem sau khi khóa phòng vật lý này, các booking chưa gán phòng (`room_number is null`) thuộc cùng hạng phòng đó có còn ít nhất 1 phòng vật lý trống liên tục toàn bộ kỳ lưu trú để gán hay không.
+  - **Tối ưu hóa thuật toán giữ chỗ liên tục cho nhiều booking (Interval Occupancy Tracking)**: Xây dựng bản đồ phân khoảng thời gian đã chiếm dụng (`roomOccupancies`) cho từng phòng vật lý (bao gồm phòng đang khóa, phòng có lịch OOO/OOS khác và phòng đã gán booking). Khi kiểm tra nhiều booking chưa gán phòng cùng lúc, hệ thống tự động trừ dần (giữ chỗ tạm thời) các phòng đã khớp, ngăn chặn trường hợp nhiều booking chưa gán cùng tính trùng vào 1 phòng trống còn lại.
+  - Tích hợp kiểm tra vào `store()`, `bulkLock()`, `update()`, `bulkUpdate()` (đặt trước bước kiểm tra AV phòng âm để ưu tiên bảo vệ tính liên tục của booking):
+    - Nếu `AllowLockRoomCauseUnassignableRoomBK = '0'`: Chặn không cho khóa phòng và trả về lỗi 422 giải thích chi tiết.
+    - Nếu `AllowLockRoomCauseUnassignableRoomBK = '1'`: Trả về cảnh báo yêu cầu xác nhận (`require_confirm: true`). Khi người dùng đồng ý (`force: true`), cho phép khóa phòng.
+
+- **Section 3: Sửa form chỉnh sửa khóa phòng đơn lẻ**:
+  - **Quy tắc ngày bắt đầu**:
+    - Khi `start_date <= system_date`: Khóa/disable ô ngày bắt đầu trên form modal ([LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue)); backend kiểm tra chặn không cho sửa ngày bắt đầu và báo lỗi nếu người dùng cố tình thay đổi.
+    - Khi `start_date > system_date`: Cho phép sửa ngày bắt đầu (với điều kiện `>= system_date`).
+    - Cho phép sửa ngày kết thúc, ghi chú/lý do, % tiến độ bảo trì.
+  - **Khắc phục lỗi so sánh với ngày hệ thống**: Thay thế việc so sánh với thời gian thực tế máy chủ `now()` bằng ngày nghiệp vụ của hệ thống (`SystemDateRoll::getSystemDate()`), tránh lỗi báo "Khóa phòng đã kết thúc trong quá khứ..." đối với các phòng khóa đang hoạt động trong ngày hệ thống.
+
+- **Section 4: Thêm 2 nút "Sửa" và "Lưu" ngoài Toolbar để sửa trực tiếp nhiều phòng khóa**:
+  - **Giao diện Toolbar & Inline Table Edit ([LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue))**:
+    - Bổ sung 2 nút "Sửa" (bật chế độ inline edit trên bảng) và "Lưu" (kèm nút "Hủy") cạnh nút "Mở khóa".
+    - Khi ở chế độ sửa, các cột Ngày bắt đầu, Ngày mở khóa, Lý do/Mô tả, % Bảo trì trở thành các ô input có thể chỉnh sửa trực tiếp.
+    - Cột ngày bắt đầu tự động bị disable nếu `start_date <= system_date` theo đúng quy tắc Section 3.
+  - **API `bulkUpdate` và Giao dịch nguyên tử (Atomic Transaction)**:
+    - Tạo API `POST /api/room-locks/bulk-update` trong [routes/api.php](file:///d:/PMS/backend/routes/api.php) và [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php).
+    - Toàn bộ các cập nhật được bọc trong `DB::transaction()`. Nếu có bất kỳ phòng nào bị lỗi kiểm tra (thời gian, trùng lịch, AV âm, hoặc vi phạm `AllowLockRoomCauseUnassignableRoomBK`), toàn bộ thay đổi sẽ rollback 100% và không có phòng nào bị thay đổi sai lệch.
+
+- **Kiểm thử tự động**:
+  - Viết và chạy thành công 13 test cases trong [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php) (13/13 passed, 40 assertions), bao trùm toàn bộ các điều kiện của cả 4 Section (Section 1 Unlock date/stats, Section 2 Unassignable bookings rule, Section 3 Single edit date logic, Section 4 Toolbar bulk update & atomic rollback).
+  - Chạy test kiểm tra công suất phòng [RoomOccupancyStatisticsTest.php](file:///d:/PMS/backend/tests/Feature/RoomOccupancyStatisticsTest.php) (passed 100%).
+  - Chạy test nghiệp vụ booking [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) (24/24 passed).
+  - Build frontend bằng `npm run build` thành công 100%, không phát sinh lỗi.
+
 
 ## [2026-09-14] - Chuẩn hóa tên file template báo cáo hàng bể vỡ trong DB migration (Tương thích Linux)
 ### Module: Báo cáo dịch vụ / Migrations ([2026_09_11_170000_create_breakage_invoice_product_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_170000_create_breakage_invoice_product_report.php), [2026_09_11_171000_create_breakage_free_invoice_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_171000_create_breakage_free_invoice_report.php))

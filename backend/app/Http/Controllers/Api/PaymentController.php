@@ -11,6 +11,8 @@ use App\Models\Payment;
 use App\Models\PaymentSequence;
 use App\Models\PaymentDebtSettlement;
 use App\Models\PaymentMethod;
+use App\Models\SalesInvoice;
+use App\Models\ServiceBill;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -109,6 +111,32 @@ class PaymentController extends Controller
         $sequence->save();
 
         return (string) $sequence->current_value;
+    }
+
+    /**
+     * Allocate one sequential 8-digit bill ID for sales invoice.
+     */
+    private function nextInvoiceBillId(): string
+    {
+        $sequence = PaymentSequence::firstOrCreate(
+            ['sequence_key' => 'sales_invoice'],
+            ['current_value' => 0]
+        );
+
+        $sequence = PaymentSequence::where('sequence_key', 'sales_invoice')
+            ->lockForUpdate()
+            ->first();
+
+        if ((int) $sequence->current_value === 0) {
+            $maxId = (int) (SalesInvoice::max('id') ?? 0);
+            $maxBill = (int) (SalesInvoice::max('bill_id') ?? 0);
+            $sequence->current_value = max($maxId, $maxBill);
+        }
+
+        $sequence->current_value++;
+        $sequence->save();
+
+        return str_pad((string) $sequence->current_value, 8, '0', STR_PAD_LEFT);
     }
 
     private function getDepartmentId(Request $request)
@@ -618,10 +646,17 @@ class PaymentController extends Controller
                 'created_by'        => Auth::user()?->username ?? 'system',
             ]);
 
-            // Nếu đây là bản ghi thanh toán (có payment_id), nhả payment_id trên các bill liên quan
+            // Nếu đây là bản ghi thanh toán (có payment_id hoặc invoice_id), nhả payment_id trên các bill liên quan và hủy hóa đơn bán hàng
+            if (!empty($payment->payment_id) || !empty($payment->invoice_id)) {
+                SalesInvoice::query()
+                    ->when($payment->invoice_id, fn($q) => $q->where('id', $payment->invoice_id))
+                    ->when($payment->payment_id, fn($q) => $q->orWhere('payment_code', $payment->payment_id))
+                    ->update(['status' => 0]);
+            }
+
             if (!empty($payment->payment_id)) {
-                $serviceBillIds = \App\Models\ServiceBill::where('PaymentID', $payment->payment_id)->pluck('Ma');
-                \App\Models\ServiceBill::where('PaymentID', $payment->payment_id)
+                $serviceBillIds = ServiceBill::where('PaymentID', $payment->payment_id)->pluck('Ma');
+                ServiceBill::where('PaymentID', $payment->payment_id)
                     ->update(['PaymentID' => null, 'Status' => 1, 'InvoiceId' => null]);
                 if (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'payment_id')) {
                     \App\Models\BookingRoomService::where('payment_id', $payment->payment_id)
@@ -651,6 +686,7 @@ class PaymentController extends Controller
                     ->whereNull('deleted_at')
                     ->update([
                         'payment_id' => null,
+                        'invoice_id' => null,
                         'status' => Payment::STATUS_PENDING,
                         'updated_by' => Auth::user()?->username ?? 'system',
                     ]);
@@ -1063,12 +1099,12 @@ class PaymentController extends Controller
         $folioId = $request->input('folio_id', '1');
         $systemDate = $this->getSystemDate();
         $departmentId = $this->getDepartmentId($request);
+        $salesInvoice = null;
 
-        DB::transaction(function () use ($request, $booking, $bookingId, $folioId, $systemDate, $departmentId) {
+        DB::transaction(function () use ($request, $booking, $bookingId, $folioId, $systemDate, $departmentId, &$salesInvoice) {
             // One sequential code is shared by all payment rows in this
             // settlement (for example cash + transfer entered together).
             $settlementCode = $this->nextSettlementCode();
-            $invoiceCode = (string)rand(7000, 9999);
 
             $isFolioA = strtoupper((string) $folioId) === 'A';
             $targetFolio = $isFolioA ? 3 : (is_numeric($folioId) ? (int)$folioId : 1);
@@ -1136,7 +1172,7 @@ class PaymentController extends Controller
                 });
             }
 
-            $unpaidServiceQuery = \App\Models\ServiceBill::query();
+            $unpaidServiceQuery = ServiceBill::query();
             if ($selectedBillIds) {
                 $unpaidServiceQuery->whereIn('Ma', $selectedBillIds);
             } else {
@@ -1218,6 +1254,98 @@ class PaymentController extends Controller
                 ]);
             }
 
+            // Tính toán bóc tách thuế phí chi tiết từ các dịch vụ được thanh toán (theo chuẩn sp_216)
+            $settledBills = (clone $unpaidServiceQuery)->get();
+            $totalBillAmount = 0.0;
+            $totalOriginalRate = 0.0;
+            $totalTax = 0.0;
+            $totalSpecialTax = 0.0;
+
+            foreach ($settledBills as $sb) {
+                $exchange = (float) ($sb->Exchange ?: 1);
+                $amt = (float) $sb->Amount * $exchange;
+                $sc = (float) ($sb->ServiceCharge ?? 0);
+                $st = (float) ($sb->SpecialTax ?? 0);
+                $tax = (float) ($sb->Tax ?? 0);
+
+                // Công thức chuẩn sp_216:
+                // OriginalRate = sum( (Amount * Exchange * 10^6) / ( (100 + ServiceCharge) * (100 + SpecialTax) * (100 + Tax) ) )
+                $denom = (100 + $sc) * (100 + $st) * (100 + $tax);
+                $orig = $denom > 0 ? ($amt * 1000000) / $denom : $amt;
+                $vTax = (100 + $tax) > 0 ? ($amt * $tax) / (100 + $tax) : 0;
+
+                $totalBillAmount += $amt;
+                $totalOriginalRate += $orig;
+                $totalTax += $vTax;
+            }
+
+            if ($settledBills->isEmpty()) {
+                $totalAmount = (float) $settlementAmount;
+                $totalOriginalRate = $totalAmount;
+                $totalTax = 0.0;
+                $totalSpecialTax = 0.0;
+                $totalServiceCharge = 0.0;
+            } else {
+                $totalAmount = round($totalBillAmount, 2);
+                $totalOriginalRate = round($totalOriginalRate, 2);
+                $totalTax = round($totalTax, 2);
+                $totalSpecialTax = 0.0;
+                $totalServiceCharge = round($totalAmount - $totalSpecialTax - $totalTax - $totalOriginalRate, 2);
+                if ($totalServiceCharge < 0) {
+                    $totalServiceCharge = 0.0;
+                    $totalOriginalRate = round($totalAmount - $totalTax, 2);
+                }
+            }
+
+            if ($reqRoomId && isset($room)) {
+                $spRoom = 'R:' . $room->room_number;
+                $spGuestRoomId = (string) $room->id . ($reqGuestId ? (string) $reqGuestId : '');
+                $guestRecord = $reqGuestId ? \App\Models\Guest::find($reqGuestId) : null;
+                $spGuestName = $guestRecord?->name ?? ($booking->booking_name ?? '');
+            } else {
+                $spRoom = 'C:' . $bookingId;
+                $spGuestRoomId = (string) $bookingId;
+                $spGuestName = $booking->booking_name ?? '';
+            }
+
+            $billId = $this->nextInvoiceBillId();
+            $paymentDate = $request->input('date', $systemDate);
+            $openTime = $request->input('open_time', now()->format('H:i:s'));
+
+            // Tạo hóa đơn bán hàng SalesInvoice
+            $salesInvoice = SalesInvoice::create([
+                'bill_id'               => $billId,
+                'invoice_date'          => $paymentDate,
+                'payment_date'          => $paymentDate,
+                'open_time'             => $openTime,
+                'room'                  => $spRoom,
+                'guest_room_id'         => $spGuestRoomId,
+                'currency'              => 'VND',
+                'original_rate'         => $totalOriginalRate,
+                'service_charge_amount' => $totalServiceCharge,
+                'special_tax'           => $totalSpecialTax,
+                'tax'                   => $totalTax,
+                'discount'              => 0,
+                'amount'                => $totalAmount,
+                'exchange_rate'         => 1,
+                'username'              => Auth::user()?->username ?? 'system',
+                'ca'                    => $request->input('shift_id') ?: (\App\Models\SystemDateRoll::latest('id')->value('shift') ?: '1'),
+                'outlet'                => in_array(strtoupper(trim((string) $departmentId)), ['FO', 'FRONTDESK', 'RECEPTION'], true) ? 'RC' : 'RC',
+                'department'            => $departmentId ?: 'FO',
+                'status'                => 1,
+                'booking_id'            => $bookingId,
+                'booking_room_id'       => $reqRoomId ? (string) $reqRoomId : null,
+                'guest_id'              => $reqGuestId ? (string) $reqGuestId : null,
+                'company_id'            => $booking->company_id,
+                'payment_code'          => (string) $settlementCode,
+                'guest_name'            => $spGuestName,
+                'legacy_booking_id'     => $bookingId,
+                'legacy_rental_room_id' => $reqRoomId ? (string) $reqRoomId : null,
+                'legacy_payment_id'     => is_numeric($settlementCode) ? (int) $settlementCode : null,
+            ]);
+
+            $invoiceCode = (string) $salesInvoice->id;
+
             // 1. Tạo các bản ghi Payment thanh toán từ danh sách payments trong modal
             foreach ($request->input('payments', []) as $pItem) {
                 $amt = (float)($pItem['amount'] ?? 0);
@@ -1246,13 +1374,14 @@ class PaymentController extends Controller
                     // existing PY settlement marker.
                     'outlet'            => in_array(strtoupper(trim((string) $departmentId)), ['FO', 'FRONTDESK', 'RECEPTION'], true) ? 'RC' : null,
                     'payment_id'        => $settlementCode,
+                    'invoice_id'        => $salesInvoice->id,
                     'status'            => Payment::STATUS_PAID, // 2
                     'edit_flag'         => 0,
                     'created_by'        => Auth::user()?->username ?? 'system',
                 ]);
             }
 
-            // 2. Cập nhật mã thanh toán payment_id trên các bản ghi cọc/tạm ứng hiện có thuộc Folio này
+            // 2. Cập nhật mã thanh toán payment_id & invoice_id trên các bản ghi cọc/tạm ứng hiện có thuộc Folio này
             $targetRoomIds = $reqRoomId ? [(string)$reqRoomId] : $booking->bookingRooms->pluck('id')->map(fn($id) => (string)$id)->toArray();
             // Một số dữ liệu legacy dùng mã phòng dạng Gxxxx, không thể so sánh
             // trực tiếp với các cột RentalRoomId kiểu số trong ServiceBill.
@@ -1282,6 +1411,7 @@ class PaymentController extends Controller
             }
             $updatePaymentData = [
                 'payment_id' => $settlementCode,
+                'invoice_id' => $salesInvoice->id,
                 'status'     => Payment::STATUS_PAID,
             ];
             if ($isFolioA) {
@@ -1290,7 +1420,7 @@ class PaymentController extends Controller
             $paymentQuery->update($updatePaymentData);
 
             // 3. Cập nhật dịch vụ ServiceBill thuộc Folio này thành Đã thanh toán (status = 2) và gán PaymentId & InvoiceId
-            $serviceBillQuery = \App\Models\ServiceBill::query();
+            $serviceBillQuery = ServiceBill::query();
             if ($selectedBillIds) {
                 $serviceBillQuery->whereIn('Ma', $selectedBillIds);
             } else {
@@ -1434,6 +1564,10 @@ class PaymentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Thanh toán Folio ' . $folioId . ' thành công!',
+            'invoice' => $salesInvoice ?? null,
+            'data'    => [
+                'invoice' => $salesInvoice ?? null,
+            ],
         ]);
     }
 

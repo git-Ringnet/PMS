@@ -36,6 +36,7 @@ class RoomLockTest extends TestCase
             'department_code' => 'MGMT',
             'department' => 'BỘ PHẬN QUẢN LÝ',
             'password' => bcrypt('password'),
+            'is_active_user' => true,
         ]);
 
         $this->hkmUser = User::create([
@@ -47,6 +48,7 @@ class RoomLockTest extends TestCase
             'department_code' => 'HK',
             'department' => 'BỘ PHẬN BUỒNG PHÒNG',
             'password' => bcrypt('password'),
+            'is_active_user' => true,
         ]);
 
         $this->fomUser = User::create([
@@ -58,6 +60,7 @@ class RoomLockTest extends TestCase
             'department_code' => 'FO',
             'department' => 'BỘ PHẬN LỄ TÂN',
             'password' => bcrypt('password'),
+            'is_active_user' => true,
         ]);
 
         // 2. Seed room class and form
@@ -84,6 +87,7 @@ class RoomLockTest extends TestCase
 
         // 4. Seed configs & system date
         $this->seed(\Database\Seeders\BookingStatusSeeder::class);
+        $this->seed(\Database\Seeders\SystemDefinitionSeeder::class);
 
         \App\Models\SystemDateRoll::create([
             'system_date' => '2026-06-01 00:00:00',
@@ -240,36 +244,83 @@ class RoomLockTest extends TestCase
     {
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
-        // Create a lock starting in past/current time relative to our fake now()
-        // Wait, Laravel's now() will be current test run time, so let's use past date
+        // Tạo phòng khóa có ngày bắt đầu <= ngày hệ thống (2026-06-01)
         $lock = RoomLock::create([
             'room_number' => $this->room101->room_number,
-            'start_date' => now()->subDay()->format('Y-m-d H:i:s'),
-            'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
+            'start_date' => '2026-06-01 00:00:00',
+            'end_date' => '2026-06-05 23:59:59',
             'lock_type' => 'OOO',
             'is_active' => true,
         ]);
-        // Attempt to edit start_date
+
+        // Thử sửa start_date của phòng đang active -> Phải bị chặn 422
         $response = $this->putJson("/api/room-locks/{$lock->id}", [
-            'start_date' => now()->subHours(12)->format('Y-m-d H:i:s'), // changed
-            'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
+            'start_date' => '2026-06-02 00:00:00', // đổi start_date
+            'end_date' => '2026-06-05 23:59:59',
             'lock_type' => 'OOO',
         ]);
 
-
         $response->assertStatus(422);
         $response->assertJsonFragment([
-            'message' => 'Không được phép điều chỉnh ngày bắt đầu đối với phòng đang trong giai đoạn khóa.'
+            'message' => 'Không được phép điều chỉnh ngày bắt đầu đối với phòng đang trong giai đoạn khóa (ngày bắt đầu <= ngày hệ thống).'
         ]);
 
-        // Attempt to edit end_date only (should be allowed)
+        // Cho phép sửa end_date, lý do, % bảo trì
         $response2 = $this->putJson("/api/room-locks/{$lock->id}", [
-            'start_date' => $lock->start_date->format('Y-m-d H:i:s'), // unchanged
-            'end_date' => now()->addDays(2)->format('Y-m-d H:i:s'), // changed
+            'start_date' => '2026-06-01 00:00:00',
+            'end_date' => '2026-06-08 23:59:59',
+            'reason' => 'Đổi kế hoạch bảo trì',
+            'maintenance_percent' => 50,
             'lock_type' => 'OOO',
         ]);
 
         $response2->assertStatus(200);
+        $this->assertDatabaseHas('room_locks', [
+            'id' => $lock->id,
+            'reason' => 'Đổi kế hoạch bảo trì',
+            'maintenance_percent' => 50,
+        ]);
+    }
+
+    public function test_edit_future_lock_allows_start_date_modification_above_system_date()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        // Tạo phòng khóa tương lai (ngày bắt đầu 2026-06-15 > ngày hệ thống 2026-06-01)
+        $lock = RoomLock::create([
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-15 00:00:00',
+            'end_date' => '2026-06-20 23:59:59',
+            'lock_type' => 'OOO',
+            'status' => 'New',
+            'is_active' => true,
+        ]);
+
+        // 1. Sửa ngày bắt đầu thành một ngày tương lai khác (2026-06-16) -> Thành công
+        $response = $this->putJson("/api/room-locks/{$lock->id}", [
+            'start_date' => '2026-06-16 00:00:00',
+            'end_date' => '2026-06-20 23:59:59',
+            'lock_type' => 'OOO',
+            'reason' => 'Dời lịch sửa',
+            'maintenance_percent' => 10,
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertDatabaseHas('room_locks', [
+            'id' => $lock->id,
+            'start_date' => '2026-06-16 00:00:00',
+            'reason' => 'Dời lịch sửa',
+        ]);
+
+        // 2. Thử sửa ngày bắt đầu nhỏ hơn ngày hệ thống (2026-05-30 < 2026-06-01) -> Bị chặn 422
+        $responseFail = $this->putJson("/api/room-locks/{$lock->id}", [
+            'start_date' => '2026-05-30 00:00:00',
+            'end_date' => '2026-06-20 23:59:59',
+            'lock_type' => 'OOO',
+        ]);
+
+        $responseFail->assertStatus(422);
+        $this->assertStringContainsString('không được nhỏ hơn Ngày hệ thống', $responseFail->json('message'));
     }
 
     public function test_unlock_department_permission_checking()
@@ -277,8 +328,8 @@ class RoomLockTest extends TestCase
         // Setup: Locked by thaovy (BỘ PHẬN LỄ TÂN)
         $lock = RoomLock::create([
             'room_number' => $this->room101->room_number,
-            'start_date' => now()->format('Y-m-d H:i:s'),
-            'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
+            'start_date' => '2026-06-01 00:00:00',
+            'end_date' => '2026-06-05 23:59:59',
             'lock_type' => 'OOO',
             'username' => 'thaovy',
             'is_active' => true,
@@ -310,8 +361,8 @@ class RoomLockTest extends TestCase
     {
         $lock = RoomLock::create([
             'room_number' => $this->room101->room_number,
-            'start_date' => now()->format('Y-m-d H:i:s'),
-            'end_date' => now()->addDay()->format('Y-m-d H:i:s'),
+            'start_date' => '2026-06-01 00:00:00',
+            'end_date' => '2026-06-05 23:59:59',
             'lock_type' => 'OOO',
             'username' => 'admin',
             'is_active' => true,
@@ -325,7 +376,7 @@ class RoomLockTest extends TestCase
         $response = $this->deleteJson("/api/room-locks/{$lock->id}");
         $response->assertStatus(403);
         $response->assertJsonFragment([
-            'message' => 'Tài khoản của bạn không có vai trò được phép mở khóa phòng OOO (Quyền yêu cầu: HKM).'
+            'message' => 'Tài khoản của bạn không thuộc vai trò (Role) được phép mở khóa phòng (Vai trò yêu cầu: HKM).'
         ]);
 
         // Try unlocking as HKM -> should pass
@@ -338,25 +389,320 @@ class RoomLockTest extends TestCase
     {
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
-        // Create a lock in the past
+        // Tạo khóa trong quá khứ so với ngày hệ thống (2026-06-01)
         $lock = RoomLock::create([
             'room_number' => $this->room101->room_number,
-            'start_date' => now()->subDays(5)->format('Y-m-d H:i:s'),
-            'end_date' => now()->subDays(3)->format('Y-m-d H:i:s'),
+            'start_date' => '2026-05-20 00:00:00',
+            'end_date' => '2026-05-25 23:59:59',
             'lock_type' => 'OOO',
             'is_active' => true,
         ]);
 
-        // Attempt to edit it
+        // Sửa khóa đã kết thúc trong quá khứ -> Phải báo lỗi 422
         $response = $this->putJson("/api/room-locks/{$lock->id}", [
-            'start_date' => now()->subDays(5)->format('Y-m-d H:i:s'),
-            'end_date' => now()->subDays(2)->format('Y-m-d H:i:s'),
+            'start_date' => '2026-05-20 00:00:00',
+            'end_date' => '2026-05-28 23:59:59',
             'lock_type' => 'OOO',
         ]);
 
         $response->assertStatus(422);
         $response->assertJsonFragment([
-            'message' => 'Không được phép chỉnh sửa lịch khóa phòng đã kết thúc trong quá khứ.'
+            'message' => 'Không được phép chỉnh sửa lịch khóa phòng đã kết thúc trong quá khứ so với ngày hệ thống.'
         ]);
+    }
+
+    public function test_section_1_unlock_updates_end_date_to_system_date()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        $lock = RoomLock::create([
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-01 00:00:00',
+            'end_date' => '2026-06-10 23:59:59',
+            'lock_type' => 'OOO',
+            'status' => 'Active',
+            'is_active' => true,
+        ]);
+
+        // Mở khóa phòng
+        $response = $this->deleteJson("/api/room-locks/{$lock->id}");
+        $response->assertStatus(200);
+
+        $lock->refresh();
+        $this->assertEquals(2, $lock->is_active);
+        // end_date phải có ngày bắt đầu bằng ngày hệ thống (2026-06-01)
+        $this->assertStringStartsWith('2026-06-01', $lock->end_date->format('Y-m-d'));
+    }
+
+    public function test_section_4_bulk_update_atomic_transaction()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        // Tạo 2 phòng khóa
+        $lock1 = RoomLock::create([
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-05 00:00:00',
+            'end_date' => '2026-06-08 23:59:59',
+            'lock_type' => 'OOO',
+            'reason' => 'Bảo trì ban đầu 1',
+            'is_active' => true,
+        ]);
+
+        $room102 = Room::create([
+            'room_number' => '102',
+            'room_class_id' => $this->supdClass->id,
+            'room_form_id' => $this->doubleForm->id,
+            'max_guests' => 2,
+            'floor' => '1',
+            'status' => 'available',
+        ]);
+
+        $lock2 = RoomLock::create([
+            'room_number' => $room102->room_number,
+            'start_date' => '2026-06-05 00:00:00',
+            'end_date' => '2026-06-08 23:59:59',
+            'lock_type' => 'OOS',
+            'reason' => 'Bảo trì ban đầu 2',
+            'is_active' => true,
+        ]);
+
+        // 1. Bulk update thành công
+        $response = $this->postJson('/api/room-locks/bulk-update', [
+            'locks' => [
+                [
+                    'lock_id' => $lock1->id,
+                    'start_date' => '2026-06-06 00:00:00',
+                    'end_date' => '2026-06-09 23:59:59',
+                    'reason' => 'Cập nhật lý do 1',
+                    'maintenance_percent' => 30,
+                ],
+                [
+                    'lock_id' => $lock2->id,
+                    'start_date' => '2026-06-06 00:00:00',
+                    'end_date' => '2026-06-09 23:59:59',
+                    'reason' => 'Cập nhật lý do 2',
+                    'maintenance_percent' => 60,
+                ],
+            ]
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertDatabaseHas('room_locks', ['id' => $lock1->id, 'reason' => 'Cập nhật lý do 1', 'maintenance_percent' => 30]);
+        $this->assertDatabaseHas('room_locks', ['id' => $lock2->id, 'reason' => 'Cập nhật lý do 2', 'maintenance_percent' => 60]);
+
+        // 2. Rollback khi 1 trong các dòng có ngày kết thúc < ngày bắt đầu
+        $responseFail = $this->postJson('/api/room-locks/bulk-update', [
+            'locks' => [
+                [
+                    'lock_id' => $lock1->id,
+                    'start_date' => '2026-06-06 00:00:00',
+                    'end_date' => '2026-06-10 23:59:59',
+                    'reason' => 'Lý do mới nếu thành công',
+                    'maintenance_percent' => 100,
+                ],
+                [
+                    'lock_id' => $lock2->id,
+                    'start_date' => '2026-06-06 00:00:00',
+                    'end_date' => '2026-06-04 23:59:59', // lỗi: end < start
+                    'reason' => 'Lý do 2 lỗi',
+                    'maintenance_percent' => 0,
+                ],
+            ]
+        ]);
+
+        $responseFail->assertStatus(422);
+        // Đảm bảo lock1 KHÔNG bị đổi thành 'Lý do mới nếu thành công' (atomic rollback)
+        $this->assertDatabaseMissing('room_locks', ['id' => $lock1->id, 'reason' => 'Lý do mới nếu thành công']);
+    }
+
+    public function test_section_2_allow_lock_room_cause_unassignable_room_bk()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        // Tạo thêm phòng 102 cùng hạng SUPD (tổng cộng có 2 phòng: 101 và 102)
+        $room102 = Room::create([
+            'room_number' => '102',
+            'room_class_id' => $this->supdClass->id,
+            'room_form_id' => $this->doubleForm->id,
+            'max_guests' => 2,
+            'floor' => '1',
+            'status' => 'available',
+        ]);
+
+        // Booking 1: Đã gán phòng 102 ở từ 2026-06-15 đến 2026-06-17
+        $bookingAssigned = \App\Models\Booking::create([
+            'booking_name' => 'Khách Phòng 102',
+            'status' => \App\Models\Booking::STATUS_RESERVATION,
+            'booking_date' => '2026-06-01',
+            'arrival_date' => '2026-06-15',
+            'departure_date' => '2026-06-17',
+            'registration_status_id' => 1,
+            'created_by' => 'admin',
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $bookingAssigned->id,
+            'room_class_id' => $this->supdClass->id,
+            'room_number' => '102',
+            'arrival_date' => '2026-06-15',
+            'departure_date' => '2026-06-17',
+            'status' => \App\Models\BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // Booking 2: Chưa gán phòng (unassigned) ở từ 2026-06-15 đến 2026-06-20
+        $bookingUnassigned = \App\Models\Booking::create([
+            'booking_name' => 'Khách Chưa Gán Phòng',
+            'status' => \App\Models\Booking::STATUS_RESERVATION,
+            'booking_date' => '2026-06-01',
+            'arrival_date' => '2026-06-15',
+            'departure_date' => '2026-06-20',
+            'registration_status_id' => 1,
+            'created_by' => 'admin',
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $bookingUnassigned->id,
+            'room_class_id' => $this->supdClass->id,
+            'room_number' => null, // Chưa gán phòng
+            'arrival_date' => '2026-06-15',
+            'departure_date' => '2026-06-20',
+            'status' => \App\Models\BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // Trường hợp 1: AllowLockRoomCauseUnassignableRoomBK = 0 -> Chặn cứng không cho khóa phòng 101 từ 18 đến 20
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '0']);
+
+        $resBlocked = $this->postJson('/api/room-locks', [
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-18 00:00:00',
+            'end_date' => '2026-06-20 23:59:59',
+            'lock_type' => 'OOO',
+            'reason' => 'Sửa phòng',
+        ]);
+
+        $resBlocked->assertStatus(422);
+        $this->assertStringContainsString('không đủ phòng trống liên tục để gán cho booking', $resBlocked->json('message'));
+
+        // Trường hợp 2: AllowLockRoomCauseUnassignableRoomBK = 1 -> Cảnh báo yêu cầu xác nhận
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '1']);
+
+        $resWarning = $this->postJson('/api/room-locks', [
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-18 00:00:00',
+            'end_date' => '2026-06-20 23:59:59',
+            'lock_type' => 'OOO',
+            'reason' => 'Sửa phòng',
+        ]);
+
+        $resWarning->assertStatus(422);
+        $this->assertTrue($resWarning->json('require_confirm'));
+
+        // Trường hợp 3: Khi người dùng bấm tiếp tục (force = true) -> Cho phép khóa thành công
+        $resForce = $this->postJson('/api/room-locks', [
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-18 00:00:00',
+            'end_date' => '2026-06-20 23:59:59',
+            'lock_type' => 'OOO',
+            'reason' => 'Sửa phòng',
+            'force' => true,
+        ]);
+
+        $resForce->assertStatus(201);
+        $this->assertDatabaseHas('room_locks', [
+            'room_number' => $this->room101->room_number,
+            'reason' => 'Sửa phòng',
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_multiple_unassigned_bookings_trigger_unassignable_violation()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        // Giả sử có hạng phòng Suite với 3 phòng vật lý: JST_A, JST_B, JST_C
+        $jstClass = \App\Models\RoomClass::firstOrCreate(
+            ['code' => 'JST_TEST'],
+            ['name' => 'Suite Test', 'orders' => 99]
+        );
+
+        Room::create([
+            'room_number' => 'JST_A',
+            'room_class_id' => $jstClass->id,
+            'room_form_id' => $this->doubleForm->id,
+            'max_guests' => 2,
+            'floor' => '12',
+            'status' => 'available',
+        ]);
+        Room::create([
+            'room_number' => 'JST_B',
+            'room_class_id' => $jstClass->id,
+            'room_form_id' => $this->doubleForm->id,
+            'max_guests' => 2,
+            'floor' => '13',
+            'status' => 'available',
+        ]);
+        Room::create([
+            'room_number' => 'JST_C',
+            'room_class_id' => $jstClass->id,
+            'room_form_id' => $this->doubleForm->id,
+            'max_guests' => 2,
+            'floor' => '14',
+            'status' => 'available',
+        ]);
+
+        // Phòng JST_C đã gán booking ở đêm 11 (out ngày 12)
+        $bAssigned = \App\Models\Booking::create([
+            'booking_name' => "Khách JST_C",
+            'status' => \App\Models\Booking::STATUS_RESERVATION,
+            'booking_date' => '2026-06-01',
+            'arrival_date' => '2026-06-11',
+            'departure_date' => '2026-06-12',
+            'registration_status_id' => 1,
+            'created_by' => 'admin',
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $bAssigned->id,
+            'room_class_id' => $jstClass->id,
+            'room_number' => 'JST_C',
+            'arrival_date' => '2026-06-11',
+            'departure_date' => '2026-06-12',
+            'status' => \App\Models\BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // Tạo 2 booking unassigned cho hạng phòng JST từ ngày 11 đến 13 (2 đêm)
+        for ($i = 1; $i <= 2; $i++) {
+            $b = \App\Models\Booking::create([
+                'booking_name' => "Khách JST $i",
+                'status' => \App\Models\Booking::STATUS_RESERVATION,
+                'booking_date' => '2026-06-01',
+                'arrival_date' => '2026-06-11',
+                'departure_date' => '2026-06-13',
+                'registration_status_id' => 1,
+                'created_by' => 'admin',
+            ]);
+            \App\Models\BookingRoom::create([
+                'booking_id' => $b->id,
+                'room_class_id' => $jstClass->id,
+                'room_number' => null, // unassigned
+                'arrival_date' => '2026-06-11',
+                'departure_date' => '2026-06-13',
+                'status' => \App\Models\BookingRoom::STATUS_BOOKED,
+            ]);
+        }
+
+        // Khóa phòng JST_A vào đêm 12 (12/06 -> 13/06).
+        // AV ngày 11: 3 - 3 = 0 (>= 0).
+        // AV ngày 12: 3 - 1 (lock) - 2 (unassigned) = 0 (>= 0, không âm phòng).
+        // Nhưng chỉ có JST_B là trống cả 2 đêm liên tục, không đủ cho cả 2 booking unassigned!
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '0']);
+
+        $res = $this->postJson('/api/room-locks', [
+            'room_number' => 'JST_A',
+            'start_date' => '2026-06-12 00:00:00',
+            'end_date' => '2026-06-13 12:00:00',
+            'lock_type' => 'OOO',
+            'reason' => 'Bảo trì suite',
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('không đủ phòng trống liên tục để gán cho booking', $res->json('message'));
     }
 }

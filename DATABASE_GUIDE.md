@@ -106,3 +106,8 @@ Hệ thống hỗ trợ **tự động 100%** khi Quản trị viên thêm chi n
 4. **Phân quyền tự động**: Tự động cấp quyền chi nhánh mới cho các tài khoản Super Admin.
 5. **Chuyển đổi tức thì**: Người dùng chọn chi nhánh mới trên Topbar và sử dụng ngay lập tức mà **không cần Dev phải cấu hình thêm bất cứ dòng nào trong code hay .env**.
 
+# Chuyển đổi mã tình trạng Booking — 14/09/2026
+
+Code Booking mới dùng `bookings.registration_status_id` tham chiếu `registration_statuses.booking_status_id`. Cần triển khai migration `2026_09_14_120000_use_booking_registration_status_codes` đồng bộ với backend/frontend; không dùng frontend cũ gửi PK danh mục vào API mới.
+
+Migration giữ cột PK trước chuyển đổi và snapshot procedure trong database để đối soát/rollback. Kiểm thử chuyển đổi đã chạy với SQLite test, không đồng nghĩa MySQL vận hành đã được chuyển đổi. Xem `docs/booking-fix-plan/IMPLEMENTATION.md` trước khi triển khai trên database khách sạn.

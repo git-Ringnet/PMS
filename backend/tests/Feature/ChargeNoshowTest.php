@@ -31,7 +31,12 @@ class ChargeNoshowTest extends TestCase
         parent::setUp();
         
         // Giả lập user đăng nhập
-        $this->actingAs(User::factory()->create(['username' => 'test_user']));
+        $user = User::factory()->create(['username' => 'test_user']);
+        $role = \App\Models\Role::create(['code' => 'noshow_test', 'name' => 'Noshow test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
+        $permission = \App\Models\Permission::firstOrCreate(['code' => 'fo.booking.noshow'], ['name' => 'Charge noshow', 'module' => 'FO']);
+        $role->permissions()->attach($permission->id);
+        $user->roles()->attach($role->id);
+        $this->actingAs($user);
         
         // Chèn các dữ liệu danh mục cần thiết
         DB::table('booking_statuses')->insert([
@@ -72,7 +77,7 @@ class ChargeNoshowTest extends TestCase
             'arrival_date' => '2026-08-04',
             'departure_date' => '2026-08-06',
             'status' => Booking::STATUS_NO_SHOW, // 4
-            'registration_status_id' => 4,
+            'registration_status_id' => 25,
             'created_by' => 'test_user'
         ]);
 
