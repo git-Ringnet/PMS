@@ -24,7 +24,7 @@ class ReportLookupController extends Controller
             'users' => $this->users($search),
             'hotel-services' => $this->hotelServices($search),
             'report-shifts' => $this->distinctServiceBillOptions('Ca'),
-            'service-departments' => $this->distinctServiceBillOptions('DepartmentId'),
+            'service-departments' => $this->serviceDepartments(),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -158,6 +158,32 @@ class ReportLookupController extends Controller
             ])->all();
     }
 
+    private function serviceDepartments(): array
+    {
+        $fromDepartments = DB::table('departments')
+            ->whereNotNull('code')
+            ->where('code', '<>', '')
+            ->where('show', 1)
+            ->orderBy('id')
+            ->get(['code', 'name'])
+            ->map(fn ($d) => [
+                'value' => $d->code,
+                'label' => trim("{$d->code} - {$d->name}", ' -'),
+            ])
+            ->all();
+
+        $fromBills = $this->distinctServiceBillOptions('DepartmentId');
+        $existing = collect($fromDepartments)->pluck('value')->all();
+
+        foreach ($fromBills as $billDept) {
+            if (! in_array($billDept['value'], $existing, true)) {
+                $fromDepartments[] = $billDept;
+            }
+        }
+
+        return $fromDepartments;
+    }
+
     private function distinctServiceBillOptions(string $column): array
     {
         return DB::table('service_bills')
@@ -171,3 +197,4 @@ class ReportLookupController extends Controller
             ->all();
     }
 }
+
