@@ -11,6 +11,234 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-17] - Chuẩn hóa cỡ chữ (fontSize: 9px) và padding ô trong content_json Báo cáo dự kiến khách ăn sáng
+### Module: Cấu hình báo cáo & Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php))
+
+- **Bối cảnh & Vấn đề**:
+  - `content_json` trước đó chưa thiết lập thuộc tính `fontSize` rõ ràng ở cấp block bảng, tiêu đề cột (`headerStyle`), ô dữ liệu (`cellStyle`), nhóm (`headerCells`) và hàng tổng (`customRows`).
+  - Khi không khai báo `fontSize`, Form Designer và trình duyệt dùng cỡ chữ mặc định (13px–16px) khiến chữ trong bảng bị to quá so với hệ thống cũ.
+  - Padding ô trước đó đặt `6px 8px`, làm chiều cao mỗi dòng tăng lên ~32px (chuẩn legacy là padding `4px 4px`, chiều cao dòng ~18–20px).
+- **Đã hoàn thành**:
+  - Cấu hình đồng bộ `fontSize: '9px'`, padding `4px 4px` vào `content_json` của 4 template reference:
+    - Block bảng chính: `style: { width: '100%', fontSize: '9px', borderCollapse: 'collapse' }`.
+    - Tất cả các cột: `headerStyle.fontSize: '9px'`, `cellStyle.fontSize: '9px'`, padding `4px 4px`.
+    - Tất cả header cells của nhóm: `style.fontSize: '9px'`.
+    - Toàn bộ custom rows (tổng phụ và tổng cộng): `style.fontSize: '9px'`, padding `4px 4px`.
+    - Bảng thống kê theo quốc gia: `style.fontSize: '9px'`, `columns` header/cell `fontSize: '9px'`.
+    - Khối chữ ký: `fontSize: '11px'`.
+  - Cập nhật database:
+    - Chạy migration `2026_09_17_183000` đồng bộ `content_json` mới vào bảng `templates` trên cả 5 connection (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+  - Kiểm thử & xác thực:
+    - Kiểm tra `check_all_font_sizes.php`: 100% 5 connection và cả 3 mẫu đều đạt `fontSize: 9px` và `padding: 4px 4px`.
+    - Backend unit test: `ExpectedBreakfastReportTest.php` đạt 7/7 passed.
+    - Frontend build: `npm run build` thành công 100%.
+
+## [2026-09-17] - Khắc phục lỗi Form Designer làm mất kiểu dáng và màu sắc Báo cáo dự kiến khách ăn sáng khi lưu phiên bản
+### Module: Cấu hình báo cáo & Báo cáo phòng ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue), [expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php))
+
+- **Bối cảnh & Nguyên nhân**:
+  - Khi người dùng vào Form Designer xem/sửa mẫu báo cáo ăn sáng và bấm "Lưu phiên bản", hệ thống tái biên dịch HTML từ `content_json` qua hàm `compileHtml()`.
+  - Trước đó, các thuộc tính style (`backgroundColor: '#dee2ed'`, `border: '1px solid #cbd5e1'`, `color: '#b82c2c'`, `color: '#1976d2'`, độ rộng 70% căn giữa cho bảng quốc gia) chỉ nằm ở chuỗi HTML tĩnh ban đầu mà chưa được cấu hình chi tiết vào `content_json` (`headerStyle`, `cellStyle`, `headerCells`, `customRows[].cells[].style`, `style`).
+  - Hàm `compileBlockToHtml` trong `TemplateEditorModal.vue` khi sinh thẻ `<table>` chưa gắn `class` (`tableClassName`).
+  - Do đó, khi lưu lại phiên bản, HTML tái tạo bị mất màu nền header và bảng thống kê quốc gia bị tràn 100% thay vì 70% căn giữa.
+- **Đã hoàn thành**:
+  - **Sửa file dùng chung `TemplateEditorModal.vue`** (đã được user phê duyệt):
+    - Bổ sung `class="${b.tableClassName || b.className || ''}"` vào thẻ `<table>` khi biên dịch block `table`.
+  - **Cấu hình toàn diện thuộc tính Design vào `content_json` trong 4 Template Providers**:
+    - `headerStyle`: `{ backgroundColor: '#dee2ed', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: 'bold' }`.
+    - `cellStyle`: `{ border: '1px solid #cbd5e1', textAlign: 'center' }` (cột chuỗi căn `left`).
+    - `headerCells`: cấu hình cho nhóm `DateGroup` (chữ "Ngày :" đỏ `#b82c2c`, ngày đen, viền) và `RoomType` (chữ xanh `#1976d2` in hoa, viền).
+    - `customRows`: cấu hình `style` nền `#dee2ed`, viền `1px solid #cbd5e1` cho toàn bộ các ô hàng tổng `date_subtotal` và `report_total`.
+    - Bảng thống kê quốc gia: cấu hình `style: { width: '70%', marginLeft: 'auto', marginRight: 'auto' }`, header và cells nền `#dee2ed`, viền `1px solid #cbd5e1`.
+    - Khối chữ ký: 2 cột `Bộ Phận FO` và `Bộ Phận F&B` in đậm căn giữa.
+  - **Đồng bộ Database Migration**:
+    - Cập nhật migration `2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php` và chạy cập nhật thành công trên cả 5 database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Kiểm thử**:
+    - Kiểm tra tái biên dịch Form Designer: HTML giữ nguyên 100% màu nền `#dee2ed`, viền `#cbd5e1`, chữ đỏ `#b82c2c`, chữ xanh `#1976d2`, hàng tổng, và bảng quốc gia có `width: 70%; margin: auto`.
+    - Backend unit test: `ExpectedBreakfastReportTest.php` đạt 7/7 tests (84 assertions).
+    - Frontend production build: `npm run build` thành công 100% trong 5.93s.
+
+## [2026-09-17] - Chuẩn hóa toàn bộ thông số UX/UI Báo cáo dự kiến khách ăn sáng theo hệ thống cũ vào Form Designer (bảng templates)
+### Module: Báo cáo phòng / Báo cáo ăn sáng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php), [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php), [expected_breakfast/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/expected_breakfast/README.md))
+
+- **Đã hoàn thành**:
+  - **Phân tích giao diện pixel-level từ file ảnh legacy**:
+    - Trích xuất và đối chiếu 5 hình ảnh thực tế từ `DANH MỤC BÁO CÁO.xlsx`: `BC_dự_kiến_khách_AS_1.png` đến `BC_dự_kiến_khách_AS_4.png` và `BC_dự_kiến_khách_AS_LT_1.png`.
+    - Xác định toàn bộ thông số chuẩn: Khổ A4 Portrait, lề 6mm/6mm/8mm/8mm, màu nền header và tổng `#dee2ed`, viền `1px solid #cbd5e1`.
+    - Tiêu đề nhóm `DateGroup` chữ "Ngày :" màu đỏ `#b82c2c`, ngày màu đen; nhóm `RoomType` chữ xanh dương `#1976d2` in hoa, in đậm; nhóm `DetailRoom` (mẫu chi tiết) chữ xanh dương `#1976d2` in đậm.
+    - Căn lề số lượng khách căn giữa (`center`).
+    - Hàng tổng hiển thị số phòng ở Cột 2 (`{{group.count}}` cho hàng tổng ngày, `{{aggregate.rows.count|number}}` cho hàng tổng cộng).
+    - Bổ sung khối chữ ký chân trang (`Bộ Phận FO` và `Bộ Phận F&B`) in đậm căn giữa, margin-top 35px.
+  - **Cập nhật Template Providers**:
+    - Chuẩn hóa cấu trúc blocks, HTML, CSS và metadata lề cho cả 3 mẫu: `EXPECTED_BREAKFAST_ARMY_SUMMARY`, `EXPECTED_BREAKFAST_DTX_SUMMARY`, `EXPECTED_BREAKFAST_DETAIL`.
+    - Khắc phục mẫu chi tiết hiển thị số phòng `{{row.Room}}` ở cột Phòng của dòng chi tiết.
+  - **Lưu toàn bộ cấu hình vào Form Designer (Database Migration)**:
+    - Tạo migration [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php).
+    - Chạy migrate thành công trên cả 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+    - Không hardcode bất kỳ giá trị style/màu sắc nào trong code xử lý backend/frontend.
+  - **Kiểm thử & Build**:
+    - Unit test [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php): 7/7 tests passed (84 assertions) đạt 100%.
+    - Frontend build: `npm run build` thành công không có lỗi (10.24s).
+- **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+  - 0 thay đổi đến Stored Procedure nghiệp vụ `rpt_expected_breakfast`, `rpt_expected_breakfast_1`, `rpt_expected_breakfast_2`.
+  - 0 thay đổi file dùng chung frontend hoặc backend core.
+
+## [2026-09-17] - Nâng cấp Form Designer: Chọn ô viền đen, Multi-select và nạp thuộc tính ô Detail Table lên Toolbar
+### Module: Cấu hình báo cáo / Form Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue), [TemplateEditorModalDetailTable.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalDetailTable.test.js))
+
+- **Đã hoàn thành**:
+  - **Tô đen quanh viền ô được chọn**:
+    - Khi click vào bất kỳ ô nào thuộc bảng Detail Table (Header cột `th`, Ô dữ liệu `td`, Tiêu đề nhóm `gh`, Hàng tùy chỉnh `cr`), ô được gắn class `.selected-detail-cell` với viền đen rõ nét (`outline: 2px solid #000000 !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 2px #000000 !important; position: relative !important; z-index: 20 !important;`) bảo đảm không làm biến dạng hay xê dịch kích thước ô.
+    - Áp dụng đồng bộ trên cả 3 band render Detail Table (Header Band, Detail Band, Footer Band).
+  - **Hỗ trợ chọn nhiều ô (Multi-select)**:
+    - Click thông thường: Chọn 1 ô duy nhất.
+    - Giữ phím `Ctrl`, `Cmd` hoặc `Shift` + click: Cho phép chọn thêm hoặc bỏ chọn từng ô vào tập hợp đang chọn.
+  - **Nạp & đồng bộ thuộc tính ô lên Toolbar**:
+    - Nạp tự động thuộc tính ô lên thanh công cụ Canvas (`v-else-if="isDetailTargetActive"`).
+    - **Nội dung / Biến**: Input sửa nhanh chữ hoặc tên biến bind dữ liệu (`detailContent`).
+    - **In đậm (Bold)**: Trạng thái active sáng nút `B`, click để bật/tắt `fontWeight: bold` cho toàn bộ các ô đang chọn.
+    - **In nghiêng (Italic)**: Trạng thái active sáng nút `I`, click để bật/tắt `fontStyle: italic` cho toàn bộ các ô đang chọn.
+    - **Gạch chân (Underline)**: Trạng thái active sáng nút `U`, click để bật/tắt `textDecoration: underline` cho toàn bộ các ô đang chọn.
+    - **Cỡ chữ**: Dropdown chọn cỡ chữ (`fontSize`), tự động hiển thị cỡ chữ hiện tại của ô.
+    - **Màu chữ**: Color picker (`color`) hiển thị chính xác mã màu chữ hiện tại của ô.
+    - **Màu nền ô**: Color picker (`backgroundColor`) hiển thị chính xác mã màu nền ô hiện tại kèm nút "Xóa nền".
+    - **Căn lề**: Dropdown chọn căn lề Trái (`left`), Giữa (`center`), Phải (`right`), Đều (`justify`).
+    - **Đặt lại**: Nút reset toàn bộ định dạng ô về mặc định.
+  - **Đồng bộ renderer HTML**:
+    - Cập nhật hàm `customTableCellTextStyle` bổ sung `fontStyle` và `textDecoration` để custom row và group header hiển thị đúng kiểu dáng khi preview và xuất in.
+  - **Kiểm thử**:
+    - Viết file test [TemplateEditorModalDetailTable.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalDetailTable.test.js): 4/4 tests passed.
+    - Toàn bộ suite `TemplateEditorModal*.test.js`: 9/9 tests passed.
+    - Frontend production build: `npm run build` thành công 100% (6.67s).
+- **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+  - 0 file backend/migration bị thay đổi.
+  - 0 ảnh hưởng đến logic in ấn, API hay cấu trúc template lưu trữ.
+
+## [2026-09-17] - Chuẩn hóa thông số Design và format Báo cáo lịch sử khóa phòng OOO & OOS theo hệ thống cũ (legacy sp_057 & sp_059)
+### Module: Báo cáo buồng phòng ([ooo_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/ooo_lock_history_reference.php), [oos_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/oos_lock_history_reference.php), [2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php), [OooLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OooLockHistoryReportTest.php), [OosLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OosLockHistoryReportTest.php), [ooo_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ooo_lock_history.md), [oos_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/oos_lock_history.md))
+
+- **Đã hoàn thành**:
+  - **Phân tích UX/UI thực tế từ ảnh chụp legacy**:
+    - Đối chiếu 4 ảnh chụp (`BC_lịch_sử_khóa_OOO_1.png`, `BC_khóa_phòng_ooo_1.png`, `BC_lịch_sử_khóa_phòng_OOS_1.png`, `BC_khóa_phòng_oos_1.png`).
+    - Khổ giấy thực tế là **A4 Portrait** (khổ dọc, ~210mm x 297mm), lề 8mm/8mm/8mm/8mm (trước đó thiết kế A4 Landscape là chưa chính xác).
+    - Cột Số phòng: Căn giữa, chữ in đậm, màu xanh lá cây đậm `#2e7d32`.
+    - Định dạng ngày giờ: `dd/mm/yyyy - HH:mm` (có dấu nối ` - ` ở giữa ngày và giờ).
+    - Tiêu đề nhóm (`Locking` / `UnLock`): Chữ màu đen `#000000` in đậm, nền trắng (trước đó dùng `#851c1c` là sai).
+    - Hàng tổng phụ nhóm (Subtotal): Cột 1 `Tổng`, Cột 2 `{{group.count}}` (số phòng/dòng), nền `#dee2ed`.
+  - **Template Providers & Stored Procedures**:
+    - Chuẩn hóa template [ooo_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/ooo_lock_history_reference.php) và [oos_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/oos_lock_history_reference.php):
+      - Đặt `page_orientation => portrait`, `page_size => a4`, margins 8mm.
+      - Thêm `cellStyle` cho cột `Phòng`: `color: #2e7d32`, `fontWeight: bold`, `textAlign: center`.
+      - Cấu hình gom nhóm `grouping` trường `GroupName` (chữ đen `#000000`).
+      - Cấu hình `customRows`: Hàng tổng phụ nhóm `scope: group`, `level: 0`, Cột 1 `Tổng`, Cột 2 `{{group.count}}`, nền `#dee2ed`.
+    - Cập nhật định dạng ngày giờ `DATE_FORMAT(..., '%d/%m/%Y - %H:%i')` trong cả 2 Stored Procedures `rpt_ooo_lock_history` và `rpt_oos_lock_history`.
+    - Cập nhật đồng bộ các migration gốc [2026_08_27_160000_create_ooo_lock_history_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_08_27_160000_create_ooo_lock_history_report.php) và [2026_08_28_170000_create_oos_lock_history_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_08_28_170000_create_oos_lock_history_report.php).
+  - **Tạo Migration đồng bộ Multi-DB**:
+    - Tạo migration [2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php) cập nhật SP và nạp lại template chuẩn Designer v1 vào bảng `templates` trên toàn bộ 7 database (`pms_system`, `pms_data`, `pms_db`, `pms_hkt1` đến `pms_hkt4`).
+    - Chạy `php artisan migrate:all --force` thành công trên cả 7 database.
+  - **Kiểm thử & Tài liệu**:
+    - [OooLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OooLockHistoryReportTest.php) và [OosLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OosLockHistoryReportTest.php) đạt 5/5 tests (40 assertions).
+    - `npm run build` thành công 100% (7.51s).
+    - Cập nhật tài liệu [.codex/docs/reports/ooo_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ooo_lock_history.md) và [.codex/docs/reports/oos_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/oos_lock_history.md).
+  - **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+    - 0 file dùng chung backend/frontend bị thay đổi.
+    - 0 logic khóa phòng hoặc bảng dữ liệu nghiệp vụ bị thay đổi.
+
+## [2026-09-17] - Triển khai Báo cáo khách VIP (VIP_GUESTS / legacy sp_295)
+### Module: Báo cáo khách ([vip_guests_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/vip_guests_reference.php), [2026_09_17_170000_create_vip_guests_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_170000_create_vip_guests_report.php), [VipGuestsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/VipGuestsReportTest.php), [vip_guests.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/vip_guests.md))
+
+- **Đã hoàn thành**:
+  - **Báo cáo khách VIP (`VIP_GUESTS` - Row 131 / legacy `sp_295`)**:
+    - Stored Procedure `rpt_vip_guests`: Tham số `p_from_date`, `p_to_date`, `p_guest_type`. Lọc khoảng lưu trú (`arrival_date <= p_to_date AND departure_date >= p_from_date`); lọc loại khách VIP (loại trừ `RegularGuest` / `6`); join bảng `rooms` qua `r.room_number = br.room_number`; loại trừ phòng nội bộ (`is_internal = 0`), số phòng ảo (`room_number NOT LIKE '0%'`), booking và phòng bị xóa mềm. Migration đồng bộ `2026_09_17_171000_fix_vip_guests_report_procedure.php` đã cập nhật thành công trên cả 7 database.
+    - Khởi động lại service Reverb WebSocket daemon trên cổng 8090.
+    - Template `vip_guests_reference.php`: Chuẩn hóa 100% thuộc tính giao diện theo 2 ảnh screenshot hệ thống cũ (`Báo_cáo_khách_VIP_1.png` và `BC_khách_VIP_1.png`):
+      - Khổ giấy: A4 Landscape (`landscape`), lề 6mm top/bottom, 5mm left/right.
+      - Khối tiêu đề: Logo khách sạn (30%), Thông tin khách sạn/nhân viên/ngày in (70%), divider ngang mảnh `#000000`, tiêu đề căn giữa in đậm, kỳ báo cáo.
+      - Bảng 11 cột: `Tên Khách` (16%), `Tình Trạng` (8%), `Đăng Ký` (6.5%), `Phòng` (6.5%), `Loại Khách` (6.5%), `Ngày Đến` (9.5%), `Ngày Đi` (9.5%), `Giá Phòng` (8%), `Người Lớn/Trẻ Em` (6.5%), `Công Ty` (10.5%), `Ghi Chú` (12.5%).
+      - Gom nhóm 1 cấp theo `Loại Khách` (`GuestType`): Tiêu đề nhóm nền trắng, chữ đỏ `#ff1414`; Dòng tổng phụ nhóm (Subtotal) `vip_guests_group_total_row` (`scope: group`, `level: 0`, `{{group.count}}`) và Dòng tổng cộng cuối bảng (Grand Total) `vip_guests_grand_total_row` (`scope: table`, `{{aggregate.rows.count|number}}`) nền xám xanh `#dee2ed`.
+      - Bộ lọc bên trái: `Ngày` (date range) và `Loại khách` (dropdown: Tất cả, VIP 1, VIP 2, VIP 3, VIP 4).
+    - Cấu hình chuẩn Form Designer v1 (`content_json`, `content_html`, `css`) được nạp trực tiếp qua migration.
+  - **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+    - 0 file dùng chung backend và 0 file dùng chung frontend bị thay đổi.
+    - 0 bảng dữ liệu nghiệp vụ bị thay đổi cấu trúc.
+  - **Multi-DB & Kiểm thử**:
+    - Chạy `php artisan migrate:all --force` thành công trên cả 7 database: `pms_system`, `pms_data`, `pms_db`, `pms_hkt1` đến `pms_hkt4`.
+    - Test [VipGuestsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/VipGuestsReportTest.php) đạt 3/3 tests (68 assertions).
+    - Frontend build `npm run build` thành công 100% trong 6.84s.
+    - Tạo tài liệu kỹ thuật [.codex/docs/reports/vip_guests.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/vip_guests.md).
+
+## [2026-09-16] - Triển khai 2 Báo cáo: Báo cáo yêu cầu đặc biệt (ROOM_SPECIAL_REQUESTS) & Báo cáo công nợ đã thanh toán (PAID_COMPANY_DEBTS)
+### Module: Báo cáo phòng & Báo cáo công nợ ([room_special_requests_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_special_requests_reference.php), [paid_company_debts_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/paid_company_debts_reference.php), [PaidCompanyDebtsDataAdapter.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/PaidCompanyDebtsDataAdapter.php), [2026_09_16_180000_create_room_special_requests_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_16_180000_create_room_special_requests_report.php), [2026_09_16_190000_create_paid_company_debts_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_16_190000_create_paid_company_debts_report.php))
+
+- **Đã hoàn thành**:
+  - **Báo cáo yêu cầu đặc biệt (`ROOM_SPECIAL_REQUESTS` - Row 122 / legacy `sp_297`)**:
+    - Stored Procedure `rpt_room_special_requests`: Hỗ trợ 3 kiểu ngày lọc (`p_date_type`: 1 - Ở, 2 - Đến, 3 - Đi), lọc phòng, user, thứ tự sắp xếp; loại trừ phòng ảo/nội bộ (`is_virtual=0`, `is_internal=0`) và booking hủy (`status <> 99`). Nối các yêu cầu đặc biệt bằng `GROUP_CONCAT(DISTINCT sr.name SEPARATOR ' - ')`.
+    - Template `room_special_requests_reference.php`: Khổ giấy A4 ngang (`landscape`), 9 cột chi tiết, gom nhóm theo `BookingId` hiển thị `Đăng Ký: [Mã]` bên trái và `Ghi Chú: [Ghi chú booking]` bên phải, kèm dòng chân nhóm hiển thị tổng số dòng/phòng.
+    - Cấu hình chuẩn Form Designer v1 (`content_json`, `content_html`, `css`): Cột, font, màu sắc và padding chuẩn mực được lưu sẵn từ migration.
+    - Test [RoomSpecialRequestsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/RoomSpecialRequestsReportTest.php) đạt 3/3 tests (32 assertions).
+  - **Báo cáo công nợ đã thanh toán (`PAID_COMPANY_DEBTS` - Row 148 / legacy `sp_294`)**:
+    - Stored Procedure `rpt_paid_company_debts`: Kết hợp `payments`, `payment_debt_settlements`, `sales_invoices`, `companies`; tính toán phân bổ các cột tiền theo tỷ lệ thanh toán (Thu tiền, Tạm thu, Trừ cọc, Giảm trừ, Phải thu, Đã thu, Công nợ).
+    - Adapter [PaidCompanyDebtsDataAdapter.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/PaidCompanyDebtsDataAdapter.php) & tích hợp [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php): Tự động tính toán bảng kê hình thức thanh toán (`payment_method_summary`), nạp tên nhân viên thu nợ, và tính các biến tổng tiền Grand Total.
+    - Template `paid_company_debts_reference.php`: Khổ giấy A4 ngang (`landscape`), header 2 tầng 16 cột chi tiết, gom nhóm 2 cấp: Ngày TT (`PaymentDateGroup`, đỏ `#b91c1c`) -> Công ty (`CompanyGroup`, đen `#0f172a`), dòng tổng phụ theo từng cấp, sub-table `BẢNG KÊ HÌNH THỨC THANH TOÁN` và khối 4 chữ ký chuẩn kế toán.
+    - Cấu hình chuẩn Form Designer v1 (`content_json`, `content_html`, `css`) được nạp trực tiếp qua migration.
+    - Test [PaidCompanyDebtsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/PaidCompanyDebtsReportTest.php) đạt 4/4 tests (52 assertions).
+  - **Hệ thống Database & Multi-DB**:
+    - Chạy `php artisan migrate:all --force` thành công trên cả 7 database: `pms_system`, `pms_data`, `pms_db`, `pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`.
+  - **Kiểm thử toàn diện**:
+    - Toàn bộ suite báo cáo `php artisan test --filter=Report` đạt 148/148 tests (1.316 assertions), không gây bất kỳ lỗi hồi quy nào.
+    - Frontend production build `npm run build` thành công 100% trong 4.69s.
+    - Tạo tài liệu nghiệp vụ đầy đủ: [.codex/docs/reports/room_special_requests.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/room_special_requests.md) và [.codex/docs/reports/paid_company_debts.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/paid_company_debts.md).
+
+## [2026-09-15] - Tách độc lập 2 Báo cáo dự kiến khách ăn sáng 1 và 2 (EXPECTED_BREAKFAST_1 & EXPECTED_BREAKFAST_2)
+### Module: Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_15_140000_split_expected_breakfast_reports.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_140000_split_expected_breakfast_reports.php))
+
+- **Đã hoàn thành**:
+  - **Tách riêng 2 Stored Procedures & 2 Data Sources**:
+    - Tạo `rpt_expected_breakfast_1` và data source `EXPECTED_BREAKFAST_1` phục vụ Mẫu 1 (Tổng hợp theo phòng theo legacy `sp_035`).
+    - Tạo `rpt_expected_breakfast_2` và data source `EXPECTED_BREAKFAST_2` phục vụ Mẫu 2 (Chi tiết khách trong phòng theo legacy `sp_032`).
+    - Tách biệt hoàn toàn thủ tục lưu trữ, tránh lỗi xung đột `report_sources_object_unique` và giới hạn kết nối MySQL PDO khi gọi lồng procedure.
+    - Chuẩn hóa kiểu dữ liệu: Chuyển `booking_room_id` trong các bảng tạm (`tmp_active_rooms`, `tmp_room_summary`, `tmp_guest_details`) từ `BIGINT` sang `VARCHAR(50)` khớp với kiểu thực tế của `booking_rooms.id` (chứa chuỗi mã phòng như `'G0000001'`), xử lý dứt điểm lỗi SQL 1366 / HTTP 422 trên MySQL.
+  - **Đăng ký 2 Báo cáo độc lập trên menu Báo cáo phòng**:
+    - **Báo cáo dự kiến khách ăn sáng 1** (`EXPECTED_BREAKFAST_1`): Sử dụng template `EXPECTED_BREAKFAST_1_STANDARD`, hiển thị 9 cột (`Mã ĐK`, `Phòng`, `Người Lớn`, `Trẻ em`, `Trẻ em MP`, `Tổng`, `Tên Khách Chính`, `Công ty`, `Ghi Chú`), gom nhóm `DateGroup` -> `RoomType`, kèm bảng phụ `THỐNG KÊ KHÁCH THEO QUỐC GIA`.
+    - **Báo cáo dự kiến khách ăn sáng 2** (`EXPECTED_BREAKFAST_2`): Sử dụng template `EXPECTED_BREAKFAST_2_STANDARD`, hiển thị 6 cột (`Phòng` để trống, `Tên Khách`, `Quốc Gia`, `Ngày Đến`, `Ngày Đi`, `Ghi Chú`), gom nhóm 3 cấp `DateGroup` -> `RoomType` -> Tiêu đề nhóm phòng `DetailRoom` (`Phòng [Số phòng] - BK [Mã BK] - [Công ty/Khách chính] - Người lớn: X - Trẻ em: Y - Trẻ em MP: Z - Trẻ em KAS: W`), từng dòng hiển thị chi tiết khách người lớn và trẻ em (`Chd. [Tên trẻ]`).
+  - **Migration & Multi-DB**:
+    - Tạo migration [2026_09_15_140000_split_expected_breakfast_reports.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_140000_split_expected_breakfast_reports.php) và chạy thành công trên cả 5 database (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+    - Đồng bộ `content_json` và `content_html` cho cả 2 template.
+  - **Dataset Enricher & Frontend**:
+    - [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php) hỗ trợ cả 2 mã `EXPECTED_BREAKFAST_1` và `EXPECTED_BREAKFAST_2`.
+  - **Kiểm thử**:
+    - Unit test [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php) đạt 5/5 tests (48 assertions).
+    - Toàn bộ suite báo cáo `php artisan test --filter=Report` đạt 139/139 tests (1.194 assertions).
+    - Frontend `npm run build` thành công 100%.
+    - Cập nhật tài liệu [.codex/docs/expected_breakfast/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/expected_breakfast/README.md).
+
+## [2026-09-15] - Triển khai Báo cáo dự kiến khách ăn sáng (EXPECTED_BREAKFAST) theo chuẩn legacy sp_035 & sp_032
+### Module: Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_15_130000_create_expected_breakfast_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_130000_create_expected_breakfast_report.php))
+
+- **Đã hoàn thành**:
+  - **Khảo sát & Đối chiếu Stored Procedure legacy**:
+    - Truy vấn trực tiếp SQL Server `ProVistaDTXHotel` qua `sqlcmd` lấy định nghĩa đầy đủ của `sp_035` (Mẫu tổng hợp) và `sp_032` (Mẫu chi tiết khách trong phòng).
+    - Làm rõ quy tắc ngày ăn sáng: ngày báo cáo là ngày ăn sáng của khách (ví dụ vào ngày 1 ra ngày 3 thì ăn sáng ngày 2 và 3).
+    - Xử lý các điều kiện:
+      - Phòng ở thật (`PHÒNG Ở THẬT`): `report_date BETWEEN ptk.actual_arrival_date + 1 AND ptk.actual_checkout_date`, check-in sớm (`actual_arrival_time <= '00:01'`), hoặc Day Use.
+      - Phòng late check-in (`PHÒNG LATE CHECK IN`): chỉ tính khi `p_late_checkin = 1`, xét bảng `late_checkins` và hóa đơn có tiền phòng (`is_room_night = 1`).
+      - Xác định ăn sáng (`IsBreakfast`): `booking_rooms.breakfast = 1`, hoặc có dịch vụ ăn sáng ngoài (`BF`, `AL`, `BD`, `BE`, `BU`), hoặc trẻ em có ăn sáng.
+      - Phân loại trẻ em: tính phí (`breakfast = 1, is_free = 0, amount > 0`), miễn phí (`breakfast = 1, is_free = 1`), và không ăn sáng (`breakfast = 0`).
+  - **Template tham chiếu chuẩn**:
+    - Tạo [expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php) định nghĩa mẫu `EXPECTED_BREAKFAST_SUMMARY_STANDARD` (9 cột, gom nhóm theo `DateGroup`, tính tổng cộng và bảng phụ `THỐNG KÊ KHÁCH THEO QUỐC GIA`).
+    - Tạo [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php) định nghĩa mẫu `EXPECTED_BREAKFAST_DETAIL_STANDARD` gom nhóm 2 cấp `RoomType` -> `DetailRoom` và hiển thị chi tiết tên khách, quốc gia, ngày đến, ngày đi, ghi chú.
+  - **Migration & Stored Procedure**:
+    - Tạo migration [2026_09_15_130000_create_expected_breakfast_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_130000_create_expected_breakfast_report.php) tạo stored procedure `rpt_expected_breakfast`, đăng ký `report_data_sources`, `report_definitions`, UI schema với đầy đủ các bộ lọc (Ngày, Loại, Người dùng, Sắp xếp theo, Thứ tự, Tính phòng late checkin, Hiển thị thông tin phòng, Đăng ký theo nhóm) và 2 template.
+    - Đã chạy `php artisan migrate:all --force` thành công trên toàn bộ 7 database PMS.
+  - **Dataset Enrichment & Frontend Integration**:
+    - Cập nhật [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php) tự động tổng hợp bảng `country_summary` (Quốc gia, Số lượng, Tỉ lệ %) và `CountryTotalPax`.
+    - Cập nhật [ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue) bổ sung watcher tự động chuyển đổi giữa mẫu tổng hợp và mẫu chi tiết khi toggle checkbox `p_show_room_details` ("Hiển thị thông tin phòng").
+  - **Kiểm thử & Tài liệu**:
+    - Tạo unit test [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php) kiểm tra toàn diện migration, layout render 2 template, enricher và UI watcher (đạt 5/5 tests, 48 assertions).
+    - Chạy toàn bộ test Reports backend đạt 48/48 tests, 495 assertions.
+    - Chạy `npm run build` frontend đạt 100%.
+    - Tạo tài liệu nghiệp vụ [.codex/docs/expected_breakfast/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/expected_breakfast/README.md).
+
 ## [2026-09-15] - Triển khai Báo cáo hóa đơn minibar miễn phí (MINIBAR_FREE_INVOICES) theo chuẩn legacy sp_202
 ### Module: Báo cáo buồng phòng / Minibar ([minibar_free_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_free_invoices_reference.php), [2026_09_15_110000_create_minibar_free_invoice_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_110000_create_minibar_free_invoice_report.php))
 
