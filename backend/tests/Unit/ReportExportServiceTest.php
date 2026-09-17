@@ -126,6 +126,57 @@ HTML;
         $this->assertGreaterThan(30, $sheet->getRowDimension(3)->getRowHeight());
     }
 
+    public function test_it_preserves_designer_block_geometry_and_supported_cell_properties(): void
+    {
+        $template = new Template(['name' => 'Mẫu Designer', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><body>
+<div class="pms-template-block-header" style="margin-top: 8px; padding-bottom: 6px; background-color: #F8FAFC;">
+  <table style="width: 100%; border: none; margin: 0; padding: 0;"><tr>
+    <td style="width: 30%; border: none; padding: 0; vertical-align: top;"><div class="pms-template-block-logo" style="margin-left: 20px; min-height: 58px;"><p style="text-decoration: underline; color: #0F172A;">Logo</p></div></td>
+    <td style="width: 70%; border: none; padding: 0; vertical-align: top;"><div class="pms-template-block-meta" style="text-align: right; font-size: 9px; font-weight: normal;"><p><b>Địa chỉ:</b> Kiểm thử</p></div></td>
+  </tr></table>
+</div>
+<table><tr><td style="border-top-style: solid; border-top-width: 2px; border-top-color: #EF4444; background-color: #E2E8F0; text-align: center; vertical-align: bottom; min-height: 28px;">Ô kiểm thử</td></tr></table>
+<table><tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td></tr></table>
+</body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+        $testCoordinate = collect($sheet->getCellCollection()->getCoordinates())
+            ->first(fn (string $coordinate): bool => $sheet->getCell($coordinate)->getValue() === 'Ô kiểm thử');
+
+        $this->assertContains('A2:C2', $sheet->getMergeCells());
+        $this->assertContains('D2:J2', $sheet->getMergeCells());
+        $this->assertSame('single', $sheet->getStyle('A2')->getFont()->getUnderline());
+        $this->assertSame('right', $sheet->getStyle('D2')->getAlignment()->getHorizontal());
+        $this->assertNotNull($testCoordinate);
+        $this->assertSame('E2E8F0', $sheet->getStyle($testCoordinate)->getFill()->getStartColor()->getRGB());
+        $this->assertSame('EF4444', $sheet->getStyle($testCoordinate)->getBorders()->getTop()->getColor()->getRGB());
+        $this->assertGreaterThanOrEqual(21, $sheet->getRowDimension((int) preg_replace('/\D+/', '', $testCoordinate))->getRowHeight());
+    }
+
+    public function test_it_does_not_collapse_narrow_primary_table_columns_when_mapping_widths(): void
+    {
+        $template = new Template(['name' => 'Báo cáo theo sản phẩm', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><body><table><tr>
+<th style="width:7%">ID</th><th style="width:34%">Sản phẩm</th><th style="width:12%">Đơn vị</th><th style="width:12%">Đơn giá</th><th style="width:11%">Số lượng</th><th style="width:12%">Thành tiền</th><th style="width:12%">Giảm giá</th>
+</tr><tr><td>43</td><td>Áo dạ</td><td>VND</td><td>115.000</td><td>3</td><td>345.000</td><td>0</td></tr></table></body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+
+        $this->assertSame('ID', $sheet->getCell('A1')->getValue());
+        $this->assertSame('Sản phẩm', $sheet->getCell('B1')->getValue());
+        $this->assertSame('Đơn vị', $sheet->getCell('C1')->getValue());
+        $this->assertSame('Đơn giá', $sheet->getCell('D1')->getValue());
+        $this->assertSame('Số lượng', $sheet->getCell('E1')->getValue());
+        $this->assertSame('Thành tiền', $sheet->getCell('F1')->getValue());
+        $this->assertSame('Giảm giá', $sheet->getCell('G1')->getValue());
+        $this->assertLessThan(25, $sheet->getRowDimension(1)->getRowHeight());
+    }
+
     private function assertValidOfficeArchive(string $content, string $format): void
     {
         $path = tempnam(sys_get_temp_dir(), 'pms-report-');

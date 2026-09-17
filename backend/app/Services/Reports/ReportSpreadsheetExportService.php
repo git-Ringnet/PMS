@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Models\Template;
+use App\Models\HotelSetting;
 use DOMDocument;
 use DOMElement;
 use DOMNode;
@@ -180,38 +181,50 @@ class ReportSpreadsheetExportService
         return $maximum;
     }
 
-    private function writeElement(Worksheet $sheet, DOMElement $element, int &$row, int $columnCount): void
+    private function writeElement(Worksheet $sheet, DOMElement $element, int &$row, int $columnCount, array $containerStyle = []): void
     {
         $tag = strtolower($element->tagName);
         if (in_array($tag, ['style', 'script', 'title', 'meta', 'head'], true)) {
             return;
         }
         if ($tag === 'table') {
-            $this->writeTable($sheet, $element, $row, $columnCount);
+            $this->writeTable($sheet, $element, $row, $columnCount, $containerStyle);
 
             return;
         }
         if ($tag === 'hr') {
-            $this->writeDivider($sheet, $row, $columnCount);
+            $this->writeDivider($sheet, $row, $columnCount, $containerStyle);
 
             return;
         }
         if ($this->hasClass($element, 'hotel-header')) {
-            $this->writeHotelHeader($sheet, $element, $row, $columnCount);
+            $this->writeHotelHeader($sheet, $element, $row, $columnCount, $containerStyle);
 
             return;
         }
         if (in_array($tag, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p'], true) || $this->isTextBlock($element)) {
-            $this->writeTextBlock($sheet, $element, $row, $columnCount);
+            $this->writeTextBlock($sheet, $element, $row, $columnCount, $containerStyle);
+
+            return;
+        }
+        if ($this->isDesignerBlockContainer($element)) {
+            $blockStyle = array_replace($containerStyle, $this->styleFor($element));
+            $this->addVerticalSpacing($sheet, $blockStyle, 'margin-top', $row);
+            $this->addVerticalSpacing($sheet, $blockStyle, 'padding-top', $row);
+            foreach ($this->childElements($element) as $child) {
+                $this->writeElement($sheet, $child, $row, $columnCount, $blockStyle);
+            }
+            $this->addVerticalSpacing($sheet, $blockStyle, 'padding-bottom', $row);
+            $this->addVerticalSpacing($sheet, $blockStyle, 'margin-bottom', $row);
 
             return;
         }
         foreach ($this->childElements($element) as $child) {
-            $this->writeElement($sheet, $child, $row, $columnCount);
+            $this->writeElement($sheet, $child, $row, $columnCount, $containerStyle);
         }
     }
 
-    private function writeHotelHeader(Worksheet $sheet, DOMElement $header, int &$row, int $columnCount): void
+    private function writeHotelHeader(Worksheet $sheet, DOMElement $header, int &$row, int $columnCount, array $containerStyle = []): void
     {
         $logoColumns = $this->hotelLogoColumnCount($sheet, $header, $columnCount);
         $logoEnd = Coordinate::stringFromColumnIndex($logoColumns);
@@ -237,7 +250,7 @@ class ReportSpreadsheetExportService
             }
             $cell = "{$infoColumn}{$current}";
             $this->setNodeValue($sheet, $cell, $line);
-            $this->applyStyle($sheet, $cell, $this->computedStyleFor($line));
+            $this->applyStyle($sheet, $cell, array_replace($containerStyle, $this->computedStyleFor($line)));
             $sheet->getRowDimension($current)->setRowHeight(16);
         }
 
@@ -263,23 +276,97 @@ class ReportSpreadsheetExportService
 
     private function writeLogo(Worksheet $sheet, DOMElement $header, string $cell): void
     {
-        $images = $header->getElementsByTagName('img');
-        $image = $images->item(0);
+        $image = $this->firstImage($header);
         if ($image instanceof DOMElement) {
-            $path = $this->localImagePath($image->getAttribute('src'));
-            if ($path !== null) {
-                $drawing = new Drawing();
-                $drawing->setPath($path);
-                $drawing->setHeight(52);
-                $drawing->setCoordinates($cell);
-                $drawing->setWorksheet($sheet);
+            $this->writeImage($sheet, $image, $cell, $this->computedStyleFor($image));
 
-                return;
-            }
+            return;
+        }
+        $path = $this->configuredLogoPath();
+        if ($path !== null) {
+            $drawing = new Drawing();
+            $drawing->setPath($path);
+            $drawing->setHeight(52);
+            $drawing->setCoordinates($cell);
+            $drawing->setWorksheet($sheet);
+
+            return;
         }
 
         $sheet->setCellValue($cell, 'Logo');
         $sheet->getStyle($cell)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+    }
+
+    private function writeImage(Worksheet $sheet, DOMElement $image, string $cell, array $style = []): void
+    {
+        $path = $this->localImagePath($image->getAttribute('src')) ?? $this->configuredLogoPath();
+        if ($path === null) {
+            return;
+        }
+
+        $height = $this->pixels((string) ($style['height'] ?? $style['max-height'] ?? $style['min-height'] ?? '52px'));
+        $drawing = new Drawing();
+        $drawing->setPath($path);
+        $drawing->setHeight(max(20, $height ?: 52));
+        $drawing->setCoordinates($cell);
+        $drawing->setWorksheet($sheet);
+    }
+
+    private function firstImage(DOMElement $element): ?DOMElement
+    {
+        $images = $element->getElementsByTagName('img');
+        $image = $images->item(0);
+
+        return $image instanceof DOMElement ? $image : null;
+    }
+
+    /** @return array<string, string> */
+    private function contentStyleForCell(DOMElement $cell, array $tableStyle): array
+    {
+        $style = array_replace($tableStyle, $this->computedStyleFor($cell));
+        $current = $cell;
+        while (($child = $this->firstChildElement($current)) instanceof DOMElement) {
+            $current = $child;
+            $style = array_replace($style, $this->styleFor($current));
+            if (in_array(strtolower($current->tagName), ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'], true)) {
+                break;
+            }
+        }
+
+        return $style;
+    }
+
+    private function firstChildElement(DOMElement $element): ?DOMElement
+    {
+        foreach ($element->childNodes as $child) {
+            if ($child instanceof DOMElement) {
+                return $child;
+            }
+        }
+
+        return null;
+    }
+
+    private function isDesignerBlockContainer(DOMElement $element): bool
+    {
+        foreach (preg_split('/\s+/', trim($element->getAttribute('class'))) ?: [] as $class) {
+            if (str_starts_with($class, 'pms-template-block-')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function configuredLogoPath(): ?string
+    {
+        try {
+            $source = HotelSetting::query()->value('logo_url') ?: HotelSetting::query()->value('logo');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return is_string($source) ? $this->localImagePath($source) : null;
     }
 
     private function localImagePath(string $source): ?string
@@ -293,73 +380,88 @@ class ReportSpreadsheetExportService
         return is_file($candidate) ? $candidate : null;
     }
 
-    private function writeDivider(Worksheet $sheet, int &$row, int $columnCount): void
+    private function writeDivider(Worksheet $sheet, int &$row, int $columnCount, array $containerStyle = []): void
     {
         $lastColumn = Coordinate::stringFromColumnIndex($columnCount);
         $range = "A{$row}:{$lastColumn}{$row}";
         $sheet->getStyle($range)->getBorders()->getBottom()
             ->setBorderStyle(Border::BORDER_THIN)
-            ->setColor(new Color(Color::COLOR_BLACK));
+            ->setColor(new Color($this->rgb($containerStyle['border-top-color'] ?? null) ?? Color::COLOR_BLACK));
         $sheet->getRowDimension($row)->setRowHeight(5);
         ++$row;
     }
 
-    private function writeTextBlock(Worksheet $sheet, DOMElement $element, int &$row, int $columnCount): void
+    private function writeTextBlock(Worksheet $sheet, DOMElement $element, int &$row, int $columnCount, array $containerStyle = []): void
     {
         $text = $this->nodeText($element);
         if ($text === '') {
             return;
         }
         $lastColumn = Coordinate::stringFromColumnIndex($columnCount);
-        $style = $this->computedStyleFor($element);
+        $style = array_replace($containerStyle, $this->computedStyleFor($element));
         $tag = strtolower($element->tagName);
         if ($tag === 'h1') {
             $style = array_replace(['font-size' => '20px', 'font-weight' => '700', 'text-align' => 'center'], $style);
         } elseif ($tag === 'h2') {
             $style = array_replace(['font-size' => '15px', 'font-weight' => '700', 'text-align' => 'center'], $style);
         }
-        $this->addVerticalSpacing($sheet, $style, 'margin-top', $row);
+        if ($containerStyle === []) {
+            $this->addVerticalSpacing($sheet, $style, 'margin-top', $row);
+            $this->addVerticalSpacing($sheet, $style, 'padding-top', $row);
+        }
         $cell = "A{$row}";
         if ($columnCount > 1) {
             $sheet->mergeCells("{$cell}:{$lastColumn}{$row}");
         }
         $this->setNodeValue($sheet, $cell, $element);
         $this->applyStyle($sheet, $cell, $style);
-        $sheet->getRowDimension($row)->setRowHeight($this->textRowHeight($text, $style));
+        $sheet->getRowDimension($row)->setRowHeight($this->specifiedRowHeight($this->textRowHeight($text, $style), $style));
         ++$row;
-        $this->addVerticalSpacing($sheet, $style, 'margin-bottom', $row);
+        if ($containerStyle === []) {
+            $this->addVerticalSpacing($sheet, $style, 'padding-bottom', $row);
+            $this->addVerticalSpacing($sheet, $style, 'margin-bottom', $row);
+        }
     }
 
-    private function writeTable(Worksheet $sheet, DOMElement $table, int &$row, int $columnCount): void
+    private function writeTable(Worksheet $sheet, DOMElement $table, int &$row, int $columnCount, array $containerStyle = []): void
     {
         $rows = $this->tableRows($table);
         if ($rows === []) {
             return;
         }
         $tableColumns = max(1, $this->tableColumnCount($table));
-        $tableStyle = $this->computedStyleFor($table);
+        $tableStyle = array_replace($containerStyle, $this->computedStyleFor($table));
         [$tableStart, $tableEnd] = $this->tableGridBounds($sheet, $table, $columnCount);
         $tableGridColumns = $tableEnd - $tableStart + 1;
-        $this->addVerticalSpacing($sheet, $tableStyle, 'margin-top', $row);
+        if ($containerStyle === []) {
+            $this->addVerticalSpacing($sheet, $tableStyle, 'margin-top', $row);
+            $this->addVerticalSpacing($sheet, $tableStyle, 'padding-top', $row);
+        }
+        $columnWidths = $this->tableColumnWidths($table, $tableColumns);
 
         foreach ($rows as $tr) {
             $logicalColumn = 1;
             $rowHeight = 14.5;
             foreach ($this->tableCells($tr) as $cellElement) {
-                $column = $tableStart + $this->gridColumnStart($logicalColumn, $tableColumns, $tableGridColumns) - 1;
+                $column = $tableStart + $this->gridColumnStartForWidths($logicalColumn, $columnWidths, $tableGridColumns) - 1;
                 while (($this->occupiedCells[$row][$column] ?? false) === true) {
                     ++$logicalColumn;
-                    $column = $tableStart + $this->gridColumnStart($logicalColumn, $tableColumns, $tableGridColumns) - 1;
+                    $column = $tableStart + $this->gridColumnStartForWidths($logicalColumn, $columnWidths, $tableGridColumns) - 1;
                 }
                 $colspan = max(1, (int) ($cellElement->getAttribute('colspan') ?: 1));
                 $rowspan = max(1, (int) ($cellElement->getAttribute('rowspan') ?: 1));
-                $endColumn = $tableStart + $this->gridColumnEnd($logicalColumn + $colspan - 1, $tableColumns, $tableGridColumns) - 1;
+                $endColumn = $tableStart + $this->gridColumnEndForWidths($logicalColumn + $colspan - 1, $columnWidths, $tableGridColumns) - 1;
                 $startCoordinate = Coordinate::stringFromColumnIndex($column).$row;
                 $endCoordinate = Coordinate::stringFromColumnIndex($endColumn).($row + $rowspan - 1);
                 $range = $startCoordinate.':'.$endCoordinate;
-                $cellStyle = $this->computedStyleFor($cellElement);
+                $cellStyle = $this->contentStyleForCell($cellElement, $tableStyle);
                 $text = $this->nodeText($cellElement);
-                $this->setNodeValue($sheet, $startCoordinate, $cellElement);
+                $image = $this->firstImage($cellElement);
+                if ($image instanceof DOMElement) {
+                    $this->writeImage($sheet, $image, $startCoordinate, $cellStyle);
+                } else {
+                    $this->setNodeValue($sheet, $startCoordinate, $cellElement);
+                }
                 if ($rowspan > 1 || $endColumn > $column) {
                     $sheet->mergeCells($range);
                     for ($coveredRow = $row; $coveredRow < $row + $rowspan; ++$coveredRow) {
@@ -374,13 +476,16 @@ class ReportSpreadsheetExportService
                     $cellStyle['font-weight'] = '700';
                 }
                 $this->applyStyle($sheet, $range, $cellStyle);
-                $rowHeight = max($rowHeight, $this->tableTextRowHeight($sheet, $text, $cellStyle, $column, $endColumn));
+                $rowHeight = max($rowHeight, $this->specifiedRowHeight($this->tableTextRowHeight($sheet, $text, $cellStyle, $column, $endColumn), $cellStyle));
                 $logicalColumn += $colspan;
             }
             $sheet->getRowDimension($row)->setRowHeight($rowHeight);
             ++$row;
         }
-        $this->addVerticalSpacing($sheet, $tableStyle, 'margin-bottom', $row);
+        if ($containerStyle === []) {
+            $this->addVerticalSpacing($sheet, $tableStyle, 'padding-bottom', $row);
+            $this->addVerticalSpacing($sheet, $tableStyle, 'margin-bottom', $row);
+        }
     }
 
     /** @return array{int, int} */
@@ -482,7 +587,41 @@ class ReportSpreadsheetExportService
             }
         }
 
+        if (array_filter($widths, static fn ($width): bool => $width !== null) !== []) {
+            return $widths;
+        }
+
+        foreach ($this->tableRows($table) as $row) {
+            $column = 1;
+            foreach ($this->tableCells($row) as $cell) {
+                $span = max(1, (int) ($cell->getAttribute('colspan') ?: 1));
+                $width = $this->computedStyleFor($cell)['width'] ?? $cell->getAttribute('width');
+                if (is_string($width) && $width !== '') {
+                    for ($offset = 0; $offset < $span && $column + $offset <= $columnCount; ++$offset) {
+                        $widths[$column + $offset] = $span === 1 ? $width : $this->splitWidth($width, $span);
+                    }
+                }
+                $column += $span;
+            }
+            if (array_filter($widths, static fn ($width): bool => $width !== null) !== []) {
+                break;
+            }
+        }
+
         return $widths;
+    }
+
+    private function splitWidth(string $width, int $span): string
+    {
+        if (preg_match('/^\s*([\d.]+)%\s*$/', $width, $matches)) {
+            return ((float) $matches[1] / max(1, $span)).'%';
+        }
+
+        if (preg_match('/^\s*([\d.]+)px\s*$/', $width, $matches)) {
+            return ((float) $matches[1] / max(1, $span)).'px';
+        }
+
+        return $width;
     }
 
     private function gridColumnStart(int $logicalColumn, int $tableColumns, int $gridColumnCount): int
@@ -493,6 +632,61 @@ class ReportSpreadsheetExportService
     private function gridColumnEnd(int $logicalColumn, int $tableColumns, int $gridColumnCount): int
     {
         return min($gridColumnCount, max(1, (int) floor($logicalColumn * $gridColumnCount / $tableColumns)));
+    }
+
+    /** @param array<int, string|null> $widths */
+    private function gridColumnStartForWidths(int $logicalColumn, array $widths, int $gridColumnCount): int
+    {
+        return $this->gridColumnBoundaryForWidths($logicalColumn - 1, $widths, $gridColumnCount) + 1;
+    }
+
+    /** @param array<int, string|null> $widths */
+    private function gridColumnEndForWidths(int $logicalColumn, array $widths, int $gridColumnCount): int
+    {
+        return max(1, $this->gridColumnBoundaryForWidths($logicalColumn, $widths, $gridColumnCount));
+    }
+
+    /** @param array<int, string|null> $widths */
+    private function gridColumnBoundaryForWidths(int $logicalBoundary, array $widths, int $gridColumnCount): int
+    {
+        $columnCount = count($widths);
+        if ($logicalBoundary <= 0) {
+            return 0;
+        }
+        if ($logicalBoundary >= $columnCount) {
+            return $gridColumnCount;
+        }
+
+        $weights = [];
+        foreach ($widths as $width) {
+            $weights[] = $this->widthWeight($width);
+        }
+        if (array_sum($weights) <= 0) {
+            return (int) floor($logicalBoundary * $gridColumnCount / max(1, $columnCount));
+        }
+
+        $target = array_sum(array_slice($weights, 0, $logicalBoundary)) / array_sum($weights);
+
+        // Each logical table column must retain at least one Excel column.
+        // Without these bounds, a narrow column can be rounded to the same
+        // boundary as its neighbour, resulting in a zero-width range and an
+        // artificially tall wrapped row.
+        $minimum = $logicalBoundary;
+        $maximum = $gridColumnCount - ($columnCount - $logicalBoundary);
+
+        return min($maximum, max($minimum, (int) round($target * $gridColumnCount)));
+    }
+
+    private function widthWeight(?string $width): float
+    {
+        if ($width !== null && preg_match('/^\s*([\d.]+)%\s*$/', $width, $matches)) {
+            return (float) $matches[1];
+        }
+        if ($width !== null && preg_match('/^\s*([\d.]+)px\s*$/', $width, $matches)) {
+            return (float) $matches[1];
+        }
+
+        return 1.0;
     }
 
     private function excelColumnWidth(mixed $width, int $columnCount): float
@@ -727,6 +921,11 @@ class ReportSpreadsheetExportService
         if (isset($style['font-style'])) {
             $font->setItalic(strtolower($style['font-style']) === 'italic');
         }
+        if (isset($style['text-decoration'])) {
+            $decoration = strtolower($style['text-decoration']);
+            $font->setUnderline(str_contains($decoration, 'underline') ? \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE : \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_NONE);
+            $font->setStrikethrough(str_contains($decoration, 'line-through'));
+        }
         if (($color = $this->rgb($style['color'] ?? null)) !== null) {
             $font->getColor()->setRGB($color);
         }
@@ -771,6 +970,20 @@ class ReportSpreadsheetExportService
                 $style->getBorders()->{$this->borderGetter($target)}()->setBorderStyle($definition['style'])->setColor(new Color($definition['color']));
             }
         }
+        foreach (['top', 'right', 'bottom', 'left'] as $side) {
+            $styleProperty = "border-{$side}-style";
+            if (! isset($css[$styleProperty])) {
+                continue;
+            }
+            $definition = $this->borderDefinitionFromParts(
+                $css[$styleProperty],
+                $css["border-{$side}-width"] ?? '1px',
+                $css["border-{$side}-color"] ?? '#B7B7B7',
+            );
+            if ($definition !== null) {
+                $style->getBorders()->{$this->borderGetter($side)}()->setBorderStyle($definition['style'])->setColor(new Color($definition['color']));
+            }
+        }
     }
 
     /** @return array{style: string, color: string}|null */
@@ -783,6 +996,19 @@ class ReportSpreadsheetExportService
         $style = str_contains($value, '2px') || str_contains($value, '3px') ? Border::BORDER_MEDIUM : Border::BORDER_THIN;
 
         return ['style' => $style, 'color' => $color];
+    }
+
+    /** @return array{style: string, color: string}|null */
+    private function borderDefinitionFromParts(string $style, string $width, string $color): ?array
+    {
+        if (in_array(strtolower(trim($style)), ['', 'none', 'hidden'], true)) {
+            return null;
+        }
+
+        return [
+            'style' => str_contains($width, '2px') || str_contains($width, '3px') || str_contains($width, '4px') ? Border::BORDER_MEDIUM : Border::BORDER_THIN,
+            'color' => $this->rgb($color) ?? 'B7B7B7',
+        ];
     }
 
     private function borderGetter(string $side): string
@@ -826,14 +1052,19 @@ class ReportSpreadsheetExportService
                 $lines += max(1, (int) ceil($length / max(1.0, $availableWidth)));
             }
         }
-        $padding = $this->pixels($style['padding'] ?? '0') * 1.5;
+        $padding = $this->lengthToPoints($this->boxSideValue((string) ($style['padding'] ?? ''), 'padding-top'))
+            + $this->lengthToPoints($this->boxSideValue((string) ($style['padding'] ?? ''), 'padding-bottom'))
+            + $this->lengthToPoints((string) ($style['padding-top'] ?? '0'))
+            + $this->lengthToPoints((string) ($style['padding-bottom'] ?? '0'));
+        $lineHeight = $this->lineHeightPoints($style, $fontSize);
 
-        return max(14.5, $fontSize * 1.45 * $lines + $padding);
+        return max(14.5, $lineHeight * $lines + $padding);
     }
 
     private function paddingIndent(array $style): int
     {
-        $padding = $this->pixels((string) ($style['padding-left'] ?? $style['padding'] ?? '0'));
+        $padding = $this->pixels((string) ($style['padding-left'] ?? $style['padding'] ?? '0'))
+            + $this->pixels((string) ($style['margin-left'] ?? '0'));
 
         return $padding >= 3 ? 1 : 0;
     }
@@ -882,6 +1113,29 @@ class ReportSpreadsheetExportService
         }
 
         return 0.0;
+    }
+
+    private function lineHeightPoints(array $style, float $fontSize): float
+    {
+        $lineHeight = trim((string) ($style['line-height'] ?? ''));
+        if ($lineHeight === '') {
+            return $fontSize * 1.45;
+        }
+        if (is_numeric($lineHeight)) {
+            return max($fontSize, $fontSize * (float) $lineHeight);
+        }
+
+        return max($fontSize, $this->lengthToPoints($lineHeight));
+    }
+
+    private function specifiedRowHeight(float $computedHeight, array $style): float
+    {
+        $height = max(
+            $this->lengthToPoints((string) ($style['height'] ?? '0')),
+            $this->lengthToPoints((string) ($style['min-height'] ?? '0')),
+        );
+
+        return max($computedHeight, $height);
     }
 
     private function rgb(?string $value): ?string
