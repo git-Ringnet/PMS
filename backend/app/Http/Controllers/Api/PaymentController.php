@@ -14,6 +14,7 @@ use App\Models\PaymentMethod;
 use App\Models\SalesInvoice;
 use App\Models\ServiceBill;
 use App\Services\RoomAvailabilityService;
+use App\Services\TaxBreakdownService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -1254,12 +1255,13 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // Tính toán bóc tách thuế phí chi tiết từ các dịch vụ được thanh toán (theo chuẩn sp_216)
+            // Tính toán bóc tách thuế phí chi tiết từ các dịch vụ được thanh toán (theo chuẩn vw_018 & Luật thuế)
             $settledBills = (clone $unpaidServiceQuery)->get();
             $totalBillAmount = 0.0;
             $totalOriginalRate = 0.0;
-            $totalTax = 0.0;
+            $totalServiceCharge = 0.0;
             $totalSpecialTax = 0.0;
+            $totalTax = 0.0;
 
             foreach ($settledBills as $sb) {
                 $exchange = (float) ($sb->Exchange ?: 1);
@@ -1268,15 +1270,13 @@ class PaymentController extends Controller
                 $st = (float) ($sb->SpecialTax ?? 0);
                 $tax = (float) ($sb->Tax ?? 0);
 
-                // Công thức chuẩn sp_216:
-                // OriginalRate = sum( (Amount * Exchange * 10^6) / ( (100 + ServiceCharge) * (100 + SpecialTax) * (100 + Tax) ) )
-                $denom = (100 + $sc) * (100 + $st) * (100 + $tax);
-                $orig = $denom > 0 ? ($amt * 1000000) / $denom : $amt;
-                $vTax = (100 + $tax) > 0 ? ($amt * $tax) / (100 + $tax) : 0;
+                $bd = TaxBreakdownService::breakdown($amt, $sc, $st, $tax);
 
-                $totalBillAmount += $amt;
-                $totalOriginalRate += $orig;
-                $totalTax += $vTax;
+                $totalBillAmount += $bd['amount'];
+                $totalOriginalRate += $bd['net_total'];
+                $totalServiceCharge += $bd['service_charge_amount'];
+                $totalSpecialTax += $bd['special_tax_amount'];
+                $totalTax += $bd['tax_amount'];
             }
 
             if ($settledBills->isEmpty()) {
@@ -1288,13 +1288,9 @@ class PaymentController extends Controller
             } else {
                 $totalAmount = round($totalBillAmount, 2);
                 $totalOriginalRate = round($totalOriginalRate, 2);
-                $totalTax = round($totalTax, 2);
-                $totalSpecialTax = 0.0;
-                $totalServiceCharge = round($totalAmount - $totalSpecialTax - $totalTax - $totalOriginalRate, 2);
-                if ($totalServiceCharge < 0) {
-                    $totalServiceCharge = 0.0;
-                    $totalOriginalRate = round($totalAmount - $totalTax, 2);
-                }
+                $totalServiceCharge = round($totalServiceCharge, 2);
+                $totalSpecialTax = round($totalSpecialTax, 2);
+                $totalTax = round($totalAmount - ($totalOriginalRate + $totalServiceCharge + $totalSpecialTax), 2);
             }
 
             if ($reqRoomId && isset($room)) {

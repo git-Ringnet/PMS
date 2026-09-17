@@ -9,6 +9,60 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-17] - Chuẩn hóa phần thập phân (2 chữ số) trực tiếp trong các file Migrations gốc & Models
+### Module: Cơ sở dữ liệu & Models ([create_service_bills_tables.php](file:///d:/PMS/backend/database/migrations/2026_07_28_160001_create_service_bills_tables.php), [add_legacy_invoice_fields.php](file:///d:/PMS/backend/database/migrations/2026_09_10_130000_add_legacy_invoice_fields.php), [create_sales_invoices...php](file:///d:/PMS/backend/database/migrations/2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php), [expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php))
+
+- **1. Sửa trực tiếp các file Migration khởi tạo ban đầu**:
+  - Đã xóa bỏ file migration vá tạm thời (`2026_09_17_120000_standardize_decimal_precision.php`).
+  - Sửa trực tiếp trong các migration tạo/mở rộng bảng:
+    + [2026_07_28_160001_create_service_bills_tables.php](file:///d:/PMS/backend/database/migrations/2026_07_28_160001_create_service_bills_tables.php):
+      * `service_bills`: `Amount` thành `decimal(15, 2)`.
+      * `service_bill_details`: `Quantity` thành `decimal(10, 2)`; `Amount`, `DetailBillOriginalAmount`, `DiscountAmount`, `IncreaseAmount` thành `decimal(15, 2)`.
+      * `housekeeping_service_bills` & `housekeeping_service_bill_details`: `Quantity` thành `decimal(10, 2)`; các cột tiền tệ `Rate`, `DiscountAmount`, `IncreaseAmount`, `TotalAmount`, `BillOriginalAmount`, `BillDiscountAmount`, `BillAmount` thành `decimal(15, 2)`.
+    + [2026_09_10_130000_add_legacy_invoice_fields.php](file:///d:/PMS/backend/database/migrations/2026_09_10_130000_add_legacy_invoice_fields.php):
+      * Chuyển tất cả các cột `ExchangeRate1`, `ExchangeRate2`, `TotalAmount*`, `ConvertAmount*`, `ServiceChargeAmount`, `SpecialTaxAmount`, `TaxAmount`, `BillExchangeAmount`, `DetailBillTotalAmount`,... từ `20, 6` về `15, 2`.
+    + [2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php](file:///d:/PMS/backend/database/migrations/2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php):
+      * Chuyển `amount`, `legacy_payment_total_amount0`, `legacy_re_credit_limit` từ `20, 6` về `15, 2`.
+    + [2026_09_16_120000_expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php):
+      * Chuyển `original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `exchange_rate` từ `20, 6` về `15, 2`.
+
+- **2. Cập nhật đồng bộ Eloquent Models Casts**:
+  - [ServiceBill.php](file:///d:/PMS/backend/app/Models/ServiceBill.php), [ServiceBillDetail.php](file:///d:/PMS/backend/app/Models/ServiceBillDetail.php), [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php): Cập nhật toàn bộ `decimal:6` thành `decimal:2`.
+  - [BookingRoomService.php](file:///d:/PMS/backend/app/Models/BookingRoomService.php), [Company.php](file:///d:/PMS/backend/app/Models/Company.php), [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php), [HousekeepingServiceBill.php](file:///d:/PMS/backend/app/Models/HousekeepingServiceBill.php): Chuẩn hóa toàn bộ các trường tiền và số lượng còn lại về `decimal:2`.
+
+- **3. Kiểm thử**:
+  - Chạy 64/64 unit & feature tests liên quan thuế phí, hóa đơn, folio, night audit và buồng phòng: Passed 100% (329 assertions).
+  - Sẵn sàng để chạy `php artisan migrate:fresh --seed` hoặc reset db mà không cần migration vá phụ.
+
+## [2026-09-17] - Chuẩn hóa bóc tách thuế phí (Net, SC, ST, VAT) cho Service Bill Details & Sales Invoices theo vw_018
+### Module: Hóa đơn & Thuế phí ([TaxBreakdownService.php](file:///d:/PMS/backend/app/Services/TaxBreakdownService.php), [ServiceBillDetail.php](file:///d:/PMS/backend/app/Models/ServiceBillDetail.php), [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))
+
+- **1. Xây dựng dịch vụ bóc tách thuế phí chuẩn kế toán ([TaxBreakdownService.php](file:///d:/PMS/backend/app/Services/TaxBreakdownService.php))**:
+  - Áp dụng công thức chuẩn từ [vw_018.sql](file:///d:/PMS/view%20PMS/vw_018.sql) và Luật Thuế Việt Nam:
+    + Đặt $s = \frac{\text{ServiceCharge}}{100}$, $e = \frac{\text{SpecialTax}}{100}$, $t = \frac{\text{Tax}}{100}$.
+    + Giá gốc thuần trước thuế phí: $Net = \frac{Amount}{(1+s) \times (1+e) \times (1+t)}$.
+    + Phí dịch vụ: $SC = Net \times s$.
+    + Thuế TTĐB: $ST = (Net + SC) \times e = Net \times (1+s) \times e$.
+    + Thuế GTGT: $VAT = Amount - (Net + SC + ST)$ (bù trừ làm tròn để triệt tiêu sai số 1 đồng).
+    + Đảm bảo đẳng thức bất biến: $Net + SC + ST + VAT = Amount$.
+  - Hỗ trợ số lượng (Quantity), số âm (khấu trừ ăn sáng/giảm trừ) và các mức thuế suất khác nhau.
+
+- **2. Cập nhật chi tiết bill dịch vụ `service_bill_details` (SP3001)**:
+  - **[BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php)**:
+    + Tự động tính và điền đầy đủ 4 cột `OriginalRate`, `ServiceChargeAmount`, `SpecialTaxAmount`, `TaxAmount` khi tạo bill tiền phòng, tiền ăn sáng, giảm trừ tiền phòng, dịch vụ buồng phòng, phụ thu và dịch vụ phát sinh khác.
+  - **[NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php)**:
+    + Tự động tính và lưu 4 thành phần thuế phí chi tiết khi chạy đêm phòng tự động (`autoChargeRoomNight`) và khi tách lại dịch vụ cũ (`splitOldServices`).
+
+- **3. Cập nhật tạo Hóa đơn bán hàng `sales_invoices` (SP3003)**:
+  - **[PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php)**:
+    + Gom các bill dịch vụ được thanh toán và tổng hợp chuẩn theo `TaxBreakdownService`.
+    + Đảm bảo `original_rate + service_charge_amount + special_tax + tax == amount` trên hóa đơn bán hàng.
+
+- **4. Kiểm thử**:
+  - Unit Test [TaxBreakdownServiceTest.php](file:///d:/PMS/backend/tests/Unit/TaxBreakdownServiceTest.php): 7/7 tests passed (38 assertions).
+  - Feature Tests: 61/61 tests passed (374 assertions) bao gồm `NightAuditTest`, `SalesInvoiceSettlementTest`, `SalesInvoiceApiTest`, `BookingRoomServiceFolioTest`, `CheckoutBusinessRulesTest`.
+  - Frontend `npm run build`: Thành công 100% (built in 8.53s).
+
 ## [2026-09-17] - Khắc phục lỗi Hủy phòng & Lấy lại phòng tại màn hình Đặt phòng
 ### Module: Đặt phòng / Quản lý phòng Booking ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))
 

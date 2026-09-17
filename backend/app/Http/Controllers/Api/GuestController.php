@@ -685,6 +685,9 @@ class GuestController extends Controller
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
             ->where('Status', '!=', 2)
             ->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id]);
+        if ((bool) $room->booking?->is_master_room_rate) {
+            $unpaidQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+        }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
         if ($this->hasUnpaidDebt($room->booking_id, $masterScope ? null : $room->id)) {
