@@ -9,6 +9,49 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-17] - Khắc phục lỗi Hủy phòng & Lấy lại phòng tại màn hình Đặt phòng
+### Module: Đặt phòng / Quản lý phòng Booking ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))
+
+- **1. Khắc phục lỗi báo thành công nhưng không thấy cộng phòng sau khi hủy**:
+  - **Nguyên nhân**:
+    - Khi booking bị hủy hết phòng, bảng hiển thị nhóm `TÌNH TRẠNG: HỦY (x)`. Khi vào Tab "Lấy phòng" lấy lại phòng mới (`status = 0`), logic `filteredActiveRooms` trước đó tự động lọc bỏ toàn bộ phòng hủy (`status = 3`) ngay khi có phòng hoạt động, làm các phòng đã hủy biến mất và bảng chỉ còn các phòng mới. Người dùng thấy tổng số dòng phòng hiển thị không đổi nên tưởng hệ thống không cộng phòng.
+    - Backend `addRooms` không kiểm tra `quantity > 0`, nếu gửi mảng rỗng vẫn trả về HTTP 200 `message: 'Thêm phòng thành công!'`.
+  - **Khắc phục**:
+    - **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+      + Giữ nguyên các phòng đã hủy trong `filteredActiveRooms` để hiển thị minh bạch dưới nhóm riêng `TÌNH TRẠNG: HỦY` (header hồng `#fbd9ee`). Khi lấy thêm phòng mới, bảng hiển thị đồng thời cả nhóm `HỦY` và nhóm `ĐĂNG KÝ`, người dùng thấy rõ số phòng mới được cộng vào.
+      + Trong `roomsTotalSummary`: Loại trừ cả phòng hủy (`status = 3`) và phòng chuyển (`status = 100`) để không tính tiền vào tổng chi phí phòng hoạt động hiện tại.
+      + Tại `handleSaveNewBooking`: Thêm kiểm tra trước khi gửi API, nếu tổng số lượng phòng của `roomAddDraft <= 0`, hiển thị cảnh báo `uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')` và dừng lại.
+    - **Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))**:
+      + Trong `validateAddOnlyRoomAllocations`: Kiểm tra bắt buộc tổng `quantity > 0`, nếu `<= 0` ném Exception 422: `'Vui lòng chọn số lượng phòng cần thêm!'`.
+      + Trong `addRooms`: Tự động đồng bộ lại trạng thái booking qua `BookingStatusSyncService::sync($booking, Booking::STATUS_RESERVATION)` khi thêm phòng vào booking đã hủy.
+
+- **2. Khắc phục lỗi nút tăng số lượng chỉ cho tăng tối đa 2 phòng**:
+  - **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+    - Chuẩn hóa nút tăng giảm tại Tab "Lấy phòng": Chuyển sang `(Number(row.quantity) || 0) + 1` và `(Number(row.quantity) || 0) - 1`, xử lý triệt để các trường hợp null/NaN/chuỗi.
+    - Loại bỏ mọi ràng buộc `max` hoặc giới hạn theo số lượng phòng cũ của booking, cho phép tăng số lượng theo đúng nhu cầu và phòng trống thực tế (`availableRooms`).
+
+- **3. Kiểm thử**:
+  - `npm run build`: Compile frontend thành công 100% (built in 10.45s).
+  - Feature tests backend:
+    + `BookingAllocationConsistencyTest.php`: 5/5 tests passed (17 assertions).
+    + `BookingBusinessRulesTest.php`: 24/24 tests passed (116 assertions).
+
+## [2026-09-16] - Kiểm tra & Xác nhận nghiệp vụ Tab Phòng đến màn hình Sang ngày (Night Audit / Day Close)
+### Module: Lễ tân / Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue), [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [NightAuditTest.php](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php))
+
+- **Xác nhận tính năng**: Nghiệp vụ loại bỏ phòng có `status = 100` (`BookingRoom::STATUS_MOVED` - phòng đã chuyển/gộp) khỏi Tab Phòng đến và Điều kiện chặn sang ngày **ĐÃ ĐƯỢC THỰC HIỆN ĐẦY ĐỦ VÀ CHẶT CHẼ** ở cả Frontend lẫn Backend:
+  - **Frontend ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))**:
+    + Hàm `checkRoomStatus()` nhận diện `isMoved = true` khi `status = 100`, `move_room` khác null.
+    + Hàm `processRealBookings()` bỏ qua hoàn toàn các phòng có `status = 100`, không tính vào số lượng `arrivalCount` (không làm chặn nút "Sang ngày" `canRollDay`).
+    + Tab "Phòng đến" (`activeFilterTab === 'arrivals'`) chỉ hiển thị các phòng có `arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100`, loại trừ 100% phòng đã chuyển.
+  - **Backend ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))**:
+    + API `GET /api/night-audit/check-status` (dòng 189) và API `POST /api/night-audit/run` (dòng 472): Đều có điều kiện `->where('status', BookingRoom::STATUS_BOOKED)->where('status', '!=', BookingRoom::STATUS_MOVED)`. Các phòng `status = 100` hoàn toàn không bị tính vào `pendingCheckIns` và không chặn sang ngày.
+    + Đêm phòng tự động (dòng 492): Loại trừ `STATUS_MOVED`, không phát sinh tiền phòng trùng lặp cho phòng cũ đã chuyển.
+  - **Kiểm thử tự động ([NightAuditTest.php](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php))**:
+    + Bổ sung test `test_moved_room_status_100_is_ignored_by_check_status_and_run_audit`: Xác nhận phòng có ngày đến hôm nay nhưng `status = 100` không bị tính vào `pending_checkins_count` và quá trình `runNightAudit` diễn ra trơn tru không bị chặn.
+    + 6/6 tests passed (32 assertions).
+
+
 ## [2026-09-16] - Hoàn thiện 3 nghiệp vụ Room Map & Lễ tân: Icon đặc biệt, Ràng buộc Hủy nhận phòng & Điều hướng Hóa đơn
 ### Module: Sơ đồ phòng & Lễ tân ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
 

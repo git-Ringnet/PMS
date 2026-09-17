@@ -1470,14 +1470,8 @@ const filteredActiveRooms = computed(() => {
   if (!tab || !tab.rooms) return []
   let list = tab.rooms
 
-  // Phòng chuyển (trạng thái 100) là lịch sử chuyển phòng nên luôn hiển thị trên màn Booking.
-  // Chỉ ẩn phòng hủy riêng lẻ khi đăng ký vẫn còn phòng hoạt động.
-  const allRoomsCancelled = tab.status === 'CANCELLED'
-    || (list.length > 0 && list.every(r => Number(r.bookingRoomStatus) === 3))
-
-  if (!allRoomsCancelled) {
-    list = list.filter(r => Number(r.bookingRoomStatus) !== 3)
-  }
+  // Cả phòng chuyển (status 100) và phòng hủy (status 3) đều là lịch sử phòng của đăng ký,
+  // luôn được hiển thị trong bảng theo từng nhóm trạng thái riêng biệt (Đăng ký, Đang ở, Hủy, Phòng chuyển).
 
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
     list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
@@ -1516,8 +1510,8 @@ const roomsTotalSummary = computed(() => {
   const tab = bookingContext.value
   if (!tab) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
   let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
-  // Phòng chuyển chỉ hiển thị để truy vết lịch sử, không cộng lặp vào tổng tiền/phòng hiện tại.
-  const roomList = filteredActiveRooms.value.filter(r => Number(r.bookingRoomStatus) !== 100)
+  // Phòng chuyển (100) và phòng hủy (3) chỉ hiển thị để truy vết lịch sử, không cộng lặp vào tổng tiền/phòng hiện tại.
+  const roomList = filteredActiveRooms.value.filter(r => Number(r.bookingRoomStatus) !== 100 && Number(r.bookingRoomStatus) !== 3)
   roomList.forEach(r => {
     priceSum += getRoomChargeTotal(r)
     adults   += Number(r.adults) || 0
@@ -3937,11 +3931,19 @@ async function handleSaveNewBooking() {
     }
     if (isEditModal.value && modalForm.value.dbId) {
       if (modalSubTab.value === 'rooms') {
+        const allocations = serializeRoomAddDraft()
+        const totalQty = allocations.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0)
+        if (totalQty <= 0) {
+          uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')
+          isSavingModal.value = false
+          return
+        }
+
         // The add-room tab has an explicit append-only API. It never sends
         // existing booking-room ids or the persisted room list.
         await addBookingRooms(modalForm.value.dbId, {
           intent: 'add_only',
-          room_allocations: serializeRoomAddDraft(),
+          room_allocations: allocations,
         })
         await loadBookings()
         resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
@@ -7693,8 +7695,8 @@ defineExpose({
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
                           <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.quantity++; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.quantity > 0 ? (row.quantity--, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            <button @click.prevent="row.quantity = (Number(row.quantity) || 0) + 1; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="(Number(row.quantity) || 0) > 0 ? (row.quantity = (Number(row.quantity) || 0) - 1, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>
