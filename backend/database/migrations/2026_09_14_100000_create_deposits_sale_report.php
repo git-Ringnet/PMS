@@ -62,6 +62,7 @@ BEGIN
             DATE_FORMAT(b.departure_date, '%d/%m/%Y') AS DepartureDate,
             COALESCE(c.name, '') AS CompanyName,
             CASE WHEN p.amount < 0 THEN 'Hoàn Trả' WHEN COALESCE(p.pack2, '') = 'DPR' THEN 'Đặt cọc' ELSE 'Thu Ngân' END AS ShowDeposit,
+            CONCAT(CASE WHEN p.amount < 0 THEN 'Hoàn Trả' WHEN COALESCE(p.pack2, '') = 'DPR' THEN 'Đặt cọc' ELSE 'Thu Ngân' END, ' / Thanh Toán: ', COALESCE(p.payment_method_id, '')) AS GroupHeader,
             CASE WHEN p.amount < 0 THEN 0 ELSE p.amount END AS PositiveAmount,
             CASE WHEN p.amount < 0 THEN p.amount ELSE 0 END AS RefundAmount,
             CASE WHEN p.amount >= 0 AND COALESCE(p.pack2, '') = 'DPR' THEN p.amount ELSE 0 END AS DepositAmount,
@@ -112,10 +113,10 @@ SQL;
             ['name'=>'p_show_amount_zero','mode'=>'IN','data_type'=>'tinyint','database_type'=>'tinyint','position'=>10,'required'=>true],
             ['name'=>'p_payment_method','mode'=>'IN','data_type'=>'varchar','database_type'=>'varchar(100)','position'=>11,'required'=>false],
         ];
-        $fields = ['PaymentId','LegacyPaymentId','PaymentDate','OpenTime','Amount','Currency','PaymentMethod','PaymentMethodName','BillID','Description','Username','Shift','DepartmentId','Department','BookingId','BookingCode','Room','GuestInfo','ArrivalDate','DepartureDate','CompanyName','ShowDeposit','PositiveAmount','RefundAmount','DepositAmount','CashAmount','CompanyTotal'];
-        $numeric = ['PaymentId','LegacyPaymentId','Amount','BookingId','PositiveAmount','RefundAmount','DepositAmount','CashAmount','CompanyTotal'];
-        $fieldSchema = array_map(fn (string $name) => ['name'=>$name,'type'=>in_array($name,$numeric,true)?'number':'string','nullable'=>!in_array($name,['PaymentDate','Amount','BookingCode','ShowDeposit'],true)], $fields);
-        $defaults = ['p_from_date'=>now()->toDateString(),'p_to_date'=>now()->toDateString(),'p_department'=>'FO','p_user'=>'','p_shift'=>'','p_from_time'=>'00:00','p_to_time'=>'23:59','p_company'=>null,'p_show_deposit'=>1,'p_show_amount_zero'=>0,'p_payment_method'=>''];
+        $fields = ['PaymentId','LegacyPaymentId','PaymentDate','OpenTime','Amount','Currency','PaymentMethod','PaymentMethodName','BillID','Description','Username','Shift','DepartmentId','Department','BookingId','BookingCode','Room','GuestInfo','ArrivalDate','DepartureDate','CompanyName','ShowDeposit','GroupHeader','PositiveAmount','RefundAmount','DepositAmount','CashAmount','CompanyTotal'];
+        $numeric = ['PaymentId','LegacyPaymentId','Amount','BookingId','BillID','PositiveAmount','RefundAmount','DepositAmount','CashAmount','CompanyTotal'];
+        $fieldSchema = array_map(fn (string $name) => ['name'=>$name,'type'=>in_array($name,$numeric,true)?'number':'string','nullable'=>!in_array($name,['PaymentDate','Amount','BookingCode','ShowDeposit','GroupHeader'],true)], $fields);
+        $defaults = ['p_from_date'=>now()->toDateString(),'p_to_date'=>now()->toDateString(),'p_department'=>'MR','p_user'=>'','p_shift'=>'','p_from_time'=>'00:00','p_to_time'=>'23:59','p_company'=>null,'p_show_deposit'=>1,'p_show_amount_zero'=>0,'p_payment_method'=>''];
         DB::table('report_data_sources')->updateOrInsert(['code'=>self::SOURCE], [
             'name'=>'Dữ liệu báo cáo đặt cọc Sale','description'=>'Báo cáo đặt cọc theo sp_039/vw_004, triển khai độc lập trên payments.','source_type'=>'procedure','schema_name'=>$database,'object_name'=>'rpt_deposits_sale','parameter_schema'=>json_encode($parameters,JSON_UNESCAPED_UNICODE),'field_schema'=>json_encode($fieldSchema,JSON_UNESCAPED_UNICODE),'sample_parameters'=>json_encode($defaults),'max_rows'=>5000,'is_active'=>true,'last_discovered_at'=>$now,'created_at'=>$now,'updated_at'=>$now,
         ]);
@@ -129,7 +130,7 @@ SQL;
             ['name'=>'p_shift','label'=>'Ca làm việc','control'=>'select','default'=>'','required'=>false,'options_source'=>'report-shifts','options'=>[]],
             ['name'=>'p_from_time','label'=>'Từ giờ','control'=>'text','default'=>'00:00','required'=>false],
             ['name'=>'p_to_time','label'=>'Đến giờ','control'=>'text','default'=>'23:59','required'=>false],
-            ['name'=>'p_department','label'=>'Chọn bộ phận','control'=>'select','default'=>'FO','required'=>false,'options_source'=>'service-departments','options'=>[]],
+            ['name'=>'p_department','label'=>'Chọn bộ phận','control'=>'select','default'=>'MR','required'=>false,'options_source'=>'service-departments','options'=>[]],
             ['name'=>'p_company','label'=>'Chọn công ty','control'=>'select','default'=>'','required'=>false,'options_source'=>'companies','options'=>[]],
             ['name'=>'p_user','label'=>'Chọn người dùng','control'=>'select','default'=>'','required'=>false,'options_source'=>'users','options'=>[]],
             ['name'=>'p_payment_method','label'=>'Phương thức thanh toán','control'=>'select','default'=>'','required'=>false,'options'=>[['label'=>'Tất cả','value'=>''],['label'=>'Tiền mặt','value'=>'CA'],['label'=>'Công nợ','value'=>'AC'],['label'=>'Chuyển khoản','value'=>'BT'],['label'=>'Thẻ','value'=>'CD'],['label'=>'Voucher','value'=>'VO']]],

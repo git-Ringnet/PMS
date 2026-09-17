@@ -89,14 +89,14 @@ class HousekeepingInvoiceReportsMigrationTest extends TestCase
         $this->assertStringNotContainsString('JSON_ARRAYAGG', $migration);
     }
 
-    public function test_compatibility_migrations_are_kept_with_their_report_codes(): void
+    public function test_json_aggregation_compatibility_is_integrated_into_base_migrations(): void
     {
-        $laundryMigration = file_get_contents(database_path('migrations/2026_09_10_310000_fix_report_json_aggregation_compatibility.php'));
-        $companyMigration = file_get_contents(database_path('migrations/2026_09_10_311000_fix_company_debt_json_aggregation_compatibility.php'));
+        $laundryMigration = file_get_contents(database_path('migrations/2026_09_10_300000_create_housekeeping_invoice_reports.php'));
+        $companyMigration = file_get_contents(database_path('migrations/2026_09_10_260000_create_company_debt_report.php'));
 
         $this->assertStringContainsString('rpt_laundry_invoices', $laundryMigration);
-        $this->assertStringNotContainsString('rpt_breakage_invoices', $laundryMigration);
-        $this->assertStringNotContainsString('rpt_minibar_invoices', $laundryMigration);
+        $this->assertStringNotContainsString('JSON_ARRAYAGG', $laundryMigration);
         $this->assertStringContainsString('rpt_company_debt', $companyMigration);
+        $this->assertStringNotContainsString('JSON_ARRAYAGG', $companyMigration);
     }
 }

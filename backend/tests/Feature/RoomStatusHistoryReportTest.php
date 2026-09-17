@@ -18,12 +18,14 @@ class RoomStatusHistoryReportTest extends TestCase
     public function test_migration_keeps_sp_288_filters_and_status_labels(): void
     {
         $migration = file_get_contents(database_path('migrations/2026_09_08_120000_create_room_status_history_report.php'));
-        $this->assertStringContainsString('DATE(changed_at) BETWEEN p_from_date AND p_to_date', $migration);
+        $this->assertStringContainsString('history.business_date BETWEEN p_from_date AND p_to_date', $migration);
+        $this->assertStringContainsString('status_from_id', $migration);
+        $this->assertStringContainsString('status_to_id', $migration);
         $this->assertStringContainsString("username = p_username", $migration);
         $this->assertStringContainsString("room = p_room", $migration);
-        $this->assertStringContainsString("REPLACE(status_from_english, 'Vacant ', '')", $migration);
-        $this->assertStringContainsString('status_from_vietnamese AS StatusFromVietnamese', $migration);
-        $this->assertStringContainsString('status_to_vietnamese AS StatusToVietnamese', $migration);
+        $this->assertStringContainsString("REPLACE(status_from.name_en, 'Vacant ', '')", $migration);
+        $this->assertStringContainsString('status_from.name_vi AS StatusFromVietnamese', $migration);
+        $this->assertStringContainsString('status_to.name_vi AS StatusToVietnamese', $migration);
         $this->assertStringNotContainsString('RoomController', $migration);
         $this->assertStringNotContainsString('ActivityLogService', $migration);
     }
@@ -79,7 +81,7 @@ class RoomStatusHistoryReportTest extends TestCase
 
     public function test_legacy_layout_uses_business_date_and_actual_action_time(): void
     {
-        $migration = file_get_contents(database_path('migrations/2026_09_08_160000_fix_room_status_history_business_datetime.php'));
+        $migration = file_get_contents(database_path('migrations/2026_09_08_120000_create_room_status_history_report.php'));
         $this->assertStringContainsString('TIMESTAMP(history.business_date, TIME(history.changed_at))', $migration);
         $this->assertStringContainsString("'%d-%m-%Y %H:%i:%s'", $migration);
     }
