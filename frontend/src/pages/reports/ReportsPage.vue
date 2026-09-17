@@ -411,6 +411,25 @@ watch(() => activeTab.value?.selectedTemplateId, (val, oldVal) => {
   }
 })
 
+// Watch p_show_room_details for EXPECTED_BREAKFAST to auto switch templates
+watch(() => activeTab.value?.parameters?.p_show_room_details, (showDetails) => {
+  if (!['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'].includes(activeTab.value?.code)) return
+  const templates = activeTab.value.report?.templates || []
+  if (templates.length <= 1) return
+
+  const target = templates.find(t =>
+    showDetails
+      ? (t.report?.includes('DETAIL') || t.name?.includes('Chi tiết'))
+      : (t.report?.includes('SUMMARY') || t.report?.includes('_1_') || t.name?.includes('Tổng hợp'))
+  )
+  if (target && target.id !== activeTab.value.selectedTemplateId) {
+    activeTab.value.selectedTemplateId = target.id
+    if (activeTab.value.dataset) {
+      executeTab(activeTab.value)
+    }
+  }
+})
+
 // Watch route parameter change
 watch(() => route.query.report, code => {
   if (code) {
