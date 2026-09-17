@@ -16,19 +16,19 @@ return new class extends Migration
                     $table->string('guest_room_id', 50)->nullable()->after('room');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'original_rate')) {
-                    $table->decimal('original_rate', 20, 6)->default(0)->after('currency');
+                    $table->decimal('original_rate', 15, 2)->default(0)->after('currency');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'service_charge_amount')) {
-                    $table->decimal('service_charge_amount', 20, 6)->default(0)->after('original_rate');
+                    $table->decimal('service_charge_amount', 15, 2)->default(0)->after('original_rate');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'special_tax')) {
-                    $table->decimal('special_tax', 20, 6)->default(0)->after('service_charge_amount');
+                    $table->decimal('special_tax', 15, 2)->default(0)->after('service_charge_amount');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'tax')) {
-                    $table->decimal('tax', 20, 6)->default(0)->after('special_tax');
+                    $table->decimal('tax', 15, 2)->default(0)->after('special_tax');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'discount')) {
-                    $table->decimal('discount', 20, 6)->default(0)->after('tax');
+                    $table->decimal('discount', 15, 2)->default(0)->after('tax');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'payment_date')) {
                     $table->dateTime('payment_date')->nullable()->after('invoice_date');
@@ -61,7 +61,7 @@ return new class extends Migration
                     $table->string('ca', 20)->nullable()->after('username');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'exchange_rate')) {
-                    $table->decimal('exchange_rate', 20, 6)->default(1)->after('amount');
+                    $table->decimal('exchange_rate', 15, 2)->default(1)->after('amount');
                 }
                 if (!Schema::hasColumn('sales_invoices', 'note')) {
                     $table->string('note', 500)->nullable()->after('status');

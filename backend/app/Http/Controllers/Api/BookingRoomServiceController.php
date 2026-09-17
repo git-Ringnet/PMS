@@ -20,6 +20,7 @@ use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
 use App\Models\SystemDateRoll;
 use App\Services\RoomAvailabilityService;
+use App\Services\TaxBreakdownService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -1238,13 +1239,20 @@ class BookingRoomServiceController extends Controller
                         'Increase' => $item['increase_pct'] ?? 0, 'IncreaseAmount' => $item['increase_amount'] ?? 0,
                         'TotalAmount' => $item['total_amount'] ?? $item['net_price'] ?? 0, 'Note' => $request->note,
                     ]);
+                    $itemLineAmount = (float)($item['total_amount'] ?? $item['net_price'] ?? 0);
+                    $bd = TaxBreakdownService::breakdown($itemLineAmount, $svcChargeAmt, $specialTaxAmt, $taxAmt, $qty);
+
                     ServiceBillDetail::create([
                         'BillServiceId' => $serviceBill->Ma, 'Ma' => $index + 1,
                         'DepartmentId' => $department, 'ServiceId' => $meta['service'],
-                        'DescriptionServive' => $pName, 'OriginalRate' => $item['original_rate'] ?? $item['price'] ?? 0, 'Quantity' => $qty,
+                        'DescriptionServive' => $pName, 'OriginalRate' => $bd['original_rate'], 'Quantity' => $qty,
                         'ServiceCharge' => $svcChargeAmt, 'SpecialTax' => $specialTaxAmt, 'Tax' => $taxAmt,
-                        'Amount' => $item['total_amount'] ?? $item['net_price'] ?? 0, 'Currency' => 'VND', 'Exchange' => 1,
-                        'DetailBillOriginalAmount' => (float)($item['original_rate'] ?? $item['price'] ?? 0) * $qty,
+                        'ServiceChargeAmount' => $bd['service_charge_amount'],
+                        'SpecialTaxAmount'    => $bd['special_tax_amount'],
+                        'TaxAmount'           => $bd['tax_amount'],
+                        'Amount' => $itemLineAmount, 'Currency' => 'VND', 'Exchange' => 1,
+                        'DetailBillOriginalAmount' => $bd['net_total'],
+                        'OriginalAmount' => $bd['net_total'],
                         'DiscountAmount' => $item['discount_amount'] ?? 0, 'IncreaseAmount' => $item['increase_amount'] ?? 0,
                     ]);
                 }
@@ -1537,20 +1545,27 @@ class BookingRoomServiceController extends Controller
                     'CreatedHour'        => now()->format('H:i'),
                 ]);
 
+                $bd = TaxBreakdownService::breakdown($totalAmount, (float)($foService->service_charge ?? 0), (float)($foService->special_tax ?? 0), (float)($foService->tax ?? 0), $qty);
+
                 ServiceBillDetail::create([
                     'BillServiceId'            => $bill->Ma,
                     'Ma'                       => $detailSeq,
                     'DepartmentId'             => 'FO',
                     'ServiceId'                => $foService->code,
                     'DescriptionServive'       => $description,
-                    'OriginalRate'             => $rate,
+                    'OriginalRate'             => $bd['original_rate'],
+                    'Quantity'                 => $qty,
                     'ServiceCharge'            => (float)($foService->service_charge ?? 0),
                     'SpecialTax'               => (float)($foService->special_tax ?? 0),
                     'Tax'                      => (float)($foService->tax ?? 0),
+                    'ServiceChargeAmount'      => $bd['service_charge_amount'],
+                    'SpecialTaxAmount'         => $bd['special_tax_amount'],
+                    'TaxAmount'                => $bd['tax_amount'],
                     'Amount'                   => $totalAmount,
                     'Currency'                 => $currency,
                     'Exchange'                 => 1,
-                    'DetailBillOriginalAmount' => $rate * $qty,
+                    'DetailBillOriginalAmount' => $bd['net_total'],
+                    'OriginalAmount'           => $bd['net_total'],
                     'DiscountAmount'           => 0,
                     'IncreaseAmount'           => 0,
                 ]);
@@ -1671,10 +1686,14 @@ class BookingRoomServiceController extends Controller
             $breakfastDescription = $breakfastService
                 ? $breakfastService->billDescription($room->room_number ?: $room->id, 'FO')
                 : 'Tiền ăn sáng người lớn - Phòng ' . ($room->room_number ?: $room->id);
+            $rmBreakdown = TaxBreakdownService::breakdown($rate, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
+            $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax']);
+            $rmMinusBreakdown = TaxBreakdownService::breakdown(-$breakfastAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
+
             ServiceBillDetail::insert([
-                ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $bill->DescriptionServive, 'OriginalRate' => $rate, 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'Amount' => $rate, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rate],
-                ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $breakfastAmount, 'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'], 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $breakfastAmount],
-                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ' . $breakfastDescription, 'OriginalRate' => -$breakfastAmount, 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => -$breakfastAmount],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $bill->DescriptionServive, 'OriginalRate' => $rmBreakdown['original_rate'], 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'ServiceChargeAmount' => $rmBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $rmBreakdown['special_tax_amount'], 'TaxAmount' => $rmBreakdown['tax_amount'], 'Amount' => $rate, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rmBreakdown['net_total'], 'OriginalAmount' => $rmBreakdown['net_total']],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $bfBreakdown['original_rate'], 'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'], 'ServiceChargeAmount' => $bfBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $bfBreakdown['special_tax_amount'], 'TaxAmount' => $bfBreakdown['tax_amount'], 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $bfBreakdown['net_total'], 'OriginalAmount' => $bfBreakdown['net_total']],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ' . $breakfastDescription, 'OriginalRate' => $rmMinusBreakdown['original_rate'], 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'ServiceChargeAmount' => $rmMinusBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $rmMinusBreakdown['special_tax_amount'], 'TaxAmount' => $rmMinusBreakdown['tax_amount'], 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rmMinusBreakdown['net_total'], 'OriginalAmount' => $rmMinusBreakdown['net_total']],
             ]);
             RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => 1, 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $room->breakfast ? $adults : 0, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
             if (!$atMaster) BookingRoomService::updateOrCreate(['booking_room_id' => $room->id, 'service_code' => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM), 'service_date' => $date->toDateString()], ['guest_id' => $guest?->guest_id, 'service_bill_id' => $bill->Ma, 'service_bill_detail_no' => 1, 'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Tiền phòng'), 'quantity' => 1, 'rate' => $rate, 'total_amount' => $rate, 'department' => 'FO', 'note' => $bill->DescriptionServive, 'tax' => $roomTaxProfile['tax'], 'service_charge' => $roomTaxProfile['service_charge'], 'unit' => 'Đêm', 'folio' => $bill->Folio, 'is_room' => 1, 'is_posted' => 1, 'posted_at' => now(), 'created_by' => $user]);
@@ -2003,77 +2022,97 @@ class BookingRoomServiceController extends Controller
                 // 3. Dòng RM trừ: Amount = -breakfastAmount
                 if ($mode === 'auto' && $targetRoom->breakfast && $breakfastAmount > 0) {
                     // Dòng 1: RM (Tiền phòng gốc)
+                    $rmBreakdown = TaxBreakdownService::breakdown($totalAmount, $serviceTaxProfile['service_charge'], $serviceTaxProfile['special_tax'], $serviceTaxProfile['tax']);
                     ServiceBillDetail::create([
                         'BillServiceId'            => $bill->Ma,
                         'Ma'                       => 1,
                         'DepartmentId'             => 'FO',
                         'ServiceId'                => $serviceCode,
                         'DescriptionServive'       => $targetDesc,
-                        'OriginalRate'             => $rate,
+                        'OriginalRate'             => $rmBreakdown['original_rate'],
                         'ServiceCharge'            => $serviceTaxProfile['service_charge'],
                         'SpecialTax'               => $serviceTaxProfile['special_tax'],
                         'Tax'                      => $serviceTaxProfile['tax'],
+                        'ServiceChargeAmount'      => $rmBreakdown['service_charge_amount'],
+                        'SpecialTaxAmount'         => $rmBreakdown['special_tax_amount'],
+                        'TaxAmount'                => $rmBreakdown['tax_amount'],
                         'Amount'                   => $totalAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
-                        'DetailBillOriginalAmount' => $rate,
+                        'DetailBillOriginalAmount' => $rmBreakdown['net_total'],
+                        'OriginalAmount'           => $rmBreakdown['net_total'],
                         'DiscountAmount'           => 0,
                         'IncreaseAmount'           => 0,
                     ]);
 
                     // Dòng 2: BF (Tiền ăn sáng)
+                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax']);
                     ServiceBillDetail::create([
                         'BillServiceId'            => $bill->Ma,
                         'Ma'                       => 2,
                         'DepartmentId'             => 'FO',
                         'ServiceId'                => 'BF',
                         'DescriptionServive'       => $breakfastDesc,
-                        'OriginalRate'             => $breakfastAmount,
+                        'OriginalRate'             => $bfBreakdown['original_rate'],
                         'ServiceCharge'            => $breakfastTaxProfile['service_charge'],
                         'SpecialTax'               => $breakfastTaxProfile['special_tax'],
                         'Tax'                      => $breakfastTaxProfile['tax'],
+                        'ServiceChargeAmount'      => $bfBreakdown['service_charge_amount'],
+                        'SpecialTaxAmount'         => $bfBreakdown['special_tax_amount'],
+                        'TaxAmount'                => $bfBreakdown['tax_amount'],
                         'Amount'                   => $breakfastAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
-                        'DetailBillOriginalAmount' => $breakfastAmount,
+                        'DetailBillOriginalAmount' => $bfBreakdown['net_total'],
+                        'OriginalAmount'           => $bfBreakdown['net_total'],
                         'DiscountAmount'           => 0,
                         'IncreaseAmount'           => 0,
                     ]);
 
                     // Dòng 3: RM trừ (Trừ tiền ăn sáng trong tiền phòng)
+                    $rmMinusBreakdown = TaxBreakdownService::breakdown(-$breakfastAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
                     ServiceBillDetail::create([
                         'BillServiceId'            => $bill->Ma,
                         'Ma'                       => 3,
                         'DepartmentId'             => 'FO',
                         'ServiceId'                => 'RM',
                         'DescriptionServive'       => 'Trừ ' . $breakfastDesc,
-                        'OriginalRate'             => -$breakfastAmount,
+                        'OriginalRate'             => $rmMinusBreakdown['original_rate'],
                         'ServiceCharge'            => $roomTaxProfile['service_charge'],
                         'SpecialTax'               => $roomTaxProfile['special_tax'],
                         'Tax'                      => $roomTaxProfile['tax'],
+                        'ServiceChargeAmount'      => $rmMinusBreakdown['service_charge_amount'],
+                        'SpecialTaxAmount'         => $rmMinusBreakdown['special_tax_amount'],
+                        'TaxAmount'                => $rmMinusBreakdown['tax_amount'],
                         'Amount'                   => -$breakfastAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
-                        'DetailBillOriginalAmount' => -$breakfastAmount,
+                        'DetailBillOriginalAmount' => $rmMinusBreakdown['net_total'],
+                        'OriginalAmount'           => $rmMinusBreakdown['net_total'],
                         'DiscountAmount'           => 0,
                         'IncreaseAmount'           => 0,
                     ]);
                 } else {
                     // Mode 'update' hoặc 'surcharge' hoặc không có ăn sáng: Chỉ 1 dòng dịch vụ
+                    $singleBreakdown = TaxBreakdownService::breakdown($totalAmount, $serviceTaxProfile['service_charge'], $serviceTaxProfile['special_tax'], $serviceTaxProfile['tax']);
                     ServiceBillDetail::create([
                         'BillServiceId'            => $bill->Ma,
                         'Ma'                       => 1,
                         'DepartmentId'             => 'FO',
                         'ServiceId'                => $serviceCode,
                         'DescriptionServive'       => $targetDesc,
-                        'OriginalRate'             => $rate,
+                        'OriginalRate'             => $singleBreakdown['original_rate'],
                         'ServiceCharge'            => $serviceTaxProfile['service_charge'],
                         'SpecialTax'               => $serviceTaxProfile['special_tax'],
                         'Tax'                      => $serviceTaxProfile['tax'],
+                        'ServiceChargeAmount'      => $singleBreakdown['service_charge_amount'],
+                        'SpecialTaxAmount'         => $singleBreakdown['special_tax_amount'],
+                        'TaxAmount'                => $singleBreakdown['tax_amount'],
                         'Amount'                   => $totalAmount,
                         'Currency'                 => $currency,
                         'Exchange'                 => 1,
-                        'DetailBillOriginalAmount' => $rate,
+                        'DetailBillOriginalAmount' => $singleBreakdown['net_total'],
+                        'OriginalAmount'           => $singleBreakdown['net_total'],
                         'DiscountAmount'           => 0,
                         'IncreaseAmount'           => 0,
                     ]);
@@ -2262,20 +2301,25 @@ class BookingRoomServiceController extends Controller
                 'CreatedHour'        => now()->format('H:i'),
             ]);
 
+            $bd = TaxBreakdownService::breakdown($totalAmount, (float) ($foService->service_charge ?? 0), (float) ($foService->special_tax ?? 0), (float) ($foService->tax ?? 0));
             ServiceBillDetail::create([
                 'BillServiceId'            => $bill->Ma,
                 'Ma'                       => 1,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => $foService->code,
                 'DescriptionServive'       => $description,
-                'OriginalRate'             => $rate,
+                'OriginalRate'             => $bd['original_rate'],
                 'ServiceCharge'            => (float) ($foService->service_charge ?? 0),
                 'SpecialTax'               => (float) ($foService->special_tax ?? 0),
                 'Tax'                      => (float) ($foService->tax ?? 0),
+                'ServiceChargeAmount'      => $bd['service_charge_amount'],
+                'SpecialTaxAmount'         => $bd['special_tax_amount'],
+                'TaxAmount'                => $bd['tax_amount'],
                 'Amount'                   => $totalAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,
-                'DetailBillOriginalAmount' => $totalAmount,
+                'DetailBillOriginalAmount' => $bd['net_total'],
+                'OriginalAmount'           => $bd['net_total'],
             ]);
 
         $service->update([
@@ -2440,20 +2484,25 @@ class BookingRoomServiceController extends Controller
             ]);
 
             // 2. Tạo ServiceBillDetail (SP3001) - 1 dòng RM, không tách ăn sáng
+            $singleBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
             ServiceBillDetail::create([
                 'BillServiceId'            => $bill->Ma,
                 'Ma'                       => 1,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'RM',
                 'DescriptionServive'       => $request->description,
-                'OriginalRate'             => $totalAmount,
+                'OriginalRate'             => $singleBreakdown['original_rate'],
                 'ServiceCharge'            => $roomTaxProfile['service_charge'],
                 'SpecialTax'               => $roomTaxProfile['special_tax'],
                 'Tax'                      => $roomTaxProfile['tax'],
+                'ServiceChargeAmount'      => $singleBreakdown['service_charge_amount'],
+                'SpecialTaxAmount'         => $singleBreakdown['special_tax_amount'],
+                'TaxAmount'                => $singleBreakdown['tax_amount'],
                 'Amount'                   => $totalAmount,
                 'Currency'                 => 'VND',
                 'Exchange'                 => 1,
-                'DetailBillOriginalAmount' => $totalAmount,
+                'DetailBillOriginalAmount' => $singleBreakdown['net_total'],
+                'OriginalAmount'           => $singleBreakdown['net_total'],
                 'DiscountAmount'           => 0,
                 'IncreaseAmount'           => 0,
             ]);

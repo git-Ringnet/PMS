@@ -59,13 +59,13 @@ class SalesInvoice extends Model
         'legacy_booking_id'     => 'integer',
         'legacy_payment_id'     => 'integer',
         'status'                => 'integer',
-        'original_rate'         => 'decimal:6',
-        'service_charge_amount' => 'decimal:6',
-        'special_tax'           => 'decimal:6',
-        'tax'                   => 'decimal:6',
-        'discount'              => 'decimal:6',
-        'amount'                => 'decimal:6',
-        'exchange_rate'         => 'decimal:6',
+        'original_rate'         => 'decimal:2',
+        'service_charge_amount' => 'decimal:2',
+        'special_tax'           => 'decimal:2',
+        'tax'                   => 'decimal:2',
+        'discount'              => 'decimal:2',
+        'amount'                => 'decimal:2',
+        'exchange_rate'         => 'decimal:2',
     ];
 
     public function booking(): BelongsTo

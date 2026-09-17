@@ -769,6 +769,8 @@ class BookingController extends Controller
                         );
                     }
                 }
+
+                app(\App\Services\BookingStatusSyncService::class)->sync($booking, Booking::STATUS_RESERVATION);
             });
         } catch (\Throwable $e) {
             Log::error('Exception in add-only booking rooms: ' . $e->getMessage(), [
@@ -2069,6 +2071,7 @@ class BookingController extends Controller
             ->map(fn ($number) => (string) $number)
             ->flip();
 
+        $totalQuantity = 0;
         foreach ($roomAllocations as $allocation) {
             if (!is_array($allocation)) {
                 throw new \Exception('Dữ liệu phân bổ phòng không hợp lệ.');
@@ -2079,6 +2082,7 @@ class BookingController extends Controller
                 throw new \Exception('Số lượng phòng mới không hợp lệ.');
             }
             $quantity = (int) $rawQuantity;
+            $totalQuantity += $quantity;
 
             $details = $allocation['rooms'] ?? [];
             if (!is_array($details)) {
@@ -2113,6 +2117,10 @@ class BookingController extends Controller
                     throw new \Exception('Số phòng ' . $roomNumber . ' đã có trong đăng ký này.');
                 }
             }
+        }
+
+        if ($totalQuantity <= 0) {
+            throw new \Exception('Vui lòng chọn số lượng phòng cần thêm!');
         }
     }
 

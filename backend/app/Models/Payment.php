@@ -88,7 +88,7 @@ class Payment extends Model
         'status'                     => 'integer',
         'edit_flag'                  => 'integer',
         'legacy_id'                  => 'integer',
-        'legacy_payment_total_amount0' => 'decimal:6',
+        'legacy_payment_total_amount0' => 'decimal:2',
     ];
 
     // =========================================

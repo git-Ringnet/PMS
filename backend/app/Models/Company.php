@@ -37,7 +37,7 @@ class Company extends Model
         'is_active' => 'boolean',
         'max_debt' => 'decimal:2',
         'legacy_id' => 'integer',
-        'legacy_re_credit_limit' => 'decimal:6',
+        'legacy_re_credit_limit' => 'decimal:2',
     ];
 
     /**
