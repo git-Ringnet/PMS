@@ -211,6 +211,30 @@ HTML;
         $this->assertStringContainsString('Ghi chú', $visible);
     }
 
+    public function test_it_renders_detail_custom_rows_without_grouping(): void
+    {
+        $html = <<<'HTML'
+<table><tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1">
+<tr class="pms-detail-row"><td>{{row.Room}}</td></tr>
+<tr class="pms-detail-custom-row"><td>Đăng Ký:</td><td>{{row.BookingId}}</td></tr>
+<tr class="pms-detail-custom-row"><td>Ghi Chú:</td><td>{{row.BookingNote}}</td></tr>
+</tbody></table>
+HTML;
+        $data = [
+            'rows' => [
+                ['BookingId' => 'GAL1', 'BookingNote' => 'Ghi chú 1', 'Room' => '101'],
+                ['BookingId' => 'GAL2', 'BookingNote' => 'Ghi chú 2', 'Room' => '102'],
+            ],
+        ];
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', $data);
+
+        $this->assertSame(2, substr_count($rendered, 'Đăng Ký:'));
+        $this->assertSame(2, substr_count($rendered, 'Ghi Chú:'));
+        $this->assertStringContainsString('GAL1', $rendered);
+        $this->assertStringContainsString('Ghi chú 2', $rendered);
+    }
+
     public function test_it_formats_group_sum_aggregates_with_number_modifier(): void
     {
         $html = <<<'HTML'

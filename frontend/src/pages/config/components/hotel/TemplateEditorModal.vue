@@ -317,7 +317,7 @@ const scopedBlockFontCss = computed(() => {
     .map(block => {
       const selector = `.template-preview-canvas .${getBlockScopeClass(block)}`
       const fontSizeCss = block.style?.fontSize
-        ? `${selector}, ${selector} * { font-size: ${block.style.fontSize} !important; }`
+        ? `${selector}, ${selector} *:not(button) { font-size: ${block.style.fontSize} !important; }`
         : ''
       const configuredTextCss = block.type === 'text'
         ? scopedBlockTextStyleCss(selector, block.style, block.textStyleOverrides)
@@ -2310,25 +2310,29 @@ const getBlockStyle = (b) => {
 const getTableCellStyle = (block, col) => {
   const align = col.align || 'left'
   const borderStyle = block.tableStyle || 'grid'
+  const baseFontSize = block.style?.fontSize ? { fontSize: block.style.fontSize } : {}
   
   if (borderStyle === 'horizontal') {
     return {
       textAlign: align,
       borderBottom: '1px solid #cbd5e1',
       borderRight: 'none',
-      padding: '6px 8px'
+      padding: '6px 8px',
+      ...baseFontSize
     }
   } else if (borderStyle === 'none') {
     return {
       textAlign: align,
       border: 'none',
-      padding: '6px 8px'
+      padding: '6px 8px',
+      ...baseFontSize
     }
   } else {
     return {
       textAlign: align,
       border: '1px solid #cbd5e1',
-      padding: '6px 8px'
+      padding: '6px 8px',
+      ...baseFontSize
     }
   }
 }
@@ -2342,6 +2346,38 @@ const applyBlockTextStyle = (property, value) => {
     ...(block.textStyleOverrides || {}),
     [property]: true
   }
+
+  if (block.type === 'table') {
+    if (property === 'fontSize') {
+      (block.columns || []).forEach(col => {
+        if (col.headerStyle) col.headerStyle.fontSize = value
+        if (col.cellStyle) col.cellStyle.fontSize = value
+      })
+      ;(block.groups || []).forEach(group => {
+        (group.headerCells || []).forEach(cell => {
+          if (!cell.style) cell.style = {}
+          cell.style.fontSize = value
+        })
+      })
+      ;(block.customRows || []).forEach(row => {
+        (row.cells || []).forEach(cell => {
+          if (!cell.style) cell.style = {}
+          cell.style.fontSize = value
+        })
+      })
+    }
+  } else if (block.type === 'static-table') {
+    if (property === 'fontSize') {
+      (block.rows || []).forEach(row => {
+        if (row.style) row.style.fontSize = value
+        ;(row.cells || []).forEach(cell => {
+          if (!cell.style) cell.style = {}
+          cell.style.fontSize = value
+        })
+      })
+    }
+  }
+
   compileHtml()
 }
 
@@ -2397,6 +2433,7 @@ const getTableDetailStyle = (block, col) => styleObjectToCss({
 const getTableHeaderStyle = (block, col) => {
   const align = col.align || 'left'
   const borderStyle = block.tableStyle || 'grid'
+  const baseFontSize = block.style?.fontSize ? { fontSize: block.style.fontSize } : {}
   
   if (borderStyle === 'horizontal') {
     return {
@@ -2404,6 +2441,7 @@ const getTableHeaderStyle = (block, col) => {
       borderBottom: '2px solid #cbd5e1',
       borderRight: 'none',
       padding: '8px',
+      ...baseFontSize,
       ...mergeConfiguredStyles({ fontWeight: 'bold' }, col.headerStyle)
     }
   } else if (borderStyle === 'none') {
@@ -2411,6 +2449,7 @@ const getTableHeaderStyle = (block, col) => {
       textAlign: align,
       border: 'none',
       padding: '8px',
+      ...baseFontSize,
       ...mergeConfiguredStyles({ fontWeight: 'bold' }, col.headerStyle)
     }
   } else {
@@ -2419,6 +2458,7 @@ const getTableHeaderStyle = (block, col) => {
       borderBottom: '2px solid #cbd5e1',
       borderRight: '1px solid #cbd5e1',
       padding: '8px',
+      ...baseFontSize,
       ...mergeConfiguredStyles({ fontWeight: 'bold' }, col.headerStyle)
     }
   }
@@ -3225,7 +3265,7 @@ const selectBand = (band) => {
                             Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
                           </span>
                         </p>
-                        <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
                               <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
@@ -3240,14 +3280,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
-                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3266,7 +3306,7 @@ const selectBand = (band) => {
 
                     <!-- Configured Static Table rendering -->
                     <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
-                      <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
                             <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
@@ -3521,7 +3561,7 @@ const selectBand = (band) => {
                             Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
                           </span>
                         </p>
-                        <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
                               <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
@@ -3536,14 +3576,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
-                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3574,7 +3614,7 @@ const selectBand = (band) => {
                     <div v-else-if="b.type === 'divider'" v-html="b.content"></div>
                     <!-- Configured Static Table rendering -->
                     <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
-                      <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
                             <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
@@ -3841,7 +3881,7 @@ const selectBand = (band) => {
                             Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
                           </span>
                         </p>
-                        <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
                           <thead>
                             <tr class="font-bold">
                               <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
@@ -3856,14 +3896,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 text-[10px] font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
-                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left text-[10px] font-bold">
+                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-[10px] text-slate-400">
+                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3882,7 +3922,7 @@ const selectBand = (band) => {
 
                     <!-- Configured Static Table rendering -->
                     <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
-                      <table class="w-full text-xs border-collapse border-none" :style="getBlockStyle(b)">
+                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
                             <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"

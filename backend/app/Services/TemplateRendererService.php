@@ -140,7 +140,7 @@ class TemplateRendererService
             $subsubgroupBy = $this->attributeValue($attributes, 'data-subsubgroup-by');
             $items = $this->getValueByPath($data, $source);
 
-            if (! is_array($items) || $items === [] || ! $groupBy) {
+            if (! is_array($items) || $items === [] || (! $groupConfigured && ! $groupBy)) {
                 return '<tbody></tbody>';
             }
 
@@ -162,6 +162,9 @@ class TemplateRendererService
                     foreach ($items as $row) {
                         if (is_array($row)) {
                             $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                            foreach ($detailCustomRows as $customRow) {
+                                $output .= $this->renderGroupedTemplate($customRow['template'], $row, [$row]);
+                            }
                         }
                     }
                 } else {
