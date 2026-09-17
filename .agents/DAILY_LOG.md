@@ -9,6 +9,15 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-17] - Fix lỗi SQL 1055 ONLY_FULL_GROUP_BY trong Migration Cutover Booking Status Codes
+### Module: Cơ sở dữ liệu ([2026_09_14_120000_use_booking_registration_status_codes.php](file:///d:/PMS/backend/database/migrations/2026_09_14_120000_use_booking_registration_status_codes.php))
+
+- **1. Sửa câu truy vấn kiểm tra trùng lặp mã nghiệp vụ**:
+  - Bổ sung `select('booking_status_id')` trước `whereNotNull('booking_status_id')->groupBy('booking_status_id')`.
+  - Khắc phục triệt để lỗi `SQLSTATE[42000]: 1055 Expression #1 of SELECT list is not in GROUP BY clause...` khi chạy trên MySQL 8.0/5.7 chuẩn trên Server (có bật `sql_mode=only_full_group_by`).
+- **2. Kiểm thử**:
+  - Chạy lại test suite [RegistrationStatusCutoverTest.php](file:///d:/PMS/backend/tests/Feature/Booking/RegistrationStatusCutoverTest.php): 10/10 tests passed (37 assertions).
+
 ## [2026-09-17] - Chuẩn hóa phần thập phân (2 chữ số) trực tiếp trong các file Migrations gốc & Models
 ### Module: Cơ sở dữ liệu & Models ([create_service_bills_tables.php](file:///d:/PMS/backend/database/migrations/2026_07_28_160001_create_service_bills_tables.php), [add_legacy_invoice_fields.php](file:///d:/PMS/backend/database/migrations/2026_09_10_130000_add_legacy_invoice_fields.php), [create_sales_invoices...php](file:///d:/PMS/backend/database/migrations/2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php), [expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php))
 

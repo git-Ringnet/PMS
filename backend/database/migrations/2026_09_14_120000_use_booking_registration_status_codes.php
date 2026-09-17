@@ -32,7 +32,7 @@ return new class extends Migration
         if (! $hasBackup && ! $hasCurrent) {
             throw new RuntimeException('Cannot cut over booking registration status: neither source nor backup column exists.');
         }
-        $duplicate = DB::table('registration_statuses')->whereNotNull('booking_status_id')
+        $duplicate = DB::table('registration_statuses')->select('booking_status_id')->whereNotNull('booking_status_id')
             ->groupBy('booking_status_id')->havingRaw('COUNT(*) > 1')->exists();
         if ($duplicate) {
             throw new RuntimeException('Duplicate registration booking_status_id values: resolve catalogue mapping before cutover.');
