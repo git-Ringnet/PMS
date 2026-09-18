@@ -19,9 +19,10 @@ export function calculateRoomPlanRoomAmounts(room, booking, systemDate) {
   const today = dateOnly(systemDate || new Date())
   const arrival = dateOnly(room.arrival_date || booking.arrival_date)
   const departure = dateOnly(room.departure_date || booking.departure_date)
-  const isProjectedDate = value => {
+  const isStayDate = value => {
     const date = dateOnly(value)
-    return date >= today && (!departure || date < departure)
+    if (!date) return true
+    return (!arrival || date >= arrival) && (!departure || date < departure)
   }
 
   const setupBillIds = new Set((room.services || [])
@@ -39,7 +40,6 @@ export function calculateRoomPlanRoomAmounts(room, booking, systemDate) {
     const billId = String(bill.Ma ?? bill.id ?? '')
     const billCode = String(bill.ServiceId || '').toUpperCase()
     return Number(bill.Edit) !== 1
-      && dateOnly(bill.Date) < today
       && (['RM', 'EB', 'BD'].includes(billCode) || setupBillIds.has(billId))
   })
 
@@ -51,37 +51,44 @@ export function calculateRoomPlanRoomAmounts(room, booking, systemDate) {
     .filter(bill => !['RM', 'ROOM_CHARGE'].includes(String(bill.ServiceId || '').toUpperCase()))
     .reduce((sum, bill) => sum + (Number(bill.Amount) || 0), 0)
 
-  const projectedServices = (room.services || []).filter(service => (
-    isProjectedDate(service.service_date)
+  const unpostedServices = (room.services || []).filter(service => (
+    isStayDate(service.service_date)
     && Number(service.is_posted) !== 1
     && !service.service_bill_id
     && !service.housekeeping_service_bill_id
   ))
 
-  const projectedNights = Math.max(0, Math.round((new Date(departure) - new Date(today)) / (1000 * 60 * 60 * 24)))
   const fullNights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / (1000 * 60 * 60 * 24)) || Number(booking.num_of_days) || 1)
 
-  const roomCharge = projectedServices
+  const unpostedRoomCharge = unpostedServices
     .filter(isRoomCharge)
     .reduce((sum, service) => sum + amountOf(service), 0)
-    || (Number(room.rate) || 0) * (today > arrival ? projectedNights : fullNights)
 
-  const hasProjectedExtraBed = projectedServices.some(service => codeOf(service) === 'EB')
-  const extraBedAmount = hasProjectedExtraBed
-    ? 0
-    : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * (today > arrival ? projectedNights : fullNights)
+  const roomCharge = (historicalRoomCharge + unpostedRoomCharge) > 0
+    ? (historicalRoomCharge + unpostedRoomCharge)
+    : (Number(room.rate) || 0) * fullNights
+
+  const unpostedExtraBed = unpostedServices
+    .filter(service => codeOf(service) === 'EB')
+    .reduce((sum, service) => sum + amountOf(service), 0)
+
+  const hasExtraBedBill = historicalBills.some(bill => String(bill.ServiceId || '').toUpperCase() === 'EB')
+
+  const extraBedAmount = (unpostedExtraBed > 0 || hasExtraBedBill)
+    ? unpostedExtraBed
+    : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * fullNights
 
   const childBreakfastAmount = (room.children || [])
     .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
     .filter(detail => Number(detail.is_extra_charge) === 1
       && Number(detail.breakfast) === 1
-      && isProjectedDate(detail.service_date))
+      && isStayDate(detail.service_date))
     .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
 
   return {
-    roomCharge: historicalRoomCharge + roomCharge,
-    serviceCharge: historicalServiceCharge + projectedServices
-      .filter(service => !isRoomCharge(service) && !isChildBreakfast(service))
+    roomCharge,
+    serviceCharge: historicalServiceCharge + unpostedServices
+      .filter(service => !isRoomCharge(service) && !isChildBreakfast(service) && codeOf(service) !== 'EB')
       .reduce((sum, service) => sum + amountOf(service), 0)
       + extraBedAmount
       + childBreakfastAmount

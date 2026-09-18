@@ -9,6 +9,24 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-18] - Khắc phục sắp xếp loại phòng, tính đúng tiền ghi chú và hiển thị chồng lấn booking trên Kế hoạch phòng
+### Module: Thống kê & Kế hoạch phòng ([AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [AvailableRoomsPage.vue](file:///d:/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue), [room-plan-amounts.js](file:///d:/PMS/frontend/src/utils/room-plan-amounts.js), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **1. Sắp xếp loại phòng theo thứ tự cột `orders` của bảng `room_classes`**:
+  - **Backend ([AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php))**: Thêm `orderBy('orders')->orderBy('id')` khi truy vấn danh sách `room_classes` và bổ sung trường `'orders' => $rc->orders` vào payload API `index`.
+  - **Frontend ([AvailableRoomsPage.vue](file:///d:/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))**: Sắp xếp danh sách `roomClasses` theo giá trị `orders` tăng dần khi nhận dữ liệu từ API.
+- **2. Khắc phục hiển thị sai tiền trên giao diện ghi chú (card/tooltip) Kế hoạch phòng**:
+  - **[room-plan-amounts.js](file:///d:/PMS/frontend/src/utils/room-plan-amounts.js)**: Sửa logic trong `calculateRoomPlanRoomAmounts`, loại bỏ điều kiện lọc sai `date >= today` đối với dịch vụ chưa post bill (trước đây làm bỏ sót các đêm lưu trú trước ngày hệ thống khi chưa chạy night audit), đảm bảo tính đủ tiền toàn bộ số đêm của phòng và tổng booking.
+  - **[RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue)**: Loại bỏ khai báo trùng lặp cũ để đồng bộ sử dụng tiện ích tính tiền dùng chung.
+- **3. Khắc phục booking check-out bị vẽ đè lên booking check-in cùng ngày khi xem lưới Kế hoạch phòng**:
+  - **Frontend ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**: Bổ sung điều kiện biên trong `processedBookings` đối với booking lưu trú qua đêm: nếu ngày check-out nhỏ hơn hoặc bằng ngày bắt đầu hiển thị của lưới (`checkOutDateStr <= visibleStartDateStr`), bỏ qua không vẽ cell booking đó, tránh bị co về span = 1 và vẽ đè lên booking mới nhận phòng trong ngày đó.
+- **4. Nâng cấp bộ chọn ngày tại Kế hoạch phòng**:
+  - **Frontend ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**: Thay thế các ô nhập ngày thủ công bằng component [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue) có icon lịch tương tác, cho phép người dùng click chọn trực quan ngày/tháng/năm thay vì phải gõ bàn phím.
+- **5. Kiểm thử**:
+  - Unit tests: [room-plan-amounts.test.js](file:///d:/PMS/frontend/tests/room-plan-amounts.test.js) (5/5 tests passed), [room-plan-grid.test.js](file:///d:/PMS/frontend/tests/room-plan-grid.test.js) (2/2 tests passed).
+  - Frontend build: `npm run build` thành công 100% (built in 4.00s).
+  - Backend test: `RoomOccupancyStatisticsTest.php` (1 passed, 40 assertions).
+
 ## [2026-09-17] - Fix lỗi SQL 1055 ONLY_FULL_GROUP_BY trong Migration Cutover Booking Status Codes
 ### Module: Cơ sở dữ liệu ([2026_09_14_120000_use_booking_registration_status_codes.php](file:///d:/PMS/backend/database/migrations/2026_09_14_120000_use_booking_registration_status_codes.php))
 

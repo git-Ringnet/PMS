@@ -88,3 +88,31 @@ test('row 149 aggregates active rooms and excludes cancelled rooms', () => {
 
   assert.deepEqual(result, { roomCharge: 300, serviceCharge: 0 })
 })
+
+test('calculates full room charge across entire stay even when arrival date is before system date', () => {
+  const testBooking = {
+    arrival_date: '2026-08-09',
+    departure_date: '2026-08-13',
+    num_of_days: 4,
+  }
+  const room = {
+    id: 101,
+    arrival_date: '2026-08-09',
+    departure_date: '2026-08-13',
+    rate: 650000,
+    services: [
+      { service_code: 'RM', service_date: '2026-08-09', quantity: 1, rate: 650000, is_posted: 0 },
+      { service_code: 'RM', service_date: '2026-08-10', quantity: 1, rate: 650000, is_posted: 0 },
+      { service_code: 'RM', service_date: '2026-08-11', quantity: 1, rate: 650000, is_posted: 0 },
+      { service_code: 'RM', service_date: '2026-08-12', quantity: 1, rate: 650000, is_posted: 0 },
+    ],
+  }
+
+  // System date is 2026-08-10, room arrived 2026-08-09 (4 nights)
+  const roomAmounts = calculateRoomPlanRoomAmounts(room, testBooking, '2026-08-10')
+  assert.deepEqual(roomAmounts, {
+    roomCharge: 2600000,
+    serviceCharge: 0,
+  })
+})
+

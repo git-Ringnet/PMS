@@ -52,8 +52,11 @@ class AvailabilityController extends Controller
             $temp = $temp->addDay();
         }
 
-        // 2. Lấy room classes
-        $roomClasses = RoomClass::where('is_active', true)->get();
+        // 2. Lấy room classes sắp xếp theo cột orders của room_classes
+        $roomClasses = RoomClass::where('is_active', true)
+            ->orderBy('orders')
+            ->orderBy('id')
+            ->get();
 
         $roomCounts = Room::where('room_number', 'not like', '0%')
             ->select('room_class_id', DB::raw('count(*) as total'), DB::raw('max(extra_beds_limit) as max_extra'))
@@ -74,6 +77,7 @@ class AvailabilityController extends Controller
                 'id'             => $rc->id,
                 'code'           => $rc->code,
                 'name'           => $rc->name,
+                'orders'         => $rc->orders,
                 'total'          => $total,
                 'max_extra_beds' => $maxExtra,
             ];

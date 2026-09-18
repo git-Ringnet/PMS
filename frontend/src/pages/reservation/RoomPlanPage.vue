@@ -13,6 +13,7 @@ import http from '@/services/http'
 import echo from '@/services/echo'
 import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -857,6 +858,8 @@ const dbRooms = computed(() => {
   const visibleEnd = days.value.length > 0 ? new Date(days.value[days.value.length - 1].fullDate) : null
   if (visibleStart) visibleStart.setHours(0, 0, 0, 0)
   if (visibleEnd) visibleEnd.setHours(23, 59, 59, 999)
+  const visibleStartDateStr = visibleStart ? formatDateStr(visibleStart) : ''
+  const visibleEndDateStr = visibleEnd ? formatDateStr(visibleEnd) : ''
 
   bookings.value.forEach(bk => {
     if (!bk.isVirtual || !visibleStart || !visibleEnd) return
@@ -865,8 +868,16 @@ const dbRooms = computed(() => {
     const checkOutDate = parseDateTime(bk.checkOut)
     if (Number.isNaN(checkInDate.getTime()) || Number.isNaN(checkOutDate.getTime())) return
 
+    const checkInDateStr = formatDateStr(checkInDate)
+    const checkOutDateStr = formatDateStr(checkOutDate)
+    const isDayUse = Boolean(bk.isDayUse || checkInDateStr === checkOutDateStr)
+
     // Do not create an unassigned-room row for bookings outside the visible period.
-    if (checkOutDate < visibleStart || checkInDate > visibleEnd) return
+    if (isDayUse) {
+      if (checkInDateStr < visibleStartDateStr || checkInDateStr > visibleEndDateStr) return
+    } else {
+      if (checkOutDateStr <= visibleStartDateStr || checkInDateStr > visibleEndDateStr) return
+    }
     virtualRooms.add(bk.room)
   })
 
@@ -1314,122 +1325,6 @@ async function loadBookings() {
       res.data.data.forEach(b => {
         if (Number(b.status) === 3) return
         if (!b.booking_rooms) return
-
-        const calculateRoomAmounts = (room) => {
-          const dateOnly = value => String(value || '').slice(0, 10)
-          const today = dateOnly(systemDate.value || new Date())
-          const arrival = dateOnly(room.arrival_date || b.arrival_date)
-          const departure = dateOnly(room.departure_date || b.departure_date)
-          const isProjectedDate = value => {
-            const date = dateOnly(value)
-            return date >= today && (!departure || date < departure)
-          }
-          const codeOf = service => String(
-            service.service_code ?? service.serviceCode ?? service.ServiceId ?? ''
-          ).toUpperCase()
-          const amountOf = service => {
-            const quantity = Number(service.quantity ?? service.Quantity ?? 1) || 1
-            const rate = Number(service.rate ?? service.price ?? service.Amount ?? service.amount ?? 0) || 0
-            return Number(service.total_amount ?? service.totalAmount ?? '') || (rate * quantity)
-          }
-          const isRoomCharge = service => ['RM', 'ROOM_CHARGE'].includes(codeOf(service))
-          const isChildBreakfast = service => codeOf(service) === 'BD'
-            || String(service.note ?? service.Note ?? '').toLowerCase().includes('phá»¥ thu Äƒn sÃ¡ng tráº» em')
-          const setupBillIds = new Set((room.services || [])
-            .map(service => service.service_bill_id ?? service.serviceBillId)
-            .filter(value => value !== null && value !== undefined && value !== '')
-            .map(String))
-          const roomBills = [
-            ...(room.service_bills || room.serviceBills || []),
-            ...(room.current_service_bills || room.currentServiceBills || []),
-            ...(b.master_service_bills || []).filter(bill => String(bill.RentalRoomId1 || '') === String(room.id))
-          ]
-          const historicalBills = roomBills.filter(bill => {
-            const billId = String(bill.Ma ?? bill.id ?? '')
-            const billCode = String(bill.ServiceId || '').toUpperCase()
-            return Number(bill.Edit) !== 1
-              && dateOnly(bill.Date) < today
-              && (['RM', 'EB', 'BD'].includes(billCode) || setupBillIds.has(billId))
-          })
-          const historicalRoomCharge = historicalBills
-            .filter(bill => ['RM', 'ROOM_CHARGE'].includes(String(bill.ServiceId || '').toUpperCase()))
-            .reduce((sum, bill) => sum + (Number(bill.Amount) || 0), 0)
-          const historicalServiceCharge = historicalBills
-            .filter(bill => !['RM', 'ROOM_CHARGE'].includes(String(bill.ServiceId || '').toUpperCase()))
-            .reduce((sum, bill) => sum + (Number(bill.Amount) || 0), 0)
-          const projectedServices = (room.services || []).filter(service => (
-            isProjectedDate(service.service_date)
-            && Number(service.is_posted) !== 1
-            && !service.service_bill_id
-            && !service.housekeeping_service_bill_id
-          ))
-          const projectedNights = Math.max(0, Math.round((new Date(departure) - new Date(today)) / (1000 * 60 * 60 * 24)))
-          const fullNights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / (1000 * 60 * 60 * 24)) || Number(b.num_of_days) || 1)
-          const roomCharge = projectedServices
-            .filter(isRoomCharge)
-            .reduce((sum, service) => sum + amountOf(service), 0)
-            || (Number(room.rate) || 0) * (today > arrival ? projectedNights : fullNights)
-          const hasProjectedExtraBed = projectedServices.some(service => codeOf(service) === 'EB')
-          const extraBedAmount = hasProjectedExtraBed
-            ? 0
-            : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * (today > arrival ? projectedNights : fullNights)
-          const childBreakfastAmount = (room.children || [])
-            .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
-            .filter(detail => Number(detail.is_extra_charge) === 1
-              && Number(detail.breakfast) === 1
-              && isProjectedDate(detail.service_date))
-            .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
-          return {
-            roomCharge: historicalRoomCharge + roomCharge,
-            serviceCharge: historicalServiceCharge + projectedServices
-              .filter(service => !isRoomCharge(service) && !isChildBreakfast(service))
-              .reduce((sum, service) => sum + amountOf(service), 0)
-              + extraBedAmount
-              + childBreakfastAmount
-          }
-
-          /* Legacy calculation kept below for comparison only.
-          const roomServices = (room.services || []).filter(service => (
-            Number(service.is_posted) !== 1
-            && !service.service_bill_id
-            && !service.housekeeping_service_bill_id
-          ))
-          const serviceAmount = service => {
-            const quantity = Number(service.quantity ?? service.Quantity ?? 1) || 1
-            const rate = Number(service.rate ?? service.price ?? service.Amount ?? service.amount ?? 0) || 0
-            return Number(service.total_amount ?? service.totalAmount ?? '') || (rate * quantity)
-          }
-          const isRoomService = service => (
-            ['RM', 'ER', 'ROOM_CHARGE'].includes(String(service.service_code ?? service.serviceCode ?? service.ServiceId ?? '').toUpperCase())
-          )
-          const roomCharge = roomServices.filter(isRoomService).reduce((sum, service) => sum + serviceAmount(service), 0)
-          const arrival = room.arrival_date || b.arrival_date
-          const departure = room.CheckoutDate || room.checkout_date || room.checkoutDate || room.departure_date || b.departure_date
-          const nights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / (1000 * 60 * 60 * 24)) || Number(b.num_of_days) || 1)
-          const hasConfiguredExtraBed = roomServices.some(service => String(service.service_code ?? service.serviceCode ?? '').toUpperCase() === 'EB')
-          const extraBedAmount = hasConfiguredExtraBed
-            ? 0
-            : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * nights
-          const childBreakfastAmount = (room.children || [])
-            .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
-            .filter(detail => Number(detail.is_extra_charge) === 1 && Number(detail.breakfast) === 1)
-            .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
-          const isChildBreakfastService = service => {
-            const note = String(service.note ?? service.Note ?? '').toLowerCase()
-            return note.startsWith('phụ thu ăn sáng trẻ em')
-          }
-          const serviceCharge = roomServices
-            .filter(service => !isRoomService(service) && !isChildBreakfastService(service))
-            .reduce((sum, service) => sum + serviceAmount(service), 0)
-            + extraBedAmount
-            + childBreakfastAmount
-
-          return {
-            roomCharge: roomCharge || (Number(room.rate) || 0) * nights,
-            serviceCharge
-          }
-          */
-        }
 
         const bookingAmounts = calculateRoomPlanBookingAmounts(b, systemDate.value)
         const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
@@ -2057,6 +1952,8 @@ const processedBookings = computed(() => {
   visibleStart.setHours(0, 0, 0, 0)
   const visibleEnd = new Date(days.value[days.value.length - 1].fullDate)
   visibleEnd.setHours(23, 59, 59, 999)
+  const visibleStartDateStr = formatDateStr(visibleStart)
+  const visibleEndDateStr = formatDateStr(visibleEnd)
 
   const combinedList = [...bookings.value]
   dbRooms.value.forEach(room => {
@@ -2116,9 +2013,26 @@ const processedBookings = computed(() => {
       checkOutDate = resizeState.value.tempCheckOut
     }
     
+    const checkInDateStr = formatDateStr(checkInDate)
+    const checkOutDateStr = formatDateStr(checkOutDate)
+    const isDayUse = Boolean(bk.isDayUse || checkInDateStr === checkOutDateStr)
+    const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
+
     // Check if there is overlap with visible grid range
-    if (checkOutDate < visibleStart || checkInDate > visibleEnd) {
-      return
+    if (isLockItem) {
+      if (checkOutDate < visibleStart || checkInDate > visibleEnd) {
+        return
+      }
+    } else if (isDayUse) {
+      if (checkInDateStr < visibleStartDateStr || checkInDateStr > visibleEndDateStr) {
+        return
+      }
+    } else {
+      // Booking lưu trú qua đêm: kết thúc vào hoặc trước ngày bắt đầu hiển thị của lưới
+      // (đã check-out trưa ngày visibleStartDateStr, không ở đêm đó) thì bỏ qua, tránh đè lên booking đến ngày đó.
+      if (checkOutDateStr <= visibleStartDateStr || checkInDateStr > visibleEndDateStr) {
+        return
+      }
     }
 
     // Find start index
@@ -2161,7 +2075,6 @@ const processedBookings = computed(() => {
     const leftRatio = showNights.value ? 0 : 0.5
 
     // Total columns spanned (occupy full cells or half cells)
-    const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
     const span = Math.max(1, isLockItem ? (endIdx - startIdx + 1) : (endIdx - startIdx))
     const showCheckOutIndicator = !showNights.value && isCheckOutVisible
 
@@ -4117,25 +4030,25 @@ function getRoomStatusIconName(item) {
           <!-- Date Picker Popover -->
           <div 
             v-if="showDatePickerPopover" 
-            class="absolute left-0 top-[34px] bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-3.5 flex flex-col gap-3 w-[260px]"
+            class="absolute left-0 top-[34px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-3.5 flex flex-col gap-3 w-[280px]"
             @click.stop
           >
-            <h4 class="text-xs font-extrabold text-slate-800 m-0">Chọn khoảng thời gian</h4>
+            <h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100 m-0">Chọn khoảng thời gian</h4>
             <div class="flex flex-col gap-2">
               <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold text-slate-500 uppercase">Từ ngày</span>
-                <input 
-                  type="date" 
+                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Từ ngày</span>
+                <SingleDatePicker 
                   v-model="tempStartDateStr"
-                  class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                  input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
+                  placeholder="Chọn ngày bắt đầu"
                 />
               </div>
               <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold text-slate-500 uppercase">Đến ngày</span>
-                <input 
-                  type="date" 
+                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Đến ngày</span>
+                <SingleDatePicker 
                   v-model="tempEndDateStr"
-                  class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                  input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
+                  placeholder="Chọn ngày kết thúc"
                 />
               </div>
             </div>
@@ -4991,25 +4904,25 @@ function getRoomStatusIconName(item) {
               <!-- Date Picker Popover for Waitlist -->
               <div 
                 v-if="showWaitlistDatePickerPopover" 
-                class="absolute left-0 top-[36px] bg-white border border-slate-200 rounded-lg shadow-xl z-[150] p-3.5 flex flex-col gap-3 w-[260px]"
+                class="absolute left-0 top-[36px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-[150] p-3.5 flex flex-col gap-3 w-[280px]"
                 @click.stop
               >
-                <h4 class="text-xs font-extrabold text-slate-800 m-0">Chọn khoảng thời gian</h4>
+                <h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100 m-0">Chọn khoảng thời gian</h4>
                 <div class="flex flex-col gap-2">
                   <div class="flex flex-col gap-1">
-                    <span class="text-[10px] font-bold text-slate-500 uppercase">Từ ngày</span>
-                    <input 
-                      type="date" 
+                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Từ ngày</span>
+                    <SingleDatePicker 
                       v-model="tempWaitlistStartDateStr"
-                      class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                      input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
+                      placeholder="Chọn ngày bắt đầu"
                     />
                   </div>
                   <div class="flex flex-col gap-1">
-                    <span class="text-[10px] font-bold text-slate-500 uppercase">Đến ngày</span>
-                    <input 
-                      type="date" 
+                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Đến ngày</span>
+                    <SingleDatePicker 
                       v-model="tempWaitlistEndDateStr"
-                      class="border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full font-sans"
+                      input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
+                      placeholder="Chọn ngày kết thúc"
                     />
                   </div>
                 </div>
