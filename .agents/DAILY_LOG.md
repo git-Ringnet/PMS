@@ -9,6 +9,98 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-18] - Bổ sung hàng tổng (customRows) trên Canvas Form Designer cho 4 báo cáo (Dòng 155, 156, 162, 163)
+### Module: Form Designer & Biểu mẫu Báo cáo ([unpaid_service_bills_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php), [room_rate_statistics_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php), [daily_frontdesk_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/daily_frontdesk_reference.php), [cancelled_invoices_payments_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/cancelled_invoices_payments_reference.php), [2026_09_18_173500_sync_report_custom_rows_designer.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_173500_sync_report_custom_rows_designer.php))
+
+- **Nguyên nhân**:
+  - Trình thiết kế mẫu Form Designer (`TemplateEditorModal.vue`) hiển thị các hàng tổng phụ và tổng cộng trên canvas dựa vào mảng `block.customRows`.
+  - Trong `content_html` đã có sẵn `<tr class="pms-group-footer">` và `<tr class="report-grand-total-row">`, nhưng trong `blocks()` (`content_json`) của các báo cáo chưa được khai báo cấu hình mảng `customRows` tương ứng, dẫn tới việc chỉ hiển thị nút `+ Thêm hàng` mà thiếu các hàng tổng trên canvas.
+- **Đã hoàn thành**:
+  - **Bổ sung `customRows` vào `blocks()` của 4 file tham chiếu biểu mẫu**:
+    1. **BÁO CÁO HÓA ĐƠN DỊCH VỤ CHƯA THANH TOÁN (`unpaid_service_bills_reference.php`)**: Cấu hình 2 hàng customRows (`subtotal_row` scope `group`, `grand_total_row` scope `table`) khớp 15 cột với nhãn `Tổng doanh thu theo dịch vụ` / `TỔNG CỘNG`, công thức tính tổng 4 cột tiền `OriginalRate`, `ServiceChargeAmount`, `TaxAmount`, `TienQDTD`.
+    2. **BÁO CÁO THỐNG KÊ MÃ GIÁ PHÒNG (`room_rate_statistics_reference.php`)**: Cấu hình 2 hàng customRows khớp 12 cột với nhãn `Tổng`, công thức `NumOfDays`, `group.count` / `aggregate.rows.count` (số phòng), `Adults`, `Children`.
+    3. **BÁO CÁO LỄ TÂN HẰNG NGÀY (`daily_frontdesk_reference.php`)**: Cấu hình 2 hàng customRows khớp 9 cột với nhãn `Tổng`, công thức tính tổng các cột phòng và khách ăn sáng.
+    4. **BÁO CÁO HỦY HÓA ĐƠN / THANH TOÁN (`cancelled_invoices_payments_reference.php`)**: Cấu hình 2 hàng customRows khớp 12 cột với nhãn `Tổng` / `Tổng Giai Đoạn`, công thức tính tổng 2 cột tiền âm (`AmountAm`) và tiền dương (`AmountDuong`).
+  - **Tạo migration đồng bộ**:
+    - [2026_09_18_173500_sync_report_custom_rows_designer.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_173500_sync_report_custom_rows_designer.php): Đồng bộ `content_json` và `content_html` vào bảng `templates` trên cả 5 kết nối database (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Kiểm thử**:
+    - Chạy PHP syntax check `php -l`: Đạt 100% không lỗi cú pháp.
+    - Chạy feature test cho cả 4 báo cáo: `UnpaidServiceBillsReportTest` (4/4 passed), `RoomRateStatisticsReportTest` (4/4 passed), `DailyFrontdeskReportTest` (4/4 passed), `CancelledInvoicesPaymentsReportTest` (3/3 passed).
+
+## [2026-09-18] - Chuẩn hóa toàn bộ thông số thiết kế 4 báo cáo (Dòng 155, 156, 162, 163) từ cấu hình Design
+### Module: Báo cáo thống kê & Biểu mẫu Design ([cancelled_invoices_payments_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/cancelled_invoices_payments_reference.php), [daily_frontdesk_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/daily_frontdesk_reference.php), [unpaid_service_bills_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php), [room_rate_statistics_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php), [2026_09_18_160000_sync_four_reports_perfect_visual_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_160000_sync_four_reports_perfect_visual_design.php))
+
+- **Bối cảnh & Yêu cầu**:
+  - Chuẩn hóa toàn bộ thông số hiển thị trực quan (cỡ chữ, màu sắc, padding, margin, border, căn lề, tỷ lệ cột, tiêu đề nhóm, dòng tổng phụ và dòng tổng cộng) của 4 báo cáo (Dòng 155: Huỷ hóa đơn/thanh toán, Dòng 156: Lễ tân hằng ngày, Dòng 162: HĐ dịch vụ chưa thanh toán, Dòng 163: Thống kê mã giá phòng) theo đúng ảnh chụp thực tế hệ thống cũ (`dong_155_ui_mau.png`, `dong_156_ui_mau.png`, `dong_162_ui_mau.png`, `dong_163_ui_mau.png`).
+  - Toàn bộ thông số hiển thị được cấu hình trực tiếp từ Design (`content_json`, `content_html`, `css`, lề trang) trong database `templates`, không hardcode vào logic xử lý dữ liệu hay controller.
+- **Đã hoàn thành**:
+  - **Dòng 155 (`CANCELLED_INVOICES_PAYMENTS`)**:
+    - Header bảng 2 tầng nền `#d9deea`, viền `#aeb5c0`.
+    - Nhóm Ngày màu ĐỎ `#d32f2f` in đậm; Nhóm Bộ phận chữ đen đậm.
+    - Cột `Mã ĐK/Phòng` màu XANH LÁ `#2e7d32` in đậm căn giữa.
+    - Dòng `Tổng` nền trắng; Dòng `Tổng Giai Đoạn` nền `#d9deea`, nhãn căn giữa in đậm, số căn phải.
+    - Khối 3 chữ ký `FOM`, `ACC`, `GM` căn giữa cách đều, margin-top 35px.
+  - **Dòng 156 (`DAILY_FRONTDESK`)**:
+    - Header 9 cột nền `#d9deea`, viền `#aeb5c0`.
+    - Dòng nhóm ngày: Cột 1 chữ `Ngày` màu ĐỎ `#d32f2f` in đậm căn giữa; Cột 2 ngày tháng màu ĐỎ `#d32f2f` in đậm căn giữa; các cột còn lại ô trống có viền.
+    - 4 dòng phân khúc: **Tất cả 6 cột số lượng đều CĂN GIỮA** (in-house, check-in, check-out, tổng phòng, ăn sáng, không ăn sáng).
+    - Dòng `Tổng` ngày nền trắng, nhãn căn giữa, số căn giữa.
+    - Dòng `Tổng` toàn báo cáo nền `#d9deea`, nhãn căn giữa, số căn giữa.
+  - **Dòng 162 (`UNPAID_SERVICE_BILLS`)**:
+    - Bảng 15 cột nền header `#d9deea`, viền `#aeb5c0`.
+    - Cột `Mã ĐK` xanh lá `#2e7d32` in đậm căn giữa; cột `Tổng` in đậm căn phải.
+    - Dòng `Tổng doanh thu theo dịch vụ` nền trắng, nhãn căn phải ở cột 8; 4 cột tiền in đậm căn phải.
+    - Dòng tổng cộng toàn báo cáo nền `#d9deea`.
+  - **Dòng 163 (`ROOM_RATE_STATISTICS`)**:
+    - Bảng 12 cột nền header `#d9deea`, viền `#aeb5c0`.
+    - Cột `Mã ĐK` xanh lá `#2e7d32` in đậm căn giữa.
+    - Tất cả các cột `Đêm`, `Phòng`, `Người Lớn`, `Trẻ Em`, `Loại Phòng`, `Mã Giá Phòng` đều CĂN GIỮA.
+    - Dòng `Tổng` subtotal nền trắng, nhãn căn phải cột 6; 4 cột số lượng căn giữa in đậm.
+    - Dòng `Tổng` toàn báo cáo nền `#d9deea`, nhãn căn phải cột 6; 4 cột số lượng căn giữa in đậm.
+  - **Database & Migration**:
+    - Tạo migration [2026_09_18_160000_sync_four_reports_perfect_visual_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_160000_sync_four_reports_perfect_visual_design.php) đồng bộ trực tiếp `content_json`, `content_html`, `css` và lề trang vào bảng `templates` trên toàn bộ 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+- **Kiểm thử & Xác thực**:
+    - Migrate hoàn tất 100% trên 5 database branch.
+    - Feature tests: `CancelledInvoicesPaymentsReportTest`, `DailyFrontdeskReportTest`, `UnpaidServiceBillsReportTest`, `RoomRateStatisticsReportTest`, `TemplateRendererServiceTest` pass 100%.
+    - Frontend node tests: Đạt 14/14 tests.
+    - Frontend production build: Thành công 100% (9.60s).
+
+## [2026-09-18] - Triển khai Báo cáo HĐ dịch vụ chưa thanh toán (Dòng 162) & Thống kê mã giá phòng (Dòng 163)
+### Module: Báo cáo doanh thu & Báo cáo thống kê ([UNPAID_SERVICE_BILLS](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php), [ROOM_RATE_STATISTICS](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php))
+
+- **Bối cảnh & Nghiệp vụ**:
+  - Dòng 162: `Báo cáo hóa đơn dịch vụ chưa thanh toán` (`UNPAID_SERVICE_BILLS`), chuyển đổi từ legacy `sp_046`, lọc các bill dịch vụ chưa thanh toán (`Edit = 0`, `PaymentId IS NULL`) trong kỳ.
+  - Dòng 163: `Báo cáo thống kê mã giá phòng` (`ROOM_RATE_STATISTICS`), chuyển đổi từ legacy `sp_287`, thống kê phòng và số đêm phát sinh lưu trú trong kỳ nhóm theo từng mã giá phòng (`RateCode`).
+- **Đã hoàn thành**:
+  - **Dòng 162 (`UNPAID_SERVICE_BILLS`)**:
+    - Tạo migration [2026_09_18_130000_create_unpaid_service_bills_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_130000_create_unpaid_service_bills_report.php): khởi tạo Stored Procedure `rpt_unpaid_service_bills`, đồng bộ Data Source `RPT_UNPAID_SERVICE_BILLS`, Template `UNPAID_SERVICE_BILLS_REFERENCE` và Report Definition trên cả 5 database branch (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+    - Tạo template [unpaid_service_bills_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php): layout A4 Landscape, 15 cột, gom nhóm theo `ServiceId`, tính tổng phụ theo dịch vụ và tổng cộng toàn báo cáo.
+    - Tạo feature test [UnpaidServiceBillsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/UnpaidServiceBillsReportTest.php).
+  - **Dòng 163 (`ROOM_RATE_STATISTICS`)**:
+    - Bổ sung lookup `rate-codes` vào [ReportLookupController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ReportLookupController.php) lấy danh sách từ `room_rate_codes`.
+    - Tạo migration [2026_09_18_140000_create_room_rate_statistics_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_140000_create_room_rate_statistics_report.php): khởi tạo Stored Procedure `rpt_room_rate_statistics`, đồng bộ Data Source `RPT_ROOM_RATE_STATISTICS`, Template `ROOM_RATE_STATISTICS_REFERENCE` và Report Definition trên cả 5 database branch.
+    - Tạo template [room_rate_statistics_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php): layout A4 Landscape, 12 cột, gom nhóm theo `RateCode`, subtotal tính tổng đêm, đếm số phòng, tổng người lớn và trẻ em.
+    - Tạo feature test [RoomRateStatisticsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/RoomRateStatisticsReportTest.php).
+- **Kiểm thử & Xác thực**:
+  - Chạy migrate thành công 100% trên cả 5 kết nối database chi nhánh.
+  - Feature tests: `UnpaidServiceBillsReportTest` và `RoomRateStatisticsReportTest` pass toàn bộ (66 assertions).
+  - Frontend production build: Thành công 100% (`built in 14.64s`).
+
+## [2026-09-18] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 155 và 156 (Thư mục .codex/docs/doc_baocao)
+### Module: Tài liệu phân tích báo cáo ([README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/README.md), [dong_155_bao_cao_huy_hoa_don_thanh_toan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_155_bao_cao_huy_hoa_don_thanh_toan.md), [dong_156_bao_cao_le_tan_hang_ngay.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_156_bao_cao_le_tan_hang_ngay.md))
+
+- **Bối cảnh**:
+  - Đọc và trích xuất thông tin từ file Excel `DANH MỤC BÁO CÁO.xlsx` tại dòng 155 (Báo cáo hủy hóa đơn/thanh toán) và dòng 156 (Báo cáo lễ tân hàng ngày).
+  - Trích xuất ảnh UI chụp màn hình hệ thống legacy từ Sheet 51 và Sheet 71.
+  - Dump trực tiếp toàn bộ mã nguồn Stored Procedure gốc từ MS SQL Server (`sp_068`, `sp_070`, `sp_275`).
+- **Đã hoàn thành**:
+  - Tạo cấu trúc thư mục chuẩn mực tại `C:\Users\Nguyen Tho Thang\OneDrive\Desktop\PMS\PMS\.codex\docs\doc_baocao`:
+    - `README.md`: Hướng dẫn tổng quan, bảng so sánh và quy trình triển khai cho Agent kế tiếp.
+    - `dong_155_bao_cao_huy_hoa_don_thanh_toan.md`: Đặc tả chi tiết 2 chế độ Huỷ hoá đơn (`sp_068`) và Huỷ thanh toán (`sp_070`), layout 11 cột, header 2 tầng, gom nhóm 2 cấp (Ngày, Bộ phận), logic đối trừ bản ghi âm/dương.
+    - `dong_156_bao_cao_le_tan_hang_ngay.md`: Đặc tả chi tiết báo cáo lễ tân hằng ngày (`sp_275`), layout 9 cột, gom nhóm theo Ngày, cố định 4 phân khúc khách (TA, OTA, Corp, Walk-in/FIT/Fanpage), công thức tính số phòng check in/out/inhouse và số suất ăn sáng ngày tiếp theo.
+    - `images/`: Chứa 2 ảnh UI mẫu thực tế `dong_155_ui_mau.png` và `dong_156_ui_mau.png`.
+    - `sql/`: Chứa mã nguồn SQL gốc đầy đủ `sp_068_full.sql`, `sp_070_full.sql`, `sp_275_full.sql`.
+
 ## [2026-09-18] - Chuẩn hóa toàn bộ thuộc tính lề và kích thước báo cáo lấy trực tiếp từ Form Designer
 ### Module: Render biểu mẫu báo cáo ([TemplateRendererService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/TemplateRendererService.php), [TemplateRendererServiceTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/TemplateRendererServiceTest.php), [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php))
 
