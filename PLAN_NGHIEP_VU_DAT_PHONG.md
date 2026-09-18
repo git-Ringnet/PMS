@@ -453,3 +453,6 @@ CREATE TABLE booking_cancel_logs (
 - Các thao tác cascade (hủy phòng, nâng hạng, cập nhật ngày) nên bọc trong **transaction** vì ảnh hưởng nhiều bảng cùng lúc (`booking_rooms`, `booking_room_guests`, `guests`, `booking_children`, `booking_room_children`).
 - Toàn bộ rule "chặn/AV âm phòng" nên tách thành 1 **service dùng chung** (`RoomAvailabilityChecker`) vì được tái sử dụng ở nhiều Epic: 1 (tạo mới), 2 (cập nhật), 6 (nâng hạng).
 - Field `is_room` / `post_to_room` (FIT/GIT) là 1 khái niệm lặp lại ở nhiều bảng (Epic 13, 14) — nên chuẩn hóa tên field giống nhau xuyên suốt DB mới.
+# Cập nhật triển khai Booking — 14/09/2026
+
+Tài liệu bên dưới là thiết kế migration ban đầu. Với các lỗi Booking mới, ưu tiên `PLAN_FIX_LOI_BOOKING.md` và kết quả triển khai tại `docs/booking-fix-plan/IMPLEMENTATION.md`. Hợp đồng mới sau migration 14/09: `bookings.registration_status_id` lưu `registration_statuses.booking_status_id`; `bookings.status` là 1 khi có bất kỳ phòng đang ở. Hai trường này có mục đích khác nhau.

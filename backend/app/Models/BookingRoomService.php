@@ -92,7 +92,7 @@ class BookingRoomService extends Model
 
     protected $casts = [
         'service_date'  => 'date',
-        'quantity'      => 'decimal:6',
+        'quantity'      => 'decimal:2',
         'rate'          => 'decimal:2',
         'total_amount'  => 'decimal:2',
         'is_room'       => 'integer',

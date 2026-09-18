@@ -70,6 +70,7 @@ class NightAuditTest extends TestCase
             'id' => 'G1000001',
             'booking_id' => $booking->id,
             'room_class_id' => 1,
+            'room_number' => '101',
             'arrival_date' => $sysDateStr,
             'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
             'status' => BookingRoom::STATUS_BOOKED, // Booked
@@ -81,6 +82,50 @@ class NightAuditTest extends TestCase
         $response->assertSuccessful()
             ->assertJsonPath('data.pending_checkins_count', 1)
             ->assertJsonPath('data.pending_checkouts_count', 0);
+    }
+
+    /**
+     * Test phòng đã chuyển (status = 100 / STATUS_MOVED) không bị tính vào pending_checkins và không chặn sang ngày
+     */
+    public function test_moved_room_status_100_is_ignored_by_check_status_and_run_audit()
+    {
+        $latest = SystemDateRoll::latest('id')->first();
+        $sysDateStr = Carbon::parse($latest->system_date)->toDateString();
+
+        $booking = Booking::create([
+            'booking_name' => 'NGUYEN VAN B',
+            'arrival_date' => $sysDateStr,
+            'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'num_of_days' => 2,
+            'booking_date' => $sysDateStr,
+            'created_by' => 'admin',
+            'registration_status_id' => 1,
+        ]);
+
+        // Phòng đã chuyển (status = 100), đến hôm nay
+        BookingRoom::create([
+            'id' => 'G1000099',
+            'booking_id' => $booking->id,
+            'room_class_id' => 1,
+            'room_number' => '101',
+            'arrival_date' => $sysDateStr,
+            'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'status' => BookingRoom::STATUS_MOVED, // 100
+            'rate' => 500000,
+        ]);
+
+        // 1. check-status phải trả về 0 pending checkins
+        $response = $this->actingAs($this->user)->getJson('/api/night-audit/check-status');
+        $response->assertSuccessful()
+            ->assertJsonPath('data.pending_checkins_count', 0)
+            ->assertJsonPath('data.pending_checkouts_count', 0);
+
+        // 2. run night audit phải thành công bình thường (không bị exception chặn)
+        $runResponse = $this->actingAs($this->user)->postJson('/api/night-audit/run', [
+            'occupied_to_dirty' => false,
+            'empty_to_inspect' => false,
+        ]);
+        $runResponse->assertSuccessful();
     }
 
     /**

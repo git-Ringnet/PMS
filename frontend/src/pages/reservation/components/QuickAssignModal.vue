@@ -816,7 +816,7 @@ async function handleSave() {
     const defaultCompany = companies.value[0]?.id || 1
     const defaultMarket = markets.value[0]?.id || 1
     const defaultSource = customerSources.value[0]?.id || 1
-    const defaultRegStatus = registrationStatuses.value.find(status => !status.is_hidden)?.id || null
+    const defaultRegStatus = registrationStatuses.value.find(status => !status.is_hidden && status.booking_status_id != null)?.booking_status_id ?? null
     const defaultPaymentMethod = paymentMethods.value[0]?.id || 1
 
     if (!defaultRegStatus) {

@@ -141,16 +141,58 @@ class RoomController extends Controller
             }
 
             // Tìm booking tương ứng
-            $br = $bookingRoomsToday->where('room_number', $room->room_number)->first();
+            $allBrToday = $bookingRoomsToday->where('room_number', $room->room_number);
+            $checkedInBr = $allBrToday->firstWhere('status', \App\Models\BookingRoom::STATUS_CHECKED_IN);
+            $bookedBr = $allBrToday->first(function($b) use ($sysDateStr) {
+                return $b->status === \App\Models\BookingRoom::STATUS_BOOKED
+                    && $b->arrival_date
+                    && $b->arrival_date->toDateString() === $sysDateStr;
+            });
+
+            $isBackToBack = false;
+            $arrivingBooking = null;
+            $hasArrivalToday = false;
+            $hasDepartureToday = false;
+
+            if ($checkedInBr) {
+                $br = $checkedInBr;
+                $hasDepartureToday = ($br->departure_date && $br->departure_date->toDateString() === $sysDateStr);
+
+                if ($bookedBr) {
+                    $isBackToBack = true;
+                    $hasArrivalToday = true;
+                    $primaryGuestArriving = $bookedBr->guests->firstWhere('is_primary', true) ?? $bookedBr->guests->first();
+                    $arrivingBooking = [
+                        'booking_id' => $bookedBr->booking_id,
+                        'booking_room_id' => $bookedBr->id,
+                        'booking_code' => $bookedBr->booking?->booking_code ?? '',
+                        'booking_name' => $bookedBr->booking?->booking_name ?? '',
+                        'guest_name' => $primaryGuestArriving?->guest?->full_name ?? '',
+                        'arrival_date' => $bookedBr->arrival_date ? $bookedBr->arrival_date->toDateString() : '',
+                        'departure_date' => $bookedBr->departure_date ? $bookedBr->departure_date->toDateString() : '',
+                        'company_name' => $bookedBr->booking?->company?->name ?? '',
+                        'rate' => $bookedBr->rate ?? 0,
+                    ];
+                }
+            } else if ($bookedBr) {
+                $br = $bookedBr;
+                $hasArrivalToday = true;
+            } else {
+                $br = $allBrToday->first();
+                if ($br && $br->status === \App\Models\BookingRoom::STATUS_BOOKED && $br->arrival_date && $br->arrival_date->toDateString() === $sysDateStr) {
+                    $hasArrivalToday = true;
+                }
+            }
+
             if ($br) {
                 if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
-                    if ($br->departure_date->toDateString() === $sysDateStr) {
+                    if ($hasDepartureToday) {
                         $room->booking_status = 'checkout';
                     } else {
                         $room->booking_status = 'occupied';
                     }
                 } else if ($br->status === \App\Models\BookingRoom::STATUS_BOOKED) {
-                    if ($br->arrival_date->toDateString() === $sysDateStr) {
+                    if ($br->arrival_date && $br->arrival_date->toDateString() === $sysDateStr) {
                         $room->booking_status = 'reserved';
                     }
                 }
@@ -219,6 +261,11 @@ class RoomController extends Controller
                 $room->booking_room_id = $br->id ?? null;
                 $room->booking_id = $br->booking_id ?? null;
             }
+
+            $room->has_arrival_today = $hasArrivalToday;
+            $room->has_departure_today = $hasDepartureToday;
+            $room->is_back_to_back = $isBackToBack;
+            $room->arriving_booking = $arrivingBooking;
 
             // Gắn thông tin khách đến vào ngày mai
             $brTomorrow = $bookingRoomsTomorrow->where('room_number', $room->room_number)->first();

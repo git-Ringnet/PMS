@@ -19,15 +19,17 @@ class ServiceBill extends Model
         'BillExchangeRate' => 'float',
         'BillExchangeAmount' => 'float',
         'ParentBillId' => 'integer',
-        'ExchangeRate1' => 'decimal:6',
-        'ExchangeRate2' => 'decimal:6',
-        'TotalAmount1' => 'decimal:6',
-        'TotalAmount2' => 'decimal:6',
-        'TotalAmount0' => 'decimal:6',
+        'Amount' => 'decimal:2',
+        'Quantity' => 'decimal:2',
+        'ExchangeRate1' => 'decimal:2',
+        'ExchangeRate2' => 'decimal:2',
+        'TotalAmount1' => 'decimal:2',
+        'TotalAmount2' => 'decimal:2',
+        'TotalAmount0' => 'decimal:2',
         'ConvertRate' => 'float',
-        'ConvertAmount' => 'decimal:6',
+        'ConvertAmount' => 'decimal:2',
         'ConvertRate2' => 'float',
-        'ConvertAmount2' => 'decimal:6',
+        'ConvertAmount2' => 'decimal:2',
         'IsSyncT' => 'boolean',
     ];
 
@@ -63,5 +65,10 @@ class ServiceBill extends Model
     public function hotelService()
     {
         return $this->belongsTo(HotelService::class, 'ServiceId', 'code');
+    }
+
+    public function salesInvoice()
+    {
+        return $this->belongsTo(SalesInvoice::class, 'InvoiceId', 'id');
     }
 }

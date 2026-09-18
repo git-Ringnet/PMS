@@ -28,6 +28,9 @@ export const deleteBookingNotification = (bookingId, notificationId) => http.del
  * @param {Object} data - Thông tin booking
  */
 export const createBooking = (data) => http.post('/bookings', data)
+// Add-room tab contract: the backend inserts only new booking_rooms and never
+// treats the payload as a replacement for the booking's existing rooms.
+export const addBookingRooms = (bookingId, data) => http.post(`/bookings/${bookingId}/add-rooms`, data)
 
 /**
  * Cập nhật booking
@@ -178,4 +181,11 @@ export const checkoutBooking = (bookingId) => http.post(`/bookings/${bookingId}/
 export const checkoutChild = (roomId, childId) => http.post(`/booking-rooms/${roomId}/children/${childId}/checkout`)
 export const restoreRoomCheckout = (roomId) => http.post(`/booking-rooms/${roomId}/restore-checkout`)
 export const restoreBookingCheckout = (bookingId) => http.post(`/bookings/${bookingId}/restore-checkout`)
+
+// ==================== SALES INVOICES (HÓA ĐƠN BÁN HÀNG) ====================
+export const fetchSalesInvoices = (params = {}) => http.get('/sales-invoices', { params })
+export const fetchSalesInvoiceDetail = (id) => http.get(`/sales-invoices/${id}`)
+export const fetchSalesInvoicePrint = (id) => http.get(`/sales-invoices/${id}/print`)
+export const fetchBookingSalesInvoices = (bookingId) => http.get(`/bookings/${bookingId}/sales-invoices`)
+
 

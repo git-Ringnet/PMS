@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\RegistrationStatusResource;
 use App\Models\RegistrationStatus;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RegistrationStatusController extends Controller
 {
@@ -35,7 +36,7 @@ class RegistrationStatusController extends Controller
 
         $validated = $request->validate([
             'id' => 'nullable|integer',
-            'booking_status_id' => 'nullable|integer',
+            'booking_status_id' => 'required|integer|min:1|max:4294967295|unique:registration_statuses,booking_status_id',
             'name' => 'required|string|max:255',
             'color' => 'nullable|string|max:50',
             'cut_off_day' => 'nullable|integer|min:0',
@@ -87,7 +88,7 @@ class RegistrationStatusController extends Controller
             : (($rawCutoff !== null && $rawCutoff !== '') ? (int)$rawCutoff : $status->cut_off_day);
 
         $validated = $request->validate([
-            'booking_status_id' => 'nullable|integer',
+            'booking_status_id' => ['sometimes', 'required', 'integer', 'min:1', 'max:4294967295', Rule::unique('registration_statuses', 'booking_status_id')->ignore($status->id)],
             'name' => 'required|string|max:255',
             'color' => 'nullable|string|max:50',
             'cut_off_day' => 'nullable|integer|min:0',

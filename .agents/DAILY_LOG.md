@@ -1,7 +1,5 @@
 # Nhật Ký Tiến Độ Dự Án (Project Dev Log)
 
-# Nhật Ký Tiến Độ Dự Án (Project Dev Log)
-
 > File này ghi nhận tiến độ công việc, các tính năng/nghiệp vụ đã hoàn thành, trạng thái hiện tại và kế hoạch tiếp theo để tiếp nối công việc giữa các phiên làm việc.
 
 ---

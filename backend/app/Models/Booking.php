@@ -19,6 +19,8 @@ class Booking extends Model
         return $prefix . $this->id;
     }
 
+    protected $hidden = ['registration_status_pk_before_codes'];
+
     protected $fillable = [
         'booking_name',
         'arrival_date',
@@ -90,6 +92,7 @@ class Booking extends Model
         'is_master_room_rate'  => 'boolean',
         'no_post'              => 'boolean',
         'status'               => 'integer',
+        'registration_status_id' => 'integer',
         'num_of_days'          => 'integer',
         'edit_count'           => 'integer',
         'payment_value'        => 'decimal:2',
@@ -129,9 +132,8 @@ class Booking extends Model
 
     public function registrationStatus()
     {
-        // bookings.registration_status_id stores registration_statuses.id.
-        // The legacy SP1311 code is registration_statuses.booking_status_id.
-        return $this->belongsTo(RegistrationStatus::class, 'registration_status_id', 'id');
+        // Store the SP1311 business code, independently of the catalogue primary key.
+        return $this->belongsTo(RegistrationStatus::class, 'registration_status_id', 'booking_status_id');
     }
 
     public function bookingStatus()
@@ -212,5 +214,10 @@ class Booking extends Model
     public function notifications()
     {
         return $this->hasMany(BookingNotification::class);
+    }
+
+    public function salesInvoices()
+    {
+        return $this->hasMany(SalesInvoice::class, 'booking_id');
     }
 }

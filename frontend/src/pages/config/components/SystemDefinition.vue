@@ -125,6 +125,7 @@ const unitForm = reactive({
 // 4. Registration Status Modal
 const isStatusModalOpen = ref(false)
 const statusForm = reactive({
+  booking_status_id: null,
   id: null,
   name: '',
   color: '#4086F7',
@@ -509,6 +510,7 @@ const toggleUnitFlag = async (item, field) => {
 const openAddStatus = () => {
   isEditMode.value = false
   Object.assign(statusForm, {
+    booking_status_id: null,
     id: null,
     name: '',
     color: '#4086F7',
@@ -523,6 +525,7 @@ const openAddStatus = () => {
 const openEditStatus = (item) => {
   isEditMode.value = true
   Object.assign(statusForm, {
+    booking_status_id: item.booking_status_id,
     id: item.id,
     name: item.name,
     color: item.color || '#4086F7',
@@ -535,6 +538,10 @@ const openEditStatus = (item) => {
   isStatusModalOpen.value = true
 }
 const saveStatus = async () => {
+  if (!Number.isInteger(Number(statusForm.booking_status_id)) || Number(statusForm.booking_status_id) < 1) {
+    uiStore.showToast('Vui lòng nhập mã tình trạng là số nguyên dương.', 'warning')
+    return
+  }
   if (!statusForm.name) {
     uiStore.showToast('Vui lòng nhập tên tình trạng đăng ký', 'warning')
     return
@@ -1342,6 +1349,9 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
         <div class="p-6 flex flex-col gap-4">
           <div class="grid grid-cols-2 gap-4">
             <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-500">Mã tình trạng</label>
+              <input type="number" v-model.number="statusForm.booking_status_id" min="1" step="1" aria-label="Mã tình trạng" placeholder="Mã tình trạng"
+                class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold" />
               <label class="text-xs font-bold text-slate-500">Tên</label>
               <input type="text" v-model="statusForm.name" placeholder="Tên trạng thái"
                 class="border border-slate-200 rounded-lg p-2.5 text-sm focus:outline-sky-500 font-semibold" />

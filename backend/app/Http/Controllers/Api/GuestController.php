@@ -10,14 +10,17 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\CancelReason;
 use App\Models\Guest;
-use App\Models\BookingRoomService;
-use App\Models\RoomRateCode;
-use App\Models\StandardRate;
+use App\Models\Payment;
 use App\Models\RoomLock;
+use App\Models\ServiceBill;
+use App\Models\SystemDateRoll;
+use App\Services\BookingRoomStayChargeService;
+use App\Services\BookingStatusSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * GuestController — Epic 7: Thông tin khách lưu trú
@@ -26,6 +29,18 @@ use Illuminate\Support\Facades\DB;
  */
 class GuestController extends Controller
 {
+    /**
+     * Room states shown by the guest-information screen. Cancelled and moved
+     * rooms remain available to history/reporting endpoints, but they must
+     * not create a second guest group in this screen.
+     */
+    private const GUEST_INFO_ROOM_STATUSES = [
+        BookingRoom::STATUS_BOOKED,
+        BookingRoom::STATUS_CHECKED_IN,
+        BookingRoom::STATUS_CHECKED_OUT,
+        BookingRoom::STATUS_NOSHOW,
+    ];
+
     // =========================================
     // GUESTS (người lớn)
     // =========================================
@@ -36,12 +51,43 @@ class GuestController extends Controller
         $booking = Booking::with([
             'bookingRooms' => function ($q) {
                 $q->whereNull('deleted_at')
-                  ->where('status', '!=', \App\Models\BookingRoom::STATUS_CANCELLED)
+                  ->whereIn('status', self::GUEST_INFO_ROOM_STATUSES)
                   ->with(['roomClass', 'guests.guest', 'children']);
             }
         ])->findOrFail($bookingId);
 
         $grouped = $booking->bookingRooms->map(function ($room) {
+            $guests = $room->guests
+                ->whereIn('status', self::GUEST_INFO_ROOM_STATUSES)
+                ->map(function ($roomGuest) {
+                    if (!$roomGuest->guest) {
+                        return null;
+                    }
+
+                    return array_merge(
+                        $roomGuest->guest->toArray(),
+                        [
+                            'pivot_id'   => $roomGuest->id,
+                            'is_primary' => (bool) $roomGuest->is_primary,
+                        ]
+                    );
+                })
+                ->filter()
+                ->values()
+                ->all();
+
+            // assignedChildren() is status-aware for room moves. Fall back to
+            // the direct relation for reservations where no assignment row
+            // has been created yet, and always return a plain JSON array.
+            $assignedChildren = $room->assignedChildren()
+                ->whereIn('child_status', self::GUEST_INFO_ROOM_STATUSES)
+                ->get();
+            $children = ($assignedChildren->isNotEmpty()
+                ? $assignedChildren
+                : $room->children->whereIn('child_status', self::GUEST_INFO_ROOM_STATUSES))
+                ->values()
+                ->all();
+
             return [
                 'booking_room_id'  => $room->id,
                 'room_number'      => $room->room_number,
@@ -49,16 +95,13 @@ class GuestController extends Controller
                 'arrival_date'     => $room->arrival_date,
                 'departure_date'   => $room->departure_date,
                 'rate'             => $room->rate,
-                'adults_count'     => $room->adults ?? 1,
-                'babies_count'     => $room->babies ?? 0,
-                'children_count'   => $room->children_qty ?? 0,
-                'guests'           => $room->guests->where('status', '!=', 100)->map(fn($rg) => array_merge(
-                    $rg->guest->toArray(),
-                    ['pivot_id' => $rg->id, 'is_primary' => $rg->is_primary]
-                )),
-                'children'         => ($room->assignedChildren()->get()->isNotEmpty() ? $room->assignedChildren()->get() : $room->children->where('child_status', 0))->values(),
+                'adults_count'     => $this->normalizeCount($room->adults, 1),
+                'babies_count'     => $this->normalizeCount($room->babies),
+                'children_count'   => $this->normalizeCount($room->children_qty),
+                'guests'           => $guests,
+                'children'         => $children,
             ];
-        });
+        })->values()->all();
 
         return response()->json(['success' => true, 'data' => $grouped]);
     }
@@ -69,7 +112,7 @@ class GuestController extends Controller
         $booking = Booking::with([
             'bookingRooms' => function ($q) {
                 $q->whereNull('deleted_at')
-                  ->where('status', '!=', \App\Models\BookingRoom::STATUS_CANCELLED)
+                  ->whereIn('status', self::GUEST_INFO_ROOM_STATUSES)
                   ->with(['guests', 'children']);
             }
         ])->findOrFail($bookingId);
@@ -77,9 +120,27 @@ class GuestController extends Controller
         DB::beginTransaction();
         try {
             foreach ($booking->bookingRooms as $room) {
-                $existingGuestsCount = $room->guests->count();
-                $existingBabies   = $room->children->where('age_group', 'baby')->count();
-                $existingChildren = $room->children->where('age_group', 'child')->count();
+                // Status 2/4 remains visible for the guest-information
+                // screen, but it is historical. Only a current reservation or
+                // inhouse room may receive generated placeholder guests.
+                if (!in_array((int) $room->status, [
+                    BookingRoom::STATUS_BOOKED,
+                    BookingRoom::STATUS_CHECKED_IN,
+                ], true)) {
+                    continue;
+                }
+
+                $existingGuestsCount = $room->guests
+                    ->whereIn('status', self::GUEST_INFO_ROOM_STATUSES)
+                    ->count();
+                $existingBabies   = $room->children
+                    ->whereIn('child_status', self::GUEST_INFO_ROOM_STATUSES)
+                    ->where('age_group', 'baby')
+                    ->count();
+                $existingChildren = $room->children
+                    ->whereIn('child_status', self::GUEST_INFO_ROOM_STATUSES)
+                    ->where('age_group', 'child')
+                    ->count();
 
                 $numAdults   = max(1, intval($room->adults ?? 1));
                 $targetBabies   = intval($room->babies ?? 0);
@@ -234,6 +295,8 @@ class GuestController extends Controller
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
         }
 
+        app(BookingStatusSyncService::class)->sync($room->booking_id);
+
         return response()->json([
             'success' => true,
             'data'    => $pivot->load('guest'),
@@ -248,6 +311,7 @@ class GuestController extends Controller
         $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
             ->where('guest_id', $guestId)
             ->firstOrFail();
+        $room = BookingRoom::with('booking')->findOrFail($roomId);
 
         if ($pivot->status === BookingRoomGuest::STATUS_CHECKED_OUT) {
             return response()->json(['success' => false, 'message' => 'Khách đã checkout rồi.'], 422);
@@ -265,6 +329,8 @@ class GuestController extends Controller
             'actual_checkout_time' => now()->format('H:i:s'),
             'checkout_by'          => Auth::user()?->username ?? 'system',
         ]);
+
+        app(BookingStatusSyncService::class)->sync($room->booking_id);
 
         return response()->json([
             'success' => true,
@@ -291,13 +357,15 @@ class GuestController extends Controller
             $hasActiveRooms = $booking->bookingRooms()
                 ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
                 ->exists();
+            $fallbackStatus = null;
             if (!$hasActiveRooms) {
-                if ($this->hasUnpaidMasterBills($booking)) {
-                    $booking->update(['status' => \App\Models\Booking::STATUS_CHECKIN]);
-                } else {
-                    $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
-                }
+                $fallbackStatus = $this->hasUnpaidMasterBills($booking)
+                    ? Booking::STATUS_CHECKIN
+                    : Booking::STATUS_CHECKOUT;
             }
+            // The sync service enforces the partial-check-in invariant while
+            // preserving the existing no-inhouse fallback above.
+            app(BookingStatusSyncService::class)->sync($booking, $fallbackStatus);
         }
         return $response;
     }
@@ -364,6 +432,7 @@ class GuestController extends Controller
             return response()->json(['success' => false, 'message' => 'Phải còn ít nhất một người lớn trong phòng để checkout trẻ em.'], 422);
         }
         $child->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+        app(BookingStatusSyncService::class)->sync($room->booking_id);
         return response()->json(['success' => true, 'message' => 'Checkout trẻ em thành công.']);
     }
 
@@ -388,7 +457,7 @@ class GuestController extends Controller
                 }
             }
             $booking->refresh();
-            $booking->update(['status' => \App\Models\Booking::STATUS_CHECKOUT]);
+            app(BookingStatusSyncService::class)->sync($booking, Booking::STATUS_CHECKOUT);
 
             try {
                 $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
@@ -467,7 +536,7 @@ class GuestController extends Controller
                 'check_out_user' => null,
             ]);
             if ($room->room) $room->room->update(['status' => 'occupied']);
-            if ($room->booking->status === Booking::STATUS_CHECKOUT) $room->booking->update(['status' => Booking::STATUS_CHECKIN]);
+            app(BookingStatusSyncService::class)->sync($room->booking_id);
 
             return response()->json([
                 'success' => true,
@@ -534,7 +603,7 @@ class GuestController extends Controller
                 }
             }
 
-            $booking->update(['status' => Booking::STATUS_CHECKIN]);
+            app(BookingStatusSyncService::class)->sync($booking, Booking::STATUS_CHECKIN);
             return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
         });
     }
@@ -616,6 +685,9 @@ class GuestController extends Controller
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
             ->where('Status', '!=', 2)
             ->whereRaw('CAST(RentalRoomId2 AS CHAR) = ?', [(string) $room->id]);
+        if ((bool) $room->booking?->is_master_room_rate) {
+            $unpaidQuery->whereNotIn('ServiceId', ['RM', 'RMS']);
+        }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
         if ($this->hasUnpaidDebt($room->booking_id, $masterScope ? null : $room->id)) {
@@ -810,6 +882,11 @@ class GuestController extends Controller
             'extra_bed_rate'    => 'nullable|numeric|min:0',
         ]);
 
+        $room = BookingRoom::find($roomId);
+        if ($room) {
+            $this->validateStayDates($request, $room);
+        }
+
         $guestData = $request->only([
             'full_name', 'title', 'id_type', 'id_number', 'id_issue_date',
             'passport_number', 'passport_expiry', 'dob', 'gender', 'nationality_code',
@@ -825,127 +902,154 @@ class GuestController extends Controller
             $guestData['passport_number'] = $request->input('id_number');
         }
 
-        $guest->update($guestData);
+        DB::transaction(function () use ($request, $guest, $guestData, $pivot, $room): void {
+            $guest->update($guestData);
 
-        $this->syncGeoFromData([$request->all()]);
+            $this->syncGeoFromData([$request->all()]);
 
-        // Cập nhật thông tin vào bảng pivot booking_room_guests cho từng khách cụ thể
-        $pivotData = [];
-        if ($request->has('arrival_date'))   $pivotData['actual_arrival_date']  = $request->arrival_date;
-        if ($request->has('arrival_time'))   $pivotData['actual_arrival_time']  = $request->arrival_time;
-        if ($request->has('departure_date')) $pivotData['actual_checkout_date'] = $request->departure_date;
-        if ($request->has('departure_time')) $pivotData['actual_checkout_time'] = $request->departure_time;
-        if (!empty($pivotData)) {
-            $pivot->update($pivotData);
-        }
+            // Cập nhật các trường thông tin lưu trú vào pivot của khách.
+            $pivotData = [];
+            if ($request->filled('arrival_date'))   $pivotData['actual_arrival_date']  = $request->input('arrival_date');
+            if ($request->filled('arrival_time'))   $pivotData['actual_arrival_time']  = $request->input('arrival_time');
+            if ($request->filled('departure_date')) $pivotData['actual_checkout_date'] = $request->input('departure_date');
+            if ($request->filled('departure_time')) $pivotData['actual_checkout_time'] = $request->input('departure_time');
+            if (!empty($pivotData)) {
+                $pivot->update($pivotData);
+            }
 
-        // Cập nhật các trường thông tin lưu trú của BookingRoom lên MySQL CSDL
-        $room = BookingRoom::find($roomId);
-        if ($room) {
-            $this->updateBookingRoomFromGuestRequest($request, $room);
-        }
+            // Cập nhật các trường thông tin lưu trú của BookingRoom cùng
+            // transaction để guest/pivot không lệch nếu đồng bộ RM lỗi.
+            if ($room) {
+                $this->updateBookingRoomFromGuestRequest($request, $room);
+            }
+        });
 
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
+    }
+
+    private function validateStayDates(Request $request, BookingRoom $room): void
+    {
+        if (!$request->has('arrival_date') && !$request->has('departure_date')) {
+            return;
+        }
+
+        $arrivalValue = $request->filled('arrival_date') ? $request->input('arrival_date') : $room->arrival_date;
+        $departureValue = $request->filled('departure_date') ? $request->input('departure_date') : $room->departure_date;
+        if (!$arrivalValue || !$departureValue) {
+            return;
+        }
+
+        $arrival = Carbon::parse($arrivalValue);
+        $departure = Carbon::parse($departureValue);
+
+        if ($departure->lessThan($arrival)) {
+            throw ValidationException::withMessages([
+                'departure_date' => 'Ngày đi phải lớn hơn hoặc bằng ngày đến.',
+            ]);
+        }
     }
 
     private function updateBookingRoomFromGuestRequest(Request $request, BookingRoom $room): void
     {
         $roomData = [];
-        if ($request->has('arrival_date'))   $roomData['arrival_date']   = $request->arrival_date;
-        if ($request->has('departure_date')) $roomData['departure_date'] = $request->departure_date;
-        if ($request->has('arrival_time'))   $roomData['arrival_time']   = $request->arrival_time;
-        if ($request->has('departure_time')) $roomData['departure_time'] = $request->departure_time;
-        if ($request->has('rate'))           $roomData['rate']           = $request->rate;
+        if ($request->filled('arrival_date'))   $roomData['arrival_date']   = $request->input('arrival_date');
+        if ($request->filled('departure_date')) $roomData['departure_date'] = $request->input('departure_date');
+        if ($request->filled('arrival_time'))   $roomData['arrival_time']   = $request->input('arrival_time');
+        if ($request->filled('departure_time')) $roomData['departure_time'] = $request->input('departure_time');
+        if ($request->has('rate') && $request->input('rate') !== null) $roomData['rate'] = $request->input('rate');
         if ($request->has('rate_code'))      $roomData['rate_code']      = filled($request->rate_code) ? trim($request->rate_code) : null;
-        if ($request->has('extra_bed_qty'))  $roomData['extra_bed_qty']  = $request->extra_bed_qty;
-        if ($request->has('extra_bed_rate')) $roomData['extra_bed_rate'] = $request->extra_bed_rate;
+        if ($request->has('extra_bed_qty') && $request->input('extra_bed_qty') !== null) $roomData['extra_bed_qty'] = $request->input('extra_bed_qty');
+        if ($request->has('extra_bed_rate') && $request->input('extra_bed_rate') !== null) $roomData['extra_bed_rate'] = $request->input('extra_bed_rate');
 
-        DB::transaction(function () use ($request, $room, $roomData) {
+        // BookingDetailModal sends the current rate and rate code together
+        // with a date-only edit. Treat those fields as a pricing change only
+        // when their normalized values differ from the persisted room values;
+        // otherwise surviving manually agreed nightly rates must remain intact.
+        $arrivalChanged = $request->filled('arrival_date')
+            && Carbon::parse($request->input('arrival_date'))->toDateString() !== ($room->arrival_date ? Carbon::parse($room->arrival_date)->toDateString() : null);
+        $departureChanged = $request->filled('departure_date')
+            && Carbon::parse($request->input('departure_date'))->toDateString() !== ($room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null);
+        $rateChanged = $request->has('rate')
+            && $request->input('rate') !== null
+            && (float) $request->input('rate') !== (float) ($room->rate ?? 0);
+        $incomingRateCode = $request->has('rate_code') && filled($request->input('rate_code'))
+            ? trim((string) $request->input('rate_code'))
+            : null;
+        $storedRateCode = filled($room->rate_code) ? trim((string) $room->rate_code) : null;
+        $rateCodeChanged = $request->has('rate_code') && $incomingRateCode !== $storedRateCode;
+        $pricingFieldsChanged = $rateChanged || $rateCodeChanged;
+        $stayFieldsChanged = $arrivalChanged || $departureChanged || $pricingFieldsChanged;
+
+        $this->validateStayDates($request, $room);
+
+        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $pricingFieldsChanged) {
             if ($roomData) $room->update($roomData);
-            if ($request->has('rate_code')) {
-                $this->syncRateCodeRoomCharges($room->fresh(), $request->has('rate') ? (float) $request->rate : null);
+            if ($stayFieldsChanged) {
+                app(BookingRoomStayChargeService::class)->synchronize(
+                    $room->fresh(),
+                    $request->has('rate') && $request->input('rate') !== null
+                        ? (float) $request->input('rate')
+                        : null,
+                    $pricingFieldsChanged
+                );
             }
         });
-    }
-
-    private function syncRateCodeRoomCharges(BookingRoom $room, ?float $fallbackRate = null): void
-    {
-        $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
-        $arrival = Carbon::parse($room->arrival_date)->startOfDay();
-        $departure = Carbon::parse($room->departure_date)->startOfDay();
-        $start = $arrival->greaterThan($systemDate) ? $arrival : $systemDate;
-        if ($start->greaterThanOrEqualTo($departure)) return;
-
-        $rateCode = $room->rate_code ? RoomRateCode::with(['ratePlans', 'dailyMappings'])->find($room->rate_code) : null;
-        $standardRate = !$rateCode && $room->room_class_id
-            ? (float) (StandardRate::where('room_class_id', $room->room_class_id)
-                ->when($room->RoomKind, fn ($query) => $query->where('room_form_id', $room->RoomKind))
-                ->value('room_price') ?? 0)
-            : 0;
-        $firstRate = null;
-        $room->loadMissing('roomClass');
-        $roomForm = $room->RoomKind ? \App\Models\RoomForm::find($room->RoomKind)?->name : null;
-
-        for ($date = $start->copy(); $date->lt($departure); $date->addDay()) {
-            $resolvedRate = $this->resolveRateCodePrice($rateCode, $room->room_class_id, $room->roomClass?->code, $roomForm, $date);
-            $rate = $rateCode ? $resolvedRate : ($standardRate ?: (float) ($fallbackRate ?? 0));
-            $firstRate ??= $rate;
-
-            $service = BookingRoomService::withTrashed()
-                ->where('booking_room_id', $room->id)
-                ->where('service_code', BookingRoomService::CODE_ROOM)
-                ->whereDate('service_date', $date->toDateString())
-                ->first();
-            if ($service && (int) $service->is_posted === 1) continue;
-
-            BookingRoomService::withTrashed()->updateOrCreate(
-                ['booking_room_id' => $room->id, 'service_code' => BookingRoomService::CODE_ROOM, 'service_date' => $date->toDateString()],
-                [
-                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
-                    'quantity' => 1,
-                    'rate' => $rate,
-                    'department' => 'FO',
-                    'is_room' => 1,
-                    'is_posted' => 0,
-                    'deleted_at' => null,
-                    'created_by' => Auth::user()?->username ?? 'system',
-                ]
-            );
-        }
-
-        if ($firstRate !== null) $room->update(['rate' => $firstRate]);
-    }
-
-    private function resolveRateCodePrice(?RoomRateCode $rateCode, $roomClassId, ?string $roomClassCode, ?string $roomForm, Carbon $date): float
-    {
-        if (!$rateCode) return 0;
-        $mapping = $rateCode->IsDaily
-            ? $rateCode->dailyMappings->first(fn ($item) => Carbon::parse($item->Date)->toDateString() === $date->toDateString())
-            : null;
-        if ($rateCode->IsDaily && !$mapping) return 0;
-        $plan = $rateCode->IsDaily
-            ? $rateCode->ratePlans->firstWhere('Code', $mapping->Code)
-            : ($rateCode->ratePlans->firstWhere('Code', 'DEFAULT') ?? $rateCode->ratePlans->first());
-        if (!$plan) return 0;
-        $period = is_string($plan->Period) ? json_decode($plan->Period, true) : $plan->Period;
-        if (!is_array($period)) return 0;
-        if (!$roomClassCode || !$roomForm) return 0;
-        $planCode = (string) ($plan->Code ?: 'DEFAULT');
-        foreach ([
-            $planCode . '_' . $roomClassCode . '_' . $roomForm,
-            $rateCode->Ma . '_' . $roomClassCode . '_' . $roomForm,
-        ] as $key) {
-            if (array_key_exists($key, $period) && is_numeric($period[$key])) return (float) $period[$key];
-        }
-        return 0;
     }
 
     // DELETE /booking-rooms/{roomId}/guests/{guestId}
     public function removeGuest($roomId, $guestId)
     {
-        BookingRoomGuest::where('booking_room_id', $roomId)
+        $room = BookingRoom::find($roomId);
+        $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
             ->where('guest_id', $guestId)
-            ->delete();
+            ->first();
+
+        // 1. Kiểm tra ngày check-in: Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Đã qua ngày thì không cho phép xóa.
+        $isStayed = ($room && $room->status === BookingRoom::STATUS_CHECKED_IN)
+            || ($pivot && $pivot->status === BookingRoomGuest::STATUS_CHECKED_IN);
+
+        if ($isStayed) {
+            $arrivalDate = $pivot?->actual_arrival_date ?: ($room?->actual_arrival_date ?: $room?->arrival_date);
+            if ($arrivalDate) {
+                $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate();
+                if (Carbon::parse($arrivalDate)->startOfDay()->lt($systemDate)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa.',
+                    ], 422);
+                }
+            }
+        }
+
+        // 2. Kiểm tra phát sinh hóa đơn hoặc thanh toán
+        $hasBills = ServiceBill::where(function ($q) use ($guestId) {
+                $q->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $guestId])
+                  ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $guestId]);
+            })
+            ->where(function ($q) {
+                $q->where('Edit', 0)
+                  ->orWhere('Status', 0);
+            })
+            ->exists();
+
+        $hasPayments = Payment::where('guest_id', (string) $guestId)
+            ->where(function ($q) {
+                $q->where('edit_flag', 0)
+                  ->orWhere('status', 0);
+            })
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($hasBills || $hasPayments) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách.',
+            ], 422);
+        }
+
+        if ($pivot) {
+            $pivot->delete();
+        }
 
         // Xóa hẳn bản ghi trong bảng guests nếu khách không còn gán ở phòng nào khác
         $otherCount = BookingRoomGuest::where('guest_id', $guestId)->count();
@@ -985,28 +1089,73 @@ class GuestController extends Controller
     public function bookingChildren(Request $request, $bookingId)
     {
         $booking  = Booking::findOrFail($bookingId);
-        $query    = $booking->children()->with('bookingRoom', 'breakfastDetails');
+        $query    = $booking->children()
+            ->with('bookingRoom', 'breakfastDetails')
+            ->whereIn('child_status', self::GUEST_INFO_ROOM_STATUSES)
+            ->where(function ($q) {
+                $q->whereNull('booking_room_id')
+                    ->orWhereHas('bookingRoom', function ($roomQuery) {
+                        $roomQuery->whereNull('deleted_at')
+                            ->whereIn('status', self::GUEST_INFO_ROOM_STATUSES);
+                    })
+                    // A moved child keeps its original booking_room_id while
+                    // the active assignment points at the destination room.
+                    // Include that child through the same room whitelist.
+                    ->orWhereExists(function ($assignmentQuery) {
+                        $assignmentQuery->selectRaw('1')
+                            ->from('booking_room_children as assigned_children')
+                            ->join('booking_rooms as assigned_rooms', 'assigned_rooms.id', '=', 'assigned_children.booking_room_id')
+                            ->whereColumn('assigned_children.booking_child_id', 'booking_children.id')
+                            ->where('assigned_children.status', 1)
+                            ->whereNull('assigned_rooms.deleted_at')
+                            ->whereIn('assigned_rooms.status', self::GUEST_INFO_ROOM_STATUSES);
+                    });
+            });
         $roomId = $request->input('booking_room_id');
 
         if ($roomId) {
+            $room = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+            if (!in_array((int) $room->status, self::GUEST_INFO_ROOM_STATUSES, true)) {
+                return response()->json(['success' => true, 'data' => []]);
+            }
+
             // Vị trí hiện tại của trẻ được lưu ở bảng phân bổ khi chuyển khách.
             $assignedIds = \App\Models\BookingRoomChild::where('booking_room_id', $roomId)
                 ->where('status', 1)->pluck('booking_child_id');
             if ($assignedIds->isNotEmpty()) {
                 $query->whereIn('id', $assignedIds);
             } else {
-                $query->where('booking_room_id', $roomId)->where('child_status', '!=', 100);
+                $query->where('booking_room_id', $roomId)
+                    ->whereIn('child_status', self::GUEST_INFO_ROOM_STATUSES);
             }
         }
 
-        $children = $query->get();
+        $children = $query->get()->values();
+        if ($children->isNotEmpty()) {
+            $activeAssignments = \App\Models\BookingRoomChild::with('room')
+                ->whereIn('booking_child_id', $children->pluck('id'))
+                ->where('status', 1)
+                ->whereHas('room', function ($roomQuery) {
+                    $roomQuery->whereNull('deleted_at')
+                        ->whereIn('status', self::GUEST_INFO_ROOM_STATUSES);
+                })
+                ->get()
+                ->keyBy('booking_child_id');
+
+            $children->each(function ($child) use ($activeAssignments) {
+                $assignment = $activeAssignments->get($child->id);
+                if ($assignment) {
+                    $child->booking_room_id = $assignment->booking_room_id;
+                }
+            });
+        }
         if ($roomId) {
             $children->each(function ($child) use ($roomId) {
                 $child->booking_room_id = $roomId;
             });
         }
 
-        return response()->json(['success' => true, 'data' => $children]);
+        return response()->json(['success' => true, 'data' => $children->values()->all()]);
     }
     // POST /bookings/{bookingId}/children — Thêm trẻ em vào booking
     public function addChild(Request $request, $bookingId)
@@ -1019,6 +1168,21 @@ class GuestController extends Controller
             'age_group'       => 'nullable|in:baby,child',
         ]);
 
+        $room = null;
+        if ($request->filled('booking_room_id')) {
+            $room = BookingRoom::where('booking_id', $bookingId)
+                ->findOrFail($request->booking_room_id);
+            if (!in_array((int) $room->status, [
+                BookingRoom::STATUS_BOOKED,
+                BookingRoom::STATUS_CHECKED_IN,
+            ], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không thể tạo khách mới cho phòng đã kết thúc hoặc đã chuyển.',
+                ], 422);
+            }
+        }
+
         $child = \App\Models\BookingChild::create([
             'booking_id'      => $bookingId,
             'booking_room_id' => $request->booking_room_id,
@@ -1030,7 +1194,7 @@ class GuestController extends Controller
         // Auto-generate breakfast detail rows cho mỗi ngày nếu có room
         if ($request->booking_room_id) {
             $this->generateBreakfastDetails($child);
-            $r = BookingRoom::find($request->booking_room_id);
+            $r = $room ?: BookingRoom::find($request->booking_room_id);
             if ($r) {
                 $r->update([
                     'children_qty' => $r->children()->where('age_group', 'child')->count(),
@@ -1067,12 +1231,20 @@ class GuestController extends Controller
             'extra_bed_rate'   => 'nullable|numeric|min:0',
         ]);
 
-        $child->update($request->only(['full_name', 'title', 'dob', 'nationality_code', 'age_group']));
-
-        if ($child->booking_room_id) {
-            $room = BookingRoom::find($child->booking_room_id);
-            if ($room) $this->updateBookingRoomFromGuestRequest($request, $room);
+        $room = $child->booking_room_id
+            ? BookingRoom::find($child->booking_room_id)
+            : null;
+        if ($room) {
+            $this->validateStayDates($request, $room);
         }
+
+        DB::transaction(function () use ($request, $child, $room): void {
+            $child->update($request->only(['full_name', 'title', 'dob', 'nationality_code', 'age_group']));
+
+            if ($room) {
+                $this->updateBookingRoomFromGuestRequest($request, $room);
+            }
+        });
 
         return response()->json(['success' => true, 'data' => $child, 'message' => 'Cập nhật thông tin trẻ em thành công.']);
     }
@@ -1082,7 +1254,57 @@ class GuestController extends Controller
     {
         $child = BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
         $roomId = $child->booking_room_id;
+        $room = $roomId ? BookingRoom::find($roomId) : null;
+        $childAssignment = $roomId ? \App\Models\BookingRoomChild::where('booking_room_id', $roomId)->where('booking_child_id', $childId)->first() : null;
+
+        // 1. Kiểm tra ngày check-in: Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Đã qua ngày thì không cho phép xóa.
+        $isStayed = ($room && $room->status === BookingRoom::STATUS_CHECKED_IN)
+            || ((int) $child->child_status === BookingRoomGuest::STATUS_CHECKED_IN)
+            || ($childAssignment && (int) $childAssignment->status === BookingRoomGuest::STATUS_CHECKED_IN);
+
+        if ($isStayed) {
+            $arrivalDate = $childAssignment?->actual_arrival_date ?: ($room?->actual_arrival_date ?: $room?->arrival_date);
+            if ($arrivalDate) {
+                $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate();
+                if (Carbon::parse($arrivalDate)->startOfDay()->lt($systemDate)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa.',
+                    ], 422);
+                }
+            }
+        }
+
+        // 2. Kiểm tra phát sinh hóa đơn hoặc thanh toán
+        $hasBills = ServiceBill::where(function ($q) use ($childId) {
+                $q->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $childId])
+                  ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $childId]);
+            })
+            ->where(function ($q) {
+                $q->where('Edit', 0)
+                  ->orWhere('Status', 0);
+            })
+            ->exists();
+
+        $hasPayments = Payment::where('guest_id', (string) $childId)
+            ->where(function ($q) {
+                $q->where('edit_flag', 0)
+                  ->orWhere('status', 0);
+            })
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($hasBills || $hasPayments) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách.',
+            ], 422);
+        }
+
         $child->breakfastDetails()->delete();
+        if ($childAssignment) {
+            $childAssignment->delete();
+        }
         $child->delete();
 
         // Xóa các dịch vụ ăn sáng trẻ em tương ứng trong booking_room_services
@@ -1090,6 +1312,7 @@ class GuestController extends Controller
             $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
             \App\Models\BookingRoomService::where('booking_room_id', $roomId)
                 ->where('service_code', $serviceCode)
+                ->where('is_posted', 0)
                 ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
                 ->delete();
 
@@ -1289,6 +1512,15 @@ class GuestController extends Controller
         return response()->json(['success' => true, 'message' => 'Cập nhật thông tin khách hàng loạt thành công!']);
     }
 
+    private function normalizeCount(mixed $value, int $default = 0): int
+    {
+        if ($value === null || $value === '') {
+            return $default;
+        }
+
+        return max(0, (int) $value);
+    }
+
     /**
      * Tự động lưu địa giới hành chính vào các bảng provinces, districts, wards khi lưu khách
      */
@@ -1377,6 +1609,13 @@ class GuestController extends Controller
         $room = BookingRoom::find($child->booking_room_id);
         if (!$room) return;
 
+        if (!in_array((int) $room->status, [
+            BookingRoom::STATUS_BOOKED,
+            BookingRoom::STATUS_CHECKED_IN,
+        ], true)) {
+            return;
+        }
+
         $isBaby  = $child->age_group === 'baby';
         $current = Carbon::parse($room->arrival_date);
         $end     = Carbon::parse($room->departure_date);
@@ -1432,33 +1671,53 @@ class GuestController extends Controller
 
         // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
         $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
+        $serviceNote = "Phụ thu ăn sáng trẻ em: {$child->full_name}";
+        $serviceDate = Carbon::parse($detail->service_date)->toDateString();
+
+        $existing = \App\Models\BookingRoomService::withTrashed()
+            ->where('booking_room_id', $child->booking_room_id)
+            ->where('service_code', $serviceCode)
+            ->whereDate('service_date', $serviceDate)
+            ->where('note', $serviceNote)
+            ->first();
+
+        if ($existing && (int) $existing->is_posted === 1) {
+            // A posted surcharge is financial history. The detail can still
+            // be edited for future reconciliation, but this endpoint must not
+            // rewrite or delete the posted service line.
+            return;
+        }
 
         if ($shouldHaveService) {
-            \App\Models\BookingRoomService::updateOrCreateForDate(
-                [
+            $values = [
+                'service_name' => $serviceNote,
+                'quantity'     => 1,
+                'rate'         => $detail->amount,
+                'total_amount' => $detail->amount,
+                'department'   => 'FO',
+                'folio'        => 1,
+                'is_room'      => $detail->is_room ? 1 : 0,
+                'is_posted'    => 0,
+                'deleted_at'   => null,
+            ];
+
+            if ($existing) {
+                $existing->fill($values);
+                $existing->save();
+            } else {
+                \App\Models\BookingRoomService::create([
                     'booking_room_id' => $child->booking_room_id,
                     'service_code'    => $serviceCode,
-                    'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
-                ],
-                $detail->service_date,
-                [
-                    'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
-                    'quantity'        => 1,
-                    'rate'            => $detail->amount,
-                    'total_amount'    => $detail->amount,
-                    'department'      => 'FO',
-                    'folio'           => 1,
-                    'is_room'         => $detail->is_room ? 1 : 0,
-                    'is_posted'       => 0,
-                ]
-            );
+                    'service_date'    => $serviceDate,
+                    'note'            => $serviceNote,
+                    ...$values,
+                ]);
+            }
         } else {
-            // Xóa dịch vụ nếu có
-            \App\Models\BookingRoomService::where('booking_room_id', $child->booking_room_id)
-                ->where('service_code', $serviceCode)
-                ->whereDate('service_date', $detail->service_date->toDateString())
-                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
-                ->delete();
+            // Xóa dịch vụ chưa post nếu có; posted rows were returned above.
+            if ($existing) {
+                $existing->delete();
+            }
         }
     }
 }

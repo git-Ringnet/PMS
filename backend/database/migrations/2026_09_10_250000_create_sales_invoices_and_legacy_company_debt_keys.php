@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('outlet', 10)->nullable();
             $table->string('username', 50)->nullable();
             $table->unsignedTinyInteger('status')->nullable();
-            $table->decimal('amount', 20, 6)->nullable();
+            $table->decimal('amount', 15, 2)->nullable();
             $table->string('currency', 3)->nullable();
             $table->timestamps();
 
@@ -35,7 +35,7 @@ return new class extends Migration
         Schema::table('payments', function (Blueprint $table) {
             $table->unsignedBigInteger('legacy_id')->nullable()->unique();
             // SP3002.PaymentTotalAmount0 is the AC amount used by sp_212.
-            $table->decimal('legacy_payment_total_amount0', 20, 6)->nullable();
+            $table->decimal('legacy_payment_total_amount0', 15, 2)->nullable();
             $table->string('legacy_payment_currency0', 3)->nullable();
             $table->string('legacy_pack5', 50)->nullable();
         });
@@ -49,7 +49,7 @@ return new class extends Migration
         Schema::table('companies', function (Blueprint $table) {
             $table->unsignedBigInteger('legacy_id')->nullable()->unique();
             // SP1302.ReCreditLimit is retained separately; max_debt equivalence is unresolved.
-            $table->decimal('legacy_re_credit_limit', 20, 6)->nullable();
+            $table->decimal('legacy_re_credit_limit', 15, 2)->nullable();
         });
     }
 

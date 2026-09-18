@@ -29,8 +29,8 @@ class RoomOccupancyStatisticsTest extends TestCase
             ['id' => 2, 'name' => 'Checked Out'],
         ]);
 
-        $availableStatus = RegistrationStatus::create(['name' => 'Confirmed', 'is_availability' => true]);
-        $ignoredStatus = RegistrationStatus::create(['name' => 'Waiting', 'is_availability' => false]);
+        $availableStatus = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $ignoredStatus = RegistrationStatus::create(['booking_status_id' => 29, 'name' => 'Waiting', 'is_availability' => false]);
         $walkInSource = CustomerSource::create(['code' => 'WALKIN', 'name' => 'Khách vãng lai']);
         $form = RoomForm::create(['name' => 'Double']);
         $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
@@ -75,7 +75,7 @@ class RoomOccupancyStatisticsTest extends TestCase
         $occupiedRoom = $this->createBookingRoom(
             '101',
             $class->id,
-            $availableStatus->id,
+            $availableStatus->booking_status_id,
             BookingRoom::STATUS_CHECKED_IN
         );
         $occupiedRoom->update([
@@ -88,9 +88,9 @@ class RoomOccupancyStatisticsTest extends TestCase
         $this->assertSame(3, $occupiedRoom->fresh()->NumOfDays);
 
         // Các booking này không được tính vì tình trạng đăng ký hoặc loại phòng không hợp lệ.
-        $this->createBookingRoom('102', $class->id, $ignoredStatus->id, BookingRoom::STATUS_CHECKED_IN);
-        $this->createBookingRoom('900', $class->id, $availableStatus->id, BookingRoom::STATUS_CHECKED_IN);
-        $this->createBookingRoom('001', $class->id, $availableStatus->id, BookingRoom::STATUS_CHECKED_IN);
+        $this->createBookingRoom('102', $class->id, $ignoredStatus->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
+        $this->createBookingRoom('900', $class->id, $availableStatus->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
+        $this->createBookingRoom('001', $class->id, $availableStatus->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
 
         $arrivalBooking = Booking::create([
             'booking_name' => 'Arrival today',
@@ -99,7 +99,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'departure_date' => '2026-09-06',
             'num_of_days' => 2,
             'status' => Booking::STATUS_RESERVATION,
-            'registration_status_id' => $availableStatus->id,
+            'registration_status_id' => $availableStatus->booking_status_id,
             'customer_source_id' => $walkInSource->id,
             'created_by' => 'room_stats_test',
         ]);
@@ -120,7 +120,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'departure_date' => '2026-09-06',
             'num_of_days' => 2,
             'status' => Booking::STATUS_RESERVATION,
-            'registration_status_id' => $availableStatus->id,
+            'registration_status_id' => $availableStatus->booking_status_id,
             'created_by' => 'room_stats_test',
         ]);
         BookingRoom::create([
@@ -140,7 +140,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'num_of_days' => 1,
             'is_day_use' => true,
             'status' => Booking::STATUS_CHECKOUT,
-            'registration_status_id' => $availableStatus->id,
+            'registration_status_id' => $availableStatus->booking_status_id,
             'created_by' => 'room_stats_test',
         ]);
         BookingRoom::create([
@@ -163,7 +163,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'departure_date' => '2026-09-04',
             'num_of_days' => 3,
             'status' => Booking::STATUS_CHECKOUT,
-            'registration_status_id' => $availableStatus->id,
+            'registration_status_id' => $availableStatus->booking_status_id,
             'created_by' => 'room_stats_test',
         ]);
         BookingRoom::create([

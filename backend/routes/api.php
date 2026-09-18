@@ -141,6 +141,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('/room-locks/history/{room_id}', [\App\Http\Controllers\Api\RoomLockController::class, 'history']);
     Route::post('/room-locks/bulk-lock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkLock']);
     Route::post('/room-locks/bulk-unlock', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUnlock']);
+    Route::post('/room-locks/bulk-update', [\App\Http\Controllers\Api\RoomLockController::class, 'bulkUpdate']);
     Route::apiResource('room-locks', \App\Http\Controllers\Api\RoomLockController::class);
 
     // Company settings
@@ -415,6 +416,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('bookings', [\App\Http\Controllers\Api\BookingController::class, 'index']);
     // Các action ghi cần quyền
     Route::post('bookings', [\App\Http\Controllers\Api\BookingController::class, 'store'])->middleware('permission:fo.booking.create');
+    Route::post('bookings/{booking}/add-rooms', [\App\Http\Controllers\Api\BookingController::class, 'addRooms'])->middleware('permission:fo.booking.edit');
     Route::put('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'update'])->middleware('permission:fo.booking.edit');
     Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
     Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware('permission:fo.booking.edit');
@@ -539,6 +541,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'debtSettlements']);
     Route::post('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'storeDebtSettlement'])->middleware('permission:fo.payment.create');
     Route::delete('/payments/{id}/debt-settlements/{settlementId}', [\App\Http\Controllers\Api\PaymentController::class, 'destroyDebtSettlement'])->middleware('permission:fo.payment.create');
+
+    // =====================================================================
+    // HÓA ĐƠN BÁN HÀNG (Sales Invoices) routes
+    // =====================================================================
+    Route::get('/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'index']);
+    Route::get('/sales-invoices/stats', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'stats']);
+    Route::get('/sales-invoices/{id}', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'show']);
+    Route::get('/sales-invoices/{id}/print', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'printData']);
+    Route::get('/bookings/{bookingId}/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'byBooking']);
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
