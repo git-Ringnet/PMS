@@ -140,7 +140,7 @@ class TemplateRendererService
             $subsubgroupBy = $this->attributeValue($attributes, 'data-subsubgroup-by');
             $items = $this->getValueByPath($data, $source);
 
-            if (! is_array($items) || $items === [] || ! $groupBy) {
+            if (! is_array($items) || $items === [] || (! $groupConfigured && ! $groupBy)) {
                 return '<tbody></tbody>';
             }
 
@@ -162,6 +162,9 @@ class TemplateRendererService
                     foreach ($items as $row) {
                         if (is_array($row)) {
                             $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                            foreach ($detailCustomRows as $customRow) {
+                                $output .= $this->renderGroupedTemplate($customRow['template'], $row, [$row]);
+                            }
                         }
                     }
                 } else {
@@ -979,8 +982,16 @@ class TemplateRendererService
         body {
             width: 100% !important;
             max-width: none !important;
+            box-sizing: border-box !important;
+            padding-top: '.$marginTop.'mm !important;
+            padding-bottom: '.$marginBottom.'mm !important;
+            padding-left: '.$marginLeft.'mm !important;
+            padding-right: '.$marginRight.'mm !important;
         }
         @media print {
+            body {
+                padding: 0 !important;
+            }
             @page {
                 size: '.$pageSize.' '.$pageOrientation.';
                 margin: '.$marginTop.'mm '.$marginRight.'mm '.$marginBottom.'mm '.$marginLeft.'mm;

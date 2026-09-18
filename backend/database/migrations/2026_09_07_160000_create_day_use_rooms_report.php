@@ -54,7 +54,6 @@ BEGIN
         br.adults AS Adult,
         br.babies AS Baby,
         br.children_qty AS Child,
-        CONCAT(br.adults, ' / ', br.babies, ' / ', br.children_qty) AS AdultBabyChild,
         br.rate AS Rate,
         COALESCE(br.note, b.note) AS Note,
         br.id AS RentalRoomId,
@@ -63,6 +62,7 @@ BEGIN
         r.orders AS RoomOrder
     FROM booking_rooms br
     INNER JOIN bookings b ON b.id = br.booking_id AND b.deleted_at IS NULL
+    INNER JOIN registration_statuses rs ON rs.id = b.registration_status_id
     INNER JOIN room_classes rc ON rc.id = br.room_class_id
     LEFT JOIN rooms r ON r.room_number = br.room_number
     LEFT JOIN companies c ON c.id = b.company_id
@@ -72,6 +72,7 @@ BEGIN
       AND br.arrival_date = br.departure_date
       AND br.status IN (0, 1, 2)
       AND b.status IN (0, 1, 2)
+      AND rs.is_availability = 1
       AND br.arrival_date BETWEEN p_from_date AND p_to_date
       AND (COALESCE(p_user, '') = '' OR br.created_by = p_user)
       AND (br.room_number IS NULL OR br.room_number NOT LIKE '0%')
@@ -98,7 +99,7 @@ SQL);
             ['name' => 'p_sort_by', 'mode' => 'IN', 'data_type' => 'varchar', 'database_type' => 'varchar(30)', 'position' => 4, 'required' => true],
             ['name' => 'p_sort_order', 'mode' => 'IN', 'data_type' => 'varchar', 'database_type' => 'varchar(4)', 'position' => 5, 'required' => true],
         ];
-        $fields = collect(['STT', 'BookingId', 'Company', 'Room', 'RoomType', 'ArrivalDate', 'DepartureDate', 'Adult', 'Baby', 'Child', 'AdultBabyChild', 'Rate', 'Note', 'RentalRoomId', 'BookingNumericId', 'ArrivalDateSort', 'RoomOrder'])
+        $fields = collect(['STT', 'BookingId', 'Company', 'Room', 'RoomType', 'ArrivalDate', 'DepartureDate', 'Adult', 'Baby', 'Child', 'Rate', 'Note', 'RentalRoomId', 'BookingNumericId', 'ArrivalDateSort', 'RoomOrder'])
             ->map(fn ($name) => [
                 'name' => $name,
                 'type' => in_array($name, ['STT', 'Adult', 'Baby', 'Child', 'RentalRoomId', 'BookingNumericId', 'RoomOrder'], true) ? 'integer' : (in_array($name, ['Rate'], true) ? 'number' : 'string'),

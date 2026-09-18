@@ -19,10 +19,10 @@ BEGIN
     SELECT
         CASE WHEN COALESCE(rl.is_active, 1) = 1 THEN 'Locking' ELSE 'Unlock' END AS GroupName,
         rl.room_number AS Room,
-        DATE_FORMAT(rl.start_date, '%d/%m/%Y %H:%i') AS DateBeginTime,
-        CASE WHEN rl.end_date IS NULL THEN NULL ELSE DATE_FORMAT(rl.end_date, '%d/%m/%Y %H:%i') END AS EndDateTime,
+        DATE_FORMAT(rl.start_date, '%d/%m/%Y - %H:%i') AS DateBeginTime,
+        CASE WHEN rl.end_date IS NULL THEN NULL ELSE DATE_FORMAT(rl.end_date, '%d/%m/%Y - %H:%i') END AS EndDateTime,
         rl.unlock_username AS UserUnlock,
-        DATE_FORMAT(rl.created_at, '%d/%m/%Y %H:%i') AS LockDateTime,
+        DATE_FORMAT(rl.created_at, '%d/%m/%Y - %H:%i') AS LockDateTime,
         rl.username AS Username,
         rl.reason AS Note,
         rl.start_date AS DateOrder

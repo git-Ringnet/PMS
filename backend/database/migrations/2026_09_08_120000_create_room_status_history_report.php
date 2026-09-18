@@ -22,18 +22,17 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('legacy_id')->nullable()->unique();
             $table->dateTime('changed_at')->nullable();
+            $table->date('business_date')->nullable();
             $table->string('username', 50)->nullable();
             $table->string('room', 50)->nullable();
-            $table->integer('status_from_code')->nullable();
-            $table->integer('status_to_code')->nullable();
-            $table->string('status_from_english', 100)->nullable();
-            $table->string('status_from_vietnamese', 100)->nullable();
-            $table->string('status_to_english', 100)->nullable();
-            $table->string('status_to_vietnamese', 100)->nullable();
+            $table->unsignedBigInteger('status_from_id')->nullable()->index();
+            $table->unsignedBigInteger('status_to_id')->nullable()->index();
+            $table->integer('legacy_status_from_code')->nullable();
+            $table->integer('legacy_status_to_code')->nullable();
             $table->string('source', 30)->default('legacy');
             $table->timestamps();
-            $table->index(['changed_at', 'room']);
-            $table->index(['changed_at', 'username']);
+            $table->index(['business_date', 'room']);
+            $table->index(['business_date', 'username']);
         });
 
         $this->createProcedure();
@@ -76,20 +75,22 @@ CREATE PROCEDURE rpt_room_status_history(
 READS SQL DATA
 BEGIN
     SELECT
-        id AS Id,
-        changed_at AS Date,
-        username AS Username,
-        room AS Room,
-        status_from_code AS StatusFrom,
-        status_to_code AS StatusTo,
-        REPLACE(status_from_english, 'Vacant ', '') AS StatusFromEnglish,
-        status_from_vietnamese AS StatusFromVietnamese,
-        REPLACE(status_to_english, 'Vacant ', '') AS StatusToEnglish,
-        status_to_vietnamese AS StatusToVietnamese
-    FROM room_status_change_logs
-    WHERE DATE(changed_at) BETWEEN p_from_date AND p_to_date
-      AND (p_username IS NULL OR p_username = '' OR username = p_username)
-      AND (p_room IS NULL OR p_room = '' OR room = p_room);
+        history.id AS Id,
+        DATE_FORMAT(TIMESTAMP(history.business_date, TIME(history.changed_at)), '%d-%m-%Y %H:%i:%s') AS Date,
+        history.username AS Username,
+        history.room AS Room,
+        COALESCE(history.legacy_status_from_code, history.status_from_id) AS StatusFrom,
+        COALESCE(history.legacy_status_to_code, history.status_to_id) AS StatusTo,
+        REPLACE(status_from.name_en, 'Vacant ', '') AS StatusFromEnglish,
+        status_from.name_vi AS StatusFromVietnamese,
+        REPLACE(status_to.name_en, 'Vacant ', '') AS StatusToEnglish,
+        status_to.name_vi AS StatusToVietnamese
+    FROM room_status_change_logs AS history
+    LEFT JOIN room_statuses AS status_from ON status_from.id = history.status_from_id
+    LEFT JOIN room_statuses AS status_to ON status_to.id = history.status_to_id
+    WHERE history.business_date BETWEEN p_from_date AND p_to_date
+      AND (p_username IS NULL OR p_username = '' OR history.username = p_username)
+      AND (p_room IS NULL OR p_room = '' OR history.room = p_room);
 END
 SQL);
     }

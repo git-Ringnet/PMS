@@ -29,16 +29,28 @@ class OooLockHistoryReportTest extends TestCase
         $this->assertStringContainsString("'value' => \$user->username", $controller);
     }
 
-    public function test_reference_template_contains_legacy_columns(): void
+    public function test_reference_template_contains_legacy_columns_and_subtotal(): void
     {
         $reference = require database_path('report_templates/ooo_lock_history_reference.php');
-        $html = (new ReflectionMethod($reference, 'html'))->invoke($reference);
-        $rendered = app(TemplateRendererService::class)->render($html, '', [
-            'parameters' => ['p_from_date'=>'2026-08-27','p_to_date'=>'2026-08-27'],
-            'report' => ['generated_by'=>'Tester','generated_at'=>'27/08/2026 12:00'],
+        $def = $reference->definition();
+        $this->assertSame('portrait', $def['page_orientation']);
+        $this->assertSame('A4', $def['page_size']);
+        $this->assertCount(7, $def['content_json']['detail'][0]['columns']);
+        $this->assertSame('#2e7d32', $def['content_json']['detail'][0]['columns'][0]['cellStyle']['color']);
+        $this->assertSame('group', $def['content_json']['detail'][0]['customRows'][0]['scope']);
+
+        $rendered = $reference->render([
+            'parameters' => ['p_from_date' => '27/06/2026', 'p_to_date' => '31/12/2026'],
+            'report' => ['generated_by' => 'Tester', 'generated_at' => '27/08/2026 12:00'],
             'rows' => [[
-                'GroupName'=>'Locking','Room'=>'712','DateBeginTime'=>'27/06/2026 10:22','EndDateTime'=>'31/12/2026 23:59',
-                'UserUnlock'=>'','LockDateTime'=>'27/06/2026 10:22','Username'=>'FOM','Note'=>'GM ở',
+                'GroupName' => 'Locking',
+                'Room' => '712',
+                'DateBeginTime' => '27/06/2026 - 10:22',
+                'EndDateTime' => '31/12/2026 - 23:59',
+                'UserUnlock' => '',
+                'LockDateTime' => '27/06/2026 - 10:22',
+                'Username' => 'FOM',
+                'Note' => 'GM ở',
             ]],
         ]);
 
@@ -46,5 +58,8 @@ class OooLockHistoryReportTest extends TestCase
         $this->assertStringContainsString('Ngày Bắt Đầu', $rendered);
         $this->assertStringContainsString('Người Mở Khóa', $rendered);
         $this->assertStringContainsString('712', $rendered);
+        $this->assertStringContainsString('#2e7d32', $rendered);
+        $this->assertStringContainsString('Locking', $rendered);
+        $this->assertStringContainsString('Tổng', $rendered);
     }
 }
