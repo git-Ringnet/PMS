@@ -9,6 +9,20 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-18] - Khắc phục số đêm thực tế (ActutalNumOfDays = 0) khi chuyển phòng cùng ngày nhận phòng
+### Module: Quản lý đặt phòng & Chuyển phòng ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php), [RoomMoveSameDayNightTest.php](file:///d:/PMS/backend/tests/Feature/Booking/RoomMoveSameDayNightTest.php))
+
+- **1. Xử lý số đêm lưu trú thực tế tại phòng cũ khi chuyển phòng**:
+  - **[BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php)**:
+    + Bỏ hàm `max(1, ...)` tại luồng chuyển phòng trống (`move_type == 'available'`) và gộp phòng (`move_type == 'merge'`).
+    + Tính toán chuẩn xác `$actualDaysStayed = Carbon::parse($originalArrivalStr)->diffInDays(Carbon::parse($sysDateStr))`. Nếu khách check-in và chuyển phòng ngay trong ngày đến, số đêm thực tế của phòng cũ nhận giá trị `0`.
+  - **[BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php)**:
+    + Cập nhật các hook `saving` và `updating`: Cho phép phòng có trạng thái đã chuyển phòng (`status === 100` / `STATUS_MOVED`) được lưu đúng số đêm chênh lệch `$diff` (bằng 0 nếu cùng ngày), không bị ép buộc ghi đè về 1 như phòng thông thường/day-use.
+- **2. Kiểm thử**:
+  - Đã kiểm tra trực tiếp qua API với kịch bản check-in phòng 405 đến 11/08/2026 và chuyển sang phòng 1008 cùng ngày 11/08/2026: Phòng 405 cập nhật `status = 100` và `ActutalNumOfDays = 0`; phòng 1008 nhận phòng kế tiếp với đúng số đêm còn lại.
+  - Unit test mới: [RoomMoveSameDayNightTest.php](file:///d:/PMS/backend/tests/Feature/Booking/RoomMoveSameDayNightTest.php) (2/2 tests passed, 14 assertions: pass cả trường hợp chuyển cùng ngày `ActutalNumOfDays = 0` và chuyển sau 2 ngày `ActutalNumOfDays = 2`).
+  - Regression tests: [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) (24/24 passed, 116 assertions), [CheckoutBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/CheckoutBusinessRulesTest.php) (10/10 passed, 35 assertions).
+
 ## [2026-09-18] - Khắc phục sắp xếp loại phòng, tính đúng tiền ghi chú và hiển thị chồng lấn booking trên Kế hoạch phòng
 ### Module: Thống kê & Kế hoạch phòng ([AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [AvailableRoomsPage.vue](file:///d:/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue), [room-plan-amounts.js](file:///d:/PMS/frontend/src/utils/room-plan-amounts.js), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
 
