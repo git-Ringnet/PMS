@@ -137,6 +137,7 @@ const resolveDefault = (value) => {
     return new Date(date.getTime() - offset).toISOString().slice(0, 10)
   }
   if (value === '$today') return localDate(baseDate)
+  if (value === '$yesterday') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() - 1))
   if (value === '$month_start') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1))
   if (value === '$month_end') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0))
   return value ?? ''

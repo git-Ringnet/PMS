@@ -184,6 +184,11 @@ class ReportDefinitionController extends Controller
     {
         $data = $this->executeReportSource($reportDefinition, $parameters, $request);
         $data = $this->enrichCancelledRoomUsers($reportDefinition, $data);
+        if ($reportDefinition->code === 'CANCELLED_INVOICES_PAYMENTS') {
+            $data['parameters']['p_mode_label'] = strtoupper((string) ($parameters['p_mode'] ?? 'BILL')) === 'PAYMENT'
+                ? 'BÁO CÁO HỦY THANH TOÁN'
+                : 'BÁO CÁO HỦY HÓA ĐƠN';
+        }
         $data['report'] = [
             'code' => $reportDefinition->code,
             'name' => $reportDefinition->name,
@@ -376,7 +381,7 @@ class ReportDefinitionController extends Controller
             'parameter_ui_schema.*.required' => 'nullable|boolean',
             'parameter_ui_schema.*.default' => 'nullable',
             'parameter_ui_schema.*.options' => 'nullable|array',
-            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments',
+            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,outlets,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments',
             'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
             'template_ids' => 'required|array|min:1',
             'template_ids.*' => 'integer|distinct|exists:templates,id',
