@@ -16,6 +16,7 @@ class ReportLookupController extends Controller
 
         $options = match ($lookup) {
             'areas' => $this->areas(),
+            'outlets' => $this->outlets(),
             'companies' => $this->companies($search),
             'bookings' => $this->bookings($search),
             'rooms' => $this->rooms($search),
@@ -25,6 +26,7 @@ class ReportLookupController extends Controller
             'hotel-services' => $this->hotelServices($search),
             'report-shifts' => $this->distinctServiceBillOptions('Ca'),
             'service-departments' => $this->serviceDepartments(),
+            'rate-codes' => $this->rateCodes($search),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -40,6 +42,21 @@ class ReportLookupController extends Controller
             ->orderBy('area')
             ->pluck('area')
             ->map(fn ($area) => ['value' => $area, 'label' => $area])
+            ->values()
+            ->all();
+    }
+
+    private function outlets(): array
+    {
+        return DB::table('outlets')
+            ->where('is_active', true)
+            ->orderBy('order_index')
+            ->orderBy('name')
+            ->get(['code', 'name'])
+            ->map(fn ($outlet) => [
+                'value' => $outlet->code,
+                'label' => trim("{$outlet->code} - {$outlet->name}", ' -'),
+            ])
             ->values()
             ->all();
     }
@@ -196,5 +213,20 @@ class ReportLookupController extends Controller
             ->values()
             ->all();
     }
-}
 
+    private function rateCodes(string $search): array
+    {
+        return DB::table('room_rate_codes')
+            ->when($search !== '', fn ($query) => $query->where(function ($nested) use ($search) {
+                $nested->where('Ma', 'like', "%{$search}%")
+                    ->orWhere('Description', 'like', "%{$search}%");
+            }))
+            ->orderBy('Ma')
+            ->get(['Ma', 'Description'])
+            ->map(fn ($rc) => [
+                'value' => $rc->Ma,
+                'label' => trim("{$rc->Ma} - {$rc->Description}", ' -'),
+            ])
+            ->all();
+    }
+}
