@@ -9,325 +9,343 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
-## [2026-09-18] - Khắc phục sắp xếp loại phòng, tính đúng tiền ghi chú và hiển thị chồng lấn booking trên Kế hoạch phòng
-### Module: Thống kê & Kế hoạch phòng ([AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [AvailableRoomsPage.vue](file:///d:/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue), [room-plan-amounts.js](file:///d:/PMS/frontend/src/utils/room-plan-amounts.js), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+## [2026-09-18] - Chuẩn hóa toàn bộ thuộc tính lề và kích thước báo cáo lấy trực tiếp từ Form Designer
+### Module: Render biểu mẫu báo cáo ([TemplateRendererService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/TemplateRendererService.php), [TemplateRendererServiceTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/TemplateRendererServiceTest.php), [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php))
 
-- **1. Sắp xếp loại phòng theo thứ tự cột `orders` của bảng `room_classes`**:
-  - **Backend ([AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php))**: Thêm `orderBy('orders')->orderBy('id')` khi truy vấn danh sách `room_classes` và bổ sung trường `'orders' => $rc->orders` vào payload API `index`.
-  - **Frontend ([AvailableRoomsPage.vue](file:///d:/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))**: Sắp xếp danh sách `roomClasses` theo giá trị `orders` tăng dần khi nhận dữ liệu từ API.
-- **2. Khắc phục hiển thị sai tiền trên giao diện ghi chú (card/tooltip) Kế hoạch phòng**:
-  - **[room-plan-amounts.js](file:///d:/PMS/frontend/src/utils/room-plan-amounts.js)**: Sửa logic trong `calculateRoomPlanRoomAmounts`, loại bỏ điều kiện lọc sai `date >= today` đối với dịch vụ chưa post bill (trước đây làm bỏ sót các đêm lưu trú trước ngày hệ thống khi chưa chạy night audit), đảm bảo tính đủ tiền toàn bộ số đêm của phòng và tổng booking.
-  - **[RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue)**: Loại bỏ khai báo trùng lặp cũ để đồng bộ sử dụng tiện ích tính tiền dùng chung.
-- **3. Khắc phục booking check-out bị vẽ đè lên booking check-in cùng ngày khi xem lưới Kế hoạch phòng**:
-  - **Frontend ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**: Bổ sung điều kiện biên trong `processedBookings` đối với booking lưu trú qua đêm: nếu ngày check-out nhỏ hơn hoặc bằng ngày bắt đầu hiển thị của lưới (`checkOutDateStr <= visibleStartDateStr`), bỏ qua không vẽ cell booking đó, tránh bị co về span = 1 và vẽ đè lên booking mới nhận phòng trong ngày đó.
-- **4. Nâng cấp bộ chọn ngày tại Kế hoạch phòng**:
-  - **Frontend ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**: Thay thế các ô nhập ngày thủ công bằng component [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue) có icon lịch tương tác, cho phép người dùng click chọn trực quan ngày/tháng/năm thay vì phải gõ bàn phím.
-- **5. Kiểm thử**:
-  - Unit tests: [room-plan-amounts.test.js](file:///d:/PMS/frontend/tests/room-plan-amounts.test.js) (5/5 tests passed), [room-plan-grid.test.js](file:///d:/PMS/frontend/tests/room-plan-grid.test.js) (2/2 tests passed).
-  - Frontend build: `npm run build` thành công 100% (built in 4.00s).
-  - Backend test: `RoomOccupancyStatisticsTest.php` (1 passed, 40 assertions).
+- **Bối cảnh & Nguyên nhân**:
+  - Người dùng đã cấu hình lề trang (`margin_top: 10`, `margin_bottom: 7`, `margin_left: 5`, `margin_right: 5`) trong Form Designer, nhưng khi hiển thị báo cáo trên web và preview, nội dung vẫn dính sát 100% vào mép trang giấy.
+  - Template `sales_invoices_reference.php` và dữ liệu trong database tồn tại đoạn CSS tĩnh `body { margin: 0; padding: 0; }` ghi đè toàn bộ padding của `body`.
+  - Khối CSS bảo vệ cuối cùng trong `TemplateRendererService::buildFullHtmlDocument` chỉ khóa `width: 100% !important; max-width: none !important;` mà chưa khóa các thông số lề trang (`padding-top/bottom/left/right`) và `box-sizing: border-box !important;`.
+- **Đã hoàn thành**:
+  - **Khóa quyền ưu tiên tuyệt đối cho lề trang từ Designer (`TemplateRendererService.php`)**:
+    - Bổ sung `padding-top: {$marginTop}mm !important;`, `padding-bottom: {$marginBottom}mm !important;`, `padding-left: {$marginLeft}mm !important;`, `padding-right: {$marginRight}mm !important;` và `box-sizing: border-box !important;` vào khối CSS ưu tiên cuối cùng.
+    - Tại `@media print`: thiết lập `body { padding: 0 !important; }` để nhường quyền cho `@page { margin: ... }` quản lý lề trang in vật lý chuẩn xác.
+  - **Dọn dẹp CSS xung đột**:
+    - Loại bỏ `margin: 0; padding: 0;` trong khối `body` của [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php).
+    - Cập nhật trực tiếp cột `css` của mẫu `SALES_INVOICES_REFERENCE` trong bảng `templates` trên cả 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+- **Kiểm thử & Xác thực**:
+  - PHPUnit test [TemplateRendererServiceTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/TemplateRendererServiceTest.php): 12/12 passed (44 assertions).
+  - Feature test `SalesInvoicesReportTest`: 6/6 passed (56 assertions).
+  - Frontend test: 14/14 passed.
+  - Frontend production build: Thành công 100% (4.68s).
 
-## [2026-09-17] - Fix lỗi SQL 1055 ONLY_FULL_GROUP_BY trong Migration Cutover Booking Status Codes
-### Module: Cơ sở dữ liệu ([2026_09_14_120000_use_booking_registration_status_codes.php](file:///d:/PMS/backend/database/migrations/2026_09_14_120000_use_booking_registration_status_codes.php))
+## [2026-09-18] - Khắc phục lỗi Form Designer không thụt lề khi nhập Margin Right và các thông số kích thước
+### Module: Cấu hình báo cáo / Form Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue), [TemplateEditorModalBlockStyling.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalBlockStyling.test.js))
 
-- **1. Sửa câu truy vấn kiểm tra trùng lặp mã nghiệp vụ**:
-  - Bổ sung `select('booking_status_id')` trước `whereNotNull('booking_status_id')->groupBy('booking_status_id')`.
-  - Khắc phục triệt để lỗi `SQLSTATE[42000]: 1055 Expression #1 of SELECT list is not in GROUP BY clause...` khi chạy trên MySQL 8.0/5.7 chuẩn trên Server (có bật `sql_mode=only_full_group_by`).
-- **2. Kiểm thử**:
-  - Chạy lại test suite [RegistrationStatusCutoverTest.php](file:///d:/PMS/backend/tests/Feature/Booking/RegistrationStatusCutoverTest.php): 10/10 tests passed (37 assertions).
+- **Nguyên nhân gốc rễ**:
+  - Người dùng nhập số nguyên thuần túy (ví dụ: `20`, `40`) vào ô `Margin Right`, giá trị lưu thành chuỗi `"20"`. Trong CSS, `margin-right: 20` thiếu đơn vị (`px`) nên trình duyệt tự động loại bỏ.
+  - Theo chuẩn CSS Box Model (Section 10.3.3): Một phần tử block hoặc table khi có `width: 100%`, tổng chiều rộng đã chiếm toàn bộ container, nên `margin-right` không làm phần tử co lại từ mép phải mà sẽ bị reset về `0` hoặc tràn ra ngoài overflow.
+  - Trên Canvas WYSIWYG, thẻ card bao quanh khối (`div.group/block` và `div.group/subblock`) chưa được gắn `:style="getCanvasBlockCardStyle(b)"`. Style trước đó bị đẩy xuống thẻ con bên trong (`table`), trong khi thẻ con lại có class `w-full` và nằm trong container `overflow-x-auto`, dẫn đến việc cả khối lẫn bảng con đều không thụt vào khi chỉnh margin-right.
+- **Đã hoàn thành**:
+  - **Chuẩn hóa đơn vị kích thước CSS (`normalizeCssDimension`)**: Tự động chuyển đổi số thuần (vd `20`, `40.5`) thành `20px`, bảo toàn các đơn vị hợp lệ (`%`, `mm`, `pt`, `auto`).
+  - **Tự động quy đổi độ rộng khi có lề (`resolveBlockStyles`)**:
+    - Khi khối có `marginLeft` hoặc `marginRight` và `width` để trống hoặc `100%`, tự động tính toán `width: calc(100% - ${mr})` hoặc `calc(100% - ${ml} - ${mr})`.
+    - Thiết lập `boxSizing: 'border-box'` đảm bảo viền và lề không làm vỡ kích thước layout.
+  - **Cập nhật hiển thị Canvas (`getCanvasBlockCardStyle` & `getBlockStyle(b, true)`)**:
+    - Thẻ card của khối (`div.group/block`) và subblock (`div.group/subblock`) trên cả 3 band (Header, Detail, Footer) được gắn `:style="getCanvasBlockCardStyle(b)"` để phản ánh trực quan ngay lập tức các margin, width, height trên canvas.
+    - Các phần tử con bên trong card (`table`, `div[type=text]`, `shape`) sử dụng `getBlockStyle(b, true)` loại trừ margin ngoài để không bị nhân đôi lề.
+  - **Cập nhật ô nhập Right Panel**:
+    - Bổ sung sự kiện `@blur` tự động chuẩn hóa đơn vị CSS (`normalizeCssDimension`) khi người dùng nhập xong và rời chuột khỏi ô nhập `Padding`, `Margin`, `Width`, `Height`.
+    - Bổ sung placeholder trực quan hướng dẫn định dạng (`0px, 20, 5%...`, `100%, 55%, 300px...`).
+- **Kiểm thử & Xác thực**:
+  - Tạo bộ test mới [TemplateEditorModalBlockStyling.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalBlockStyling.test.js): 14/14 tests passed (100%).
+  - Chạy `npm run build` trên `frontend/`: Thành công 100% trong 5.05s.
+  - Backend feature tests: Đạt 100%.
 
-## [2026-09-17] - Chuẩn hóa phần thập phân (2 chữ số) trực tiếp trong các file Migrations gốc & Models
-### Module: Cơ sở dữ liệu & Models ([create_service_bills_tables.php](file:///d:/PMS/backend/database/migrations/2026_07_28_160001_create_service_bills_tables.php), [add_legacy_invoice_fields.php](file:///d:/PMS/backend/database/migrations/2026_09_10_130000_add_legacy_invoice_fields.php), [create_sales_invoices...php](file:///d:/PMS/backend/database/migrations/2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php), [expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php))
+## [2026-09-18] - Triển khai Báo cáo hóa đơn bán hàng (SALES_INVOICES - sp_094 legacy)
+### Module: Báo cáo thống kê lễ tân ([sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php), [SalesInvoicesDataAdapter.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/SalesInvoicesDataAdapter.php), [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php), [2026_09_18_100000_create_sales_invoices_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_100000_create_sales_invoices_report.php), [sales_invoices.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/sales_invoices.md))
 
-- **1. Sửa trực tiếp các file Migration khởi tạo ban đầu**:
-  - Đã xóa bỏ file migration vá tạm thời (`2026_09_17_120000_standardize_decimal_precision.php`).
-  - Sửa trực tiếp trong các migration tạo/mở rộng bảng:
-    + [2026_07_28_160001_create_service_bills_tables.php](file:///d:/PMS/backend/database/migrations/2026_07_28_160001_create_service_bills_tables.php):
-      * `service_bills`: `Amount` thành `decimal(15, 2)`.
-      * `service_bill_details`: `Quantity` thành `decimal(10, 2)`; `Amount`, `DetailBillOriginalAmount`, `DiscountAmount`, `IncreaseAmount` thành `decimal(15, 2)`.
-      * `housekeeping_service_bills` & `housekeeping_service_bill_details`: `Quantity` thành `decimal(10, 2)`; các cột tiền tệ `Rate`, `DiscountAmount`, `IncreaseAmount`, `TotalAmount`, `BillOriginalAmount`, `BillDiscountAmount`, `BillAmount` thành `decimal(15, 2)`.
-    + [2026_09_10_130000_add_legacy_invoice_fields.php](file:///d:/PMS/backend/database/migrations/2026_09_10_130000_add_legacy_invoice_fields.php):
-      * Chuyển tất cả các cột `ExchangeRate1`, `ExchangeRate2`, `TotalAmount*`, `ConvertAmount*`, `ServiceChargeAmount`, `SpecialTaxAmount`, `TaxAmount`, `BillExchangeAmount`, `DetailBillTotalAmount`,... từ `20, 6` về `15, 2`.
-    + [2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php](file:///d:/PMS/backend/database/migrations/2026_09_10_250000_create_sales_invoices_and_legacy_company_debt_keys.php):
-      * Chuyển `amount`, `legacy_payment_total_amount0`, `legacy_re_credit_limit` từ `20, 6` về `15, 2`.
-    + [2026_09_16_120000_expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php):
-      * Chuyển `original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `exchange_rate` từ `20, 6` về `15, 2`.
+- **Bối cảnh & Nghiệp vụ**:
+  - Triển khai báo cáo dòng 153 trong `DANH MỤC BÁO CÁO.xlsx`, Sheet 66 `BC HĐ bán hàng`.
+  - Đối chiếu logic từ Stored Procedure `sp_094` và hàm `func_021` trên SQL Server SSMS (`ProVistaDTXHotel`).
+  - Đối chiếu giao diện và bộ lọc thực tế từ ảnh chụp màn hình legacy `sheet66_image73.png`.
+- **Đã hoàn thành**:
+  - **Cơ sở dữ liệu & Migration**:
+    - Bổ sung các cột `nullable()` vào bảng `sales_invoices`: `booking_id`, `rental_room_id`, `payment_id`, `company_id`, `guest_name`, `original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `department`, `pack1`.
+    - Tạo Stored Procedure `rpt_sales_invoices` hỗ trợ 9 tham số, phân tách tiền thanh toán vào 6 cột chi tiết (`Cash`, `Card`, `Voucher`, `City`, `DPCash`, `DPCard`), hỗ trợ lọc VATNo theo `p_export_type`.
+    - Chạy migration `2026_09_18_100000` thành công trên cả 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+    - Đăng ký `report_data_sources` (`RPT_SALES_INVOICES`), `report_definitions` (`SALES_INVOICES`), `templates` (`SALES_INVOICES_REFERENCE`), và liên kết `report_definition_template`.
+    - Cấu hình chuẩn `parameter_ui_schema` 5 control: Chọn ngày, Chọn bộ phận, Chọn công ty, Chọn người dùng, Xem Theo.
+  - **Data Adapter & Template**:
+    - Tạo `SalesInvoicesDataAdapter`: Định dạng ngày `dd/mm/yyyy`, chuẩn hóa tên khách `BK ...`, tính toán tự động 3 dòng cho `Bảng Phân Bổ Tiền Tệ` (`Bank transfer/ Chuyển khoản`, `Cash/ Tiền mặt`, `Credit Card/ Cà thẻ`) và dòng tổng theo công ty.
+    - Cập nhật an toàn `ReportDatasetEnricher` chỉ bổ sung nhánh điều kiện độc lập cho `SALES_INVOICES` và `RPT_SALES_INVOICES` (Zero side-effects).
+    - Tạo `sales_invoices_reference.php`: Khổ ngang A4 landscape, header 2 tầng, gom nhóm ngày, dòng tổng phụ `Số lượng:` và `Tổng của Ngày`, dòng tổng toàn bảng, và bảng phân bổ tiền tệ 55% căn giữa.
+  - **Kiểm thử & Xác thực**:
+    - `SalesInvoicesReportTest.php`: Đạt 5/5 tests (56 assertions, 1 skipped do sqlite).
+    - Kiểm thử procedure và rendering thực tế trên MySQL runtime: Tạo HTML chuẩn 100% không lỗi.
+    - `VipGuestsReportTest.php`: 3/3 passed (68 assertions).
+    - `SharedReportLayoutTest.php`: 2/2 passed (4 assertions).
+    - `npm run build`: Frontend build thành công 100% trong 7.92s.
+    - Tạo tài liệu đầy đủ tại `.codex/docs/reports/sales_invoices.md`.
+  - **Chuẩn hóa chỉ số thuộc tính trong Form Designer**:
+    - Bổ sung tường minh các thuộc tính `marginTop`, `marginBottom`, `marginLeft`, `marginRight`, `paddingTop`, `paddingBottom`, `paddingLeft`, `paddingRight` cho tất cả các block.
+    - Sửa bảng phụ tiền tệ từ CSS shorthand `margin: 0 auto` sang `marginLeft: auto`, `marginRight: auto`, `marginBottom: 14px`, `borderWidth: 1px`, `borderColor: #aeb5c0` để Form Designer hiển thị chuẩn xác từng ô thuộc tính.
+    - Bổ sung `headerStyle` (màu nền `#d9deea`, viền `#aeb5c0`, padding `3px 4px`, font `9.5px`) và `cellStyle` (viền `#aeb5c0`, padding `3px 4px`, font `9.5px`) cho 14 cột bảng chính và 4 cột bảng phân bổ tiền tệ.
+    - Đồng bộ khóa `groups` để Form Designer nhận diện và hiển thị trực quan dòng gom nhóm Ngày kèm chữ "Ngày:" xanh lá `#2e7d32`.
+    - Đồng bộ lại toàn bộ dữ liệu mẫu template mới trên cả 5 kết nối database (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Cải tiến & Hoàn thiện Form Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue))**:
+    - Khôi phục và nâng cấp tính năng chọn ô bảng Detail Table:
+      - Click chọn ô bất kỳ trong bảng Detail Table (tiêu đề cột `header`, ô dữ liệu `detail`, ô nhóm `group-cell`, ô tổng/tùy chỉnh `custom-cell`) ở cả 3 band (Header, Detail, Footer).
+      - Tô viền đen đậm chuẩn mực (`outline: 2px solid #000000; outline-offset: -2px; box-shadow: inset 0 0 0 2px #000000;`).
+      - Hỗ trợ giữ phím `Ctrl`/`Command` để chọn nhiều ô cùng lúc (multi-select).
+      - Tự động nạp thuộc tính ô/cột lên cả thanh Floating Toolbar và Bảng Thuộc Tính (Right Panel) để chỉnh sửa trực tiếp: In đậm, In nghiêng, Gạch chân, Cỡ chữ, Căn lề, Màu chữ, Màu nền, Tiêu đề cột/Nội dung ô.
+    - Bổ sung ô nhập `Chiều rộng (Width)` và `Chiều cao (Height)` trên Bảng Thuộc Tính (Right Panel) giúp chủ động điều chỉnh độ rộng khối theo phần trăm (`100%`, `55%`) hoặc pixel (`300px`), tránh hiểu nhầm do margin.
+    - Cập nhật mẫu [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php) cho khối `sales_invoices_allocation_table` lên độ rộng `width: 100%`, `marginLeft: 0px`, `marginRight: 0px` và đồng bộ thành công vào DB của tất cả các chi nhánh.
+    - Kiểm thử tự động:
+      - `TemplateEditorModalDetailTable.test.js`: 4/4 passed (100%).
+      - `TemplateEditorModalPageLayout.test.js`: 5/5 passed (100%).
+      - `SalesInvoicesReportTest.php`: 5/5 passed.
+      - `npm run build`: Build frontend thành công 100% không lỗi.
 
-- **2. Cập nhật đồng bộ Eloquent Models Casts**:
-  - [ServiceBill.php](file:///d:/PMS/backend/app/Models/ServiceBill.php), [ServiceBillDetail.php](file:///d:/PMS/backend/app/Models/ServiceBillDetail.php), [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php): Cập nhật toàn bộ `decimal:6` thành `decimal:2`.
-  - [BookingRoomService.php](file:///d:/PMS/backend/app/Models/BookingRoomService.php), [Company.php](file:///d:/PMS/backend/app/Models/Company.php), [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php), [HousekeepingServiceBill.php](file:///d:/PMS/backend/app/Models/HousekeepingServiceBill.php): Chuẩn hóa toàn bộ các trường tiền và số lượng còn lại về `decimal:2`.
+## [2026-09-17] - Chuẩn hóa cỡ chữ (fontSize: 9px) và padding ô trong content_json Báo cáo dự kiến khách ăn sáng
+### Module: Cấu hình báo cáo & Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php))
 
-- **3. Kiểm thử**:
-  - Chạy 64/64 unit & feature tests liên quan thuế phí, hóa đơn, folio, night audit và buồng phòng: Passed 100% (329 assertions).
-  - Sẵn sàng để chạy `php artisan migrate:fresh --seed` hoặc reset db mà không cần migration vá phụ.
+- **Bối cảnh & Vấn đề**:
+  - `content_json` trước đó chưa thiết lập thuộc tính `fontSize` rõ ràng ở cấp block bảng, tiêu đề cột (`headerStyle`), ô dữ liệu (`cellStyle`), nhóm (`headerCells`) và hàng tổng (`customRows`).
+  - Khi không khai báo `fontSize`, Form Designer và trình duyệt dùng cỡ chữ mặc định (13px–16px) khiến chữ trong bảng bị to quá so với hệ thống cũ.
+  - Padding ô trước đó đặt `6px 8px`, làm chiều cao mỗi dòng tăng lên ~32px (chuẩn legacy là padding `4px 4px`, chiều cao dòng ~18–20px).
+- **Đã hoàn thành**:
+  - Cấu hình đồng bộ `fontSize: '9px'`, padding `4px 4px` vào `content_json` của 4 template reference:
+    - Block bảng chính: `style: { width: '100%', fontSize: '9px', borderCollapse: 'collapse' }`.
+    - Tất cả các cột: `headerStyle.fontSize: '9px'`, `cellStyle.fontSize: '9px'`, padding `4px 4px`.
+    - Tất cả header cells của nhóm: `style.fontSize: '9px'`.
+    - Toàn bộ custom rows (tổng phụ và tổng cộng): `style.fontSize: '9px'`, padding `4px 4px`.
+    - Bảng thống kê theo quốc gia: `style.fontSize: '9px'`, `columns` header/cell `fontSize: '9px'`.
+    - Khối chữ ký: `fontSize: '11px'`.
+  - Cập nhật database:
+    - Chạy migration `2026_09_17_183000` đồng bộ `content_json` mới vào bảng `templates` trên cả 5 connection (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+  - Kiểm thử & xác thực:
+    - Kiểm tra `check_all_font_sizes.php`: 100% 5 connection và cả 3 mẫu đều đạt `fontSize: 9px` và `padding: 4px 4px`.
+    - Backend unit test: `ExpectedBreakfastReportTest.php` đạt 7/7 passed.
+    - Frontend build: `npm run build` thành công 100%.
 
-## [2026-09-17] - Chuẩn hóa bóc tách thuế phí (Net, SC, ST, VAT) cho Service Bill Details & Sales Invoices theo vw_018
-### Module: Hóa đơn & Thuế phí ([TaxBreakdownService.php](file:///d:/PMS/backend/app/Services/TaxBreakdownService.php), [ServiceBillDetail.php](file:///d:/PMS/backend/app/Models/ServiceBillDetail.php), [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))
+## [2026-09-17] - Khắc phục lỗi Form Designer làm mất kiểu dáng và màu sắc Báo cáo dự kiến khách ăn sáng khi lưu phiên bản
+### Module: Cấu hình báo cáo & Báo cáo phòng ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue), [expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php))
 
-- **1. Xây dựng dịch vụ bóc tách thuế phí chuẩn kế toán ([TaxBreakdownService.php](file:///d:/PMS/backend/app/Services/TaxBreakdownService.php))**:
-  - Áp dụng công thức chuẩn từ [vw_018.sql](file:///d:/PMS/view%20PMS/vw_018.sql) và Luật Thuế Việt Nam:
-    + Đặt $s = \frac{\text{ServiceCharge}}{100}$, $e = \frac{\text{SpecialTax}}{100}$, $t = \frac{\text{Tax}}{100}$.
-    + Giá gốc thuần trước thuế phí: $Net = \frac{Amount}{(1+s) \times (1+e) \times (1+t)}$.
-    + Phí dịch vụ: $SC = Net \times s$.
-    + Thuế TTĐB: $ST = (Net + SC) \times e = Net \times (1+s) \times e$.
-    + Thuế GTGT: $VAT = Amount - (Net + SC + ST)$ (bù trừ làm tròn để triệt tiêu sai số 1 đồng).
-    + Đảm bảo đẳng thức bất biến: $Net + SC + ST + VAT = Amount$.
-  - Hỗ trợ số lượng (Quantity), số âm (khấu trừ ăn sáng/giảm trừ) và các mức thuế suất khác nhau.
+- **Bối cảnh & Nguyên nhân**:
+  - Khi người dùng vào Form Designer xem/sửa mẫu báo cáo ăn sáng và bấm "Lưu phiên bản", hệ thống tái biên dịch HTML từ `content_json` qua hàm `compileHtml()`.
+  - Trước đó, các thuộc tính style (`backgroundColor: '#dee2ed'`, `border: '1px solid #cbd5e1'`, `color: '#b82c2c'`, `color: '#1976d2'`, độ rộng 70% căn giữa cho bảng quốc gia) chỉ nằm ở chuỗi HTML tĩnh ban đầu mà chưa được cấu hình chi tiết vào `content_json` (`headerStyle`, `cellStyle`, `headerCells`, `customRows[].cells[].style`, `style`).
+  - Hàm `compileBlockToHtml` trong `TemplateEditorModal.vue` khi sinh thẻ `<table>` chưa gắn `class` (`tableClassName`).
+  - Do đó, khi lưu lại phiên bản, HTML tái tạo bị mất màu nền header và bảng thống kê quốc gia bị tràn 100% thay vì 70% căn giữa.
+- **Đã hoàn thành**:
+  - **Sửa file dùng chung `TemplateEditorModal.vue`** (đã được user phê duyệt):
+    - Bổ sung `class="${b.tableClassName || b.className || ''}"` vào thẻ `<table>` khi biên dịch block `table`.
+  - **Cấu hình toàn diện thuộc tính Design vào `content_json` trong 4 Template Providers**:
+    - `headerStyle`: `{ backgroundColor: '#dee2ed', border: '1px solid #cbd5e1', textAlign: 'center', fontWeight: 'bold' }`.
+    - `cellStyle`: `{ border: '1px solid #cbd5e1', textAlign: 'center' }` (cột chuỗi căn `left`).
+    - `headerCells`: cấu hình cho nhóm `DateGroup` (chữ "Ngày :" đỏ `#b82c2c`, ngày đen, viền) và `RoomType` (chữ xanh `#1976d2` in hoa, viền).
+    - `customRows`: cấu hình `style` nền `#dee2ed`, viền `1px solid #cbd5e1` cho toàn bộ các ô hàng tổng `date_subtotal` và `report_total`.
+    - Bảng thống kê quốc gia: cấu hình `style: { width: '70%', marginLeft: 'auto', marginRight: 'auto' }`, header và cells nền `#dee2ed`, viền `1px solid #cbd5e1`.
+    - Khối chữ ký: 2 cột `Bộ Phận FO` và `Bộ Phận F&B` in đậm căn giữa.
+  - **Đồng bộ Database Migration**:
+    - Cập nhật migration `2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php` và chạy cập nhật thành công trên cả 5 database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Kiểm thử**:
+    - Kiểm tra tái biên dịch Form Designer: HTML giữ nguyên 100% màu nền `#dee2ed`, viền `#cbd5e1`, chữ đỏ `#b82c2c`, chữ xanh `#1976d2`, hàng tổng, và bảng quốc gia có `width: 70%; margin: auto`.
+    - Backend unit test: `ExpectedBreakfastReportTest.php` đạt 7/7 tests (84 assertions).
+    - Frontend production build: `npm run build` thành công 100% trong 5.93s.
 
-- **2. Cập nhật chi tiết bill dịch vụ `service_bill_details` (SP3001)**:
-  - **[BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php)**:
-    + Tự động tính và điền đầy đủ 4 cột `OriginalRate`, `ServiceChargeAmount`, `SpecialTaxAmount`, `TaxAmount` khi tạo bill tiền phòng, tiền ăn sáng, giảm trừ tiền phòng, dịch vụ buồng phòng, phụ thu và dịch vụ phát sinh khác.
-  - **[NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php)**:
-    + Tự động tính và lưu 4 thành phần thuế phí chi tiết khi chạy đêm phòng tự động (`autoChargeRoomNight`) và khi tách lại dịch vụ cũ (`splitOldServices`).
+## [2026-09-17] - Chuẩn hóa toàn bộ thông số UX/UI Báo cáo dự kiến khách ăn sáng theo hệ thống cũ vào Form Designer (bảng templates)
+### Module: Báo cáo phòng / Báo cáo ăn sáng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php), [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php), [expected_breakfast/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/expected_breakfast/README.md))
 
-- **3. Cập nhật tạo Hóa đơn bán hàng `sales_invoices` (SP3003)**:
-  - **[PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php)**:
-    + Gom các bill dịch vụ được thanh toán và tổng hợp chuẩn theo `TaxBreakdownService`.
-    + Đảm bảo `original_rate + service_charge_amount + special_tax + tax == amount` trên hóa đơn bán hàng.
+- **Đã hoàn thành**:
+  - **Phân tích giao diện pixel-level từ file ảnh legacy**:
+    - Trích xuất và đối chiếu 5 hình ảnh thực tế từ `DANH MỤC BÁO CÁO.xlsx`: `BC_dự_kiến_khách_AS_1.png` đến `BC_dự_kiến_khách_AS_4.png` và `BC_dự_kiến_khách_AS_LT_1.png`.
+    - Xác định toàn bộ thông số chuẩn: Khổ A4 Portrait, lề 6mm/6mm/8mm/8mm, màu nền header và tổng `#dee2ed`, viền `1px solid #cbd5e1`.
+    - Tiêu đề nhóm `DateGroup` chữ "Ngày :" màu đỏ `#b82c2c`, ngày màu đen; nhóm `RoomType` chữ xanh dương `#1976d2` in hoa, in đậm; nhóm `DetailRoom` (mẫu chi tiết) chữ xanh dương `#1976d2` in đậm.
+    - Căn lề số lượng khách căn giữa (`center`).
+    - Hàng tổng hiển thị số phòng ở Cột 2 (`{{group.count}}` cho hàng tổng ngày, `{{aggregate.rows.count|number}}` cho hàng tổng cộng).
+    - Bổ sung khối chữ ký chân trang (`Bộ Phận FO` và `Bộ Phận F&B`) in đậm căn giữa, margin-top 35px.
+  - **Cập nhật Template Providers**:
+    - Chuẩn hóa cấu trúc blocks, HTML, CSS và metadata lề cho cả 3 mẫu: `EXPECTED_BREAKFAST_ARMY_SUMMARY`, `EXPECTED_BREAKFAST_DTX_SUMMARY`, `EXPECTED_BREAKFAST_DETAIL`.
+    - Khắc phục mẫu chi tiết hiển thị số phòng `{{row.Room}}` ở cột Phòng của dòng chi tiết.
+  - **Lưu toàn bộ cấu hình vào Form Designer (Database Migration)**:
+    - Tạo migration [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php).
+    - Chạy migrate thành công trên cả 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+    - Không hardcode bất kỳ giá trị style/màu sắc nào trong code xử lý backend/frontend.
+  - **Kiểm thử & Build**:
+    - Unit test [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php): 7/7 tests passed (84 assertions) đạt 100%.
+    - Frontend build: `npm run build` thành công không có lỗi (10.24s).
+- **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+  - 0 thay đổi đến Stored Procedure nghiệp vụ `rpt_expected_breakfast`, `rpt_expected_breakfast_1`, `rpt_expected_breakfast_2`.
+  - 0 thay đổi file dùng chung frontend hoặc backend core.
 
-- **4. Kiểm thử**:
-  - Unit Test [TaxBreakdownServiceTest.php](file:///d:/PMS/backend/tests/Unit/TaxBreakdownServiceTest.php): 7/7 tests passed (38 assertions).
-  - Feature Tests: 61/61 tests passed (374 assertions) bao gồm `NightAuditTest`, `SalesInvoiceSettlementTest`, `SalesInvoiceApiTest`, `BookingRoomServiceFolioTest`, `CheckoutBusinessRulesTest`.
-  - Frontend `npm run build`: Thành công 100% (built in 8.53s).
+## [2026-09-17] - Nâng cấp Form Designer: Chọn ô viền đen, Multi-select và nạp thuộc tính ô Detail Table lên Toolbar
+### Module: Cấu hình báo cáo / Form Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue), [TemplateEditorModalDetailTable.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalDetailTable.test.js))
 
-## [2026-09-17] - Khắc phục lỗi Hủy phòng & Lấy lại phòng tại màn hình Đặt phòng
-### Module: Đặt phòng / Quản lý phòng Booking ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))
+- **Đã hoàn thành**:
+  - **Tô đen quanh viền ô được chọn**:
+    - Khi click vào bất kỳ ô nào thuộc bảng Detail Table (Header cột `th`, Ô dữ liệu `td`, Tiêu đề nhóm `gh`, Hàng tùy chỉnh `cr`), ô được gắn class `.selected-detail-cell` với viền đen rõ nét (`outline: 2px solid #000000 !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 2px #000000 !important; position: relative !important; z-index: 20 !important;`) bảo đảm không làm biến dạng hay xê dịch kích thước ô.
+    - Áp dụng đồng bộ trên cả 3 band render Detail Table (Header Band, Detail Band, Footer Band).
+  - **Hỗ trợ chọn nhiều ô (Multi-select)**:
+    - Click thông thường: Chọn 1 ô duy nhất.
+    - Giữ phím `Ctrl`, `Cmd` hoặc `Shift` + click: Cho phép chọn thêm hoặc bỏ chọn từng ô vào tập hợp đang chọn.
+  - **Nạp & đồng bộ thuộc tính ô lên Toolbar**:
+    - Nạp tự động thuộc tính ô lên thanh công cụ Canvas (`v-else-if="isDetailTargetActive"`).
+    - **Nội dung / Biến**: Input sửa nhanh chữ hoặc tên biến bind dữ liệu (`detailContent`).
+    - **In đậm (Bold)**: Trạng thái active sáng nút `B`, click để bật/tắt `fontWeight: bold` cho toàn bộ các ô đang chọn.
+    - **In nghiêng (Italic)**: Trạng thái active sáng nút `I`, click để bật/tắt `fontStyle: italic` cho toàn bộ các ô đang chọn.
+    - **Gạch chân (Underline)**: Trạng thái active sáng nút `U`, click để bật/tắt `textDecoration: underline` cho toàn bộ các ô đang chọn.
+    - **Cỡ chữ**: Dropdown chọn cỡ chữ (`fontSize`), tự động hiển thị cỡ chữ hiện tại của ô.
+    - **Màu chữ**: Color picker (`color`) hiển thị chính xác mã màu chữ hiện tại của ô.
+    - **Màu nền ô**: Color picker (`backgroundColor`) hiển thị chính xác mã màu nền ô hiện tại kèm nút "Xóa nền".
+    - **Căn lề**: Dropdown chọn căn lề Trái (`left`), Giữa (`center`), Phải (`right`), Đều (`justify`).
+    - **Đặt lại**: Nút reset toàn bộ định dạng ô về mặc định.
+  - **Đồng bộ renderer HTML**:
+    - Cập nhật hàm `customTableCellTextStyle` bổ sung `fontStyle` và `textDecoration` để custom row và group header hiển thị đúng kiểu dáng khi preview và xuất in.
+  - **Kiểm thử**:
+    - Viết file test [TemplateEditorModalDetailTable.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalDetailTable.test.js): 4/4 tests passed.
+    - Toàn bộ suite `TemplateEditorModal*.test.js`: 9/9 tests passed.
+    - Frontend production build: `npm run build` thành công 100% (6.67s).
+- **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+  - 0 file backend/migration bị thay đổi.
+  - 0 ảnh hưởng đến logic in ấn, API hay cấu trúc template lưu trữ.
 
-- **1. Khắc phục lỗi báo thành công nhưng không thấy cộng phòng sau khi hủy**:
-  - **Nguyên nhân**:
-    - Khi booking bị hủy hết phòng, bảng hiển thị nhóm `TÌNH TRẠNG: HỦY (x)`. Khi vào Tab "Lấy phòng" lấy lại phòng mới (`status = 0`), logic `filteredActiveRooms` trước đó tự động lọc bỏ toàn bộ phòng hủy (`status = 3`) ngay khi có phòng hoạt động, làm các phòng đã hủy biến mất và bảng chỉ còn các phòng mới. Người dùng thấy tổng số dòng phòng hiển thị không đổi nên tưởng hệ thống không cộng phòng.
-    - Backend `addRooms` không kiểm tra `quantity > 0`, nếu gửi mảng rỗng vẫn trả về HTTP 200 `message: 'Thêm phòng thành công!'`.
-  - **Khắc phục**:
-    - **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
-      + Giữ nguyên các phòng đã hủy trong `filteredActiveRooms` để hiển thị minh bạch dưới nhóm riêng `TÌNH TRẠNG: HỦY` (header hồng `#fbd9ee`). Khi lấy thêm phòng mới, bảng hiển thị đồng thời cả nhóm `HỦY` và nhóm `ĐĂNG KÝ`, người dùng thấy rõ số phòng mới được cộng vào.
-      + Trong `roomsTotalSummary`: Loại trừ cả phòng hủy (`status = 3`) và phòng chuyển (`status = 100`) để không tính tiền vào tổng chi phí phòng hoạt động hiện tại.
-      + Tại `handleSaveNewBooking`: Thêm kiểm tra trước khi gửi API, nếu tổng số lượng phòng của `roomAddDraft <= 0`, hiển thị cảnh báo `uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')` và dừng lại.
-    - **Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))**:
-      + Trong `validateAddOnlyRoomAllocations`: Kiểm tra bắt buộc tổng `quantity > 0`, nếu `<= 0` ném Exception 422: `'Vui lòng chọn số lượng phòng cần thêm!'`.
-      + Trong `addRooms`: Tự động đồng bộ lại trạng thái booking qua `BookingStatusSyncService::sync($booking, Booking::STATUS_RESERVATION)` khi thêm phòng vào booking đã hủy.
+## [2026-09-17] - Chuẩn hóa thông số Design và format Báo cáo lịch sử khóa phòng OOO & OOS theo hệ thống cũ (legacy sp_057 & sp_059)
+### Module: Báo cáo buồng phòng ([ooo_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/ooo_lock_history_reference.php), [oos_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/oos_lock_history_reference.php), [2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php), [OooLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OooLockHistoryReportTest.php), [OosLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OosLockHistoryReportTest.php), [ooo_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ooo_lock_history.md), [oos_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/oos_lock_history.md))
 
-- **2. Khắc phục lỗi nút tăng số lượng chỉ cho tăng tối đa 2 phòng**:
-  - **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
-    - Chuẩn hóa nút tăng giảm tại Tab "Lấy phòng": Chuyển sang `(Number(row.quantity) || 0) + 1` và `(Number(row.quantity) || 0) - 1`, xử lý triệt để các trường hợp null/NaN/chuỗi.
-    - Loại bỏ mọi ràng buộc `max` hoặc giới hạn theo số lượng phòng cũ của booking, cho phép tăng số lượng theo đúng nhu cầu và phòng trống thực tế (`availableRooms`).
+- **Đã hoàn thành**:
+  - **Phân tích UX/UI thực tế từ ảnh chụp legacy**:
+    - Đối chiếu 4 ảnh chụp (`BC_lịch_sử_khóa_OOO_1.png`, `BC_khóa_phòng_ooo_1.png`, `BC_lịch_sử_khóa_phòng_OOS_1.png`, `BC_khóa_phòng_oos_1.png`).
+    - Khổ giấy thực tế là **A4 Portrait** (khổ dọc, ~210mm x 297mm), lề 8mm/8mm/8mm/8mm (trước đó thiết kế A4 Landscape là chưa chính xác).
+    - Cột Số phòng: Căn giữa, chữ in đậm, màu xanh lá cây đậm `#2e7d32`.
+    - Định dạng ngày giờ: `dd/mm/yyyy - HH:mm` (có dấu nối ` - ` ở giữa ngày và giờ).
+    - Tiêu đề nhóm (`Locking` / `UnLock`): Chữ màu đen `#000000` in đậm, nền trắng (trước đó dùng `#851c1c` là sai).
+    - Hàng tổng phụ nhóm (Subtotal): Cột 1 `Tổng`, Cột 2 `{{group.count}}` (số phòng/dòng), nền `#dee2ed`.
+  - **Template Providers & Stored Procedures**:
+    - Chuẩn hóa template [ooo_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/ooo_lock_history_reference.php) và [oos_lock_history_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/oos_lock_history_reference.php):
+      - Đặt `page_orientation => portrait`, `page_size => a4`, margins 8mm.
+      - Thêm `cellStyle` cho cột `Phòng`: `color: #2e7d32`, `fontWeight: bold`, `textAlign: center`.
+      - Cấu hình gom nhóm `grouping` trường `GroupName` (chữ đen `#000000`).
+      - Cấu hình `customRows`: Hàng tổng phụ nhóm `scope: group`, `level: 0`, Cột 1 `Tổng`, Cột 2 `{{group.count}}`, nền `#dee2ed`.
+    - Cập nhật định dạng ngày giờ `DATE_FORMAT(..., '%d/%m/%Y - %H:%i')` trong cả 2 Stored Procedures `rpt_ooo_lock_history` và `rpt_oos_lock_history`.
+    - Cập nhật đồng bộ các migration gốc [2026_08_27_160000_create_ooo_lock_history_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_08_27_160000_create_ooo_lock_history_report.php) và [2026_08_28_170000_create_oos_lock_history_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_08_28_170000_create_oos_lock_history_report.php).
+  - **Tạo Migration đồng bộ Multi-DB**:
+    - Tạo migration [2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_172000_align_ooo_oos_reports_with_legacy_design.php) cập nhật SP và nạp lại template chuẩn Designer v1 vào bảng `templates` trên toàn bộ 7 database (`pms_system`, `pms_data`, `pms_db`, `pms_hkt1` đến `pms_hkt4`).
+    - Chạy `php artisan migrate:all --force` thành công trên cả 7 database.
+  - **Kiểm thử & Tài liệu**:
+    - [OooLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OooLockHistoryReportTest.php) và [OosLockHistoryReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/OosLockHistoryReportTest.php) đạt 5/5 tests (40 assertions).
+    - `npm run build` thành công 100% (7.51s).
+    - Cập nhật tài liệu [.codex/docs/reports/ooo_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ooo_lock_history.md) và [.codex/docs/reports/oos_lock_history.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/oos_lock_history.md).
+  - **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+    - 0 file dùng chung backend/frontend bị thay đổi.
+    - 0 logic khóa phòng hoặc bảng dữ liệu nghiệp vụ bị thay đổi.
 
-- **3. Kiểm thử**:
-  - `npm run build`: Compile frontend thành công 100% (built in 10.45s).
-  - Feature tests backend:
-    + `BookingAllocationConsistencyTest.php`: 5/5 tests passed (17 assertions).
-    + `BookingBusinessRulesTest.php`: 24/24 tests passed (116 assertions).
+## [2026-09-17] - Triển khai Báo cáo khách VIP (VIP_GUESTS / legacy sp_295)
+### Module: Báo cáo khách ([vip_guests_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/vip_guests_reference.php), [2026_09_17_170000_create_vip_guests_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_170000_create_vip_guests_report.php), [VipGuestsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/VipGuestsReportTest.php), [vip_guests.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/vip_guests.md))
 
-## [2026-09-16] - Kiểm tra & Xác nhận nghiệp vụ Tab Phòng đến màn hình Sang ngày (Night Audit / Day Close)
-### Module: Lễ tân / Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue), [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [NightAuditTest.php](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php))
+- **Đã hoàn thành**:
+  - **Báo cáo khách VIP (`VIP_GUESTS` - Row 131 / legacy `sp_295`)**:
+    - Stored Procedure `rpt_vip_guests`: Tham số `p_from_date`, `p_to_date`, `p_guest_type`. Lọc khoảng lưu trú (`arrival_date <= p_to_date AND departure_date >= p_from_date`); lọc loại khách VIP (loại trừ `RegularGuest` / `6`); join bảng `rooms` qua `r.room_number = br.room_number`; loại trừ phòng nội bộ (`is_internal = 0`), số phòng ảo (`room_number NOT LIKE '0%'`), booking và phòng bị xóa mềm. Migration đồng bộ `2026_09_17_171000_fix_vip_guests_report_procedure.php` đã cập nhật thành công trên cả 7 database.
+    - Khởi động lại service Reverb WebSocket daemon trên cổng 8090.
+    - Template `vip_guests_reference.php`: Chuẩn hóa 100% thuộc tính giao diện theo 2 ảnh screenshot hệ thống cũ (`Báo_cáo_khách_VIP_1.png` và `BC_khách_VIP_1.png`):
+      - Khổ giấy: A4 Landscape (`landscape`), lề 6mm top/bottom, 5mm left/right.
+      - Khối tiêu đề: Logo khách sạn (30%), Thông tin khách sạn/nhân viên/ngày in (70%), divider ngang mảnh `#000000`, tiêu đề căn giữa in đậm, kỳ báo cáo.
+      - Bảng 11 cột: `Tên Khách` (16%), `Tình Trạng` (8%), `Đăng Ký` (6.5%), `Phòng` (6.5%), `Loại Khách` (6.5%), `Ngày Đến` (9.5%), `Ngày Đi` (9.5%), `Giá Phòng` (8%), `Người Lớn/Trẻ Em` (6.5%), `Công Ty` (10.5%), `Ghi Chú` (12.5%).
+      - Gom nhóm 1 cấp theo `Loại Khách` (`GuestType`): Tiêu đề nhóm nền trắng, chữ đỏ `#ff1414`; Dòng tổng phụ nhóm (Subtotal) `vip_guests_group_total_row` (`scope: group`, `level: 0`, `{{group.count}}`) và Dòng tổng cộng cuối bảng (Grand Total) `vip_guests_grand_total_row` (`scope: table`, `{{aggregate.rows.count|number}}`) nền xám xanh `#dee2ed`.
+      - Bộ lọc bên trái: `Ngày` (date range) và `Loại khách` (dropdown: Tất cả, VIP 1, VIP 2, VIP 3, VIP 4).
+    - Cấu hình chuẩn Form Designer v1 (`content_json`, `content_html`, `css`) được nạp trực tiếp qua migration.
+  - **Cam kết không ảnh hưởng hệ thống (Zero Impact)**:
+    - 0 file dùng chung backend và 0 file dùng chung frontend bị thay đổi.
+    - 0 bảng dữ liệu nghiệp vụ bị thay đổi cấu trúc.
+  - **Multi-DB & Kiểm thử**:
+    - Chạy `php artisan migrate:all --force` thành công trên cả 7 database: `pms_system`, `pms_data`, `pms_db`, `pms_hkt1` đến `pms_hkt4`.
+    - Test [VipGuestsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/VipGuestsReportTest.php) đạt 3/3 tests (68 assertions).
+    - Frontend build `npm run build` thành công 100% trong 6.84s.
+    - Tạo tài liệu kỹ thuật [.codex/docs/reports/vip_guests.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/vip_guests.md).
 
-- **Xác nhận tính năng**: Nghiệp vụ loại bỏ phòng có `status = 100` (`BookingRoom::STATUS_MOVED` - phòng đã chuyển/gộp) khỏi Tab Phòng đến và Điều kiện chặn sang ngày **ĐÃ ĐƯỢC THỰC HIỆN ĐẦY ĐỦ VÀ CHẶT CHẼ** ở cả Frontend lẫn Backend:
-  - **Frontend ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))**:
-    + Hàm `checkRoomStatus()` nhận diện `isMoved = true` khi `status = 100`, `move_room` khác null.
-    + Hàm `processRealBookings()` bỏ qua hoàn toàn các phòng có `status = 100`, không tính vào số lượng `arrivalCount` (không làm chặn nút "Sang ngày" `canRollDay`).
-    + Tab "Phòng đến" (`activeFilterTab === 'arrivals'`) chỉ hiển thị các phòng có `arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100`, loại trừ 100% phòng đã chuyển.
-  - **Backend ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))**:
-    + API `GET /api/night-audit/check-status` (dòng 189) và API `POST /api/night-audit/run` (dòng 472): Đều có điều kiện `->where('status', BookingRoom::STATUS_BOOKED)->where('status', '!=', BookingRoom::STATUS_MOVED)`. Các phòng `status = 100` hoàn toàn không bị tính vào `pendingCheckIns` và không chặn sang ngày.
-    + Đêm phòng tự động (dòng 492): Loại trừ `STATUS_MOVED`, không phát sinh tiền phòng trùng lặp cho phòng cũ đã chuyển.
-  - **Kiểm thử tự động ([NightAuditTest.php](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php))**:
-    + Bổ sung test `test_moved_room_status_100_is_ignored_by_check_status_and_run_audit`: Xác nhận phòng có ngày đến hôm nay nhưng `status = 100` không bị tính vào `pending_checkins_count` và quá trình `runNightAudit` diễn ra trơn tru không bị chặn.
-    + 6/6 tests passed (32 assertions).
+## [2026-09-16] - Triển khai 2 Báo cáo: Báo cáo yêu cầu đặc biệt (ROOM_SPECIAL_REQUESTS) & Báo cáo công nợ đã thanh toán (PAID_COMPANY_DEBTS)
+### Module: Báo cáo phòng & Báo cáo công nợ ([room_special_requests_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_special_requests_reference.php), [paid_company_debts_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/paid_company_debts_reference.php), [PaidCompanyDebtsDataAdapter.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/PaidCompanyDebtsDataAdapter.php), [2026_09_16_180000_create_room_special_requests_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_16_180000_create_room_special_requests_report.php), [2026_09_16_190000_create_paid_company_debts_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_16_190000_create_paid_company_debts_report.php))
 
+- **Đã hoàn thành**:
+  - **Báo cáo yêu cầu đặc biệt (`ROOM_SPECIAL_REQUESTS` - Row 122 / legacy `sp_297`)**:
+    - Stored Procedure `rpt_room_special_requests`: Hỗ trợ 3 kiểu ngày lọc (`p_date_type`: 1 - Ở, 2 - Đến, 3 - Đi), lọc phòng, user, thứ tự sắp xếp; loại trừ phòng ảo/nội bộ (`is_virtual=0`, `is_internal=0`) và booking hủy (`status <> 99`). Nối các yêu cầu đặc biệt bằng `GROUP_CONCAT(DISTINCT sr.name SEPARATOR ' - ')`.
+    - Template `room_special_requests_reference.php`: Khổ giấy A4 ngang (`landscape`), 9 cột chi tiết, gom nhóm theo `BookingId` hiển thị `Đăng Ký: [Mã]` bên trái và `Ghi Chú: [Ghi chú booking]` bên phải, kèm dòng chân nhóm hiển thị tổng số dòng/phòng.
+    - Cấu hình chuẩn Form Designer v1 (`content_json`, `content_html`, `css`): Cột, font, màu sắc và padding chuẩn mực được lưu sẵn từ migration.
+    - Test [RoomSpecialRequestsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/RoomSpecialRequestsReportTest.php) đạt 3/3 tests (32 assertions).
+  - **Báo cáo công nợ đã thanh toán (`PAID_COMPANY_DEBTS` - Row 148 / legacy `sp_294`)**:
+    - Stored Procedure `rpt_paid_company_debts`: Kết hợp `payments`, `payment_debt_settlements`, `sales_invoices`, `companies`; tính toán phân bổ các cột tiền theo tỷ lệ thanh toán (Thu tiền, Tạm thu, Trừ cọc, Giảm trừ, Phải thu, Đã thu, Công nợ).
+    - Adapter [PaidCompanyDebtsDataAdapter.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/PaidCompanyDebtsDataAdapter.php) & tích hợp [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php): Tự động tính toán bảng kê hình thức thanh toán (`payment_method_summary`), nạp tên nhân viên thu nợ, và tính các biến tổng tiền Grand Total.
+    - Template `paid_company_debts_reference.php`: Khổ giấy A4 ngang (`landscape`), header 2 tầng 16 cột chi tiết, gom nhóm 2 cấp: Ngày TT (`PaymentDateGroup`, đỏ `#b91c1c`) -> Công ty (`CompanyGroup`, đen `#0f172a`), dòng tổng phụ theo từng cấp, sub-table `BẢNG KÊ HÌNH THỨC THANH TOÁN` và khối 4 chữ ký chuẩn kế toán.
+    - Cấu hình chuẩn Form Designer v1 (`content_json`, `content_html`, `css`) được nạp trực tiếp qua migration.
+    - Test [PaidCompanyDebtsReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/PaidCompanyDebtsReportTest.php) đạt 4/4 tests (52 assertions).
+  - **Hệ thống Database & Multi-DB**:
+    - Chạy `php artisan migrate:all --force` thành công trên cả 7 database: `pms_system`, `pms_data`, `pms_db`, `pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`.
+  - **Kiểm thử toàn diện**:
+    - Toàn bộ suite báo cáo `php artisan test --filter=Report` đạt 148/148 tests (1.316 assertions), không gây bất kỳ lỗi hồi quy nào.
+    - Frontend production build `npm run build` thành công 100% trong 4.69s.
+    - Tạo tài liệu nghiệp vụ đầy đủ: [.codex/docs/reports/room_special_requests.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/room_special_requests.md) và [.codex/docs/reports/paid_company_debts.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/paid_company_debts.md).
 
-## [2026-09-16] - Hoàn thiện 3 nghiệp vụ Room Map & Lễ tân: Icon đặc biệt, Ràng buộc Hủy nhận phòng & Điều hướng Hóa đơn
-### Module: Sơ đồ phòng & Lễ tân ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+## [2026-09-15] - Tách độc lập 2 Báo cáo dự kiến khách ăn sáng 1 và 2 (EXPECTED_BREAKFAST_1 & EXPECTED_BREAKFAST_2)
+### Module: Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_15_140000_split_expected_breakfast_reports.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_140000_split_expected_breakfast_reports.php))
 
-- **1. Nghiệp vụ 1 - Vị trí Icon Birthday, Honeymoon, Extra Bed ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
-  - Gỡ bỏ khối icon nằm ở `top-1 left-1/2 -translate-x-1/2` gây đè lên số phòng (101, 105,...).
-  - Chuyển toàn bộ các icon đặc biệt (`birthday`, `honeymoon`, `extra-bed`) xuống hàng dưới cùng góc trái, đặt chung flex container ngang hàng với icon số lượng khách (`getGuestCount`).
-  - Cân chỉnh container trung tâm chứa thông tin phòng và tên khách (`top-[44%] -translate-y-1/2`, `truncate px-1`), tạo khoảng đệm an toàn phía dưới để tên khách không bao giờ đè lên các icon dưới đáy thẻ phòng.
+- **Đã hoàn thành**:
+  - **Tách riêng 2 Stored Procedures & 2 Data Sources**:
+    - Tạo `rpt_expected_breakfast_1` và data source `EXPECTED_BREAKFAST_1` phục vụ Mẫu 1 (Tổng hợp theo phòng theo legacy `sp_035`).
+    - Tạo `rpt_expected_breakfast_2` và data source `EXPECTED_BREAKFAST_2` phục vụ Mẫu 2 (Chi tiết khách trong phòng theo legacy `sp_032`).
+    - Tách biệt hoàn toàn thủ tục lưu trữ, tránh lỗi xung đột `report_sources_object_unique` và giới hạn kết nối MySQL PDO khi gọi lồng procedure.
+    - Chuẩn hóa kiểu dữ liệu: Chuyển `booking_room_id` trong các bảng tạm (`tmp_active_rooms`, `tmp_room_summary`, `tmp_guest_details`) từ `BIGINT` sang `VARCHAR(50)` khớp với kiểu thực tế của `booking_rooms.id` (chứa chuỗi mã phòng như `'G0000001'`), xử lý dứt điểm lỗi SQL 1366 / HTTP 422 trên MySQL.
+  - **Đăng ký 2 Báo cáo độc lập trên menu Báo cáo phòng**:
+    - **Báo cáo dự kiến khách ăn sáng 1** (`EXPECTED_BREAKFAST_1`): Sử dụng template `EXPECTED_BREAKFAST_1_STANDARD`, hiển thị 9 cột (`Mã ĐK`, `Phòng`, `Người Lớn`, `Trẻ em`, `Trẻ em MP`, `Tổng`, `Tên Khách Chính`, `Công ty`, `Ghi Chú`), gom nhóm `DateGroup` -> `RoomType`, kèm bảng phụ `THỐNG KÊ KHÁCH THEO QUỐC GIA`.
+    - **Báo cáo dự kiến khách ăn sáng 2** (`EXPECTED_BREAKFAST_2`): Sử dụng template `EXPECTED_BREAKFAST_2_STANDARD`, hiển thị 6 cột (`Phòng` để trống, `Tên Khách`, `Quốc Gia`, `Ngày Đến`, `Ngày Đi`, `Ghi Chú`), gom nhóm 3 cấp `DateGroup` -> `RoomType` -> Tiêu đề nhóm phòng `DetailRoom` (`Phòng [Số phòng] - BK [Mã BK] - [Công ty/Khách chính] - Người lớn: X - Trẻ em: Y - Trẻ em MP: Z - Trẻ em KAS: W`), từng dòng hiển thị chi tiết khách người lớn và trẻ em (`Chd. [Tên trẻ]`).
+  - **Migration & Multi-DB**:
+    - Tạo migration [2026_09_15_140000_split_expected_breakfast_reports.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_140000_split_expected_breakfast_reports.php) và chạy thành công trên cả 5 database (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+    - Đồng bộ `content_json` và `content_html` cho cả 2 template.
+  - **Dataset Enricher & Frontend**:
+    - [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php) hỗ trợ cả 2 mã `EXPECTED_BREAKFAST_1` và `EXPECTED_BREAKFAST_2`.
+  - **Kiểm thử**:
+    - Unit test [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php) đạt 5/5 tests (48 assertions).
+    - Toàn bộ suite báo cáo `php artisan test --filter=Report` đạt 139/139 tests (1.194 assertions).
+    - Frontend `npm run build` thành công 100%.
+    - Cập nhật tài liệu [.codex/docs/expected_breakfast/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/expected_breakfast/README.md).
 
-- **2. Nghiệp vụ 2 - Ràng buộc Hủy nhận phòng (Undo Check-in) & Chuẩn hóa Modal**:
-  - **Backend ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))**:
-    + Thêm điều kiện chặn hủy nhận phòng khi phòng đang thao tác đã phát sinh hóa đơn dịch vụ (`service_bills` có `Edit = 0`) hoặc thanh toán/đặt cọc (`payments` có `edit_flag = 0` và chưa xóa).
-    + Trả về cảnh báo 422: `"Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin"`.
-    + Chỉ cho phép hủy nhận phòng đối với những phòng vừa mới nhận trong ngày hệ thống (`actual_arrival_date == systemDate`); qua ngày chặn với thông báo `"Chỉ được hủy nhận phòng cho những phòng vừa mới nhận trong ngày."`.
-  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
-    + Cập nhật nội dung câu hỏi modal xác nhận: `"Vui lòng chọn tình trạng phòng sau khi thực hiện \"Hủy nhận phòng\""`.
-    + Loại bỏ nút **Đóng**, cung cấp 2 lựa chọn rõ ràng: **Dơ** (chuyển sang `vacant_dirty`) và **Chờ kiểm tra** (chuyển sang `vacant_clean`).
-    + Cập nhật toast thông báo thành công tương ứng với tình trạng phòng đã chọn.
-  - **Kiểm thử tự động ([UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php))**: 6/6 tests passed (15 assertions) bao phủ đầy đủ tất cả các trường hợp chặn và cho phép hủy nhận phòng.
+## [2026-09-15] - Triển khai Báo cáo dự kiến khách ăn sáng (EXPECTED_BREAKFAST) theo chuẩn legacy sp_035 & sp_032
+### Module: Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_15_130000_create_expected_breakfast_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_130000_create_expected_breakfast_report.php))
 
-- **3. Nghiệp vụ 3 - Điều hướng Menu chuột phải "Hóa đơn" và "Nhóm hóa đơn" ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
-  - Chuột phải vào phòng trên Room Map:
-    + Chọn **"Hóa đơn"**: Điều hướng vào đúng màn hình Trả phòng kèm mã booking và ID phòng (`/frontdesk?tab=checkout&bookingCode=...&roomId=...`). [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) tự động focus và chọn đúng phòng của hóa đơn.
-    + Chọn **"Nhóm hóa đơn"**: Điều hướng vào màn hình Trả phòng kèm mã booking (`/frontdesk?tab=checkout&bookingCode=...`) để mở toàn bộ hóa đơn của đăng ký.
-    + Phòng trống chưa có booking: Hiển thị cảnh báo nhắc nhở phù hợp thay vì chuyển trang sai nghiệp vụ.
+- **Đã hoàn thành**:
+  - **Khảo sát & Đối chiếu Stored Procedure legacy**:
+    - Truy vấn trực tiếp SQL Server `ProVistaDTXHotel` qua `sqlcmd` lấy định nghĩa đầy đủ của `sp_035` (Mẫu tổng hợp) và `sp_032` (Mẫu chi tiết khách trong phòng).
+    - Làm rõ quy tắc ngày ăn sáng: ngày báo cáo là ngày ăn sáng của khách (ví dụ vào ngày 1 ra ngày 3 thì ăn sáng ngày 2 và 3).
+    - Xử lý các điều kiện:
+      - Phòng ở thật (`PHÒNG Ở THẬT`): `report_date BETWEEN ptk.actual_arrival_date + 1 AND ptk.actual_checkout_date`, check-in sớm (`actual_arrival_time <= '00:01'`), hoặc Day Use.
+      - Phòng late check-in (`PHÒNG LATE CHECK IN`): chỉ tính khi `p_late_checkin = 1`, xét bảng `late_checkins` và hóa đơn có tiền phòng (`is_room_night = 1`).
+      - Xác định ăn sáng (`IsBreakfast`): `booking_rooms.breakfast = 1`, hoặc có dịch vụ ăn sáng ngoài (`BF`, `AL`, `BD`, `BE`, `BU`), hoặc trẻ em có ăn sáng.
+      - Phân loại trẻ em: tính phí (`breakfast = 1, is_free = 0, amount > 0`), miễn phí (`breakfast = 1, is_free = 1`), và không ăn sáng (`breakfast = 0`).
+  - **Template tham chiếu chuẩn**:
+    - Tạo [expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php) định nghĩa mẫu `EXPECTED_BREAKFAST_SUMMARY_STANDARD` (9 cột, gom nhóm theo `DateGroup`, tính tổng cộng và bảng phụ `THỐNG KÊ KHÁCH THEO QUỐC GIA`).
+    - Tạo [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php) định nghĩa mẫu `EXPECTED_BREAKFAST_DETAIL_STANDARD` gom nhóm 2 cấp `RoomType` -> `DetailRoom` và hiển thị chi tiết tên khách, quốc gia, ngày đến, ngày đi, ghi chú.
+  - **Migration & Stored Procedure**:
+    - Tạo migration [2026_09_15_130000_create_expected_breakfast_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_130000_create_expected_breakfast_report.php) tạo stored procedure `rpt_expected_breakfast`, đăng ký `report_data_sources`, `report_definitions`, UI schema với đầy đủ các bộ lọc (Ngày, Loại, Người dùng, Sắp xếp theo, Thứ tự, Tính phòng late checkin, Hiển thị thông tin phòng, Đăng ký theo nhóm) và 2 template.
+    - Đã chạy `php artisan migrate:all --force` thành công trên toàn bộ 7 database PMS.
+  - **Dataset Enrichment & Frontend Integration**:
+    - Cập nhật [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php) tự động tổng hợp bảng `country_summary` (Quốc gia, Số lượng, Tỉ lệ %) và `CountryTotalPax`.
+    - Cập nhật [ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue) bổ sung watcher tự động chuyển đổi giữa mẫu tổng hợp và mẫu chi tiết khi toggle checkbox `p_show_room_details` ("Hiển thị thông tin phòng").
+  - **Kiểm thử & Tài liệu**:
+    - Tạo unit test [ExpectedBreakfastReportTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ExpectedBreakfastReportTest.php) kiểm tra toàn diện migration, layout render 2 template, enricher và UI watcher (đạt 5/5 tests, 48 assertions).
+    - Chạy toàn bộ test Reports backend đạt 48/48 tests, 495 assertions.
+    - Chạy `npm run build` frontend đạt 100%.
+    - Tạo tài liệu nghiệp vụ [.codex/docs/expected_breakfast/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/expected_breakfast/README.md).
 
-## [2026-09-16] - Chuẩn hóa Bảng Hóa đơn bán hàng sales_invoices & Loại bỏ hoàn toàn các view legacy (sp3000, sp3002, sp3003)
-### Module: Thu ngân / Quản lý Hóa đơn bán hàng & Doanh thu ([PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php), [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php))
+## [2026-09-15] - Triển khai Báo cáo hóa đơn minibar miễn phí (MINIBAR_FREE_INVOICES) theo chuẩn legacy sp_202
+### Module: Báo cáo buồng phòng / Minibar ([minibar_free_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_free_invoices_reference.php), [2026_09_15_110000_create_minibar_free_invoice_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_110000_create_minibar_free_invoice_report.php))
 
-- **1. Nghiệp vụ & Bối cảnh**:
-  - Chuẩn hóa tên 3 bảng riêng biệt trực tiếp trong MySQL (không dùng các tên prefix `sp...` của SQL Server cũ):
-    + **Bảng thanh toán (`payments`)**: Quản lý dòng tiền thu vào (cash-in) theo ngày giao dịch thực tế (cọc, tạm ứng, thanh toán).
-    + **Bảng hóa đơn dịch vụ (`service_bills`)**: Quản lý doanh thu phát sinh theo từng bill dịch vụ khách sử dụng thực tế.
-    + **Bảng hóa đơn bán hàng (`sales_invoices`)**: Quản lý tổng doanh thu bán hàng theo ngày lễ tân thực hiện thanh toán/quyết toán cấn trừ cọc và dịch vụ.
-  - Mối quan hệ liên kết 3 bảng chuẩn: `service_bills.InvoiceId = payments.invoice_id = sales_invoices.id`.
-
-- **2. Cơ sở dữ liệu & Kiến trúc bảng**:
-  - **Bảng vật lý**: Bảng riêng `sales_invoices` (Hóa đơn bán hàng) được mở rộng chuẩn cấu trúc PMS với `id` auto-increment, `bill_id`, các cột bóc tách thuế phí (`original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `amount`), ngày giờ thanh toán, phòng, khách, booking, ca, bộ phận, mã thanh toán (`payment_code`),...
-  - **Bảng thanh toán**: Bổ sung cột `invoice_id` (bigint unsigned nullable indexed) vào bảng `payments`.
-  - **Dọn dẹp DB**: Drop sạch toàn bộ các views và bảng legacy `sp3000`, `sp3002`, `sp3003` trên toàn bộ 8 database chi nhánh MySQL; xóa bỏ model `SP3003.php` và code SQLite.
-  - Migration [2026_09_16_120000_expand_sales_invoices_table.php](file:///d:/PMS/backend/database/migrations/2026_09_16_120000_expand_sales_invoices_table.php): Đã chạy thành công 100% trên toàn bộ 8 chi nhánh database (`pms_gkt6`, `pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`, `pms_hkt5`, `pms_hkt8`, `pms_loloee`).
-  - Model [SalesInvoice.php](file:///d:/PMS/backend/app/Models/SalesInvoice.php): Model chính đại diện cho hóa đơn bán hàng, quan hệ chuẩn Eloquent `booking`, `payments`, `serviceBills`, `company`.
-  - Model [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php): Bổ sung `invoice_id` và relation `salesInvoice()`.
-
-- **3. Logic nghiệp vụ & APIs ([SalesInvoiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/SalesInvoiceController.php), [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php))**:
-  - Tạo Controller mới [SalesInvoiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/SalesInvoiceController.php):
-    + `GET /api/sales-invoices`: Tra cứu danh sách hóa đơn theo ngày (`from_date` ~ `to_date`), phòng (`room`), mã HĐ (`bill_id`), mã booking (`booking_id`), mã thanh toán (`payment_code`), tên khách (`guest_name`), trạng thái (`status`). Phân trang kèm khối `summary` tổng hợp doanh thu và thuế phí (`total_amount`, `total_original_rate`, `total_service_charge`, `total_tax`, `total_discount`).
-    + `GET /api/sales-invoices/{id}`: Chi tiết 1 hóa đơn đầy đủ nạp kèm `booking`, `company`, danh sách dịch vụ `serviceBills`, và các khoản thanh toán/cọc `payments`.
-    + `GET /api/bookings/{bookingId}/sales-invoices`: Lấy danh sách toàn bộ hóa đơn của 1 booking.
-    + `GET /api/sales-invoices/{id}/print`: Cung cấp dữ liệu mẫu in hóa đơn gồm thông tin khách sạn (`hotel_settings`), thông tin khách, chi tiết phòng/dịch vụ, bóc tách thuế VAT, phí dịch vụ, hình thức thanh toán và số tiền bằng chữ tiếng Việt (`numberToVietnameseWords`).
-    + `GET /api/sales-invoices/stats`: Thống kê nhanh doanh thu hóa đơn bán hàng theo ngày hệ thống.
-  - Quan hệ Eloquent Models:
-    + [Booking.php](file:///d:/PMS/backend/app/Models/Booking.php): Bổ sung quan hệ `salesInvoices()`.
-    + [BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php): Bổ sung quan hệ `salesInvoices()`.
-    + [ServiceBill.php](file:///d:/PMS/backend/app/Models/ServiceBill.php): Bổ sung quan hệ `salesInvoice()`.
-    + [Payment.php](file:///d:/PMS/backend/app/Models/Payment.php): Quan hệ `salesInvoice()`.
-  - [PaymentController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PaymentController.php):
-    + Lưu ca làm việc (`ca`), khóa tra cứu báo cáo (`legacy_booking_id`, `legacy_rental_room_id`, `legacy_payment_id`) vào `SalesInvoice::create()`.
-    + `destroy()`: Hủy hóa đơn bán hàng (`status = 0`) và nhả liên kết khi hủy thanh toán.
-  - Frontend [booking-service.js](file:///d:/PMS/frontend/src/services/booking-service.js): Xuất các hàm API helper `fetchSalesInvoices`, `fetchSalesInvoiceDetail`, `fetchSalesInvoicePrint`, `fetchBookingSalesInvoices`.
-
-- **4. Kiểm thử**:
-  - Feature Test [SalesInvoiceApiTest.php](file:///d:/PMS/backend/tests/Feature/SalesInvoiceApiTest.php): 6/6 tests passed (79 assertions) bao phủ danh sách, bộ lọc, chi tiết, in ấn, đọc số tiền bằng chữ.
-  - Feature Test [SalesInvoiceSettlementTest.php](file:///d:/PMS/backend/tests/Feature/SalesInvoiceSettlementTest.php): 2/2 tests passed (22 assertions).
-  - Kiểm tra hồi quy [PaymentSequenceTest.php](file:///d:/PMS/backend/tests/Unit/PaymentSequenceTest.php) & [BookingRoomServiceFolioTest.php](file:///d:/PMS/backend/tests/Feature/BookingRoomServiceFolioTest.php): 20/20 tests passed.
-  - Tổng cộng 28/28 tests passed (195 assertions).
-  - Build frontend `npm run build`: Thành công 100%.
-
-## [2026-09-16] - Hoàn thiện 3 yêu cầu Sơ đồ phòng (Room Map): Phòng Back-to-back, Giao diện danh sách & Đóng menu HK
-### Module: Sơ đồ phòng / Room Map ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
-
-- **1. Xử lý hiển thị icon phòng Back-to-back**:
-  - **Khái niệm**: Phòng Back-to-back là phòng có khách trả phòng (check-out) hôm nay và ngay lập tức có đoàn khách tiếp theo nhận phòng (check-in) hôm nay vào đúng phòng đó mà không để trống.
-  - **Backend ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php))**:
-    - Nhận diện cả booking đang ở (`$checkedInBr`, `status = 1`, `departure_date = sysDateStr`) và booking mới đến (`$bookedBr`, `status = 0`, `arrival_date = sysDateStr`) cho cùng một phòng vật lý.
-    - Trả về cờ `has_arrival_today`, `has_departure_today`, `is_back_to_back = true` và đính kèm `arriving_booking` trong payload Room Resource.
-  - **Frontend ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
-    - Cập nhật hàm `hasArrivalToday(room)` ưu tiên cờ `room.has_arrival_today` và bỏ chặn nếu là phòng `is_back_to_back`.
-    - Trên Card view: Phòng Back-to-back hiển thị đồng thời cả icon chấm xanh lá 🟢 (khách đến hôm nay bên trái) và icon đỏ 🔴 (khách đi hôm nay bên phải).
-    - Cập nhật Tooltip hover: Thêm khối thông tin chi tiết của khách tiếp theo sắp nhận phòng (Tên khách, mã đặt phòng, giờ đến,...).
-
-- **2. Chuẩn hóa Room Map dạng danh sách (List / Table View)**:
-  - **Màu nền phòng**: Hàm `getListRowStyle(room)` chỉ áp dụng màu nền khi phòng đã inhouse (`isRoomCheckedIn(room)`). Phòng chưa check-in giữ nền trắng mặc định (`#ffffff`).
-  - **Click chọn dòng**: Thay đổi class `.room-row-selected` sử dụng viền đậm (`outline: 2px solid #0284c7`, box-shadow tint nhẹ) tương tự như Card view khi active, không làm mất hoặc ghi đè màu nền của phòng.
-  - **Hiển thị Ngày đến / Ngày đi**: Sửa hàm `formatDateShort` xử lý chuẩn định dạng `dd-MM-yyyy`, lấy từ `room.arrival_date || room.actual_arrival_date` và `room.departure_date || room.actual_departure_date`.
-  - **Bộ lọc các cột tiêu đề bảng dạng Popover (Header Popover Filters - Khớp 100% Mockup Ảnh 1 & 2)**:
-    - Bố trí đúng thứ tự 17 cột: `Checkbox/STT`, `TTĐK`, `Nhận phòng trễ`, `Chuyển phòng kế hoạch`, `TT Phòng`, `Thêm giường`, `Yêu cầu ĐB`, `Loại phòng`, `Dạng phòng`, `Phòng`, `Tên khách`, `Mã ĐK`, `Tên đăng ký`, `Ngày đến`, `Ngày đi`, `Công ty`, `Tầng`.
-    - **Cột Lọc Checkbox (Icon ▾)**: Gồm `TTĐK` (Khách lẻ, Phòng ở, Phòng đến, Phòng đi), `Nhận phòng trễ`, `Chuyển phòng kế hoạch`, `TT Phòng`, `Thêm giường`, `Yêu cầu ĐB`, `Loại phòng`, `Dạng phòng`, `Công ty`, `Tầng`. Khi click mở popover chọn checkbox kèm 2 nút `Reset` và `OK` (màu xanh `#7ec1e8`).
-    - **Cột Tìm Kiếm (Icon 🔍)**: Gồm `Phòng`, `Tên khách` (placeholder: "Search guest name" đúng Ảnh 2), `Mã ĐK`, `Tên đăng ký`, `Ngày đến`, `Ngày đi`. Khi click mở popover input text kèm 2 nút `🔍 Search` (màu xanh `#7ec1e8`) và `Reset`.
-    - Tự động đóng popover khi click ra ngoài (`handleClickOutsideSettings`).
-    - Bổ sung thanh trạng thái số lượng phòng hiển thị và nút "Xóa tất cả lọc" khi có bộ lọc hoạt động.
-
-- **3. Sửa lỗi click vào icon đổi tình trạng buồng phòng (HK) & Đóng khi click ra ngoài**:
-  - **Nguyên nhân lỗi**: Khối container trên Toolbar thiếu class `.bulk-status-container` và nút chưa dùng `@click.stop`, dẫn đến khi click mở menu thì sự kiện click lan truyền (bubble) lên `window` và bị `handleClickOutsideSettings` đóng lại ngay lập tức. Ngoài ra, nút bị gán thuộc tính `:disabled` khi chưa chọn phòng làm trình duyệt nuốt sự kiện click.
-    - Cấu hình hiển thị 2 nút chức năng ("Cập nhật tình trạng phòng" và "In Worksheet") **chỉ hiển thị ở Room Map dạng danh sách** (`!isGridMode`), ẩn hoàn toàn khi ở dạng lưới/card.
-    - Tự động đóng popup menu đổi tình trạng phòng khi người dùng chuyển đổi chế độ xem.
-    - Bỏ thuộc tính `:disabled` chặn click khi chưa chọn phòng, thay vào đó hiển thị thông báo toast cảnh báo hướng dẫn người dùng (*"Vui lòng chọn phòng cần cập nhật."* hoặc *"Bạn không có quyền..."*).
-    - Tự động đóng menu khi click ra bất kỳ đâu bên ngoài vùng `.bulk-status-container`.
-    - **Đồng bộ hóa icon "Sẵn sàng"**: Chuyển đổi icon của trạng thái `vacant_ready` trong `bulkStatusOptions` từ icon `available` (tròn xanh lá) sang icon `double-check` (`text-[#38bdf8]`), đồng bộ 100% với menu ngữ cảnh (Context Menu "Chuyển tình trạng phòng > Sẵn sàng").
-
-- **Kiểm thử**: `npm run build` thành công 100%, không phát sinh lỗi.
-
-## [2026-09-16] - Khắc phục lỗi kết nối MariaDB (SQLSTATE[HY000] [1130] Host 'localhost' is not allowed to connect)
-### Module: Database / Hạ tầng MariaDB (XAMPP)
-
-- **Nguyên nhân**:
-  - Bảng hệ thống lưu trữ tài khoản và phân quyền của MariaDB (`mysql.global_priv` sử dụng storage engine Aria) bị crash checksum (`ERROR 1030: Got error 176 "Read page with wrong checksum" from storage engine Aria`).
-  - Khi client kết nối, MariaDB không đọc được bảng quyền nên tự động từ chối mọi kết nối handshake từ `localhost` / `127.0.0.1` với mã lỗi `1130`. Tiến trình `mysqld` vẫn chạy nên XAMPP Control Panel không báo lỗi.
-- **Khắc phục**:
-  - Tạm thời khởi động mysqld với `skip-grant-tables`.
-  - Thực hiện sửa chữa toàn bộ bảng hệ thống bằng `REPAIR TABLE mysql.global_priv;` và `mysqlcheck --repair --databases mysql`.
-  - Khôi phục lại file cấu hình `my.ini` về trạng thái chuẩn và khởi động lại MariaDB bình thường.
-- **Kiểm thử**: Kết nối PHP PDO và phpMyAdmin hoạt động 100%, query bảng `hotel_settings` thành công.
-
-## [2026-09-15] - Sửa lỗi hiển thị icon "Phòng đến" trên Sơ đồ phòng khi đã nhận phòng
-### Module: Sơ đồ phòng / Room Map ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
-
-- **Khắc phục lỗi hiển thị sai icon "Phòng đến" (chấm xanh lá cây) sau khi nhận phòng**:
-  - **Nguyên nhân**: Hàm `hasArrivalToday(room)` trước đó chỉ so sánh ngày đến `arrDate === targetDate`. Vì phòng vừa nhận phòng trong ngày nên ngày đến bằng ngày hệ thống hiện tại, dẫn đến việc phòng đã chuyển sang trạng thái Đang ở (Occupied - màu xanh dương) nhưng trên góc trên bên trái thẻ phòng (Card View) và cột Đến/Đi (List View) vẫn tiếp tục hiển thị chấm tròn màu xanh lá cây 🟢 ("Phòng đến").
-  - **Khắc phục**: Bổ sung điều kiện kiểm tra `if (isRoomCheckedIn(room)) return false` trong `hasArrivalToday(room)` để tuyệt đối không hiển thị icon/chấm xanh khách đến một khi phòng đã được nhận phòng. Đồng thời kiểm tra phòng phải có thông tin đặt phòng hợp lệ (`hasBooking`).
-- **Kiểm thử**: `npm run build` thành công 100%.
-
-## [2026-09-15] - Ràng buộc nghiệp vụ Xóa khách trong Thông tin đặt phòng
-### Module: Đặt phòng / Quản lý Khách ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestDeleteRestrictionsTest.php](file:///d:/PMS/backend/tests/Feature/GuestDeleteRestrictionsTest.php))
-
-- **Chặn xóa khách khi đã phát sinh hóa đơn hoặc thanh toán**:
-  - **Backend ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))**:
-    - Trong cả hai hàm `removeGuest` (khách người lớn) và `removeChild` (khách trẻ em):
-      - Kiểm tra phát sinh hóa đơn trong bảng `service_bills` (`CustomerId1` hoặc `CustomerId2`) với tình trạng `Edit = 0` hoặc `Status = 0`.
-      - Kiểm tra phát sinh đặt cọc/thanh toán trong bảng `payments` (`guest_id`) với tình trạng `edit_flag = 0` hoặc `status = 0` (chưa bị xóa mềm `deleted_at is null`).
-      - Nếu phát sinh bất kỳ bill hoặc payment nào: Chặn xóa và trả về mã lỗi 422 kèm cảnh báo đúng yêu cầu: `"Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách."`
-- **Ràng buộc thời gian check-in trong ngày**:
-  - Chỉ cho phép xóa khách khi vừa mới check-in trong ngày (`actual_arrival_date == system_date`).
-  - Đối với khách/phòng đang lưu trú (`status = 1` - Checked in): Nếu ngày đến thực tế nhỏ hơn ngày hệ thống (`actual_arrival_date < system_date` - đã qua ngày) thì chặn xóa và trả về mã lỗi 422: `"Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Khách đã lưu trú qua ngày không thể xóa."`
-  - Áp dụng chặt chẽ cho cả người lớn (`BookingRoomGuest`) và trẻ em (`BookingChild` / `BookingRoomChild`).
-- **Cải tiến giao diện ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))**:
-  - Hàm `handleDeleteGuest()`: Loại bỏ hành vi xóa lạc quan trên giao diện trước khi gọi API (tránh việc khách biến mất trên UI nhưng backend báo lỗi chặn xóa).
-  - Bắt lỗi chi tiết từ backend (`e.response?.data?.message`) và hiển thị thông báo chính xác cho người dùng qua `uiStore.showToast(errorMsg, 'error')`.
-  - Tự động nạp lại danh sách khách (`loadGuests()`) trong block `catch` để luôn đồng bộ trạng thái dữ liệu thực tế.
-- **Kiểm thử**:
-  - Tạo mới bộ test `GuestDeleteRestrictionsTest.php` gồm 8 test cases bao phủ 100% các kịch bản: chặn khi có bill `CustomerId1`, `CustomerId2`, payment, check-in qua ngày (cả người lớn và trẻ em); cho phép xóa khi check-in cùng ngày không có bill/payment.
-  - Chạy `php artisan test tests/Feature/GuestDeleteRestrictionsTest.php`: 8/8 tests PASSED (18 assertions).
-  - Chạy `php artisan test tests/Feature/GuestControllerFixesTest.php`: 3/3 tests PASSED (27 assertions).
-  - Chạy `npm run build`: compile frontend thành công 100%.
-
-## [2026-09-15] - Cải tiến DatePicker và sửa lỗi cập nhật ngày đi phòng Inhouse trên Sơ đồ phòng
-### Module: Đặt phòng / Sơ đồ phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
-
-- **Chuyển đổi các ô ngày sang component `SingleDatePicker` trực quan**:
-  - Thay thế toàn bộ `<input type="date">` mặc định của trình duyệt tại 4 trường: `Sinh nhật`, `Ngày phát hành` (Giấy tờ tùy thân), `Ngày đến` và `Ngày đi` sang component [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue) đồng bộ với toàn hệ thống PMS.
-  - Tích hợp popup lịch chọn ngày trực quan (`dd/MM/yyyy`), hỗ trợ `:min-date` tự động ràng buộc `Ngày đi >= Ngày đến`.
-  - Tự động tính lại số đêm (`stayInfo.nights`) thông qua watcher ngay khi người dùng đổi ngày đến/ngày đi.
-  - Định dạng kích thước `height: 35px`, viền và nền xám chuẩn PMS cho các ô disabled (`Ngày đến`).
-- **Sửa lỗi lưu thông tin phòng Inhouse (Section 8)**:
-  - Khắc phục lỗi 422 (`exists:room_rate_codes,Ma`) khi lưu phòng do `rate_code` mang giá trị placeholder `'Vui lòng chọn giá phòng'`.
-  - Làm sạch `rate_code` (gán về `null` nếu không có hoặc là placeholder) trước khi gửi payload lên API `updateBookingRoomGuest`.
-  - Bổ sung hiển thị thông báo lỗi chi tiết từ backend thay vì câu thông báo chung chung.
-- **Kiểm thử**: `npm run build` thành công 100%.
-
-## [2026-09-14] - Hoàn thiện toàn diện các nghiệp vụ Khóa phòng theo tài liệu Lỗi liên quan tới khóa phòng.docx
-### Module: Quản lý Khóa phòng (Room Lock) ([RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php), [routes/api.php](file:///d:/PMS/backend/routes/api.php), [LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue), [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php))
-
-- **Section 1: Cập nhật thời gian khi mở khóa phòng & đồng bộ thống kê OOO/OOS**:
-  - **Cập nhật ngày kết thúc khi mở khóa**: Khi mở khóa phòng (cả đơn lẻ qua `destroy` và hàng loạt qua `bulkUnlock`), hệ thống cập nhật `end_date` của phòng khóa thành ngày hệ thống (`system_date`) và giờ thao tác thực tế (`H:i:s`), đồng thời chuyển `is_active = 2` (STATUS_UNLOCKED) và `status = 'Done'`.
-  - **Giữ lịch sử khóa qua đêm trên màn hình Kế hoạch phòng & Phòng trống**: Cập nhật các truy vấn và service tính công suất ([RoomOccupancyStatisticsService.php](file:///d:/PMS/backend/app/Services/RoomOccupancyStatisticsService.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [AvailabilityController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AvailabilityController.php)) lấy các bản ghi khóa phòng `is_active in [1, 2]`.
-  - **So khớp cấu hình `FrmOOO_DefineLockByTime`**: Các ngày trước đó (đã khóa qua đêm) giữ nguyên số liệu thống kê OOO/OOS. Riêng ngày thực hiện mở khóa: nếu mở trước giờ quy định `FrmOOO_DefineLockByTime` (mặc định 12:00) thì không tính ngày đó bị khóa (trừ số liệu OOO/OOS); nếu mở sau giờ quy định thì vẫn tính ngày đó bị khóa.
-
-- **Section 2: Kiểm tra cấu hình `AllowLockRoomCauseUnassignableRoomBK`**:
-  - Bổ sung helper `checkUnassignableBookingsAvailability(...)` trong [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php) để kiểm tra xem sau khi khóa phòng vật lý này, các booking chưa gán phòng (`room_number is null`) thuộc cùng hạng phòng đó có còn ít nhất 1 phòng vật lý trống liên tục toàn bộ kỳ lưu trú để gán hay không.
-  - **Tối ưu hóa thuật toán giữ chỗ liên tục cho nhiều booking (Interval Occupancy Tracking)**: Xây dựng bản đồ phân khoảng thời gian đã chiếm dụng (`roomOccupancies`) cho từng phòng vật lý (bao gồm phòng đang khóa, phòng có lịch OOO/OOS khác và phòng đã gán booking). Khi kiểm tra nhiều booking chưa gán phòng cùng lúc, hệ thống tự động trừ dần (giữ chỗ tạm thời) các phòng đã khớp, ngăn chặn trường hợp nhiều booking chưa gán cùng tính trùng vào 1 phòng trống còn lại.
-  - Tích hợp kiểm tra vào `store()`, `bulkLock()`, `update()`, `bulkUpdate()` (đặt trước bước kiểm tra AV phòng âm để ưu tiên bảo vệ tính liên tục của booking):
-    - Nếu `AllowLockRoomCauseUnassignableRoomBK = '0'`: Chặn không cho khóa phòng và trả về lỗi 422 giải thích chi tiết.
-    - Nếu `AllowLockRoomCauseUnassignableRoomBK = '1'`: Trả về cảnh báo yêu cầu xác nhận (`require_confirm: true`). Khi người dùng đồng ý (`force: true`), cho phép khóa phòng.
-
-- **Section 3: Sửa form chỉnh sửa khóa phòng đơn lẻ**:
-  - **Quy tắc ngày bắt đầu**:
-    - Khi `start_date <= system_date`: Khóa/disable ô ngày bắt đầu trên form modal ([LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue)); backend kiểm tra chặn không cho sửa ngày bắt đầu và báo lỗi nếu người dùng cố tình thay đổi.
-    - Khi `start_date > system_date`: Cho phép sửa ngày bắt đầu (với điều kiện `>= system_date`).
-    - Cho phép sửa ngày kết thúc, ghi chú/lý do, % tiến độ bảo trì.
-  - **Khắc phục lỗi so sánh với ngày hệ thống**: Thay thế việc so sánh với thời gian thực tế máy chủ `now()` bằng ngày nghiệp vụ của hệ thống (`SystemDateRoll::getSystemDate()`), tránh lỗi báo "Khóa phòng đã kết thúc trong quá khứ..." đối với các phòng khóa đang hoạt động trong ngày hệ thống.
-
-- **Section 4: Thêm 2 nút "Sửa" và "Lưu" ngoài Toolbar để sửa trực tiếp nhiều phòng khóa**:
-  - **Giao diện Toolbar & Inline Table Edit ([LockRoomPage.vue](file:///d:/PMS/frontend/src/pages/reservation/LockRoomPage.vue))**:
-    - Bổ sung 2 nút "Sửa" (bật chế độ inline edit trên bảng) và "Lưu" (kèm nút "Hủy") cạnh nút "Mở khóa".
-    - Khi ở chế độ sửa, các cột Ngày bắt đầu, Ngày mở khóa, Lý do/Mô tả, % Bảo trì trở thành các ô input có thể chỉnh sửa trực tiếp.
-    - Cột ngày bắt đầu tự động bị disable nếu `start_date <= system_date` theo đúng quy tắc Section 3.
-  - **API `bulkUpdate` và Giao dịch nguyên tử (Atomic Transaction)**:
-    - Tạo API `POST /api/room-locks/bulk-update` trong [routes/api.php](file:///d:/PMS/backend/routes/api.php) và [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php).
-    - Toàn bộ các cập nhật được bọc trong `DB::transaction()`. Nếu có bất kỳ phòng nào bị lỗi kiểm tra (thời gian, trùng lịch, AV âm, hoặc vi phạm `AllowLockRoomCauseUnassignableRoomBK`), toàn bộ thay đổi sẽ rollback 100% và không có phòng nào bị thay đổi sai lệch.
-
-- **Kiểm thử tự động**:
-  - Viết và chạy thành công 13 test cases trong [RoomLockTest.php](file:///d:/PMS/backend/tests/Feature/RoomLockTest.php) (13/13 passed, 40 assertions), bao trùm toàn bộ các điều kiện của cả 4 Section (Section 1 Unlock date/stats, Section 2 Unassignable bookings rule, Section 3 Single edit date logic, Section 4 Toolbar bulk update & atomic rollback).
-  - Chạy test kiểm tra công suất phòng [RoomOccupancyStatisticsTest.php](file:///d:/PMS/backend/tests/Feature/RoomOccupancyStatisticsTest.php) (passed 100%).
-  - Chạy test nghiệp vụ booking [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) (24/24 passed).
-  - Build frontend bằng `npm run build` thành công 100%, không phát sinh lỗi.
-
+- **Đã hoàn thành**:
+  - **Khảo sát & Đối chiếu dữ liệu thật**:
+    - Truy vấn trực tiếp SSMS SQL Server `.\MSSQLSERVER01` -> database `ProVistaDTXHotel` qua `sqlcmd` kiểm tra logic và output của stored procedure `sp_202` với tham số `@outlet = 'MB'`.
+    - Xác nhận các hóa đơn minibar miễn phí gắn với phương thức thanh toán `CL` (Complementary / Miễn phí).
+  - **Template tham chiếu & Header Band chuẩn hóa**:
+    - Chuẩn hóa template [minibar_free_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/minibar_free_invoices_reference.php) theo đúng cấu trúc canonical report header band của hệ thống (dạng `columns` 30% logo / 70% thông tin khách sạn + divider + title + period và wrapper `<div class="report-header-band">`).
+    - Bảng chi tiết gồm 13 cột (có cột HTTT) và bảng kê tổng hợp số lượng sản phẩm minibar miễn phí.
+  - **Stored Procedure & Migration**:
+    - Tạo migration [2026_09_15_110000_create_minibar_free_invoice_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_15_110000_create_minibar_free_invoice_report.php) tạo stored procedure `rpt_minibar_free_invoices` lọc `housekeeping_service_bills` có `Outlet = 'MB'` và phương thức thanh toán `CL`.
+    - Đồng bộ `content_json` và `content_html` chứa report header band chuẩn hóa vào bảng `templates` trên toàn bộ các database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Data Enrichment & UI Integration**:
+    - Cập nhật [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php) hỗ trợ mã `MINIBAR_FREE_INVOICES` trích xuất `product_summary`.
+    - Cập nhật [ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue) thêm `MINIBAR_FREE_INVOICES` vào nhóm filter hóa đơn buồng phòng.
+  - **Kiểm thử**:
+    - Tạo unit test [MinibarFreeInvoicesTemplateTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/MinibarFreeInvoicesTemplateTest.php), kiểm tra layout, metadata và rendering (đạt 2/2 tests, 14 assertions).
+    - Cập nhật [ReportDatasetEnricherHousekeepingTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/Reports/ReportDatasetEnricherHousekeepingTest.php) (đạt 1/1 test, 10 assertions).
+    - Chạy toàn bộ test Reports backend (43/43 tests, 444 assertions).
+    - Chạy `npm run build` frontend thành công 100%.
 
 ## [2026-09-14] - Chuẩn hóa tên file template báo cáo hàng bể vỡ trong DB migration (Tương thích Linux)
 ### Module: Báo cáo dịch vụ / Migrations ([2026_09_11_170000_create_breakage_invoice_product_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_170000_create_breakage_invoice_product_report.php), [2026_09_11_171000_create_breakage_free_invoice_report.php](file:///d:/PMS/backend/database/migrations/2026_09_11_171000_create_breakage_free_invoice_report.php))

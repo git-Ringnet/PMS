@@ -6,39 +6,25 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     private const DEFINITION = [
-        'outlet' => 'LA',
-        'procedure' => 'rpt_laundry_free_invoices',
-        'template' => 'LAUNDRY_FREE_INVOICES_STANDARD',
-        'template_file' => 'laundry_free_invoices_reference.php',
-        'name' => 'Báo cáo hóa đơn giặt ủi miễn phí',
-        'sort_order' => 42,
+        'outlet' => 'MB',
+        'procedure' => 'rpt_minibar_free_invoices',
+        'template' => 'MINIBAR_FREE_INVOICES_STANDARD',
+        'template_file' => 'minibar_free_invoices_reference.php',
+        'name' => 'Báo cáo hóa đơn minibar miễn phí',
+        'sort_order' => 46,
     ];
 
     public function up(): void
     {
         $installer = require database_path('migrations/2026_09_10_300000_create_housekeeping_invoice_reports.php');
-        $installer->installReport('LAUNDRY_FREE_INVOICES', self::DEFINITION);
-        if (DB::connection()->getDriverName() === 'mysql') {
-            DB::table('report_definitions')->where('code', 'LAUNDRY_FREE_INVOICES')->update([
-                'parameter_ui_schema' => json_encode([
-                    ['name' => 'p_from_date', 'label' => 'Ngày', 'control' => 'date-range', 'range_end_parameter' => 'p_to_date', 'default' => '$today', 'required' => true],
-                    ['name' => 'p_to_date', 'label' => 'Đến ngày', 'control' => 'hidden', 'default' => '$today', 'required' => true],
-                    ['name' => 'p_user', 'label' => 'Chọn người dùng', 'control' => 'select', 'default' => '', 'required' => false, 'placeholder' => 'Select Value', 'options_source' => 'users', 'options' => []],
-                    ['name' => 'p_order_by', 'label' => 'Sắp xếp theo', 'control' => 'select', 'layout' => 'inline', 'default' => 'Ma', 'required' => true, 'options' => [['value' => 'Ma', 'label' => 'Mã']]],
-                    ['name' => 'p_order_type', 'label' => 'Thứ tự', 'control' => 'select', 'layout' => 'inline', 'default' => 'ASC', 'required' => true, 'options' => [['value' => 'ASC', 'label' => 'ASC'], ['value' => 'DESC', 'label' => 'DESC']]],
-                    ['name' => 'p_show_details', 'label' => 'Detail', 'control' => 'checkbox', 'default' => false, 'required' => false],
-                ], JSON_UNESCAPED_UNICODE),
-            ]);
-
-            $this->applyFinalContract();
+        $installer->installReport('MINIBAR_FREE_INVOICES', self::DEFINITION);
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
         }
-    }
 
-    private function applyFinalContract(): void
-    {
-        DB::unprepared('DROP PROCEDURE IF EXISTS `rpt_laundry_free_invoices`');
+        DB::unprepared('DROP PROCEDURE IF EXISTS `rpt_minibar_free_invoices`');
         DB::unprepared(<<<'SQL'
-CREATE PROCEDURE `rpt_laundry_free_invoices`(
+CREATE PROCEDURE `rpt_minibar_free_invoices`(
     IN p_from_date DATE,
     IN p_to_date DATE,
     IN p_user VARCHAR(50),
@@ -88,13 +74,13 @@ BEGIN
     LEFT JOIN payment_methods pm ON pm.code = pay.PaymentMethod
     LEFT JOIN guests g ON g.id = h.GuestId
     WHERE h.Date >= p_from_date AND h.Date < DATE_ADD(p_to_date, INTERVAL 1 DAY)
-      AND h.Outlet = 'LA' AND pay.PaymentMethod = 'CL'
+      AND h.Outlet = 'MB' AND pay.PaymentMethod = 'CL'
       AND (p_user IS NULL OR p_user = '' OR h.BillUsername LIKE CONCAT('%', p_user, '%'))
     ORDER BY STT;
 END
 SQL);
 
-        DB::table('report_data_sources')->where('code', 'LAUNDRY_FREE_INVOICES')->update([
+        DB::table('report_data_sources')->where('code', 'MINIBAR_FREE_INVOICES')->update([
             'parameter_schema' => json_encode([
                 ['name'=>'p_from_date','mode'=>'IN','data_type'=>'date','database_type'=>'date','position'=>1,'required'=>true],
                 ['name'=>'p_to_date','mode'=>'IN','data_type'=>'date','database_type'=>'date','position'=>2,'required'=>true],
@@ -106,7 +92,7 @@ SQL);
             'updated_at' => now(),
         ]);
 
-        $source = DB::table('report_data_sources')->where('code', 'LAUNDRY_FREE_INVOICES')->first();
+        $source = DB::table('report_data_sources')->where('code', 'MINIBAR_FREE_INVOICES')->first();
         $fields = $source?->field_schema ? json_decode($source->field_schema, true) : [];
         if (is_array($fields)) {
             $fields = array_map(static function (array $field): array {
@@ -115,25 +101,50 @@ SQL);
                 }
                 return $field;
             }, $fields);
-            DB::table('report_data_sources')->where('code', 'LAUNDRY_FREE_INVOICES')->update([
+            DB::table('report_data_sources')->where('code', 'MINIBAR_FREE_INVOICES')->update([
                 'field_schema' => json_encode($fields, JSON_UNESCAPED_UNICODE),
                 'updated_at' => now(),
             ]);
         }
 
-        $provider = require database_path('report_templates/laundry_free_invoices_reference.php');
+        DB::table('report_definitions')->where('code', 'MINIBAR_FREE_INVOICES')->update([
+            'parameter_ui_schema' => json_encode([
+                ['name' => 'p_from_date', 'label' => 'Ngày', 'control' => 'date-range', 'range_end_parameter' => 'p_to_date', 'default' => '$today', 'required' => true],
+                ['name' => 'p_to_date', 'label' => 'Đến ngày', 'control' => 'hidden', 'default' => '$today', 'required' => true],
+                ['name' => 'p_user', 'label' => 'Chọn người dùng', 'control' => 'select', 'default' => '', 'required' => false, 'placeholder' => 'Select Value', 'options_source' => 'users', 'options' => []],
+                ['name' => 'p_order_by', 'label' => 'Sắp xếp theo', 'control' => 'select', 'layout' => 'inline', 'default' => 'Ma', 'required' => true, 'options' => [['value' => 'Ma', 'label' => 'Mã']]],
+                ['name' => 'p_order_type', 'label' => 'Thứ tự', 'control' => 'select', 'layout' => 'inline', 'default' => 'ASC', 'required' => true, 'options' => [['value' => 'ASC', 'label' => 'ASC'], ['value' => 'DESC', 'label' => 'DESC']]],
+                ['name' => 'p_show_details', 'label' => 'Detail', 'control' => 'checkbox', 'default' => false, 'required' => false],
+            ], JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
+
+        $provider = require database_path('report_templates/minibar_free_invoices_reference.php');
         $definition = $provider->definition();
-        DB::table('templates')->where('report', 'LAUNDRY_FREE_INVOICES_STANDARD')->update([
+
+        $updateData = [
             'content_html' => $definition['content_html'],
             'content_json' => json_encode($definition['content_json'], JSON_UNESCAPED_UNICODE),
             'css' => $definition['css'],
             'updated_at' => now(),
-        ]);
+        ];
+
+        DB::table('templates')->where('report', 'MINIBAR_FREE_INVOICES_STANDARD')->update($updateData);
+
+        foreach (['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'] as $conn) {
+            try {
+                if (DB::connection($conn)->getDriverName() === 'mysql') {
+                    DB::connection($conn)->table('templates')->where('report', 'MINIBAR_FREE_INVOICES_STANDARD')->update($updateData);
+                }
+            } catch (\Throwable) {
+                // Ignore connection errors for unavailable tenant connections
+            }
+        }
     }
 
     public function down(): void
     {
         $installer = require database_path('migrations/2026_09_10_300000_create_housekeeping_invoice_reports.php');
-        $installer->removeReport('LAUNDRY_FREE_INVOICES', self::DEFINITION);
+        $installer->removeReport('MINIBAR_FREE_INVOICES', self::DEFINITION);
     }
 };
