@@ -1903,7 +1903,7 @@ class BookingRoomController extends Controller
                     // --- 2. HANDLE OLD ROOM (Sp2100 & Sp2200 & Sp2500) ---
                     if ($isAllGuestsMoved) {
                         // Dự án mới lưu departure_date là ngày checkout, không trừ một ngày.
-                        $actualDaysStayed = max(1, \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr)));
+                        $actualDaysStayed = \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr));
 
                         $bookingRoom->update([
                             'departure_date'   => $sysDateStr,
@@ -2243,7 +2243,7 @@ class BookingRoomController extends Controller
                     $originalArrivalStr = $bookingRoom->actual_arrival_date
                         ? $bookingRoom->actual_arrival_date->toDateString()
                         : $bookingRoom->arrival_date->toDateString();
-                    $actualDaysStayed = max(1, \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr)));
+                    $actualDaysStayed = \Carbon\Carbon::parse($originalArrivalStr)->diffInDays(\Carbon\Carbon::parse($sysDateStr));
 
                     $bookingRoom->update([
                         'departure_date'   => $sysDateStr,

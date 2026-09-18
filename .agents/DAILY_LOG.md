@@ -104,6 +104,7 @@
 ## [2026-09-18] - Chuẩn hóa toàn bộ thuộc tính lề và kích thước báo cáo lấy trực tiếp từ Form Designer
 ### Module: Render biểu mẫu báo cáo ([TemplateRendererService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/TemplateRendererService.php), [TemplateRendererServiceTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/TemplateRendererServiceTest.php), [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php))
 
+
 - **Bối cảnh & Nguyên nhân**:
   - Người dùng đã cấu hình lề trang (`margin_top: 10`, `margin_bottom: 7`, `margin_left: 5`, `margin_right: 5`) trong Form Designer, nhưng khi hiển thị báo cáo trên web và preview, nội dung vẫn dính sát 100% vào mép trang giấy.
   - Template `sales_invoices_reference.php` và dữ liệu trong database tồn tại đoạn CSS tĩnh `body { margin: 0; padding: 0; }` ghi đè toàn bộ padding của `body`.
