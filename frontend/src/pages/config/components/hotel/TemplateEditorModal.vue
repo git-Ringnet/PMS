@@ -59,6 +59,9 @@ const staticStyleScope = ref('cell')
 const staticStyleClipboard = ref(null)
 const staticCellContextMenu = ref(null)
 
+const selectedDetailCellKeys = ref([])
+const selectedDetailCellTargets = ref([])
+
 const onCellFocus = (cell) => {
   activeCell.value = cell
   editingCellContent.value = cell.content || ''
@@ -435,6 +438,10 @@ const defaultBlockStyle = {
   paddingRight: '0px',
   marginTop: '0px',
   marginBottom: '0px',
+  marginLeft: '0px',
+  marginRight: '0px',
+  width: '',
+  height: '',
   color: '#1e293b',
   fontWeight: 'normal',
   whiteSpace: 'normal',
@@ -455,6 +462,8 @@ const selectQuickFormatTarget = target => {
 
 const closeQuickToolbar = () => {
   quickFormatTarget.value = null
+  selectedDetailCellKeys.value = []
+  selectedDetailCellTargets.value = []
   selectedBlockId.value = null
 }
 
@@ -518,6 +527,147 @@ const applyStaticBorder = (property, value) => {
 
 const resetStaticStyle = () => {
   staticStyleTargets().forEach(({ cell }) => { cell.style = normalizeStaticTextStyle() })
+  compileHtml()
+}
+
+const detailCellKey = (block, kind, idOrIdx) => `${block?.id || 'detail'}:${kind}:${idOrIdx}`
+const isDetailCellSelected = (key) => selectedDetailCellKeys.value.includes(key)
+
+const selectDetailCell = (event, block, kind, targetData) => {
+  selectedBlockId.value = block.id
+  selectedStaticCellKeys.value = []
+  const idOrIdx = (kind === 'header' || kind === 'detail')
+    ? (targetData.colIdx ?? targetData.col?.value ?? targetData.col?.header ?? 0)
+    : (targetData.cell?.id ?? targetData.cellIndex ?? 0)
+  const key = detailCellKey(block, kind, idOrIdx)
+  const multiSelect = event?.ctrlKey || event?.metaKey
+
+  const targetObj = { key, block, kind, ...targetData }
+
+  if (multiSelect) {
+    if (isDetailCellSelected(key)) {
+      selectedDetailCellKeys.value = selectedDetailCellKeys.value.filter(k => k !== key)
+      selectedDetailCellTargets.value = selectedDetailCellTargets.value.filter(t => t.key !== key)
+    } else {
+      selectedDetailCellKeys.value = [...selectedDetailCellKeys.value, key]
+      selectedDetailCellTargets.value = [...selectedDetailCellTargets.value, targetObj]
+    }
+  } else {
+    selectedDetailCellKeys.value = [key]
+    selectedDetailCellTargets.value = [targetObj]
+  }
+
+  quickFormatTarget.value = {
+    kind: kind === 'header' ? 'table-header' : kind === 'detail' ? 'table-cell' : 'custom-cell',
+    block,
+    column: targetData.col,
+    cell: targetData.cell
+  }
+}
+
+const getDetailTargetStyle = (target) => {
+  if (!target) return {}
+  if (target.kind === 'header' && target.col) {
+    target.col.headerStyle = target.col.headerStyle || {}
+    return target.col.headerStyle
+  }
+  if (target.kind === 'detail' && target.col) {
+    target.col.cellStyle = target.col.cellStyle || {}
+    return target.col.cellStyle
+  }
+  if (target.cell) {
+    target.cell.style = target.cell.style || {}
+    return target.cell.style
+  }
+  return {}
+}
+
+const isDetailTargetActive = computed(() => selectedDetailCellTargets.value.length > 0)
+
+const isDetailBold = computed(() => {
+  if (!selectedDetailCellTargets.value.length) return false
+  return selectedDetailCellTargets.value.every(t => {
+    const style = getDetailTargetStyle(t)
+    return style?.fontWeight === 'bold' || style?.fontWeight === '700' || style?.fontWeight === 700 || t.cell?.fontWeight === 'bold'
+  })
+})
+
+const isDetailItalic = computed(() => {
+  if (!selectedDetailCellTargets.value.length) return false
+  return selectedDetailCellTargets.value.every(t => {
+    const style = getDetailTargetStyle(t)
+    return style?.fontStyle === 'italic'
+  })
+})
+
+const isDetailUnderline = computed(() => {
+  if (!selectedDetailCellTargets.value.length) return false
+  return selectedDetailCellTargets.value.every(t => {
+    const style = getDetailTargetStyle(t)
+    return String(style?.textDecoration || '').includes('underline')
+  })
+})
+
+const detailTextColor = computed(() => {
+  if (!selectedDetailCellTargets.value.length) return ''
+  const first = selectedDetailCellTargets.value[0]
+  const style = getDetailTargetStyle(first)
+  return style?.color || first.cell?.color || ''
+})
+
+const detailBgColor = computed(() => {
+  if (!selectedDetailCellTargets.value.length) return ''
+  const first = selectedDetailCellTargets.value[0]
+  const style = getDetailTargetStyle(first)
+  return style?.backgroundColor || first.cell?.backgroundColor || ''
+})
+
+const applyDetailStyle = (property, value) => {
+  selectedDetailCellTargets.value.forEach(t => {
+    if (t.kind === 'header' && t.col) {
+      t.col.headerStyle = t.col.headerStyle || {}
+      t.col.headerStyle[property] = value
+    } else if (t.kind === 'detail' && t.col) {
+      t.col.cellStyle = t.col.cellStyle || {}
+      t.col.cellStyle[property] = value
+    } else if (t.cell) {
+      t.cell.style = t.cell.style || {}
+      t.cell.style[property] = value
+      if (property === 'backgroundColor') t.cell.backgroundColor = value
+      if (property === 'color') t.cell.color = value
+      if (property === 'fontSize') t.cell.fontSize = value
+      if (property === 'fontWeight') t.cell.fontWeight = value
+      if (property === 'textAlign') t.cell.align = value
+    }
+  })
+  compileHtml()
+}
+
+const toggleDetailBold = () => {
+  const nextVal = isDetailBold.value ? 'normal' : 'bold'
+  applyDetailStyle('fontWeight', nextVal)
+}
+
+const toggleDetailItalic = () => {
+  const nextVal = isDetailItalic.value ? 'normal' : 'italic'
+  applyDetailStyle('fontStyle', nextVal)
+}
+
+const toggleDetailUnderline = () => {
+  const nextVal = isDetailUnderline.value ? 'none' : 'underline'
+  applyDetailStyle('textDecoration', nextVal)
+}
+
+const updateDetailContent = (newVal) => {
+  selectedDetailCellTargets.value.forEach(t => {
+    if (t.kind === 'header' && t.col) {
+      t.col.header = newVal
+    } else if (t.kind === 'detail' && t.col) {
+      t.col.value = newVal
+    } else if (t.cell) {
+      t.cell.content = newVal
+    }
+  })
   compileHtml()
 }
 
@@ -2069,11 +2219,31 @@ const compileHtml = () => {
   scheduleDesignerHistory()
 }
 
-const compileBlockToHtml = (b) => {
-  if (b.visible === false) return ''
-  const originalStyles = b.style || {}
+const normalizeCssDimension = (val) => {
+  if (val === undefined || val === null || val === '') return ''
+  const str = String(val).trim()
+  if (/^-?\d+(\.\d+)?$/.test(str)) {
+    return `${str}px`
+  }
+  return str
+}
+
+const resolveBlockStyles = (b) => {
+  if (!b || !b.style) return {}
+  const originalStyles = b.style
   const compiledStyles = { ...originalStyles }
   
+  const dimensionProps = [
+    'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
+    'paddingTop', 'paddingBottom', 'paddingLeft', 'paddingRight',
+    'width', 'height', 'fontSize', 'borderWidth', 'borderRadius'
+  ]
+  dimensionProps.forEach(prop => {
+    if (compiledStyles[prop] !== undefined && compiledStyles[prop] !== null && compiledStyles[prop] !== '') {
+      compiledStyles[prop] = normalizeCssDimension(compiledStyles[prop])
+    }
+  })
+
   if (compiledStyles.borderSide && compiledStyles.borderSide !== 'all') {
     const side = compiledStyles.borderSide
     const sideCap = side.charAt(0).toUpperCase() + side.slice(1)
@@ -2101,6 +2271,30 @@ const compileBlockToHtml = (b) => {
   } else {
     delete compiledStyles.borderSide
   }
+
+  const ml = compiledStyles.marginLeft
+  const mr = compiledStyles.marginRight
+  const hasLeftMargin = ml && ml !== '0px' && ml !== '0' && ml !== 'auto'
+  const hasRightMargin = mr && mr !== '0px' && mr !== '0' && mr !== 'auto'
+  
+  if (compiledStyles.width === '100%' || !compiledStyles.width) {
+    if (hasLeftMargin && hasRightMargin) {
+      compiledStyles.width = `calc(100% - ${ml} - ${mr})`
+    } else if (hasRightMargin) {
+      compiledStyles.width = `calc(100% - ${mr})`
+    } else if (hasLeftMargin) {
+      compiledStyles.width = `calc(100% - ${ml})`
+    }
+  }
+
+  compiledStyles.boxSizing = 'border-box'
+
+  return compiledStyles
+}
+
+const compileBlockToHtml = (b) => {
+  if (b.visible === false) return ''
+  const compiledStyles = resolveBlockStyles(b)
   
   const styles = Object.entries(compiledStyles)
     .filter(([k, v]) => v !== undefined && v !== null && v !== '')
@@ -2271,40 +2465,29 @@ const compileBlockToHtml = (b) => {
   return blockHtml
 }
 
-const getBlockStyle = (b) => {
-  if (!b.style) return {}
-  const originalStyles = b.style
-  const compiledStyles = { ...originalStyles }
-  
-  if (compiledStyles.borderSide && compiledStyles.borderSide !== 'all') {
-    const side = compiledStyles.borderSide
-    const sideCap = side.charAt(0).toUpperCase() + side.slice(1)
-    
-    if (compiledStyles.borderStyle) {
-      compiledStyles[`border${sideCap}Style`] = compiledStyles.borderStyle
-      delete compiledStyles.borderStyle
-    }
-    if (compiledStyles.borderWidth) {
-      compiledStyles[`border${sideCap}Width`] = compiledStyles.borderWidth
-      delete compiledStyles.borderWidth
-    }
-    if (compiledStyles.borderColor) {
-      compiledStyles[`border${sideCap}Color`] = compiledStyles.borderColor
-      delete compiledStyles.borderColor
-    }
-    
-    const otherSides = ['top', 'bottom', 'left', 'right'].filter(s => s !== side)
-    otherSides.forEach(s => {
-      const sCap = s.charAt(0).toUpperCase() + s.slice(1)
-      compiledStyles[`border${sCap}Style`] = 'none'
-    })
-    
-    delete compiledStyles.borderSide
-  } else {
-    delete compiledStyles.borderSide
+const getBlockStyle = (b, isInner = false) => {
+  if (!b || !b.style) return {}
+  const resolved = resolveBlockStyles(b)
+  if (isInner) {
+    const { marginTop, marginBottom, marginLeft, marginRight, width, height, ...innerStyle } = resolved
+    return innerStyle
   }
-  
-  return compiledStyles
+  return resolved
+}
+
+const getCanvasBlockCardStyle = (b) => {
+  if (!b || !b.style) return {}
+  const resolved = resolveBlockStyles(b)
+  const cardStyle = {}
+  if (resolved.marginTop) cardStyle.marginTop = resolved.marginTop
+  if (resolved.marginBottom) cardStyle.marginBottom = resolved.marginBottom
+  if (resolved.marginLeft) cardStyle.marginLeft = resolved.marginLeft
+  if (resolved.marginRight) cardStyle.marginRight = resolved.marginRight
+  if (resolved.width) cardStyle.width = resolved.width
+  if (resolved.height) cardStyle.height = resolved.height
+  cardStyle.boxSizing = 'border-box'
+  cardStyle.minWidth = '50px'
+  return cardStyle
 }
 
 const getTableCellStyle = (block, col) => {
@@ -3083,6 +3266,16 @@ const selectBand = (band) => {
                 <button type="button" @click="mergeStaticCells" class="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] hover:bg-sky-50">Gộp ô</button>
                 <button type="button" @click="splitStaticCell" class="h-7 rounded border border-slate-200 bg-white px-2 text-[10px] hover:bg-sky-50">Tách ô</button>
               </template>
+              <template v-else-if="isDetailTargetActive">
+                <span class="mr-1 text-[10px] font-bold text-sky-700">Đang chọn {{ selectedDetailCellTargets.length }} ô bảng chi tiết</span>
+                <button type="button" @click="toggleDetailBold" :class="isDetailBold ? 'bg-sky-100 border-sky-400 text-sky-800 ring-1 ring-sky-400' : 'bg-white border-slate-200 text-slate-700'" class="h-7 w-7 rounded border text-xs font-black hover:bg-sky-50" title="In đậm">B</button>
+                <button type="button" @click="toggleDetailItalic" :class="isDetailItalic ? 'bg-sky-100 border-sky-400 text-sky-800 ring-1 ring-sky-400' : 'bg-white border-slate-200 text-slate-700'" class="h-7 w-7 rounded border text-xs italic hover:bg-sky-50" title="In nghiêng">I</button>
+                <button type="button" @click="toggleDetailUnderline" :class="isDetailUnderline ? 'bg-sky-100 border-sky-400 text-sky-800 ring-1 ring-sky-400' : 'bg-white border-slate-200 text-slate-700'" class="h-7 w-7 rounded border text-xs underline hover:bg-sky-50" title="Gạch chân">U</button>
+                <select @change="applyDetailStyle('fontSize', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Cỡ chữ"><option value="">Cỡ chữ</option><option v-for="size in fontSizeOptions" :key="size" :value="`${size}px`">{{ size }}px</option></select>
+                <select @change="applyDetailStyle('textAlign', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px]" title="Căn lề"><option value="">Căn lề</option><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu chữ">Chữ<input type="color" :value="colorInputValue(detailTextColor, '#1e293b')" @input="applyDetailStyle('color', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+                <label class="flex h-7 items-center gap-1 rounded border border-slate-200 px-1 text-[10px]" title="Màu nền">Nền<input type="color" :value="colorInputValue(detailBgColor, '#ffffff')" @input="applyDetailStyle('backgroundColor', $event.target.value)" class="h-5 w-5 border-0 p-0" /></label>
+              </template>
               <template v-else-if="quickFormatTarget">
                 <span class="mr-1 text-[10px] font-bold text-sky-700">Đang chọn: {{ quickFormatTarget.kind === 'table-header' ? 'tiêu đề cột' : quickFormatTarget.kind === 'table-cell' ? 'ô dữ liệu' : quickFormatTarget.kind === 'custom-cell' ? 'ô tổng/nhóm' : 'đoạn chữ' }}</span>
                 <button type="button" @mousedown.prevent="applyQuickStyle('bold')" class="h-7 w-7 rounded border border-slate-200 bg-white text-xs font-black hover:bg-sky-50" title="In đậm">B</button>
@@ -3159,7 +3352,8 @@ const selectBand = (band) => {
                     @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'header', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'header'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
-                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']">
+                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']"
+                    :style="getCanvasBlockCardStyle(b)">
                     
                     <!-- Block Type Tag -->
                     <span class="absolute -top-1.5 left-2 bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-1.5 rounded-md border border-slate-200">
@@ -3180,7 +3374,7 @@ const selectBand = (band) => {
                     </div>
 
                     <!-- Block Visual Content -->
-                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b)">
+                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b, true)">
                       <div v-if="selectedBlockId === b.id" 
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
@@ -3265,10 +3459,10 @@ const selectBand = (band) => {
                             Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
                           </span>
                         </p>
-                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
+                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b, true)">
                           <thead>
                             <tr class="font-bold">
-                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectDetailCell($event, b, 'header', { col, colIdx })" class="relative group/th" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'header', colIdx)) }" :style="getTableHeaderStyle(b, col)">
                                 <input type="text" v-model="col.header" :style="styleObjectToCss(mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle), true)" class="w-full bg-transparent border-none text-slate-800 focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" />
                                 <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
                               </th>
@@ -3280,14 +3474,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'group-cell', { cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="[cell.className, { 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'group-cell', cell.id)) }]" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
                               <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
+                              <td v-for="(col, colIdx) in b.columns" :key="col.value" @click.stop="selectDetailCell($event, b, 'detail', { col, colIdx })" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'detail', colIdx)) }" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3295,7 +3489,7 @@ const selectBand = (band) => {
                           </tbody>
                           <tfoot>
                             <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
-                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'custom-cell', { cell, cellIndex })" :colspan="cell.colspan" class="px-2 py-1" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'custom-cell', cell.id)) }" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
                             </tr>
                             <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
@@ -3306,7 +3500,7 @@ const selectBand = (band) => {
 
                     <!-- Configured Static Table rendering -->
                     <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
-                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
+                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b, true)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
                             <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
@@ -3327,7 +3521,7 @@ const selectBand = (band) => {
                         </tbody>
                       </table>
                     </div>
-                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b), height: `${b.height || 40}px` }" class="min-h-px"></div>
+                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b, true), height: `${b.height || 40}px` }" class="min-h-px"></div>
                     <div v-else-if="b.type === 'page-break'" class="flex h-5 items-center gap-2 text-[9px] font-bold uppercase text-rose-500"><span class="h-px flex-1 border-t border-dashed border-rose-300"></span>Ngắt trang<span class="h-px flex-1 border-t border-dashed border-rose-300"></span></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
@@ -3367,7 +3561,8 @@ const selectBand = (band) => {
                         <div v-for="(subBlock, subIdx) in col.blocks" :key="subBlock.id"
                           @click.stop="selectedBlockId = subBlock.id; selectedBand = 'header'"
                           class="border rounded p-1.5 cursor-pointer relative group/subblock text-left"
-                          :class="selectedBlockId === subBlock.id ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-300' : 'border-slate-100 bg-white'">
+                          :class="selectedBlockId === subBlock.id ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-300' : 'border-slate-100 bg-white'"
+                          :style="getCanvasBlockCardStyle(subBlock)">
                           
                           <span class="text-[7px] font-black uppercase text-slate-400 absolute -top-1.5 left-1 bg-slate-50 px-1 border border-slate-200 rounded">
                             {{ subBlock.type }}
@@ -3387,7 +3582,7 @@ const selectBand = (band) => {
                           </div>
                           
                           <!-- Content for subblock -->
-                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock)">
+                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock, true)">
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
@@ -3467,7 +3662,8 @@ const selectBand = (band) => {
                     @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'detail', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'detail'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
-                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']">
+                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']"
+                    :style="getCanvasBlockCardStyle(b)">
                     
                     <!-- Block Type Tag -->
                     <span class="absolute -top-1.5 left-2 bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-1.5 rounded-md border border-slate-200">
@@ -3561,10 +3757,10 @@ const selectBand = (band) => {
                             Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
                           </span>
                         </p>
-                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
+                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b, true)">
                           <thead>
                             <tr class="font-bold">
-                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectDetailCell($event, b, 'header', { col, colIdx })" class="relative group/th" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'header', colIdx)) }" :style="getTableHeaderStyle(b, col)">
                                 <input type="text" v-model="col.header" :style="styleObjectToCss(mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle), true)" class="w-full bg-transparent border-none text-slate-800 focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" />
                                 <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
                               </th>
@@ -3576,14 +3772,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'group-cell', { cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="[cell.className, { 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'group-cell', cell.id)) }]" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
                               <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
+                              <td v-for="(col, colIdx) in b.columns" :key="col.value" @click.stop="selectDetailCell($event, b, 'detail', { col, colIdx })" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'detail', colIdx)) }" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3591,7 +3787,7 @@ const selectBand = (band) => {
                           </tbody>
                           <tfoot>
                             <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
-                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'custom-cell', { cell, cellIndex })" :colspan="cell.colspan" class="px-2 py-1" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'custom-cell', cell.id)) }" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
                             </tr>
                             <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
@@ -3601,7 +3797,7 @@ const selectBand = (band) => {
                     </div>
                     
                     <!-- Other Block Types -->
-                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b)">
+                    <div v-if="b.type === 'text'" :class="getBlockScopeClass(b)" :style="getBlockStyle(b, true)">
                       <div v-if="selectedBlockId === b.id" 
                         contenteditable="true"
                         @input="b.content = $event.target.innerHTML; compileHtml()"
@@ -3614,7 +3810,7 @@ const selectBand = (band) => {
                     <div v-else-if="b.type === 'divider'" v-html="b.content"></div>
                     <!-- Configured Static Table rendering -->
                     <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
-                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
+                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b, true)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
                             <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
@@ -3635,7 +3831,7 @@ const selectBand = (band) => {
                         </tbody>
                       </table>
                     </div>
-                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b), height: `${b.height || 40}px` }" class="min-h-px"></div>
+                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b, true), height: `${b.height || 40}px` }" class="min-h-px"></div>
                     <div v-else-if="b.type === 'page-break'" class="flex h-5 items-center gap-2 text-[9px] font-bold uppercase text-rose-500"><span class="h-px flex-1 border-t border-dashed border-rose-300"></span>Ngắt trang<span class="h-px flex-1 border-t border-dashed border-rose-300"></span></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
@@ -3675,7 +3871,8 @@ const selectBand = (band) => {
                         <div v-for="(subBlock, subIdx) in col.blocks" :key="subBlock.id"
                           @click.stop="selectedBlockId = subBlock.id; selectedBand = 'detail'"
                           class="border rounded p-1.5 cursor-pointer relative group/subblock text-left"
-                          :class="selectedBlockId === subBlock.id ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-300' : 'border-slate-100 bg-white'">
+                          :class="selectedBlockId === subBlock.id ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-300' : 'border-slate-100 bg-white'"
+                          :style="getCanvasBlockCardStyle(subBlock)">
                           
                           <span class="text-[7px] font-black uppercase text-slate-400 absolute -top-1.5 left-1 bg-slate-50 px-1 border border-slate-200 rounded">
                             {{ subBlock.type }}
@@ -3695,7 +3892,7 @@ const selectBand = (band) => {
                           </div>
                           
                           <!-- Content for subblock -->
-                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock)">
+                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock, true)">
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
@@ -3775,7 +3972,8 @@ const selectBand = (band) => {
                     @dragover.prevent @drop.stop="onCanvasBlockDrop($event, 'footer', idx, b)"
                     @click.stop="selectedBlockId = b.id; selectedBand = 'footer'"
                     class="border rounded-lg p-2.5 cursor-pointer relative hover:shadow-2xs group/block"
-                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']">
+                    :class="[selectedBlockId === b.id ? 'border-sky-500 bg-sky-50/40 ring-1 ring-sky-300' : 'border-slate-200 bg-white', b.visible === false ? 'opacity-45 border-dotted' : '', b.locked ? 'cursor-default' : '']"
+                    :style="getCanvasBlockCardStyle(b)">
                     
                     <!-- Block Type Tag -->
                     <span class="absolute -top-1.5 left-2 bg-slate-100 text-slate-500 text-[8px] font-black uppercase px-1.5 rounded-md border border-slate-200">
@@ -3881,10 +4079,10 @@ const selectBand = (band) => {
                             Cấp {{ index + 1 }}: {{ group.field }}<span v-if="group.enabledBy"> · Khi: {{ group.enabledBy }}</span><span v-if="index < tableGroups(b).length - 1"> → </span>
                           </span>
                         </p>
-                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
+                        <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b, true)">
                           <thead>
                             <tr class="font-bold">
-                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectQuickFormatTarget({ kind: 'table-header', block: b, column: col })" class="relative group/th" :style="getTableHeaderStyle(b, col)">
+                              <th v-for="(col, colIdx) in b.columns" :key="colIdx" @click.stop="selectDetailCell($event, b, 'header', { col, colIdx })" class="relative group/th" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'header', colIdx)) }" :style="getTableHeaderStyle(b, col)">
                                 <input type="text" v-model="col.header" :style="styleObjectToCss(mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle), true)" class="w-full bg-transparent border-none text-slate-800 focus:ring-1 focus:ring-sky-500 rounded px-1 py-0.5" />
                                 <button @click.stop="deleteTableColumn(b, colIdx)" class="absolute top-1.5 right-1 hidden group-hover/th:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded text-[9px] border-none cursor-pointer items-center justify-center font-bold">×</button>
                               </th>
@@ -3896,14 +4094,14 @@ const selectBand = (band) => {
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
-                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="cell.className" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                                <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'group-cell', { cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="[cell.className, { 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'group-cell', cell.id)) }]" :style="getCustomTableCellStyle(b, cell, {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               </template>
                               <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
                             <tr class="bg-white">
-                              <td v-for="col in b.columns" :key="col.value" @click.stop="selectQuickFormatTarget({ kind: 'table-cell', block: b, column: col })" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
+                              <td v-for="(col, colIdx) in b.columns" :key="col.value" @click.stop="selectDetailCell($event, b, 'detail', { col, colIdx })" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'detail', colIdx)) }" :style="getTableDetailStyle(b, col)" class="font-mono text-slate-400">
                                 {{ col.value }}
                               </td>
                               <td class="bg-slate-50/50" :style="{ borderBottom: b.tableStyle === 'none' ? 'none' : '1px solid #cbd5e1' }"></td>
@@ -3911,7 +4109,7 @@ const selectBand = (band) => {
                           </tbody>
                           <tfoot>
                             <tr v-for="(customRow, customRowIndex) in tableCustomRows(b)" :key="customRow.id" class="bg-slate-100 font-bold">
-                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectQuickFormatTarget({ kind: 'custom-cell', block: b, cell })" :colspan="cell.colspan" class="px-2 py-1" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
+                              <td v-for="(cell, cellIndex) in customRow.cells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'custom-cell', { cell, cellIndex })" :colspan="cell.colspan" class="px-2 py-1" :class="{ 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'custom-cell', cell.id)) }" :style="getCustomTableCellStyle(b, cell, b.columns[cellIndex] || {})">{{ customCellContent(cell, b.dataSource) }}</td>
                               <td class="w-8 px-1 text-center" :style="getTableCellStyle(b, {})"><button type="button" @click.stop="removeTableCustomRow(b, customRowIndex)" class="border-none bg-transparent text-red-500">×</button></td>
                             </tr>
                             <tr class="bg-sky-50"><td :colspan="b.columns.length + 1" class="px-2 py-1 text-center"><button type="button" @click.stop="addTableCustomRow(b)" class="rounded border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black text-sky-700">+ Thêm hàng</button></td></tr>
@@ -3922,7 +4120,7 @@ const selectBand = (band) => {
 
                     <!-- Configured Static Table rendering -->
                     <div v-else-if="b.type === 'static-table'" class="w-full overflow-x-auto text-left">
-                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b)">
+                      <table :class="['w-full border-collapse border-none', getBlockScopeClass(b)]" :style="getBlockStyle(b, true)">
                         <tbody>
                           <tr v-for="(row, rIdx) in b.rows" :key="rIdx">
                             <td v-for="(cell, cIdx) in row.cells" :key="cIdx" v-if="!isStaticCellCovered(b, rIdx, cIdx)"
@@ -3943,7 +4141,7 @@ const selectBand = (band) => {
                         </tbody>
                       </table>
                     </div>
-                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b), height: `${b.height || 40}px` }" class="min-h-px"></div>
+                    <div v-else-if="b.type === 'shape'" :style="{ ...getBlockStyle(b, true), height: `${b.height || 40}px` }" class="min-h-px"></div>
                     <div v-else-if="b.type === 'page-break'" class="flex h-5 items-center gap-2 text-[9px] font-bold uppercase text-rose-500"><span class="h-px flex-1 border-t border-dashed border-rose-300"></span>Ngắt trang<span class="h-px flex-1 border-t border-dashed border-rose-300"></span></div>
                     <div v-else-if="b.type === 'spacer'" class="border border-dashed border-slate-200 bg-slate-50/50 rounded flex items-center justify-center text-[10px] text-slate-400 italic" :style="{ height: `${b.height || 20}px` }">
                       Khoảng trống {{ b.height || 20 }}px
@@ -3983,7 +4181,8 @@ const selectBand = (band) => {
                         <div v-for="(subBlock, subIdx) in col.blocks" :key="subBlock.id"
                           @click.stop="selectedBlockId = subBlock.id; selectedBand = 'footer'"
                           class="border rounded p-1.5 cursor-pointer relative group/subblock text-left"
-                          :class="selectedBlockId === subBlock.id ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-300' : 'border-slate-100 bg-white'">
+                          :class="selectedBlockId === subBlock.id ? 'border-sky-500 bg-sky-50/60 ring-1 ring-sky-300' : 'border-slate-100 bg-white'"
+                          :style="getCanvasBlockCardStyle(subBlock)">
                           
                           <span class="text-[7px] font-black uppercase text-slate-400 absolute -top-1.5 left-1 bg-slate-50 px-1 border border-slate-200 rounded">
                             {{ subBlock.type }}
@@ -4003,7 +4202,7 @@ const selectBand = (band) => {
                           </div>
                           
                           <!-- Content for subblock -->
-                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock)">
+                          <div v-if="subBlock.type === 'text'" :class="getBlockScopeClass(subBlock)" :style="getBlockStyle(subBlock, true)">
                             <div v-if="selectedBlockId === subBlock.id"
                               contenteditable="true"
                               @input="subBlock.content = $event.target.innerHTML; compileHtml()"
@@ -4103,6 +4302,62 @@ const selectBand = (band) => {
                 </label>
               </div>
 
+              <!-- Detail Table Cell Inspector Card -->
+              <div v-if="isDetailTargetActive" class="flex flex-col gap-2.5 bg-sky-50/70 p-3 border border-sky-200 rounded-xl shadow-3xs">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-bold text-sky-800 uppercase">
+                    Ô Bảng Đang Chọn ({{ selectedDetailCellTargets.length }} ô)
+                  </span>
+                  <button type="button" @click="selectedDetailCellKeys = []; selectedDetailCellTargets = []" class="text-[10px] text-sky-600 hover:text-sky-800 underline">Bỏ chọn ô</button>
+                </div>
+                
+                <div class="flex items-center gap-1">
+                  <button type="button" @click="toggleDetailBold" :class="isDetailBold ? 'bg-sky-200 border-sky-400 text-sky-900 font-black' : 'bg-white border-slate-200 text-slate-700'" class="h-7 w-7 rounded border text-xs font-bold hover:bg-sky-100" title="In đậm">B</button>
+                  <button type="button" @click="toggleDetailItalic" :class="isDetailItalic ? 'bg-sky-200 border-sky-400 text-sky-900' : 'bg-white border-slate-200 text-slate-700'" class="h-7 w-7 rounded border text-xs italic hover:bg-sky-100" title="In nghiêng">I</button>
+                  <button type="button" @click="toggleDetailUnderline" :class="isDetailUnderline ? 'bg-sky-200 border-sky-400 text-sky-900' : 'bg-white border-slate-200 text-slate-700'" class="h-7 w-7 rounded border text-xs underline hover:bg-sky-100" title="Gạch chân">U</button>
+                  <select @change="applyDetailStyle('textAlign', $event.target.value)" class="h-7 flex-1 rounded border border-slate-200 px-1 text-[10px] bg-white" title="Căn lề">
+                    <option value="">Căn lề</option>
+                    <option value="left">Trái</option>
+                    <option value="center">Giữa</option>
+                    <option value="right">Phải</option>
+                  </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="flex flex-col gap-1 text-[10px] font-bold text-slate-500">
+                    Cỡ chữ:
+                    <select @change="applyDetailStyle('fontSize', $event.target.value)" class="h-7 rounded border border-slate-200 px-1 text-[10px] bg-white">
+                      <option value="">Mặc định</option>
+                      <option v-for="size in fontSizeOptions" :key="size" :value="`${size}px`">{{ size }}px</option>
+                    </select>
+                  </label>
+                  <label class="flex flex-col gap-1 text-[10px] font-bold text-slate-500">
+                    Màu chữ:
+                    <input type="color" :value="colorInputValue(detailTextColor, '#1e293b')" @input="applyDetailStyle('color', $event.target.value)" class="h-7 w-full border border-slate-200 rounded cursor-pointer" />
+                  </label>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="flex flex-col gap-1 text-[10px] font-bold text-slate-500">
+                    Màu nền:
+                    <input type="color" :value="colorInputValue(detailBgColor, '#ffffff')" @input="applyDetailStyle('backgroundColor', $event.target.value)" class="h-7 w-full border border-slate-200 rounded cursor-pointer" />
+                  </label>
+                  <div class="flex flex-col justify-end">
+                    <button type="button" @click="applyDetailStyle('backgroundColor', '')" class="h-7 rounded border border-slate-200 bg-white text-[10px] text-slate-600 hover:bg-slate-100">Xóa màu nền</button>
+                  </div>
+                </div>
+
+                <!-- If 1 cell is selected and has editable content/header/label -->
+                <div v-if="selectedDetailCellTargets.length === 1 && selectedDetailCellTargets[0].kind === 'header'" class="flex flex-col gap-1">
+                  <span class="text-[10px] font-bold text-slate-500">Tiêu đề cột:</span>
+                  <input type="text" v-model="selectedDetailCellTargets[0].col.header" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white" />
+                </div>
+                <div v-else-if="selectedDetailCellTargets.length === 1 && selectedDetailCellTargets[0].cell" class="flex flex-col gap-1">
+                  <span class="text-[10px] font-bold text-slate-500">Nội dung ô:</span>
+                  <input type="text" v-model="selectedDetailCellTargets[0].cell.label" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white" />
+                </div>
+              </div>
+
               <!-- Alignment & Font properties -->
               <div class="flex flex-col gap-2.5 bg-white p-3 border border-slate-200 rounded-xl shadow-3xs">
                 <span class="text-[10px] font-bold text-slate-400 uppercase">Định dạng kiểu chữ (Styles)</span>
@@ -4170,35 +4425,43 @@ const selectBand = (band) => {
                 <div class="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-100">
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Top:</span>
-                    <input type="text" v-model="selectedBlock.style.paddingTop" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.paddingTop" @input="compileHtml" @blur="selectedBlock.style.paddingTop = normalizeCssDimension(selectedBlock.style.paddingTop); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Bottom:</span>
-                    <input type="text" v-model="selectedBlock.style.paddingBottom" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.paddingBottom" @input="compileHtml" @blur="selectedBlock.style.paddingBottom = normalizeCssDimension(selectedBlock.style.paddingBottom); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Left:</span>
-                    <input type="text" v-model="selectedBlock.style.paddingLeft" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.paddingLeft" @input="compileHtml" @blur="selectedBlock.style.paddingLeft = normalizeCssDimension(selectedBlock.style.paddingLeft); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Padding Right:</span>
-                    <input type="text" v-model="selectedBlock.style.paddingRight" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.paddingRight" @input="compileHtml" @blur="selectedBlock.style.paddingRight = normalizeCssDimension(selectedBlock.style.paddingRight); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Top:</span>
-                    <input type="text" v-model="selectedBlock.style.marginTop" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.marginTop" @input="compileHtml" @blur="selectedBlock.style.marginTop = normalizeCssDimension(selectedBlock.style.marginTop); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Bottom:</span>
-                    <input type="text" v-model="selectedBlock.style.marginBottom" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.marginBottom" @input="compileHtml" @blur="selectedBlock.style.marginBottom = normalizeCssDimension(selectedBlock.style.marginBottom); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Left:</span>
-                    <input type="text" v-model="selectedBlock.style.marginLeft" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.marginLeft" @input="compileHtml" @blur="selectedBlock.style.marginLeft = normalizeCssDimension(selectedBlock.style.marginLeft); compileHtml()" placeholder="0px" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                   <div class="flex flex-col gap-1">
                     <span class="text-[10px] text-slate-400 font-bold uppercase">Margin Right:</span>
-                    <input type="text" v-model="selectedBlock.style.marginRight" @input="compileHtml" class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                    <input type="text" v-model="selectedBlock.style.marginRight" @input="compileHtml" @blur="selectedBlock.style.marginRight = normalizeCssDimension(selectedBlock.style.marginRight); compileHtml()" placeholder="0px, 20, 5%..." class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Chiều rộng (Width):</span>
+                    <input type="text" v-model="selectedBlock.style.width" @input="compileHtml" @blur="selectedBlock.style.width = normalizeCssDimension(selectedBlock.style.width); compileHtml()" placeholder="100%, 55%, 300px..." class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Chiều cao (Height):</span>
+                    <input type="text" v-model="selectedBlock.style.height" @input="compileHtml" @blur="selectedBlock.style.height = normalizeCssDimension(selectedBlock.style.height); compileHtml()" placeholder="auto, 50px..." class="w-full text-xs border border-slate-200 rounded-lg px-2 py-1" />
                   </div>
                 </div>
 
@@ -4787,5 +5050,10 @@ input[type="range"] {
 }
 .report-header-band, .report-detail-band, .report-footer-band {
   width: 100%;
+}
+.selected-detail-cell {
+  outline: 2px solid #000000 !important;
+  outline-offset: -2px !important;
+  box-shadow: inset 0 0 0 2px #000000 !important;
 }
 </style>

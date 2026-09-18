@@ -15,14 +15,17 @@ use Illuminate\Support\Facades\DB;
 class ReportDatasetEnricher
 {
     private readonly PaidCompanyDebtsDataAdapter $paidCompanyDebts;
+    private readonly SalesInvoicesDataAdapter $salesInvoices;
 
     public function __construct(
         private readonly ArrivingRoomsSummaryService $arrivingRoomsSummary,
         private readonly HousekeepingInvoiceDataAdapter $housekeepingInvoices,
         private readonly CompanyDebtDataAdapter $companyDebt,
         ?PaidCompanyDebtsDataAdapter $paidCompanyDebts = null,
+        ?SalesInvoicesDataAdapter $salesInvoices = null,
     ) {
         $this->paidCompanyDebts = $paidCompanyDebts ?? new PaidCompanyDebtsDataAdapter();
+        $this->salesInvoices = $salesInvoices ?? new SalesInvoicesDataAdapter();
     }
 
     public function enrich(ReportDefinition $reportDefinition, array $data): array
@@ -45,6 +48,9 @@ class ReportDatasetEnricher
         }
         if ($code === 'PAID_COMPANY_DEBTS') {
             return $this->paidCompanyDebts->adapt($this->resolvePaidDebtUserNames($data));
+        }
+        if (in_array($code, ['SALES_INVOICES', 'RPT_SALES_INVOICES'], true)) {
+            return $this->salesInvoices->adapt($this->resolveSystemUserNames($data));
         }
         if (in_array($code, ['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'], true)) {
             return $this->enrichExpectedBreakfast($data);

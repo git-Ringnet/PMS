@@ -982,8 +982,16 @@ class TemplateRendererService
         body {
             width: 100% !important;
             max-width: none !important;
+            box-sizing: border-box !important;
+            padding-top: '.$marginTop.'mm !important;
+            padding-bottom: '.$marginBottom.'mm !important;
+            padding-left: '.$marginLeft.'mm !important;
+            padding-right: '.$marginRight.'mm !important;
         }
         @media print {
+            body {
+                padding: 0 !important;
+            }
             @page {
                 size: '.$pageSize.' '.$pageOrientation.';
                 margin: '.$marginTop.'mm '.$marginRight.'mm '.$marginBottom.'mm '.$marginLeft.'mm;

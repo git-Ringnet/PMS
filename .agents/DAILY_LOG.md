@@ -11,6 +11,94 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-18] - Chuẩn hóa toàn bộ thuộc tính lề và kích thước báo cáo lấy trực tiếp từ Form Designer
+### Module: Render biểu mẫu báo cáo ([TemplateRendererService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/TemplateRendererService.php), [TemplateRendererServiceTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/TemplateRendererServiceTest.php), [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php))
+
+- **Bối cảnh & Nguyên nhân**:
+  - Người dùng đã cấu hình lề trang (`margin_top: 10`, `margin_bottom: 7`, `margin_left: 5`, `margin_right: 5`) trong Form Designer, nhưng khi hiển thị báo cáo trên web và preview, nội dung vẫn dính sát 100% vào mép trang giấy.
+  - Template `sales_invoices_reference.php` và dữ liệu trong database tồn tại đoạn CSS tĩnh `body { margin: 0; padding: 0; }` ghi đè toàn bộ padding của `body`.
+  - Khối CSS bảo vệ cuối cùng trong `TemplateRendererService::buildFullHtmlDocument` chỉ khóa `width: 100% !important; max-width: none !important;` mà chưa khóa các thông số lề trang (`padding-top/bottom/left/right`) và `box-sizing: border-box !important;`.
+- **Đã hoàn thành**:
+  - **Khóa quyền ưu tiên tuyệt đối cho lề trang từ Designer (`TemplateRendererService.php`)**:
+    - Bổ sung `padding-top: {$marginTop}mm !important;`, `padding-bottom: {$marginBottom}mm !important;`, `padding-left: {$marginLeft}mm !important;`, `padding-right: {$marginRight}mm !important;` và `box-sizing: border-box !important;` vào khối CSS ưu tiên cuối cùng.
+    - Tại `@media print`: thiết lập `body { padding: 0 !important; }` để nhường quyền cho `@page { margin: ... }` quản lý lề trang in vật lý chuẩn xác.
+  - **Dọn dẹp CSS xung đột**:
+    - Loại bỏ `margin: 0; padding: 0;` trong khối `body` của [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php).
+    - Cập nhật trực tiếp cột `css` của mẫu `SALES_INVOICES_REFERENCE` trong bảng `templates` trên cả 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+- **Kiểm thử & Xác thực**:
+  - PHPUnit test [TemplateRendererServiceTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Unit/TemplateRendererServiceTest.php): 12/12 passed (44 assertions).
+  - Feature test `SalesInvoicesReportTest`: 6/6 passed (56 assertions).
+  - Frontend test: 14/14 passed.
+  - Frontend production build: Thành công 100% (4.68s).
+
+## [2026-09-18] - Khắc phục lỗi Form Designer không thụt lề khi nhập Margin Right và các thông số kích thước
+### Module: Cấu hình báo cáo / Form Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue), [TemplateEditorModalBlockStyling.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalBlockStyling.test.js))
+
+- **Nguyên nhân gốc rễ**:
+  - Người dùng nhập số nguyên thuần túy (ví dụ: `20`, `40`) vào ô `Margin Right`, giá trị lưu thành chuỗi `"20"`. Trong CSS, `margin-right: 20` thiếu đơn vị (`px`) nên trình duyệt tự động loại bỏ.
+  - Theo chuẩn CSS Box Model (Section 10.3.3): Một phần tử block hoặc table khi có `width: 100%`, tổng chiều rộng đã chiếm toàn bộ container, nên `margin-right` không làm phần tử co lại từ mép phải mà sẽ bị reset về `0` hoặc tràn ra ngoài overflow.
+  - Trên Canvas WYSIWYG, thẻ card bao quanh khối (`div.group/block` và `div.group/subblock`) chưa được gắn `:style="getCanvasBlockCardStyle(b)"`. Style trước đó bị đẩy xuống thẻ con bên trong (`table`), trong khi thẻ con lại có class `w-full` và nằm trong container `overflow-x-auto`, dẫn đến việc cả khối lẫn bảng con đều không thụt vào khi chỉnh margin-right.
+- **Đã hoàn thành**:
+  - **Chuẩn hóa đơn vị kích thước CSS (`normalizeCssDimension`)**: Tự động chuyển đổi số thuần (vd `20`, `40.5`) thành `20px`, bảo toàn các đơn vị hợp lệ (`%`, `mm`, `pt`, `auto`).
+  - **Tự động quy đổi độ rộng khi có lề (`resolveBlockStyles`)**:
+    - Khi khối có `marginLeft` hoặc `marginRight` và `width` để trống hoặc `100%`, tự động tính toán `width: calc(100% - ${mr})` hoặc `calc(100% - ${ml} - ${mr})`.
+    - Thiết lập `boxSizing: 'border-box'` đảm bảo viền và lề không làm vỡ kích thước layout.
+  - **Cập nhật hiển thị Canvas (`getCanvasBlockCardStyle` & `getBlockStyle(b, true)`)**:
+    - Thẻ card của khối (`div.group/block`) và subblock (`div.group/subblock`) trên cả 3 band (Header, Detail, Footer) được gắn `:style="getCanvasBlockCardStyle(b)"` để phản ánh trực quan ngay lập tức các margin, width, height trên canvas.
+    - Các phần tử con bên trong card (`table`, `div[type=text]`, `shape`) sử dụng `getBlockStyle(b, true)` loại trừ margin ngoài để không bị nhân đôi lề.
+  - **Cập nhật ô nhập Right Panel**:
+    - Bổ sung sự kiện `@blur` tự động chuẩn hóa đơn vị CSS (`normalizeCssDimension`) khi người dùng nhập xong và rời chuột khỏi ô nhập `Padding`, `Margin`, `Width`, `Height`.
+    - Bổ sung placeholder trực quan hướng dẫn định dạng (`0px, 20, 5%...`, `100%, 55%, 300px...`).
+- **Kiểm thử & Xác thực**:
+  - Tạo bộ test mới [TemplateEditorModalBlockStyling.test.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModalBlockStyling.test.js): 14/14 tests passed (100%).
+  - Chạy `npm run build` trên `frontend/`: Thành công 100% trong 5.05s.
+  - Backend feature tests: Đạt 100%.
+
+## [2026-09-18] - Triển khai Báo cáo hóa đơn bán hàng (SALES_INVOICES - sp_094 legacy)
+### Module: Báo cáo thống kê lễ tân ([sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php), [SalesInvoicesDataAdapter.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/SalesInvoicesDataAdapter.php), [ReportDatasetEnricher.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/Reports/ReportDatasetEnricher.php), [2026_09_18_100000_create_sales_invoices_report.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_100000_create_sales_invoices_report.php), [sales_invoices.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/sales_invoices.md))
+
+- **Bối cảnh & Nghiệp vụ**:
+  - Triển khai báo cáo dòng 153 trong `DANH MỤC BÁO CÁO.xlsx`, Sheet 66 `BC HĐ bán hàng`.
+  - Đối chiếu logic từ Stored Procedure `sp_094` và hàm `func_021` trên SQL Server SSMS (`ProVistaDTXHotel`).
+  - Đối chiếu giao diện và bộ lọc thực tế từ ảnh chụp màn hình legacy `sheet66_image73.png`.
+- **Đã hoàn thành**:
+  - **Cơ sở dữ liệu & Migration**:
+    - Bổ sung các cột `nullable()` vào bảng `sales_invoices`: `booking_id`, `rental_room_id`, `payment_id`, `company_id`, `guest_name`, `original_rate`, `service_charge_amount`, `special_tax`, `tax`, `discount`, `department`, `pack1`.
+    - Tạo Stored Procedure `rpt_sales_invoices` hỗ trợ 9 tham số, phân tách tiền thanh toán vào 6 cột chi tiết (`Cash`, `Card`, `Voucher`, `City`, `DPCash`, `DPCard`), hỗ trợ lọc VATNo theo `p_export_type`.
+    - Chạy migration `2026_09_18_100000` thành công trên cả 5 kết nối database chi nhánh (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+    - Đăng ký `report_data_sources` (`RPT_SALES_INVOICES`), `report_definitions` (`SALES_INVOICES`), `templates` (`SALES_INVOICES_REFERENCE`), và liên kết `report_definition_template`.
+    - Cấu hình chuẩn `parameter_ui_schema` 5 control: Chọn ngày, Chọn bộ phận, Chọn công ty, Chọn người dùng, Xem Theo.
+  - **Data Adapter & Template**:
+    - Tạo `SalesInvoicesDataAdapter`: Định dạng ngày `dd/mm/yyyy`, chuẩn hóa tên khách `BK ...`, tính toán tự động 3 dòng cho `Bảng Phân Bổ Tiền Tệ` (`Bank transfer/ Chuyển khoản`, `Cash/ Tiền mặt`, `Credit Card/ Cà thẻ`) và dòng tổng theo công ty.
+    - Cập nhật an toàn `ReportDatasetEnricher` chỉ bổ sung nhánh điều kiện độc lập cho `SALES_INVOICES` và `RPT_SALES_INVOICES` (Zero side-effects).
+    - Tạo `sales_invoices_reference.php`: Khổ ngang A4 landscape, header 2 tầng, gom nhóm ngày, dòng tổng phụ `Số lượng:` và `Tổng của Ngày`, dòng tổng toàn bảng, và bảng phân bổ tiền tệ 55% căn giữa.
+  - **Kiểm thử & Xác thực**:
+    - `SalesInvoicesReportTest.php`: Đạt 5/5 tests (56 assertions, 1 skipped do sqlite).
+    - Kiểm thử procedure và rendering thực tế trên MySQL runtime: Tạo HTML chuẩn 100% không lỗi.
+    - `VipGuestsReportTest.php`: 3/3 passed (68 assertions).
+    - `SharedReportLayoutTest.php`: 2/2 passed (4 assertions).
+    - `npm run build`: Frontend build thành công 100% trong 7.92s.
+    - Tạo tài liệu đầy đủ tại `.codex/docs/reports/sales_invoices.md`.
+  - **Chuẩn hóa chỉ số thuộc tính trong Form Designer**:
+    - Bổ sung tường minh các thuộc tính `marginTop`, `marginBottom`, `marginLeft`, `marginRight`, `paddingTop`, `paddingBottom`, `paddingLeft`, `paddingRight` cho tất cả các block.
+    - Sửa bảng phụ tiền tệ từ CSS shorthand `margin: 0 auto` sang `marginLeft: auto`, `marginRight: auto`, `marginBottom: 14px`, `borderWidth: 1px`, `borderColor: #aeb5c0` để Form Designer hiển thị chuẩn xác từng ô thuộc tính.
+    - Bổ sung `headerStyle` (màu nền `#d9deea`, viền `#aeb5c0`, padding `3px 4px`, font `9.5px`) và `cellStyle` (viền `#aeb5c0`, padding `3px 4px`, font `9.5px`) cho 14 cột bảng chính và 4 cột bảng phân bổ tiền tệ.
+    - Đồng bộ khóa `groups` để Form Designer nhận diện và hiển thị trực quan dòng gom nhóm Ngày kèm chữ "Ngày:" xanh lá `#2e7d32`.
+    - Đồng bộ lại toàn bộ dữ liệu mẫu template mới trên cả 5 kết nối database (`mysql`, `mysql_hkt1` đến `mysql_hkt4`).
+  - **Cải tiến & Hoàn thiện Form Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue))**:
+    - Khôi phục và nâng cấp tính năng chọn ô bảng Detail Table:
+      - Click chọn ô bất kỳ trong bảng Detail Table (tiêu đề cột `header`, ô dữ liệu `detail`, ô nhóm `group-cell`, ô tổng/tùy chỉnh `custom-cell`) ở cả 3 band (Header, Detail, Footer).
+      - Tô viền đen đậm chuẩn mực (`outline: 2px solid #000000; outline-offset: -2px; box-shadow: inset 0 0 0 2px #000000;`).
+      - Hỗ trợ giữ phím `Ctrl`/`Command` để chọn nhiều ô cùng lúc (multi-select).
+      - Tự động nạp thuộc tính ô/cột lên cả thanh Floating Toolbar và Bảng Thuộc Tính (Right Panel) để chỉnh sửa trực tiếp: In đậm, In nghiêng, Gạch chân, Cỡ chữ, Căn lề, Màu chữ, Màu nền, Tiêu đề cột/Nội dung ô.
+    - Bổ sung ô nhập `Chiều rộng (Width)` và `Chiều cao (Height)` trên Bảng Thuộc Tính (Right Panel) giúp chủ động điều chỉnh độ rộng khối theo phần trăm (`100%`, `55%`) hoặc pixel (`300px`), tránh hiểu nhầm do margin.
+    - Cập nhật mẫu [sales_invoices_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/sales_invoices_reference.php) cho khối `sales_invoices_allocation_table` lên độ rộng `width: 100%`, `marginLeft: 0px`, `marginRight: 0px` và đồng bộ thành công vào DB của tất cả các chi nhánh.
+    - Kiểm thử tự động:
+      - `TemplateEditorModalDetailTable.test.js`: 4/4 passed (100%).
+      - `TemplateEditorModalPageLayout.test.js`: 5/5 passed (100%).
+      - `SalesInvoicesReportTest.php`: 5/5 passed.
+      - `npm run build`: Build frontend thành công 100% không lỗi.
+
 ## [2026-09-17] - Chuẩn hóa cỡ chữ (fontSize: 9px) và padding ô trong content_json Báo cáo dự kiến khách ăn sáng
 ### Module: Cấu hình báo cáo & Báo cáo phòng ([expected_breakfast_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_summary_reference.php), [expected_breakfast_army_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_army_summary_reference.php), [expected_breakfast_dtx_summary_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_dtx_summary_reference.php), [expected_breakfast_detail_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/expected_breakfast_detail_reference.php), [2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_17_183000_align_expected_breakfast_templates_with_legacy_design.php))
 

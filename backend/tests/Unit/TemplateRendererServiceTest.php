@@ -53,6 +53,11 @@ class TemplateRendererServiceTest extends TestCase
 
         $this->assertStringContainsString('size: A4 landscape;', $rendered);
         $this->assertStringContainsString('margin: 0mm 5mm 8mm 0mm;', $rendered);
+        $this->assertStringContainsString('padding-top: 0mm !important;', $rendered);
+        $this->assertStringContainsString('padding-right: 5mm !important;', $rendered);
+        $this->assertStringContainsString('padding-bottom: 8mm !important;', $rendered);
+        $this->assertStringContainsString('padding-left: 0mm !important;', $rendered);
+        $this->assertStringContainsString('box-sizing: border-box !important;', $rendered);
         $this->assertGreaterThan(
             strpos($rendered, 'max-width: 210mm;'),
             strrpos($rendered, 'max-width: none !important;')
