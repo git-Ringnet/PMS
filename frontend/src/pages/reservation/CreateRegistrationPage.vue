@@ -602,6 +602,16 @@ function openDepositModal() {
   isDepositModalOpen.value = true
 }
 
+const depositModalRooms = computed(() => {
+  if (Array.isArray(modalForm.value?.rooms) && modalForm.value.rooms.length > 0) {
+    return modalForm.value.rooms
+  }
+  if (Array.isArray(activeTab.value?.rooms) && activeTab.value.rooms.length > 0) {
+    return activeTab.value.rooms
+  }
+  return []
+})
+
 async function openDepositFromQuery() {
   if (route.query.action !== 'deposit' || !activeTab.value) return
 
@@ -7976,7 +7986,7 @@ defineExpose({
         :paymentMethods="paymentMethods" 
         :currenciesList="currenciesList" 
         :department-id="currentBookingModule === 'FO' ? 'FO' : 'MR'"
-        :rooms="modalForm?.rooms || activeTab?.rooms || []"
+        :rooms="depositModalRooms"
         v-model:deposits="modalForm.deposits" 
         @update:paymentValue="modalForm.paymentValue = $event"
       />
