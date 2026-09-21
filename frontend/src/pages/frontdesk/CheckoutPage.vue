@@ -885,6 +885,14 @@ const refreshCheckoutData = async () => {
         displayedBookingsList.value = [freshB]
       }
       selectedBooking.value = freshB
+      if (currentBookingId) {
+        window.dispatchEvent(new CustomEvent('booking-updated', { detail: { bookingId: currentBookingId } }))
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('pms-room-updates')
+          bc.postMessage({ type: 'booking-updated', bookingId: currentBookingId })
+          bc.close()
+        }
+      }
       if (currentRoomId) {
         const freshR = freshB.roomItems.find(r => r.roomId === currentRoomId)
         if (freshR) {
