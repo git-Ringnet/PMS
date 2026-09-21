@@ -9,6 +9,53 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-21] - Khôi phục thứ tự cột danh sách Sơ đồ phòng khớp yêu cầu trước đó & Sửa hiển thị icon tìm kiếm
+### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Khôi phục thứ tự 17 cột danh sách phòng**:
+  - Thứ tự chuẩn đã sắp xếp: Checkbox -> TTĐK -> TT phòng -> Tầng -> Phòng -> Loại phòng -> Dạng phòng -> Tên khách -> Mã ĐK -> Tên đăng ký -> Ngày đến -> Ngày đi -> Công ty -> Thêm giường -> Yêu cầu ĐB -> Nhận phòng trễ -> Chuyển phòng kế hoạch.
+  - Bảo toàn đầy đủ toàn bộ icon bộ lọc / tìm kiếm popover cho cả 17 cột đã xây dựng.
+  - Tối ưu căn lề popover (`right-0` cho các cột sát lề phải: Công ty, Thêm giường, Yêu cầu ĐB, Nhận phòng trễ, Chuyển phòng kế hoạch) tránh tràn viền màn hình.
+- **Sửa lỗi 4 icon tìm kiếm `[🔍]` bị ẩn (Phòng, Tên khách, Ngày đến, Ngày đi)**:
+  - Khắc phục thuộc tính SVG đặt nhầm class `stroke-currentColor stroke-width-2` sang chuẩn SVG attribute `fill="none" stroke="currentColor" stroke-width="2"`, giúp icon hiển thị rõ nét và đổi màu sky/slate đồng bộ khi kích hoạt bộ lọc.
+- **Thêm tooltip hiển thị thông tin tên cột đầy đủ khi hover chuột**:
+  - Bổ sung thuộc tính `title` vào cả thẻ `<th>` và `<span class="truncate">` cho toàn bộ các cột trong header bảng danh sách phòng.
+  - Khi hover vào các cột có chữ ngắn bị ẩn bớt (`...`) như `TTĐK`, `TT Phòng`, `Dạng phòng`, `Mã ĐK`, `Yêu cầu ĐB`, `Nhận phòng trễ`, `Chuyển phòng kế hoạch`,... trình duyệt sẽ hiển thị tooltip với tên đầy đủ rõ ràng (ví dụ: `Tình trạng đăng ký (TTĐK)`, `Yêu cầu đặc biệt (YCĐB)`, `Nhận phòng trễ (Late check-in)`,...).
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành thành công 100% (0 lỗi).
+
+## [2026-09-18] - Cập nhật Khai báo lưu trú (Trẻ em, Phòng chuyển, Khách đang ở) & Chuẩn hóa dữ liệu Khách / residence_types
+### Module: Đặt phòng, Khai báo lưu trú & Khách lưu trú ([ResidenceDeclarationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue), [Guest.php](file:///d:/PMS/backend/app/Models/Guest.php), [BookingChild.php](file:///d:/PMS/backend/app/Models/BookingChild.php), [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php), [2026_09_18_120000_create_sp8066_and_normalize_guests.php](file:///d:/PMS/backend/database/migrations/2026_09_18_120000_create_sp8066_and_normalize_guests.php))
+
+- **1. Khai báo lưu trú ([ResidenceDeclarationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))**:
+  - **Điều kiện tải danh sách**: Chỉ lấy các phòng có `status == 1` (In-house) với `arrival_date == targetDate`.
+  - **Tải cả người lớn và trẻ em**:
+    + Người lớn tải từ `br.guests` (hoặc contact guest booking), toggle `N.Lớn = true` (bật).
+    + Trẻ em tải từ `br.children`, toggle `N.Lớn = false` (tắt).
+  - **Bộ lọc "Khách đang ở" (`inHouse`)**: Khi bật checkbox này, hiển thị thêm các phòng in-house có `arrival_date < targetDate < departure_date`.
+  - **Thêm cột "Ghi chú chuyển phòng" & bộ lọc "Phòng Chuyển" (`roomMove`)**:
+    + Nếu phòng chuyển sau khi đã ở ($\ge 1$ đêm, `old_arrival < new_arrival`):
+      * Ngày check-in ban đầu: hiển thị phòng cũ (không có ghi chú).
+      * Ngày chuyển phòng (`targetDate == new_arrival`): chỉ hiển thị phòng mới khi người dùng tick chọn mục **"Phòng Chuyển"**; hiển thị ghi chú `From Room {old_number}, old arrival date: {dd/mm/yyyy}`. Nếu không tick chọn "Phòng Chuyển" thì không hiển thị.
+    + Nếu phòng chuyển cùng ngày nhận phòng (`old_arrival == new_arrival`): chỉ hiển thị phòng vừa chuyển tới, không hiển thị phòng cũ (`status = 100`).
+  - **Bộ lọc giao diện (khớp Ảnh 1)**: Popup dropdown gồm ô tìm kiếm và 6 checkbox: `VAT`, `No VAT`, `Trẻ em`, `Passport`, `Phòng Chuyển`, `Khách đang ở`, nút `Lưu`. Nút bấm toolbar hiển thị `Chọn: {count} v`.
+  - **Xuất file**: Đã bổ sung cột `Ghi chú chuyển phòng` vào file xuất Excel tổng hợp và file CSV.
+- **2. Bảng loại cư trú `residence_types` (thay thế `sp8066`)**:
+  - Xóa bỏ bảng `sp8066`, model `Sp8066.php` và endpoint API `sp8066`.
+  - Tái sử dụng bảng chuẩn có sẵn [residence_types](file:///d:/PMS/backend/database/migrations/2026_09_08_120000_create_residence_types_table.php) gồm 3 bản ghi: ID 1 (`Địa chỉ thường trú` / `Thường trú`), ID 2 (`Địa chỉ tạm trú` / `Tạm trú`), ID 3 (`Địa chỉ khác` / `Khác`) khớp 100% Ảnh 2.
+- **3. Chuẩn hóa lưu trữ dữ liệu Khách hàng (`guests` và `booking_children`)**:
+  - `gender`: Tự động map và lưu mã số `1` (Nam), `2` (Nữ) qua model hook.
+  - `nationality_code`: Chuẩn hóa 3 ký tự ISO (Alpha-3, VD: `VNM`, `RUS`).
+  - `guest_type`: Lưu ID số theo `guest_types`.
+  - `residence_type`: Lưu ID số theo `residence_types` (`1`, `2`, `3`).
+  - `entry_purpose`: Lưu ID số theo `entry_purposes`.
+  - `border_gate`: Lưu mã code theo `border_gates` (VD: `SCR`).
+  - Migration đồng bộ lại toàn bộ dữ liệu lịch sử trong DB chi nhánh.
+- **4. Kiểm thử**:
+  - `npm run build`: Hoàn thành thành công 100% (0 lỗi, 4.63s).
+  - `php artisan test`: 14/14 tests suite Master Data, Khách hàng & Chuyển phòng passed (112 assertions).
+
+
 ## [2026-09-18] - Bổ sung hàng tổng (customRows) trên Canvas Form Designer cho 4 báo cáo (Dòng 155, 156, 162, 163)
 ### Module: Form Designer & Biểu mẫu Báo cáo ([unpaid_service_bills_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php), [room_rate_statistics_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php), [daily_frontdesk_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/daily_frontdesk_reference.php), [cancelled_invoices_payments_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/cancelled_invoices_payments_reference.php), [2026_09_18_173500_sync_report_custom_rows_designer.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_173500_sync_report_custom_rows_designer.php))
 

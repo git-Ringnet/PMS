@@ -3229,9 +3229,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 2. TTĐK [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Tình trạng đăng ký (TTĐK)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">TTĐK</span>
+                            <span class="truncate" title="Tình trạng đăng ký (TTĐK)">TTĐK</span>
                             <button type="button" @click.stop="toggleColFilter('ttdk')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('ttdk') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TTĐK">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3251,56 +3251,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 3. Nhận phòng trễ [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px]">
+                        <!-- 3. TT Phòng [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Tình trạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Nhận phòng trễ</span>
-                            <button type="button" @click.stop="toggleColFilter('lateCheckin')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('lateCheckin') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc nhận phòng trễ">
-                              <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
-                            </button>
-                          </div>
-                          <!-- Popover -->
-                          <div v-if="activeColFilter === 'lateCheckin'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
-                            <div class="space-y-1 mb-2">
-                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
-                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.lateCheckin" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                                <span class="truncate">{{ opt.label }}</span>
-                              </label>
-                            </div>
-                            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-                              <button type="button" @click.stop="resetCheckboxFilter('lateCheckin')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
-                              <button type="button" @click.stop="applyCheckboxFilter('lateCheckin')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
-                            </div>
-                          </div>
-                        </th>
-
-                        <!-- 4. Chuyển phòng kế hoạch [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[130px]">
-                          <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Chuyển phòng kế hoạch</span>
-                            <button type="button" @click.stop="toggleColFilter('planMove')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('planMove') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc chuyển phòng">
-                              <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
-                            </button>
-                          </div>
-                          <!-- Popover -->
-                          <div v-if="activeColFilter === 'planMove'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
-                            <div class="space-y-1 mb-2">
-                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
-                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.planMove" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                                <span class="truncate">{{ opt.label }}</span>
-                              </label>
-                            </div>
-                            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-                              <button type="button" @click.stop="resetCheckboxFilter('planMove')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
-                              <button type="button" @click.stop="applyCheckboxFilter('planMove')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
-                            </div>
-                          </div>
-                        </th>
-
-                        <!-- 5. TT Phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]">
-                          <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">TT Phòng</span>
+                            <span class="truncate" title="Tình trạng phòng">TT Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomStatus')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomStatus') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TT Phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3320,56 +3274,53 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 6. Thêm giường [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]">
+                        <!-- 4. Tầng [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[70px]" title="Tầng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Thêm giường</span>
-                            <button type="button" @click.stop="toggleColFilter('extraBed')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('extraBed') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc thêm giường">
+                            <span class="truncate" title="Tầng">Tầng</span>
+                            <button type="button" @click.stop="toggleColFilter('floor')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('floor') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tầng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
                           </div>
                           <!-- Popover -->
-                          <div v-if="activeColFilter === 'extraBed'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
-                            <div class="space-y-1 mb-2">
-                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
-                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.extraBed" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                          <div v-if="activeColFilter === 'floor'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
+                            <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
+                              <label v-for="opt in dynamicFloorOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
+                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.floor" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate">{{ opt.label }}</span>
                               </label>
                             </div>
                             <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-                              <button type="button" @click.stop="resetCheckboxFilter('extraBed')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
-                              <button type="button" @click.stop="applyCheckboxFilter('extraBed')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
+                              <button type="button" @click.stop="resetCheckboxFilter('floor')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
+                              <button type="button" @click.stop="applyCheckboxFilter('floor')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
                             </div>
                           </div>
                         </th>
 
-                        <!-- 7. Yêu cầu ĐB [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px]">
+                        <!-- 5. Phòng [🔍] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[80px]" title="Số phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Yêu cầu ĐB</span>
-                            <button type="button" @click.stop="toggleColFilter('specialRequests')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('specialRequests') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc yêu cầu đặc biệt">
-                              <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
+                            <span class="truncate" title="Số phòng">Phòng</span>
+                            <button type="button" @click.stop="toggleColFilter('roomNumber')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomNumber') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm số phòng">
+                              <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
                           </div>
-                          <!-- Popover -->
-                          <div v-if="activeColFilter === 'specialRequests'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
-                            <div class="space-y-1 mb-2">
-                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
-                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.specialRequests" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                                <span class="truncate">{{ opt.label }}</span>
-                              </label>
-                            </div>
-                            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-                              <button type="button" @click.stop="resetCheckboxFilter('specialRequests')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
-                              <button type="button" @click.stop="applyCheckboxFilter('specialRequests')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
+                          <!-- Search Popover -->
+                          <div v-if="activeColFilter === 'roomNumber'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 w-[200px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
+                            <input type="text" v-model="tempSearchFilters.roomNumber" placeholder="Tìm số phòng..." @keyup.enter="applySearchFilter('roomNumber')" class="w-full px-2.5 py-1.5 text-xs border border-sky-400 rounded focus:outline-none focus:ring-1 focus:ring-sky-400 placeholder:text-slate-400" autofocus />
+                            <div class="flex items-center justify-between gap-2 mt-2">
+                              <button type="button" @click.stop="applySearchFilter('roomNumber')" class="flex-1 flex items-center justify-center gap-1 text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium py-1 px-2 rounded shadow-xs">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Search
+                              </button>
+                              <button type="button" @click.stop="resetSearchFilter('roomNumber')" class="flex-1 text-xs border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-1 px-2 rounded">Reset</button>
                             </div>
                           </div>
                         </th>
 
-                        <!-- 8. Loại phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]">
+                        <!-- 6. Loại phòng [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Loại phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Loại phòng</span>
+                            <span class="truncate" title="Loại phòng">Loại phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomType')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomType') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc loại phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3390,10 +3341,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 9. Dạng phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]">
+                        <!-- 7. Dạng phòng [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Dạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Dạng phòng</span>
+                            <span class="truncate" title="Dạng phòng">Dạng phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomShape')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomShape') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc dạng phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3414,35 +3365,15 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 10. Phòng [🔍] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[80px]">
+                        <!-- 8. Tên khách [🔍] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[180px]" title="Tên khách">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Phòng</span>
-                            <button type="button" @click.stop="toggleColFilter('roomNumber')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomNumber') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm số phòng">
-                              <svg class="w-3 h-3 fill-none stroke-currentColor stroke-width-2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <span class="truncate" title="Tên khách">Tên khách</span>
+                            <button type="button" @click.stop="toggleColFilter('guestName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('guestName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm tên khách">
+                              <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
                           </div>
                           <!-- Search Popover -->
-                          <div v-if="activeColFilter === 'roomNumber'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 w-[200px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
-                            <input type="text" v-model="tempSearchFilters.roomNumber" placeholder="Tìm số phòng..." @keyup.enter="applySearchFilter('roomNumber')" class="w-full px-2.5 py-1.5 text-xs border border-sky-400 rounded focus:outline-none focus:ring-1 focus:ring-sky-400 placeholder:text-slate-400" autofocus />
-                            <div class="flex items-center justify-between gap-2 mt-2">
-                              <button type="button" @click.stop="applySearchFilter('roomNumber')" class="flex-1 flex items-center justify-center gap-1 text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium py-1 px-2 rounded shadow-xs">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg> Search
-                              </button>
-                              <button type="button" @click.stop="resetSearchFilter('roomNumber')" class="flex-1 text-xs border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-1 px-2 rounded">Reset</button>
-                            </div>
-                          </div>
-                        </th>
-
-                        <!-- 11. Tên khách [🔍] (Matching Image 2) -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[180px]">
-                          <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Tên khách</span>
-                            <button type="button" @click.stop="toggleColFilter('guestName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('guestName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm tên khách">
-                              <svg class="w-3 h-3 fill-none stroke-currentColor stroke-width-2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                            </button>
-                          </div>
-                          <!-- Search Popover Image 2 -->
                           <div v-if="activeColFilter === 'guestName'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 w-[210px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <input type="text" v-model="tempSearchFilters.guestName" placeholder="Search guest name" @keyup.enter="applySearchFilter('guestName')" class="w-full px-2.5 py-1.5 text-xs border border-sky-400 rounded focus:outline-none focus:ring-1 focus:ring-sky-400 placeholder:text-slate-400" autofocus />
                             <div class="flex items-center justify-between gap-2 mt-2">
@@ -3454,10 +3385,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 12. Mã ĐK [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]">
+                        <!-- 9. Mã ĐK [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Mã đăng ký (Mã ĐK)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Mã ĐK</span>
+                            <span class="truncate" title="Mã đăng ký (Mã ĐK)">Mã ĐK</span>
                             <button type="button" @click.stop="toggleColFilter('regId')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('regId') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc mã đăng ký">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3474,10 +3405,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 13. Tên đăng ký [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[220px]">
+                        <!-- 10. Tên đăng ký [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[220px]" title="Tên đăng ký">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Tên đăng ký</span>
+                            <span class="truncate" title="Tên đăng ký">Tên đăng ký</span>
                             <button type="button" @click.stop="toggleColFilter('regName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('regName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tên đăng ký">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3494,12 +3425,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 14. Ngày đến -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]">
+                        <!-- 11. Ngày đến -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Ngày đến">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Ngày đến</span>
+                            <span class="truncate" title="Ngày đến">Ngày đến</span>
                             <button type="button" @click.stop="toggleColFilter('arrivalDate')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('arrivalDate') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc ngày đến">
-                              <svg class="w-3 h-3 fill-none stroke-currentColor stroke-width-2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                              <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
                           </div>
                           <!-- Search Popover -->
@@ -3514,12 +3445,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 15. Ngày đi -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]">
+                        <!-- 12. Ngày đi -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Ngày đi">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Ngày đi</span>
+                            <span class="truncate" title="Ngày đi">Ngày đi</span>
                             <button type="button" @click.stop="toggleColFilter('departureDate')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('departureDate') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc ngày đi">
-                              <svg class="w-3 h-3 fill-none stroke-currentColor stroke-width-2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                              <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
                           </div>
                           <!-- Search Popover -->
@@ -3534,10 +3465,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 16. Công ty [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[200px]">
+                        <!-- 13. Công ty [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[200px]" title="Công ty / Đại lý">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Công ty</span>
+                            <span class="truncate" title="Công ty / Đại lý">Công ty</span>
                             <button type="button" @click.stop="toggleColFilter('company')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('company') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc công ty">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3558,25 +3489,94 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </th>
 
-                        <!-- 17. Tầng [▾] -->
-                        <th class="p-2 relative col-filter-container w-[70px]">
+                        <!-- 14. Thêm giường [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Thêm giường (Extra bed)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate">Tầng</span>
-                            <button type="button" @click.stop="toggleColFilter('floor')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('floor') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tầng">
+                            <span class="truncate" title="Thêm giường (Extra bed)">Thêm giường</span>
+                            <button type="button" @click.stop="toggleColFilter('extraBed')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('extraBed') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc thêm giường">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
                           </div>
-                          <!-- Popover (aligned right) -->
-                          <div v-if="activeColFilter === 'floor'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
-                            <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <label v-for="opt in dynamicFloorOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
-                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.floor" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                          <!-- Popover -->
+                          <div v-if="activeColFilter === 'extraBed'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
+                            <div class="space-y-1 mb-2">
+                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
+                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.extraBed" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate">{{ opt.label }}</span>
                               </label>
                             </div>
                             <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-                              <button type="button" @click.stop="resetCheckboxFilter('floor')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
-                              <button type="button" @click.stop="applyCheckboxFilter('floor')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
+                              <button type="button" @click.stop="resetCheckboxFilter('extraBed')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
+                              <button type="button" @click.stop="applyCheckboxFilter('extraBed')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
+                            </div>
+                          </div>
+                        </th>
+
+                        <!-- 15. Yêu cầu ĐB [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px]" title="Yêu cầu đặc biệt (YCĐB)">
+                          <div class="flex items-center justify-between gap-1 w-full">
+                            <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu cầu ĐB</span>
+                            <button type="button" @click.stop="toggleColFilter('specialRequests')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('specialRequests') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc yêu cầu đặc biệt">
+                              <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
+                            </button>
+                          </div>
+                          <!-- Popover -->
+                          <div v-if="activeColFilter === 'specialRequests'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
+                            <div class="space-y-1 mb-2">
+                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
+                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.specialRequests" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                                <span class="truncate">{{ opt.label }}</span>
+                              </label>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <button type="button" @click.stop="resetCheckboxFilter('specialRequests')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
+                              <button type="button" @click.stop="applyCheckboxFilter('specialRequests')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
+                            </div>
+                          </div>
+                        </th>
+
+                        <!-- 16. Nhận phòng trễ [▾] -->
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px]" title="Nhận phòng trễ (Late check-in)">
+                          <div class="flex items-center justify-between gap-1 w-full">
+                            <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận phòng trễ</span>
+                            <button type="button" @click.stop="toggleColFilter('lateCheckin')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('lateCheckin') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc nhận phòng trễ">
+                              <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
+                            </button>
+                          </div>
+                          <!-- Popover -->
+                          <div v-if="activeColFilter === 'lateCheckin'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
+                            <div class="space-y-1 mb-2">
+                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
+                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.lateCheckin" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                                <span class="truncate">{{ opt.label }}</span>
+                              </label>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <button type="button" @click.stop="resetCheckboxFilter('lateCheckin')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
+                              <button type="button" @click.stop="applyCheckboxFilter('lateCheckin')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
+                            </div>
+                          </div>
+                        </th>
+
+                        <!-- 17. Chuyển phòng kế hoạch [▾] -->
+                        <th class="p-2 relative col-filter-container w-[130px]" title="Chuyển phòng kế hoạch">
+                          <div class="flex items-center justify-between gap-1 w-full">
+                            <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển phòng kế hoạch</span>
+                            <button type="button" @click.stop="toggleColFilter('planMove')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('planMove') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc chuyển phòng">
+                              <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
+                            </button>
+                          </div>
+                          <!-- Popover -->
+                          <div v-if="activeColFilter === 'planMove'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[140px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
+                            <div class="space-y-1 mb-2">
+                              <label v-for="opt in yesNoOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
+                                <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.planMove" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                                <span class="truncate">{{ opt.label }}</span>
+                              </label>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <button type="button" @click.stop="resetCheckboxFilter('planMove')" class="text-xs text-sky-500 hover:text-sky-700 font-medium px-1 py-0.5">Reset</button>
+                              <button type="button" @click.stop="applyCheckboxFilter('planMove')" class="text-xs bg-[#7ec1e8] hover:bg-[#68b2dc] text-white font-medium px-3 py-1 rounded shadow-xs">OK</button>
                             </div>
                           </div>
                         </th>
@@ -3616,18 +3616,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </td>
 
-                        <!-- 3. Nhận phòng trễ -->
-                        <td class="p-2 border-r border-slate-200 text-center">
-                          {{ getListLateCheckin(room) }}
-                        </td>
-
-                        <!-- 4. Chuyển phòng kế hoạch -->
-                        <td class="p-2 border-r border-slate-200 text-center">
-                          <span v-if="room.plan_move || room.is_plan_move" class="text-amber-600 font-medium">Có</span>
-                          <span v-else class="text-slate-400">-</span>
-                        </td>
-
-                        <!-- 5. TT Phòng -->
+                        <!-- 3. TT Phòng -->
                         <td class="p-2 border-r border-slate-200 text-center">
                           <div class="flex items-center justify-center">
                             <RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" />
@@ -3635,27 +3624,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
                         </td>
 
-                        <!-- 6. Thêm giường -->
-                        <td class="p-2 border-r border-slate-200 text-center">
-                          {{ room.extra_bed_qty || '-' }}
+                        <!-- 4. Tầng -->
+                        <td class="p-2 border-r border-slate-200 text-center text-[11px] font-medium">
+                          {{ room.floor }}
                         </td>
 
-                        <!-- 7. Yêu cầu ĐB -->
-                        <td class="p-2 border-r border-slate-200 text-center truncate" :title="getListSpecialRequests(room)">
-                          {{ getListSpecialRequests(room) || '-' }}
-                        </td>
-
-                        <!-- 8. Loại phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center font-medium">
-                          {{ room.room_type || room.room_class?.code || '-' }}
-                        </td>
-
-                        <!-- 9. Dạng phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
-                          {{ getRoomTypeShape(room) || '-' }}
-                        </td>
-
-                        <!-- 10. Phòng -->
+                        <!-- 5. Phòng -->
                         <td class="p-2 border-r border-slate-200 text-center font-bold text-[13px]">
                           <span
                             :class="[
@@ -3674,39 +3648,65 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </span>
                         </td>
 
-                        <!-- 11. Tên khách -->
+                        <!-- 6. Loại phòng -->
+                        <td class="p-2 border-r border-slate-200 text-center font-medium">
+                          {{ room.room_type || room.room_class?.code || '-' }}
+                        </td>
+
+                        <!-- 7. Dạng phòng -->
+                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                          {{ getRoomTypeShape(room) || '-' }}
+                        </td>
+
+                        <!-- 8. Tên khách -->
                         <td class="p-2 border-r border-slate-200 truncate font-medium" :title="getMockGuestName(room)">
                           {{ getMockGuestName(room) || '-' }}
                         </td>
 
-                        <!-- 12. Mã ĐK -->
+                        <!-- 9. Mã ĐK -->
                         <td class="p-2 border-r border-slate-200 text-center text-[11px]">
                           {{ getMockRegId(room) || '-' }}
                         </td>
 
-                        <!-- 13. Tên đăng ký -->
+                        <!-- 10. Tên đăng ký -->
                         <td class="p-2 border-r border-slate-200 truncate text-[11px]" :title="getMockRegName(room)">
                           {{ getMockRegName(room) || '-' }}
                         </td>
 
-                        <!-- 14. Ngày đến -->
+                        <!-- 11. Ngày đến -->
                         <td class="p-2 border-r border-slate-200 text-center text-[11px]">
                           {{ formatDateShort(room.arrival_date || room.actual_arrival_date || room.check_in) || '-' }}
                         </td>
 
-                        <!-- 15. Ngày đi -->
+                        <!-- 12. Ngày đi -->
                         <td class="p-2 border-r border-slate-200 text-center text-[11px]">
                           {{ formatDateShort(room.departure_date || room.actual_departure_date || room.check_out) || '-' }}
                         </td>
 
-                        <!-- 16. Công ty -->
+                        <!-- 13. Công ty -->
                         <td class="p-2 border-r border-slate-200 truncate text-[11px]" :title="getMockCompany(room)">
                           {{ getMockCompany(room) || '-' }}
                         </td>
 
-                        <!-- 17. Tầng -->
-                        <td class="p-2 text-center text-[11px] font-medium">
-                          {{ room.floor }}
+                        <!-- 14. Thêm giường -->
+                        <td class="p-2 border-r border-slate-200 text-center">
+                          {{ room.extra_bed_qty || '-' }}
+                        </td>
+
+                        <!-- 15. Yêu cầu ĐB -->
+                        <td class="p-2 border-r border-slate-200 text-center truncate" :title="getListSpecialRequests(room)">
+                          {{ getListSpecialRequests(room) || '-' }}
+                        </td>
+
+                        <!-- 16. Nhận phòng trễ -->
+                        <td class="p-2 border-r border-slate-200 text-center">
+                          {{ getListLateCheckin(room) }}
+                        </td>
+
+                        <!-- 17. Chuyển phòng kế hoạch -->
+                        <td class="p-2 text-center">
+                          <span v-if="room.plan_move || room.is_plan_move" class="text-amber-600 font-medium">Có</span>
+                          <span v-else class="text-slate-400">-</span>
                         </td>
                       </tr>
                     </tbody>

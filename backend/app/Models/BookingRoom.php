@@ -370,6 +370,16 @@ class BookingRoom extends Model
         return $this->hasMany(BookingCancelLog::class);
     }
 
+    public function movedFromRoom()
+    {
+        return $this->hasOne(BookingRoom::class, 'move_room', 'id')->withTrashed();
+    }
+
+    public function movedToRoom()
+    {
+        return $this->belongsTo(BookingRoom::class, 'move_room', 'id')->withTrashed();
+    }
+
     public function salesInvoices()
     {
         return $this->hasMany(SalesInvoice::class, 'booking_room_id');

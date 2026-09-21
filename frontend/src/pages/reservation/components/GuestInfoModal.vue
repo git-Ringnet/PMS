@@ -127,7 +127,7 @@
                       
                       <!-- Title dropdown -->
                       <template v-else-if="col.key === 'title'">
-                        <select v-model="guest.title" class="table-input">
+                        <select v-model="guest.title" @change="handleTitleChange(guest)" class="table-input">
                           <option value="">-- Chọn --</option>
                           <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
                         </select>
@@ -154,8 +154,8 @@
                       <template v-else-if="col.key === 'residence_type'">
                         <select v-model="guest.residence_type" class="table-input">
                           <option value="">-- Chọn --</option>
-                          <option v-for="rt in residenceTypesList" :key="rt.code || rt.name" :value="rt.name_new_form || rt.name">{{ rt.name_new_form || rt.name }}</option>
-                          <option v-if="guest.residence_type && !residenceTypesList.some(rt => (rt.name_new_form || rt.name) === guest.residence_type)" :value="guest.residence_type">{{ guest.residence_type }}</option>
+                          <option v-for="rt in residenceTypesList" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
+                          <option v-if="guest.residence_type && !residenceTypesList.some(rt => String(rt.id) === String(guest.residence_type))" :value="guest.residence_type">{{ guest.residence_type }}</option>
                         </select>
                       </template>
 
@@ -163,8 +163,8 @@
                       <template v-else-if="col.key === 'guest_type'">
                         <select v-model="guest.guest_type" class="table-input">
                           <option value="">Loại</option>
-                          <option v-for="gt in guestTypesList" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
-                          <option v-if="guest.guest_type && !guestTypesList.some(gt => getGuestTypeValue(gt) === guest.guest_type || gt.name === guest.guest_type)" :value="guest.guest_type">{{ guest.guest_type }}</option>
+                          <option v-for="gt in guestTypesList" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
+                          <option v-if="guest.guest_type && !guestTypesList.some(gt => String(gt.id) === String(guest.guest_type))" :value="guest.guest_type">{{ guest.guest_type }}</option>
                         </select>
                       </template>
 
@@ -172,8 +172,8 @@
                       <template v-else-if="col.key === 'entry_purpose'">
                         <select v-model="guest.entry_purpose" class="table-input">
                           <option value="">Mục đích</option>
-                          <option v-for="ep in entryPurposesList" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
-                          <option v-if="guest.entry_purpose && !entryPurposesList.some(ep => ep.name === guest.entry_purpose)" :value="guest.entry_purpose">{{ guest.entry_purpose }}</option>
+                          <option v-for="ep in entryPurposesList" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
+                          <option v-if="guest.entry_purpose && !entryPurposesList.some(ep => String(ep.id) === String(guest.entry_purpose))" :value="guest.entry_purpose">{{ guest.entry_purpose }}</option>
                         </select>
                       </template>
 
@@ -181,8 +181,8 @@
                       <template v-else-if="col.key === 'border_gate'">
                         <select v-model="guest.border_gate" class="table-input">
                           <option value="">-- Cửa khẩu --</option>
-                          <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
-                          <option v-if="guest.border_gate && !borderGateNames.includes(guest.border_gate)" :value="guest.border_gate">{{ guest.border_gate }}</option>
+                          <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
+                          <option v-if="guest.border_gate && !borderGatesList.some(bg => bg.code === guest.border_gate)" :value="guest.border_gate">{{ guest.border_gate }}</option>
                         </select>
                       </template>
 
@@ -511,6 +511,18 @@ const titlesList = computed(() => {
   return ['Boy.', 'Girl.', 'Inf', 'Kid.', 'Mr.', 'Ms.']
 })
 
+function handleTitleChange(row) {
+  if (!row || !row.title) return
+  const match = (guestDefinitions.value.titles || []).find(t => t.name === row.title || t.code === row.title)
+  if (match && match.gender) {
+    row.gender = match.gender
+  } else if (['Mr.', 'Mr', 'Boy.', 'Boy', 'Inf', 'Kid.', 'Kid'].includes(row.title)) {
+    row.gender = 1
+  } else if (['Ms.', 'Ms', 'Mrs.', 'Mrs', 'Girl.', 'Girl'].includes(row.title)) {
+    row.gender = 2
+  }
+}
+
 const borderGatesList = computed(() => guestDefinitions.value.border_gates || [])
 const borderGateNames = computed(() => borderGatesList.value.map(g => g.name))
 const entryPurposesList = computed(() => guestDefinitions.value.entry_purposes || [])
@@ -521,9 +533,9 @@ const residenceTypesList = computed(() => {
     return guestDefinitions.value.residence_types
   }
   return [
-    { code: '1', name: 'Địa chỉ thường trú', name_new_form: 'Thường trú' },
-    { code: '2', name: 'Địa chỉ tạm trú', name_new_form: 'Tạm trú' },
-    { code: '3', name: 'Địa chỉ khác', name_new_form: 'Khác' },
+    { id: 1, name: 'Địa chỉ thường trú', name_new_form: 'Thường trú' },
+    { id: 2, name: 'Địa chỉ tạm trú', name_new_form: 'Tạm trú' },
+    { id: 3, name: 'Địa chỉ khác', name_new_form: 'Khác' },
   ]
 })
 
@@ -537,9 +549,7 @@ function getIdTypeValue(it) {
 
 function getGuestTypeValue(gt) {
   if (!gt) return ''
-  if (gt.code === 'CREW') return 'Crew'
-  if (gt.code === 'LONGSTAY') return 'Long Stay'
-  return gt.code
+  return String(gt.id)
 }
 
 async function loadGuestDefinitions() {
@@ -564,14 +574,17 @@ async function loadNationalities() {
     if (res.data?.success) {
       const list = res.data.data || []
       nationalitiesList.value = list.map(item => ({
-        code: item.asm_code || item.nationality_id || '',
+        code: item.nationality_id || item.asm_code || '',
         label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
       })).filter(item => item.code !== '')
 
       const map = {}
       list.forEach(item => {
-        const c = item.asm_code || item.nationality_id
-        if (c) map[c] = item.asm_name || item.nationality_name
+        const c3 = item.nationality_id
+        const c2 = item.asm_code
+        const name = item.asm_name || item.nationality_name
+        if (c3) map[c3] = name
+        if (c2) map[c2] = name
       })
       nationalityMap.value = map
     }
@@ -594,6 +607,22 @@ function formatDate(d) {
 
 function getDisplayTitle(row, col) {
   if (col.key === 'nationality_code') return getNationalityLabel(row.nationality_code)
+  if (col.key === 'residence_type') {
+    const rt = residenceTypesList.value.find(item => String(item.id) === String(row.residence_type))
+    return rt ? (rt.name_new_form || rt.name) : (row.residence_type || '—')
+  }
+  if (col.key === 'guest_type') {
+    const gt = guestTypesList.value.find(item => String(item.id) === String(row.guest_type))
+    return gt ? gt.name : (row.guest_type || '—')
+  }
+  if (col.key === 'entry_purpose') {
+    const ep = entryPurposesList.value.find(item => String(item.id) === String(row.entry_purpose))
+    return ep ? ep.name : (row.entry_purpose || '—')
+  }
+  if (col.key === 'border_gate') {
+    const bg = borderGatesList.value.find(item => item.code === row.border_gate || item.name === row.border_gate)
+    return bg ? bg.name : (row.border_gate || '—')
+  }
   if (['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)) {
     return formatDate(row[col.key])
   }

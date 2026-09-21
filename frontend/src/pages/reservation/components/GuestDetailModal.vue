@@ -119,7 +119,7 @@
               <div class="g c12">
                 <div class="f s2">
                   <label>Danh xưng</label>
-                  <select v-model="form.title">
+                  <select v-model="form.title" @change="handleTitleChange">
                     <option value="">-- Chọn --</option>
                     <option v-for="t in titles" :key="t" :value="t">{{ t }}</option>
                   </select>
@@ -134,8 +134,8 @@
                   <label>Loại khách</label>
                   <select v-model="form.guest_type">
                     <option value="">-- Loại khách --</option>
-                    <option v-for="gt in guestTypes" :key="gt.id" :value="getGuestTypeValue(gt)">{{ gt.name }}</option>
-                    <option v-if="form.guest_type && !guestTypes.some(gt => getGuestTypeValue(gt) === form.guest_type || gt.name === form.guest_type)" :value="form.guest_type">{{ form.guest_type }}</option>
+                    <option v-for="gt in guestTypes" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
+                    <option v-if="form.guest_type && !guestTypes.some(gt => String(gt.id) === String(form.guest_type))" :value="form.guest_type">{{ form.guest_type }}</option>
                   </select>
                 </div>
 
@@ -206,8 +206,8 @@
                   <label>Cửa khẩu</label>
                   <select v-model="form.border_gate">
                     <option value="">— Chọn cửa khẩu —</option>
-                    <option v-for="bg in borderGates" :key="bg.id" :value="bg.name">{{ bg.name }}</option>
-                    <option v-if="form.border_gate && !borderGateNames.includes(form.border_gate)" :value="form.border_gate">{{ form.border_gate }}</option>
+                    <option v-for="bg in borderGates" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
+                    <option v-if="form.border_gate && !borderGates.some(bg => bg.code === form.border_gate)" :value="form.border_gate">{{ form.border_gate }}</option>
                   </select>
                 </div>
 
@@ -215,8 +215,8 @@
                   <label>Mục đích nhập cảnh</label>
                   <select v-model="form.entry_purpose">
                     <option value="">— Chọn mục đích —</option>
-                    <option v-for="ep in entryPurposes" :key="ep.id" :value="ep.name">{{ ep.name }}</option>
-                    <option v-if="form.entry_purpose && !entryPurposes.some(ep => ep.name === form.entry_purpose)" :value="form.entry_purpose">{{ form.entry_purpose }}</option>
+                    <option v-for="ep in entryPurposes" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
+                    <option v-if="form.entry_purpose && !entryPurposes.some(ep => String(ep.id) === String(form.entry_purpose))" :value="form.entry_purpose">{{ form.entry_purpose }}</option>
                   </select>
                 </div>
 
@@ -224,8 +224,8 @@
                   <label>Hình thức cư trú</label>
                   <select v-model="form.residence_type">
                     <option value="">— Chọn hình thức —</option>
-                    <option v-for="rt in residenceTypes" :key="rt.code || rt.name" :value="rt.name_new_form || rt.name">{{ rt.name_new_form || rt.name }}</option>
-                    <option v-if="form.residence_type && !residenceTypes.some(rt => (rt.name_new_form || rt.name) === form.residence_type)" :value="form.residence_type">{{ form.residence_type }}</option>
+                    <option v-for="rt in residenceTypes" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
+                    <option v-if="form.residence_type && !residenceTypes.some(rt => String(rt.id) === String(form.residence_type))" :value="form.residence_type">{{ form.residence_type }}</option>
                   </select>
                 </div>
 
@@ -384,6 +384,18 @@ const titles = computed(() => {
   return ['Boy.', 'Girl.', 'Inf', 'Kid.', 'Mr.', 'Ms.']
 })
 
+function handleTitleChange() {
+  if (!form.value.title) return
+  const match = (guestDefinitions.value.titles || []).find(t => t.name === form.value.title || t.code === form.value.title)
+  if (match && match.gender) {
+    form.value.gender = match.gender
+  } else if (['Mr.', 'Mr', 'Boy.', 'Boy', 'Inf', 'Kid.', 'Kid'].includes(form.value.title)) {
+    form.value.gender = 1
+  } else if (['Ms.', 'Ms', 'Mrs.', 'Mrs', 'Girl.', 'Girl'].includes(form.value.title)) {
+    form.value.gender = 2
+  }
+}
+
 const borderGates = computed(() => guestDefinitions.value.border_gates || [])
 const borderGateNames = computed(() => borderGates.value.map(g => g.name))
 const entryPurposes = computed(() => guestDefinitions.value.entry_purposes || [])
@@ -394,9 +406,9 @@ const residenceTypes = computed(() => {
     return guestDefinitions.value.residence_types
   }
   return [
-    { code: '1', name: 'Địa chỉ thường trú', name_new_form: 'Thường trú' },
-    { code: '2', name: 'Địa chỉ tạm trú', name_new_form: 'Tạm trú' },
-    { code: '3', name: 'Địa chỉ khác', name_new_form: 'Khác' },
+    { id: 1, name: 'Địa chỉ thường trú', name_new_form: 'Thường trú' },
+    { id: 2, name: 'Địa chỉ tạm trú', name_new_form: 'Tạm trú' },
+    { id: 3, name: 'Địa chỉ khác', name_new_form: 'Khác' },
   ]
 })
 
@@ -410,9 +422,7 @@ function getIdTypeValue(it) {
 
 function getGuestTypeValue(gt) {
   if (!gt) return ''
-  if (gt.code === 'CREW') return 'Crew'
-  if (gt.code === 'LONGSTAY') return 'Long Stay'
-  return gt.code
+  return String(gt.id)
 }
 
 async function loadGuestDefinitions() {
@@ -435,7 +445,7 @@ async function loadNationalities() {
     if (res.data?.success) {
       const list = res.data.data || []
       nationalities.value = list.map(item => ({
-        code: item.asm_code || item.nationality_id || '',
+        code: item.nationality_id || item.asm_code || '',
         label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
       })).filter(item => item.code !== '')
     }
