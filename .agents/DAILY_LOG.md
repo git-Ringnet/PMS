@@ -9,6 +9,35 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-21] - Sửa lỗi tính năng Chuyển cọc (Khắc phục che mất khúc dưới, lọc đúng phòng đang ở, bỏ dòng Toàn bộ phòng)
+### Module: Đặt phòng / Đặt cọc ([DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue))
+
+- **Nguyên nhân**:
+  - Giao diện modal chuyển cọc cũ bị nhúng bên trong modal cha có CSS `transform: translate(...)`, kích thước input hẹp (`max-w-[260px]`), danh sách dropdown absolute tràn ra ngoài mép dưới modal dẫn đến bị che khuất phần đáy trên màn hình/cửa sổ nhỏ.
+  - Gọi API tải booking có giới hạn cứng `limit: 100` và lọc `status: '0,1'` (thiếu `status: 4`), đồng thời chặn tìm kiếm lại khi `searchResults` đã có dữ liệu làm thiếu nhiều booking so với màn hình Hóa đơn.
+  - Computed `transferOptions` cho phép cả phòng ở trạng thái Đăng ký (`status = 0`) chưa check-in / chưa gán số phòng, dẫn đến hiển thị dòng "Chưa xếp | Khách chưa đặt tên".
+  - Tự động sinh thêm dòng `type: 'room'` hiển thị `[Số phòng] | Toàn bộ phòng` cho từng phòng gây dư thừa.
+- **Xử lý hoàn thành**:
+  - **Khắc phục che mất khúc dưới & Đóng dropdown khi click ngoài**:
+    + Bọc Modal Chuyển cọc trong `<Teleport to="body">` với `z-[2000000]` và đặt modal ở vị trí cao hơn (`pt-20 items-start`) để có khoảng trống lớn phía dưới cho dropdown mở thoải mái.
+    + Thêm logic tự động phát hiện vị trí `checkDropdownPlacement`: Nếu khoảng cách phía dưới nhỏ hơn 230px, dropdown sẽ tự động mở lật ngược lên trên (`openUpwards: bottom-full mb-1.5`), tuyệt đối không bao giờ bị cắt chân hay che mất khúc dưới.
+    + Bổ sung listener `pointerdown` toàn cục đóng dropdown ngay lập tức khi người dùng click ra ngoài ô input/dropdown mà không cần phải đóng modal.
+    + Giữ nguyên form chuẩn xác như giao diện người dùng yêu cầu: có icon mũi tên `⌄` xoay khi đóng mở, ô xóa nhanh `✕`.
+  - **Khắc phục danh sách phòng & booking bị thiếu**:
+    + Đồng bộ với màn hình Hóa đơn: Gọi `fetchBookings({ status: '0,1,4' })` bỏ giới hạn `limit: 100` để lấy toàn bộ booking hiện hành.
+    + Bổ sung debounce tự động gọi server tìm kiếm khi người dùng nhập từ khóa tìm kiếm mà bộ lọc cục bộ chưa có.
+  - **Lọc chuẩn phòng Đang ở & bỏ dòng "Toàn bộ phòng"**:
+    + Bỏ hoàn toàn việc tạo dòng `type: 'room'` ("Toàn bộ phòng").
+    + Chỉ hiển thị các phòng ĐANG Ở (`Number(room.status) === 1`), chưa checkout và đã có số phòng thực tế (`room_number`).
+    + Loại bỏ hoàn toàn các phòng trạng thái Đăng ký (`status = 0`).
+    + Tên khách hiển thị format chuẩn: `[Số phòng] | [Tên khách]`, có fallback chuẩn xác sang `room.guest_name`, `booking.booking_name`, `booking.guest_name`, `booking.contact_name`, không bao giờ hiển thị "Khách chưa đặt tên" hay "Chưa xếp".
+  - **Căn giữa màn hình & Cho phép kéo di chuyển modal (Draggable)**:
+    + Căn giữa modal Chuyển đặt cọc theo trục ngang và dọc (`items-center justify-center p-4`) như các modal chuẩn khác.
+    + Thêm tính năng kéo di chuyển tự do (`cursor-move select-none`, `startDragTransferModal`, `transferModalPos`) tại thanh tiêu đề (header) của modal chuyển cọc.
+    + Khi di chuyển hoặc mở dropdown, tự động tính toán lại vị trí `checkDropdownPlacement` để dropdown bung lên trên (`openUpwards`) nếu sát đáy màn hình.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành thành công 100% (0 lỗi).
+
 ## [2026-09-21] - Đồng bộ tính toán và hiển thị tiền phòng quá khứ theo hóa đơn thực tế (service_bills)
 ### Module: Đặt phòng / Tạo đăng ký ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
 
