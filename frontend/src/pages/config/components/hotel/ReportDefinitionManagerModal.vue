@@ -284,6 +284,7 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
                   <select v-model="parameter.options_source" class="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
                     <option value="">Nhập danh sách tĩnh bên dưới</option>
                     <option value="areas">Khu vực phòng</option>
+                    <option value="outlets">Outlet</option>
                     <option value="companies">Công ty / lữ hành</option>
                     <option value="bookings">Đăng ký phòng</option>
                     <option value="rooms">Phòng</option>

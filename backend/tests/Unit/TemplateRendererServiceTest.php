@@ -53,6 +53,11 @@ class TemplateRendererServiceTest extends TestCase
 
         $this->assertStringContainsString('size: A4 landscape;', $rendered);
         $this->assertStringContainsString('margin: 0mm 5mm 8mm 0mm;', $rendered);
+        $this->assertStringContainsString('padding-top: 0mm !important;', $rendered);
+        $this->assertStringContainsString('padding-right: 5mm !important;', $rendered);
+        $this->assertStringContainsString('padding-bottom: 8mm !important;', $rendered);
+        $this->assertStringContainsString('padding-left: 0mm !important;', $rendered);
+        $this->assertStringContainsString('box-sizing: border-box !important;', $rendered);
         $this->assertGreaterThan(
             strpos($rendered, 'max-width: 210mm;'),
             strrpos($rendered, 'max-width: none !important;')
@@ -209,6 +214,30 @@ HTML;
         $data['parameters']['show_note'] = true;
         $visible = app(TemplateRendererService::class)->render($html, '', $data);
         $this->assertStringContainsString('Ghi chú', $visible);
+    }
+
+    public function test_it_renders_detail_custom_rows_without_grouping(): void
+    {
+        $html = <<<'HTML'
+<table><tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1">
+<tr class="pms-detail-row"><td>{{row.Room}}</td></tr>
+<tr class="pms-detail-custom-row"><td>Đăng Ký:</td><td>{{row.BookingId}}</td></tr>
+<tr class="pms-detail-custom-row"><td>Ghi Chú:</td><td>{{row.BookingNote}}</td></tr>
+</tbody></table>
+HTML;
+        $data = [
+            'rows' => [
+                ['BookingId' => 'GAL1', 'BookingNote' => 'Ghi chú 1', 'Room' => '101'],
+                ['BookingId' => 'GAL2', 'BookingNote' => 'Ghi chú 2', 'Room' => '102'],
+            ],
+        ];
+
+        $rendered = app(TemplateRendererService::class)->render($html, '', $data);
+
+        $this->assertSame(2, substr_count($rendered, 'Đăng Ký:'));
+        $this->assertSame(2, substr_count($rendered, 'Ghi Chú:'));
+        $this->assertStringContainsString('GAL1', $rendered);
+        $this->assertStringContainsString('Ghi chú 2', $rendered);
     }
 
     public function test_it_formats_group_sum_aggregates_with_number_modifier(): void

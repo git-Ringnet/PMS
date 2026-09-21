@@ -12,11 +12,6 @@ class DayUseRoomsReportTest extends TestCase
         return file_get_contents(database_path('migrations/2026_09_07_160000_create_day_use_rooms_report.php'));
     }
 
-    private function latestProcedureMigration(): string
-    {
-        return file_get_contents(database_path('migrations/2026_09_07_163000_fix_day_use_availability_and_sorting.php'));
-    }
-
     public function test_report_preserves_sp_132_filters_and_separate_guest_counts(): void
     {
         $migration = $this->migration();
@@ -41,7 +36,7 @@ class DayUseRoomsReportTest extends TestCase
 
     public function test_report_filters_available_registration_statuses_and_honors_sort_parameters(): void
     {
-        $migration = $this->latestProcedureMigration();
+        $migration = $this->migration();
 
         $this->assertStringContainsString('INNER JOIN registration_statuses rs ON rs.id = b.registration_status_id', $migration);
         $this->assertStringContainsString('rs.is_availability = 1', $migration);

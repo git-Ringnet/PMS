@@ -21,20 +21,26 @@ class OosLockHistoryReportTest extends TestCase
         $this->assertStringContainsString("'OOS_LOCK_HISTORY'", $migration);
     }
 
-    public function test_reference_template_contains_legacy_columns(): void
+    public function test_reference_template_contains_legacy_columns_and_subtotal(): void
     {
         $reference = require database_path('report_templates/oos_lock_history_reference.php');
-        $html = (new ReflectionMethod($reference, 'html'))->invoke($reference);
-        $rendered = app(TemplateRendererService::class)->render($html, '', [
-            'parameters' => ['p_from_date' => '2026-08-28', 'p_to_date' => '2026-08-28'],
+        $def = $reference->definition();
+        $this->assertSame('portrait', $def['page_orientation']);
+        $this->assertSame('A4', $def['page_size']);
+        $this->assertCount(7, $def['content_json']['detail'][0]['columns']);
+        $this->assertSame('#2e7d32', $def['content_json']['detail'][0]['columns'][0]['cellStyle']['color']);
+        $this->assertSame('group', $def['content_json']['detail'][0]['customRows'][0]['scope']);
+
+        $rendered = $reference->render([
+            'parameters' => ['p_from_date' => '01/07/2026', 'p_to_date' => '15/07/2026'],
             'report' => ['generated_by' => 'Tester', 'generated_at' => '28/08/2026 12:00'],
             'rows' => [[
                 'GroupName' => 'UnLock',
                 'Room' => '502',
-                'DateBeginTime' => '01/07/2026 13:12',
-                'EndDateTime' => '02/07/2026 10:31',
+                'DateBeginTime' => '01/07/2026 - 13:12',
+                'EndDateTime' => '02/07/2026 - 10:31',
                 'UserUnlock' => 'NB0031',
-                'LockDateTime' => '01/07/2026 13:12',
+                'LockDateTime' => '01/07/2026 - 13:12',
                 'Username' => 'NB0031',
                 'Note' => 'KHÁCH ĐẶT',
             ]],
@@ -44,5 +50,8 @@ class OosLockHistoryReportTest extends TestCase
         $this->assertStringContainsString('Ngày Bắt Đầu', $rendered);
         $this->assertStringContainsString('Người Mở Khóa', $rendered);
         $this->assertStringContainsString('502', $rendered);
+        $this->assertStringContainsString('#2e7d32', $rendered);
+        $this->assertStringContainsString('UnLock', $rendered);
+        $this->assertStringContainsString('Tổng', $rendered);
     }
 }

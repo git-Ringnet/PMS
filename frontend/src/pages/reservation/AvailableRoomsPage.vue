@@ -384,7 +384,11 @@ async function loadAvailability(start = null, end = null) {
     if (response.data && response.data.success) {
       const data = response.data
       dates.value = data.dates
-      roomClasses.value = data.room_classes
+      roomClasses.value = (data.room_classes || []).slice().sort((a, b) => {
+        const orderA = a.orders !== undefined && a.orders !== null ? Number(a.orders) : 9999
+        const orderB = b.orders !== undefined && b.orders !== null ? Number(b.orders) : 9999
+        return orderA - orderB || Number(a.id || 0) - Number(b.id || 0)
+      })
       gridData.value = data.grid
       occBookings.value = data.occ_bookings || {}
       statistics.value = data.statistics

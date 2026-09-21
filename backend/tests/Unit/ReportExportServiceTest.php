@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\Template;
 use App\Services\Reports\ReportExportService;
+use App\Services\Reports\ReportSpreadsheetExportService;
 use Tests\TestCase;
 
 class ReportExportServiceTest extends TestCase
@@ -32,6 +33,148 @@ class ReportExportServiceTest extends TestCase
             $this->assertStringStartsWith('PK', $content);
             $this->assertValidOfficeArchive($content, $format);
         }
+    }
+
+    public function test_it_exports_rendered_report_layout_to_excel(): void
+    {
+        $template = new Template([
+            'name' => 'Mẫu báo cáo', 'page_size' => 'A4', 'page_orientation' => 'portrait',
+            'margin_top' => 6, 'margin_bottom' => 6, 'margin_left' => 5, 'margin_right' => 5,
+        ]);
+        $html = <<<'HTML'
+<!doctype html>
+<html><head><style>
+body { font-family: Arial; font-size: 10px; }
+h1 { text-align: center; font-size: 20px; }
+.grid th, .grid td { border: 1px solid #94A3B8; padding: 4px; }
+.grid th { background-color: #D9E1EC; text-align: center; }
+.total { font-weight: 700; background-color: #E2E8F0; text-align: right; }
+</style></head><body>
+<h1>BÁO CÁO KIỂM THỬ</h1>
+<table class="grid">
+  <tr><th>Mã ĐK</th><th colspan="2">Tên khách</th></tr>
+  <tr><td>001</td><td colspan="2">Nguyễn Văn A</td></tr>
+  <tr><td colspan="3" class="total">Tổng: 1</td></tr>
+</table>
+</body></html>
+HTML;
+
+        $response = app(ReportExportService::class)->download('xlsx', $template, [], $html, 'TEST');
+        ob_start();
+        $response->sendContent();
+        $content = ob_get_clean();
+        $path = tempnam(sys_get_temp_dir(), 'pms-report-layout-');
+        file_put_contents($path, $content);
+
+        try {
+            $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path)->getActiveSheet();
+
+            $this->assertSame('BÁO CÁO KIỂM THỬ', $sheet->getCell('A1')->getValue());
+            $this->assertContains('A1:C1', $sheet->getMergeCells());
+            $this->assertSame('Tên khách', $sheet->getCell('B2')->getValue());
+            $this->assertContains('B2:C2', $sheet->getMergeCells());
+            $this->assertSame('D9E1EC', $sheet->getStyle('A2')->getFill()->getStartColor()->getRGB());
+            $this->assertTrue($sheet->getStyle('A2')->getFont()->getBold());
+            $this->assertSame('Tổng: 1', $sheet->getCell('A4')->getValue());
+            $this->assertTrue($sheet->getStyle('A4')->getFont()->getBold());
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function test_it_maps_secondary_tables_to_the_primary_report_width(): void
+    {
+        $template = new Template(['name' => 'Mẫu báo cáo', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><body>
+<table><tr><th>A</th><th>B</th><th>C</th><th>D</th></tr></table>
+<table><tr><th>Tổng 1</th><th>Tổng 2</th></tr></table>
+</body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+
+        $this->assertSame('Tổng 1', $sheet->getCell('A2')->getValue());
+        $this->assertSame('Tổng 2', $sheet->getCell('C2')->getValue());
+        $this->assertContains('A2:B2', $sheet->getMergeCells());
+        $this->assertContains('C2:D2', $sheet->getMergeCells());
+    }
+
+    public function test_it_honors_column_widths_important_styles_and_wrapped_row_height(): void
+    {
+        $template = new Template(['name' => 'Mẫu báo cáo', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><head><style>
+th { background-color: #F8FAFC; }
+.report th { background: #E2E8F0; }
+.report .date-group { text-align: left !important; background: #F8FAFC; }
+.report td { padding: 4px 3px; overflow-wrap: anywhere; }
+</style></head><body>
+<table class="report"><colgroup><col style="width:10%"><col style="width:20%"></colgroup>
+  <tr><th>Mã</th><th>Nội dung</th></tr>
+  <tr><td colspan="2" class="date-group">Ngày: 09/08/2026</td></tr>
+  <tr><td>1</td><td>Nội dung minibar rất dài cần xuống nhiều dòng để kiểm tra chiều cao hàng Excel được tính đúng và không bị cắt khi xuất báo cáo.</td></tr>
+</table>
+</body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+
+        $this->assertSame('E2E8F0', $sheet->getStyle('A1')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('left', $sheet->getStyle('A2')->getAlignment()->getHorizontal());
+        $this->assertGreaterThan($sheet->getColumnDimension('A')->getWidth(), $sheet->getColumnDimension('B')->getWidth());
+        $this->assertGreaterThan(30, $sheet->getRowDimension(3)->getRowHeight());
+    }
+
+    public function test_it_preserves_designer_block_geometry_and_supported_cell_properties(): void
+    {
+        $template = new Template(['name' => 'Mẫu Designer', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><body>
+<div class="pms-template-block-header" style="margin-top: 8px; padding-bottom: 6px; background-color: #F8FAFC;">
+  <table style="width: 100%; border: none; margin: 0; padding: 0;"><tr>
+    <td style="width: 30%; border: none; padding: 0; vertical-align: top;"><div class="pms-template-block-logo" style="margin-left: 20px; min-height: 58px;"><p style="text-decoration: underline; color: #0F172A;">Logo</p></div></td>
+    <td style="width: 70%; border: none; padding: 0; vertical-align: top;"><div class="pms-template-block-meta" style="text-align: right; font-size: 9px; font-weight: normal;"><p><b>Địa chỉ:</b> Kiểm thử</p></div></td>
+  </tr></table>
+</div>
+<table><tr><td style="border-top-style: solid; border-top-width: 2px; border-top-color: #EF4444; background-color: #E2E8F0; text-align: center; vertical-align: bottom; min-height: 28px;">Ô kiểm thử</td></tr></table>
+<table><tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td></tr></table>
+</body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+        $testCoordinate = collect($sheet->getCellCollection()->getCoordinates())
+            ->first(fn (string $coordinate): bool => $sheet->getCell($coordinate)->getValue() === 'Ô kiểm thử');
+
+        $this->assertContains('A2:C2', $sheet->getMergeCells());
+        $this->assertContains('D2:J2', $sheet->getMergeCells());
+        $this->assertSame('single', $sheet->getStyle('A2')->getFont()->getUnderline());
+        $this->assertSame('right', $sheet->getStyle('D2')->getAlignment()->getHorizontal());
+        $this->assertNotNull($testCoordinate);
+        $this->assertSame('E2E8F0', $sheet->getStyle($testCoordinate)->getFill()->getStartColor()->getRGB());
+        $this->assertSame('EF4444', $sheet->getStyle($testCoordinate)->getBorders()->getTop()->getColor()->getRGB());
+        $this->assertGreaterThanOrEqual(21, $sheet->getRowDimension((int) preg_replace('/\D+/', '', $testCoordinate))->getRowHeight());
+    }
+
+    public function test_it_does_not_collapse_narrow_primary_table_columns_when_mapping_widths(): void
+    {
+        $template = new Template(['name' => 'Báo cáo theo sản phẩm', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><body><table><tr>
+<th style="width:7%">ID</th><th style="width:34%">Sản phẩm</th><th style="width:12%">Đơn vị</th><th style="width:12%">Đơn giá</th><th style="width:11%">Số lượng</th><th style="width:12%">Thành tiền</th><th style="width:12%">Giảm giá</th>
+</tr><tr><td>43</td><td>Áo dạ</td><td>VND</td><td>115.000</td><td>3</td><td>345.000</td><td>0</td></tr></table></body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+
+        $this->assertSame('ID', $sheet->getCell('A1')->getValue());
+        $this->assertSame('Sản phẩm', $sheet->getCell('B1')->getValue());
+        $this->assertSame('Đơn vị', $sheet->getCell('C1')->getValue());
+        $this->assertSame('Đơn giá', $sheet->getCell('D1')->getValue());
+        $this->assertSame('Số lượng', $sheet->getCell('E1')->getValue());
+        $this->assertSame('Thành tiền', $sheet->getCell('F1')->getValue());
+        $this->assertSame('Giảm giá', $sheet->getCell('G1')->getValue());
+        $this->assertLessThan(25, $sheet->getRowDimension(1)->getRowHeight());
     }
 
     private function assertValidOfficeArchive(string $content, string $format): void

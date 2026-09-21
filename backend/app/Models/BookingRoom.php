@@ -60,7 +60,7 @@ class BookingRoom extends Model
                 $arr = \Carbon\Carbon::parse($model->arrival_date);
                 $dep = \Carbon\Carbon::parse($model->departure_date);
                 $diff = $arr->diffInDays($dep);
-                $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
+                $model->ActutalNumOfDays = ((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1);
             }
             // Giữ riêng kế hoạch ban đầu để nhận diện checkout sớm sau khi ngày đi thực tế thay đổi.
             $model->planned_departure_date = $model->planned_departure_date ?: $model->departure_date;
@@ -92,7 +92,7 @@ class BookingRoom extends Model
                     $arr = \Carbon\Carbon::parse($model->arrival_date);
                     $dep = \Carbon\Carbon::parse($model->departure_date);
                     $diff = $arr->diffInDays($dep);
-                    $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
+                    $model->ActutalNumOfDays = ((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1);
                 }
             }
 
@@ -185,7 +185,11 @@ class BookingRoom extends Model
                 $arr = \Carbon\Carbon::parse($model->arrival_date);
                 $dep = \Carbon\Carbon::parse($model->departure_date);
                 $diff = $arr->diffInDays($dep);
-                $model->ActutalNumOfDays = $diff > 0 ? $diff : 1; // Nếu cùng ngày (day use) thì tính 1 ngày
+                if ((int)$model->status === self::STATUS_MOVED) {
+                    $model->ActutalNumOfDays = $diff;
+                } elseif ($model->ActutalNumOfDays === null || $model->isDirty('arrival_date') || $model->isDirty('departure_date')) {
+                    $model->ActutalNumOfDays = $diff > 0 ? $diff : 1; // Nếu cùng ngày (day use) thì tính 1 ngày
+                }
             }
 
             // Reset giá thêm giường về 0 nếu số lượng giường phụ bằng 0
@@ -364,6 +368,16 @@ class BookingRoom extends Model
     public function cancelLogs()
     {
         return $this->hasMany(BookingCancelLog::class);
+    }
+
+    public function movedFromRoom()
+    {
+        return $this->hasOne(BookingRoom::class, 'move_room', 'id')->withTrashed();
+    }
+
+    public function movedToRoom()
+    {
+        return $this->belongsTo(BookingRoom::class, 'move_room', 'id')->withTrashed();
     }
 
     public function salesInvoices()

@@ -27,6 +27,7 @@ const housekeepingInvoiceCodes = new Set([
   'BREAKAGE_INVOICES_BY_PRODUCT',
   'BREAKAGE_FREE_INVOICES',
   'MINIBAR_INVOICES_BY_PRODUCT',
+  'MINIBAR_FREE_INVOICES',
 ])
 const isHousekeepingInvoiceReport = (tab) => housekeepingInvoiceCodes.has(tab?.code)
 const parameterOptions = (tab, name) => tab?.parameterOptions?.[name]
@@ -136,6 +137,7 @@ const resolveDefault = (value) => {
     return new Date(date.getTime() - offset).toISOString().slice(0, 10)
   }
   if (value === '$today') return localDate(baseDate)
+  if (value === '$yesterday') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() - 1))
   if (value === '$month_start') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), 1))
   if (value === '$month_end') return localDate(new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0))
   return value ?? ''
@@ -407,6 +409,25 @@ const handleTemplateSaved = async (event) => {
 watch(() => activeTab.value?.selectedTemplateId, (val, oldVal) => {
   if (val && oldVal && val !== oldVal) {
     changeTemplateForTab(activeTab.value)
+  }
+})
+
+// Watch p_show_room_details for EXPECTED_BREAKFAST to auto switch templates
+watch(() => activeTab.value?.parameters?.p_show_room_details, (showDetails) => {
+  if (!['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'].includes(activeTab.value?.code)) return
+  const templates = activeTab.value.report?.templates || []
+  if (templates.length <= 1) return
+
+  const target = templates.find(t =>
+    showDetails
+      ? (t.report?.includes('DETAIL') || t.name?.includes('Chi tiết'))
+      : (t.report?.includes('SUMMARY') || t.report?.includes('_1_') || t.name?.includes('Tổng hợp'))
+  )
+  if (target && target.id !== activeTab.value.selectedTemplateId) {
+    activeTab.value.selectedTemplateId = target.id
+    if (activeTab.value.dataset) {
+      executeTab(activeTab.value)
+    }
   }
 })
 
