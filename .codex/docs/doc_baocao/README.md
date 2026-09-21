@@ -1,6 +1,6 @@
-# Tài Liệu Đặc Tả Báo Cáo Dòng 155 & 156 (Thư Mục `doc_baocao`)
+# Tài Liệu Đặc Tả Báo Cáo (Thư Mục `doc_baocao`)
 
-Thư mục này chứa toàn bộ tài liệu phân tích nghiệp vụ, mô hình dữ liệu, đặc tả giao diện và mã nguồn SQL legacy cho **Dòng 155** và **Dòng 156** trong file `DANH MỤC BÁO CÁO.xlsx`, phục vụ cho Agent đọc và triển khai độc lập.
+Thư mục này chứa toàn bộ tài liệu phân tích nghiệp vụ, mô hình dữ liệu, đặc tả giao diện và mã nguồn SQL legacy cho các báo cáo trong file `DANH MỤC BÁO CÁO.xlsx`, phục vụ cho Agent đọc và triển khai độc lập.
 
 ---
 
@@ -8,42 +8,52 @@ Thư mục này chứa toàn bộ tài liệu phân tích nghiệp vụ, mô hì
 
 ```text
 .codex/docs/doc_baocao/
-├── README.md                                  # Hướng dẫn tổng quan & phân loại
-├── dong_155_bao_cao_huy_hoa_don_thanh_toan.md # Đặc tả chi tiết Dòng 155 (sp_068, sp_070)
-├── dong_156_bao_cao_le_tan_hang_ngay.md       # Đặc tả chi tiết Dòng 156 (sp_275)
-├── images/                                    # Ảnh chụp màn hình UI thực tế từ hệ thống legacy
-│   ├── dong_155_ui_mau.png                    # UI thực tế Dòng 155 (Sheet 51)
-│   └── dong_156_ui_mau.png                    # UI thực tế Dòng 156 (Sheet 71)
-└── sql/                                       # Mã nguồn Stored Procedure gốc trích xuất từ MS SQL Server
-    ├── sp_068_full.sql                        # SQL gốc sp_068 (Huỷ hoá đơn)
-    ├── sp_070_full.sql                        # SQL gốc sp_070 (Huỷ thanh toán)
-    └── sp_275_full.sql                        # SQL gốc sp_275 (Lễ tân hằng ngày)
+├── README.md                                               # Hướng dẫn tổng quan & phân loại
+├── dong_150_bao_cao_doanh_thu_army.md                      # Đặc tả chi tiết Dòng 150 (sp_292)
+├── dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md       # Đặc tả chi tiết Dòng 151 (sp_238, sp_240)
+├── dong_152_bao_cao_doanh_thu_le_tan_army.md               # Đặc tả chi tiết Dòng 152 (sp_293)
+├── dong_155_bao_cao_huy_hoa_don_thanh_toan.md              # Đặc tả chi tiết Dòng 155 (sp_068, sp_070)
+├── dong_156_bao_cao_le_tan_hang_ngay.md                    # Đặc tả chi tiết Dòng 156 (sp_275)
+├── images/                                                 # Ảnh chụp màn hình UI thực tế từ hệ thống legacy
+│   ├── dong_150_ui_mau.png                                 # UI thực tế Dòng 150 (Sheet 73)
+│   ├── dong_151_ui_mau.png                                 # UI thực tế Dòng 151 (Sheet 67)
+│   ├── dong_152_ui_mau.png                                 # UI thực tế Dòng 152 (Sheet 74)
+│   ├── dong_155_ui_mau.png                                 # UI thực tế Dòng 155 (Sheet 51)
+│   └── dong_156_ui_mau.png                                 # UI thực tế Dòng 156 (Sheet 71)
+└── sql/                                                    # Mã nguồn Stored Procedure gốc trích xuất từ MS SQL Server
+    ├── sp_292_full.sql                                     # SQL gốc sp_292 (Doanh thu Army Quy Nhơn)
+    ├── sp_238_full.sql                                     # SQL gốc sp_238 (Doanh thu theo ngày đi - chi tiết phòng)
+    ├── sp_240_full.sql                                     # SQL gốc sp_240 (Doanh thu theo ngày đi - nhóm đăng ký)
+    ├── sp_293_full.sql                                     # SQL gốc sp_293 (Doanh thu lễ tân Army)
+    ├── sp_068_full.sql                                     # SQL gốc sp_068 (Huỷ hoá đơn)
+    ├── sp_070_full.sql                                     # SQL gốc sp_070 (Huỷ thanh toán)
+    └── sp_275_full.sql                                     # SQL gốc sp_275 (Lễ tân hằng ngày)
 ```
 
 ---
 
-## 📊 Bảng Đối Chiếu 2 Báo Cáo
+## 📊 Bảng Đối Chiếu Các Báo Cáo
 
-| Thuộc tính | Dòng 155 | Dòng 156 |
-|---|---|---|
-| **Tên báo cáo** | **Báo cáo hủy hóa đơn/thanh toán** | **Báo cáo lễ tân hằng ngày** |
-| **STT trong Excel** | 9.0 | 10.0 |
-| **Mã đề xuất (`code`)** | `CANCELLED_INVOICES_PAYMENTS` | `DAILY_FRONTDESK` |
-| **Nhóm báo cáo (`group`)** | `cancellation` (hoặc `frontdesk`) | `frontdesk` |
-| **Sheet Excel legacy** | **Sheet 51** (`BC hủy hđ-thanh toán`) | **Sheet 71** (`BC lễ tân hằng ngày`) |
-| **Store legacy gốc** | `sp_068` (Huỷ hoá đơn), `sp_070` (Huỷ thanh toán) | `sp_275` |
-| **Tài liệu chi tiết** | [dong_155_bao_cao_huy_hoa_don_thanh_toan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_155_bao_cao_huy_hoa_don_thanh_toan.md) | [dong_156_bao_cao_le_tan_hang_ngay.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_156_bao_cao_le_tan_hang_ngay.md) |
-| **Ảnh UI mẫu** | [dong_155_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_155_ui_mau.png) | [dong_156_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_156_ui_mau.png) |
-| **File SQL gốc** | [sp_068_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_068_full.sql), [sp_070_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_070_full.sql) | [sp_275_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_275_full.sql) |
+| Thuộc tính | Dòng 150 | Dòng 151 | Dòng 152 | Dòng 155 | Dòng 156 |
+|---|---|---|---|---|---|
+| **Tên báo cáo** | **Báo cáo doanh thu** | **Báo cáo doanh thu đăng ký theo ngày đi** | **Báo cáo doanh thu lễ tân_army** | **Báo cáo hủy hóa đơn/thanh toán** | **Báo cáo lễ tân hằng ngày** |
+| **STT trong Excel** | 4.0 | 5.0 | 6.0 | 9.0 | 10.0 |
+| **Mã đề xuất (`code`)** | `REVENUE_ARMY` | `REVENUE_BY_DEPARTURE_DATE` | `RECEPTION_REVENUE_ARMY` | `CANCELLED_INVOICES_PAYMENTS` | `DAILY_FRONTDESK` |
+| **Nhóm báo cáo** | `revenue` | `revenue` | `revenue` | `cancellation` | `frontdesk` |
+| **Sheet Excel legacy** | **Sheet 73** (`Báo cáo Dthu`) | **Sheet 67** (`BC DT theo ngày đi`) | **Sheet 74** (`BC doanh thu lễ tân`) | **Sheet 51** (`BC hủy hđ-thanh toán`) | **Sheet 71** (`BC lễ tân hằng ngày`) |
+| **Store legacy gốc** | `sp_292` | `sp_238`, `sp_240` | `sp_293` | `sp_068`, `sp_070` | `sp_275` |
+| **Tài liệu chi tiết** | [dong_150...](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_150_bao_cao_doanh_thu_army.md) | [dong_151...](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md) | [dong_152...](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_152_bao_cao_doanh_thu_le_tan_army.md) | [dong_155...](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_155_bao_cao_huy_hoa_don_thanh_toan.md) | [dong_156...](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_156_bao_cao_le_tan_hang_ngay.md) |
+| **Ảnh UI mẫu** | [dong_150_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_150_ui_mau.png) | [dong_151_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_151_ui_mau.png) | [dong_152_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_152_ui_mau.png) | [dong_155_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_155_ui_mau.png) | [dong_156_ui_mau.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/dong_156_ui_mau.png) |
+| **File SQL gốc** | [sp_292_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_292_full.sql) | [sp_238_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_238_full.sql), [sp_240_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_240_full.sql) | [sp_293_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_293_full.sql) | [sp_068_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_068_full.sql), [sp_070_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_070_full.sql) | [sp_275_full.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/sp_275_full.sql) |
 
 ---
 
 ## 🛠️ Quy Trình Triển Khai Chuẩn Cho Agent Kế Tiếp
 
-Khi một Agent nhận nhiệm vụ triển khai 2 báo cáo này, Agent chỉ cần thực hiện theo các bước chuẩn mực sau:
+Khi một Agent nhận nhiệm vụ triển khai các báo cáo này, Agent thực hiện theo các bước chuẩn mực sau:
 
 1. **Đọc tài liệu đặc tả**:
-   - Mở file `.codex/docs/doc_baocao/dong_155_bao_cao_huy_hoa_don_thanh_toan.md` hoặc `.codex/docs/doc_baocao/dong_156_bao_cao_le_tan_hang_ngay.md`.
+   - Mở file tài liệu đặc tả chi tiết trong thư mục `doc_baocao/`.
    - Xem ảnh UI mẫu tương ứng trong thư mục `images/`.
    - Đọc file SQL tương ứng trong thư mục `sql/` để nắm trọn vẹn logic join và tính toán.
 2. **Tạo Migration (`backend/database/migrations/`)**:
@@ -52,9 +62,9 @@ Khi một Agent nhận nhiệm vụ triển khai 2 báo cáo này, Agent chỉ c
    - Đăng ký `ReportDataSource` và `ReportDefinition`.
 3. **Tạo Template Reference (`backend/database/report_templates/`)**:
    - Viết file template `.php` trả về `html` và `content_json` hỗ trợ Form Designer WYSIWYG.
-   - Áp dụng đầy đủ cấu hình margin, padding, viền, font size chuẩn (9.5px - 10px cho bảng, 16px cho tiêu đề).
+   - Khai báo đầy đủ `customRows` để hiển thị hàng tổng phụ (Subtotal) và hàng tổng cộng (Grand Total) trên Canvas Form Designer.
 4. **Kiểm Thử (Verification)**:
-   - Chạy `php artisan migrate`.
+   - Chạy `php artisan migrate:all --force`.
    - Viết Feature Test trong `backend/tests/Feature/`.
    - Chạy `npm run build` trên `frontend/`.
 5. **Ghi Nhật Ký**:
