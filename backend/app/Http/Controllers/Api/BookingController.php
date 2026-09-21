@@ -118,6 +118,8 @@ class BookingController extends Controller
             'bookingRooms.movedFromRoom',
             'bookingRooms.movedFromRoom.room',
             'bookingRooms.services',
+            'bookingRooms.serviceBills',
+            'bookingRooms.currentServiceBills',
             'bookingRooms.specialRequests.specialRequest',
         ];
 
@@ -663,6 +665,8 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.serviceBills',
+            'bookingRooms.currentServiceBills',
             'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
@@ -705,6 +709,9 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.serviceBills',
+            'bookingRooms.currentServiceBills',
+            'masterServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
             'payments.user',
@@ -1325,6 +1332,8 @@ class BookingController extends Controller
             'bookingRooms.guests.guest',
             'bookingRooms.children',
             'bookingRooms.services',
+            'bookingRooms.serviceBills',
+            'bookingRooms.currentServiceBills',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);

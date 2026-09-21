@@ -9,6 +9,28 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-21] - Đồng bộ tính toán và hiển thị tiền phòng quá khứ theo hóa đơn thực tế (service_bills)
+### Module: Đặt phòng / Tạo đăng ký ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+
+- **Nguyên nhân gốc rễ**:
+  - `BookingController.php`: Các hàm `index`, `show`, `store`, `update` chưa eager load `bookingRooms.serviceBills` và `bookingRooms.currentServiceBills`, khiến màn hình booking thiếu thông tin hóa đơn thực tế của từng phòng.
+  - `CreateRegistrationPage.vue`: Trong `getRoomDisplayServices`, khi một đêm trong quá khứ bị xóa bill ở màn hình Trả phòng, dòng trong `booking_room_services` bị soft delete -> vòng lặp ngày không thấy dữ liệu đã tự động fallback sinh ra dòng ảo 500k theo đơn giá gốc `room.price`. Khi post bill mới 300k, màn hình booking không đọc từ `service_bills` nên vẫn giữ dòng 500k.
+- **Xử lý hoàn thành**:
+  - **Backend (`BookingController.php`)**:
+    + Bổ sung eager load `bookingRooms.serviceBills`, `bookingRooms.currentServiceBills` vào `$relations` của `index`, `show`, `store`, và `update`.
+  - **Frontend (`CreateRegistrationPage.vue`)**:
+    + Trong `bookingToTab`: Gom toàn bộ `serviceBills` và `currentServiceBills` vào `roomObj.serviceBills`.
+    + Trong `getRoomDisplayServices(room)`: Phân tách rõ ràng giữa đêm quá khứ và đêm tương lai:
+      * **Đêm quá khứ** (`dStr < systemDate`): Ưu tiên 100% lấy theo hóa đơn tiền phòng hợp lệ (`RM`, `ER`, `Edit != 1`, `Status != 3`) trong `room.serviceBills`. Nếu không có bill (đã xóa/hủy) -> không tự bù dòng tiền phòng, tiền phòng đêm đó = 0.
+      * **Đêm hôm nay / tương lai** (`dStr >= systemDate`): Nếu đã có bill thì lấy theo bill; nếu chưa có bill thì lấy theo dịch vụ kế hoạch hoặc đơn giá `room.dailyRoomPrices` / `room.price`.
+      * Bỏ qua các dòng `RM` cũ trong `room.services` ở phần 2 để tránh trùng lặp.
+    + Trong `getRoomChargeTotal(room)`: Tính tổng tiền phòng chuẩn xác từ `getRoomDisplayServices(room)`.
+  - **Đồng bộ liên màn hình (`CheckoutPage.vue`)**:
+    + Sau khi xóa dịch vụ hoặc post hóa đơn mới ở màn hình Trả phòng (checkout/folio), tự động phát sự kiện `booking-updated` và gửi broadcast qua `pms-room-updates` để màn hình Đặt phòng tự động reload tức thì.
+- **Kiểm thử**:
+  - `php -l`: Đã kiểm tra cú pháp PHP không có lỗi.
+  - `npm run build`: Hoàn thành thành công 100% (0 lỗi, 5.48s).
+
 ## [2026-09-21] - Khôi phục thứ tự cột danh sách Sơ đồ phòng khớp yêu cầu trước đó & Sửa hiển thị icon tìm kiếm
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
