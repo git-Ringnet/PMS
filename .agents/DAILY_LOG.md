@@ -9,6 +9,73 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-21] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 158, 161, 164 (Báo cáo Thu ngân lễ tân, Doanh thu hai giai đoạn, Dự kiến doanh thu tiền phòng)
+### Module: Tài liệu phân tích báo cáo ([ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md), [dong_158_bao_cao_thu_ngan_le_tan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_158_bao_cao_thu_ngan_le_tan.md), [dong_161_bao_cao_doanh_thu_hai_giai_doan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_161_bao_cao_doanh_thu_hai_giai_doan.md), [dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md))
+
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 158, 161, 164 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Đọc đúng Stored Procedure chỉ định:
+    - **Dòng 158**: `sp_039` của **Navy** (`ProVistaNavyHotel.dbo.sp_039`), Sheet 63 `BC thu ngân`.
+    - **Dòng 161**: `sp_217` theo **Army** (`ProVistaArmyHotel.dbo.sp_217`), Sheet 4 `Báo cáo doanh thu hai giai đoạn`.
+    - **Dòng 164**: `sp_095` (`ProVistaArmyHotel.dbo.sp_095`), Sheet 2 `Báo cáo dự kiến doanh thu tiền`.
+  - Trích xuất ảnh UI thực tế: `dong_158_ui_mau.png`, `dong_161_ui_mau.png`, `dong_164_ui_mau.png`, `dong_164_popup_ui_mau.png`.
+  - Trích xuất và bóc tách các view, hàm, bảng legacy: `vw_004`, `vw_003`, `vw_025`, `vw_044`, `vw_031`, `vw_030`, `func_031`, `SP2102`, `SP3000`, `SP3002`, `SP3003`.
+  - Lập tài liệu đặc tả cặn kẽ khép kín gồm đầy đủ thông số `content_json` (blocks, columns, grouping, customRows, footer, static tables), Stored Procedure MySQL 8.0, mapping cơ sở dữ liệu và hướng dẫn kiểm thử.
+- **Đã hoàn thành**:
+  - **Dòng 158 - Báo cáo thu ngân lễ tân (`sp_039` Navy)**:
+    - Bóc tách Store Navy `sp_039`: Xử lý phòng cho khách lẻ qua `#tempKhachLe`, quy tắc che số thẻ `CD` giữ 4 chữ số cuối.
+    - Cấu hình tham số bộ phận lọc: `Report_ListDepartmentCashierShiftReport` (`FO,FB,MR,ACC`), mặc định `FO`, hỗ trợ đa chọn.
+    - Đặc tả bố cục A4 Landscape gồm 3 bảng: Bảng 1 chi tiết giao dịch (11 cột, grouping 2 cấp Loại & HTTT, subtotal từng cấp), Bảng 2 phân bổ tiền tệ (6 cột), Bảng 3 tổng hợp công nợ công ty (4 cột) và 3 chữ ký chân trang.
+    - Viết hoàn chỉnh PHP reference template `reception_cashier_shift_reference.php` và Stored Procedure MySQL 8.0 `rpt_reception_cashier_shift`.
+  - **Dòng 161 - Báo cáo doanh thu hai giai đoạn (`sp_217` Army)**:
+    - Bóc tách logic hai giai đoạn: Lọc dịch vụ có Tháng/Năm phát sinh khác Tháng/Năm thanh toán hóa đơn: `((MONTH(sb.service_date) <> MONTH(inv.invoice_date)) OR (YEAR(sb.service_date) <> YEAR(inv.invoice_date)))`.
+    - Thực hiện 2 điểm nâng cấp bắt buộc theo yêu cầu của Army:
+      1. Bổ sung cột "Ngày dịch vụ" (`DateHDDV`) sau cột "Tên khách", lấy từ `service_bills.service_date` (`SP3000.Date`).
+      2. Bộ lọc dịch vụ cho phép chọn nhiều cùng lúc (`multi-select` qua `FIND_IN_SET`).
+    - Bóc tách công thức tính thuế phí theo `vw_044` (`OriginalRate`, `ServiceChargeAmount`, `SpecialTaxAmount`, `TaxAmount`).
+    - Viết hoàn chỉnh PHP reference template `two_period_revenue_reference.php` và Stored Procedure MySQL 8.0 `rpt_two_period_revenue`.
+  - **Dòng 164 - Báo cáo dự kiến doanh thu tiền phòng (`sp_095`)**:
+    - Xác định vị trí nghiệp vụ: Nút bấm `Báo cáo dự kiến doanh thu tiền phòng` tại màn hình **Sang Ngày (Night Audit)** (`dong_164_ui_mau.png`) mở Popup in xem trước (`dong_164_popup_ui_mau.png`).
+    - Bóc tách logic dự kiến doanh thu phòng đang ở (`status IN (0, 1)`) gồm: Tiền phòng (`RM`) theo bảng giá ngày (`booking_room_rates` / `func_031`) + Dịch vụ cố định hàng ngày (`ServiceId <> 'RM'`) từ `booking_room_daily_services` (`SP2102`).
+    - Bố cục bảng in 11 cột có tổng cộng doanh thu tiền phòng và dịch vụ cố định trong đêm audit.
+    - Viết hoàn chỉnh PHP reference template `expected_room_revenue_reference.php` và Stored Procedure MySQL 8.0 `rpt_expected_room_revenue_night_audit`.
+  - **Tài liệu bàn giao**:
+    - [dong_158_bao_cao_thu_ngan_le_tan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_158_bao_cao_thu_ngan_le_tan.md)
+    - [dong_161_bao_cao_doanh_thu_hai_giai_doan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_161_bao_cao_doanh_thu_hai_giai_doan.md)
+    - [dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md)
+    - [ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md)
+
+## [2026-09-21] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 150, 151, 152 (Báo cáo Doanh thu, Doanh thu theo ngày đi, Doanh thu lễ tân Army)
+### Module: Tài liệu phân tích báo cáo ([ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md), [dong_150_bao_cao_doanh_thu_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_150_bao_cao_doanh_thu_army.md), [dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md), [dong_152_bao_cao_doanh_thu_le_tan_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_152_bao_cao_doanh_thu_le_tan_army.md))
+
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 150, 151, 152 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Trích xuất ảnh chụp UI mẫu legacy thực tế từ các Sheet 73, Sheet 67, Sheet 74.
+  - Trích xuất định nghĩa Stored Procedure gốc từ MS SQL Server (SSMS `.\MSSQLSERVER01`): `sp_292`, `sp_238`, `sp_240`, `sp_293`.
+  - Lập tài liệu đặc tả cặn kẽ từ kiến trúc đa chi nhánh, mapping cơ sở dữ liệu, code chuyển đổi Stored Procedure MySQL 8.0, định nghĩa tham số bộ lọc Designer (`parameter_ui_schema`), ma trận cột nhiều tầng, customRows và hướng dẫn kiểm thử chi tiết để Agent mới chưa có thông tin có thể triển khai độc lập ngay lập tức.
+- **Đã hoàn thành**:
+  - **Dòng 150 - Báo cáo doanh thu (Army Quy Nhơn) (`sp_292`)**:
+    - Trích xuất ảnh UI mẫu `dong_150_ui_mau.png` và SQL gốc `sp_292_full.sql`.
+    - Đặc tả layout A4 Landscape, 22 cột, header 2 tầng, tổng hợp 7 nhóm doanh thu trong ngày, doanh thu ngày trước, phân bổ hình thức thanh toán (TM, CK, HH, Còn nợ) và số dư phòng còn ở.
+    - Cấu hình toàn bộ mã nguồn PHP reference template `revenue_army_reference.php` gồm 100% thông số `content_json`: 22 cột trong `columns()`, khối header thông tin khách sạn/ngày in, bảng động có `topHeader` 13 ô gộp, hàng `customRows` Grand Total gồm nhãn `"Tổng số BK: {{aggregate.rows.count}}"` và 15 binding sums `aggregate.rows.sum.*`, khối chân trang 5 chữ ký quân đội.
+  - **Dòng 151 - Báo cáo doanh thu đăng ký theo ngày đi (`sp_238` & `sp_240`)**:
+    - Trích xuất ảnh UI mẫu `dong_151_ui_mau.png` và SQL gốc `sp_238_full.sql` (chi tiết phòng), `sp_240_full.sql` (nhóm theo đăng ký).
+    - Đặc tả layout A4 Landscape, 24 cột, header 3 tầng (FO, Housekeeping, F&B Revenue - Nhà hàng, Doanh thu khác).
+    - Tích hợp công tắc chuyển đổi `p_group_by_booking` (0: chi tiết phòng, 1: nhóm theo đăng ký).
+    - Cấu hình toàn bộ mã nguồn PHP reference template `revenue_by_departure_date_reference.php` gồm 100% thông số `content_json`: 24 cột trong `columns()`, khối header thời gian đến phút, bảng động có `topHeader` ma trận đa tầng (FO colspan 7, HK colspan 4, F&B colspan 4, Nhà hàng), hàng `customRows` Grand Total gồm nhãn `"Total"` và 17 binding sums `aggregate.rows.sum.*` cho tất cả cột doanh thu, khối chữ ký 3 cột.
+  - **Dòng 152 - Báo cáo doanh thu lễ tân_army (`sp_293`)**:
+    - Trích xuất ảnh UI mẫu `dong_152_ui_mau.png` và SQL gốc `sp_293_full.sql`.
+    - Đặc tả layout 11 cột với 2 cấp nhóm phân tầng (Cấp 1: Nhóm doanh thu, Cấp 2: Dịch vụ) kèm bảng tổng hợp phụ 2 cột ở chân trang.
+    - Cấu hình toàn bộ mã nguồn PHP reference template `reception_revenue_army_reference.php` gồm 100% thông số `content_json`: 11 cột trong `columns()`, bảng động có `grouping` 2 cấp (`RevenueGroupName` và `ServiceId`), hàng `customRows` Subtotal 2 cấp (`scope: group` level 1 và level 0) + Grand Total (`scope: table`), khối bảng tĩnh `summary_revenue_box_table` (`tableType: static`) hiển thị tổng hợp Doanh thu phòng, Doanh thu dịch vụ và Tổng cộng, khối 5 chữ ký quân đội.
+  - **Bóc tách chi tiết các hàm, view và bảng legacy trong Stored Procedure**:
+    - **Hàm `func_054` (Dòng 150 - `sp_292`)**: Bóc tách chi tiết bản chất của Table-Valued Function tính doanh thu cốt lõi legacy (~35KB, 583 dòng), cấu trúc dữ liệu trả về 14 cột (`RentalRoomId`, `BookingId`, `BillIdService`, `ServiceId`, `Date`, `Total`, `RoomRateCode`, `DepartmentId`...), cách `sp_292` gọi để tách doanh thu trong ngày và ngày trước (`PrevDay`), và phương án thay thế tối ưu bằng CTE query trực tiếp bảng `sales_invoices` trên MySQL 8.0.
+    - **Các bảng trong Dòng 151 (`sp_238` & `sp_240`)**: Bóc tách vai trò của `SP8060`/`SP8058`/`SP8059` (cấu hình template), `SP3000`/`SP3001` (hóa đơn & chi tiết hóa đơn), `SP2100` (thời gian trả phòng thực tế `CheckoutDate` + `CheckoutTime`), `sp1326` (hình thức miễn phí cần loại trừ) và bảng đối chiếu sang MySQL mới.
+    - **View `vw_018` (Dòng 152 - `sp_293`)**: Bóc tách nguồn gốc View tổng hợp đa bảng (`SP3000`, `SP2100`, `SP2200`, `SP2300`, `SP1306`, `SP3003`, `SP6000`, `SP5000`), công thức bóc tách thuế phí `OriginalRate`, `ServiceChargeAmount`, `TaxAmount`, bảng cấu hình nhóm dịch vụ `SP1610` (`FORevenueReport`), bảng ngôn ngữ `SP1602` và bảng đối chiếu sang MySQL mới.
+  - **Tài liệu tổng hợp và lưu trữ**:
+    - Tạo tài liệu tổng quan toàn diện: [ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md).
+    - Tạo các tài liệu chi tiết độc lập theo chuẩn thư mục `doc_baocao/`: [dong_150_bao_cao_doanh_thu_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_150_bao_cao_doanh_thu_army.md), [dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md), [dong_152_bao_cao_doanh_thu_le_tan_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_152_bao_cao_doanh_thu_le_tan_army.md).
+    - Lưu trữ tập trung 3 file ảnh mẫu tại `.codex/docs/doc_baocao/images/` và 4 file SQL Stored Procedure gốc tại `.codex/docs/doc_baocao/sql/`.
+
 ## [2026-09-18] - Bổ sung hàng tổng (customRows) trên Canvas Form Designer cho 4 báo cáo (Dòng 155, 156, 162, 163)
 ### Module: Form Designer & Biểu mẫu Báo cáo ([unpaid_service_bills_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php), [room_rate_statistics_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php), [daily_frontdesk_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/daily_frontdesk_reference.php), [cancelled_invoices_payments_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/cancelled_invoices_payments_reference.php), [2026_09_18_173500_sync_report_custom_rows_designer.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_173500_sync_report_custom_rows_designer.php))
 
