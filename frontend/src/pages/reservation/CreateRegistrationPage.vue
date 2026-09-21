@@ -602,6 +602,16 @@ function openDepositModal() {
   isDepositModalOpen.value = true
 }
 
+const depositModalRooms = computed(() => {
+  if (Array.isArray(modalForm.value?.rooms) && modalForm.value.rooms.length > 0) {
+    return modalForm.value.rooms
+  }
+  if (Array.isArray(activeTab.value?.rooms) && activeTab.value.rooms.length > 0) {
+    return activeTab.value.rooms
+  }
+  return []
+})
+
 async function openDepositFromQuery() {
   if (route.query.action !== 'deposit' || !activeTab.value) return
 
@@ -7549,9 +7559,7 @@ defineExpose({
 
             <!-- Tab 3: Lấy phòng -->
             <div v-else-if="modalSubTab === 'rooms'" class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-4 relative animate-in">
-              <div class="text-[11px] text-sky-700 bg-sky-50 border border-sky-100 rounded-md px-3 py-2">
-                Chỉ khai báo số phòng mới cần thêm. Các phòng đã lưu không hiển thị và không bị thay đổi từ tab này.
-              </div>
+            
               
               <!-- Column Selector Icon at Top Right -->
               <div class="flex justify-end items-center relative z-20 shrink-0">
@@ -7976,7 +7984,7 @@ defineExpose({
         :paymentMethods="paymentMethods" 
         :currenciesList="currenciesList" 
         :department-id="currentBookingModule === 'FO' ? 'FO' : 'MR'"
-        :rooms="modalForm?.rooms || activeTab?.rooms || []"
+        :rooms="depositModalRooms"
         v-model:deposits="modalForm.deposits" 
         @update:paymentValue="modalForm.paymentValue = $event"
       />

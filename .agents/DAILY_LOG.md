@@ -21,6 +21,9 @@
 - **Thêm tooltip hiển thị thông tin tên cột đầy đủ khi hover chuột**:
   - Bổ sung thuộc tính `title` vào cả thẻ `<th>` và `<span class="truncate">` cho toàn bộ các cột trong header bảng danh sách phòng.
   - Khi hover vào các cột có chữ ngắn bị ẩn bớt (`...`) như `TTĐK`, `TT Phòng`, `Dạng phòng`, `Mã ĐK`, `Yêu cầu ĐB`, `Nhận phòng trễ`, `Chuyển phòng kế hoạch`,... trình duyệt sẽ hiển thị tooltip với tên đầy đủ rõ ràng (ví dụ: `Tình trạng đăng ký (TTĐK)`, `Yêu cầu đặc biệt (YCĐB)`, `Nhận phòng trễ (Late check-in)`,...).
+- **Sửa lỗi dropdown chọn phòng đặt cọc riêng bị trống ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue))**:
+  - Khắc phục lỗi truyền prop `:rooms`: Biểu thức cũ `modalForm?.rooms || activeTab?.rooms` bị kẹt ở `modalForm.rooms = []` (do mảng rỗng trong JS là truthy). Đã thay thế bằng computed `depositModalRooms` kiểm tra độ dài mảng và fallback chuẩn xác sang `activeTab.rooms`.
+  - Tối ưu hiển thị nhãn trong dropdown phòng cọc bằng hàm `formatRoomOptionLabel`: Hiển thị số phòng + hạng phòng + trạng thái (ví dụ: `Phòng 405 - DELUXE DOUBLE CITY VIEW (Đang ở)`, `Phòng 105 - SUPERIOR DOUBLE (Phòng chuyển)`).
 - **Kiểm thử**:
   - `npm run build`: Hoàn thành thành công 100% (0 lỗi).
 
