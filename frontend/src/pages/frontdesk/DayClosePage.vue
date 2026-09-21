@@ -513,7 +513,7 @@ async function handleRollDay() {
 }
 
 function handleRevenueReport() {
-  uiStore.showToast('Đang tải báo cáo dự kiến doanh thu tiền phòng...', 'info')
+  router.push({ path: '/reports', query: { report: 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT' } })
 }
 
 async function handlePostRoomCharge() {
