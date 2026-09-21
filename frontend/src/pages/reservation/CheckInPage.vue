@@ -40,8 +40,10 @@ const isArrivalMode = computed(() => props.displayMode === 'arrivals' || !props.
 const isDepartureMode = computed(() => props.displayMode === 'departures')
 const isOccupiedMode = computed(() => props.displayMode === 'occupied')
 const systemDate = ref('')
-const canCancelCheckIn = ref(false)
-const canUndoForDate = computed(() => isArrivalMode.value && isFrontDesk.value && canCancelCheckIn.value)
+const canUndoForDate = computed(() => {
+  const isToday = !systemDate.value || !searchDate.value || normalizeDate(searchDate.value) === normalizeDate(systemDate.value)
+  return isArrivalMode.value && isFrontDesk.value && canCancelCheckIn.value && isToday
+})
 
 // State
 const bookings = ref([])

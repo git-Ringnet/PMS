@@ -831,31 +831,33 @@ class BookingRoomController extends Controller
         }
 
         // Không cho phép hủy nhận phòng đối với các phòng đã phát sinh hóa đơn, thanh toán hoặc thanh toán trước (Edit = 0)
-        $hasServiceBills = \App\Models\ServiceBill::where(function ($q) use ($bookingRoom, $booking) {
-            $q->where('RentalRoomId2', (string) $bookingRoom->id)
-              ->orWhere('RentalRoomId1', (string) $bookingRoom->id);
-            if ($booking && $booking->bookingRooms()->count() <= 1) {
-                $q->orWhere(function ($q2) use ($booking) {
-                    $q2->where(function ($mb) use ($booking) {
-                        $mb->where('RegisterID2', (string) $booking->id)
-                           ->orWhere('RegisterId1', (string) $booking->id);
-                    })->where(function ($r) {
-                        $r->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
-                    });
-                });
-            }
+        // Chỉ xét các hóa đơn đang thực sự thuộc về phòng này (RentalRoomId2) và chưa bị xóa/hủy/chuyển (Edit=0, Status not in [3, 4])
+        $hasServiceBills = \App\Models\ServiceBill::where(function ($q) use ($bookingRoom) {
+            $roomIdStr = (string) $bookingRoom->id;
+            $q->where('RentalRoomId2', $roomIdStr)
+              ->orWhere(function ($fallback) use ($roomIdStr) {
+                  $fallback->where(function ($r2) {
+                      $r2->whereNull('RentalRoomId2')
+                         ->orWhere('RentalRoomId2', '')
+                         ->orWhere('RentalRoomId2', '0');
+                  })->where(function ($reg2) {
+                      $reg2->whereNull('RegisterID2')
+                         ->orWhere('RegisterID2', '')
+                         ->orWhere('RegisterID2', '0');
+                  })->where('RentalRoomId1', $roomIdStr);
+              });
         })
-        ->where('Edit', 0)
+        ->where(function ($q) {
+            $q->where('Edit', 0)->orWhere('Edit', false)->orWhereNull('Edit');
+        })
+        ->whereNotIn('Status', [3, 4])
         ->exists();
 
-        $hasPayments = \App\Models\Payment::where('booking_id', $booking->id)
-            ->where(function ($q) use ($bookingRoom, $booking) {
-                $q->where('booking_room_id', $bookingRoom->id);
-                if ($booking && $booking->bookingRooms()->count() <= 1) {
-                    $q->orWhereNull('booking_room_id');
-                }
+        // Chỉ xét các khoản thanh toán / cọc gắn trực tiếp vào phòng này và chưa bị hủy (edit_flag = 0)
+        $hasPayments = \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
+            ->where(function ($q) {
+                $q->where('edit_flag', 0)->orWhereNull('edit_flag');
             })
-            ->where('edit_flag', 0)
             ->whereNull('deleted_at')
             ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
             ->exists();

@@ -9,6 +9,35 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-21] - Sửa nghiệp vụ Hủy nhận phòng (Undo Check-In): Chặn khi có dịch vụ/cọc, cho phép khi đã hủy/chuyển, chuẩn hóa giao diện xác nhận
+### Module: Sơ đồ phòng & Phòng đã đến ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+
+- **Nghiệp vụ & Lỗi gốc rễ khách phản ánh ("Ràng thiếu điều kiện")**:
+  - Khi check-in phòng -> phát sinh bill/thanh toán/thanh toán trước -> hệ thống trước đây không kiểm tra đầy đủ bill/cọc còn hiệu lực hay đã bị hủy/chuyển.
+  - Sau khi người dùng chuyển bill sang phòng khác hoặc hủy bill/cọc, query cũ vẫn kiểm tra `orWhere('RentalRoomId1', $bookingRoom->id)` và quét Master Folio (`RegisterID2 = booking->id`).
+  - Do cơ chế `quickTransfer`/`transferFolio` nhân bản bill (`replicate()`) giữ nguyên `RentalRoomId1` là ID phòng gốc trong khi `RentalRoomId2` là phòng đích, câu query cũ match phải dòng bill mới trên phòng đích khiến phòng gốc bị chặn oan dù đã sạch hóa đơn.
+- **Xử lý hoàn thành**:
+  - **Backend (`BookingController.php` - phương thức `undoCheckIn`)**:
+    + Kiểm tra chỉ cho phép hủy nhận phòng cho các phòng vừa check-in trong ngày (`check_in_date === system_date`).
+    + Tối ưu kiểm tra hóa đơn dịch vụ (`$hasServiceBills`):
+      * Chỉ xét các bill đang gắn vào phòng hiện tại qua cột sở hữu chính thức `RentalRoomId2 = $bookingRoom->id` (kèm fallback legacy khi cả `RentalRoomId2` và `RegisterID2` rỗng/null và `RentalRoomId1 = $bookingRoom->id`).
+      * Bắt buộc kiểm tra `COALESCE(Edit, 0) = 0` và loại trừ các trạng thái đã hủy/chuyển `whereNotIn('Status', [3, 4])`.
+      * Không quét nhầm Master Folio hay các bill đã được chuyển sang phòng khác (`RentalRoomId2 != $bookingRoom->id`).
+    + Tối ưu kiểm tra thanh toán / cọc (`$hasPayments`):
+      * Chỉ xét bản ghi gắn với phòng `booking_room_id = $bookingRoom->id`, `edit_flag = 0`, `deleted_at IS NULL`, `status != STATUS_DELETED`.
+    + Trả về thông báo lỗi chuẩn nghiệp vụ khi vi phạm:
+      `"Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin"`.
+  - **Frontend (`RoomMapPage.vue` & `CheckInPage.vue`)**:
+    + Chuẩn hóa modal xác nhận hủy nhận phòng:
+      * Câu hỏi: `"Vui lòng chọn tình trạng phòng sau khi thực hiện \"Hủy nhận phòng\""`.
+      * 2 nút lựa chọn: **Dơ** (`dirty`), **Chờ kiểm tra** (`clean`).
+      * Bỏ nút "Đóng" (người dùng đóng bằng nút `[X]` góc trên modal).
+    + Frontend chỉ cho phép thực hiện hủy nhận phòng khi phòng check-in trong ngày hôm nay (`systemDate`).
+- **Kiểm thử**:
+  - Backend tests: Bổ sung 3 test cases trong [UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php) (chuyển bill sang phòng khác, chuyển cọc sang phòng khác, chuyển bill sang Master Folio). Chạy toàn bộ 9/9 tests pass 100% (25 assertions).
+  - Test tương thích [CheckoutBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/CheckoutBusinessRulesTest.php): 10/10 tests pass.
+  - Frontend build: `npm run build` hoàn thành 100% không có lỗi.
+
 ## [2026-09-21] - Sửa lỗi tính năng Chuyển cọc (Khắc phục che mất khúc dưới, lọc đúng phòng đang ở, bỏ dòng Toàn bộ phòng)
 ### Module: Đặt phòng / Đặt cọc ([DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue))
 
