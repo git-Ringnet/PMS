@@ -16,6 +16,7 @@ class ReportDatasetEnricher
 {
     private readonly PaidCompanyDebtsDataAdapter $paidCompanyDebts;
     private readonly SalesInvoicesDataAdapter $salesInvoices;
+    private readonly DepositsSaleDataAdapter $depositsSale;
 
     public function __construct(
         private readonly ArrivingRoomsSummaryService $arrivingRoomsSummary,
@@ -23,9 +24,11 @@ class ReportDatasetEnricher
         private readonly CompanyDebtDataAdapter $companyDebt,
         ?PaidCompanyDebtsDataAdapter $paidCompanyDebts = null,
         ?SalesInvoicesDataAdapter $salesInvoices = null,
+        ?DepositsSaleDataAdapter $depositsSale = null,
     ) {
         $this->paidCompanyDebts = $paidCompanyDebts ?? new PaidCompanyDebtsDataAdapter();
         $this->salesInvoices = $salesInvoices ?? new SalesInvoicesDataAdapter();
+        $this->depositsSale = $depositsSale ?? new DepositsSaleDataAdapter();
     }
 
     public function enrich(ReportDefinition $reportDefinition, array $data): array
@@ -51,6 +54,12 @@ class ReportDatasetEnricher
         }
         if (in_array($code, ['SALES_INVOICES', 'RPT_SALES_INVOICES'], true)) {
             return $this->salesInvoices->adapt($this->resolveSystemUserNames($data));
+        }
+        if ($code === 'DEPOSITS_SALE') {
+            return $this->depositsSale->adapt($data);
+        }
+        if (in_array($code, ['RPT_RECEPTION_REVENUE_ARMY', 'RECEPTION_REVENUE_ARMY'], true)) {
+            return $this->enrichReceptionRevenueArmySummary($data);
         }
         if (in_array($code, ['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'], true)) {
             return $this->enrichExpectedBreakfast($data);
@@ -181,6 +190,36 @@ class ReportDatasetEnricher
         $data['totals'] = array_merge($data['totals'] ?? [], [
             'CountryTotalPax' => $totalPax,
         ]);
+
+        return $data;
+    }
+
+    private function enrichReceptionRevenueArmySummary(array $data): array
+    {
+        if (isset($data['revenue_summary'])) {
+            return $data;
+        }
+
+        $roomTotal = 0.0;
+        $grandTotal = 0.0;
+
+        foreach ($data['rows'] ?? [] as $row) {
+            $amount = $row['Amount'] ?? null;
+            if (! is_numeric($amount)) {
+                continue;
+            }
+
+            $amount = (float) $amount;
+            $grandTotal += $amount;
+            if (strtoupper(trim((string) ($row['DisplayName'] ?? ''))) === 'ROOMREVENUE') {
+                $roomTotal += $amount;
+            }
+        }
+
+        $data['revenue_summary'] = [
+            ['GroupName' => 'Doanh Thu Phòng', 'TotalAmount' => round($roomTotal, 2)],
+            ['GroupName' => 'Doanh Thu Dịch Vụ', 'TotalAmount' => round($grandTotal - $roomTotal, 2)],
+        ];
 
         return $data;
     }
