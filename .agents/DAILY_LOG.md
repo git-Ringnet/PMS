@@ -9,6 +9,88 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-22] - Rà soát chi tiết & Hoàn thiện Cẩm nang triển khai toàn diện 6 Báo cáo (Dòng 154, 159, 160, 166, 167, 168)
+### Module: Tài liệu phân tích báo cáo ([MASTER_IMPLEMENTATION_GUIDE_6_REPORTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/MASTER_IMPLEMENTATION_GUIDE_6_REPORTS.md))
+
+- **Bối cảnh & Yêu cầu**:
+  - Rà soát lại toàn bộ 6 báo cáo (Dòng 159, 160, 166, 154, 167, 168) theo yêu cầu người dùng: kiểm tra đối chiếu từng dòng, từng trường, từng công thức và từng ràng buộc để đảm bảo một Agent mới chưa có dữ liệu có thể tiếp nhận và triển khai độc lập, khép kín 100%.
+  - Kiểm tra các giới hạn kiến trúc runtime của PMS (quy tắc Result Set đơn của `ReportDataExecutorService`, adapter dẫn xuất dataset phụ, 5 database tenant).
+- **Kết quả rà soát & Bổ sung**:
+  1. **Dòng 154 (Hóa đơn dịch vụ tổng hợp)**: Bổ sung kiến trúc và mã nguồn PHP Adapter `SummaryServiceInvoicesDataAdapter.php` để sinh bảng phụ `summary` (Doanh Thu | Tổng) và hướng dẫn đăng ký vào `ReportDatasetEnricher.php`, tránh lỗi procedure trả 2 result sets bị nuốt mất bảng 2.
+  2. **Dòng 159 (Tiền đặt cọc)**: Chuẩn hóa cấu hình tooltip icon `(i)` trong `parameter_ui_schema` và vị trí cột "Tên đăng ký" (`BookingName`).
+  3. **Dòng 160 (Tổng hợp ngày)**: Chuẩn hóa cấu trúc 2 cột dữ liệu (Ngày & Lũy kế tháng), cách mở rộng các nhóm doanh thu mới qua `UNION ALL`.
+  4. **Dòng 166, 167, 168 (Công suất công ty & Doanh thu người bán)**: Xác lập và tài liệu hóa **Quy tắc đối soát chéo bất biến (Cross-Verification Rule)** đảm bảo số liệu Đêm phòng, Doanh thu phòng, Số lượng khách, ADR giữa 3 báo cáo này khớp 100% với nhau.
+  5. **Ban hành Cẩm nang tổng thể**: Xuất bản [MASTER_IMPLEMENTATION_GUIDE_6_REPORTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/MASTER_IMPLEMENTATION_GUIDE_6_REPORTS.md) tích hợp đầy đủ checklist kiểm thử, ma trận metadata, Stored Procedure và cấu hình Designer cho cả 6 báo cáo.
+
+## [2026-09-22] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 154, 167, 168 (Báo cáo Hóa đơn dịch vụ tổng hợp, Báo cáo Công suất công ty, Báo cáo Doanh thu theo người bán)
+### Module: Tài liệu phân tích báo cáo ([ROW_154_167_168_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_154_167_168_COMPREHENSIVE_SPECIFICATION.md), [dong_154_bao_cao_hoa_don_dich_vu_tong_hop.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_154_bao_cao_hoa_don_dich_vu_tong_hop.md), [dong_167_bao_cao_cong_suat_cong_ty.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_167_bao_cao_cong_suat_cong_ty.md), [dong_168_bao_cao_doanh_thu_theo_nguoi_ban.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_168_bao_cao_doanh_thu_theo_nguoi_ban.md))
+
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 154, 167, 168 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Tuân thủ nghiêm ngặt chỉ định: **Chưa có store Galliot nên bỏ qua Galliot**, lấy store chuẩn của Navy (`ProVistaNavyHotel`).
+  - Trích xuất và bóc tách Stored Procedure gốc từ MS SQL Server (SSMS `.\MSSQLSERVER01`):
+    - **Dòng 154**: `sp_025` (`ProVistaNavyHotel.dbo.sp_025`), Sheet 20 & Sheet 64 `BC hóa đơn dịch vụ tổng hợp` (Bỏ qua Galliot).
+    - **Dòng 167**: `sp_055` & `sp_055_Division` (`ProVistaNavyHotel.dbo.sp_055`), Sheet 15 `Báo cáo công suất công ty`.
+    - **Dòng 168**: `sp_155`, `sp_158` (`ProVistaArmyHotel`) & `sp_055` (`ProVistaNavyHotel`), Sheet 19 `BC doanh thu theo người bán`.
+  - Trích xuất ảnh UI thực tế: `dong_154_ui_mau.png`, `sheet_64_img_1.png`, `sheet_0_img_2.png`, `dong_167_ui_mau_1.png`, `dong_167_ui_mau_2.png`.
+  - Lập tài liệu đặc tả cặn kẽ khép kín gồm đầy đủ thông số `content_json` (blocks, columns, grouping, customRows, footer, static tables), Stored Procedure MySQL 8.0, mapping cơ sở dữ liệu và hướng dẫn kiểm thử cho Agent triển khai tiếp theo.
+- **Đã hoàn thành**:
+  - **Dòng 154 - Báo cáo hóa đơn dịch vụ tổng hợp (`sp_025` Navy - Bỏ qua Galliot)**:
+    - Bỏ qua gom nhóm theo Outlet `SP3000` của Galliot; tuân thủ chuẩn Navy: ánh xạ dịch vụ sang 6 nhóm doanh thu lớn theo bảng `SP1610` (`NightAuditReport`: Nhà hàng, Minibar, Phòng, Giặt là, Vận chuyển, Dịch vụ khác).
+    - Bộ lọc dịch vụ trên UI cho phép đa chọn (`multi-select` qua `FIND_IN_SET`).
+    - Sửa lỗi cú pháp store Navy cũ (`cast(vw.Date as Date)e =`).
+    - Lưới 11 cột, grouping 2 cấp (Loại doanh thu -> Dịch vụ), bảng thống kê phụ 2 cột (Doanh Thu | Tổng).
+    - Viết hoàn chỉnh PHP reference template `summary_service_invoices_reference.php` và Stored Procedure MySQL 8.0 `rpt_summary_service_invoices`.
+  - **Dòng 167 - Báo cáo công suất công ty (`sp_055` & `sp_055_Division` Navy)**:
+    - Bóc tách cấu trúc 11 cột có đánh số thứ tự từ 1-11 ở header tầng 2.
+    - Trích xuất công thức gốc từ DevExpress Designer: `%OCC`, Đêm phòng, ADR thực thu, ADR niêm yết không FOC/giảm giá, Doanh thu phòng, F&B, Khác, Tổng DT.
+    - Cấu hình 5 tùy chọn động: DT phòng gồm ăn sáng (`@BF`), xem chi tiết, nhóm theo ngày, theo thị trường, theo nguồn khách (thị trường & nguồn khách chỉ chọn 1 trong 2).
+    - Khối Note ghi chú giải thích công thức in dưới chân bảng.
+    - Viết hoàn chỉnh PHP reference template `company_occupancy_reference.php` và Stored Procedure MySQL 8.0 `rpt_company_occupancy`.
+  - **Dòng 168 - Báo cáo doanh thu theo người bán (`sp_155`, `sp_158` Army & `sp_055` Navy)**:
+    - Hợp nhất 2 kiểu chạy của hệ thống cũ thành tham số `Chế độ lọc (Filter Mode)`:
+      + `Mode 1`: Lọc theo ngày đến của đặt phòng (Arrival Date Mode - Chuẩn Army `sp_155`/`sp_158`).
+      + `Mode 2`: Lọc theo đêm phòng lưu trú thực tế trong kỳ (Stay Date / Room-Night Mode - Chuẩn Navy `sp_055` group theo `@UserSale`).
+    - Hỗ trợ 2 mẫu: Tổng hợp theo người bán (11 cột) và Chi tiết từng booking.
+    - Viết hoàn chỉnh PHP reference template `salesperson_revenue_reference.php` và Stored Procedure MySQL 8.0 `rpt_salesperson_revenue`.
+  - **Tài liệu bàn giao**:
+    - [dong_154_bao_cao_hoa_don_dich_vu_tong_hop.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_154_bao_cao_hoa_don_dich_vu_tong_hop.md)
+    - [dong_167_bao_cao_cong_suat_cong_ty.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_167_bao_cao_cong_suat_cong_ty.md)
+    - [dong_168_bao_cao_doanh_thu_theo_nguoi_ban.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_168_bao_cao_doanh_thu_theo_nguoi_ban.md)
+    - [ROW_154_167_168_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_154_167_168_COMPREHENSIVE_SPECIFICATION.md)
+
+## [2026-09-22] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 159, 160, 166 (Báo cáo Tiền đặt cọc, Báo cáo Tổng hợp ngày, Báo cáo Chi tiết công suất công ty)
+### Module: Tài liệu phân tích báo cáo ([ROW_159_160_166_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_159_160_166_COMPREHENSIVE_SPECIFICATION.md), [dong_159_bao_cao_tien_dat_coc.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_159_bao_cao_tien_dat_coc.md), [dong_160_bao_cao_tong_hop_ngay.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_160_bao_cao_tong_hop_ngay.md), [dong_166_bao_cao_chi_tiet_cong_suat_cong_ty.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_166_bao_cao_chi_tiet_cong_suat_cong_ty.md))
+
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 159, 160, 166 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Tuân thủ chỉ định: **Chưa có store Galliot nên bỏ qua Galliot**, lấy store chuẩn của Navy (`ProVistaNavyHotel`).
+  - Trích xuất và bóc tách Stored Procedure gốc từ MS SQL Server (SSMS `.\MSSQLSERVER01`):
+    - **Dòng 159**: `sp_076` (`ProVistaNavyHotel.dbo.sp_076`), Sheet 62 `BC tiền đặt cọc`.
+    - **Dòng 160**: `sp_279` (`ProVistaNavyHotel.dbo.sp_279`), Sheet 71 `BC tổng hợp ngày` (Bỏ qua Galliot).
+    - **Dòng 166**: `sp_078` (`ProVistaNavyHotel.dbo.sp_078`), Sheet 16 `Báo cáo chi tiết công suất công`.
+  - Trích xuất ảnh UI thực tế: `dong_159_ui_mau.png`, `dong_160_ui_mau.png`, `dong_166_ui_mau.png`.
+  - Lập tài liệu đặc tả cặn kẽ khép kín gồm đầy đủ thông số `content_json` (blocks, columns, grouping, customRows, footer, static tables), Stored Procedure MySQL 8.0, mapping cơ sở dữ liệu và hướng dẫn kiểm thử cho Agent triển khai tiếp theo.
+- **Đã hoàn thành**:
+  - **Dòng 159 - Báo cáo tiền đặt cọc (`sp_076` Navy)**:
+    - Bóc tách lỗi lọc của store cũ (`Option 1` lọc khác tháng check-out vô lý, `Option 4` thiếu kiểm tra cấn trừ thanh toán).
+    - Chuẩn hóa 5 chế độ lọc rõ ràng kèm tooltip icon `(i)` giải thích nghiệp vụ trên UI.
+    - Bổ sung cột "Tên đăng ký" (`BookingName`) ngay sau cột Mã ĐK/Phòng.
+    - Viết hoàn chỉnh PHP reference template `deposits_summary_reference.php` và Stored Procedure MySQL 8.0 `rpt_deposits_summary`.
+  - **Dòng 160 - Báo cáo tổng hợp ngày (`sp_279` Navy - Bỏ qua Galliot)**:
+    - Bóc tách cấu trúc 7 nhóm chỉ tiêu quản trị: Doanh thu (Phòng, F&B, Giặt là, Khác, FOC), Hoạt động KS (Inhouse, Checkin, Checkout, Cuối ngày), OCC%, ADR, Ý kiến khách, Cơ sở vật chất, Đề xuất.
+    - Phân tách dữ liệu thành 2 cột so sánh: Cột Ngày (Daily) và Cột Lũy kế tháng (MTD).
+    - Viết hoàn chỉnh PHP reference template `daily_summary_reference.php` và Stored Procedure MySQL 8.0 `rpt_daily_summary`.
+  - **Dòng 166 - Báo cáo chi tiết công suất công ty (`sp_078` Navy)**:
+    - Xác định vai trò nghiệp vụ: Báo cáo đối soát chéo công suất, doanh thu phòng, F&B, khác với báo cáo công suất cty và dự đoán bán phòng.
+    - Lưới 21 cột chi tiết, công thức tính số đêm phòng/đêm khách trong kỳ, ADR thực thu vs ADR niêm yết không giảm giá.
+    - Viết hoàn chỉnh PHP reference template `company_occupancy_detail_reference.php` và Stored Procedure MySQL 8.0 `rpt_company_occupancy_detail`.
+  - **Tài liệu bàn giao**:
+    - [dong_159_bao_cao_tien_dat_coc.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_159_bao_cao_tien_dat_coc.md)
+    - [dong_160_bao_cao_tong_hop_ngay.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_160_bao_cao_tong_hop_ngay.md)
+    - [dong_166_bao_cao_chi_tiet_cong_suat_cong_ty.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_166_bao_cao_chi_tiet_cong_suat_cong_ty.md)
+    - [ROW_159_160_166_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_159_160_166_COMPREHENSIVE_SPECIFICATION.md)
+
 ## [2026-09-21] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 158, 161, 164 (Báo cáo Thu ngân lễ tân, Doanh thu hai giai đoạn, Dự kiến doanh thu tiền phòng)
 ### Module: Tài liệu phân tích báo cáo ([ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md), [dong_158_bao_cao_thu_ngan_le_tan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_158_bao_cao_thu_ngan_le_tan.md), [dong_161_bao_cao_doanh_thu_hai_giai_doan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_161_bao_cao_doanh_thu_hai_giai_doan.md), [dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md))
 
