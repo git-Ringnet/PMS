@@ -510,7 +510,8 @@ const staticStyleValue = (property) => {
   const target = quickFormatTarget.value
   if (!target?.cell) return ''
   target.cell.style = normalizeStaticTextStyle(target.cell.style)
-  return target.cell.style[property] || ''
+  const rowStyle = normalizeStaticTextStyle(target.row?.style)
+  return target.cell.style[property] || rowStyle[property] || target.block?.style?.[property] || ''
 }
 
 const applyStaticStyle = (property, value) => {
@@ -582,6 +583,17 @@ const getDetailTargetStyle = (target) => {
   return {}
 }
 
+const detailTargetStyleValue = (target, property) => {
+  const style = getDetailTargetStyle(target)
+  return target?.cell?.[property] || style?.[property] || target?.block?.style?.[property] || ''
+}
+
+const detailStyleValue = (property) => {
+  const values = selectedDetailCellTargets.value.map(target => detailTargetStyleValue(target, property))
+  if (!values.length) return ''
+  return values.every(value => value === values[0]) ? values[0] : ''
+}
+
 const isDetailTargetActive = computed(() => selectedDetailCellTargets.value.length > 0)
 
 const isDetailBold = computed(() => {
@@ -609,17 +621,11 @@ const isDetailUnderline = computed(() => {
 })
 
 const detailTextColor = computed(() => {
-  if (!selectedDetailCellTargets.value.length) return ''
-  const first = selectedDetailCellTargets.value[0]
-  const style = getDetailTargetStyle(first)
-  return style?.color || first.cell?.color || ''
+  return detailStyleValue('color')
 })
 
 const detailBgColor = computed(() => {
-  if (!selectedDetailCellTargets.value.length) return ''
-  const first = selectedDetailCellTargets.value[0]
-  const style = getDetailTargetStyle(first)
-  return style?.backgroundColor || first.cell?.backgroundColor || ''
+  return detailStyleValue('backgroundColor')
 })
 
 const applyDetailStyle = (property, value) => {
@@ -4598,7 +4604,7 @@ const selectBand = (band) => {
                   
                   <!-- Background Color picker -->
                   <div class="flex items-center justify-between">
-                    <span class="text-xs text-slate-500">Màu nền:</span>
+                    <span class="text-xs text-slate-500">Màu nền block:</span>
                     <div class="flex items-center gap-1">
                       <input type="color" :value="colorInputValue(selectedBlock.style.backgroundColor, '#ffffff')" @input="selectedBlock.style.backgroundColor = $event.target.value; compileHtml()" class="w-8 h-8 border border-slate-200 rounded cursor-pointer" />
                       <button @click="selectedBlock.style.backgroundColor = ''; compileHtml()" class="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-[10px] text-slate-500 rounded border-none cursor-pointer">Xóa</button>
