@@ -1649,6 +1649,23 @@ function handleRoomMapShortcut(event) {
   if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
   if (currentTab.value !== 'room-map') return
 
+  // Không cho phép bấm phím tắt khi đang mở bất kỳ modal nào (Thông tin, Chuyển phòng, Đặt cọc, Khóa phòng,...)
+  if (
+    showBookingDetailModal.value ||
+    showRoomMoveModal.value ||
+    showDetailModal.value ||
+    showRoomLockModal.value ||
+    showDepositModal.value ||
+    showStatsModal.value ||
+    showPrintTasksModal.value ||
+    showQuickCheckinModal.value ||
+    showQuickAssignModal.value ||
+    showUndoCheckinModal.value ||
+    Boolean(document.querySelector('.fixed.inset-0:not(.pointer-events-none), [role="dialog"]'))
+  ) {
+    return
+  }
+
   const key = String(event.key || '').toLowerCase()
   if (!['b', 'g', 'c', 'i', '1', '2', '3'].includes(key)) return
 

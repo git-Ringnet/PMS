@@ -9,6 +9,32 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-22] - Hoàn thiện 4 Section nghiệp vụ Room Map và CheckInPage theo tài liệu lỗi
+### Module: Room Map & Check-In ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [RoomMoveModal.vue](file:///d:/PMS/frontend/src/components/RoomMoveModal.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMoveTest.php](file:///d:/PMS/backend/tests/Feature/RoomMoveTest.php))
+
+- **Bối cảnh**: Triển khai toàn bộ 4 Section nghiệp vụ từ file đặc tả lỗi Room Map (`Các lỗi liên quan tới Room map.docx`):
+  1. **Section 1: Chuyển phòng sang phòng trống - Ràng buộc over phòng theo AllowOverRoomTypeRoomKind**:
+     - Kiểm tra AV (khả dụng) của loại phòng đích trong toàn bộ thời gian lưu trú khi chuyển phòng.
+     - Nếu chuyển phòng dẫn đến over loại phòng:
+       + `AllowOverRoomTypeRoomKind = 0`: Chặn chuyển phòng và báo lỗi: `"Loại phòng đã bị over, không thể chuyển phòng"`.
+       + `AllowOverRoomTypeRoomKind = 1`: Hiển thị cảnh báo xác nhận: `"Loại phòng đã bị over, bạn có muốn tiếp tục"` với 2 nút Yes / No. Chọn Yes tiếp tục chuyển phòng; chọn No hủy bỏ thao tác.
+  2. **Section 2: Modal Chuyển phòng (Danh sách phòng trống, sắp xếp tự nhiên, chặn phòng bẩn/chờ kiểm tra)**:
+     - Danh sách phòng trống khả dụng: Hiển thị đầy đủ các phòng có giai đoạn trống kể cả khi ở tình trạng bẩn (`vacant_dirty`, `turndown`) hoặc chờ kiểm tra (`vacant_clean`).
+     - Sắp xếp cột phòng theo thứ tự tự nhiên (natural sort: 101, 102, 103, 1002...).
+     - Khi chọn chuyển sang phòng bẩn: Khi bấm Lưu báo lỗi `"Phòng đang trong tình trạng phòng bẩn, không thể chuyển phòng "` và chặn chuyển.
+     - Khi chọn chuyển sang phòng chờ kiểm tra (`vacant_clean`): Chỉ cho chuyển vào phòng Sẵn sàng (`vacant_ready`); nếu chọn phòng chờ kiểm tra thì báo lỗi `"Phòng đang trong tình trạng chờ kiểm tra, không thể chuyển phòng "` và chặn chuyển.
+  3. **Section 3: Danh sách phòng đến/đi/ở (CheckInPage)**:
+     - Bổ sung 2 cột mới cho cả 2 bảng dữ liệu (Bảng phòng chưa đến / chưa trả và Bảng phòng đã đến / đang ở / đã trả):
+       + Cột `NL/TE/EB`: Số lượng người lớn / trẻ em / extra bed cho cả cấp booking và cấp phòng (`adults/children/extra_beds`).
+       + Cột `Yêu cầu ĐB`: Hiển thị yêu cầu đặc biệt của phòng và booking.
+     - Cập nhật colspan bảng trống tương ứng khi ở chế độ đến (12 cột) và chế độ trả phòng (15 cột).
+  4. **Section 4: Phím tắt đổi trạng thái trên Sơ đồ phòng (RoomMapPage)**:
+     - Khắc phục lỗi khi mở các modal (Thông tin, Chuyển phòng, Chi tiết, Khóa phòng...) bấm phím số 1, 2, 3... làm nhảy popup đổi tình trạng phòng.
+     - Chặn toàn bộ phím tắt số khi có bất kỳ modal nào đang mở trên Sơ đồ phòng.
+- **Kiểm thử & Xác thực**:
+  - Backend tests: Bổ sung 4 test cases trong [RoomMoveTest.php](file:///d:/PMS/backend/tests/Feature/RoomMoveTest.php), 14/14 tests pass 100%; `RoomMoveSameDayNightTest.php` 2/2 tests pass; toàn bộ 50/50 test cases `tests/Feature/Booking/` pass 100%.
+  - Frontend build: `npm run build` hoàn thành 100% không lỗi.
+
 ## [2026-09-22] - Bổ sung hiển thị icon tình trạng phòng trong các danh sách CheckInPage (Đã đến / Đã đi / Đang ở)
 ### Module: Đặt phòng / Check-in ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))
 

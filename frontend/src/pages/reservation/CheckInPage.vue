@@ -606,6 +606,55 @@ function getRoomGuestName(room, booking) {
   return '-'
 }
 
+// Get occupancy text (NL/TE/EB: Người lớn / Trẻ em / Extra bed)
+function getRoomOccupancyText(room) {
+  if (!room) return '-'
+  const adults = Number(room.adults) || (room.guests?.length ? room.guests.length : 1)
+  const children = (Number(room.children_qty) || 0) + (Number(room.babies) || 0) || (room.children?.length ? room.children.length : 0)
+  const extraBeds = Number(room.extra_bed_qty) || 0
+  return `${adults}/${children}/${extraBeds}`
+}
+
+function getBookingOccupancyText(booking) {
+  if (!booking?.booking_rooms || booking.booking_rooms.length === 0) return '-'
+  const adults = booking.booking_rooms.reduce((sum, r) => sum + (Number(r.adults) || (r.guests?.length ? r.guests.length : 1)), 0)
+  const children = booking.booking_rooms.reduce((sum, r) => sum + ((Number(r.children_qty) || 0) + (Number(r.babies) || 0) || (r.children?.length ? r.children.length : 0)), 0)
+  const extraBeds = booking.booking_rooms.reduce((sum, r) => sum + (Number(r.extra_bed_qty) || 0), 0)
+  return `${adults}/${children}/${extraBeds}`
+}
+
+// Get special requests text
+function getRoomSpecialRequestsText(room) {
+  if (!room) return '-'
+  if (typeof room.special_requests === 'string' && room.special_requests.trim()) {
+    return room.special_requests.trim()
+  }
+  const reqList = room.special_requests || room.specialRequests || room.special_request_types || []
+  if (Array.isArray(reqList) && reqList.length > 0) {
+    const names = reqList.map(r => r.special_request?.name || r.specialRequest?.name || r.name || r.note || '').filter(Boolean)
+    if (names.length > 0) return names.join(', ')
+  }
+  return '-'
+}
+
+function getBookingSpecialRequestsText(booking) {
+  if (!booking) return '-'
+  if (typeof booking.special_requests === 'string' && booking.special_requests.trim()) {
+    return booking.special_requests.trim()
+  }
+  if (Array.isArray(booking.special_requests) && booking.special_requests.length > 0) {
+    const names = booking.special_requests.map(r => r.special_request?.name || r.specialRequest?.name || r.name || r.note || '').filter(Boolean)
+    if (names.length > 0) return names.join(', ')
+  }
+  const roomReqs = (booking.booking_rooms || [])
+    .map(r => getRoomSpecialRequestsText(r))
+    .filter(t => t && t !== '-')
+  if (roomReqs.length > 0) {
+    return [...new Set(roomReqs)].join('; ')
+  }
+  return '-'
+}
+
 const activeBill = bill => Number(bill?.Edit ?? bill?.edit) !== 1 && ![3, 4].includes(Number(bill?.Status ?? bill?.status))
 
 const billBelongsToFinancialRoom = (bill, roomId) => {
@@ -893,6 +942,8 @@ watch(() => props.displayMode, async () => {
                 <th class="p-2.5 text-center w-[100px]">Ngày đến</th>
                 <th class="p-2.5 text-center w-[100px]">Ngày đi</th>
                 <th class="p-2.5 text-center w-[80px]">Phòng</th>
+                <th class="p-2.5 text-center w-[90px]">NL/TE/EB</th>
+                <th class="p-2.5 w-[160px]">Yêu cầu ĐB</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Tổng cộng</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Đã thanh toán</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Chưa thanh toán</th>
@@ -902,7 +953,7 @@ watch(() => props.displayMode, async () => {
             <tbody class="divide-y divide-slate-200">
               <template v-if="chuaDenBookings.length === 0">
                 <tr>
-                  <td :colspan="isDepartureMode ? 13 : 10" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                  <td :colspan="isDepartureMode ? 15 : 12" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
                     Không có phòng nào chưa đến trong ngày hôm nay.
                   </td>
                 </tr>
@@ -942,6 +993,8 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
+                  <td class="p-2.5 text-center font-mono text-slate-700 font-semibold">{{ getBookingOccupancyText(booking) }}</td>
+                  <td class="p-2.5 text-slate-600 truncate max-w-[160px]" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
@@ -985,6 +1038,8 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.departure_date) }}</td>
                   <td class="p-2.5 text-center"></td>
+                  <td class="p-2.5 text-center font-mono text-slate-600">{{ getRoomOccupancyText(room) }}</td>
+                  <td class="p-2.5 text-slate-500 truncate max-w-[160px]" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
@@ -1044,6 +1099,8 @@ watch(() => props.displayMode, async () => {
                 <th class="p-2.5 text-center w-[100px]">Ngày đến</th>
                 <th class="p-2.5 text-center w-[100px]">Ngày đi</th>
                 <th class="p-2.5 text-center w-[80px]">Phòng</th>
+                <th class="p-2.5 text-center w-[90px]">NL/TE/EB</th>
+                <th class="p-2.5 w-[160px]">Yêu cầu ĐB</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Tổng cộng</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Đã thanh toán</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Chưa thanh toán</th>
@@ -1053,7 +1110,7 @@ watch(() => props.displayMode, async () => {
             <tbody class="divide-y divide-slate-200">
               <template v-if="daDenBookings.length === 0">
                 <tr>
-                  <td :colspan="isDepartureMode ? 13 : 10" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                  <td :colspan="isDepartureMode ? 15 : 12" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
                     Không có phòng nào đã đến trong ngày hôm nay.
                   </td>
                 </tr>
@@ -1093,6 +1150,8 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
+                  <td class="p-2.5 text-center font-mono text-slate-700 font-semibold">{{ getBookingOccupancyText(booking) }}</td>
+                  <td class="p-2.5 text-slate-600 truncate max-w-[160px]" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
@@ -1136,6 +1195,8 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.departure_date) }}</td>
                   <td class="p-2.5 text-center"></td>
+                  <td class="p-2.5 text-center font-mono text-slate-600">{{ getRoomOccupancyText(room) }}</td>
+                  <td class="p-2.5 text-slate-500 truncate max-w-[160px]" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-emerald-600">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right font-mono text-rose-600">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>

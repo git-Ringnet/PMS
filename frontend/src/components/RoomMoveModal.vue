@@ -127,6 +127,8 @@ const filteredAvailableRooms = computed(() => {
       if (!matchNo && !matchClass) return false
     }
     return true
+  }).sort((a, b) => {
+    return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' })
   })
 })
 
@@ -142,6 +144,8 @@ const filteredOccupiedRooms = computed(() => {
       if (!matchNo && !matchClass && !matchGuest) return false
     }
     return true
+  }).sort((a, b) => {
+    return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' })
   })
 })
 
@@ -237,8 +241,12 @@ async function loadData() {
     if (resTarget.data?.success) {
       const data = resTarget.data.data
       currentRoom.value = data.current_room
-      availableRooms.value = data.available_rooms || []
-      occupiedRooms.value = data.occupied_rooms || []
+      availableRooms.value = (data.available_rooms || []).sort((a, b) => {
+        return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' })
+      })
+      occupiedRooms.value = (data.occupied_rooms || []).sort((a, b) => {
+        return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, { numeric: true, sensitivity: 'base' })
+      })
 
       newRate.value = currentRoom.value?.rate || 0
       extraBedQty.value = currentRoom.value?.extra_bed_qty || 0
@@ -424,6 +432,17 @@ watch(isChangeRate, (newVal) => {
   }
 })
 
+function getRoomStatusCode(r) {
+  return r?.room_status_code || r?.status || ''
+}
+
+function getRoomStatusBadgeClass(r) {
+  if (r.is_ready) return 'status-ready'
+  const code = getRoomStatusCode(r)
+  if (code === 'vacant_clean' || code === 'occupied_clean') return 'status-clean'
+  return 'status-dirty'
+}
+
 function selectAvailableRoom(room) {
   selectedMoveType.value = 'available'
   selectedTargetRoomNumber.value = room.room_number
@@ -440,7 +459,12 @@ function selectAvailableRoom(room) {
   }
 
   if (!room.is_ready) {
-    warningMsg.value = `Vui lòng kiểm tra tình trạng phòng: Phòng ${room.room_number} hiện ở trạng thái "${room.status_label}".`
+    const code = getRoomStatusCode(room)
+    if (code === 'vacant_clean' || code === 'occupied_clean') {
+      warningMsg.value = 'Phòng đang trong tình trạng chờ kiểm tra, không thể chuyển phòng '
+    } else {
+      warningMsg.value = 'Phòng đang trong tình trạng phòng bẩn, không thể chuyển phòng '
+    }
   }
 }
 
@@ -473,9 +497,16 @@ function handleSubmit() {
     return
   }
 
-  if (selectedMoveType.value === 'available' && !isTargetRoomReady.value) {
-    uiStore.showToast('Vui lòng kiểm tra tình trạng phòng (Phòng chưa ở trạng thái Sẵn sàng)', 'error')
-    return
+  if (selectedMoveType.value === 'available' && selectedTargetRoomObj.value) {
+    const statusCode = getRoomStatusCode(selectedTargetRoomObj.value)
+    if (statusCode === 'vacant_clean' || statusCode === 'occupied_clean') {
+      uiStore.showToast('Phòng đang trong tình trạng chờ kiểm tra, không thể chuyển phòng ', 'error')
+      return
+    }
+    if (statusCode === 'vacant_dirty' || statusCode === 'turndown' || statusCode === 'occupied_dirty' || !selectedTargetRoomObj.value.is_ready) {
+      uiStore.showToast('Phòng đang trong tình trạng phòng bẩn, không thể chuyển phòng ', 'error')
+      return
+    }
   }
 
   // Chuẩn hóa collection sau khi lọc khách đã chuyển
@@ -513,7 +544,7 @@ function confirmGuestSelection() {
   executeSubmit(selectedAdults, selectedChildren)
 }
 
-async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExceedCapacity = false) {
+async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExceedCapacity = false, confirmOverRoom = false) {
   submitting.value = true
   try {
     const payload = {
@@ -528,6 +559,7 @@ async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExc
       extra_bed_qty: Number(extraBedQty.value),
       extra_bed_rate: Number(extraBedRate.value),
       confirm_exceed_capacity: confirmExceedCapacity,
+      confirm_over_room: confirmOverRoom,
     }
 
     const res = await moveBookingRoom(props.bookingId, props.roomId, payload)
@@ -541,14 +573,26 @@ async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExc
   } catch (err) {
     console.error('Lỗi khi chuyển phòng:', err)
     const errorData = err.response?.data
-    if (errorData?.require_capacity_confirm) {
+    if (errorData?.require_over_confirm) {
+      const confirmed = await uiStore.confirm({
+        title: 'Cảnh báo over phòng',
+        message: errorData.message || 'Loại phòng đã bị over, bạn có muốn tiếp tục',
+        confirmText: 'Yes',
+        cancelText: 'No'
+      })
+      if (confirmed) {
+        submitting.value = false
+        executeSubmit(selectedGuestIds, selectedChildIds, confirmExceedCapacity, true)
+        return
+      }
+    } else if (errorData?.require_capacity_confirm) {
       const confirmed = await uiStore.confirm({
         title: 'Xác nhận vượt sức chứa',
         message: errorData.message
       })
       if (confirmed) {
         submitting.value = false
-        executeSubmit(selectedGuestIds, selectedChildIds, true)
+        executeSubmit(selectedGuestIds, selectedChildIds, true, confirmOverRoom)
         return
       }
     } else if (errorData?.detail) {
@@ -681,7 +725,7 @@ async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExc
                   <td class="col-dang">{{ r.room_form_name }}</td>
                   <td class="col-phong" style="font-weight: 600; color: #1e3a8a;">{{ r.room_number }}</td>
                   <td class="col-them">
-                    <span :class="['status-badge', r.is_ready ? 'status-clean' : 'status-dirty']">
+                    <span :class="['status-badge', getRoomStatusBadgeClass(r)]">
                       {{ r.status_label || '' }}
                     </span>
                   </td>
@@ -836,7 +880,7 @@ async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExc
             <span>Quay lại</span>
           </button>
           <button @click="handleSubmit"
-            :disabled="submitting || !selectedTargetRoomNumber || (selectedMoveType === 'available' && selectedTargetRoomObj && !isTargetRoomReady)"
+            :disabled="submitting || !selectedTargetRoomNumber"
             class="btn btn-blue" type="button">
             <svg v-if="submitting" class="w-4 h-4 animate-spin text-white" viewBox="0 0 24 24" fill="none"
               stroke="currentColor">
@@ -1427,13 +1471,18 @@ input[type="radio"] {
   display: inline-block;
 }
 
-.status-dirty {
-  background-color: #fee2e2;
-  color: #991b1b;
+.status-ready {
+  background-color: #dcfce7;
+  color: #166534;
 }
 
 .status-clean {
-  background-color: #dcfce7;
-  color: #166534;
+  background-color: #fef9c3;
+  color: #854d0e;
+}
+
+.status-dirty {
+  background-color: #fee2e2;
+  color: #991b1b;
 }
 </style>
