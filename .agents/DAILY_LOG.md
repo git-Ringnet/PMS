@@ -9,6 +9,24 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-22] - Hoàn thiện Format Tiền Tệ Tự Động & Sửa Nghiệp Vụ Bảng Booking_room_services (Mục 1 - 215-239.docx)
+### Module: FrontDesk / Lễ tân & Hóa đơn ([AddServiceModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue), [AdjustRoomRateModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AdjustRoomRateModal.vue), [BookingRoomServiceController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))
+
+- **Yêu cầu (Mục 1 - 215-239.docx & Bảng booking_room_services)**:
+  - Tự động thêm dấu phẩy `,` ngăn cách hàng nghìn và cho phép dấu chấm `.` thập phân khi người dùng nhập số tiền (Đơn giá dịch vụ, Tiền phòng tự nhập, Giá phòng điều chỉnh).
+  - Khắc phục lỗi lưu sai bảng `booking_room_services`: Chỉ lưu khi thay đổi giá phòng theo đêm ở màn hình booking (`RM`) hoặc thêm dịch vụ bổ sung ở booking (phục vụ night audit tự động chạy sang ngày). Khi post bill phát sinh trực tiếp tại màn hình Lễ tân (FO), Buồng phòng (HK) hoặc Phụ thu thì KHÔNG được insert vào `booking_room_services` làm sai lệch tiền booking.
+- **Đã hoàn thành**:
+  - Viết hàm `formatInputCurrency` và `parseInputCurrency` chuyên dụng xử lý bóc tách linh hoạt phần nguyên và phần thập phân, bảo toàn vị trí con trỏ nhập liệu (`selectionStart/selectionEnd`).
+  - Áp dụng vào:
+    - [AddServiceModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue): Tab Dịch vụ (`unitPriceDisplay` / `onUnitPriceInput`) và Tab Tiền phòng (`customRoomRateDisplay` / `onCustomRoomRateInput`).
+    - [AdjustRoomRateModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AdjustRoomRateModal.vue): Ô Giá phòng (`rateDisplay` / `onRateInput`).
+  - Chuẩn hóa cờ `is_room: props.bookingRoomId ? 1 : 0` khi thêm bill FO tại Master Folio.
+  - Loại bỏ các lệnh `BookingRoomService::create` không đúng nghiệp vụ trong [BookingRoomServiceController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php) tại:
+    1. `postHousekeepingBill`: Không insert vào `booking_room_services` khi post bill buồng phòng (minibar, giặt là).
+    2. `postFoServiceBill`: Chỉ cập nhật `service_bill_id` nếu có sẵn dịch vụ đặt trước (`existingBrs`), không insert dòng mới vào `booking_room_services`.
+    3. `postRoomCharge`: Không insert `ER` vào `booking_room_services` khi chọn chế độ phụ thu tiền phòng (`mode = 'surcharge'`).
+  - Kiểm tra build frontend `npm run build` và backend route list thành công.
+
 ## [2026-09-21] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 158, 161, 164 (Báo cáo Thu ngân lễ tân, Doanh thu hai giai đoạn, Dự kiến doanh thu tiền phòng)
 ### Module: Tài liệu phân tích báo cáo ([ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md), [dong_158_bao_cao_thu_ngan_le_tan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_158_bao_cao_thu_ngan_le_tan.md), [dong_161_bao_cao_doanh_thu_hai_giai_doan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_161_bao_cao_doanh_thu_hai_giai_doan.md), [dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md))
 

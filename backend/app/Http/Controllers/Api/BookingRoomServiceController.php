@@ -1203,32 +1203,12 @@ class BookingRoomServiceController extends Controller
                     $specialTaxAmt = $itemTaxProfile['special_tax'];
                     $svcChargeAmt = $itemTaxProfile['service_charge'];
 
-                    $created = BookingRoomService::create([
-                        'booking_room_id' => $room->id,
-                        'guest_id'         => $guestId,
-                        'service_bill_id' => $serviceBill->Ma,
-                        'service_bill_detail_no' => $index + 1,
-                        'housekeeping_service_bill_id' => $bill->Ma,
-                        'housekeeping_service_bill_detail_no' => $index + 1,
-                        'service_code'    => $serviceCode,
-                        'service_name'    => $pName,
-                        'service_date'    => $serviceDate,
-                        'quantity'        => $qty,
-                        'rate'            => $netPrice,
-                        'total_amount'    => $qty * $netPrice,
-                        'department'      => $department,
-                        'note'            => $request->note ?: "Post bill $groupTitle",
-                        'tax'             => $taxAmt,
-                        'service_charge'  => $svcChargeAmt,
-                        'unit'            => $item['unit'] ?? 'Cái',
-                        'folio'           => $effectiveFolio,
-                        'is_room'         => 1,
-                        'is_posted'       => 1,
-                        'posted_at'       => now(),
-                        'created_by'      => $user,
-                    ]);
-
-                    $createdRecords[] = $created;
+                    $createdRecords[] = [
+                        'name' => $pName,
+                        'qty' => $qty,
+                        'price' => $netPrice,
+                        'total_amount' => $qty * $netPrice,
+                    ];
 
                     HousekeepingServiceBillDetail::create([
                         'BillId' => $bill->Ma, 'DetailId' => $index + 1,
@@ -1260,11 +1240,11 @@ class BookingRoomServiceController extends Controller
         });
 
         try {
-            $firstRecord = reset($createdRecords);
-            $roomNumber = $firstRecord ? $firstRecord->bookingRoom?->room_number : null;
-            $bCode = $firstRecord ? ($firstRecord->bookingRoom?->booking?->booking_code ?? ('GAL' . $firstRecord->bookingRoom?->booking_id)) : null;
-            $itemsCount = count($createdRecords);
-            $summaryName = $itemsCount > 0 ? ($firstRecord->service_name . ($itemsCount > 1 ? " (+ " . ($itemsCount - 1) . " món)" : "")) : 'Dịch vụ buồng phòng';
+            $roomNumber = $room->room_number;
+            $bCode = $room->booking?->booking_code ?? ('GAL' . $room->booking_id);
+            $itemsCount = count($items);
+            $firstName = $items[0]['name'] ?? ($items[0]['product']['name'] ?? 'Sản phẩm buồng phòng');
+            $summaryName = $itemsCount > 0 ? ($firstName . ($itemsCount > 1 ? " (+ " . ($itemsCount - 1) . " món)" : "")) : 'Dịch vụ buồng phòng';
             \App\Services\ActivityLogService::logServiceAction('create', $roomNumber, $bCode, $summaryName, $itemsCount, 0, $request);
         } catch (\Throwable $e) {}
 
@@ -1570,7 +1550,7 @@ class BookingRoomServiceController extends Controller
                     'IncreaseAmount'           => 0,
                 ]);
 
-                // Lưu/cập nhật vào booking_room_services chỉ khi post cho 1 phòng cụ thể
+                // Nếu có sẵn bản ghi dịch vụ đặt trước ở booking chờ post thì liên kết service_bill_id, không tạo thêm bản ghi mới
                 if ($room) {
                     $existingBrs = BookingRoomService::where('booking_room_id', $room->id)
                         ->where('service_code', $foService->code)
@@ -1594,31 +1574,8 @@ class BookingRoomServiceController extends Controller
                             'service_charge'         => (float)($foService->service_charge ?? 0),
                             'is_posted'              => 1,
                             'posted_at'              => now(),
-                            'note'         => $description,
-                            'is_room'      => $isRoomFolio,
-                        ]);
-                    } else {
-                        BookingRoomService::create([
-                            'booking_room_id' => $room->id,
-                            'guest_id'        => $guestId,
-                            'service_bill_id' => $bill->Ma,
-                            'service_bill_detail_no' => $detailSeq,
-                            'service_code'    => $foService->code,
-                            'service_name'    => $foService->name,
-                            'service_date'    => $current->toDateString(),
-                            'quantity'        => $qty,
-                            'rate'            => $rate,
-                            'total_amount'    => $totalAmount,
-                            'department'      => 'FO',
-                            'note'            => $description,
-                            'tax'             => (float)($foService->tax ?? 0),
-                            'service_charge'  => (float)($foService->service_charge ?? 0),
-                            'unit'            => $foService->unit ?? 'Lần',
-                            'folio'           => $folio,
-                            'is_room'         => $isRoomFolio,
-                            'is_posted'       => 1,
-                            'posted_at'       => now(),
-                            'created_by'      => $user,
+                            'note'                   => $description,
+                            'is_room'                => $isRoomFolio,
                         ]);
                     }
                 }
@@ -2145,31 +2102,7 @@ class BookingRoomServiceController extends Controller
                     BookingRoomService::where('booking_room_id', $targetRoom->id)
                         ->where('service_bill_id', $bill->Ma)
                         ->delete();
-                } elseif ($mode === 'surcharge') {
-                    // Bổ sung tiền phòng: Tạo mới dịch vụ cộng thêm độc lập
-                    BookingRoomService::create([
-                        'booking_room_id' => $targetRoom->id,
-                        'guest_id'        => $guestId,
-                        'service_bill_id' => $bill->Ma,
-                        'service_bill_detail_no' => 1,
-                        'service_code'    => BookingRoomService::catalogCode('ER'),
-                        'service_name'    => BookingRoomService::catalogName('ER', 'Bổ sung tiền phòng'),
-                        'service_date'    => $current->toDateString(),
-                        'quantity'        => 1,
-                        'rate'            => $rate,
-                        'total_amount'    => $totalAmount,
-                        'department'      => 'FO',
-                        'note'            => $targetDesc,
-                        'tax'             => $serviceTaxProfile['tax'],
-                        'service_charge'  => $serviceTaxProfile['service_charge'],
-                        'unit'            => 'Lần',
-                        'folio'           => $folio,
-                        'is_room'         => 0,
-                        'is_posted'       => 1,
-                        'posted_at'       => now(),
-                        'created_by'      => $user,
-                    ]);
-                } else {
+                } elseif ($mode !== 'surcharge') {
                     // Cập nhật / Tự động: Cập nhật tiền phòng chuẩn của ngày đó
                     BookingRoomService::updateOrCreate(
                         [
