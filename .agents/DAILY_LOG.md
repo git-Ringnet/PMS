@@ -9,77 +9,72 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
-## [2026-09-21] - Đồng bộ tính toán và hiển thị tiền phòng quá khứ theo hóa đơn thực tế (service_bills)
-### Module: Đặt phòng / Tạo đăng ký ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+## [2026-09-21] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 158, 161, 164 (Báo cáo Thu ngân lễ tân, Doanh thu hai giai đoạn, Dự kiến doanh thu tiền phòng)
+### Module: Tài liệu phân tích báo cáo ([ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md), [dong_158_bao_cao_thu_ngan_le_tan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_158_bao_cao_thu_ngan_le_tan.md), [dong_161_bao_cao_doanh_thu_hai_giai_doan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_161_bao_cao_doanh_thu_hai_giai_doan.md), [dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md))
 
-- **Nguyên nhân gốc rễ**:
-  - `BookingController.php`: Các hàm `index`, `show`, `store`, `update` chưa eager load `bookingRooms.serviceBills` và `bookingRooms.currentServiceBills`, khiến màn hình booking thiếu thông tin hóa đơn thực tế của từng phòng.
-  - `CreateRegistrationPage.vue`: Trong `getRoomDisplayServices`, khi một đêm trong quá khứ bị xóa bill ở màn hình Trả phòng, dòng trong `booking_room_services` bị soft delete -> vòng lặp ngày không thấy dữ liệu đã tự động fallback sinh ra dòng ảo 500k theo đơn giá gốc `room.price`. Khi post bill mới 300k, màn hình booking không đọc từ `service_bills` nên vẫn giữ dòng 500k.
-- **Xử lý hoàn thành**:
-  - **Backend (`BookingController.php`)**:
-    + Bổ sung eager load `bookingRooms.serviceBills`, `bookingRooms.currentServiceBills` vào `$relations` của `index`, `show`, `store`, và `update`.
-  - **Frontend (`CreateRegistrationPage.vue`)**:
-    + Trong `bookingToTab`: Gom toàn bộ `serviceBills` và `currentServiceBills` vào `roomObj.serviceBills`.
-    + Trong `getRoomDisplayServices(room)`: Phân tách rõ ràng giữa đêm quá khứ và đêm tương lai:
-      * **Đêm quá khứ** (`dStr < systemDate`): Ưu tiên 100% lấy theo hóa đơn tiền phòng hợp lệ (`RM`, `ER`, `Edit != 1`, `Status != 3`) trong `room.serviceBills`. Nếu không có bill (đã xóa/hủy) -> không tự bù dòng tiền phòng, tiền phòng đêm đó = 0.
-      * **Đêm hôm nay / tương lai** (`dStr >= systemDate`): Nếu đã có bill thì lấy theo bill; nếu chưa có bill thì lấy theo dịch vụ kế hoạch hoặc đơn giá `room.dailyRoomPrices` / `room.price`.
-      * Bỏ qua các dòng `RM` cũ trong `room.services` ở phần 2 để tránh trùng lặp.
-    + Trong `getRoomChargeTotal(room)`: Tính tổng tiền phòng chuẩn xác từ `getRoomDisplayServices(room)`.
-  - **Đồng bộ liên màn hình (`CheckoutPage.vue`)**:
-    + Sau khi xóa dịch vụ hoặc post hóa đơn mới ở màn hình Trả phòng (checkout/folio), tự động phát sự kiện `booking-updated` và gửi broadcast qua `pms-room-updates` để màn hình Đặt phòng tự động reload tức thì.
-- **Kiểm thử**:
-  - `php -l`: Đã kiểm tra cú pháp PHP không có lỗi.
-  - `npm run build`: Hoàn thành thành công 100% (0 lỗi, 5.48s).
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 158, 161, 164 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Đọc đúng Stored Procedure chỉ định:
+    - **Dòng 158**: `sp_039` của **Navy** (`ProVistaNavyHotel.dbo.sp_039`), Sheet 63 `BC thu ngân`.
+    - **Dòng 161**: `sp_217` theo **Army** (`ProVistaArmyHotel.dbo.sp_217`), Sheet 4 `Báo cáo doanh thu hai giai đoạn`.
+    - **Dòng 164**: `sp_095` (`ProVistaArmyHotel.dbo.sp_095`), Sheet 2 `Báo cáo dự kiến doanh thu tiền`.
+  - Trích xuất ảnh UI thực tế: `dong_158_ui_mau.png`, `dong_161_ui_mau.png`, `dong_164_ui_mau.png`, `dong_164_popup_ui_mau.png`.
+  - Trích xuất và bóc tách các view, hàm, bảng legacy: `vw_004`, `vw_003`, `vw_025`, `vw_044`, `vw_031`, `vw_030`, `func_031`, `SP2102`, `SP3000`, `SP3002`, `SP3003`.
+  - Lập tài liệu đặc tả cặn kẽ khép kín gồm đầy đủ thông số `content_json` (blocks, columns, grouping, customRows, footer, static tables), Stored Procedure MySQL 8.0, mapping cơ sở dữ liệu và hướng dẫn kiểm thử.
+- **Đã hoàn thành**:
+  - **Dòng 158 - Báo cáo thu ngân lễ tân (`sp_039` Navy)**:
+    - Bóc tách Store Navy `sp_039`: Xử lý phòng cho khách lẻ qua `#tempKhachLe`, quy tắc che số thẻ `CD` giữ 4 chữ số cuối.
+    - Cấu hình tham số bộ phận lọc: `Report_ListDepartmentCashierShiftReport` (`FO,FB,MR,ACC`), mặc định `FO`, hỗ trợ đa chọn.
+    - Đặc tả bố cục A4 Landscape gồm 3 bảng: Bảng 1 chi tiết giao dịch (11 cột, grouping 2 cấp Loại & HTTT, subtotal từng cấp), Bảng 2 phân bổ tiền tệ (6 cột), Bảng 3 tổng hợp công nợ công ty (4 cột) và 3 chữ ký chân trang.
+    - Viết hoàn chỉnh PHP reference template `reception_cashier_shift_reference.php` và Stored Procedure MySQL 8.0 `rpt_reception_cashier_shift`.
+  - **Dòng 161 - Báo cáo doanh thu hai giai đoạn (`sp_217` Army)**:
+    - Bóc tách logic hai giai đoạn: Lọc dịch vụ có Tháng/Năm phát sinh khác Tháng/Năm thanh toán hóa đơn: `((MONTH(sb.service_date) <> MONTH(inv.invoice_date)) OR (YEAR(sb.service_date) <> YEAR(inv.invoice_date)))`.
+    - Thực hiện 2 điểm nâng cấp bắt buộc theo yêu cầu của Army:
+      1. Bổ sung cột "Ngày dịch vụ" (`DateHDDV`) sau cột "Tên khách", lấy từ `service_bills.service_date` (`SP3000.Date`).
+      2. Bộ lọc dịch vụ cho phép chọn nhiều cùng lúc (`multi-select` qua `FIND_IN_SET`).
+    - Bóc tách công thức tính thuế phí theo `vw_044` (`OriginalRate`, `ServiceChargeAmount`, `SpecialTaxAmount`, `TaxAmount`).
+    - Viết hoàn chỉnh PHP reference template `two_period_revenue_reference.php` và Stored Procedure MySQL 8.0 `rpt_two_period_revenue`.
+  - **Dòng 164 - Báo cáo dự kiến doanh thu tiền phòng (`sp_095`)**:
+    - Xác định vị trí nghiệp vụ: Nút bấm `Báo cáo dự kiến doanh thu tiền phòng` tại màn hình **Sang Ngày (Night Audit)** (`dong_164_ui_mau.png`) mở Popup in xem trước (`dong_164_popup_ui_mau.png`).
+    - Bóc tách logic dự kiến doanh thu phòng đang ở (`status IN (0, 1)`) gồm: Tiền phòng (`RM`) theo bảng giá ngày (`booking_room_rates` / `func_031`) + Dịch vụ cố định hàng ngày (`ServiceId <> 'RM'`) từ `booking_room_daily_services` (`SP2102`).
+    - Bố cục bảng in 11 cột có tổng cộng doanh thu tiền phòng và dịch vụ cố định trong đêm audit.
+    - Viết hoàn chỉnh PHP reference template `expected_room_revenue_reference.php` và Stored Procedure MySQL 8.0 `rpt_expected_room_revenue_night_audit`.
+  - **Tài liệu bàn giao**:
+    - [dong_158_bao_cao_thu_ngan_le_tan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_158_bao_cao_thu_ngan_le_tan.md)
+    - [dong_161_bao_cao_doanh_thu_hai_giai_doan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_161_bao_cao_doanh_thu_hai_giai_doan.md)
+    - [dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_164_bao_cao_du_kien_doanh_thu_tien_phong.md)
+    - [ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md)
 
-## [2026-09-21] - Khôi phục thứ tự cột danh sách Sơ đồ phòng khớp yêu cầu trước đó & Sửa hiển thị icon tìm kiếm
-### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+## [2026-09-21] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 150, 151, 152 (Báo cáo Doanh thu, Doanh thu theo ngày đi, Doanh thu lễ tân Army)
+### Module: Tài liệu phân tích báo cáo ([ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md), [dong_150_bao_cao_doanh_thu_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_150_bao_cao_doanh_thu_army.md), [dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md), [dong_152_bao_cao_doanh_thu_le_tan_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_152_bao_cao_doanh_thu_le_tan_army.md))
 
-- **Khôi phục thứ tự 17 cột danh sách phòng**:
-  - Thứ tự chuẩn đã sắp xếp: Checkbox -> TTĐK -> TT phòng -> Tầng -> Phòng -> Loại phòng -> Dạng phòng -> Tên khách -> Mã ĐK -> Tên đăng ký -> Ngày đến -> Ngày đi -> Công ty -> Thêm giường -> Yêu cầu ĐB -> Nhận phòng trễ -> Chuyển phòng kế hoạch.
-  - Bảo toàn đầy đủ toàn bộ icon bộ lọc / tìm kiếm popover cho cả 17 cột đã xây dựng.
-  - Tối ưu căn lề popover (`right-0` cho các cột sát lề phải: Công ty, Thêm giường, Yêu cầu ĐB, Nhận phòng trễ, Chuyển phòng kế hoạch) tránh tràn viền màn hình.
-- **Sửa lỗi 4 icon tìm kiếm `[🔍]` bị ẩn (Phòng, Tên khách, Ngày đến, Ngày đi)**:
-  - Khắc phục thuộc tính SVG đặt nhầm class `stroke-currentColor stroke-width-2` sang chuẩn SVG attribute `fill="none" stroke="currentColor" stroke-width="2"`, giúp icon hiển thị rõ nét và đổi màu sky/slate đồng bộ khi kích hoạt bộ lọc.
-- **Thêm tooltip hiển thị thông tin tên cột đầy đủ khi hover chuột**:
-  - Bổ sung thuộc tính `title` vào cả thẻ `<th>` và `<span class="truncate">` cho toàn bộ các cột trong header bảng danh sách phòng.
-  - Khi hover vào các cột có chữ ngắn bị ẩn bớt (`...`) như `TTĐK`, `TT Phòng`, `Dạng phòng`, `Mã ĐK`, `Yêu cầu ĐB`, `Nhận phòng trễ`, `Chuyển phòng kế hoạch`,... trình duyệt sẽ hiển thị tooltip với tên đầy đủ rõ ràng (ví dụ: `Tình trạng đăng ký (TTĐK)`, `Yêu cầu đặc biệt (YCĐB)`, `Nhận phòng trễ (Late check-in)`,...).
-- **Sửa lỗi dropdown chọn phòng đặt cọc riêng bị trống ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue))**:
-  - Khắc phục lỗi truyền prop `:rooms`: Biểu thức cũ `modalForm?.rooms || activeTab?.rooms` bị kẹt ở `modalForm.rooms = []` (do mảng rỗng trong JS là truthy). Đã thay thế bằng computed `depositModalRooms` kiểm tra độ dài mảng và fallback chuẩn xác sang `activeTab.rooms`.
-  - Tối ưu hiển thị nhãn trong dropdown phòng cọc bằng hàm `formatRoomOptionLabel`: Hiển thị số phòng + hạng phòng + trạng thái (ví dụ: `Phòng 405 - DELUXE DOUBLE CITY VIEW (Đang ở)`, `Phòng 105 - SUPERIOR DOUBLE (Phòng chuyển)`).
-- **Kiểm thử**:
-  - `npm run build`: Hoàn thành thành công 100% (0 lỗi).
-
-## [2026-09-18] - Cập nhật Khai báo lưu trú (Trẻ em, Phòng chuyển, Khách đang ở) & Chuẩn hóa dữ liệu Khách / residence_types
-### Module: Đặt phòng, Khai báo lưu trú & Khách lưu trú ([ResidenceDeclarationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue), [Guest.php](file:///d:/PMS/backend/app/Models/Guest.php), [BookingChild.php](file:///d:/PMS/backend/app/Models/BookingChild.php), [GuestDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestDefinitionController.php), [2026_09_18_120000_create_sp8066_and_normalize_guests.php](file:///d:/PMS/backend/database/migrations/2026_09_18_120000_create_sp8066_and_normalize_guests.php))
-
-- **1. Khai báo lưu trú ([ResidenceDeclarationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))**:
-  - **Điều kiện tải danh sách**: Chỉ lấy các phòng có `status == 1` (In-house) với `arrival_date == targetDate`.
-  - **Tải cả người lớn và trẻ em**:
-    + Người lớn tải từ `br.guests` (hoặc contact guest booking), toggle `N.Lớn = true` (bật).
-    + Trẻ em tải từ `br.children`, toggle `N.Lớn = false` (tắt).
-  - **Bộ lọc "Khách đang ở" (`inHouse`)**: Khi bật checkbox này, hiển thị thêm các phòng in-house có `arrival_date < targetDate < departure_date`.
-  - **Thêm cột "Ghi chú chuyển phòng" & bộ lọc "Phòng Chuyển" (`roomMove`)**:
-    + Nếu phòng chuyển sau khi đã ở ($\ge 1$ đêm, `old_arrival < new_arrival`):
-      * Ngày check-in ban đầu: hiển thị phòng cũ (không có ghi chú).
-      * Ngày chuyển phòng (`targetDate == new_arrival`): chỉ hiển thị phòng mới khi người dùng tick chọn mục **"Phòng Chuyển"**; hiển thị ghi chú `From Room {old_number}, old arrival date: {dd/mm/yyyy}`. Nếu không tick chọn "Phòng Chuyển" thì không hiển thị.
-    + Nếu phòng chuyển cùng ngày nhận phòng (`old_arrival == new_arrival`): chỉ hiển thị phòng vừa chuyển tới, không hiển thị phòng cũ (`status = 100`).
-  - **Bộ lọc giao diện (khớp Ảnh 1)**: Popup dropdown gồm ô tìm kiếm và 6 checkbox: `VAT`, `No VAT`, `Trẻ em`, `Passport`, `Phòng Chuyển`, `Khách đang ở`, nút `Lưu`. Nút bấm toolbar hiển thị `Chọn: {count} v`.
-  - **Xuất file**: Đã bổ sung cột `Ghi chú chuyển phòng` vào file xuất Excel tổng hợp và file CSV.
-- **2. Bảng loại cư trú `residence_types` (thay thế `sp8066`)**:
-  - Xóa bỏ bảng `sp8066`, model `Sp8066.php` và endpoint API `sp8066`.
-  - Tái sử dụng bảng chuẩn có sẵn [residence_types](file:///d:/PMS/backend/database/migrations/2026_09_08_120000_create_residence_types_table.php) gồm 3 bản ghi: ID 1 (`Địa chỉ thường trú` / `Thường trú`), ID 2 (`Địa chỉ tạm trú` / `Tạm trú`), ID 3 (`Địa chỉ khác` / `Khác`) khớp 100% Ảnh 2.
-- **3. Chuẩn hóa lưu trữ dữ liệu Khách hàng (`guests` và `booking_children`)**:
-  - `gender`: Tự động map và lưu mã số `1` (Nam), `2` (Nữ) qua model hook.
-  - `nationality_code`: Chuẩn hóa 3 ký tự ISO (Alpha-3, VD: `VNM`, `RUS`).
-  - `guest_type`: Lưu ID số theo `guest_types`.
-  - `residence_type`: Lưu ID số theo `residence_types` (`1`, `2`, `3`).
-  - `entry_purpose`: Lưu ID số theo `entry_purposes`.
-  - `border_gate`: Lưu mã code theo `border_gates` (VD: `SCR`).
-  - Migration đồng bộ lại toàn bộ dữ liệu lịch sử trong DB chi nhánh.
-- **4. Kiểm thử**:
-  - `npm run build`: Hoàn thành thành công 100% (0 lỗi, 4.63s).
-  - `php artisan test`: 14/14 tests suite Master Data, Khách hàng & Chuyển phòng passed (112 assertions).
-
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 150, 151, 152 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Trích xuất ảnh chụp UI mẫu legacy thực tế từ các Sheet 73, Sheet 67, Sheet 74.
+  - Trích xuất định nghĩa Stored Procedure gốc từ MS SQL Server (SSMS `.\MSSQLSERVER01`): `sp_292`, `sp_238`, `sp_240`, `sp_293`.
+  - Lập tài liệu đặc tả cặn kẽ từ kiến trúc đa chi nhánh, mapping cơ sở dữ liệu, code chuyển đổi Stored Procedure MySQL 8.0, định nghĩa tham số bộ lọc Designer (`parameter_ui_schema`), ma trận cột nhiều tầng, customRows và hướng dẫn kiểm thử chi tiết để Agent mới chưa có thông tin có thể triển khai độc lập ngay lập tức.
+- **Đã hoàn thành**:
+  - **Dòng 150 - Báo cáo doanh thu (Army Quy Nhơn) (`sp_292`)**:
+    - Trích xuất ảnh UI mẫu `dong_150_ui_mau.png` và SQL gốc `sp_292_full.sql`.
+    - Đặc tả layout A4 Landscape, 22 cột, header 2 tầng, tổng hợp 7 nhóm doanh thu trong ngày, doanh thu ngày trước, phân bổ hình thức thanh toán (TM, CK, HH, Còn nợ) và số dư phòng còn ở.
+    - Cấu hình toàn bộ mã nguồn PHP reference template `revenue_army_reference.php` gồm 100% thông số `content_json`: 22 cột trong `columns()`, khối header thông tin khách sạn/ngày in, bảng động có `topHeader` 13 ô gộp, hàng `customRows` Grand Total gồm nhãn `"Tổng số BK: {{aggregate.rows.count}}"` và 15 binding sums `aggregate.rows.sum.*`, khối chân trang 5 chữ ký quân đội.
+  - **Dòng 151 - Báo cáo doanh thu đăng ký theo ngày đi (`sp_238` & `sp_240`)**:
+    - Trích xuất ảnh UI mẫu `dong_151_ui_mau.png` và SQL gốc `sp_238_full.sql` (chi tiết phòng), `sp_240_full.sql` (nhóm theo đăng ký).
+    - Đặc tả layout A4 Landscape, 24 cột, header 3 tầng (FO, Housekeeping, F&B Revenue - Nhà hàng, Doanh thu khác).
+    - Tích hợp công tắc chuyển đổi `p_group_by_booking` (0: chi tiết phòng, 1: nhóm theo đăng ký).
+    - Cấu hình toàn bộ mã nguồn PHP reference template `revenue_by_departure_date_reference.php` gồm 100% thông số `content_json`: 24 cột trong `columns()`, khối header thời gian đến phút, bảng động có `topHeader` ma trận đa tầng (FO colspan 7, HK colspan 4, F&B colspan 4, Nhà hàng), hàng `customRows` Grand Total gồm nhãn `"Total"` và 17 binding sums `aggregate.rows.sum.*` cho tất cả cột doanh thu, khối chữ ký 3 cột.
+  - **Dòng 152 - Báo cáo doanh thu lễ tân_army (`sp_293`)**:
+    - Trích xuất ảnh UI mẫu `dong_152_ui_mau.png` và SQL gốc `sp_293_full.sql`.
+    - Đặc tả layout 11 cột với 2 cấp nhóm phân tầng (Cấp 1: Nhóm doanh thu, Cấp 2: Dịch vụ) kèm bảng tổng hợp phụ 2 cột ở chân trang.
+    - Cấu hình toàn bộ mã nguồn PHP reference template `reception_revenue_army_reference.php` gồm 100% thông số `content_json`: 11 cột trong `columns()`, bảng động có `grouping` 2 cấp (`RevenueGroupName` và `ServiceId`), hàng `customRows` Subtotal 2 cấp (`scope: group` level 1 và level 0) + Grand Total (`scope: table`), khối bảng tĩnh `summary_revenue_box_table` (`tableType: static`) hiển thị tổng hợp Doanh thu phòng, Doanh thu dịch vụ và Tổng cộng, khối 5 chữ ký quân đội.
+  - **Bóc tách chi tiết các hàm, view và bảng legacy trong Stored Procedure**:
+    - **Hàm `func_054` (Dòng 150 - `sp_292`)**: Bóc tách chi tiết bản chất của Table-Valued Function tính doanh thu cốt lõi legacy (~35KB, 583 dòng), cấu trúc dữ liệu trả về 14 cột (`RentalRoomId`, `BookingId`, `BillIdService`, `ServiceId`, `Date`, `Total`, `RoomRateCode`, `DepartmentId`...), cách `sp_292` gọi để tách doanh thu trong ngày và ngày trước (`PrevDay`), và phương án thay thế tối ưu bằng CTE query trực tiếp bảng `sales_invoices` trên MySQL 8.0.
+    - **Các bảng trong Dòng 151 (`sp_238` & `sp_240`)**: Bóc tách vai trò của `SP8060`/`SP8058`/`SP8059` (cấu hình template), `SP3000`/`SP3001` (hóa đơn & chi tiết hóa đơn), `SP2100` (thời gian trả phòng thực tế `CheckoutDate` + `CheckoutTime`), `sp1326` (hình thức miễn phí cần loại trừ) và bảng đối chiếu sang MySQL mới.
+    - **View `vw_018` (Dòng 152 - `sp_293`)**: Bóc tách nguồn gốc View tổng hợp đa bảng (`SP3000`, `SP2100`, `SP2200`, `SP2300`, `SP1306`, `SP3003`, `SP6000`, `SP5000`), công thức bóc tách thuế phí `OriginalRate`, `ServiceChargeAmount`, `TaxAmount`, bảng cấu hình nhóm dịch vụ `SP1610` (`FORevenueReport`), bảng ngôn ngữ `SP1602` và bảng đối chiếu sang MySQL mới.
+  - **Tài liệu tổng hợp và lưu trữ**:
+    - Tạo tài liệu tổng quan toàn diện: [ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md).
+    - Tạo các tài liệu chi tiết độc lập theo chuẩn thư mục `doc_baocao/`: [dong_150_bao_cao_doanh_thu_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_150_bao_cao_doanh_thu_army.md), [dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_151_bao_cao_doanh_thu_dang_ky_theo_ngay_di.md), [dong_152_bao_cao_doanh_thu_le_tan_army.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_152_bao_cao_doanh_thu_le_tan_army.md).
+    - Lưu trữ tập trung 3 file ảnh mẫu tại `.codex/docs/doc_baocao/images/` và 4 file SQL Stored Procedure gốc tại `.codex/docs/doc_baocao/sql/`.
 
 ## [2026-09-18] - Bổ sung hàng tổng (customRows) trên Canvas Form Designer cho 4 báo cáo (Dòng 155, 156, 162, 163)
 ### Module: Form Designer & Biểu mẫu Báo cáo ([unpaid_service_bills_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/unpaid_service_bills_reference.php), [room_rate_statistics_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/room_rate_statistics_reference.php), [daily_frontdesk_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/daily_frontdesk_reference.php), [cancelled_invoices_payments_reference.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/report_templates/cancelled_invoices_payments_reference.php), [2026_09_18_173500_sync_report_custom_rows_designer.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/database/migrations/2026_09_18_173500_sync_report_custom_rows_designer.php))
