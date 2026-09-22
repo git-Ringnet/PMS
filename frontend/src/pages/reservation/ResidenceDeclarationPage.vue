@@ -62,15 +62,17 @@ const isFilterOpen = ref(false)
 const isColOpen = ref(false)
 
 // Filter states
+const filterSearchTerm = ref('')
 const filters = ref({
-  vn: true,
-  foreign: true,
+  vat: false,
+  noVat: false,
   children: false,
   passport: false,
+  roomMove: false,
   inHouse: false
 })
 
-// Column Visibility State (true means VISIBLE - covers all 15 columns)
+// Column Visibility State (true means VISIBLE - covers all 16 columns)
 const colVisibility = ref({
   ma: true,
   phong: true,
@@ -86,7 +88,8 @@ const colVisibility = ref({
   ngayhethan: true,
   ngaynhapcanh: true,
   cuakhau: true,
-  nlon: true
+  nlon: true,
+  ghichuchuyen: true
 })
 
 const allColsChecked = computed({
@@ -122,6 +125,7 @@ const tableClasses = computed(() => {
     'hide-ngaynhapcanh': !colVisibility.value.ngaynhapcanh,
     'hide-cuakhau': !colVisibility.value.cuakhau,
     'hide-nlon': !colVisibility.value.nlon,
+    'hide-ghichuchuyen': !colVisibility.value.ghichuchuyen,
   }
 })
 
@@ -152,17 +156,16 @@ function formatDateDisplay(dStr) {
 
 function parseDate(str) {
   if (!str) return null
-  if (str.includes('/')) {
+  if (typeof str === 'string' && str.includes('/')) {
     const [d, m, y] = str.split('/')
     const year = y.split(' ')[0]
-    return new Date(`${year}-${m}-${d}T00:00:00`)
+    return new Date(Number(year), Number(m) - 1, Number(d), 0, 0, 0, 0)
   }
-  if (str.includes('-')) {
-    const clean = str.replace('T', ' ').split(' ')[0]
-    return new Date(`${clean}T00:00:00`)
-  }
-  return null
+  const dateObj = new Date(str)
+  if (isNaN(dateObj.getTime())) return null
+  return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0, 0)
 }
+
 
 function handleDateInputChange(e) {
   const val = e.target.value
@@ -212,47 +215,91 @@ function handleSort(key) {
 const filteredRows = computed(() => {
   let list = rowsData.value
 
-  // Date filter: Only include guests staying on selectedDate (ngayDen <= selectedDate <= ngayDi)
   const targetDate = parseDate(selectedDate.value)
-  if (targetDate) {
-    targetDate.setHours(0, 0, 0, 0)
-    list = list.filter(r => {
-      const arrDate = parseDate(r.ngayDen)
-      const depDate = parseDate(r.ngayDi)
-      if (arrDate) arrDate.setHours(0, 0, 0, 0)
-      if (depDate) depDate.setHours(0, 0, 0, 0)
+  if (!targetDate) return []
+  targetDate.setHours(0, 0, 0, 0)
+  const targetTime = targetDate.getTime()
 
-      if (arrDate && depDate) {
-        return targetDate >= arrDate && targetDate <= depDate
-      } else if (arrDate) {
-        return targetDate >= arrDate
-      }
-      return true
-    })
-  }
-
-  // Search filter
-  if (searchTerm.value.trim()) {
-    const s = searchTerm.value.trim().toLowerCase()
-    list = list.filter(r => `${r.ma} ${r.phong} ${r.ten} ${r.quocTich}`.toLowerCase().includes(s))
-  }
-
-  // Filter checkboxes
+  // 1. Lọc theo ngày xem và nghiệp vụ tình trạng phòng/chuyển phòng
   list = list.filter(r => {
-    // 1. Việt Nam / Nước ngoài nationality
-    if (!filters.value.vn && r.isVn) return false
-    if (!filters.value.foreign && !r.isVn) return false
+    const arrDate = parseDate(r.arrivalDate || r.ngayDen)
+    if (arrDate) arrDate.setHours(0, 0, 0, 0)
+    const arrTime = arrDate ? arrDate.getTime() : null
 
-    // 2. Trẻ em (Children)
-    if (filters.value.children && r.nLon) return false
+    const depDate = parseDate(r.departureDate || r.ngayDi)
+    if (depDate) depDate.setHours(0, 0, 0, 0)
+    const depTime = depDate ? depDate.getTime() : null
 
-    // 3. Passport
-    if (filters.value.passport && !r.hoChieu) return false
+    const status = Number(r.roomStatus)
 
-    return true
+    // A. Phòng cũ tình trạng 100 (STATUS_MOVED)
+    if (status === 100) {
+      if (r.isSameDayMoved) {
+        // Vừa check in xong chuyển cùng ngày: không hiển thị phòng cũ (tình trạng 100)
+        return false
+      }
+      if (r.isStayedThenMoved && arrTime === targetTime) {
+        // Ngày check-in ban đầu: hiển thị phòng ban đầu
+        return true
+      }
+      return false
+    }
+
+    // B. Phòng in-house (status = 1)
+    if (status === 1) {
+      // B.1. Phòng chuyển tới sau khi đã ở (isStayedThenMoved)
+      if (r.isStayedThenMoved) {
+        if (arrTime === targetTime) {
+          // Ngày xem = ngày chuyển phòng (cũng là ngày in của phòng mới)
+          // Chỉ hiển thị khi có tick chọn "Phòng Chuyển" (roomMove)
+          return !!filters.value.roomMove
+        }
+        if (arrTime && depTime && arrTime < targetTime && targetTime < depTime) {
+          // Khách đang ở trong những ngày kế tiếp
+          return !!filters.value.inHouse
+        }
+        return false
+      }
+
+      // B.2. Phòng bình thường hoặc chuyển cùng ngày nhận phòng
+      if (arrTime === targetTime) {
+        // Ngày đến = ngày cần xem
+        return true
+      }
+      if (arrTime && depTime && arrTime < targetTime && targetTime < depTime) {
+        // Khách đang ở: ArrivalDate < ngày xem < CheckoutDate
+        return !!filters.value.inHouse
+      }
+      return false
+    }
+
+    return false
   })
 
-  // Sorting
+  // 2. Lọc theo VAT / No VAT
+  if (filters.value.vat && !filters.value.noVat) {
+    list = list.filter(r => r.hasVat)
+  } else if (filters.value.noVat && !filters.value.vat) {
+    list = list.filter(r => !r.hasVat)
+  }
+
+  // 3. Lọc Trẻ em
+  if (filters.value.children) {
+    list = list.filter(r => !r.nLon)
+  }
+
+  // 4. Lọc Passport
+  if (filters.value.passport) {
+    list = list.filter(r => !!r.hoChieu && String(r.hoChieu).trim() !== '')
+  }
+
+  // 5. Tìm kiếm nội bộ
+  if (searchTerm.value.trim()) {
+    const s = searchTerm.value.trim().toLowerCase()
+    list = list.filter(r => `${r.ma} ${r.phong} ${r.ten} ${r.quocTich} ${r.soGiayTo} ${r.transferNote}`.toLowerCase().includes(s))
+  }
+
+  // 6. Sắp xếp (Sorting)
   if (sortKey.value) {
     list = [...list].sort((a, b) => {
       let va = a[sortKey.value]
@@ -310,7 +357,8 @@ function exportToExcel(rows) {
     'STT', 'HỌ TÊN', 'NGÀY SINH', 'GIỚI TÍNH', 'LOẠI KHÁCH', 'SỐ GIẤY TỜ', 'LOẠI GIẤY TỜ', 'QUỐC TỊCH',
     'ĐỊA CHỈ', 'PHƯỜNG/XÃ', 'QUẬN/HUYỆN', 'TP/TỈNH', 'KHÁCH SẠN', 'MÃ CHECKIN', 'SỐ PHÒNG', 'ĐƠN GIÁ',
     'NGÀY ĐẾN', 'NGÀY ĐI', 'NGÀY NHẬP CẢNH', 'MỤC ĐÍCH NHẬP CẢNH', 'CỬA KHẨU NHẬP CẢNH', 'TẠM TRÚ ĐẾN NGÀY',
-    'NGHỀ NGHIỆP', 'GHI CHÚ', 'SỐ ĐIỆN THOẠI', 'NƠI LÀM VIỆC', 'LÝ DO LƯU TRÚ', 'THƯỜNG TRÚ', 'DÂN TỘC'
+    'NGHỀ NGHIỆP', 'GHI CHÚ', 'SỐ ĐIỆN THOẠI', 'NƠI LÀM VIỆC', 'LÝ DO LƯU TRÚ', 'THƯỜNG TRÚ', 'DÂN TỘC',
+    'GHI CHÚ CHUYỂN PHÒNG'
   ]
 
   let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`
@@ -361,6 +409,7 @@ function exportToExcel(rows) {
     html += `<td style="border: 0.5pt solid #000000;">${r.lyDoLuuTru || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.thuongTru || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.danToc || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${r.transferNote || ''}</td>`
     html += `</tr>`
   })
 
@@ -403,7 +452,7 @@ function exportToCsv(rows) {
   const headers = [
     'STT', 'Mã Đăng Ký', 'Phòng', 'Tên Khách', 'Giới Tính', 'Ngày Sinh',
     'Ngày Đến', 'Ngày Đi', 'Quốc Tịch', 'Địa chỉ', 'Số Giấy Tờ', 'Hộ chiếu',
-    'Ngày hết hạn', 'Ngày Nhập Cảnh', 'Cửa Khẩu', 'N.Lớn'
+    'Ngày hết hạn', 'Ngày Nhập Cảnh', 'Cửa Khẩu', 'N.Lớn', 'Ghi chú chuyển phòng'
   ]
 
   let csvContent = '\uFEFF' // BOM for Excel UTF-8 support
@@ -431,7 +480,8 @@ function exportToCsv(rows) {
       r.ngayHetHan || '',
       entryDateVal,
       r.cuaKhau || '',
-      ''
+      r.nLon ? '1' : '0',
+      r.transferNote || ''
     ]
     csvContent += rowValues.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',') + '\n'
   })
@@ -749,10 +799,11 @@ function handleExport(type) {
 
 function resetFilters() {
   filters.value = {
-    vn: false,
-    foreign: false,
+    vat: false,
+    noVat: false,
     children: false,
     passport: false,
+    roomMove: false,
     inHouse: false
   }
 }
@@ -790,7 +841,7 @@ async function loadBookingData() {
     const res = await fetchBookings()
     const rawList = res?.data?.data || res?.data || []
     if (Array.isArray(rawList)) {
-      // Include non-cancelled bookings (in-house, checked-out, guaranteed)
+      // Include non-cancelled bookings
       const activeBookings = rawList.filter(b => {
         if (b.deleted_at || b.is_cancelled || b.is_canceled) return false
         
@@ -798,8 +849,6 @@ async function loadBookingData() {
         if (b.registration_status && Number(b.registration_status.bk_definite) === 4) return false
 
         const statusVal = b.status !== undefined && b.status !== null ? String(b.status).toLowerCase() : ''
-        
-        // Skip cancelled bookings
         if (statusVal === 'cancelled' || statusVal === 'canceled' || statusVal === '3') return false
 
         return true
@@ -809,6 +858,7 @@ async function loadBookingData() {
       let seq = 1
       activeBookings.forEach(b => {
         const ma = b.booking_code || b.code || b.id || ''
+        const hasVat = !!(b.has_vat || b.vat || b.is_vat)
         const bookingRooms = b.booking_rooms || b.bookingRooms || []
         
         if (bookingRooms.length > 0) {
@@ -823,18 +873,36 @@ async function loadBookingData() {
             const ngayDen = br.arrival_date || b.arrival_date || ''
             const ngayDi = br.departure_date || b.departure_date || ''
 
+            // Tìm phòng cũ nếu đây là phòng mới được chuyển tới
+            const oldBr = bookingRooms.find(r => String(r.move_room) === String(br.id)) || br.moved_from_room || br.movedFromRoom
+            const isMovedRoom = !!oldBr
+            const oldArrStr = oldBr ? (oldBr.arrival_date || '') : ''
+            const newArrStr = br.arrival_date || ''
+            const oldArr = parseDate(oldArrStr)
+            const newArr = parseDate(newArrStr)
+            const isStayedThenMoved = !!(isMovedRoom && oldArr && newArr && oldArr.getTime() < newArr.getTime())
+            const isSameDayMoved = !!(isMovedRoom && oldArr && newArr && oldArr.getTime() === newArr.getTime())
+            const oldRoomNum = oldBr ? (oldBr.room_number || oldBr.room?.room_number || '') : ''
+
+            let transferNote = ''
+            if (isMovedRoom && oldRoomNum) {
+              transferNote = `From Room ${oldRoomNum}, old arrival date: ${formatDateDisplay(oldArrStr)}`
+            }
+
+            // 1. Tải danh sách Người lớn trong phòng
             const brGuests = br.guests || []
             if (brGuests.length > 0) {
               brGuests.forEach(brg => {
                 if (brg.status === 3 || brg.status === '3') return // skip cancelled guest in room
                 const c = brg.guest
                 if (c) {
-                  const isVn = (c.nationality_code || 'VN').toUpperCase() === 'VN' || 
+                  const isVn = (c.nationality_code || 'VNM').toUpperCase() === 'VNM' || 
+                               (c.nationality_code || 'VN').toUpperCase() === 'VN' || 
                                (c.nationality_code || '').toLowerCase().includes('vietnam') || 
                                (c.nationality_code || '').toLowerCase().includes('việt nam')
 
                   let genderText = 'M - Nam'
-                  if (c.gender === 1 || String(c.gender).toLowerCase() === 'female' || c.gender === 'female' || String(c.gender) === '2' || c.gender === 2) {
+                  if (c.gender === 2 || String(c.gender) === '2' || String(c.gender).toLowerCase() === 'female' || (c.title && ['Girl.', 'Girl', 'Ms.', 'Ms', 'Mrs.', 'Mrs'].includes(c.title))) {
                     genderText = 'F - Nữ'
                   }
 
@@ -848,7 +916,7 @@ async function loadBookingData() {
                     ngaySinh: c.dob ? formatDateDisplay(c.dob) : '',
                     ngayDen: formatDateDisplay(ngayDen),
                     ngayDi: formatDateDisplay(ngayDi),
-                    quocTich: getNationalityName(c.nationality_code),
+                    quocTich: getNationalityName(c.nationality_code || 'VNM'),
                     diaChi: c.address || '_',
                     soGiayTo: c.id_number || c.passport_number || '',
                     loaiGiayTo: c.passport_number ? 'Hộ chiếu' : 'Căn cước công dân',
@@ -856,7 +924,7 @@ async function loadBookingData() {
                     ngayHetHan: c.passport_expiry ? formatDateDisplay(c.passport_expiry) : '',
                     ngayNhapCanh: c.entry_date ? formatDateDisplay(c.entry_date) : formatDateDisplay(ngayDen),
                     cuaKhau: c.border_gate || '',
-                    nLon: c.is_adult !== false,
+                    nLon: true,
                     isVn: isVn,
                     phuongXa: c.ward || '',
                     quanHuyen: c.district || '',
@@ -866,18 +934,26 @@ async function loadBookingData() {
                     tamTruDen: c.temp_residence_to ? formatDateDisplay(c.temp_residence_to) : formatDateDisplay(ngayDi),
                     ngheNghiep: c.occupation || '',
                     ghiChu: c.note || '',
+                    transferNote: transferNote,
                     soDienThoai: c.phone || '',
                     noiLamViec: c.workplace || '',
                     lyDoLuuTru: c.entry_purpose || 'Du lịch',
                     thuongTru: c.address || '',
                     danToc: '',
                     rawDob: c.dob || '',
-                    rawEntryDate: c.entry_date || ngayDen || ''
+                    rawEntryDate: c.entry_date || ngayDen || '',
+                    // Metadata phục vụ lọc ngày & chuyển phòng
+                    roomStatus: brStatus,
+                    arrivalDate: br.arrival_date,
+                    departureDate: br.departure_date,
+                    isStayedThenMoved: isStayedThenMoved,
+                    isSameDayMoved: isSameDayMoved,
+                    hasVat: hasVat
                   })
                 }
               })
             } else {
-              // fallback to booking guest info
+              // fallback to booking guest info nếu phòng chưa gán khách cụ thể
               mapped.push({
                 id: seq++,
                 bookingId: b.id,
@@ -906,15 +982,88 @@ async function loadBookingData() {
                 tamTruDen: formatDateDisplay(ngayDi),
                 ngheNghiep: '',
                 ghiChu: '',
+                transferNote: transferNote,
                 soDienThoai: b.contact_phone || '',
                 noiLamViec: '',
                 lyDoLuuTru: 'Du lịch',
                 thuongTru: '',
                 danToc: '',
                 rawDob: '',
-                rawEntryDate: ngayDen || ''
+                rawEntryDate: ngayDen || '',
+                roomStatus: brStatus,
+                arrivalDate: br.arrival_date,
+                departureDate: br.departure_date,
+                isStayedThenMoved: isStayedThenMoved,
+                isSameDayMoved: isSameDayMoved,
+                hasVat: hasVat
               })
             }
+
+            // 2. Tải danh sách Trẻ em trong phòng (br.children và assignedChildren)
+            const brChildren = [
+              ...(br.children || []),
+              ...(br.assigned_children || br.assignedChildren || []),
+              ...((b.children || []).filter(c => String(c.booking_room_id) === String(br.id)))
+            ]
+            const seenChildIds = new Set()
+            brChildren.forEach(ch => {
+              if (!ch || !ch.id || seenChildIds.has(ch.id)) return
+              seenChildIds.add(ch.id)
+
+              const isVnChild = (ch.nationality_code || 'VNM').toUpperCase() === 'VNM' || 
+                               (ch.nationality_code || 'VN').toUpperCase() === 'VN' || 
+                               (ch.nationality_code || '').toLowerCase().includes('vietnam') || 
+                               (ch.nationality_code || '').toLowerCase().includes('việt nam')
+
+              let childGenderText = 'M - Nam'
+              if (ch.gender === 2 || String(ch.gender) === '2' || String(ch.gender).toLowerCase() === 'female' || (ch.title && ['Girl.', 'Girl', 'Ms.', 'Ms'].includes(ch.title))) {
+                childGenderText = 'F - Nữ'
+              }
+
+              mapped.push({
+                id: seq++,
+                bookingId: b.id,
+                ma: String(ma),
+                phong: String(phong),
+                ten: ch.full_name || 'Trẻ em',
+                gioiTinh: childGenderText,
+                ngaySinh: ch.dob ? formatDateDisplay(ch.dob) : '',
+                ngayDen: formatDateDisplay(ngayDen),
+                ngayDi: formatDateDisplay(ngayDi),
+                quocTich: getNationalityName(ch.nationality_code || 'VNM'),
+                diaChi: ch.address || '_',
+                soGiayTo: ch.id_number || ch.passport_number || '',
+                loaiGiayTo: ch.passport_number ? 'Hộ chiếu' : (ch.id_type || 'Căn cước công dân'),
+                hoChieu: ch.passport_number || '',
+                ngayHetHan: ch.passport_expiry ? formatDateDisplay(ch.passport_expiry) : '',
+                ngayNhapCanh: ch.entry_date ? formatDateDisplay(ch.entry_date) : formatDateDisplay(ngayDen),
+                cuaKhau: ch.border_gate || '',
+                nLon: false,
+                isVn: isVnChild,
+                phuongXa: ch.ward || '',
+                quanHuyen: ch.district || '',
+                tpTinh: ch.province || '',
+                donGia: br.rate || 0,
+                mucDichNhapCanh: ch.entry_purpose || 'Du lịch',
+                tamTruDen: ch.temp_residence_to ? formatDateDisplay(ch.temp_residence_to) : formatDateDisplay(ngayDi),
+                ngheNghiep: '',
+                ghiChu: ch.note || '',
+                transferNote: transferNote,
+                soDienThoai: ch.phone || '',
+                noiLamViec: '',
+                lyDoLuuTru: ch.entry_purpose || 'Du lịch',
+                thuongTru: ch.address || '',
+                danToc: '',
+                rawDob: ch.dob || '',
+                rawEntryDate: ch.entry_date || ngayDen || '',
+                roomStatus: brStatus,
+                arrivalDate: br.arrival_date,
+                departureDate: br.departure_date,
+                isStayedThenMoved: isStayedThenMoved,
+                isSameDayMoved: isSameDayMoved,
+                hasVat: hasVat
+              })
+            })
           })
         }
       })
@@ -1061,40 +1210,52 @@ onUnmounted(() => {
 
       <div class="spacer"></div>
 
-      <!-- Filter Dropdown Anchor -->
+      <!-- Filter Dropdown Anchor (Matching Image 1) -->
       <div class="dropdown-anchor">
-        <button class="filter-btn" :class="{ 'has-active': activeFilterCount > 0 }" @click.stop="toggleDropdown('filter')">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-          Bộ lọc
-          <span v-if="activeFilterCount > 0" class="fbadge">{{ activeFilterCount }}</span>
-          <svg width="8" height="5" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <button class="filter-btn filter-select-box" :class="{ 'has-active': activeFilterCount > 0 }" @click.stop="toggleDropdown('filter')">
+          <span class="filter-select-label">Chọn: {{ activeFilterCount }}</span>
+          <svg width="8" height="5" viewBox="0 0 10 6" fill="none" class="filter-arrow-down"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
 
-        <div class="dropdown-panel" :class="{ open: isFilterOpen }">
-          <div class="dp-head">
-            <span class="dp-head-label">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-              Bộ lọc
-            </span>
-            <button class="dp-head-x" @click="isFilterOpen = false">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-            </button>
+        <div class="dropdown-panel filter-popup-panel" :class="{ open: isFilterOpen }">
+          <div class="filter-popup-top-header">
+            <span class="filter-top-count">Chọn: {{ activeFilterCount }}</span>
+            <svg width="8" height="5" viewBox="0 0 10 6" fill="none" class="filter-arrow-up"><path d="M1 5l4-4 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
-          <div class="dp-list">
-            <label class="dp-item"><input type="checkbox" v-model="filters.vn" /> Việt Nam</label>
-            <label class="dp-item"><input type="checkbox" v-model="filters.foreign" /> Nước ngoài</label>
-            <label class="dp-item"><input type="checkbox" v-model="filters.children" /> Trẻ em</label>
-            <label class="dp-item"><input type="checkbox" v-model="filters.passport" /> Passport</label>
-            <label class="dp-item"><input type="checkbox" v-model="filters.inHouse" /> Khách đang ở</label>
+
+          <div class="dp-search-box">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" class="dp-search-icon"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <input type="text" v-model="filterSearchTerm" placeholder="" class="dp-search-input" />
           </div>
-          <div class="dp-foot">
-            <button class="btn btn-reset-sm" @click="resetFilters">Xoá lọc</button>
-            <button class="btn btn-primary" @click="applyFilters">Áp dụng</button>
+
+          <div class="dp-list filter-items-list">
+            <label v-show="!filterSearchTerm || 'vat'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.vat" /> VAT
+            </label>
+            <label v-show="!filterSearchTerm || 'no vat'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.noVat" /> No VAT
+            </label>
+            <label v-show="!filterSearchTerm || 'trẻ em'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.children" /> Trẻ em
+            </label>
+            <label v-show="!filterSearchTerm || 'passport'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.passport" /> Passport
+            </label>
+            <label v-show="!filterSearchTerm || 'phòng chuyển'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.roomMove" /> Phòng Chuyển
+            </label>
+            <label v-show="!filterSearchTerm || 'khách đang ở'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.inHouse" /> Khách đang ở
+            </label>
+          </div>
+
+          <div class="filter-popup-foot">
+            <button class="btn-filter-save" @click="applyFilters">Lưu</button>
           </div>
         </div>
       </div>
 
-      <!-- Column Visibility Anchor (All 15 columns toggleable) -->
+      <!-- Column Visibility Anchor (All 16 columns toggleable) -->
       <div class="dropdown-anchor">
         <button class="filter-btn icon-only" @click.stop="toggleDropdown('col')" title="Tuỳ chỉnh cột">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="6" r="2" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="12" r="2" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="18" r="2" stroke="currentColor" stroke-width="1.6"/></svg>
@@ -1130,6 +1291,7 @@ onUnmounted(() => {
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.ngaynhapcanh" /> Ngày nhập cảnh</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.cuakhau" /> Cửa khẩu</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.nlon" /> N.Lớn</label>
+            <label class="dp-item"><input type="checkbox" v-model="colVisibility.ghichuchuyen" /> Ghi chú chuyển phòng</label>
           </div>
         </div>
       </div>
@@ -1146,7 +1308,7 @@ onUnmounted(() => {
               </th>
               <th class="col-ma sortable" :class="{ 'sort-asc': sortKey === 'ma' && sortDir === 1, 'sort-desc': sortKey === 'ma' && sortDir === -1 }" @click="handleSort('ma')">
                 <div class="th-inner">
-                  Mã ĐK
+                  Mã Đăng Ký
                   <span class="sort-icons">
                     <svg class="up" width="7" height="4" viewBox="0 0 10 6" fill="none"><path d="M1 5l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     <svg class="down" width="7" height="4" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1162,12 +1324,12 @@ onUnmounted(() => {
                   </span>
                 </div>
               </th>
-              <th class="col-ten">Tên khách</th>
-              <th class="col-gioitinh">Giới tính</th>
-              <th class="col-ngaysinh">Ngày sinh</th>
+              <th class="col-ten">Tên Khách</th>
+              <th class="col-gioitinh">Giới Tính</th>
+              <th class="col-ngaysinh">Ngày Sinh</th>
               <th class="col-ngayden sortable" :class="{ 'sort-asc': sortKey === 'ngayDen' && sortDir === 1, 'sort-desc': sortKey === 'ngayDen' && sortDir === -1 }" @click="handleSort('ngayDen')">
                 <div class="th-inner">
-                  Ngày đến
+                  Ngày Đến
                   <span class="sort-icons">
                     <svg class="up" width="7" height="4" viewBox="0 0 10 6" fill="none"><path d="M1 5l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     <svg class="down" width="7" height="4" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1176,27 +1338,28 @@ onUnmounted(() => {
               </th>
               <th class="col-ngaydi sortable" :class="{ 'sort-asc': sortKey === 'ngayDi' && sortDir === 1, 'sort-desc': sortKey === 'ngayDi' && sortDir === -1 }" @click="handleSort('ngayDi')">
                 <div class="th-inner">
-                  Ngày đi
+                  Ngày Đi
                   <span class="sort-icons">
                     <svg class="up" width="7" height="4" viewBox="0 0 10 6" fill="none"><path d="M1 5l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     <svg class="down" width="7" height="4" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                   </span>
                 </div>
               </th>
-              <th class="col-quoctich">Quốc tịch</th>
+              <th class="col-quoctich">Quốc Tịch</th>
               <th class="col-diachi">Địa chỉ</th>
-              <th class="col-sogiayto">Số giấy tờ</th>
+              <th class="col-sogiayto">Số Giấy Tờ</th>
               <th class="col-hochieu">Hộ chiếu</th>
               <th class="col-ngayhethan">Ngày hết hạn</th>
-              <th class="col-ngaynhapcanh">Ngày nhập cảnh</th>
-              <th class="col-cuakhau">Cửa khẩu</th>
+              <th class="col-ngaynhapcanh">Ngày Nhập Cảnh</th>
+              <th class="col-cuakhau">Cửa Khẩu</th>
               <th class="col-nlon">N.Lớn</th>
+              <th class="col-ghichuchuyen">Ghi chú chuyển phòng</th>
             </tr>
           </thead>
 
           <tbody>
             <tr v-if="filteredRows.length === 0">
-              <td colspan="16">
+              <td colspan="17">
                 <div class="empty-state">Không tìm thấy kết quả phù hợp.</div>
               </td>
             </tr>
@@ -1226,6 +1389,7 @@ onUnmounted(() => {
                   <span class="sw-track"></span>
                 </label>
               </td>
+              <td class="col-ghichuchuyen cell-ghichuchuyen">{{ r.transferNote || '' }}</td>
             </tr>
           </tbody>
         </table>
@@ -1890,22 +2054,23 @@ input[type=checkbox] {
 /* Column Widths */
 .col-checkbox { width: 3.5%; }
 .col-ma { width: 6%; }
-.col-phong { width: 6%; }
-.col-ten { width: 9%; }
-.col-gioitinh { width: 6.5%; }
-.col-ngaysinh { width: 7%; }
-.col-ngayden { width: 7.5%; }
-.col-ngaydi { width: 7.5%; }
-.col-quoctich { width: 11%; }
-.col-diachi { width: 6.5%; }
+.col-phong { width: 5%; }
+.col-ten { width: 8.5%; }
+.col-gioitinh { width: 5%; }
+.col-ngaysinh { width: 6%; }
+.col-ngayden { width: 6.5%; }
+.col-ngaydi { width: 6.5%; }
+.col-quoctich { width: 9%; }
+.col-diachi { width: 5%; }
 .col-sogiayto { width: 6.5%; }
-.col-hochieu { width: 6%; }
-.col-ngayhethan { width: 6.5%; }
-.col-ngaynhapcanh { width: 7.5%; }
+.col-hochieu { width: 5.5%; }
+.col-ngayhethan { width: 6%; }
+.col-ngaynhapcanh { width: 6.5%; }
 .col-cuakhau { width: 5.5%; }
-.col-nlon { width: 4.5%; }
+.col-nlon { width: 4%; }
+.col-ghichuchuyen { min-width: 220px; width: 14%; }
 
-/* Column Hiding (All 15 columns) */
+/* Column Hiding (All 16 columns) */
 table.grid.hide-ma .col-ma,
 table.grid.hide-phong .col-phong,
 table.grid.hide-ten .col-ten,
@@ -1920,8 +2085,113 @@ table.grid.hide-hochieu .col-hochieu,
 table.grid.hide-ngayhethan .col-ngayhethan,
 table.grid.hide-ngaynhapcanh .col-ngaynhapcanh,
 table.grid.hide-cuakhau .col-cuakhau,
-table.grid.hide-nlon .col-nlon {
+table.grid.hide-nlon .col-nlon,
+table.grid.hide-ghichuchuyen .col-ghichuchuyen {
   display: none !important;
+}
+
+.cell-ghichuchuyen {
+  color: #c0392b;
+  font-size: 11.5px;
+  font-style: italic;
+  white-space: normal;
+}
+
+/* Filter Dropdown Popup (Image 1) */
+.filter-select-box {
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 80px;
+  justify-content: space-between;
+}
+.filter-select-box:hover {
+  border-color: #999;
+}
+.filter-select-box.has-active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.filter-popup-panel {
+  width: 190px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #cdd5df;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.filter-popup-top-header {
+  display: none;
+}
+.dp-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.dp-search-box .dp-search-input {
+  width: 100%;
+  height: 26px;
+  border: 1px solid #cdd5df;
+  border-radius: 3px;
+  padding: 2px 24px 2px 6px;
+  font-size: 12px;
+  outline: none;
+}
+.dp-search-box .dp-search-input:focus {
+  border-color: var(--blue);
+}
+.dp-search-box .dp-search-icon {
+  position: absolute;
+  right: 6px;
+  color: #888;
+  pointer-events: none;
+}
+.filter-items-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-items-list .dp-item {
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #333;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-items-list .dp-item:hover {
+  background: #f0f5fa;
+}
+.filter-popup-foot {
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.btn-filter-save {
+  background: #7fc1eb;
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-filter-save:hover {
+  background: #5baee4;
 }
 
 .empty-state {

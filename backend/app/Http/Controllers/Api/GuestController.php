@@ -1428,9 +1428,18 @@ class GuestController extends Controller
                 if (empty($gData['id'])) continue;
                 $guest = Guest::find($gData['id']);
                 if ($guest) {
+                    $gender = $gData['gender'] ?? null;
+                    if (($gender === null || $gender === '') && !empty($gData['title'])) {
+                        $matchedTitle = \App\Models\GuestTitle::where('name', $gData['title'])->orWhere('code', $gData['title'])->first();
+                        if ($matchedTitle) {
+                            $gender = $matchedTitle->gender;
+                        }
+                    }
+
                     $guestData = [
                         'full_name'         => $gData['full_name'] ?? '',
                         'title'             => $gData['title'] ?? null,
+                        'gender'            => $gender !== null && $gender !== '' ? (int) $gender : null,
                         'dob'               => $gData['dob'] ?? null,
                         'nationality_code'  => $gData['nationality_code'] ?? null,
                         'id_type'           => $gData['id_type'] ?? null,
@@ -1471,9 +1480,18 @@ class GuestController extends Controller
                 if (empty($cData['id'])) continue;
                 $child = BookingChild::find($cData['id']);
                 if ($child) {
+                    $childGender = $cData['gender'] ?? null;
+                    if (($childGender === null || $childGender === '') && !empty($cData['title'])) {
+                        $matchedTitle = \App\Models\GuestTitle::where('name', $cData['title'])->orWhere('code', $cData['title'])->first();
+                        if ($matchedTitle) {
+                            $childGender = $matchedTitle->gender;
+                        }
+                    }
+
                     $child->update([
                         'full_name'         => $cData['full_name'] ?? '',
                         'title'             => $cData['title'] ?? null,
+                        'gender'            => $childGender !== null && $childGender !== '' ? (int) $childGender : null,
                         'dob'               => $cData['dob'] ?? null,
                         'nationality_code'  => $cData['nationality_code'] ?? null,
                         'id_type'           => $cData['id_type'] ?? null,

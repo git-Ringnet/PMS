@@ -51,7 +51,7 @@
                         >
                             <option :value="null">-- Đặt cọc cho toàn bộ phiếu đăng ký --</option>
                             <option v-for="r in availableRooms" :key="getBookingRoomId(r)" :value="getBookingRoomId(r)">
-                                Phòng {{ r.room_number || r.roomNumber || r.room?.room_number || r.id }}
+                                {{ formatRoomOptionLabel(r) }}
                             </option>
                         </select>
                         <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
@@ -922,6 +922,23 @@ const availableRooms = computed(() => {
   if (!props.rooms || !Array.isArray(props.rooms)) return []
   return props.rooms
 })
+
+function formatRoomOptionLabel(r) {
+  const roomNo = r.room_number || r.roomNumber || r.room?.room_number
+  const typeName = r.type || r.room_type || r.room_class?.name || r.room_class?.code || r.roomClassCode || ''
+  const status = Number(r.bookingRoomStatus !== undefined ? r.bookingRoomStatus : (r.status !== undefined ? r.status : 0))
+  let statusTag = ''
+  if (status === 100) statusTag = ' (Phòng chuyển)'
+  else if (status === 3) statusTag = ' (Đã hủy)'
+  else if (status === 2) statusTag = ' (Đã trả)'
+  else if (status === 1) statusTag = ' (Đang ở)'
+  else if (status === 0) statusTag = ' (Đăng ký)'
+
+  if (roomNo) {
+    return `Phòng ${roomNo}${typeName ? ' - ' + typeName : ''}${statusTag}`
+  }
+  return `[Chưa xếp] ${typeName || ('Phòng ' + (r.id || ''))}${statusTag}`
+}
 
 // Lấy số phòng đang chọn (nếu có)
 const selectedRoomNumber = computed(() => {

@@ -602,6 +602,16 @@ function openDepositModal() {
   isDepositModalOpen.value = true
 }
 
+const depositModalRooms = computed(() => {
+  if (Array.isArray(modalForm.value?.rooms) && modalForm.value.rooms.length > 0) {
+    return modalForm.value.rooms
+  }
+  if (Array.isArray(activeTab.value?.rooms) && activeTab.value.rooms.length > 0) {
+    return activeTab.value.rooms
+  }
+  return []
+})
+
 async function openDepositFromQuery() {
   if (route.query.action !== 'deposit' || !activeTab.value) return
 
@@ -1217,12 +1227,31 @@ async function handleInlineServiceDelete(room, svc) {
   }
 }
 
+function isRoomChargeBillRecord(sb) {
+  if (!sb) return false
+  if (Number(sb.Edit) === 1 || [3, 4].includes(Number(sb.Status))) return false
+  const code = String(sb.ServiceId || sb.service_code || '').toUpperCase()
+  const name = String(sb.DescriptionServive || sb.service_name || '')
+  return code === 'RM' || code === 'ER' || name.includes('Tiền phòng') || name.includes('Room Charge')
+}
+
+function getBillRecordDateStr(sb) {
+  if (!sb) return ''
+  const raw = sb.Date || sb.date || (sb.Year && sb.Month && sb.Day ? `${sb.Year}-${String(sb.Month).padStart(2, '0')}-${String(sb.Day).padStart(2, '0')}` : '')
+  return cleanDateStr(raw)
+}
+
 function getRoomDisplayServices(room) {
   const list = []
-  
-  // 1. Dịch vụ phòng nghỉ mặc định (Room Charge) cho từng ngày lưu trú nếu ngày đó chưa có tiền phòng thực tế trong DB
+  const sysDate = systemDate.value ? parseApiDate(systemDate.value) : ''
+  const handledBillIds = new Set()
+
+  // 1. Dịch vụ phòng nghỉ (Room Charge):
+  // - Đối với đêm quá khứ (< systemDate): Bắt buộc lấy theo hóa đơn service_bills hợp lệ. Nếu đã xóa bill -> không tự bù tiền, tiền = 0.
+  // - Đối với đêm hôm nay/tương lai (>= systemDate): Nếu đã có bill thì lấy theo bill; nếu chưa có thì lấy theo giá kế hoạch booking.
   const checkIn = room.checkIn
   const nights = Number(room.nights) || 1
+
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
       const parts = checkIn.split('-')
@@ -1237,35 +1266,95 @@ function getRoomDisplayServices(room) {
       const mm = String(curr.getMonth() + 1).padStart(2, '0')
       const dd = String(curr.getDate()).padStart(2, '0')
       const dStr = `${yyyy}-${mm}-${dd}`
-      
-      const hasDbChargeForDate = room.services && room.services.some(svc => 
-        (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
-        cleanDateStr(svc.service_date) === dStr
+
+      const isPastNight = sysDate ? (dStr < sysDate) : false
+
+      // Tìm các hóa đơn tiền phòng hợp lệ trong room.serviceBills cho ngày dStr
+      const matchingBills = (room.serviceBills || []).filter(sb => 
+        isRoomChargeBillRecord(sb) && getBillRecordDateStr(sb) === dStr
       )
 
-      if (!hasDbChargeForDate) {
-        const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[dStr] !== undefined)
-          ? room.dailyRoomPrices[dStr]
-          : room.price
-
-        list.push({
-          id: `room-charge-${room.id}-${i}`,
-          service_date: dStr,
-          service_name: getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
-          service_code: getHotelServiceCode('RM'),
-          quantity: 1,
-          rate: customRate,
-          is_room: true
+      if (matchingBills.length > 0) {
+        // Có hóa đơn từ service_bills (quá khứ hoặc đã post trước) -> LẤY 100% THEO HÓA ĐƠN
+        matchingBills.forEach((sb, bIdx) => {
+          const bId = String(sb.Ma || sb.id || `bill-${dStr}-${bIdx}`)
+          handledBillIds.add(bId)
+          const qty = Number(sb.Quantity) || 1
+          const amt = Number(sb.Amount) || 0
+          list.push({
+            id: `service-bill-${bId}`,
+            service_date: dStr,
+            service_name: sb.DescriptionServive || getHotelServiceName(sb.ServiceId || 'RM', 'Dịch vụ phòng nghỉ'),
+            service_code: sb.ServiceId || 'RM',
+            quantity: qty,
+            rate: qty > 0 ? amt / qty : amt,
+            is_room: true,
+            from_bill: true,
+            bill_ref: sb
+          })
         })
+      } else if (isPastNight) {
+        // Đêm QUÁ KHỨ nhưng KHÔNG CÓ hóa đơn hợp lệ trong service_bills (đã bị xóa ở màn hình bill)
+        // -> KHÔNG tự động bù dòng tiền phòng 500k; tiền phòng đêm này = 0
+      } else {
+        // Đêm HÔM NAY HOẶC TƯƠNG LAI: chưa có hóa đơn, lấy theo dịch vụ phòng đã lưu hoặc giá kế hoạch
+        const dbCharge = (room.services || []).find(svc => 
+          (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
+          cleanDateStr(svc.service_date) === dStr
+        )
+
+        if (dbCharge) {
+          list.push({
+            id: dbCharge.id,
+            service_date: dStr,
+            service_name: getChildBreakfastDisplayName(dbCharge) || getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+            service_code: dbCharge.service_code,
+            quantity: dbCharge.quantity || 1,
+            rate: dbCharge.rate || 0,
+            is_room: true,
+            svc_ref: dbCharge
+          })
+        } else {
+          const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[dStr] !== undefined)
+            ? room.dailyRoomPrices[dStr]
+            : room.price
+
+          list.push({
+            id: `room-charge-${room.id}-${i}`,
+            service_date: dStr,
+            service_name: getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+            service_code: getHotelServiceCode('RM'),
+            quantity: 1,
+            rate: customRate,
+            is_room: true
+          })
+        }
       }
     }
   } else {
-    const todayStr = systemDate.value || formatLocalYYYYMMDD(new Date())
-    const hasDbChargeForToday = room.services && room.services.some(svc => 
-      (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE') && 
-      cleanDateStr(svc.service_date) === todayStr
+    const todayStr = sysDate || formatLocalYYYYMMDD(new Date())
+    const matchingBills = (room.serviceBills || []).filter(sb => 
+      isRoomChargeBillRecord(sb) && getBillRecordDateStr(sb) === todayStr
     )
-    if (!hasDbChargeForToday) {
+    if (matchingBills.length > 0) {
+      matchingBills.forEach((sb, bIdx) => {
+        const bId = String(sb.Ma || sb.id || `bill-${todayStr}-${bIdx}`)
+        handledBillIds.add(bId)
+        const qty = Number(sb.Quantity) || 1
+        const amt = Number(sb.Amount) || 0
+        list.push({
+          id: `service-bill-${bId}`,
+          service_date: todayStr,
+          service_name: sb.DescriptionServive || getHotelServiceName(sb.ServiceId || 'RM', 'Dịch vụ phòng nghỉ'),
+          service_code: sb.ServiceId || 'RM',
+          quantity: qty,
+          rate: qty > 0 ? amt / qty : amt,
+          is_room: true,
+          from_bill: true,
+          bill_ref: sb
+        })
+      })
+    } else {
       const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[todayStr] !== undefined)
         ? room.dailyRoomPrices[todayStr]
         : room.price
@@ -1281,9 +1370,38 @@ function getRoomDisplayServices(room) {
     }
   }
 
-  // 2. Các dịch vụ bổ sung và dịch vụ phòng nghỉ từ DB
+  // Quét các hóa đơn tiền phòng phát sinh ngoài dải ngày lưu trú (nếu có)
+  ;(room.serviceBills || []).forEach(sb => {
+    if (isRoomChargeBillRecord(sb)) {
+      const bId = String(sb.Ma || sb.id)
+      if (bId && !handledBillIds.has(bId)) {
+        handledBillIds.add(bId)
+        const bDate = getBillRecordDateStr(sb) || cleanDateStr(room.checkIn)
+        const qty = Number(sb.Quantity) || 1
+        const amt = Number(sb.Amount) || 0
+        list.push({
+          id: `service-bill-${bId}`,
+          service_date: bDate,
+          service_name: sb.DescriptionServive || getHotelServiceName(sb.ServiceId || 'RM', 'Dịch vụ phòng nghỉ'),
+          service_code: sb.ServiceId || 'RM',
+          quantity: qty,
+          rate: qty > 0 ? amt / qty : amt,
+          is_room: true,
+          from_bill: true,
+          bill_ref: sb
+        })
+      }
+    }
+  })
+
+  // 2. Các dịch vụ bổ sung khác (EB, ăn uống,...) từ room.services
   if (room.services && room.services.length > 0) {
     room.services.forEach(svc => {
+      const isRM = svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE'
+      if (isRM) {
+        // Dịch vụ RM đã được tính ở phần 1 theo bill quá khứ hoặc kế hoạch tương lai, không đẩy lặp lại
+        return
+      }
       list.push({
         id: svc.id,
         service_date: parseApiDate(svc.service_date || ''),
@@ -1297,7 +1415,7 @@ function getRoomDisplayServices(room) {
     })
   }
 
-  // SẮP XẾP THEO NGÀY (ASC). Cùng ngày: ROOM_CHARGE/RM -> EB -> Dịch vụ khác
+  // SẮP XẾP THEO NGÀY (ASC). Cùng ngày: ROOM_CHARGE/RM/ER -> EB -> Dịch vụ khác
   list.sort((a, b) => {
     const dateA = a.service_date || ''
     const dateB = b.service_date || ''
@@ -1305,7 +1423,7 @@ function getRoomDisplayServices(room) {
       return dateA.localeCompare(dateB)
     }
     const orderPriority = (code) => {
-      if (code === 'ROOM_CHARGE' || code === 'RM') return 1
+      if (code === 'ROOM_CHARGE' || code === 'RM' || code === 'ER') return 1
       if (code === 'EB') return 2
       return 3
     }
@@ -1362,13 +1480,9 @@ function getRoomExtraBedTotal(room) {
 }
 
 function getRoomChargeTotal(room) {
-  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE' || s.service_code === 'RM')
-  if (displayServices.length > 0) {
-    return displayServices.reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity || 1)), 0)
-  }
-  const nights = Number(room.nights) || 1
-  const basePrice = Number(room.price) || 0
-  return basePrice * nights
+  if (!room) return 0
+  const displayServices = getRoomDisplayServices(room).filter(s => s.service_code === 'ROOM_CHARGE' || s.service_code === 'RM' || s.service_code === 'ER')
+  return displayServices.reduce((sum, s) => sum + (Number(s.rate) * Number(s.quantity || 1)), 0)
 }
 
 function calculateRoomTotal(room) {
@@ -2057,6 +2171,23 @@ function bookingToTab(b) {
         }
       })
 
+      const rawBills = [
+        ...(br.service_bills || br.serviceBills || []),
+        ...(br.current_service_bills || br.currentServiceBills || []),
+        ...((b.service_bills || b.serviceBills || []).filter(sb => String(sb.RentalRoomId1) === String(br.id) || String(sb.RentalRoomId2) === String(br.id)))
+      ]
+      const seenBillIds = new Set()
+      const roomBills = []
+      rawBills.forEach(sb => {
+        const bId = sb.Ma ?? sb.id
+        if (bId && !seenBillIds.has(String(bId))) {
+          seenBillIds.add(String(bId))
+          roomBills.push(sb)
+        } else if (!bId) {
+          roomBills.push(sb)
+        }
+      })
+
       const roomObj = {
         id: idCounter++,
         bookingRoomId: br.id, // lưu lại id để edit nếu cần
@@ -2094,6 +2225,7 @@ function bookingToTab(b) {
         total: 0,
         roomClassId: br.room_class_id,
         services: br.services || [],
+        serviceBills: roomBills,
         dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
         dailyExtraBeds: dailyExtraBeds.length ? dailyExtraBeds : null,
         specialRequests: br.special_requests || [],
@@ -7549,9 +7681,7 @@ defineExpose({
 
             <!-- Tab 3: Lấy phòng -->
             <div v-else-if="modalSubTab === 'rooms'" class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-4 relative animate-in">
-              <div class="text-[11px] text-sky-700 bg-sky-50 border border-sky-100 rounded-md px-3 py-2">
-                Chỉ khai báo số phòng mới cần thêm. Các phòng đã lưu không hiển thị và không bị thay đổi từ tab này.
-              </div>
+            
               
               <!-- Column Selector Icon at Top Right -->
               <div class="flex justify-end items-center relative z-20 shrink-0">
@@ -7976,7 +8106,7 @@ defineExpose({
         :paymentMethods="paymentMethods" 
         :currenciesList="currenciesList" 
         :department-id="currentBookingModule === 'FO' ? 'FO' : 'MR'"
-        :rooms="modalForm?.rooms || activeTab?.rooms || []"
+        :rooms="depositModalRooms"
         v-model:deposits="modalForm.deposits" 
         @update:paymentValue="modalForm.paymentValue = $event"
       />
