@@ -677,3 +677,12 @@ DELIMITER ;
 | `Người dùng` | `bcdt.Username` | `payments.created_by` | Tài khoản nhân viên thực hiện thu tiền |
 | `Mô Tả` | `bcdt.Description` | `payments.description` | Diễn giải thu tiền |
 | `Ghi Chú DT FB` | `CardId` (Thẻ CD) | `payments.card_number` (che 4 số cuối) | 4 số cuối thẻ tín dụng nếu HTTT là 'CD' |
+
+---
+
+## 7. Trạng thái triển khai runtime
+
+- Mã runtime: `RECEPTION_CASHIER_SHIFT`, procedure `rpt_reception_cashier_shift`, template `RECEPTION_CASHIER_SHIFT_REFERENCE`.
+- Migration đã chạy: `2026_09_22_100000` và các migration tương thích schema đến `2026_09_22_160000` trên HKT1–HKT4.
+- Enricher tạo `currency_allocations` và `city_ledger_rows`; City Ledger lọc phương thức `AC` và đối soát `payment_debt_settlements`.
+- Smoke-test `CALL rpt_reception_cashier_shift(...)` đạt trên `pms_hkt1`–`pms_hkt4`; chưa nghiệm thu số liệu với dữ liệu legacy thật.
