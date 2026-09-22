@@ -1,20 +1,25 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { Database, Download, FileText, LoaderCircle, Play, Printer } from '@lucide/vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import ReportDateRangePicker from '@/components/ReportDateRangePicker.vue'
 import HousekeepingInvoiceFilters from '@/pages/reports/components/HousekeepingInvoiceFilters.vue'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 const uiStore = useUiStore()
 const loading = ref(false)
 const systemDate = ref('')
 const reports = ref([])
 const activeTabId = ref(null)
 const openTabs = ref([])
+const temporaryReportCode = 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT'
+const customDatePickerReportCodes = new Set(['REVENUE_ARMY', temporaryReportCode])
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 
@@ -30,6 +35,7 @@ const housekeepingInvoiceCodes = new Set([
   'MINIBAR_FREE_INVOICES',
 ])
 const isHousekeepingInvoiceReport = (tab) => housekeepingInvoiceCodes.has(tab?.code)
+const usesCustomDatePicker = (tab) => customDatePickerReportCodes.has(tab?.code)
 const parameterOptions = (tab, name) => tab?.parameterOptions?.[name]
   || tab?.report?.parameter_ui_schema?.find(parameter => parameter.name === name)?.options
   || []
@@ -107,7 +113,13 @@ const loadReports = async () => {
   loading.value = true
   try {
     const response = await http.get('/report-definitions', { params: { active_only: 1 } })
-    reports.value = response.data.data || []
+    const availableReports = response.data.data || []
+    const hasReportPermission = authStore.isSuperAdmin
+      || authStore.permissions.includes('mgmt.report.view')
+    const isTemporaryReportEntry = route.query.report === temporaryReportCode && !hasReportPermission
+    reports.value = isTemporaryReportEntry
+      ? availableReports.filter(item => item.code === temporaryReportCode)
+      : availableReports
 
     // Check initial report code from URL
     const requestedCode = route.query.report
@@ -575,6 +587,10 @@ onBeforeUnmount(() => {
                 :system-date="systemDate"
               />
 
+              <SingleDatePicker
+                v-else-if="parameter.control === 'date' && usesCustomDatePicker(activeTab)"
+                v-model="activeTab.parameters[parameter.name]"
+              />
               <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
               <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
               </div>

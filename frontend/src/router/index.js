@@ -133,7 +133,11 @@ router.beforeEach(async (to, from) => {
       // Kiểm tra permission nếu route có meta.permission
       if (to.meta.permission) {
         const isSuperAdmin = authStore.roles.some(r => r.role_code === 'super_admin')
-        const hasAccess = isSuperAdmin || authStore.permissions.includes(to.meta.permission)
+        const isTemporaryExpectedRevenueAccess = to.name === 'Reports'
+          && to.query.report === 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT'
+        const hasAccess = isSuperAdmin
+          || authStore.permissions.includes(to.meta.permission)
+          || isTemporaryExpectedRevenueAccess
         if (!hasAccess) {
           return { name: 'Forbidden' }
         }
