@@ -9,6 +9,19 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-22] - Bổ sung hiển thị icon tình trạng phòng trong các danh sách CheckInPage (Đã đến / Đã đi / Đang ở)
+### Module: Đặt phòng / Check-in ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+
+- **Yêu cầu**: Đối với các phòng đã gán số phòng trong màn hình CheckInPage (Đã đến, Đã đi, Đang ở...), hiển thị thêm icon tình trạng phòng (Sạch, Bẩn, OOO, OOS, DND,...) bên cạnh số phòng.
+- **Xử lý hoàn thành**:
+  - Import [RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue).
+  - Hoàn thiện mapping `getRoomStatusIcon(room)`, `getRoomStatusIconClass(room)` và `getRoomStatusTooltip(room)` tra cứu từ danh sách phòng vật lý `roomStore.rooms` (kèm fallback `room.room`).
+  - Hỗ trợ đầy đủ các trạng thái: Sẵn sàng, Chờ kiểm tra (Sạch), Chưa dọn (Bẩn), OOO, OOS, DND, dịch vụ dọn phòng, ưu tiên dọn,... kèm màu sắc chuẩn và tooltip tiếng Việt khi hover.
+  - Gắn `<RoomIcon>` hiển thị cạnh `room.room_number` ở cả 2 bảng dữ liệu (Bảng phòng chưa đến / chưa trả và Bảng phòng đã đến / đang ở / đã trả).
+  - Khai báo bổ sung `const canCancelCheckIn = ref(false)` để sửa lỗi `ReferenceError: canCancelCheckIn is not defined` khi chuyển màn hình từ Sơ đồ phòng.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành 100% không có lỗi.
+
 ## [2026-09-21] - Sửa nghiệp vụ Hủy nhận phòng (Undo Check-In): Chặn khi có dịch vụ/cọc, cho phép khi đã hủy/chuyển, chuẩn hóa giao diện xác nhận
 ### Module: Sơ đồ phòng & Phòng đã đến ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))
 

@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import { t } from '@/utils/i18n'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import RoomIcon from '@/components/RoomIcon.vue'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -40,6 +41,7 @@ const isArrivalMode = computed(() => props.displayMode === 'arrivals' || !props.
 const isDepartureMode = computed(() => props.displayMode === 'departures')
 const isOccupiedMode = computed(() => props.displayMode === 'occupied')
 const systemDate = ref('')
+const canCancelCheckIn = ref(false)
 const canUndoForDate = computed(() => {
   const isToday = !systemDate.value || !searchDate.value || normalizeDate(searchDate.value) === normalizeDate(systemDate.value)
   return isArrivalMode.value && isFrontDesk.value && canCancelCheckIn.value && isToday
@@ -537,19 +539,54 @@ const handleCancelSelected = async () => {
 // Get room status icon name for assigned rooms
 function getRoomStatusIcon(room) {
   if (!room || !room.room_number || room.room_number === '--') return null
-  const physRoom = roomStore.rooms.find(r => r.room_number === room.room_number) || room.room
+  const physRoom = roomStore.rooms.find(r => String(r.room_number) === String(room.room_number)) || room.room
   if (!physRoom) return null
   const code = physRoom.room_status_code
   if (code && Object.prototype.hasOwnProperty.call(ROOM_STATUS_ICON_MAP, code)) {
     return ROOM_STATUS_ICON_MAP[code]
   }
-  if (physRoom.status === 'dirty' || code?.includes('dirty')) return 'dirty'
-  if (physRoom.status === 'checkout') return 'checkout'
-  if (physRoom.status === 'maintenance') return 'housekeeping-service'
-  if (physRoom.status === 'reserved') return 'priority'
-  if (physRoom.status === 'dnd') return 'dnd'
+  if (physRoom.status === 'dirty' || code?.includes('dirty') || physRoom.clean_status === 'dirty') return 'dirty'
+  if (physRoom.status === 'checkout' || code === 'turndown') return 'checkout'
+  if (physRoom.status === 'maintenance' || code === 'housekeeping') return 'housekeeping-service'
+  if (physRoom.status === 'reserved' || code === 'vacant_priority') return 'priority'
+  if (physRoom.status === 'dnd' || code === 'dnd') return 'dnd'
   if (physRoom.status === 'clean' || code === 'vacant_clean') return 'clean'
+  if (code === 'ooo' || code === 'occupied_ooo') return 'ooo'
+  if (code === 'oos') return 'oos'
   return null
+}
+
+function getRoomStatusIconClass(room) {
+  const iconName = getRoomStatusIcon(room)
+  if (iconName === 'ooo') return 'text-[#d97706]'
+  if (iconName === 'oos') return 'text-[#059669]'
+  if (iconName === 'dirty') return 'text-[#d97706]'
+  if (iconName === 'clean') return 'text-slate-700'
+  if (iconName === 'priority') return 'text-slate-600'
+  if (iconName === 'dnd') return 'text-sky-500'
+  return 'text-slate-600'
+}
+
+function getRoomStatusTooltip(room) {
+  if (!room || !room.room_number || room.room_number === '--') return ''
+  const physRoom = roomStore.rooms.find(r => String(r.room_number) === String(room.room_number)) || room.room
+  if (!physRoom) return ''
+  const statusLabels = {
+    'vacant_ready': 'Sẵn sàng',
+    'vacant_clean': 'Chờ kiểm tra (Sạch)',
+    'vacant_dirty': 'Chưa dọn (Bẩn)',
+    'turndown': 'Chưa dọn',
+    'occupied_ready': 'Đang ở (Sẵn sàng)',
+    'occupied_clean': 'Đang ở (Sạch)',
+    'occupied_dirty': 'Đang ở (Bẩn)',
+    'occupied_ooo': 'Phòng đang có khách & sửa chữa',
+    'ooo': 'Phòng sửa chữa (OOO)',
+    'oos': 'Phòng dịch vụ (OOS)',
+    'housekeeping': 'Dịch vụ dọn phòng',
+    'dnd': 'Không làm phiền (DND)',
+    'vacant_priority': 'Phòng ưu tiên dọn',
+  }
+  return statusLabels[physRoom.room_status_code] || physRoom.status_label || physRoom.room_status_code || ''
 }
 
 // Get single primary guest name for display
@@ -929,6 +966,14 @@ watch(() => props.displayMode, async () => {
                   </td>
                   <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
                     <span>{{ room.room_number || '--' }}</span>
+                    <RoomIcon
+                      v-if="getRoomStatusIcon(room)"
+                      :name="getRoomStatusIcon(room)"
+                      :monochrome="false"
+                      :class="getRoomStatusIconClass(room)"
+                      class="w-4 h-4 shrink-0"
+                      :title="getRoomStatusTooltip(room)"
+                    />
                   </td>
                   <td class="p-2.5"></td>
                   <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
@@ -1072,6 +1117,14 @@ watch(() => props.displayMode, async () => {
                   </td>
                   <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
                     <span>{{ room.room_number || '--' }}</span>
+                    <RoomIcon
+                      v-if="getRoomStatusIcon(room)"
+                      :name="getRoomStatusIcon(room)"
+                      :monochrome="false"
+                      :class="getRoomStatusIconClass(room)"
+                      class="w-4 h-4 shrink-0"
+                      :title="getRoomStatusTooltip(room)"
+                    />
                   </td>
                   <td class="p-2.5"></td>
                   <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
