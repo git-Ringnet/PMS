@@ -239,7 +239,12 @@ class RoomController extends Controller
                     ->filter()
                     ->values()
                     ->toArray();
-                $room->extra_bed_qty = (int) $br->services->sum(fn($service) => (float) $service->quantity);
+                $ebQty = (int) ($br->extra_bed_qty ?? 0);
+                if ($ebQty === 0 && $br->services) {
+                    $ebQty = (int) ($br->services->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)->max('quantity') ?? 0);
+                }
+                $room->extra_bed_qty = $ebQty;
+                $room->extra_bed_rate = (float) ($br->extra_bed_rate ?? ($br->services?->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)->first()?->rate ?? 0));
                 $room->late_checkin = $br->lateCheckins->contains(fn($late) => (int) $late->status === 1);
                 
                 $room->external_booking_code = $br->booking?->external_booking_code ?? '';
@@ -298,6 +303,8 @@ class RoomController extends Controller
                     $room->rate = $room->tomorrow_booking['rate'];
                     $room->booking_id = $room->tomorrow_booking['booking_id'];
                     $room->booking_room_id = $room->tomorrow_booking['booking_room_id'];
+                    $room->extra_bed_qty = (int) ($brTomorrow->extra_bed_qty ?? 0);
+                    $room->extra_bed_rate = (float) ($brTomorrow->extra_bed_rate ?? 0);
                 }
             }
 

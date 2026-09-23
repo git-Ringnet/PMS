@@ -85,12 +85,14 @@ class BookingChild extends Model
 
         static::created(function ($model) {
             if (!empty($model->booking_room_id)) {
+                $status = (int) ($model->child_status ?? 1);
+                $assignmentStatus = in_array($status, [0, 1], true) ? 1 : $status;
                 BookingRoomChild::firstOrCreate(
                     [
                         'booking_child_id' => $model->id,
                         'booking_room_id' => $model->booking_room_id,
                     ],
-                    ['status' => (int) ($model->child_status ?? 1)]
+                    ['status' => $assignmentStatus]
                 );
             }
         });

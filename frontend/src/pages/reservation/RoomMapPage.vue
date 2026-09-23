@@ -3959,8 +3959,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   hoverTooltip.room.company_name }}</div>
                 <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{
                   hoverTooltip.room.booking_note }}</div>
-                <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{
-                  hoverTooltip.room.special_requests }}</div>
+                <div v-if="getListSpecialRequests(hoverTooltip.room)" class="text-neutral-400 italic">Yêu cầu: {{
+                  getListSpecialRequests(hoverTooltip.room) }}</div>
 
                 <div class="h-px bg-neutral-700/30 my-1.5"
                   v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>

@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
+import http from '@/services/http'
 import {
   fetchRoomGuests,
   addRoomGuest,
@@ -15,6 +16,11 @@ import {
   fetchSystemDate,
   uploadGuestAvatar,
   fetchNationalities,
+  searchGuests,
+  fetchBookingRoomSpecialRequests,
+  syncBookingRoomSpecialRequests,
+  fetchGuestDefinitions,
+  fetchBookingRoomServices,
 } from '@/services/booking-service'
 
 import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequestsModal.vue'
@@ -37,9 +43,60 @@ const uiStore = useUiStore()
 const titlesList = ['Mr.', 'Ms.', 'Mrs.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
 
 const nationalitiesList = ref([])
+const nationalitySearch = ref('')
+const showNationalitySuggestions = ref(false)
+
+const filteredNationalities = computed(() => {
+  const q = (nationalitySearch.value || '').trim().toLowerCase()
+  if (!q) return nationalitiesList.value.slice(0, 35)
+  return nationalitiesList.value.filter(n =>
+    n.code.toLowerCase().includes(q) || n.label.toLowerCase().includes(q)
+  ).slice(0, 35)
+})
+
+function syncNationalityDisplay() {
+  const code = formGuest.value.nationality
+  if (!code) {
+    nationalitySearch.value = ''
+    return
+  }
+  const found = nationalitiesList.value.find(n => n.code.toUpperCase() === code.toUpperCase())
+  nationalitySearch.value = found ? found.label : code
+}
+
+function onNationalityInput(e) {
+  nationalitySearch.value = e.target.value
+  showNationalitySuggestions.value = true
+  const q = e.target.value.trim().toUpperCase()
+  const match = nationalitiesList.value.find(n => n.code.toUpperCase() === q)
+  if (match) {
+    formGuest.value.nationality = match.code
+  }
+}
+
+function onNationalityFocus() {
+  if (!isEditingMode.value) return
+  showNationalitySuggestions.value = true
+}
+
+function onNationalityBlur() {
+  setTimeout(() => {
+    showNationalitySuggestions.value = false
+    syncNationalityDisplay()
+  }, 200)
+}
+
+function selectNationality(n) {
+  formGuest.value.nationality = n.code
+  nationalitySearch.value = n.label
+  showNationalitySuggestions.value = false
+}
 
 async function loadNationalities() {
-  if (nationalitiesList.value.length > 0) return
+  if (nationalitiesList.value.length > 0) {
+    syncNationalityDisplay()
+    return
+  }
   try {
     const res = await fetchNationalities()
     if (res.data?.success) {
@@ -48,9 +105,55 @@ async function loadNationalities() {
         code: item.asm_code || item.nationality_id || '',
         label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
       })).filter(item => item.code !== '')
+      syncNationalityDisplay()
     }
   } catch (err) {
     console.error('Lỗi tải danh sách quốc tịch:', err)
+  }
+}
+
+// ── Residence Types Catalog (Thường trú / Tạm trú) ───
+const residenceTypesList = ref([
+  { id: 1, name: 'Địa chỉ thường trú', name_new_form: 'Thường trú' },
+  { id: 2, name: 'Địa chỉ tạm trú', name_new_form: 'Tạm trú' },
+  { id: 3, name: 'Địa chỉ khác', name_new_form: 'Khác' },
+])
+
+async function loadResidenceTypes() {
+  try {
+    const res = await fetchGuestDefinitions()
+    if (res.data?.success && res.data.data?.residence_types?.length > 0) {
+      residenceTypesList.value = res.data.data.residence_types
+    }
+  } catch (err) {
+    console.error('loadResidenceTypes error:', err)
+  }
+}
+
+// ── Booking Room Services & Extra Bed State ─────────
+const roomServices = ref([])
+
+async function loadRoomServices() {
+  const brId = bookingRoomId.value
+  if (!brId) return
+  try {
+    const res = await fetchBookingRoomServices(brId)
+    if (res.data?.success) {
+      roomServices.value = res.data.data || []
+      const ebList = roomServices.value.filter(s => s.service_code === 'EB')
+      if (ebList.length > 0) {
+        const maxQty = Math.max(...ebList.map(s => Number(s.quantity) || 0))
+        const activeEB = ebList.find(s => Number(s.rate) > 0)
+        if (maxQty > 0) {
+          pricingInfo.value.extra_bed_qty = maxQty
+          if (activeEB) {
+            pricingInfo.value.extra_bed_price = formatNumber(activeEB.rate)
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('loadRoomServices error:', err)
   }
 }
 
@@ -77,6 +180,22 @@ const timePickerRef  = ref(null)
 // Edit mode state (Readonly / Vùng xám when false)
 const isEditingMode = ref(false)
 const backupFormGuest = ref(null)
+
+// Draft guest state
+const draftGuest = ref(null)
+
+// Room special requests state (Section 2)
+const roomSpecialRequests = ref([])
+
+// Guest autocomplete suggestions state (Section 1)
+const nameSuggestions = ref([])
+const showNameSuggestions = ref(false)
+const searchQueryName = ref('')
+const idNumberSuggestions = ref([])
+const showIdNumberSuggestions = ref(false)
+const searchQueryIdNumber = ref('')
+let searchNameTimeout = null
+let searchIdTimeout = null
 
 // Add-form inline states
 const addingAdult  = ref(false)
@@ -179,7 +298,7 @@ function onRateCodeChange(selectedValue = pricingInfo.value.rate_code) {
   }
 }
 
-function onExtraBedSaved(data) {
+async function onExtraBedSaved(data) {
   if (data) {
     if (data.quantity !== undefined) {
       pricingInfo.value.extra_bed_qty = data.quantity
@@ -187,11 +306,235 @@ function onExtraBedSaved(data) {
     if (data.rate !== undefined) {
       pricingInfo.value.extra_bed_price = formatNumber(data.rate)
     }
+    if (bookingRoomId.value) {
+      try {
+        uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
+        if (bookingId.value) {
+          await http.put(`/bookings/${bookingId.value}/rooms/${bookingRoomId.value}`, {
+            extra_bed_qty: data.quantity,
+            extra_bed_rate: data.rate
+          })
+        }
+        if (data.dailyRates && data.dailyRates.length > 0) {
+          for (const d of data.dailyRates) {
+            if (d.isLocked || d.isPast) continue
+            try {
+              await http.post(`/booking-rooms/${bookingRoomId.value}/services`, {
+                service_code: 'EB',
+                service_name: 'Extra Bed',
+                service_date: d.dateStr,
+                quantity: d.quantity || 0,
+                rate: d.rate || 0,
+                is_room: d.isRoom ? 1 : 0
+              })
+            } catch (svcErr) {
+              console.warn('Post EB service note:', svcErr.response?.data?.message || svcErr.message)
+            }
+          }
+        }
+        await loadRoomServices()
+        pricingInfo.value.extra_bed_qty = data.quantity
+        pricingInfo.value.extra_bed_price = formatNumber(data.rate)
+        uiStore.showToast('Đã lưu thông tin Thêm giường thành công!', 'success')
+        emit('refresh')
+      } catch (err) {
+        console.error('Lỗi khi lưu extra bed:', err)
+        uiStore.showToast('Lỗi khi lưu thêm giường: ' + (err.response?.data?.message || err.message), 'error')
+      }
+    }
   }
 }
 
-function onSpecialRequestsSaved() {
+async function loadRoomSpecialRequests() {
+  // 1. Khởi tạo ngay từ props.room để hiển thị tức thì không bị giật
+  if (Array.isArray(props.room?.special_request_types) && props.room.special_request_types.length > 0) {
+    roomSpecialRequests.value = props.room.special_request_types.map((item, idx) => ({
+      id: item.id || item.code || idx,
+      code: item.code || '',
+      name: item.name || item.code || '',
+    }))
+  } else if (typeof props.room?.special_requests === 'string' && props.room.special_requests.trim()) {
+    roomSpecialRequests.value = props.room.special_requests.split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map((s, idx) => ({ id: idx, code: '', name: s }))
+  }
+
+  // 2. Tải dữ liệu mới nhất từ CSDL qua API
+  const brId = bookingRoomId.value
+  if (!brId) return
+
+  try {
+    const res = await fetchBookingRoomSpecialRequests(brId)
+    if (res.data?.success) {
+      const list = res.data.data || []
+      if (list.length > 0) {
+        roomSpecialRequests.value = list.map(item => {
+          const sr = item.special_request || item.specialRequest || {}
+          return {
+            id: item.special_request_id || sr.id || item.id,
+            code: sr.code || item.code || '',
+            name: sr.name || item.name || sr.code || item.code || '',
+          }
+        }).filter(item => item.name || item.code)
+      } else if (!Array.isArray(props.room?.special_request_types) || props.room.special_request_types.length === 0) {
+        roomSpecialRequests.value = []
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load room special requests', err)
+  }
+}
+
+async function onSpecialRequestsSaved(data) {
+  if (Array.isArray(data) && data.length > 0) {
+    roomSpecialRequests.value = data.map(item => {
+      const sr = item.special_request || item.specialRequest || {}
+      return {
+        id: item.special_request_id || sr.id || item.id,
+        code: sr.code || item.code || '',
+        name: sr.name || item.name || sr.code || item.code || '',
+      }
+    }).filter(item => item.name || item.code)
+  }
+  await loadRoomSpecialRequests()
   emit('refresh')
+}
+
+async function quickRemoveSpecialRequest(req) {
+  if (!isEditingMode.value) return
+  const remainingRequests = roomSpecialRequests.value.filter(r => String(r.id) !== String(req.id))
+  roomSpecialRequests.value = remainingRequests
+
+  if (bookingRoomId.value) {
+    try {
+      const remainingIds = remainingRequests.map(r => r.id).filter(Boolean)
+      await syncBookingRoomSpecialRequests(bookingRoomId.value, {
+        special_request_ids: remainingIds,
+      })
+      uiStore.showToast(`Đã gỡ yêu cầu: ${req.name || req.code}`, 'success')
+      emit('refresh')
+    } catch (e) {
+      console.error('Quick remove special request error', e)
+      await loadRoomSpecialRequests()
+    }
+  }
+}
+
+// ── Autocomplete Functions (Section 1) ─────────────────
+function onNameInput(val) {
+  if (!isEditingMode.value) return
+  searchQueryName.value = val || ''
+  clearTimeout(searchNameTimeout)
+  if (!val || val.trim().length < 1) {
+    nameSuggestions.value = []
+    showNameSuggestions.value = false
+    return
+  }
+  searchNameTimeout = setTimeout(async () => {
+    try {
+      const res = await searchGuests(val.trim())
+      if (res.data?.success) {
+        nameSuggestions.value = res.data.data || []
+        showNameSuggestions.value = nameSuggestions.value.length > 0
+      }
+    } catch (e) {
+      console.error('searchGuests error', e)
+    }
+  }, 250)
+}
+
+function onNameFocus() {
+  if (!isEditingMode.value) return
+  if (nameSuggestions.value.length > 0 && formGuest.value.name?.length >= 1) {
+    showNameSuggestions.value = true
+  }
+}
+
+function onIdNumberInput(val) {
+  if (!isEditingMode.value) return
+  searchQueryIdNumber.value = val || ''
+  clearTimeout(searchIdTimeout)
+  if (!val || val.trim().length < 1) {
+    idNumberSuggestions.value = []
+    showIdNumberSuggestions.value = false
+    return
+  }
+  searchIdTimeout = setTimeout(async () => {
+    try {
+      const res = await searchGuests(val.trim())
+      if (res.data?.success) {
+        idNumberSuggestions.value = res.data.data || []
+        showIdNumberSuggestions.value = idNumberSuggestions.value.length > 0
+      }
+    } catch (e) {
+      console.error('searchGuests error', e)
+    }
+  }, 250)
+}
+
+function onIdNumberFocus() {
+  if (!isEditingMode.value) return
+  if (idNumberSuggestions.value.length > 0 && formGuest.value.id_number?.length >= 1) {
+    showIdNumberSuggestions.value = true
+  }
+}
+
+function selectSuggestion(guest) {
+  if (!guest) return
+  // Kế thừa thông tin khách cũ vào form hiện tại (không thay đổi ID slot khách của phòng)
+  formGuest.value.name = guest.full_name ? guest.full_name.toUpperCase() : formGuest.value.name
+  if (guest.title) formGuest.value.title = guest.title
+  if (guest.dob) formGuest.value.dob = guest.dob
+  if (guest.nationality_code) {
+    formGuest.value.nationality = guest.nationality_code === 'VNM' ? 'VN' : guest.nationality_code
+  }
+  if (guest.phone) formGuest.value.phone = guest.phone
+  if (guest.email) formGuest.value.email = guest.email
+  if (guest.id_type) formGuest.value.id_type = guest.id_type
+  if (guest.id_number) formGuest.value.id_number = guest.id_number
+  if (guest.passport_number) formGuest.value.passport_number = guest.passport_number
+  if (guest.id_issue_date) formGuest.value.id_issue_date = guest.id_issue_date
+  if (guest.residence_type) formGuest.value.residence_type = guest.residence_type
+  if (guest.address) formGuest.value.address = guest.address
+  if (guest.avatar) formGuest.value.avatar = guest.avatar
+  if (guest.stay_count) formGuest.value.stay_count = guest.stay_count
+
+  syncNationalityDisplay()
+  showNameSuggestions.value = false
+  showIdNumberSuggestions.value = false
+  uiStore.showToast(`Đã kế thừa thông tin khách "${guest.full_name}".`, 'info')
+}
+
+function highlightMatch(text, query) {
+  if (!text || !query) return text || ''
+  const q = String(query).trim()
+  if (!q) return text
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`(${escaped})`, 'gi')
+  return text.replace(regex, '<span class="text-orange-600 font-extrabold">$1</span>')
+}
+
+function highlightGuestSuggestion(g, query) {
+  const parts = []
+  parts.push(highlightMatch(g.full_name || 'Khách', query))
+  if (g.dob) {
+    const dParts = g.dob.split('-')
+    if (dParts.length === 3) {
+      parts.push(`${dParts[2]}/${dParts[1]}/${dParts[0]}`)
+    } else {
+      parts.push(g.dob)
+    }
+  }
+  if (g.id_number) {
+    parts.push(highlightMatch(g.id_number, query))
+  }
+  const bkCount = g.stay_count || 1
+  parts.push(`${bkCount} BK`)
+  if (g.total_revenue && g.total_revenue > 0) {
+    parts.push(`${formatNumber(g.total_revenue)} VND`)
+  }
+  return parts.join(' - ')
 }
 
 const formattedRoomForModals = computed(() => ({
@@ -209,6 +552,7 @@ const formattedRoomForModals = computed(() => ({
   extraBedQty: Number(pricingInfo.value.extra_bed_qty || 0),
   extraBedPrice: parseNumber(pricingInfo.value.extra_bed_price) || 300000,
   rate: props.room.rate,
+  services: roomServices.value.length > 0 ? roomServices.value : (props.room.services || []),
   specialRequests: Array.isArray(props.room.specialRequests)
     ? props.room.specialRequests
     : (Array.isArray(props.room.special_requests) ? props.room.special_requests : []),
@@ -240,8 +584,15 @@ function selectMinute(m) {
   showTimePicker.value = false
 }
 
-// Click outside to close 24h TimePicker (Use Capture Phase true to bypass @click.stop)
+// Click outside to close dropdowns / 24h TimePicker (Use Capture Phase true to bypass @click.stop)
 function handleGlobalClick(e) {
+  if (!e.target.closest('.suggestion-container')) {
+    showNameSuggestions.value = false
+    showIdNumberSuggestions.value = false
+  }
+  if (!e.target.closest('.nationality-container')) {
+    showNationalitySuggestions.value = false
+  }
   if (!showTimePicker.value) return
   const el = timePickerRef.value || document.querySelector('.time-picker-rel')
   if (el && !el.contains(e.target)) {
@@ -253,6 +604,8 @@ onMounted(() => {
   window.addEventListener('click', handleGlobalClick, true)
   loadRateCodes()
   loadSystemDate()
+  loadResidenceTypes()
+  loadRoomServices()
 })
 
 onBeforeUnmount(() => {
@@ -390,12 +743,15 @@ watch(() => props.room, (newRoom) => {
       rate: formatNumber(newRoom.rate) || '0',
       rate_code: newRoom.rate_code || '',
       discount_type: 'Tăng/Giảm giá',
-      extra_bed_qty: newRoom.extra_bed_qty ?? (newRoom.extra_bed && newRoom.extra_bed !== 'Không thêm' ? 1 : 0),
+      extra_bed_qty: Number(newRoom.extra_bed_qty || 0),
       extra_bed_price: formatNumber(newRoom.extra_bed_rate || newRoom.extra_bed_price || 0),
     }
   }
   loadGuests()
   loadNationalities()
+  loadResidenceTypes()
+  loadRoomServices()
+  loadRoomSpecialRequests()
 }, { immediate: true })
 
 watch(() => [stayInfo.value.arrival_date, stayInfo.value.departure_date], ([arr, dep]) => {
@@ -445,8 +801,17 @@ function onExtraBedPriceInput(e) {
 }
 
 function selectGuest(g) {
+  if (draftGuest.value && g.id !== draftGuest.value.id) {
+    adults.value = adults.value.filter(a => !a.isDraft)
+    children.value = children.value.filter(c => !c.isDraft)
+    babies.value = babies.value.filter(b => !b.isDraft)
+    draftGuest.value = null
+    isEditingMode.value = false
+  }
   selectedGuest.value = g
   selectedChild.value = null
+  showNameSuggestions.value = false
+  showIdNumberSuggestions.value = false
   if (g) {
     formGuest.value = {
       title: g.title || 'Mr.',
@@ -464,24 +829,22 @@ function selectGuest(g) {
       address: g.address || '',
       avatar: g.avatar || '',
     }
-    if (g.actual_checkout_time) {
-      stayInfo.value.departure_time = g.actual_checkout_time
-    }
-    if (g.actual_arrival_time) {
-      stayInfo.value.arrival_time = g.actual_arrival_time
-    }
-    if (g.actual_checkout_date) {
-      stayInfo.value.departure_date = g.actual_checkout_date
-    }
-    if (g.actual_arrival_date) {
-      stayInfo.value.arrival_date = g.actual_arrival_date
-    }
+    syncNationalityDisplay()
   }
 }
 
 function selectChild(c) {
+  if (draftGuest.value && c.id !== draftGuest.value.id) {
+    adults.value = adults.value.filter(a => !a.isDraft)
+    children.value = children.value.filter(c => !c.isDraft)
+    babies.value = babies.value.filter(b => !b.isDraft)
+    draftGuest.value = null
+    isEditingMode.value = false
+  }
   selectedChild.value = c
   selectedGuest.value = null
+  showNameSuggestions.value = false
+  showIdNumberSuggestions.value = false
   formGuest.value = {
     title: c.title || 'Mr.',
     name: c.name ? c.name.toUpperCase() : '',
@@ -498,6 +861,7 @@ function selectChild(c) {
     address: '',
     avatar: '',
   }
+  syncNationalityDisplay()
 }
 
 function isPassportType(value) {
@@ -547,65 +911,91 @@ async function handleAvatarFileChange(event) {
 }
 
 // ── Actions ────────────────────────────────────────
-async function doAddAdult() {
-  const nameToAdd = newAdultName.value.trim() || getNextDefaultName('adult')
-  submitting.value = true
-  try {
-    let newId = null
-    if (bookingRoomId.value) {
-      const res = await addRoomGuest(bookingRoomId.value, {
-        full_name: nameToAdd,
-        nationality_code: 'VN',
-      })
-      newId = res.data?.data?.guest_id || res.data?.data?.id
-    }
-    newAdultName.value = ''
-    addingAdult.value = false
-    uiStore.showToast(`Đã thêm người lớn "${nameToAdd}".`, 'success')
-    await loadGuests(newId)
-    isEditingMode.value = true
-    backupFormGuest.value = JSON.parse(JSON.stringify(formGuest.value))
-    emit('refresh')
-  } catch (e) {
-    uiStore.showToast('Lỗi khi thêm người lớn.', 'error')
-  } finally {
-    submitting.value = false
+function doAddAdult() {
+  if (draftGuest.value) {
+    adults.value = adults.value.filter(a => !a.isDraft)
+    children.value = children.value.filter(c => !c.isDraft)
+    babies.value = babies.value.filter(b => !b.isDraft)
   }
+
+  const nameToAdd = newAdultName.value.trim() || getNextDefaultName('adult')
+  newAdultName.value = ''
+  addingAdult.value = false
+
+  const newDraft = {
+    id: 'draft_adult_' + Date.now(),
+    isDraft: true,
+    type: 'adult',
+    name: nameToAdd,
+    title: 'Mr.',
+    nationality: 'VN',
+    dob: '',
+    phone: '',
+    email: '',
+    stay_count: 1,
+    id_type: 'CCCD',
+    id_number: '',
+    passport_number: '',
+    id_issue_date: '',
+    residence_type: 'Thường trú',
+    address: '',
+    avatar: '',
+    is_primary: adults.value.length === 0,
+  }
+  draftGuest.value = newDraft
+  adults.value.push(newDraft)
+  selectGuest(newDraft)
+  isEditingMode.value = true
+  backupFormGuest.value = null
+  uiStore.showToast(`Đang thêm người lớn "${nameToAdd}". Vui lòng kiểm tra thông tin và bấm Lưu.`, 'info')
 }
 
-async function doAddChild(ageGroup) {
+function doAddChild(ageGroup) {
+  if (draftGuest.value) {
+    adults.value = adults.value.filter(a => !a.isDraft)
+    children.value = children.value.filter(c => !c.isDraft)
+    babies.value = babies.value.filter(b => !b.isDraft)
+  }
+
   const isChild = ageGroup === 'child'
   const inputVal = isChild ? newChildName.value : newBabyName.value
   const nameToAdd = inputVal.trim() || getNextDefaultName(ageGroup)
-  
-  submitting.value = true
-  try {
-    let newId = null
-    if (bookingId.value) {
-      const res = await addBookingChild(bookingId.value, {
-        booking_room_id: bookingRoomId.value,
-        full_name: nameToAdd,
-        age_group: ageGroup,
-      })
-      newId = res.data?.data?.id
-    }
-    if (isChild) {
-      newChildName.value = ''
-      addingChild.value = false
-    } else {
-      newBabyName.value = ''
-      addingBaby.value = false
-    }
-    uiStore.showToast(`Đã thêm ${isChild ? 'trẻ em' : 'em bé'} "${nameToAdd}".`, 'success')
-    await loadGuests(newId)
-    isEditingMode.value = true
-    backupFormGuest.value = JSON.parse(JSON.stringify(formGuest.value))
-    emit('refresh')
-  } catch (e) {
-    uiStore.showToast(`Lỗi khi thêm ${isChild ? 'trẻ em' : 'em bé'}.`, 'error')
-  } finally {
-    submitting.value = false
+  if (isChild) {
+    newChildName.value = ''
+    addingChild.value = false
+  } else {
+    newBabyName.value = ''
+    addingBaby.value = false
   }
+
+  const newDraft = {
+    id: 'draft_' + ageGroup + '_' + Date.now(),
+    isDraft: true,
+    type: ageGroup,
+    age_group: ageGroup,
+    name: nameToAdd,
+    title: 'Mr.',
+    nationality: 'VN',
+    dob: '',
+    stay_count: 1,
+    id_type: 'CCCD',
+    id_number: '',
+    passport_number: '',
+    id_issue_date: '',
+    residence_type: 'Thường trú',
+    address: '',
+    avatar: '',
+  }
+  draftGuest.value = newDraft
+  if (isChild) {
+    children.value.push(newDraft)
+  } else {
+    babies.value.push(newDraft)
+  }
+  selectChild(newDraft)
+  isEditingMode.value = true
+  backupFormGuest.value = null
+  uiStore.showToast(`Đang thêm ${isChild ? 'trẻ em' : 'em bé'} "${nameToAdd}". Vui lòng kiểm tra thông tin và bấm Lưu.`, 'info')
 }
 
 const backupStayInfo = ref(null)
@@ -620,6 +1010,27 @@ function startEditing() {
 }
 
 function cancelEditing() {
+  if (draftGuest.value) {
+    adults.value = adults.value.filter(a => !a.isDraft)
+    children.value = children.value.filter(c => !c.isDraft)
+    babies.value = babies.value.filter(b => !b.isDraft)
+    draftGuest.value = null
+
+    if (adults.value.length > 0) {
+      selectGuest(adults.value.find(a => a.is_primary) || adults.value[0])
+    } else if (children.value.length > 0) {
+      selectChild(children.value[0])
+    } else if (babies.value.length > 0) {
+      selectChild(babies.value[0])
+    }
+    isEditingMode.value = false
+    showTimePicker.value = false
+    showNameSuggestions.value = false
+    showIdNumberSuggestions.value = false
+    uiStore.showToast('Đã hủy thêm khách mới.', 'info')
+    return
+  }
+
   if (backupFormGuest.value) {
     formGuest.value = JSON.parse(JSON.stringify(backupFormGuest.value))
   }
@@ -631,6 +1042,8 @@ function cancelEditing() {
   }
   isEditingMode.value = false
   showTimePicker.value = false
+  showNameSuggestions.value = false
+  showIdNumberSuggestions.value = false
   uiStore.showToast('Đã hủy bỏ thay đổi.', 'info')
 }
 
@@ -638,8 +1051,10 @@ async function handleSave() {
   if (!isEditingMode.value) return
 
   const confirmed = await uiStore.confirm({
-    title: 'Xác nhận lưu thông tin',
-    message: 'Bạn có chắc chắn muốn lưu các thay đổi thông tin khách hàng này không?',
+    title: draftGuest.value ? 'Xác nhận thêm khách mới' : 'Xác nhận lưu thông tin',
+    message: draftGuest.value
+      ? `Bạn có chắc chắn muốn lưu khách mới "${formGuest.value.name || 'Khách'}" vào phòng không?`
+      : 'Bạn có chắc chắn muốn lưu các thay đổi thông tin khách hàng này không?',
     confirmText: 'Lưu ngay',
     cancelText: 'Hủy',
   })
@@ -660,6 +1075,55 @@ async function handleSave() {
       rate_code: validRateCode,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
       extra_bed_rate: pricingInfo.value.extra_bed_price ? Number(String(pricingInfo.value.extra_bed_price).replace(/\D/g, '')) : 0,
+    }
+
+    if (draftGuest.value) {
+      let newId = null
+      if (draftGuest.value.type === 'adult') {
+        if (bookingRoomId.value) {
+          const res = await addRoomGuest(bookingRoomId.value, {
+            full_name: formGuest.value.name,
+            title: formGuest.value.title,
+            nationality_code: formGuest.value.nationality,
+            dob: formGuest.value.dob,
+            phone: formGuest.value.phone,
+            email: formGuest.value.email,
+            id_type: formGuest.value.id_type,
+            id_number: formGuest.value.id_number,
+            passport_number: isPassportType(formGuest.value.id_type)
+              ? formGuest.value.id_number
+              : formGuest.value.passport_number,
+            id_issue_date: formGuest.value.id_issue_date,
+            residence_type: formGuest.value.residence_type,
+            address: formGuest.value.address,
+            avatar: formGuest.value.avatar,
+            ...roomFields,
+          })
+          newId = res.data?.data?.guest_id || res.data?.data?.id
+        }
+      } else {
+        if (bookingId.value) {
+          const res = await addBookingChild(bookingId.value, {
+            booking_room_id: bookingRoomId.value,
+            full_name: formGuest.value.name,
+            title: formGuest.value.title,
+            nationality_code: formGuest.value.nationality,
+            dob: formGuest.value.dob,
+            age_group: draftGuest.value.age_group,
+            ...roomFields,
+          })
+          newId = res.data?.data?.id
+        }
+      }
+      draftGuest.value = null
+      isEditingMode.value = false
+      showTimePicker.value = false
+      showNameSuggestions.value = false
+      showIdNumberSuggestions.value = false
+      uiStore.showToast('Đã thêm và lưu thông tin khách thành công!', 'success')
+      await loadGuests(newId)
+      emit('refresh')
+      return
     }
 
     if (selectedGuest.value && bookingRoomId.value) {
@@ -692,6 +1156,8 @@ async function handleSave() {
     }
     isEditingMode.value = false
     showTimePicker.value = false
+    showNameSuggestions.value = false
+    showIdNumberSuggestions.value = false
     uiStore.showToast('Đã lưu thông tin khách thành công!', 'success')
     await loadGuests(selectedGuest.value?.id || selectedChild.value?.id)
     emit('refresh')
@@ -712,6 +1178,10 @@ async function handleSave() {
 }
 
 async function handleDeleteGuest() {
+  if (selectedGuest.value?.isDraft || selectedChild.value?.isDraft) {
+    cancelEditing()
+    return
+  }
   if (!selectedGuest.value && !selectedChild.value) {
     uiStore.showToast('Vui lòng chọn khách cần xóa!', 'warning')
     return
@@ -867,6 +1337,13 @@ function parseNumber(val) {
 
         <!-- BODY -->
         <div class="card-body">
+          <div v-if="draftGuest" class="draft-alert-banner">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="text-amber-600 flex-shrink-0">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span>Đang thêm khách mới (<strong>{{ formGuest.name || 'Khách' }}</strong>). Vui lòng kiểm tra/nhập thông tin, sau đó bấm <strong>Lưu</strong> trên thanh tiêu đề để lưu vào hệ thống, hoặc bấm <strong>Quay lại</strong> để hủy.</span>
+          </div>
+
           <div class="main-grid" :class="{ 'readonly-mode': !isEditingMode }">
 
             <!-- Ô 1 (CỘT 1, TRẢI 3 HÀNG): DANH SÁCH KHÁCH -->
@@ -893,7 +1370,10 @@ function parseNumber(val) {
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
                   </span>
-                  <span class="g-name">{{ g.name }}</span>
+                  <span class="g-name">
+                    {{ g.name }}
+                    <span v-if="g.isDraft" class="draft-badge">(Mới)</span>
+                  </span>
                 </div>
 
                 <button v-if="!addingAdult" @click="doAddAdult" class="btn-add">+ Thêm người lớn</button>
@@ -914,7 +1394,10 @@ function parseNumber(val) {
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
                   </span>
-                  <span class="g-name">{{ c.name }}</span>
+                  <span class="g-name">
+                    {{ c.name }}
+                    <span v-if="c.isDraft" class="draft-badge">(Mới)</span>
+                  </span>
                 </div>
 
                 <button v-if="!addingChild" @click="doAddChild('child')" class="btn-add">+ Thêm trẻ em</button>
@@ -935,7 +1418,10 @@ function parseNumber(val) {
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
                   </span>
-                  <span class="g-name">{{ b.name }}</span>
+                  <span class="g-name">
+                    {{ b.name }}
+                    <span v-if="b.isDraft" class="draft-badge">(Mới)</span>
+                  </span>
                 </div>
 
                 <button v-if="!addingBaby" @click="doAddChild('baby')" class="btn-add">+ Thêm em bé</button>
@@ -978,15 +1464,57 @@ function parseNumber(val) {
                         <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
                       </select>
                     </div>
-                    <div class="f">
+                    <div class="f relative suggestion-container">
                       <label>Họ tên <span class="req">*</span></label>
-                      <input type="text" v-model="formGuest.name" :disabled="!isEditingMode" style="font-weight: 700; text-transform: uppercase;">
+                      <input 
+                        type="text" 
+                        v-model="formGuest.name" 
+                        @input="onNameInput($event.target.value)"
+                        @focus="onNameFocus"
+                        :disabled="!isEditingMode" 
+                        style="font-weight: 700; text-transform: uppercase;"
+                        autocomplete="off"
+                      >
+                      <!-- Dropdown gợi ý Tên khách -->
+                      <div 
+                        v-if="showNameSuggestions && nameSuggestions.length > 0"
+                        class="suggestion-dropdown"
+                      >
+                        <div 
+                          v-for="sug in nameSuggestions" 
+                          :key="sug.id"
+                          @mousedown.prevent="selectSuggestion(sug)"
+                          class="suggestion-item"
+                          v-html="highlightGuestSuggestion(sug, searchQueryName)"
+                        ></div>
+                      </div>
                     </div>
-                    <div class="f">
+                    <div class="f relative nationality-container suggestion-container">
                       <label>Quốc tịch</label>
-                      <select v-model="formGuest.nationality" :disabled="!isEditingMode">
-                        <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
-                      </select>
+                      <input 
+                        type="text" 
+                        :value="nationalitySearch" 
+                        @input="onNationalityInput" 
+                        @focus="onNationalityFocus" 
+                        :disabled="!isEditingMode" 
+                        placeholder="Nhập mã hoặc tên nước..." 
+                        autocomplete="off"
+                      />
+                      <!-- Dropdown gợi ý Quốc tịch -->
+                      <div 
+                        v-if="showNationalitySuggestions && filteredNationalities.length > 0" 
+                        class="suggestion-dropdown" 
+                        style="width: 320px;"
+                      >
+                        <div 
+                          v-for="n in filteredNationalities" 
+                          :key="n.code" 
+                          @mousedown.prevent="selectNationality(n)" 
+                          class="suggestion-item"
+                        >
+                          {{ n.label }}
+                        </div>
+                      </div>
                     </div>
                     <div class="f">
                       <label>Sinh nhật</label>
@@ -1037,9 +1565,29 @@ function parseNumber(val) {
                     <option value="Khác">Khác</option>
                   </select>
                 </div>
-                <div class="f">
+                <div class="f relative suggestion-container">
                   <label>Số giấy tờ <span class="req">*</span></label>
-                  <input type="text" v-model="formGuest.id_number" :disabled="!isEditingMode">
+                  <input 
+                    type="text" 
+                    v-model="formGuest.id_number" 
+                    @input="onIdNumberInput($event.target.value)"
+                    @focus="onIdNumberFocus"
+                    :disabled="!isEditingMode"
+                    autocomplete="off"
+                  >
+                  <!-- Dropdown gợi ý Số giấy tờ -->
+                  <div 
+                    v-if="showIdNumberSuggestions && idNumberSuggestions.length > 0"
+                    class="suggestion-dropdown"
+                  >
+                    <div 
+                      v-for="sug in idNumberSuggestions" 
+                      :key="sug.id"
+                      @mousedown.prevent="selectSuggestion(sug)"
+                      class="suggestion-item"
+                      v-html="highlightGuestSuggestion(sug, searchQueryIdNumber)"
+                    ></div>
+                  </div>
                 </div>
                 <div class="f">
                   <label>Ngày phát hành</label>
@@ -1052,8 +1600,13 @@ function parseNumber(val) {
                 <div class="f">
                   <label>Thường trú / Tạm trú</label>
                   <select v-model="formGuest.residence_type" :disabled="!isEditingMode">
-                    <option value="Thường trú">Thường trú</option>
-                    <option value="Tạm trú">Tạm trú</option>
+                    <option 
+                      v-for="rt in residenceTypesList" 
+                      :key="rt.id" 
+                      :value="rt.name_new_form || rt.name || rt.id"
+                    >
+                      {{ rt.name_new_form || rt.name }}
+                    </option>
                   </select>
                 </div>
                 <div class="f span-4">
@@ -1166,10 +1719,41 @@ function parseNumber(val) {
                   <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
                   <button class="btn-act" @click="showSpecialRequestsModal = true">
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                    </svg>Yêu cầu đặc biệt
+                      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                      <line x1="7" y1="7" x2="7.01" y2="7"/>
+                    </svg>Yêu cầu đặc biệt<span v-if="roomSpecialRequests.length > 0" class="ml-1 px-1.5 py-0.2 text-[10px] bg-white/20 text-white rounded-full font-bold">({{ roomSpecialRequests.length }})</span>
                   </button>
                 </div>
+              </div>
+
+              <!-- DANH SÁCH YÊU CẦU ĐẶC BIỆT ĐÃ CHỌN -->
+              <div v-if="roomSpecialRequests.length > 0" class="special-requests-tags">
+                <span class="sr-label">
+                  <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="text-slate-400">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                  </svg>
+                  Yêu cầu:
+                </span>
+                <span 
+                  v-for="req in roomSpecialRequests" 
+                  :key="req.id"
+                  class="sr-badge"
+                  :title="req.name || req.code"
+                  @click="showSpecialRequestsModal = true"
+                >
+                  <span class="sr-dot"></span>
+                  <span class="sr-text">{{ req.name || req.code }}</span>
+                  <button
+                    v-if="isEditingMode"
+                    type="button"
+                    @click.stop="quickRemoveSpecialRequest(req)"
+                    class="sr-remove-btn"
+                    title="Gỡ yêu cầu này"
+                  >
+                    &times;
+                  </button>
+                </span>
               </div>
               
               <div class="g price-grid-2">
@@ -1672,5 +2256,155 @@ input.always-gray:disabled {
   background-color: #f1f5f9 !important;
   color: #64748b !important;
   border-color: #cbd5e1 !important;
+}
+
+/* SECTION 1 & 2 EXTENSIONS */
+.draft-badge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.suggestion-container {
+  position: relative;
+}
+
+.suggestion-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  width: 440px;
+  max-width: 90vw;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+}
+
+.suggestion-item {
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s, color 0.12s;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background-color: #38bdf8;
+  color: #ffffff;
+}
+
+.suggestion-item:hover :deep(span) {
+  color: #fef08a !important;
+}
+
+.special-requests-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: -2px;
+  margin-bottom: 9px;
+  padding: 1px 0;
+}
+
+.sr-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  margin-right: 2px;
+}
+
+.sr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #0369a1;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 9999px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sr-badge:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0284c7;
+}
+
+.sr-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #0284c7;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.sr-text {
+  line-height: 1.2;
+}
+
+.sr-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: #0284c7;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.12s;
+}
+
+.sr-remove-btn:hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.draft-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin-bottom: 12px;
 }
 </style>
