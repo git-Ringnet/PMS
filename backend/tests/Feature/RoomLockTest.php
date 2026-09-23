@@ -22,6 +22,31 @@ class RoomLockTest extends TestCase
     protected RoomClass $supdClass;
     protected RoomForm $doubleForm;
 
+    public function createApplication()
+    {
+        $app = parent::createApplication();
+
+        config(['database.default' => 'sqlite']);
+        config(['database.connections.sqlite' => [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+            'foreign_key_constraints' => false,
+        ]]);
+
+        $connections = ['mysql', 'mysql_data', 'mysql_db', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
+        foreach ($connections as $conn) {
+            config(["database.connections.{$conn}" => [
+                'driver' => 'sqlite',
+                'database' => ':memory:',
+                'prefix' => '',
+                'foreign_key_constraints' => false,
+            ]]);
+        }
+
+        return $app;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -704,5 +729,105 @@ class RoomLockTest extends TestCase
 
         $res->assertStatus(422);
         $this->assertStringContainsString('không đủ phòng trống liên tục để gán cho booking', $res->json('message'));
+    }
+
+    public function test_room_map_unlock_status_change_enforces_role_and_updates_end_date()
+    {
+        // Cấu hình thông số RoleUserUnlockRoomOOO/OOS
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'Admin,FOM']);
+
+        // Tạo user không có quyền mở khóa (HK)
+        $unauthorizedUser = User::create([
+            'name' => 'Housekeeper',
+            'username' => 'hk_staff',
+            'email' => 'hkstaff@pms.com',
+            'job_title' => 'Nhân viên buồng',
+            'job_title_code' => 'RL018',
+            'department_code' => 'HK',
+            'department' => 'BỘ PHẬN BUỒNG PHÒNG',
+            'password' => bcrypt('password'),
+            'is_active_user' => true,
+        ]);
+
+        // Tạo lock trên phòng 101 từ 2026-06-01 đến 2026-06-05
+        $lock = RoomLock::create([
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-01 00:00:00',
+            'end_date' => '2026-06-05 23:59:59',
+            'lock_type' => 'OOO',
+            'status' => 'Active',
+            'is_active' => 1,
+            'username' => 'admin',
+        ]);
+        $this->room101->update(['room_status_code' => 'ooo']);
+
+        // 1. Thử mở khóa bằng đổi trạng thái phòng khi không có Role hợp lệ -> Bị chặn 403
+        \Laravel\Sanctum\Sanctum::actingAs($unauthorizedUser);
+        $resForbidden = $this->putJson("/api/rooms/{$this->room101->id}/status", [
+            'room_status_code' => 'vacant_clean',
+            'current_module' => 'housekeeping',
+        ]);
+        $resForbidden->assertStatus(403);
+        $this->assertStringContainsString('không thuộc vai trò (Role) được phép mở khóa phòng', $resForbidden->json('message'));
+
+        // 2. Mở khóa bằng user có Role hợp lệ (Admin) -> Thành công
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $resSuccess = $this->putJson("/api/rooms/{$this->room101->id}/status", [
+            'room_status_code' => 'vacant_clean',
+            'current_module' => 'housekeeping',
+        ]);
+        $resSuccess->assertStatus(200);
+
+        // Kiểm tra database room_locks: end_date được cập nhật về ngày hệ thống (2026-06-01), status = Done, is_active = 2
+        $lock->refresh();
+        $this->assertEquals(2, $lock->is_active);
+        $this->assertEquals('Done', $lock->status);
+        $this->assertEquals($this->adminUser->username, $lock->unlock_username);
+        $this->assertStringStartsWith('2026-06-01', $lock->end_date);
+    }
+
+    public function test_allow_over_room_type_checked_before_unassignable_and_strictly_blocks_when_zero()
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        // Tạo 1 phòng SUPD (đã có room101 ở setUp)
+        // Tạo 1 booking chiếm phòng 101 từ 2026-06-10 đến 2026-06-12
+        $b = \App\Models\Booking::create([
+            'booking_name' => 'Khách chiếm phòng duy nhất',
+            'status' => \App\Models\Booking::STATUS_RESERVATION,
+            'booking_date' => '2026-06-01',
+            'arrival_date' => '2026-06-10',
+            'departure_date' => '2026-06-12',
+            'registration_status_id' => 1,
+            'created_by' => 'admin',
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $b->id,
+            'room_class_id' => $this->supdClass->id,
+            'room_number' => null, // unassigned
+            'arrival_date' => '2026-06-10',
+            'departure_date' => '2026-06-12',
+            'status' => \App\Models\BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // Cấu hình: AllowOverRoomTypeRoomKind = 0 (chặn cứng không cho over), AllowLockRoomCauseUnassignableRoomBK = 1
+        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '0']);
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '1']);
+
+        // Khóa phòng 101 trong ngày 10-12 dẫn đến AV = 1 - 0 - 1 = 0, khóa thêm 1 phòng làm AV = -1 (< 0)
+        // Thử gửi force = true xem có bị chặn cứng không
+        $res = $this->postJson('/api/room-locks', [
+            'room_number' => $this->room101->room_number,
+            'start_date' => '2026-06-10 00:00:00',
+            'end_date' => '2026-06-12 12:00:00',
+            'lock_type' => 'OOO',
+            'reason' => 'Khóa gây over',
+            'force' => true,
+        ]);
+
+        $res->assertStatus(422);
+        // Phải thông báo lỗi AV < 0 chặn cứng trước, không cho phép force
+        $this->assertStringContainsString('hết phòng trống (AV < 0)', $res->json('message'));
+        $this->assertFalse($res->json('require_confirm') ?? false);
     }
 }

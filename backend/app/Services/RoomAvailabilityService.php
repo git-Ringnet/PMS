@@ -116,7 +116,10 @@ class RoomAvailabilityService
             $lockStart = Carbon::parse($lk->start_date)->toDateString();
             $lockEnd = Carbon::parse($lk->end_date)->toDateString();
 
-            if ($lk->is_active == 2 && $lockStart !== $lockEnd) {
+            if ($lk->is_active == 2) {
+                if ($lockStart === $lockEnd) {
+                    return false;
+                }
                 $endTime = Carbon::parse($lk->end_date)->format('H:i');
                 if ($endTime < $defineLockTime && $lockEnd <= $arrivalDate) {
                     return false;

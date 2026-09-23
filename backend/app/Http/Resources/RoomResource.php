@@ -63,6 +63,7 @@ class RoomResource extends JsonResource
                 'lock_reason' => $lock->reason,
                 'lock_maintenance_percent' => $lock->maintenance_percent ?? 0,
                 'lock_status' => $lock->status ?? '',
+                'is_active' => (int) ($lock->is_active ?? 1),
                 'lock_username' => $lock->username ?? '',
                 'unlock_username' => $lock->unlock_username ?? '',
                 'unlocked_at' => $lock->unlocked_at instanceof \DateTimeInterface ? $lock->unlocked_at?->format('Y-m-d H:i:s') : $lock->unlocked_at,

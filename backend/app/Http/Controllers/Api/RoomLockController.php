@@ -116,28 +116,10 @@ class RoomLockController extends Controller
             ], 422);
         }
 
-        // 4. Check unassignable booking availability (AllowLockRoomCauseUnassignableRoomBK)
-        $unassignableConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
-        $unassignableViolation = $this->checkUnassignableBookingsAvailability($room->room_class_id, $validated['start_date'], $validated['end_date'], [(string)$room->room_number]);
-        if (!empty($unassignableViolation) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            if ($unassignableConfig === '0') {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Không thể khóa phòng vì loại phòng {$unassignableViolation['class_name']} sẽ không đủ phòng trống liên tục để gán cho booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']})."
-                ], 422);
-            }
-
-            return response()->json([
-                'success' => false,
-                'require_confirm' => true,
-                'message' => "Khóa phòng sẽ dẫn đến booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']}) của loại phòng {$unassignableViolation['class_name']} không đủ phòng trống liên tục để gán số phòng. Bạn có muốn tiếp tục thao tác khóa phòng?",
-            ], 422);
-        }
-
-        // 5. Check AV capacity
-        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $room->room_number);
+        // 4. Check AV capacity (AllowOverRoomTypeRoomKind) - Kiểm tra Overbooking TRƯỚC
         $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
-        if (!empty($avError) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $room->room_number);
+        if (!empty($avError)) {
             if ($allowOverAv === '0') {
                 return response()->json([
                     'success' => false,
@@ -145,11 +127,33 @@ class RoomLockController extends Controller
                 ], 422);
             }
 
-            return response()->json([
-                'success' => false,
-                'require_confirm' => true,
-                'message' => "Khóa phòng {$room->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục thao tác khóa phòng?",
-            ], 422);
+            if (!filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+                return response()->json([
+                    'success' => false,
+                    'require_confirm' => true,
+                    'message' => "Khóa phòng {$room->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục thao tác khóa phòng?",
+                ], 422);
+            }
+        }
+
+        // 5. Check unassignable booking availability (AllowLockRoomCauseUnassignableRoomBK) - Kiểm tra unassignable SAU
+        $unassignableConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
+        $unassignableViolation = $this->checkUnassignableBookingsAvailability($room->room_class_id, $validated['start_date'], $validated['end_date'], [(string)$room->room_number]);
+        if (!empty($unassignableViolation)) {
+            if ($unassignableConfig === '0') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Không thể khóa phòng vì loại phòng {$unassignableViolation['class_name']} sẽ không đủ phòng trống liên tục để gán cho booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']})."
+                ], 422);
+            }
+
+            if (!filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+                return response()->json([
+                    'success' => false,
+                    'require_confirm' => true,
+                    'message' => "Khóa phòng sẽ dẫn đến booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']}) của loại phòng {$unassignableViolation['class_name']} không đủ phòng trống liên tục để gán số phòng. Bạn có muốn tiếp tục thao tác khóa phòng?",
+                ], 422);
+            }
         }
 
         $validated['room_number'] = $room->room_number;
@@ -384,27 +388,8 @@ class RoomLockController extends Controller
             return response()->json(['success' => false, 'message' => implode(' ', $messages)], 422);
         }
 
-        if (!empty($unassignableBlockedRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            $messages = [];
-            foreach ($unassignableBlockedRooms as $u) {
-                $messages[] = "Không thể khóa phòng {$u['room_number']} vì loại phòng {$u['class_name']} sẽ không đủ phòng trống liên tục để gán cho booking {$u['booking_code']} ({$u['arrival']} ~ {$u['departure']}).";
-            }
-            return response()->json(['success' => false, 'message' => implode(' ', $messages)], 422);
-        }
-
-        if (!empty($unassignableWarningRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            $messages = [];
-            foreach ($unassignableWarningRooms as $u) {
-                $messages[] = "Khóa phòng {$u['room_number']} sẽ làm loại phòng {$u['class_name']} không đủ phòng trống liên tục để gán cho booking {$u['booking_code']} ({$u['arrival']} ~ {$u['departure']}).";
-            }
-            return response()->json([
-                'success' => false,
-                'require_confirm' => true,
-                'message' => implode(' ', $messages) . ' Bạn có muốn tiếp tục thao tác khóa phòng?'
-            ], 422);
-        }
-
-        if (!empty($avBlockedRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+        // Kiểm tra Overbooking TRƯỚC
+        if (!empty($avBlockedRooms)) {
             $messages = [];
             foreach ($avBlockedRooms as $av) {
                 $messages[] = "Không thể khóa phòng {$av['room_number']} vì loại phòng {$av['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$av['date']}.";
@@ -416,6 +401,27 @@ class RoomLockController extends Controller
             $messages = [];
             foreach ($avWarningRooms as $av) {
                 $messages[] = "Khóa phòng {$av['room_number']} sẽ làm loại phòng {$av['class_name']} bị âm phòng (AV < 0) vào ngày {$av['date']}.";
+            }
+            return response()->json([
+                'success' => false,
+                'require_confirm' => true,
+                'message' => implode(' ', $messages) . ' Bạn có muốn tiếp tục thao tác khóa phòng?'
+            ], 422);
+        }
+
+        // Kiểm tra Unassignable SAU
+        if (!empty($unassignableBlockedRooms)) {
+            $messages = [];
+            foreach ($unassignableBlockedRooms as $u) {
+                $messages[] = "Không thể khóa phòng {$u['room_number']} vì loại phòng {$u['class_name']} sẽ không đủ phòng trống liên tục để gán cho booking {$u['booking_code']} ({$u['arrival']} ~ {$u['departure']}).";
+            }
+            return response()->json(['success' => false, 'message' => implode(' ', $messages)], 422);
+        }
+
+        if (!empty($unassignableWarningRooms) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+            $messages = [];
+            foreach ($unassignableWarningRooms as $u) {
+                $messages[] = "Khóa phòng {$u['room_number']} sẽ làm loại phòng {$u['class_name']} không đủ phòng trống liên tục để gán cho booking {$u['booking_code']} ({$u['arrival']} ~ {$u['departure']}).";
             }
             return response()->json([
                 'success' => false,
@@ -814,7 +820,27 @@ class RoomLockController extends Controller
             ], 422);
         }
 
-        // 5. Check unassignable booking availability (AllowLockRoomCauseUnassignableRoomBK)
+        // 5. Check AV capacity (AllowOverRoomTypeRoomKind) - Kiểm tra Overbooking TRƯỚC
+        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
+        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $lock->room_number);
+        if (!empty($avError)) {
+            if ($allowOverAv === '0') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$avError['date']}."
+                ], 422);
+            }
+
+            if (!filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+                return response()->json([
+                    'success' => false,
+                    'require_confirm' => true,
+                    'message' => "Khóa phòng {$lock->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục thao tác khóa phòng?",
+                ], 422);
+            }
+        }
+
+        // 6. Check unassignable booking availability (AllowLockRoomCauseUnassignableRoomBK) - Kiểm tra unassignable SAU
         $unassignableConfig = \App\Models\HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->first()?->value ?? '0';
         $unassignableViolation = $this->checkUnassignableBookingsAvailability(
             $room->room_class_id,
@@ -824,7 +850,7 @@ class RoomLockController extends Controller
             $lock->id
         );
 
-        if (!empty($unassignableViolation) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
+        if (!empty($unassignableViolation)) {
             if ($unassignableConfig === '0') {
                 return response()->json([
                     'success' => false,
@@ -832,29 +858,13 @@ class RoomLockController extends Controller
                 ], 422);
             }
 
-            return response()->json([
-                'success' => false,
-                'require_confirm' => true,
-                'message' => "Cập nhật khóa phòng sẽ làm loại phòng {$unassignableViolation['class_name']} không đủ phòng trống liên tục để gán cho booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']}). Bạn có muốn tiếp tục thao tác khóa phòng?",
-            ], 422);
-        }
-
-        // 6. Check AV capacity
-        $allowOverAv = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
-        $avError = $this->checkAvForRoomClass($room->room_class_id, $validated['start_date'], $validated['end_date'], $lock->room_number);
-        if (!empty($avError) && !filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
-            if ($allowOverAv === '0') {
+            if (!filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN)) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Không thể cập nhật khóa phòng vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$avError['date']}."
+                    'require_confirm' => true,
+                    'message' => "Cập nhật khóa phòng sẽ làm loại phòng {$unassignableViolation['class_name']} không đủ phòng trống liên tục để gán cho booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']}). Bạn có muốn tiếp tục thao tác khóa phòng?",
                 ], 422);
             }
-
-            return response()->json([
-                'success' => false,
-                'require_confirm' => true,
-                'message' => "Khóa phòng {$lock->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục thao tác khóa phòng?",
-            ], 422);
         }
 
         // Remove non-schema fields
@@ -1111,12 +1121,32 @@ class RoomLockController extends Controller
             $batchRoomNumbers[] = (string)$lock->room_number;
         }
 
-        // Validate AV and Unassignable Bookings for each room
+        // Validate AV and Unassignable Bookings for each room (Overbooking TRƯỚC, Unassignable SAU)
         foreach ($prepared as $p) {
             $lock = $p['lock'];
             $room = $p['room'];
             $data = $p['data'];
 
+            // 1. Kiểm tra Overbooking TRƯỚC
+            $avError = $this->checkAvForRoomClass($room->room_class_id, $data['start_date'], $data['end_date'], $lock->room_number);
+            if (!empty($avError)) {
+                if ($allowOverAv === '0') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Không thể cập nhật phòng {$lock->room_number} vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$avError['date']}."
+                    ], 422);
+                }
+
+                if (!$force) {
+                    return response()->json([
+                        'success' => false,
+                        'require_confirm' => true,
+                        'message' => "Cập nhật phòng {$lock->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục?",
+                    ], 422);
+                }
+            }
+
+            // 2. Kiểm tra Unassignable SAU
             $unassignableViolation = $this->checkUnassignableBookingsAvailability(
                 $room->room_class_id,
                 $data['start_date'],
@@ -1125,7 +1155,7 @@ class RoomLockController extends Controller
                 $lock->id
             );
 
-            if (!empty($unassignableViolation) && !$force) {
+            if (!empty($unassignableViolation)) {
                 if ($unassignableConfig === '0') {
                     return response()->json([
                         'success' => false,
@@ -1133,27 +1163,13 @@ class RoomLockController extends Controller
                     ], 422);
                 }
 
-                return response()->json([
-                    'success' => false,
-                    'require_confirm' => true,
-                    'message' => "Cập nhật phòng {$lock->room_number} sẽ làm loại phòng {$unassignableViolation['class_name']} không đủ phòng trống liên tục để gán cho booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']}). Bạn có muốn tiếp tục?",
-                ], 422);
-            }
-
-            $avError = $this->checkAvForRoomClass($room->room_class_id, $data['start_date'], $data['end_date'], $lock->room_number);
-            if (!empty($avError) && !$force) {
-                if ($allowOverAv === '0') {
+                if (!$force) {
                     return response()->json([
                         'success' => false,
-                        'message' => "Không thể cập nhật phòng {$lock->room_number} vì loại phòng {$avError['class_name']} sẽ bị hết phòng trống (AV < 0) vào ngày {$avError['date']}."
+                        'require_confirm' => true,
+                        'message' => "Cập nhật phòng {$lock->room_number} sẽ làm loại phòng {$unassignableViolation['class_name']} không đủ phòng trống liên tục để gán cho booking {$unassignableViolation['booking_code']} ({$unassignableViolation['arrival']} ~ {$unassignableViolation['departure']}). Bạn có muốn tiếp tục?",
                     ], 422);
                 }
-
-                return response()->json([
-                    'success' => false,
-                    'require_confirm' => true,
-                    'message' => "Cập nhật phòng {$lock->room_number} sẽ làm loại phòng {$avError['class_name']} bị âm phòng (AV < 0) vào ngày {$avError['date']}. Bạn có muốn tiếp tục?",
-                ], 422);
             }
         }
 
@@ -1370,8 +1386,8 @@ class RoomLockController extends Controller
                     BookingRoom::STATUS_BOOKED,
                     BookingRoom::STATUS_CHECKED_IN,
                 ])
-                ->where('arrival_date', '<=', $dateStr)
-                ->where('departure_date', '>', $dateStr)
+                ->whereDate('arrival_date', '<=', $dateStr)
+                ->whereDate('departure_date', '>', $dateStr)
                 ->whereHas('booking', function ($q) {
                     $q->whereNotIn('status', [\App\Models\Booking::STATUS_DELETED, \App\Models\Booking::STATUS_NO_SHOW])
                       ->where(function ($subQ) {
@@ -1572,28 +1588,7 @@ class RoomLockController extends Controller
      */
     private function checkUnlockDepartmentPermission(Request $request, RoomLock $lock)
     {
-        $user = $request->user();
-        if (!$user) {
-            return null;
-        }
-
-        $checkOoo = \App\Models\HotelConfig::where('name', 'OOOCheckDepartment')->first()?->value ?? '0';
-        $checkOos = \App\Models\HotelConfig::where('name', 'OOSCheckDepartment')->first()?->value ?? '0';
-
-        $isOoo = strtoupper($lock->lock_type) === 'OOO';
-        $isOos = strtoupper($lock->lock_type) === 'OOS';
-
-        if (($isOoo && $checkOoo === '1') || ($isOos && $checkOos === '1')) {
-            $locker = \App\Models\User::where('username', $lock->username)
-                ->orWhere('name', $lock->username)
-                ->first();
-
-            if ($locker && !empty($locker->department) && $user->department !== $locker->department) {
-                return "Bạn không thuộc bộ phận đã thực hiện khóa phòng này (Bộ phận: {$locker->department}), không thể mở khóa.";
-            }
-        }
-
-        return null;
+        return app(\App\Services\RoomLockPermissionService::class)->checkUnlockDepartmentPermission($request->user(), $lock);
     }
 
     /**
@@ -1601,101 +1596,6 @@ class RoomLockController extends Controller
      */
     private function checkUnlockRolePermission(Request $request, RoomLock $lock)
     {
-        $user = $request->user();
-        if (!$user) {
-            return null;
-        }
-
-        // Ưu tiên đọc cấu hình RoleUserUnlockRoomOOO/OOS
-        $allowedRolesStr = \App\Models\HotelConfig::where('name', 'RoleUserUnlockRoomOOO/OOS')->value('value');
-
-        // Fallback về cấu hình riêng lẻ nếu chưa cấu hình chung
-        if ($allowedRolesStr === null || trim((string)$allowedRolesStr) === '') {
-            $isOoo = strtoupper($lock->lock_type) === 'OOO';
-            $configName = $isOoo ? 'OOORoleUserUnlock' : 'OOSRoleUserUnlock';
-            $allowedRolesStr = \App\Models\HotelConfig::where('name', $configName)->value('value');
-        }
-
-        if (empty($allowedRolesStr) || trim((string)$allowedRolesStr) === '') {
-            return null; // Không cấu hình => không giới hạn
-        }
-
-        $allowedRoles = preg_split('/[,;|]+/', strtolower((string) $allowedRolesStr), -1, PREG_SPLIT_NO_EMPTY);
-        if (empty($allowedRoles)) {
-            return null;
-        }
-
-        // Thu thập danh sách Roles (tên Rule/vai trò, job_title_code, department_code) của user
-        $userRoles = [];
-
-        // 1. Roles từ bảng phân quyền roles (code & name)
-        if (method_exists($user, 'roles')) {
-            try {
-                $rolesList = $user->roles;
-                if ($rolesList) {
-                    foreach ($rolesList as $r) {
-                        if (!empty($r->code)) $userRoles[] = strtolower(trim((string)$r->code));
-                        if (!empty($r->name)) $userRoles[] = strtolower(trim((string)$r->name));
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Ignore if relation error
-            }
-        }
-
-        // 2. Chức danh & Bộ phận (job_title_code, job_title, department_code, department)
-        if (!empty($user->job_title_code)) $userRoles[] = strtolower(trim((string)$user->job_title_code));
-        if (!empty($user->job_title)) $userRoles[] = strtolower(trim((string)$user->job_title));
-        if (!empty($user->department_code)) $userRoles[] = strtolower(trim((string)$user->department_code));
-        if (!empty($user->department)) $userRoles[] = strtolower(trim((string)$user->department));
-
-        $userRoles = array_unique(array_filter($userRoles));
-
-        $matched = false;
-        foreach ($allowedRoles as $allowedRole) {
-            $roleLower = trim(strtolower($allowedRole));
-
-            // So khớp trực tiếp với bất kỳ Role / Job title nào của user
-            if (in_array($roleLower, $userRoles, true)) {
-                $matched = true;
-                break;
-            }
-
-            // So khớp mềm / substring
-            foreach ($userRoles as $uRole) {
-                if ($uRole === $roleLower || str_contains($uRole, $roleLower) || str_contains($roleLower, $uRole)) {
-                    $matched = true;
-                    break 2;
-                }
-            }
-
-            // Xử lý các quy ước Role phổ biến:
-            // Admin / Quản trị
-            if ($roleLower === 'admin' && (in_array('administrator', $userRoles, true) || in_array('quản trị', $userRoles, true) || in_array('tổng giám đốc', $userRoles, true) || strtolower($user->username ?? '') === 'admin')) {
-                $matched = true;
-                break;
-            }
-            // FO / FOM / Lễ tân
-            if (in_array($roleLower, ['fo', 'fom'], true) && (in_array('fo', $userRoles, true) || in_array('fom', $userRoles, true) || in_array('lễ tân', $userRoles, true) || in_array('reception', $userRoles, true))) {
-                $matched = true;
-                break;
-            }
-            // HK / HKM / Buồng phòng
-            if (in_array($roleLower, ['hk', 'hkm'], true) && (in_array('hk', $userRoles, true) || in_array('hkm', $userRoles, true) || in_array('buồng phòng', $userRoles, true) || in_array('buồng', $userRoles, true) || in_array('housekeeping', $userRoles, true))) {
-                $matched = true;
-                break;
-            }
-            // Sales / Kinh doanh
-            if ($roleLower === 'sales' && (in_array('sales', $userRoles, true) || in_array('kinh doanh', $userRoles, true))) {
-                $matched = true;
-                break;
-            }
-        }
-
-        if (!$matched) {
-            return "Tài khoản của bạn không thuộc vai trò (Role) được phép mở khóa phòng (Vai trò yêu cầu: {$allowedRolesStr}).";
-        }
-
-        return null;
+        return app(\App\Services\RoomLockPermissionService::class)->checkUnlockRolePermission($request->user(), $lock);
     }
 }

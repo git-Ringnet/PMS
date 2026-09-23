@@ -10,6 +10,29 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-09-23] - Xử lý chuẩn hóa 3 phần nghiệp vụ Khóa phòng (Note 22/09)
+### Module: Khóa phòng & Sơ đồ phòng & Thống kê ([RoomLockPermissionService.php](file:///d:/PMS/backend/app/Services/RoomLockPermissionService.php), [RoomLockController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomLockController.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [Room.php](file:///d:/PMS/backend/app/Models/Room.php), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Section 1: Bổ sung ghi chú khóa phòng & Thông số phân quyền RoleUserUnlockRoomOOO/OOS**:
+  - Giao diện Kế hoạch phòng: Loại bỏ 2 dòng Tên và Loại khóa phòng trên popover/tooltip, giữ lại phần Ghi chú và bổ sung hiển thị "Người khóa: [username/name]".
+  - Sơ đồ phòng (Room Map): Hover vào phòng đang khóa hiển thị tooltip thông tin thời gian, ghi chú và người khóa đồng bộ với Kế hoạch phòng.
+  - Phân quyền thông số `RoleUserUnlockRoomOOO/OOS`: Tạo service dùng chung `RoomLockPermissionService` kiểm tra Role/Chức danh của user từ đa nguồn (`user_branch_positions` -> `positions`, `position_branch_roles` -> `roles`, direct `roles`, `job_title`, `job_title_code`, `department`, super admin, v.v.).
+  - Áp dụng kiểm tra phân quyền mở khóa trên tất cả các luồng: cả màn hình Khóa phòng (`RoomLockController`) và đổi trạng thái phòng trên Sơ đồ phòng lưới/danh sách (`RoomController@updateStatus`, `bulkUpdateStatus`).
+  - Giao diện Cấu hình hệ thống ([HotelConfigTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelConfigTab.vue)): Nâng cấp ô nhập Giá trị cho các thông số phân quyền Role (`RoleUserUnlockRoomOOO/OOS`, `OOORoleUserUnlock`, `OOSRoleUserUnlock`, `RuleUserCorrectOrPostBillPaymentOldDay`,...) từ text thô sang **Dropdown tick chọn vai trò** (multi-select checkbox dropdown kèm tìm kiếm, chọn tất cả/bỏ chọn, tag badge có nút xóa nhanh và thêm mã vai trò tùy biến).
+- **Section 2: Cập nhật ngày giờ kết thúc khi mở khóa phòng & Tính toán thống kê phòng trống**:
+  - Khi thao tác mở khóa phòng (bao gồm đổi trạng thái phòng trên Sơ đồ phòng), tự động cập nhật `end_date` của bản ghi `room_locks` về `[ngày hệ thống] [giờ thực hiện mở khóa]`, cập nhật `is_active = 2`, `status = 'Done'`, `unlocked_at`, `unlock_username`.
+  - Màn hình Kế hoạch phòng và Thống kê: Xử lý theo thông số giờ mở khóa mặc định `FrmOOO_DefineLockByTime` (mặc định `12:00` / `23:59`). Khi phòng khóa qua đêm (từ ngày 10 đến ngày 11 mở khóa lúc 10:41 < 12:00), ngày 10 vẫn tính 1 phòng khóa OOO/OOS, còn ngày 11 không tính phòng khóa.
+  - Sửa lỗi hiển thị phòng đã mở khóa trên Kế hoạch phòng ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue)): Khóa đã hoàn tất (`is_active = 2` hoặc `status = 'Done'`) được loại bỏ khỏi lưới Kế hoạch phòng nếu mở trong ngày (không còn chiếm đêm); quan hệ `allActiveLocks` trên [Room.php](file:///d:/PMS/backend/app/Models/Room.php) giữ chuẩn `where('is_active', 1)` để phòng đã mở khóa ngay lập tức biến mất khỏi lưới và hiển thị phòng sẵn sàng (`vacant_ready`). Thống kê OOO lịch sử qua đêm vẫn được tính chuẩn xác qua [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php).
+- **Section 3: Thứ tự kiểm tra overbooking và thông số AllowLockRoomCauseUnassignableRoomBK**:
+  - Chuẩn hóa thứ tự kiểm tra khi tạo/sửa/khóa hàng loạt:
+    1. Kiểm tra khóa phòng vật lý trùng lặp (chặn cứng).
+    2. Kiểm tra trùng booking trên phòng vật lý (chặn cứng).
+    3. Kiểm tra công suất phòng trống AV (`AllowOverRoomTypeRoomKind`) **TRƯỚC**: Nếu giá trị bằng `0` thì chặn cứng không cho phép (không hiện popup hỏi, không cho bypass bằng `force: true`). Nếu bằng `1` thì hiển thị cảnh báo yêu cầu xác nhận.
+    4. Kiểm tra phòng trống liên tục cho booking chưa gán số phòng (`AllowLockRoomCauseUnassignableRoomBK`) **SAU**: Nếu giá trị bằng `0` thì chặn cứng không cho phép. Nếu bằng `1` thì hiển thị cảnh báo xác nhận.
+- **Kiểm thử**:
+  - Backend: `php artisan test --filter=RoomLockTest` đạt 15/15 tests (50 assertions) pass 100%.
+  - Frontend: `npm run build` thành công không phát sinh lỗi (4.27s).
+
 ## [2026-09-22] - Hoàn thiện Format Tiền Tệ Tự Động & Sửa Nghiệp Vụ Bảng Booking_room_services (Mục 1 - 215-239.docx)
 ### Module: FrontDesk / Lễ tân & Hóa đơn ([AddServiceModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue), [AdjustRoomRateModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AdjustRoomRateModal.vue), [BookingRoomServiceController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))
 
