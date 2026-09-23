@@ -5,6 +5,15 @@
 
 ---
 
+## Contract runtime đã chốt
+
+- Tham số thực tế: `p_from_date`, `p_to_date`, `p_shift`, `p_department`, `p_outlet`, `p_company`, `p_user`, `p_option`, `p_sort_by`, `p_order_by`.
+- Output có 15 field; `PaymentMethod` và `DepositGroup` là field kỹ thuật phục vụ grouping, template hiển thị 13 cột.
+- Runtime vẫn giữ `PaymentMethod` và `DepositGroup` trong `field_schema`; không loại hai field này khỏi metadata chỉ vì chúng không hiển thị.
+- Template runtime dùng A4 ngang, lề `8/5/8/5mm`, nhóm trạng thái cọc → hình thức thanh toán.
+- Các đoạn mẫu legacy dùng `p_date_range`; không dùng làm contract runtime.
+- Source of truth giao diện là `content_json`; `content_html` được biên dịch từ JSON và `css` chỉ giữ phần trình bày. Không thêm giá trị dữ liệu cố định vào HTML.
+
 ## 1. Thông Tin Định Danh & Phân Loại
 
 * **Tên báo cáo tiếng Việt**: Báo cáo tiền đặt cọc
@@ -82,6 +91,8 @@
 ---
 
 ## 4. Stored Procedure Chuẩn Hóa MySQL 8.0 (`rpt_deposits_summary`)
+
+> SQL mẫu phía dưới là bằng chứng legacy. Contract chạy thật nằm trong migration `2026_09_22_170000...` và patch `2026_09_23_100000...`; option 5 lấy từng dòng `payment_debt_settlements.amount` và ngày settlement ưu tiên trước ngày invoice/payment.
 
 ```sql
 DELIMITER $$

@@ -6,6 +6,15 @@
 
 ---
 
+## Contract runtime đã chốt
+
+- Chỉ có tham số `p_date` kiểu ngày.
+- Output gồm 9 field: `GroupIndex`, `SortOrder`, `Content`, `DateAmount`, `MonthAmount`, `PlanAmount`, `Rate`, `IsBold`, `CustomText`.
+- Template runtime dùng A4 dọc, lề `10/10/10/10mm`; `PlanAmount` và `Rate` để trống theo nghiệp vụ Navy.
+- Runtime trả đủ các dòng doanh thu Navy `1-1` đến `1-11`, sắp xếp theo số thứ tự tự nhiên (`1-2` trước `1-10`); các dòng `1-4`, `1-6`, `1-8` mặc định 0 nếu chưa có mapping cấu hình.
+- Dòng `6-1` hiển thị `CustomText = Đã hoàn tất` theo ảnh UI; bản SQL legacy có thêm dòng trạng thái trùng `6-2`, nhưng không render trùng trong mẫu mới.
+- Source of truth giao diện là `content_json`; `content_html` được biên dịch từ JSON và `css` chỉ giữ phần trình bày. Không thêm giá trị dữ liệu cố định vào HTML.
+
 ## 1. Thông Tin Định Danh & Phân Loại
 
 * **Tên báo cáo tiếng Việt**: Báo cáo tổng hợp ngày
@@ -92,6 +101,8 @@
 ---
 
 ## 4. Stored Procedure Chuẩn Hóa MySQL 8.0 (`rpt_daily_summary`)
+
+> SQL mẫu phía dưới là bản mô tả legacy. Contract chạy thật nằm trong migration `2026_09_22_170000...`; cấu hình `Revenue` và `AverageRoomRateIncludedOthersRoomRevenue` được đọc từ `hotel_configs`.
 
 ```sql
 DELIMITER $$

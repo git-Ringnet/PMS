@@ -5,6 +5,15 @@
 
 ---
 
+## Contract runtime đã chốt
+
+- Tham số thực tế: `p_from_date`, `p_to_date`, `p_area`, `p_company`, `p_segment`, `p_user_sale`, `p_source_code`.
+- Output gồm 21 field; mã hiển thị chính là `BookingCode`, không dùng `BookingId` trong template runtime.
+- `BookingCode` là mã nội bộ có prefix (`prefix_booking_id + bookings.id`); `ReferenceCode` mới là mã OTA/external booking code. Hai mã không được dùng thay thế cho nhau.
+- Template runtime dùng A4 ngang, lề `6/4/6/4mm`.
+- Các đoạn mẫu legacy dùng `p_date_range` hoặc `BookingId` chỉ là bằng chứng tham khảo.
+- Source of truth giao diện là `content_json`; `content_html` được biên dịch từ JSON và `css` chỉ giữ phần trình bày. Không thêm giá trị dữ liệu cố định vào HTML.
+
 ## 1. Thông Tin Định Danh & Phân Loại
 
 * **Tên báo cáo tiếng Việt**: Báo cáo chi tiết công suất công ty
@@ -109,6 +118,8 @@
 ---
 
 ## 4. Stored Procedure Chuẩn Hóa MySQL 8.0 (`rpt_company_occupancy_detail`)
+
+> SQL mẫu phía dưới có thể còn alias `BookingId` từ legacy. Khi chạy PMS mới, dùng đúng 21 alias trong `field_schema`, đặc biệt `BookingCode` và `ReferenceCode` như contract ở trên.
 
 ```sql
 DELIMITER $$

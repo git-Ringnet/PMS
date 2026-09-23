@@ -4,13 +4,24 @@
 
 ---
 
+## Contract runtime đã chốt
+
+- Triển khai thành 2 report độc lập: `SALESPERSON_REVENUE_SUMMARY` và `SALESPERSON_REVENUE_DETAIL`.
+- Tham số chung: `p_from_date`, `p_to_date`, `p_filter_mode`, `p_sales_person`, `p_market_segment`, `p_company_id`; `p_group_by` là tham số ẩn cố định `SALESPERSON`.
+- Summary output dùng `RoomNights`, `ActualADR`, `RackADR`; detail output dùng 14 field, trong đó có `RoomNights`, `FocRoomNights`, `SalesPersonName`.
+- Giữ Mode 1 theo ngày đến và Mode 2 theo đêm phòng ở; không dùng `p_show_detail`.
+- Mode 1 chọn booking theo ngày đến nhưng lấy doanh thu toàn bộ khoảng lưu trú của booking; Mode 2 chỉ lấy phát sinh trong khoảng ngày lọc.
+- Template runtime dùng A4 ngang, lề `6/4/6/4mm`.
+- Source of truth giao diện là `content_json`; `content_html` được biên dịch từ JSON và `css` chỉ giữ phần trình bày. Không thêm giá trị dữ liệu cố định vào HTML.
+- Các phần mẫu cũ dùng một report `SALESPERSON_REVENUE`, `p_show_detail`, `RoomNight` chỉ là tài liệu legacy/planning; runtime dùng hai report độc lập và 14/11 field đúng như contract trên.
+
 ## 1. THÔNG TIN ĐỊNH DANH BÁO CÁO
 
 - **Tên báo cáo:** Báo cáo doanh thu theo người bán
 - **Tên tiếng Anh:** Salesperson Revenue Report
-- **Mã báo cáo (`report_code`):** `SALESPERSON_REVENUE`
-- **Mã Data Source:** `RPT_SALESPERSON_REVENUE`
-- **Mã Template tham chiếu:** `SALESPERSON_REVENUE_REFERENCE`
+- **Mã báo cáo (`report_code`):** `SALESPERSON_REVENUE_SUMMARY` và `SALESPERSON_REVENUE_DETAIL`
+- **Mã Data Source:** `RPT_SALESPERSON_REVENUE_SUMMARY` và `RPT_SALESPERSON_REVENUE_DETAIL`
+- **Mã Template tham chiếu:** `SALESPERSON_REVENUE_SUMMARY_REFERENCE` và `SALESPERSON_REVENUE_DETAIL_REFERENCE`
 - **Menu điều hướng:** `BÁO CÁO` -> `BÁO CÁO THỐNG KÊ` -> `BÁO CÁO DOANH THU THEO NGƯỜI BÁN`
 - **Store gốc chỉ định:**
   - Chế độ lọc theo ngày đến (Army): `ProVistaArmyHotel.dbo.sp_155` (chi tiết) và `sp_158` (tổng hợp) (Lưu tại [.codex/docs/doc_baocao/sql/ProVistaArmyHotel_sp_155.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/ProVistaArmyHotel_sp_155.sql) & [.codex/docs/doc_baocao/sql/ProVistaArmyHotel_sp_158.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/ProVistaArmyHotel_sp_158.sql))
@@ -31,9 +42,9 @@
   1. Thêm tham số **`Chế độ lọc (Filter Mode)`** trên giao diện:
      - **Mode 1 - Theo ngày đến của đặt phòng (Arrival Date Mode - Chuẩn Army):** Tìm kiếm tất cả booking có ngày đến (`arrival_date`) rơi vào khoảng thời gian tìm kiếm. Toàn bộ doanh thu phòng và dịch vụ của booking đó được tính cho nhân viên kinh doanh (`SalesPerson`) phụ trách booking.
      - **Mode 2 - Theo đêm phòng lưu trú thực tế trong kỳ (Stay Date / Room-Night Mode - Chuẩn Navy):** Tìm kiếm các đêm phòng và hóa đơn dịch vụ phát sinh thực tế trong khoảng thời gian tìm kiếm (tương tự Báo cáo công suất công ty Dòng 167), sau đó gom nhóm theo người bán (`SalesPerson`).
-  2. Thêm tùy chọn **`Hiển thị chi tiết (Show Detail)`**:
-     - **Mẫu Tổng Hợp (Default):** Thống kê theo từng nhân viên kinh doanh (Mã NV, Tên NV, %OCC, Đêm phòng, SL khách, ADR thực thu, ADR niêm yết, DT Tiền phòng, DT F&B, DT Khác, Tổng DT).
-     - **Mẫu Chi Tiết:** Liệt kê chi tiết từng booking do nhân viên đó phụ trách (Mã ĐK, Tên ĐK, Ngày đến, Ngày đi, Đêm phòng, FOC, Khách, Công ty, Thị trường, DT Tiền phòng, DT F&B, DT Khác, Tổng DT, Người tạo).
+  2. Dùng hai report độc lập thay cho toggle `p_show_detail`:
+     - **Summary:** 11 field theo người bán.
+     - **Detail:** 14 field theo booking, có `BookingCode`, `RoomNights`, `FocRoomNights` và `SalesPersonName`.
 
 ---
 
@@ -44,12 +55,12 @@ Bộ lọc nằm ở Left Panel của trang xem báo cáo:
 
 | Tên tham số | Mã tham số | Kiểu dữ liệu | Mặc định | Tùy chọn / Ràng buộc |
 |---|---|---|---|---|
-| **Chọn ngày** | `p_date_range` | Date Range | Hôm nay (`$today`) | Dải ngày tìm kiếm (`FromDate` ~ `ToDate`) |
+| **Từ ngày / Đến ngày** | `p_from_date`, `p_to_date` | Date Range | Hôm nay (`$today`) | Dải ngày tìm kiếm |
 | **Kiểu chạy báo cáo**| `p_filter_mode` | Select / Dropdown | `1` (Theo ngày đến) | 1: Theo ngày đến của BK (Army); 2: Theo đêm phòng ở thực tế (Navy) |
 | **Người bán** | `p_sales_person` | Select / Dropdown | Tất cả (`''`) | Danh mục nhân viên Sales (`users`) |
 | **Thị trường** | `p_market_segment` | Select / Dropdown | Tất cả (`''`) | Phân khúc thị trường |
-| **Công ty** | `p_company_id` | Select / Dropdown | Tất cả (`0`) | Danh mục công ty / đại lý |
-| **Hiển thị chi tiết** | `p_show_detail` | Toggle Switch | `false` (TẮT) | Bật: Xem danh sách booking chi tiết; Tắt: Xem bảng tổng hợp |
+| **Công ty** | `p_company_id` | Select / Dropdown | Tất cả (`''`) | Danh mục công ty / đại lý |
+| **Báo cáo chi tiết** | Không dùng toggle | Report độc lập | — | Mở `SALESPERSON_REVENUE_DETAIL` |
 
 ### 3.2. Bố Cục Bảng Tổng Hợp Theo Người Bán (11 Cột)
 
@@ -58,10 +69,10 @@ Bộ lọc nằm ở Left Panel của trang xem báo cáo:
 | 1 | **Mã NV** | `SalesPersonCode` | Trái | 75px | Mã nhân viên kinh doanh (màu xanh lá `#16a34a`) |
 | 2 | **Người Bán** | `SalesPersonName` | Trái | 170px | Họ tên nhân viên kinh doanh |
 | 3 | **Công suất** | `OccupancyRate` | Phải | 75px | `%OCC = [Đêm phòng] / [RoomAvailable] * 100` |
-| 4 | **Đêm phòng** | `RoomNight` | Phải | 75px | Tổng số đêm phòng do Sales mang lại |
+| 4 | **Đêm phòng** | `RoomNights` | Phải | 75px | Tổng số đêm phòng do Sales mang lại |
 | 5 | **SL khách** | `GuestQty` | Phải | 65px | Tổng số lượng khách |
-| 6 | **Giá phòng TB** | `AverageRate` | Phải | 110px | `ADR thực thu = [DT phòng] / [Đêm phòng]` |
-| 7 | **Giá phòng TB (k/g FOC)** | `AverageRateWithoutFoc` | Phải | 130px | `ADR niêm yết = [DT phòng] / ([Đêm phòng] - FOC - HU)` |
+| 6 | **Giá phòng TB** | `ActualADR` | Phải | 110px | `ADR thực thu = [DT phòng] / [Đêm phòng]` |
+| 7 | **Giá phòng TB (k/g FOC)** | `RackADR` | Phải | 130px | `ADR niêm yết = [DT phòng] / ([Đêm phòng] - FOC - HU)` |
 | 8 | **Doanh thu phòng** | `RoomRevenue` | Phải | 110px | Doanh thu tiền phòng thực tế |
 | 9 | **Doanh thu F&B** | `FbRevenue` | Phải | 100px | Doanh thu ăn uống, nhà hàng |
 | 10 | **Doanh thu khác** | `OtherRevenue` | Phải | 100px | Doanh thu spa, giặt là, đưa đón, dịch vụ khác |
@@ -82,7 +93,9 @@ Bộ lọc nằm ở Left Panel của trang xem báo cáo:
 
 ---
 
-## 4. THIẾT KẾ STORED PROCEDURE MYSQL 8.0 (`rpt_salesperson_revenue`)
+## 4. THIẾT KẾ STORED PROCEDURE MYSQL 8.0
+
+> SQL mẫu phía dưới là bản legacy/planning. Runtime dùng `rpt_salesperson_revenue_summary` và `rpt_salesperson_revenue_detail`, cùng 7 tham số; không copy `p_show_detail` hoặc report code đơn `SALESPERSON_REVENUE` vào hệ thống mới.
 
 ```sql
 DELIMITER $$
@@ -234,7 +247,9 @@ DELIMITER ;
 
 ---
 
-## 5. MÃ NGUỒN TEMPLATE REFERENCE PHP (`salesperson_revenue_reference.php`)
+## 5. MÃ NGUỒN TEMPLATE REFERENCE PHP LEGACY (`salesperson_revenue_reference.php`)
+
+> Khối mã này lưu bằng chứng thiết kế cũ một report. Runtime mới dùng hai provider `salesperson_revenue_summary_reference.php` và `salesperson_revenue_detail_reference.php`; không dùng các code/field legacy trong khối dưới.
 
 ```php
 <?php

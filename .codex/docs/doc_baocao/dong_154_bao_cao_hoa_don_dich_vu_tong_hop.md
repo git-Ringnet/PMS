@@ -4,6 +4,16 @@
 
 ---
 
+## Contract runtime đã chốt
+
+- Tham số thực tế: `p_from_date`, `p_to_date`, `p_department`, `p_services` (`TEXT`), `p_user`, `p_order_by`, `p_show_deleted`, `p_group_by_service`, `p_group_by_date`.
+- Output procedure gồm 16 field; `Stt` và `ServiceCode` là field kỹ thuật, các field `RevenueGroupName`, `ServiceGroupHeader`, `DateGroupHeader` phục vụ grouping.
+- Nhóm doanh thu runtime dùng tên legacy: `Doanh Thu Phòng`, `Doanh Thu Nhà Hàng`, `Doanh Thu Minibar`, `Doanh Thu Giặt Là`, `Doanh Thu Vận Chuyển`, `Doanh Thu Dịch Vụ`.
+- Template runtime dùng A4 ngang, lề `8/5/8/5mm`, nhóm doanh thu → dịch vụ → ngày tùy tham số.
+- Các đoạn mẫu legacy bên dưới có thể dùng `p_date_range`; không dùng làm contract runtime.
+- Các đoạn mẫu có `ServiceName` hoặc 10 cột là bản legacy; contract Designer hiện tại dùng 11 cột hiển thị và không yêu cầu `ServiceName`.
+- Source of truth giao diện là `content_json`; `content_html` được biên dịch từ JSON và `css` chỉ giữ phần trình bày. Không thêm giá trị dữ liệu cố định vào HTML.
+
 ## 1. THÔNG TIN ĐỊNH DANH BÁO CÁO
 
 - **Tên báo cáo:** Báo cáo hóa đơn dịch vụ tổng hợp
@@ -50,11 +60,11 @@ Bộ lọc nằm ở Left Panel của trang xem báo cáo:
 
 | Tên tham số | Mã tham số | Kiểu dữ liệu | Mặc định | Tùy chọn / Ràng buộc |
 |---|---|---|---|---|
-| **Ngày** | `p_date_range` | Date Range | Hôm nay (`$today`) | Chọn dải ngày (`FromDate` ~ `ToDate`) hoặc ngày đơn |
+| **Từ ngày / Đến ngày** | `p_from_date`, `p_to_date` | Date Range | Hôm nay (`$today`) | Chọn dải ngày |
 | **Bộ phận** | `p_department` | Select / Dropdown | Tất cả (`''`) | Lấy danh mục phòng ban: FO, FB, HK, ENG, SPA... |
 | **Dịch vụ** | `p_services` | Multi-select Checkbox | Rỗng (Tất cả) | Danh sách dịch vụ: RM, FB, MB, LA, PU, DO... Chọn nhiều dịch vụ |
 | **Người dùng** | `p_user` | Select / Dropdown | Tất cả (`''`) | Danh sách nhân viên thu ngân / lễ tân |
-| **Sắp xếp theo** | `p_order_by` | Select & Direction | `Ma` ASC | Tiêu chí sắp xếp: Mã, Ngày, Số phòng... và Hướng: ASC / DESC |
+| **Sắp xếp theo** | `p_order_by` | Select | `Date` | Tiêu chí: Ngày, Phòng, Mã |
 | **Xem HĐ đã xóa** | `p_show_deleted` | Toggle Switch | `false` | Bật/tắt hiển thị các bill/hóa đơn đã hủy/xóa |
 | **Nhóm theo Outlet & Dịch vụ** | `p_group_by_service` | Toggle Switch | `true` (BẬT) | Gom nhóm cấp 1 theo Loại Doanh Thu, cấp 2 theo Mã Dịch Vụ |
 | **Nhóm theo ngày** | `p_group_by_date` | Toggle Switch | `false` (TẮT) | Bổ sung cấp gom nhóm theo từng Ngày giao dịch |
@@ -67,7 +77,7 @@ Bộ lọc nằm ở Left Panel của trang xem báo cáo:
   - Tiêu đề chính giữa: **BÁO CÁO HÓA ĐƠN DỊCH VỤ TỔNG HỢP** (font size 18px, bold, in hoa).
   - Dòng ngày báo cáo: `Ngày: dd/mm/yyyy ~ dd/mm/yyyy` (in nghiêng, căn giữa).
 
-### 3.3. Ma Trận Cột Dữ Liệu Bảng Chi Tiết (10 Cột)
+### 3.3. Ma Trận Cột Dữ Liệu Bảng Chi Tiết (11 Cột hiển thị)
 
 | Cột | Tiêu đề | Field | Căn lề | Độ rộng | Format / Ghi chú |
 |:---:|---|---|:---:|:---:|---|
@@ -110,6 +120,8 @@ Nằm ngay dưới bảng chi tiết:
 ---
 
 ## 4. THIẾT KẾ STORED PROCEDURE MYSQL 8.0 (`rpt_summary_service_invoices`)
+
+> Phần SQL mẫu phía dưới là bằng chứng legacy. Khi triển khai, dùng procedure trong migration `2026_09_22_170000...` và patch contract mới nhất; không copy các alias `ServiceName`/`p_date_range` từ mẫu cũ vào runtime.
 
 ```sql
 DELIMITER $$

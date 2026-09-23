@@ -4,6 +4,15 @@
 
 ---
 
+## Contract runtime đã chốt
+
+- Tham số thực tế: 7 tham số lọc của Dòng 166, thêm `p_group_by` (`COMPANY/DATE/MARKET/SOURCE`) và `p_include_breakfast`.
+- Output tổng hợp gồm 11 field: `CompanyCode`, `CompanyName`, `OccupancyRate`, `RoomNight`, `GuestQty`, `ActualADR`, `RackADR`, `RoomRevenue`, `FbRevenue`, `OtherRevenue`, `TotalRevenue`.
+- Dòng 167 là báo cáo tổng hợp; chi tiết dùng Dòng 166. Không dùng `p_show_detail` trong runtime.
+- Khi tắt `p_include_breakfast`, tiền ăn sáng được trừ khỏi `RoomRevenue` và cộng sang `FbRevenue`.
+- Template runtime dùng A4 ngang, lề `6/4/6/4mm`.
+- Source of truth giao diện là `content_json`; `content_html` được biên dịch từ JSON và `css` chỉ giữ phần trình bày. Không thêm giá trị dữ liệu cố định vào HTML.
+
 ## 1. THÔNG TIN ĐỊNH DANH BÁO CÁO
 
 - **Tên báo cáo:** Báo cáo công suất công ty
@@ -36,14 +45,9 @@
   > *mặc định là xem theo công ty, thị trường và nguồn khách lúc xem chỉ được chọn 1 trong hai"*
 - **Chỉ đạo của người dùng:** *"chưa có store galliot nên bỏ qua galliot"*.
 - **Quy tắc triển khai chuẩn hóa:**
-  1. Triển khai mẫu chung chuẩn theo Navy `sp_055` và `sp_055_Division`.
-  2. Bắt buộc hỗ trợ 5 tùy chọn động trên giao diện:
-     - `DT phòng bao gồm AS` (Toggle, mặc định BẬT - tương ứng `@BF = 1`): Khi bật, tiền ăn sáng đi kèm giá phòng được tính gộp vào Doanh thu tiền phòng; khi tắt, tiền ăn sáng được tách riêng sang Doanh thu F&B.
-     - `Hiển thị chi tiết` (Toggle, mặc định TẮT): Khi tắt hiển thị bảng tổng hợp theo công ty; khi bật chuyển sang hiển thị danh sách chi tiết từng booking (tương đương Báo cáo Dòng 166).
-     - `Nhóm theo ngày` (Toggle, mặc định TẮT - tương ứng `@TypeGroup = 'date'`): Gom nhóm dữ liệu theo từng ngày phát sinh lưu trú.
-     - `Nhóm theo thị trường` (Toggle, mặc định TẮT - tương ứng `@TypeGroup = 'marketsegment'`).
-     - `Nhóm theo nguồn khách` (Toggle, mặc định TẮT - tương ứng `@TypeGroup = 'sourcecode'`).
-     - **Ràng buộc tương hỗ (Mutual Exclusion):** Mặc định xem theo Công ty (`@TypeGroup = 'none'`). `Nhóm theo thị trường` và `Nhóm theo nguồn khách` chỉ được phép chọn tối đa 1 trong 2 cùng lúc (radio-like behavior).
+  1. Triển khai mẫu chung chuẩn theo Navy `sp_055` và `sp_055_Division`; chi tiết được tách riêng ở Dòng 166.
+  2. Runtime hỗ trợ `p_include_breakfast` (mặc định bật): khi tắt, tiền ăn sáng được trừ khỏi `RoomRevenue` và cộng sang `FbRevenue`.
+  3. Runtime hỗ trợ `p_group_by` với đúng 4 giá trị `COMPANY`, `DATE`, `MARKET`, `SOURCE`; không dùng các cờ `p_show_detail`, `p_group_by_date`, `p_group_by_market`, `p_group_by_source`.
 
 ---
 
@@ -54,21 +58,20 @@ Bộ lọc nằm ở Left Panel của trang xem báo cáo:
 
 | Tên tham số | Mã tham số | Kiểu dữ liệu | Mặc định | Tùy chọn / Ràng buộc |
 |---|---|---|---|---|
-| **Chọn ngày** | `p_date_range` | Date Range | Hôm nay (`$today`) | Dải ngày kiểm tra công suất (`FromDate` ~ `ToDate`) |
-| **Chọn công ty** | `p_company_id` | Select / Dropdown | Tất cả (`0`) | Danh mục công ty / đại lý du lịch (`companies`) |
-| **Thị trường** | `p_market_segment` | Select / Dropdown | Tất cả (`''`) | Danh mục phân khúc thị trường (`market_segments`) |
-| **Chọn người dùng** | `p_user_sale` | Select / Dropdown | Tất cả (`''`) | Danh mục nhân viên kinh doanh (`SalesPerson`) |
-| **Chọn khu vực** | `p_area` | Select / Dropdown | Tất cả (`''`) | Khu vực địa lý (`areas`) |
-| **Hiển thị chi tiết** | `p_show_detail` | Toggle Switch | `false` (TẮT) | Chuyển sang mẫu chi tiết từng booking |
-| **DT phòng bao gồm AS**| `p_include_breakfast`| Toggle Switch | `true` (BẬT) | Doanh thu phòng đã gồm ăn sáng hay tách F&B |
-| **Nhóm theo ngày** | `p_group_by_date` | Toggle Switch | `false` (TẮT) | Bổ sung cấp gom nhóm theo từng ngày lưu trú |
-| **Nhóm theo thị trường**| `p_group_by_market` | Toggle Switch | `false` (TẮT) | Chỉ chọn 1 trong 2 với Nguồn khách |
-| **Nhóm theo nguồn khách**| `p_group_by_source` | Toggle Switch | `false` (TẮT) | Chỉ chọn 1 trong 2 với Thị trường |
+| **Từ ngày / Đến ngày** | `p_from_date`, `p_to_date` | Date Range | Hôm nay (`$today`) | Dải ngày kiểm tra công suất |
+| **Công ty** | `p_company` | Select / Dropdown | Tất cả (`''`) | Mã hoặc code công ty |
+| **Thị trường** | `p_segment` | Select / Dropdown | Tất cả (`''`) | Mã hoặc code thị trường |
+| **Người bán** | `p_user_sale` | Select / Dropdown | Tất cả (`''`) | Nhân viên kinh doanh |
+| **Nguồn khách** | `p_source_code` | Select / Dropdown | Tất cả (`''`) | Mã hoặc code nguồn khách |
+| **Khu vực** | `p_area` | Select / Dropdown | Tất cả (`''`) | Khu vực phòng |
+| **Nhóm theo** | `p_group_by` | Select / Dropdown | `COMPANY` | Công ty, ngày, thị trường hoặc nguồn khách |
+| **DT phòng bao gồm AS** | `p_include_breakfast` | Checkbox | `true` | Tách/gộp tiền ăn sáng trong doanh thu phòng |
 
 ### 3.2. Bố Cục Bảng Dữ Liệu 11 Cột & Header 2 Tầng
 Header có 2 tầng rõ ràng theo đúng ảnh hệ thống legacy:
 - **Tầng 1:** Tên cột nghiệp vụ.
 - **Tầng 2:** Đánh số thứ tự cột từ `1` đến `11` (in đậm, căn giữa).
+- Runtime field name dùng `ActualADR` và `RackADR`; các tên `AverageRate`/ `AverageRateWithoutFoc` trong phần SQL legacy bên dưới chỉ là alias cũ.
 
 | Cột | Tên Cột (Tầng 1) | Số TT (Tầng 2) | Field | Căn lề | Độ rộng | Công thức tính toán |
 |:---:|---|:---:|---|:---:|:---:|---|
@@ -77,8 +80,8 @@ Header có 2 tầng rõ ràng theo đúng ảnh hệ thống legacy:
 | 3 | **Công suất** | `3` | `OccupancyRate` | Phải | 75px | `%OCC = [Đêm phòng (4)] / [RoomAvailable] * 100` |
 | 4 | **Đêm phòng** | `4` | `RoomNight` | Phải | 75px | Tổng đêm phòng: `Room sales + FOC + HU` |
 | 5 | **SL khách** | `5` | `GuestQty` | Phải | 65px | Số lượng khách lưu trú |
-| 6 | **Giá phòng trung bình** | `6` | `AverageRate` | Phải | 110px | `ADR thực thu = [DT phòng (8)] / [Đêm phòng (4)]` |
-| 7 | **Giá phòng TB (không FOC/Giảm giá)** | `7` | `AverageRateWithoutFoc` | Phải | 130px | `ADR niêm yết = [DT phòng (8)] / ([Đêm phòng (4)] - FOC - HU)` |
+| 6 | **Giá phòng trung bình** | `6` | `ActualADR` | Phải | 110px | `ADR thực thu = [DT phòng (8)] / [Đêm phòng (4)]` |
+| 7 | **Giá phòng TB (không FOC/Giảm giá)** | `7` | `RackADR` | Phải | 130px | `ADR niêm yết = [DT phòng (8)] / ([Đêm phòng (4)] - FOC - HU)` |
 | 8 | **Doanh thu phòng** | `8` | `RoomRevenue` | Phải | 110px | Doanh thu dịch vụ phòng (`RM`) |
 | 9 | **Doanh thu F&B** | `9` | `FbRevenue` | Phải | 100px | Doanh thu nhà hàng, ăn uống |
 | 10 | **Doanh thu khác** | `10` | `OtherRevenue` | Phải | 100px | Doanh thu minibar, giặt là, dịch vụ khác |
@@ -114,6 +117,8 @@ Note (Ghi chú):
 ---
 
 ## 4. THIẾT KẾ STORED PROCEDURE MYSQL 8.0 (`rpt_company_occupancy`)
+
+> SQL mẫu phía dưới là bản legacy/planning. Procedure runtime hiện tại dùng 9 tham số đã chốt ở đầu tài liệu và output 11 alias `ActualADR`/`RackADR`; không copy `p_show_detail` hoặc các alias cũ vào runtime.
 
 ```sql
 DELIMITER $$

@@ -9,6 +9,50 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-23] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 169, 170, 171 (Báo cáo Dự đoán bán phòng, Báo cáo Phòng hàng tuần, Báo cáo Tổng doanh thu)
+### Module: Tài liệu phân tích báo cáo ([ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md), [dong_169_bao_cao_du_doan_ban_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_169_bao_cao_du_doan_ban_phong.md), [dong_170_bao_cao_phong_hang_tuan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_170_bao_cao_phong_hang_tuan.md), [dong_171_bao_cao_tong_doanh_thu.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_171_bao_cao_tong_doanh_thu.md))
+
+- **Bối cảnh & Yêu cầu**:
+  - Đọc và phân tích sâu các dòng 169, 170, 171 từ file Excel `DANH MỤC BÁO CÁO.xlsx`.
+  - Trích xuất ảnh giao diện UI thực tế từ các sheet tương ứng trong file Excel:
+    - **Dòng 169**: Sheet 22, Sheet 39, Sheet 80 (`dong_169_ui_mau_1.png`, `dong_169_ui_mau_2.png`, `dong_169_ui_mau_3.png`).
+    - **Dòng 170**: Sheet 45 (`dong_170_ui_mau.png`).
+    - **Dòng 171**: Sheet 72 (`dong_171_ui_mau.png`).
+  - Trích xuất và bóc tách Stored Procedure gốc từ MS SQL Server (SSMS `.\MSSQLSERVER01`):
+    - **Dòng 169**: `sp_023` (`ProVistaNavyHotel.dbo.sp_023` & `ProVistaArmyHotel.dbo.sp_023`).
+    - **Dòng 170**: `sp_023_Division` (`ProVistaNavyHotel.dbo.sp_023_Division`).
+    - **Dòng 171**: `sp_TotalRevenueFromReportSetup` (theo cấu hình chỉ tiêu `AT7620` với `ReportCode = 'DT'`, `AT7621`) và `sp_292` (bảng kê folio chi tiết Sheet 72).
+  - Soạn thảo tài liệu đặc tả độc lập, khép kín 100% để bất kỳ Agent nào tiếp nhận cũng có đầy đủ công thức toán học, cấu trúc Stored Procedure MySQL 8.0, định nghĩa Form Designer Template (`content_json`, columns, blocks, customRows) và quy tắc đối soát chéo bất biến (Cross-Verification Rules).
+- **Đã hoàn thành**:
+  - **Dòng 169 - Báo cáo dự đoán bán phòng (`ROOM_FORECAST` / `sp_023`)**:
+    - Ma trận 17 cột có đánh số thứ tự chỉ số từ `(1)` đến `(17)`.
+    - Phân tách và đặc tả 13 công thức cốt lõi: Phòng đi/đến/ở, Nội bộ (House Use), Phòng miễn phí (FOCAll), Phòng bán (`P.Bán = P.Ở - HU - FOC`), Doanh thu phòng, ADR không tính nội bộ (`AvgRate`), ADR thực thu (`AvgRate2`), Phòng có thể bán (`RoomAvible = Total - OOO`), Công suất tổng thể (`PercentOccupancy`), Công suất thực thu (`PercentOccupancy1`), RevPAR (`DThu/Tổng phòng`).
+    - Tùy chọn doanh thu bao gồm ăn sáng (`p_include_breakfast`).
+    - Viết hoàn chỉnh PHP reference template `room_forecast_reference.php` và Stored Procedure MySQL 8.0 `rpt_room_forecast`.
+  - **Dòng 170 - Báo cáo phòng hàng tuần (`WEEKLY_ROOM_REPORT` / `sp_023_Division`)**:
+    - Cấu trúc bảng 2 tầng header: Tầng 1 gồm Ngày (rowspan 2), Thứ (rowspan 2), ĐẾN (colspan 2), ĐI (colspan 2), Ở (colspan 2), CÔNG SUẤT (%) (rowspan 2); Tầng 2 gồm Phòng & Khách dưới ĐẾN, ĐI, Ở.
+    - Bộ lọc dropdown chọn tuần ("Tuần này", "Tuần trước", "Tuần sau", tùy chọn tuần).
+    - Công thức dòng tổng: Số ngày (7), tổng khách đến (280), tổng khách đi (248), tổng khách ở (1601), công suất bình quân gia quyền cả tuần = $\frac{\sum \text{Phòng Ở}}{\sum \text{Phòng Khả Dụng}} \times 100\% = 79.08\%$.
+    - Viết hoàn chỉnh PHP reference template `weekly_room_report_reference.php` và Stored Procedure MySQL 8.0 `rpt_weekly_room_report`.
+  - **Dòng 171 - Báo cáo tổng doanh thu (`TOTAL_REVENUE` / `sp_TotalRevenueFromReportSetup` & Sheet 72)**:
+    - Bóc tách toàn diện 2 mô hình vận hành:
+      + *Mô hình A (Chuẩn Sheet 72 & Army)*: Bảng kê chi tiết 22 cột theo từng booking/folio trong ngày. Phân tách 7 dịch vụ thu trong ngày (Tiền phòng, Phụ thu, Minibar, Giặt, Bể vỡ, Nhà hàng, Dịch vụ khác), DT ngày trước, Tổng cộng, phân bổ thanh toán phòng đã trả (TM, CK, HH, Còn nợ) và Doanh thu treo phòng còn ở.
+      + *Mô hình B (Chỉ tiêu Setup `AT7620`/`AT7621`)*: Báo cáo tài chính phân cấp theo Outlet (Nhà hàng RE, Room Service RS, Spa, Tour, Minibar...) qua store `sp_TotalRevenueFromReportSetup`.
+    - Thiết lập đẳng thức cân bằng kế toán bất biến: $\text{Tổng cộng} \equiv \text{TM} + \text{CK} + \text{HH} + \text{Còn nợ} + \text{Phòng còn ở}$.
+    - Viết hoàn chỉnh PHP reference template `total_revenue_reference.php` và Stored Procedure MySQL 8.0 `rpt_total_revenue`.
+  - **Tài liệu ban hành**:
+    - [dong_169_bao_cao_du_doan_ban_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_169_bao_cao_du_doan_ban_phong.md)
+    - [dong_170_bao_cao_phong_hang_tuan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_170_bao_cao_phong_hang_tuan.md)
+    - [dong_171_bao_cao_tong_doanh_thu.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_171_bao_cao_tong_doanh_thu.md)
+    - [ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md)
+    - Cập nhật [README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/README.md) trong thư mục `doc_baocao`.
+  - **Quyết định kỹ thuật đã phê duyệt trước khi triển khai**:
+    1. *Dòng 171*: Triển khai trước mẫu bảng kê chi tiết theo Folio/Booking (Sheet 72 / `sp_292`) với đầy đủ 22 cột doanh thu và thanh toán; mô hình AT7620/AT7621 là ngoài phạm vi đợt đầu. Gộp `BreakfastSurchargeToday` vào cột Phụ thu tiền phòng.
+    2. *Dòng 169*: Triển khai mẫu Lễ tân FO 17 cột đầy đủ, ẩn 4 cột doanh thu (Doanh thu, ADR w/o HU, ADR w/o HU+FOC, RevPAR) trên giao diện template khi chọn chế độ Buồng phòng (HK); chạy cho chi nhánh hiện tại.
+    3. *Dòng 170*: Chuẩn hóa chỉ dùng `p_division` (`__current__`, `__all__`), loại bỏ `p_branch`; thống nhất tên cột chi nhánh là `Division`; tính tuần từ Thứ Hai đến Chủ Nhật tại Frontend và guard bằng `DATE_SUB` ở backend.
+    4. *Mapping & Database*: Xác nhận `booking_rooms.id` là string(50), phòng liên kết `booking_rooms.room_number` -> `rooms.room_number`; `payments.booking_room_id` là string(50); `payments.payment_method_id` là mã string; cô lập chi nhánh bằng DB connection (`rooms` không có `branch_id`); `bookings.status = 3` là `Deleted` (không ghi trực tiếp `CANCELLED`, cần kết hợp `booking_cancel_logs`).
+
+
 ## [2026-09-22] - Rà soát chi tiết & Hoàn thiện Cẩm nang triển khai toàn diện 6 Báo cáo (Dòng 154, 159, 160, 166, 167, 168)
 ### Module: Tài liệu phân tích báo cáo ([MASTER_IMPLEMENTATION_GUIDE_6_REPORTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/MASTER_IMPLEMENTATION_GUIDE_6_REPORTS.md))
 
@@ -1801,3 +1845,10 @@
 - Ghi lại phạm vi đã làm của Section 1–8 và phần chưa gồm UAT/backfill/tab thuế-phí trong `PLAN_FIX_LOI_DAT_COC.md`.
 - Commit đề xuất: `fix(deposit): complete deposit workflow and bank account management`.
 - Chưa tạo commit hoặc push GitHub; chờ người dùng commit.
+
+## [2026-09-23] - Triển khai Dòng 169/170/171
+
+- Thêm procedure, metadata, Designer reference và test cho `ROOM_FORECAST`, `WEEKLY_ROOM_REPORT`, `TOTAL_REVENUE`.
+- Dòng 170 dùng `p_division=__current__/__all__`, Dòng 169 dùng `p_branch=__current__` ẩn; Dòng 171 phân nhóm thanh toán theo `payment_group` và giữ invariant kế toán.
+- PHPUnit 11/11 (115 assertions), PHP lint, route list, `git diff --check` và frontend build đạt.
+- Chưa chạy migration/database thật hoặc nghiệm thu browser/PDF với dữ liệu thật.
