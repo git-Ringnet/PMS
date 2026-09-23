@@ -7,8 +7,8 @@ final class SummaryServiceInvoicesDataAdapter
     public function adapt(array $result): array
     {
         $totals = [
-            'Doanh Thu Tiền Phòng' => 0.0,
-            'Doanh Thu F&B' => 0.0,
+            'Doanh Thu Phòng' => 0.0,
+            'Doanh Thu Nhà Hàng' => 0.0,
             'Doanh Thu Minibar' => 0.0,
             'Doanh Thu Giặt Là' => 0.0,
             'Doanh Thu Vận Chuyển' => 0.0,

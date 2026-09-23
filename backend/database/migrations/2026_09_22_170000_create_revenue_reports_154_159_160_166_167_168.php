@@ -164,7 +164,7 @@ return new class extends Migration
         ];
     }
 
-    private function params154(): array { return $this->parameterList([['p_from_date','date'],['p_to_date','date'],['p_department','varchar'],['p_services','varchar'],['p_user','varchar'],['p_order_by','varchar'],['p_show_deleted','tinyint'],['p_group_by_service','tinyint'],['p_group_by_date','tinyint']]); }
+    private function params154(): array { return $this->parameterList([['p_from_date','date'],['p_to_date','date'],['p_department','varchar'],['p_services','text'],['p_user','varchar'],['p_order_by','varchar'],['p_show_deleted','tinyint'],['p_group_by_service','tinyint'],['p_group_by_date','tinyint']]); }
     private function params159(): array { return $this->parameterList([['p_from_date','date'],['p_to_date','date'],['p_option','int'],['p_shift','varchar'],['p_department','varchar'],['p_outlet','varchar'],['p_company','varchar'],['p_user','varchar'],['p_sort_by','varchar'],['p_order_by','varchar']]); }
     private function params160(): array { return $this->parameterList([['p_date','date']]); }
     private function params166(): array { return $this->parameterList([['p_from_date','date'],['p_to_date','date'],['p_area','varchar'],['p_company','varchar'],['p_segment','varchar'],['p_user_sale','varchar'],['p_source_code','varchar']]); }
@@ -172,7 +172,7 @@ return new class extends Migration
     private function params168(): array { return $this->parameterList([['p_from_date','date'],['p_to_date','date'],['p_filter_mode','int'],['p_sales_person','varchar'],['p_market_segment','varchar'],['p_company_id','varchar'],['p_group_by','varchar']]); }
     private function parameterList(array $items): array { return array_map(static fn (array $item, int $index): array => ['name' => $item[0], 'mode' => 'IN', 'data_type' => $item[1], 'database_type' => $item[1], 'position' => $index + 1, 'required' => true], $items, array_keys($items)); }
 
-    private function fields154(): array { return ['BookingCode'=>'string','RoomNumber'=>'string','ArrivalDate'=>'string','DepartureDate'=>'string','GuestName'=>'string','Description'=>'string','Amount'=>'number','PaymentMethod'=>'string','CompanyName'=>'string','OpenTime'=>'string','Note'=>'string','RevenueGroupName'=>'string','ServiceGroupHeader'=>'string','DateGroupHeader'=>'string']; }
+    private function fields154(): array { return ['Stt'=>'integer','BookingCode'=>'string','RoomNumber'=>'string','ArrivalDate'=>'string','DepartureDate'=>'string','GuestName'=>'string','Description'=>'string','Amount'=>'number','PaymentMethod'=>'string','CompanyName'=>'string','OpenTime'=>'string','Note'=>'string','ServiceCode'=>'string','RevenueGroupName'=>'string','ServiceGroupHeader'=>'string','DateGroupHeader'=>'string']; }
     private function fields159(): array { return ['MaDatCoc'=>'string','MTT'=>'string','PaymentDate'=>'string','TimePayment'=>'string','BookingRoomCode'=>'string','BookingName'=>'string','BusinessName'=>'string','ArrivalDate'=>'string','DepartureDate'=>'string','Amount'=>'number','PaymentMethodName'=>'string','Description'=>'string','Username'=>'string','PaymentMethod'=>'string','DepositGroup'=>'string']; }
     private function fields160(): array { return ['GroupIndex'=>'integer','SortOrder'=>'string','Content'=>'string','DateAmount'=>'number','MonthAmount'=>'number','PlanAmount'=>'number','Rate'=>'number','IsBold'=>'integer','CustomText'=>'string']; }
     private function fields166(): array { return ['BookingCode'=>'string','ReferenceCode'=>'string','CompanyName'=>'string','GuestName'=>'string','MarketSegment'=>'string','SourceCode'=>'string','BookingDate'=>'string','ArrivalDate'=>'string','DepartureDate'=>'string','NoOfNight'=>'integer','NoOfRoom'=>'integer','RoomNight'=>'integer','GuestNight'=>'integer','AverageRate'=>'number','AverageRateOriginal'=>'number','RoomRevenue'=>'number','FbRevenue'=>'number','OtherRevenue'=>'number','TotalRevenue'=>'number','RoomType'=>'string','Nationality'=>'string']; }
@@ -218,8 +218,8 @@ BEGIN
         COALESCE(NULLIF(sb.Pack3, ''), '') AS Note,
         sb.ServiceId AS ServiceCode,
         CASE
-            WHEN sb.ServiceId IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS') THEN 'Doanh Thu Tiền Phòng'
-            WHEN COALESCE(sb.DepartmentId, '') = 'FB' OR sb.ServiceId = 'FB' THEN 'Doanh Thu F&B'
+            WHEN sb.ServiceId IN ('BC','BD','BF','EB','EI','EP','ER','LO','RM','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS') THEN 'Doanh Thu Phòng'
+            WHEN COALESCE(sb.DepartmentId, '') = 'FB' OR sb.ServiceId IN ('FB','OT','RB','RF') THEN 'Doanh Thu Nhà Hàng'
             WHEN sb.ServiceId = 'MB' THEN 'Doanh Thu Minibar'
             WHEN sb.ServiceId = 'LA' THEN 'Doanh Thu Giặt Là'
             WHEN sb.ServiceId IN ('PU','DO') THEN 'Doanh Thu Vận Chuyển'
@@ -312,8 +312,8 @@ BEGIN
        OR (COALESCE(p_option, 1) = 5 AND COALESCE(s.payment_date, si.payment_date, si.invoice_date, p.date) BETWEEN COALESCE(p_from_date, CURRENT_DATE()) AND COALESCE(p_to_date, CURRENT_DATE()))
       )
     ORDER BY
-        CASE WHEN p_order_by = 'DESC' AND p_sort_by = 'Amount' THEN Amount END DESC,
-        CASE WHEN p_order_by <> 'DESC' AND p_sort_by = 'Amount' THEN Amount END ASC,
+        CASE WHEN p_order_by = 'DESC' AND p_sort_by = 'Amount' THEN (CASE WHEN COALESCE(p_option, 1) = 5 THEN COALESCE(s.amount, 0) ELSE COALESCE(p.amount, 0) END) END DESC,
+        CASE WHEN p_order_by <> 'DESC' AND p_sort_by = 'Amount' THEN (CASE WHEN COALESCE(p_option, 1) = 5 THEN COALESCE(s.amount, 0) ELSE COALESCE(p.amount, 0) END) END ASC,
         CASE WHEN p_order_by = 'DESC' AND p_sort_by = 'Room' THEN BookingRoomCode END DESC,
         CASE WHEN p_order_by <> 'DESC' AND p_sort_by = 'Room' THEN BookingRoomCode END ASC,
         CASE WHEN p_order_by = 'DESC' OR p_order_by IS NULL OR p_order_by = '' THEN PaymentDate END DESC,
@@ -341,6 +341,12 @@ BEGIN
     DECLARE v_la_month DECIMAL(15,2) DEFAULT 0;
     DECLARE v_transport_day DECIMAL(15,2) DEFAULT 0;
     DECLARE v_transport_month DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_conference_day DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_conference_month DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_vpth_day DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_vpth_month DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_shop_day DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_shop_month DECIMAL(15,2) DEFAULT 0;
     DECLARE v_other_day DECIMAL(15,2) DEFAULT 0;
     DECLARE v_other_month DECIMAL(15,2) DEFAULT 0;
     DECLARE v_inhouse INT DEFAULT 0;
@@ -351,32 +357,54 @@ BEGIN
     DECLARE v_room_available INT DEFAULT 0;
     DECLARE v_occ DECIMAL(15,2) DEFAULT 0;
     DECLARE v_adr DECIMAL(15,2) DEFAULT 0;
-    DECLARE v_revenue_list TEXT DEFAULT 'RM,EB,ER,LO,TB,DN,GN,HN,HT,LH,MR,MS,NB,TO,WS';
+    DECLARE v_revenue_list TEXT DEFAULT 'BC,BD,BF,EB,EI,EP,ER,LO,RM,TB,DN,GN,HN,HT,LH,MR,MS,NB,TO,WS';
+    DECLARE v_fb_list TEXT DEFAULT 'FB,OT,RB,RF';
+    DECLARE v_conference_list TEXT DEFAULT '';
+    DECLARE v_minibar_list TEXT DEFAULT 'MB';
+    DECLARE v_laundry_list TEXT DEFAULT 'LA';
+    DECLARE v_transport_list TEXT DEFAULT 'PU,DO';
+    DECLARE v_vpth_list TEXT DEFAULT '';
+    DECLARE v_shop_list TEXT DEFAULT '';
     DECLARE v_include_others TINYINT DEFAULT 0;
 
     SET v_month_start = DATE_FORMAT(v_date, '%Y-%m-01');
     SELECT COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'revenue' THEN value END), ''), v_revenue_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'fbrevenue' THEN value END), ''), v_fb_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'conferencerevenue' THEN value END), ''), v_conference_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'minibarrevenue' THEN value END), ''), v_minibar_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'laundryrevenue' THEN value END), ''), v_laundry_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'transportationrevenue' THEN value END), ''), v_transport_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) IN ('vpthrevenue', 'officerevenue') THEN value END), ''), v_vpth_list),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'shoprevenue' THEN value END), ''), v_shop_list),
            COALESCE(MAX(CASE WHEN LOWER(name) = 'averageroomrateincludedothersroomrevenue' THEN CAST(value AS UNSIGNED) END), 0)
-      INTO v_revenue_list, v_include_others
+      INTO v_revenue_list, v_fb_list, v_conference_list, v_minibar_list, v_laundry_list,
+           v_transport_list, v_vpth_list, v_shop_list, v_include_others
       FROM hotel_configs;
 
     SELECT COALESCE(SUM(CASE WHEN DATE(Date) = v_date THEN Amount ELSE 0 END), 0),
            COALESCE(SUM(Amount), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND ServiceId IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS') THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND ServiceId IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS') THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND (DepartmentId = 'FB' OR ServiceId = 'FB') THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND (DepartmentId = 'FB' OR ServiceId = 'FB') THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND ServiceId = 'MB' THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND ServiceId = 'MB' THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND ServiceId = 'LA' THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND ServiceId = 'LA' THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND ServiceId IN ('PU','DO') THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND ServiceId IN ('PU','DO') THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND ServiceId NOT IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS','FB','MB','LA','PU','DO') AND COALESCE(DepartmentId, '') <> 'FB' THEN Amount ELSE 0 END), 0),
-           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND ServiceId NOT IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS','FB','MB','LA','PU','DO') AND COALESCE(DepartmentId, '') <> 'FB' THEN Amount ELSE 0 END), 0)
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND (CASE WHEN v_include_others = 1 THEN FIND_IN_SET(ServiceId, REPLACE(v_revenue_list, ' ', '')) > 0 ELSE ServiceId = 'RM' END) THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND (CASE WHEN v_include_others = 1 THEN FIND_IN_SET(ServiceId, REPLACE(v_revenue_list, ' ', '')) > 0 ELSE ServiceId = 'RM' END) THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND (DepartmentId = 'FB' OR FIND_IN_SET(ServiceId, REPLACE(v_fb_list, ' ', '')) > 0) THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND (DepartmentId = 'FB' OR FIND_IN_SET(ServiceId, REPLACE(v_fb_list, ' ', '')) > 0) THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND FIND_IN_SET(ServiceId, REPLACE(v_minibar_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND FIND_IN_SET(ServiceId, REPLACE(v_minibar_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND FIND_IN_SET(ServiceId, REPLACE(v_laundry_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND FIND_IN_SET(ServiceId, REPLACE(v_laundry_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND FIND_IN_SET(ServiceId, REPLACE(v_transport_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND FIND_IN_SET(ServiceId, REPLACE(v_transport_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_conference_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_conference_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_vpth_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_vpth_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_shop_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_shop_list, ' ', '')) > 0 THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) = v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_revenue_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_fb_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_conference_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_minibar_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_laundry_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_transport_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_vpth_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_shop_list, ' ', '')) = 0 AND COALESCE(DepartmentId, '') <> 'FB' THEN Amount ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN DATE(Date) BETWEEN v_month_start AND v_date AND v_include_others = 1 AND FIND_IN_SET(ServiceId, REPLACE(v_revenue_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_fb_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_conference_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_minibar_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_laundry_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_transport_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_vpth_list, ' ', '')) = 0 AND FIND_IN_SET(ServiceId, REPLACE(v_shop_list, ' ', '')) = 0 AND COALESCE(DepartmentId, '') <> 'FB' THEN Amount ELSE 0 END), 0)
       INTO v_total_day, v_total_month, v_room_day, v_room_month, v_fb_day, v_fb_month,
            v_mb_day, v_mb_month, v_la_day, v_la_month, v_transport_day, v_transport_month,
-           v_other_day, v_other_month
+           v_conference_day, v_conference_month, v_vpth_day, v_vpth_month,
+           v_shop_day, v_shop_month, v_other_day, v_other_month
       FROM service_bills
      WHERE COALESCE(Edit, 0) = 0 AND COALESCE(Status, 1) <> 3
        AND DATE(Date) BETWEEN v_month_start AND v_date;
@@ -421,11 +449,14 @@ BEGIN
         SELECT '1-1' AS SortOrder, 1 AS GroupIndex, 'Tổng doanh thu' AS Content, v_total_day AS DateAmount, v_total_month AS MonthAmount, NULL AS PlanAmount, NULL AS Rate, 1 AS IsBold, '' AS CustomText
         UNION ALL SELECT '1-2',1,'Doanh thu phòng',v_room_day,v_room_month,NULL,NULL,0,''
         UNION ALL SELECT '1-3',1,'Doanh thu nhà hàng',v_fb_day,v_fb_month,NULL,NULL,0,''
-        UNION ALL SELECT '1-4',1,'Doanh thu Minibar',v_mb_day,v_mb_month,NULL,NULL,0,''
-        UNION ALL SELECT '1-5',1,'Doanh thu giặt ủi',v_la_day,v_la_month,NULL,NULL,0,''
-        UNION ALL SELECT '1-6',1,'Doanh thu vận chuyển',v_transport_day,v_transport_month,NULL,NULL,0,''
-        UNION ALL SELECT '1-7',1,'Doanh thu dịch vụ khác',v_other_day,v_other_month,NULL,NULL,0,''
-        UNION ALL SELECT '1-8',1,'FOC',v_foc_day,v_foc_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-4',1,'Doanh thu hội nghị',v_conference_day,v_conference_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-5',1,'Doanh thu Minibar',v_mb_day,v_mb_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-6',1,'Doanh thu VPTH',v_vpth_day,v_vpth_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-7',1,'Doanh thu giặt ủi',v_la_day,v_la_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-8',1,'Doanh thu shop',v_shop_day,v_shop_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-9',1,'Doanh thu vận chuyển',v_transport_day,v_transport_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-10',1,'Doanh thu dịch vụ khác',v_other_day,v_other_month,NULL,NULL,0,''
+        UNION ALL SELECT '1-11',1,'FOC',v_foc_day,v_foc_month,NULL,NULL,0,''
         UNION ALL SELECT '2-1',2,'Hoạt động khách sạn',NULL,NULL,NULL,NULL,1,''
         UNION ALL SELECT '2-2',2,'Số phòng In house',v_inhouse,NULL,NULL,NULL,0,''
         UNION ALL SELECT '2-3',2,'Check in',v_checkin,NULL,NULL,NULL,0,''
@@ -434,9 +465,9 @@ BEGIN
         UNION ALL SELECT '3-1',3,'Công suất phòng (OCC)/%',v_occ,NULL,NULL,NULL,1,CONCAT(v_occ,'%')
         UNION ALL SELECT '4-1',4,'Giá phòng bình quân (ADR)',v_adr,NULL,NULL,NULL,1,''
         UNION ALL SELECT '5-1',5,'Ý kiến khách hàng',NULL,NULL,NULL,NULL,1,''
-        UNION ALL SELECT '6-1',6,'Tình trạng cơ sở vật chất',NULL,NULL,NULL,NULL,1,''
+        UNION ALL SELECT '6-1',6,'Tình trạng cơ sở vật chất',NULL,NULL,NULL,NULL,1,'Đã hoàn tất'
         UNION ALL SELECT '7-1',7,'Đề xuất',NULL,NULL,NULL,NULL,1,''
-    ) AS result_rows ORDER BY SortOrder;
+    ) AS result_rows ORDER BY GroupIndex, CAST(SUBSTRING_INDEX(SortOrder, '-', -1) AS UNSIGNED);
 END
 SQL;
     }
@@ -454,10 +485,13 @@ CREATE PROCEDURE rpt_company_occupancy_detail(
 )
 READS SQL DATA
 BEGIN
+    DECLARE v_prefix VARCHAR(50) DEFAULT '';
+    SELECT COALESCE(prefix_booking_id, '') INTO v_prefix FROM hotel_settings ORDER BY id LIMIT 1;
+
     DROP TEMPORARY TABLE IF EXISTS tmp_company_occupancy_detail;
     CREATE TEMPORARY TABLE tmp_company_occupancy_detail AS
     SELECT
-        COALESCE(NULLIF(b.external_booking_code, ''), CAST(b.id AS CHAR)) AS BookingCode,
+        CONCAT(v_prefix, b.id) AS BookingCode,
         COALESCE(NULLIF(b.external_booking_code, ''), '') AS ReferenceCode,
         COALESCE(NULLIF(c.name, ''), 'KHÁCH LẺ') AS CompanyName,
         COALESCE(NULLIF(b.booking_name, ''), '') AS GuestName,
@@ -566,7 +600,8 @@ BEGIN
     LEFT JOIN (
         SELECT x.booking_id,
                SUM(CASE WHEN x.ServiceId IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS') THEN x.Amount - CASE WHEN COALESCE(p_include_breakfast, 1) = 0 THEN x.BreakfastAmount ELSE 0 END ELSE 0 END) AS RoomRevenue,
-               SUM(CASE WHEN x.DepartmentId = 'FB' OR x.ServiceId = 'FB' THEN x.Amount ELSE 0 END) AS FbRevenue,
+               SUM(CASE WHEN x.DepartmentId = 'FB' OR x.ServiceId = 'FB' THEN x.Amount ELSE 0 END)
+                 + CASE WHEN COALESCE(p_include_breakfast, 1) = 0 THEN SUM(x.BreakfastAmount) ELSE 0 END AS FbRevenue,
                SUM(CASE WHEN x.ServiceId NOT IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS','FB') AND COALESCE(x.DepartmentId, '') <> 'FB' THEN x.Amount ELSE 0 END) AS OtherRevenue,
                SUM(CASE WHEN x.ServiceId = 'RM' AND x.is_room_night = 1 THEN 1 ELSE 0 END) AS RoomNight,
                SUM(CASE WHEN x.ServiceId = 'RM' AND x.is_room_night = 1 AND x.RateCode = 'FOC' THEN 1 ELSE 0 END) AS FocRoomNights,
@@ -596,22 +631,26 @@ BEGIN
       AND (COALESCE(p_area, '') = '' OR EXISTS (SELECT 1 FROM booking_rooms bra INNER JOIN rooms rra ON rra.room_number = bra.room_number WHERE bra.booking_id = b.id AND rra.area = p_area));
 
     SELECT
-        CASE COALESCE(p_group_by, 'COMPANY') WHEN 'DATE' THEN DATE_FORMAT(ActivityDate, '%d/%m/%Y') WHEN 'MARKET' THEN MarketCode WHEN 'SOURCE' THEN SourceCode ELSE CompanyCode END AS CompanyCode,
-        CASE COALESCE(p_group_by, 'COMPANY') WHEN 'DATE' THEN DATE_FORMAT(ActivityDate, '%d/%m/%Y') WHEN 'MARKET' THEN MarketName WHEN 'SOURCE' THEN SourceName ELSE CompanyName END AS CompanyName,
-        ROUND(SUM(RoomNight) * 100 / v_capacity, 2) AS OccupancyRate,
-        SUM(RoomNight) AS RoomNight,
-        SUM(GuestQty) AS GuestQty,
-        CASE WHEN SUM(RoomNight) > 0 THEN ROUND(SUM(RoomRevenue) / SUM(RoomNight), 0) ELSE 0 END AS ActualADR,
-        CASE WHEN SUM(RoomNight - FocRoomNights - HuRoomNights) > 0 THEN ROUND(SUM(OriginalAmount) / SUM(RoomNight - FocRoomNights - HuRoomNights), 0) ELSE 0 END AS RackADR,
-        SUM(RoomRevenue) AS RoomRevenue,
-        SUM(FbRevenue) AS FbRevenue,
-        SUM(OtherRevenue) AS OtherRevenue,
-        SUM(RoomRevenue + FbRevenue + OtherRevenue) AS TotalRevenue
-    FROM tmp_company_occupancy_base
-    GROUP BY
-        CASE COALESCE(p_group_by, 'COMPANY') WHEN 'DATE' THEN DATE_FORMAT(ActivityDate, '%d/%m/%Y') WHEN 'MARKET' THEN MarketCode WHEN 'SOURCE' THEN SourceCode ELSE CompanyCode END,
-        CASE COALESCE(p_group_by, 'COMPANY') WHEN 'DATE' THEN DATE_FORMAT(ActivityDate, '%d/%m/%Y') WHEN 'MARKET' THEN MarketName WHEN 'SOURCE' THEN SourceName ELSE CompanyName END
-    ORDER BY TotalRevenue DESC, CompanyName;
+        grouped_rows.CompanyCode,
+        grouped_rows.CompanyName,
+        ROUND(SUM(grouped_rows.RoomNight) * 100 / v_capacity, 2) AS OccupancyRate,
+        SUM(grouped_rows.RoomNight) AS RoomNight,
+        SUM(grouped_rows.GuestQty) AS GuestQty,
+        CASE WHEN SUM(grouped_rows.RoomNight) > 0 THEN ROUND(SUM(grouped_rows.RoomRevenue) / SUM(grouped_rows.RoomNight), 0) ELSE 0 END AS ActualADR,
+        CASE WHEN SUM(grouped_rows.RoomNight - grouped_rows.FocRoomNights - grouped_rows.HuRoomNights) > 0 THEN ROUND(SUM(grouped_rows.OriginalAmount) / SUM(grouped_rows.RoomNight - grouped_rows.FocRoomNights - grouped_rows.HuRoomNights), 0) ELSE 0 END AS RackADR,
+        SUM(grouped_rows.RoomRevenue) AS RoomRevenue,
+        SUM(grouped_rows.FbRevenue) AS FbRevenue,
+        SUM(grouped_rows.OtherRevenue) AS OtherRevenue,
+        SUM(grouped_rows.RoomRevenue + grouped_rows.FbRevenue + grouped_rows.OtherRevenue) AS TotalRevenue
+    FROM (
+        SELECT
+            CASE COALESCE(p_group_by, 'COMPANY') WHEN 'DATE' THEN DATE_FORMAT(ActivityDate, '%d/%m/%Y') WHEN 'MARKET' THEN MarketCode WHEN 'SOURCE' THEN SourceCode ELSE CompanyCode END AS CompanyCode,
+            CASE COALESCE(p_group_by, 'COMPANY') WHEN 'DATE' THEN DATE_FORMAT(ActivityDate, '%d/%m/%Y') WHEN 'MARKET' THEN MarketName WHEN 'SOURCE' THEN SourceName ELSE CompanyName END AS CompanyName,
+            RoomNight, GuestQty, FocRoomNights, HuRoomNights, RoomRevenue, FbRevenue, OtherRevenue, OriginalAmount
+        FROM tmp_company_occupancy_base
+    ) AS grouped_rows
+    GROUP BY grouped_rows.CompanyCode, grouped_rows.CompanyName
+    ORDER BY TotalRevenue DESC, grouped_rows.CompanyName;
 
     DROP TEMPORARY TABLE IF EXISTS tmp_company_occupancy_base;
 END
@@ -639,7 +678,9 @@ CREATE PROCEDURE __PROCEDURE_NAME__(
 )
 READS SQL DATA
 BEGIN
+    DECLARE v_prefix VARCHAR(50) DEFAULT '';
     DECLARE v_capacity DECIMAL(15,2) DEFAULT 0;
+    SELECT COALESCE(prefix_booking_id, '') INTO v_prefix FROM hotel_settings ORDER BY id LIMIT 1;
     SELECT COUNT(*) * (DATEDIFF(COALESCE(p_to_date, CURRENT_DATE()), COALESCE(p_from_date, CURRENT_DATE())) + 1)
       INTO v_capacity FROM rooms WHERE COALESCE(is_internal, 0) = 0;
     SET v_capacity = GREATEST(v_capacity, 1);
@@ -647,7 +688,7 @@ BEGIN
     DROP TEMPORARY TABLE IF EXISTS tmp_salesperson_revenue_base;
     CREATE TEMPORARY TABLE tmp_salesperson_revenue_base AS
     SELECT
-        COALESCE(NULLIF(b.external_booking_code, ''), CAST(b.id AS CHAR)) AS BookingCode,
+        CONCAT(v_prefix, b.id) AS BookingCode,
         COALESCE(NULLIF(b.booking_name, ''), '') AS BookingName,
         DATE_FORMAT(b.arrival_date, '%d/%m/%Y') AS ArrivalDate,
         DATE_FORMAT(b.departure_date, '%d/%m/%Y') AS DepartureDate,
@@ -683,9 +724,13 @@ BEGIN
                    CASE WHEN sb.ServiceId IN ('RM','EB','ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS') THEN COALESCE(NULLIF(rnb.rate, 0), sb.Amount) ELSE 0 END AS OriginalAmount
             FROM service_bills sb
             LEFT JOIN booking_rooms br ON br.id = COALESCE(sb.RentalRoomId2, sb.RentalRoomId1)
+            LEFT JOIN bookings bx ON bx.id = COALESCE(br.booking_id, NULLIF(sb.RegisterID2, 0))
             LEFT JOIN room_night_bills rnb ON rnb.bill_id = sb.Ma
             WHERE COALESCE(sb.Edit, 0) = 0 AND COALESCE(sb.Status, 1) <> 3
-              AND DATE(COALESCE(rnb.date, sb.Date)) BETWEEN COALESCE(p_from_date, CURRENT_DATE()) AND COALESCE(p_to_date, CURRENT_DATE())
+              AND (
+                  (COALESCE(p_filter_mode, 1) = 1 AND DATE(COALESCE(rnb.date, sb.Date)) BETWEEN COALESCE(bx.arrival_date, DATE(COALESCE(rnb.date, sb.Date))) AND COALESCE(bx.departure_date, DATE(COALESCE(rnb.date, sb.Date))))
+                  OR (COALESCE(p_filter_mode, 1) = 2 AND DATE(COALESCE(rnb.date, sb.Date)) BETWEEN COALESCE(p_from_date, CURRENT_DATE()) AND COALESCE(p_to_date, CURRENT_DATE()))
+              )
         ) x
         WHERE x.booking_id IS NOT NULL
         GROUP BY x.booking_id
