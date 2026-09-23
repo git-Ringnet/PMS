@@ -1004,7 +1004,15 @@ const staticFieldList = {
 }
 
 const selectedDataSource = computed(() => {
-  return dataSources.value.find(source => source.id === template.value?.report_data_source_id) || null
+  const selectedSourceId = template.value?.report_data_source_id
+  const source = dataSources.value.find(item => String(item.id) === String(selectedSourceId))
+
+  if (source) return source
+
+  const embeddedSource = template.value?.report_data_source
+  return embeddedSource && String(embeddedSource.id) === String(selectedSourceId)
+    ? embeddedSource
+    : null
 })
 
 const conditionalParameterOptions = computed(() => {
