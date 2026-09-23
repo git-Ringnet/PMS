@@ -8,6 +8,8 @@ use App\Models\BookingRoom;
 use App\Models\BookingCancelLog;
 use App\Models\BookingRoomService;
 use App\Models\HotelConfig;
+use App\Models\Room;
+use App\Models\RoomLock;
 use App\Models\RoomDoNotMoveLock;
 use App\Models\SystemDateRoll;
 use App\Models\BookingRoomGuest;
@@ -831,31 +833,33 @@ class BookingRoomController extends Controller
         }
 
         // Không cho phép hủy nhận phòng đối với các phòng đã phát sinh hóa đơn, thanh toán hoặc thanh toán trước (Edit = 0)
-        $hasServiceBills = \App\Models\ServiceBill::where(function ($q) use ($bookingRoom, $booking) {
-            $q->where('RentalRoomId2', (string) $bookingRoom->id)
-              ->orWhere('RentalRoomId1', (string) $bookingRoom->id);
-            if ($booking && $booking->bookingRooms()->count() <= 1) {
-                $q->orWhere(function ($q2) use ($booking) {
-                    $q2->where(function ($mb) use ($booking) {
-                        $mb->where('RegisterID2', (string) $booking->id)
-                           ->orWhere('RegisterId1', (string) $booking->id);
-                    })->where(function ($r) {
-                        $r->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
-                    });
-                });
-            }
+        // Chỉ xét các hóa đơn đang thực sự thuộc về phòng này (RentalRoomId2) và chưa bị xóa/hủy/chuyển (Edit=0, Status not in [3, 4])
+        $hasServiceBills = \App\Models\ServiceBill::where(function ($q) use ($bookingRoom) {
+            $roomIdStr = (string) $bookingRoom->id;
+            $q->where('RentalRoomId2', $roomIdStr)
+              ->orWhere(function ($fallback) use ($roomIdStr) {
+                  $fallback->where(function ($r2) {
+                      $r2->whereNull('RentalRoomId2')
+                         ->orWhere('RentalRoomId2', '')
+                         ->orWhere('RentalRoomId2', '0');
+                  })->where(function ($reg2) {
+                      $reg2->whereNull('RegisterID2')
+                         ->orWhere('RegisterID2', '')
+                         ->orWhere('RegisterID2', '0');
+                  })->where('RentalRoomId1', $roomIdStr);
+              });
         })
-        ->where('Edit', 0)
+        ->where(function ($q) {
+            $q->where('Edit', 0)->orWhere('Edit', false)->orWhereNull('Edit');
+        })
+        ->whereNotIn('Status', [3, 4])
         ->exists();
 
-        $hasPayments = \App\Models\Payment::where('booking_id', $booking->id)
-            ->where(function ($q) use ($bookingRoom, $booking) {
-                $q->where('booking_room_id', $bookingRoom->id);
-                if ($booking && $booking->bookingRooms()->count() <= 1) {
-                    $q->orWhereNull('booking_room_id');
-                }
+        // Chỉ xét các khoản thanh toán / cọc gắn trực tiếp vào phòng này và chưa bị hủy (edit_flag = 0)
+        $hasPayments = \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
+            ->where(function ($q) {
+                $q->where('edit_flag', 0)->orWhereNull('edit_flag');
             })
-            ->where('edit_flag', 0)
             ->whereNull('deleted_at')
             ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
             ->exists();
@@ -1528,7 +1532,7 @@ class BookingRoomController extends Controller
 
         $availableRooms = [];
         $statusLabels = [
-            'vacant_ready'   => '',
+            'vacant_ready'   => 'Ready',
             'vacant_clean'   => 'Vacant Clean',
             'vacant_dirty'   => 'Vacant Dirty',
             'turndown'       => 'Vacant Dirty',
@@ -1549,33 +1553,35 @@ class BookingRoomController extends Controller
                 $bookingRoom->id
             );
 
-            // Chỉ nhận phòng vật lý đang trống và sạch: Vacant Ready/Vacant Clean.
-            // Không dùng accessor status vì một số mã occupied_* có thể được quy đổi về available.
-            if (!$isOccupied && in_array($room->room_status_code, ['vacant_ready', 'vacant_clean'], true)) {
+            // Cho phép hiển thị các phòng vật lý đang trống trong giai đoạn ở (bao gồm cả phòng bẩn và chờ kiểm tra)
+            // Loại trừ các phòng có trạng thái OOO, OOS hoặc đang sửa chữa
+            if (!$isOccupied && !in_array($room->room_status_code, ['ooo', 'oos', 'occupied_ooo'], true)) {
                 $stdRate = $ratesMap->get($room->room_class_id);
 
                 $availableRooms[] = [
-                    'id'              => $room->id,
-                    'room_number'     => $room->room_number,
-                    'room_class_id'   => $room->room_class_id,
-                    'room_class_code' => $room->roomClass?->code ?? $room->roomClass?->Ma ?? '',
-                    'room_class_name' => $room->roomClass?->name ?? '',
-                    'room_form_name'  => $room->roomForm?->name ?? 'Double',
-                    'floor'           => $room->floor,
-                    'grid_row'        => (int)$room->grid_row,
-                    'grid_column'     => (int)$room->grid_column,
-                    'is_internal'     => (bool)$room->is_internal,
-                    'is_virtual'      => (bool)$room->is_virtual,
-                    'rate'            => (float)($stdRate?->rate ?? 0),
-                    'extra_bed_rate'  => (float)($stdRate?->extra_bed_rate ?? 0),
-                    'status'          => $room->room_status_code,
-                    'status_label'    => $statusLabels[$room->room_status_code] ?? $room->room_status_code,
-                    'is_ready'        => in_array($room->room_status_code, ['vacant_ready', 'vacant_clean'], true),
+                    'id'               => $room->id,
+                    'room_number'      => $room->room_number,
+                    'room_class_id'    => $room->room_class_id,
+                    'room_class_code'  => $room->roomClass?->code ?? $room->roomClass?->Ma ?? '',
+                    'room_class_name'  => $room->roomClass?->name ?? '',
+                    'room_form_name'   => $room->roomForm?->name ?? 'Double',
+                    'floor'            => $room->floor,
+                    'grid_row'         => (int)$room->grid_row,
+                    'grid_column'      => (int)$room->grid_column,
+                    'is_internal'      => (bool)$room->is_internal,
+                    'is_virtual'       => (bool)$room->is_virtual,
+                    'rate'             => (float)($stdRate?->rate ?? 0),
+                    'extra_bed_rate'   => (float)($stdRate?->extra_bed_rate ?? 0),
+                    'status'           => $room->room_status_code,
+                    'room_status_code' => $room->room_status_code,
+                    'clean_status'     => $room->clean_status,
+                    'status_label'     => $statusLabels[$room->room_status_code] ?? $room->room_status_code,
+                    'is_ready'         => $room->room_status_code === 'vacant_ready',
                 ];
             }
         }
 
-        usort($availableRooms, fn($a, $b) => strcmp($a['room_number'], $b['room_number']));
+        usort($availableRooms, fn($a, $b) => strnatcasecmp($a['room_number'], $b['room_number']));
 
         // 2. Fetch occupied (In-House) rooms for merging (departure_date >= current room's departure_date)
         $occupiedBookingRooms = BookingRoom::where('id', '!=', $bookingRoom->id)
@@ -1620,7 +1626,7 @@ class BookingRoomController extends Controller
             ];
         }
 
-        usort($occupiedRooms, fn($a, $b) => strcmp($a['room_number'], $b['room_number']));
+        usort($occupiedRooms, fn($a, $b) => strnatcasecmp($a['room_number'], $b['room_number']));
 
         // Khach da chuyen (status=100) khong con thuoc phong cu.
         $guests = $bookingRoom->guests->where('status', '!=', 100)->values()->map(function ($gPivot) {
@@ -1785,24 +1791,26 @@ class BookingRoomController extends Controller
                 return response()->json(['success' => false, 'message' => "Không tìm thấy số phòng {$targetRoomNumber} trong hệ thống."], 422);
             }
 
-            // Rule 2.1: Target room MUST be in "Sẵn sàng" (status === 'available').
-            $sysDateStr = $systemDate->toDateString();
-            $activeLockToday = \App\Models\RoomLock::where('room_number', $targetRoomNumber)
-                ->where('is_active', 1)
-                ->where('start_date', '<=', $sysDateStr . ' 23:59:59')
-                ->where('end_date', '>=', $sysDateStr . ' 00:00:00')
-                ->first();
-
-            if (!$activeLockToday && $physicalRoom->status === 'maintenance') {
-                $physicalRoom->update(['status' => 'available']);
-                $physicalRoom->status = 'available';
-            }
-
-            if ($physicalRoom->status !== 'available') {
+            // Kiểm tra trạng thái phòng đích
+            $statusCode = $physicalRoom->room_status_code;
+            if (in_array($statusCode, ['vacant_dirty', 'turndown', 'occupied_dirty']) || $physicalRoom->clean_status === 'dirty' || $physicalRoom->status === 'dirty') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Vui lòng kiểm tra tình trạng phòng',
-                    'detail'  => "Phòng {$targetRoomNumber} hiện chưa ở trạng thái Sẵn sàng (Trạng thái: {$physicalRoom->status})."
+                    'message' => 'Phòng đang trong tình trạng phòng bẩn, không thể chuyển phòng '
+                ], 422);
+            }
+
+            if (in_array($statusCode, ['vacant_clean', 'occupied_clean'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng đang trong tình trạng chờ kiểm tra, không thể chuyển phòng '
+                ], 422);
+            }
+
+            if ($statusCode !== 'vacant_ready') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vui lòng kiểm tra tình trạng phòng (Chỉ cho phép chuyển đến phòng ở trạng thái Sẵn sàng)'
                 ], 422);
             }
 
@@ -1816,6 +1824,32 @@ class BookingRoomController extends Controller
                     'success' => false,
                     'message' => "Số phòng {$targetRoomNumber} đã có khách ở hoặc đã được phân phòng trong khoảng thời gian {$moveDateStr} đến {$departureDateStr}.",
                 ], 422);
+            }
+
+            // Kiểm tra over phòng theo AllowOverRoomTypeRoomKind
+            $isSameClass = (int)$bookingRoom->room_class_id === (int)$physicalRoom->room_class_id;
+            if (!$isSameClass) {
+                $targetClassId = (int)$physicalRoom->room_class_id;
+                $confirmOverRoom = filter_var($request->input('confirm_over_room', false), FILTER_VALIDATE_BOOLEAN);
+
+                $overViolation = $this->checkOverAvForRoomClass($targetClassId, $moveDateStr, $departureDateStr);
+                if ($overViolation['is_over']) {
+                    $allowOverConfig = HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value ?? '0';
+                    if ($allowOverConfig == '0') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Loại phòng đã bị over, không thể chuyển phòng'
+                        ], 422);
+                    } else {
+                        if (!$confirmOverRoom) {
+                            return response()->json([
+                                'success' => false,
+                                'require_over_confirm' => true,
+                                'message' => 'Loại phòng đã bị over, bạn có muốn tiếp tục'
+                            ], 422);
+                        }
+                    }
+                }
             }
 
             DB::beginTransaction();
@@ -2026,9 +2060,11 @@ class BookingRoomController extends Controller
                     // Reserved state room change
                     $oldNumber = $bookingRoom->room_number;
                     $updateData = [
-                        'room_number' => $targetRoomNumber,
-                        'note'        => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đổi phòng từ {$oldNumber} sang {$targetRoomNumber}: {$reason}"),
-                        'updated_by'  => $currentUser,
+                        'room_number'   => $targetRoomNumber,
+                        'room_class_id' => $physicalRoom->room_class_id,
+                        'RoomKind'      => $physicalRoom->room_form_id ?? $bookingRoom->RoomKind,
+                        'note'          => trim(($bookingRoom->note ? $bookingRoom->note . ' | ' : '') . "Đổi phòng từ {$oldNumber} sang {$targetRoomNumber}: {$reason}"),
+                        'updated_by'    => $currentUser,
                     ];
 
                     if ($isChangeRate) {
@@ -2411,5 +2447,81 @@ class BookingRoomController extends Controller
             'message' => 'Khôi phục phòng noshow thành công!',
             'data'    => $bookingRoom->fresh()->load(['roomClass']),
         ]);
+    }
+
+    /**
+     * Kiểm tra xem việc thêm 1 phòng vào loại phòng đích có làm over phòng (AV < 0) trong khoảng ngày không.
+     */
+    private function checkOverAvForRoomClass(int $roomClassId, string $startDateStr, string $endDateStr): array
+    {
+        $start = Carbon::parse($startDateStr)->startOfDay();
+        $end   = Carbon::parse($endDateStr)->startOfDay();
+
+        $totalRooms = Room::where('room_class_id', $roomClassId)
+            ->where('is_internal', false)
+            ->count();
+
+        $bookings = BookingRoom::where('room_class_id', $roomClassId)
+            ->whereIn('status', [
+                BookingRoom::STATUS_BOOKED,
+                BookingRoom::STATUS_CHECKED_IN,
+                BookingRoom::STATUS_CHECKED_OUT,
+            ])
+            ->whereHas('booking', function ($q) {
+                $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
+                  ->whereHas('registrationStatus', function ($subQ) {
+                      $subQ->where('is_availability', 1);
+                  });
+            })
+            ->where('arrival_date', '<', $endDateStr)
+            ->where('departure_date', '>', $startDateStr)
+            ->get(['arrival_date', 'departure_date']);
+
+        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId)->where('is_internal', false))
+            ->whereIn('is_active', [1, 2])
+            ->where('start_date', '<', $endDateStr . ' 23:59:59')
+            ->where('end_date', '>', $startDateStr . ' 00:00:00')
+            ->get(['room_number', 'start_date', 'end_date', 'is_active']);
+
+        $defineLockTime = HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->value('value') ?? '12:00';
+
+        $curr = $start->copy();
+        while ($curr->lt($end)) {
+            $dateStr = $curr->toDateString();
+            $nextDay = $curr->copy()->addDay()->toDateString();
+
+            $bookedCount = $bookings->filter(fn($br) =>
+                $br->arrival_date->toDateString() < $nextDay &&
+                $br->departure_date->toDateString() > $dateStr
+            )->count();
+
+            $lockedCount = $locks->filter(function ($lk) use ($dateStr, $defineLockTime) {
+                $lockStart = Carbon::parse($lk->start_date)->toDateString();
+                $lockEnd = Carbon::parse($lk->end_date)->toDateString();
+                if ($lockStart <= $dateStr && $lockEnd >= $dateStr) {
+                    if ($lk->is_active == 2 && $dateStr === $lockEnd && $lockStart !== $lockEnd) {
+                        $endTime = Carbon::parse($lk->end_date)->format('H:i');
+                        if ($endTime < $defineLockTime) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                return false;
+            })->pluck('room_number')->unique()->count();
+
+            $currentAv = $totalRooms - $lockedCount - $bookedCount;
+            if (($currentAv - 1) < 0) {
+                return [
+                    'is_over'    => true,
+                    'date'       => $dateStr,
+                    'current_av' => $currentAv,
+                ];
+            }
+
+            $curr->addDay();
+        }
+
+        return ['is_over' => false];
     }
 }

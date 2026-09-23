@@ -1109,7 +1109,9 @@ class BookingController extends Controller
                                 'original_room_class_id' => $alloc['roomClassId'] ?? null,
                                 'arrival_date' => $roomArrival,
                                 'departure_date' => $roomDeparture,
-                                'actual_arrival_date' => $bRoom && $bRoom->actual_arrival_date ? $bRoom->actual_arrival_date->toDateString() : $roomArrival,
+                                'actual_arrival_date' => ($bRoom && (int)$bRoom->status !== \App\Models\BookingRoom::STATUS_BOOKED && $bRoom->actual_arrival_date)
+                                    ? $bRoom->actual_arrival_date->toDateString()
+                                    : $roomArrival,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
                                 'departure_time' => $detail['hoursOut'] ?? null,
                                 'rate' => $detail['price'] ?? $alloc['price'] ?? 0,
@@ -1155,9 +1157,12 @@ class BookingController extends Controller
                                 $pivot->guest->update([
                                     'full_name' => $roomGuestName,
                                 ]);
-                                $pivot->update([
-                                    'status' => $bRoom->status,
-                                ]);
+                                $pivotUpdate = ['status' => $bRoom->status];
+                                if ((int) $bRoom->status === \App\Models\BookingRoom::STATUS_BOOKED) {
+                                    $pivotUpdate['actual_arrival_date'] = $bRoom->arrival_date;
+                                    $pivotUpdate['actual_checkout_date'] = $bRoom->departure_date;
+                                }
+                                $pivot->update($pivotUpdate);
                             } else {
                                 $guest = \App\Models\Guest::create([
                                     'full_name'        => $roomGuestName,
@@ -1182,11 +1187,14 @@ class BookingController extends Controller
                                 ->where('is_primary', 0)
                                 ->get();
                             
-                            // Cập nhật status cho khách phụ hiện có
+                            // Cập nhật status và ngày cho khách phụ hiện có
                             foreach ($secondaries as $subPivot) {
-                                $subPivot->update([
-                                    'status' => $bRoom->status,
-                                ]);
+                                $subPivotUpdate = ['status' => $bRoom->status];
+                                if ((int) $bRoom->status === \App\Models\BookingRoom::STATUS_BOOKED) {
+                                    $subPivotUpdate['actual_arrival_date'] = $bRoom->arrival_date;
+                                    $subPivotUpdate['actual_checkout_date'] = $bRoom->departure_date;
+                                }
+                                $subPivot->update($subPivotUpdate);
                             }
 
                             $totalCurrentGuests = 1 + $secondaries->count();

@@ -993,7 +993,69 @@ class GuestController extends Controller
                     $pricingFieldsChanged
                 );
             }
+            if ($request->has('extra_bed_qty') || $request->has('extra_bed_rate')) {
+                $this->syncExtraBedServices($room->fresh());
+            }
         });
+    }
+
+    private function syncExtraBedServices(BookingRoom $room): void
+    {
+        $arrivalDate   = $room->arrival_date ? $room->arrival_date->toDateString() : null;
+        $departureDate = $room->departure_date ? $room->departure_date->toDateString() : null;
+        if (!$arrivalDate || !$departureDate) return;
+
+        if ((int)$room->extra_bed_qty <= 0) {
+            $room->services()
+                ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                ->where('is_posted', 0)
+                ->forceDelete();
+            return;
+        }
+
+        $existingServices = $room->services()
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+            ->get()
+            ->keyBy(fn($item) => $item->service_date ? $item->service_date->toDateString() : '');
+
+        $current = Carbon::parse($arrivalDate);
+        $end     = Carbon::parse($departureDate);
+        $stayDates = [];
+        while ($current->lt($end)) {
+            $stayDates[] = $current->toDateString();
+            $current = $current->addDay();
+        }
+
+        $room->services()
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+            ->whereNotIn('service_date', $stayDates)
+            ->where('is_posted', 0)
+            ->forceDelete();
+
+        foreach ($stayDates as $dateStr) {
+            $existing = $existingServices->get($dateStr);
+            if ($existing && $existing->is_posted == 1) {
+                continue;
+            }
+
+            BookingRoomService::withTrashed()->updateOrCreate(
+                [
+                    'booking_room_id' => $room->id,
+                    'service_code'    => BookingRoomService::CODE_EXTRA_BED,
+                    'service_date'    => $dateStr,
+                ],
+                [
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                    'quantity'     => $room->extra_bed_qty,
+                    'rate'         => $room->extra_bed_rate,
+                    'department'   => 'FO',
+                    'is_room'      => $existing?->is_room ?? 1,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ]
+            );
+        }
     }
 
     // DELETE /booking-rooms/{roomId}/guests/{guestId}
@@ -1071,14 +1133,49 @@ class GuestController extends Controller
     // GET /guests/search?q=keyword — Tìm khách để kế thừa thông tin
     public function searchGuests(Request $request)
     {
-        $q = $request->q;
-        $guests = \App\Models\Guest::where('full_name', 'like', "%$q%")
-            ->orWhere('id_number', 'like', "%$q%")
-            ->orWhere('passport_number', 'like', "%$q%")
+        $q = trim((string)$request->input('q', ''));
+        if ($q === '') {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        $guests = \App\Models\Guest::where(function ($query) use ($q) {
+                $query->where('full_name', 'like', "%{$q}%")
+                    ->orWhere('id_number', 'like', "%{$q}%")
+                    ->orWhere('passport_number', 'like', "%{$q}%")
+                    ->orWhere('phone', 'like', "%{$q}%");
+            })
+            ->withCount('bookingRoomGuests')
             ->limit(20)
             ->get();
 
-        return response()->json(['success' => true, 'data' => $guests]);
+        $data = $guests->map(function ($g) {
+            $stayCount = max(1, (int)($g->booking_room_guests_count ?? 1));
+            $revenue = (float) \App\Models\ServiceBill::where(function ($query) use ($g) {
+                $query->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string)$g->id])
+                    ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string)$g->id]);
+            })->where('Edit', 0)->whereNotIn('Status', [3, 4])->sum('Amount');
+
+            return [
+                'id'              => $g->id,
+                'full_name'       => $g->full_name,
+                'title'           => $g->title ?: 'Mr.',
+                'dob'             => $g->dob ? $g->dob->format('Y-m-d') : null,
+                'id_type'         => $g->id_type ?: 'CCCD',
+                'id_number'       => $g->id_number ?: $g->passport_number,
+                'passport_number' => $g->passport_number,
+                'id_issue_date'   => $g->id_issue_date ? $g->id_issue_date->format('Y-m-d') : null,
+                'nationality_code'=> $g->nationality_code ?: 'VN',
+                'phone'           => $g->phone ?: '',
+                'email'           => $g->email ?: '',
+                'address'         => $g->address ?: '',
+                'residence_type'  => $g->residence_type ?: 'Thường trú',
+                'avatar'          => $g->avatar ?: '',
+                'stay_count'      => $stayCount,
+                'total_revenue'   => $revenue,
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $data]);
     }
 
     // =========================================

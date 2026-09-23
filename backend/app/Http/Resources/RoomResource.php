@@ -85,6 +85,7 @@ class RoomResource extends JsonResource
             'has_birthday_today' => (bool) ($this->has_birthday_today ?? false),
             'guest_details' => $this->guest_details,
             'extra_bed_qty' => (int) ($this->extra_bed_qty ?? 0),
+            'extra_bed_rate' => (float) ($this->extra_bed_rate ?? 0),
             'booking_status' => $this->booking_status,
             'external_booking_code' => $this->external_booking_code,
             'registration_status' => $this->registration_status,

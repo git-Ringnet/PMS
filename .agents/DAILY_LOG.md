@@ -9,8 +9,188 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+
 ## [2026-09-22] - Hoàn thiện Format Tiền Tệ Tự Động & Sửa Nghiệp Vụ Bảng Booking_room_services (Mục 1 - 215-239.docx)
 ### Module: FrontDesk / Lễ tân & Hóa đơn ([AddServiceModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue), [AdjustRoomRateModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AdjustRoomRateModal.vue), [BookingRoomServiceController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))
+
+## [2026-09-23] - Tối ưu giao diện Yêu cầu đặc biệt (Special Requests) & Xóa bỏ icon ngôi sao vàng
+### Module: Thông tin đặt phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
+
+- **Bối cảnh & Vấn đề**:
+  - Khối hiển thị Yêu cầu đặc biệt trên modal Thông tin đặt phòng có quá nhiều icon ngôi sao vàng (`★`), tạo cảm giác như đánh giá sao (rating) hoặc VIP thay vì danh sách yêu cầu phòng.
+  - Khung bao viền xám kéo dài toàn hàng nhưng tag chỉ chiếm một đoạn nhỏ bên trái, tạo khoảng trống thừa thô cứng và chèn ngang gây đứt đoạn giữa hàng Giá phòng và Thêm giường.
+- **Xử lý hoàn thành**:
+  - **Xóa bỏ toàn bộ ngôi sao vàng**: Loại bỏ ký tự `★`, icon ngôi sao vàng ở nhãn và icon star trong nút bấm. Thay bằng icon tag/thẻ ghi chú thanh lịch và dot xanh tinh tế.
+  - **Bỏ khung hộp xám thô**: Xóa bỏ background và border xám bao quanh. Khối tag tự co giãn tự nhiên theo dạng chip (pill).
+  - **Thiết kế lại Chip dạng mềm mại**: Nền xanh pastel nhẹ (`#f0f9ff`), viền mảnh (`#bae6fd`), bo tròn viên thuốc (`border-radius: 9999px`), chữ xanh biển sắc nét.
+  - **Bổ sung tính năng gỡ nhanh yêu cầu**: Khi đang ở chế độ Sửa (`isEditingMode`), mỗi tag hiển thị thêm nút `×` nhỏ để người dùng gỡ trực tiếp từng yêu cầu nhanh chóng qua `syncBookingRoomSpecialRequests` mà không cần mở popup.
+  - **Tương tác trực quan**: Click vào tag mở ngay modal Yêu cầu đặc biệt để xem/chọn thêm.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành 100% không phát sinh lỗi (4.19s).
+
+## [2026-09-23] - Sửa lỗi lệch ngày đến và số đêm giữa Đặt phòng và Sơ đồ phòng (Room Map)
+### Module: Đặt phòng / Sơ đồ phòng ([BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
+
+- **Bối cảnh & Vấn đề**:
+  - Khi booking được dời ngày ở tại màn hình Đăng ký (ví dụ từ `09/08 ~ 10/08` sang `10/08 ~ 11/08`), thông tin phòng trên Sơ đồ phòng khi mở popup Thông tin đặt phòng lại hiển thị ngày đến là `09/08/2026`, ngày đi `11/08/2026`, số đêm bị tính thành 2 đêm và modal Chi tiết thêm giường cũng bị tính thành 2 đêm (`09/08` và `10/08`).
+  - Nguyên nhân:
+    - Backend: Khi cập nhật ngày booking/phòng, hệ thống chỉ cập nhật bảng `bookings` và `booking_rooms` nhưng thiếu event đồng bộ `actual_arrival_date` cho các khách (`booking_room_guests`), khiến khách bị kẹt ngày cũ `09/08/2026`.
+    - Frontend: Hàm `selectGuest()` trong `BookingDetailModal.vue` tự động lấy ngày của khách (`actual_arrival_date`) ghi đè lên ngày đến của phòng, khiến form phòng bị đổi ngày và watcher tính lại thành 2 đêm.
+- **Xử lý hoàn thành**:
+  - **Đồng bộ Backend Model ([BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php))**: Thêm event `updated` cho `BookingRoom` để khi `arrival_date` của phòng thay đổi ở trạng thái `STATUS_BOOKED`, tự động cập nhật `actual_arrival_date` cho tất cả các khách (`guests()`) và trẻ em (`childAssignments()`) của phòng đó.
+  - **Đồng bộ API Update ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))**: Đảm bảo cập nhật `actual_arrival_date` và `actual_checkout_date` cho các khách chính và phụ khi phòng chưa check-in.
+  - **Ngăn ghi đè Frontend ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))**: Bỏ logic ghi đè ngày đến của phòng trong `selectGuest()`. Thông tin lưu trú của phòng luôn giữ nguyên theo ngày phòng (`props.room`).
+  - **Chuẩn hóa dữ liệu CSDL**: Cập nhật toàn bộ các khách của Booking GAL4 về đúng ngày đến `10/08/2026` và ngày đi `11/08/2026`.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành 100% không lỗi (4.58s).
+
+## [2026-09-23] - Chuẩn hóa ràng buộc nghiệp vụ Thêm giường (Extra Bed) cho đêm quá khứ bằng Popup ràng buộc
+### Module: Đặt phòng / Chi tiết thêm giường ([ExtraBedModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
+
+- **Bối cảnh & Vấn đề**:
+  - Khi phòng có đêm thuộc quá khứ (nhỏ hơn Ngày hệ thống), modal thêm giường hiển thị dòng chữ cảnh báo màu vàng ở đáy nhưng form vẫn cho phép chỉnh sửa/thêm giường và lưu thành công, gây mâu thuẫn nghiệp vụ và mâu thuẫn giao diện.
+  - Người dùng yêu cầu chuẩn hóa: Khi có thao tác thêm giường vào đêm quá khứ, hệ thống phải hiển thị Popup ràng buộc (thông báo lý do và hướng xử lý) thay vì chỉ để một dòng cảnh báo thụ động ở dưới.
+- **Xử lý hoàn thành**:
+  - **Khoá chỉnh sửa đêm quá khứ**: Khôi phục lại trạng thái `isLocked = isPastDate || isPosted`. Toàn bộ các đêm quá khứ được hiển thị tag `Quá khứ` và khoá ô nhập số lượng, đơn giá, switch FIT/GIT.
+  - **Bảo vệ hàng Total**: Nếu toàn bộ các đêm lưu trú đều là quá khứ (`isAllPastOrLocked`), hàng Total tự động khóa và phủ lớp chặn tương tác.
+  - **Hiển thị Popup Ràng Buộc (Constraint Modal)**: Khi người dùng bấm vào ô nhập, nút tăng/giảm hoặc toggle của đêm quá khứ (hoặc dòng Total khi mọi đêm là quá khứ), hệ thống kích hoạt Popup ràng buộc nổi bật ở giữa màn hình (icon tam giác cảnh báo, nội dung: *"Đêm [ngày] thuộc quá khứ (nhỏ hơn Ngày hệ thống [ngày]) không được phép thêm mới/chỉnh sửa Extra Bed. Trường hợp cần phát sinh chi phí quá khứ, vui lòng tạo hóa đơn tại Modun Lễ tân."*, nút bấm *"Đã hiểu"*).
+  - **Xóa bỏ dòng cảnh báo màu vàng thụ động** ở đáy modal, giúp giao diện gọn gàng, trực quan và đúng chuẩn UX tương tác.
+  - **Bỏ qua đêm quá khứ khi đồng bộ dịch vụ**: Trong `BookingDetailModal.vue`, kiểm tra `if (d.isLocked || d.isPast) continue` trước khi gọi API post dịch vụ, tránh lỗi 422 từ backend.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành thành công 100% không có lỗi (7.04s).
+
+## [2026-09-22] - Hoàn thiện nghiệp vụ Thông tin phòng (BookingDetailModal) theo yêu cầu Section 1 & Section 2
+### Module: Thông tin đặt phòng / phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php))
+
+- **Section 1: Gợi ý khách, nhập tay ngày, luồng thêm khách draft và lỗi Extra Bed / Em bé**:
+  1. **Gợi ý thông tin khách tại ô Tên khách & Số giấy tờ**:
+     - Backend API `searchGuests`: Bổ sung tìm kiếm theo `full_name`, `id_number`, `passport_number`, `phone` kèm đếm số lần lưu trú `stay_count` và tổng doanh thu `total_revenue`. Tìm kiếm nhạy bén ngay từ 1 ký tự nhập vào.
+     - Frontend Autocomplete Dropdown: Khi gõ tên hoặc số giấy tờ, hiển thị dropdown đúng định dạng: `[TÊN] - [dd/mm/yyyy] - [SỐ GIẤY TỜ] - [X] BK [- SỐ TIỀN VND]`, tự động highlight từ khóa khớp màu cam; hover màu xanh trời `#38bdf8` chữ trắng. Tách riêng timer debounce cho 2 ô tìm kiếm.
+     - Khi chọn khách từ gợi ý: Kế thừa toàn bộ thông tin cá nhân (tên, ngày sinh, cccd, sđt, email, địa chỉ...) vào form mà không thay đổi slot/ID khách hiện tại của phòng ("kế thừa chứ không thay thế").
+  2. **Cho phép gõ tay hoặc chọn từ lịch**:
+     - Nâng cấp [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue): Thêm thẻ `<input>` cho phép gõ trực tiếp định dạng `dd/mm/yyyy`, `d/m/yyyy`, `dd-mm-yyyy`, `ddmmyyyy`, tự chuẩn hóa sang `YYYY-MM-DD`, blur/enter chuẩn hóa ngày, click icon hoặc input vẫn mở lịch bình thường.
+     - Áp dụng thành công cho: Ngày sinh, Ngày phát hành, Ngày đi,...
+  3. **Thêm Người lớn / Trẻ em / Em bé theo luồng nháp (Draft)**:
+     - Khi bấm `+ Thêm người lớn / trẻ em / em bé`, hệ thống tạo bản ghi draft tạm thời với nhãn badge `(Mới)` trên danh sách khách bên trái, mở form chỉnh sửa và hiển thị banner thông báo hướng dẫn.
+     - Người dùng kiểm tra thông tin, có thể chọn kế thừa từ khách cũ, sau đó bấm nút **Lưu** ở header mới hiển thị popup xác nhận và gọi API insert vào CSDL.
+     - Nếu bấm **Quay lại** hoặc đổi khách khác: Hủy bản ghi draft, hoàn trả form ban đầu, không gọi API lưu vào CSDL.
+  4. **Khắc phục lỗi thêm EB (Em bé & Extra Bed)**:
+     - **Em bé (EB)**: Sửa [BookingChild.php](file:///d:/PMS/backend/app/Models/BookingChild.php) gán `status = 1` cho `BookingRoomChild` khi tạo mới, giúp trẻ em / em bé mới tạo không bị loại khỏi query `bookingChildren` khi tải lại phòng.
+     - **Extra Bed (EB)**: Sửa lỗi trong [ExtraBedModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue) khi các đêm của phòng in-house bị gán nhầm `isPast` dẫn đến ép số lượng về `0`, dòng Total không áp dụng và khi bấm Lưu bị emit `quantity: 0`. Đã chuyển sang cơ chế `isLocked` (chỉ khóa khi đêm đã post hóa đơn `is_posted == 1`), cho phép nhập/chỉnh sửa đêm in-house bình thường. Đồng bộ cập nhật ngay `pricingInfo.value.extra_bed_qty` và `pricingInfo.value.extra_bed_price` trong [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue).
+  5. **Thường trú / Tạm trú**:
+     - Nạp danh mục động từ CSDL thông qua API `fetchGuestDefinitions()` (`residence_types`), hiển thị đúng các lựa chọn theo bảng `residence_types` (Thường trú, Tạm trú, Khác) thay vì hardcode.
+  6. **Ô Quốc tịch**:
+     - Chuyển ô Quốc tịch từ thẻ `<select>` sang input autocomplete searchable (`nationalitySearch`), cho phép gõ tìm kiếm mã/tên quốc gia và hiển thị gợi ý dropdown (`filteredNationalities`) để chọn nhanh.
+- **Section 2: Hiển thị danh sách Yêu cầu đặc biệt ra ngoài giao diện**:
+  - Sửa lỗi mapping `loadRoomSpecialRequests`: API trả về quan hệ snake_case `special_request` (`item.special_request`), trước đó hàm map đọc `item.specialRequest` (camelCase) khiến `roomSpecialRequests` bị rỗng và không hiển thị ra giao diện.
+  - Tải tức thì từ `props.room.special_request_types` và đồng bộ realtime qua API `fetchBookingRoomSpecialRequests(bookingRoomId)`.
+  - Hiển thị danh sách các badge yêu cầu đặc biệt đã chọn ra ngoài giao diện ngay dưới nút `[☆ Yêu cầu đặc biệt]` trong khu vực "GIÁ PHÒNG & YÊU CẦU" (khớp Ảnh 2).
+  - Cập nhật số lượng tag ngay trên nút `Yêu cầu đặc biệt (X)`, tự động làm mới ngay sau khi lưu từ modal Yêu cầu đặc biệt và đồng bộ hiển thị lên tooltip trên Sơ đồ phòng.
+  - Bổ sung đầy đủ các import Vue lifecycle (`ref`, `computed`, `watch`, `onMounted`, `onBeforeUnmount`), `vue-router` (`useRouter`, `useRoute`) và `useUiStore` trong [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue) để khắc phục lỗi `ReferenceError: useRouter is not defined`.
+- **Kiểm thử**:
+  - Frontend: `npm run build` hoàn thành 100% không có lỗi.
+  - Backend: Toàn bộ test suites `RoomMoveTest.php` (14/14 tests), `GuestTest` (41/41 tests), và `tests/Feature/Booking/` (50/50 tests) pass 100%.
+
+## [2026-09-22] - Hoàn thiện 4 Section nghiệp vụ Room Map và CheckInPage theo tài liệu lỗi
+### Module: Room Map & Check-In ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [RoomMoveModal.vue](file:///d:/PMS/frontend/src/components/RoomMoveModal.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue), [RoomMoveTest.php](file:///d:/PMS/backend/tests/Feature/RoomMoveTest.php))
+
+- **Bối cảnh**: Triển khai toàn bộ 4 Section nghiệp vụ từ file đặc tả lỗi Room Map (`Các lỗi liên quan tới Room map.docx`):
+  1. **Section 1: Chuyển phòng sang phòng trống - Ràng buộc over phòng theo AllowOverRoomTypeRoomKind**:
+     - Kiểm tra AV (khả dụng) của loại phòng đích trong toàn bộ thời gian lưu trú khi chuyển phòng.
+     - Nếu chuyển phòng dẫn đến over loại phòng:
+       + `AllowOverRoomTypeRoomKind = 0`: Chặn chuyển phòng và báo lỗi: `"Loại phòng đã bị over, không thể chuyển phòng"`.
+       + `AllowOverRoomTypeRoomKind = 1`: Hiển thị cảnh báo xác nhận: `"Loại phòng đã bị over, bạn có muốn tiếp tục"` với 2 nút Yes / No. Chọn Yes tiếp tục chuyển phòng; chọn No hủy bỏ thao tác.
+  2. **Section 2: Modal Chuyển phòng (Danh sách phòng trống, sắp xếp tự nhiên, chặn phòng bẩn/chờ kiểm tra)**:
+     - Danh sách phòng trống khả dụng: Hiển thị đầy đủ các phòng có giai đoạn trống kể cả khi ở tình trạng bẩn (`vacant_dirty`, `turndown`) hoặc chờ kiểm tra (`vacant_clean`).
+     - Sắp xếp cột phòng theo thứ tự tự nhiên (natural sort: 101, 102, 103, 1002...).
+     - Khi chọn chuyển sang phòng bẩn: Khi bấm Lưu báo lỗi `"Phòng đang trong tình trạng phòng bẩn, không thể chuyển phòng "` và chặn chuyển.
+     - Khi chọn chuyển sang phòng chờ kiểm tra (`vacant_clean`): Chỉ cho chuyển vào phòng Sẵn sàng (`vacant_ready`); nếu chọn phòng chờ kiểm tra thì báo lỗi `"Phòng đang trong tình trạng chờ kiểm tra, không thể chuyển phòng "` và chặn chuyển.
+  3. **Section 3: Danh sách phòng đến/đi/ở (CheckInPage)**:
+     - Bổ sung 2 cột mới cho cả 2 bảng dữ liệu (Bảng phòng chưa đến / chưa trả và Bảng phòng đã đến / đang ở / đã trả):
+       + Cột `NL/TE/EB`: Số lượng người lớn / trẻ em / extra bed cho cả cấp booking và cấp phòng (`adults/children/extra_beds`).
+       + Cột `Yêu cầu ĐB`: Hiển thị yêu cầu đặc biệt của phòng và booking.
+     - Cập nhật colspan bảng trống tương ứng khi ở chế độ đến (12 cột) và chế độ trả phòng (15 cột).
+  4. **Section 4: Phím tắt đổi trạng thái trên Sơ đồ phòng (RoomMapPage)**:
+     - Khắc phục lỗi khi mở các modal (Thông tin, Chuyển phòng, Chi tiết, Khóa phòng...) bấm phím số 1, 2, 3... làm nhảy popup đổi tình trạng phòng.
+     - Chặn toàn bộ phím tắt số khi có bất kỳ modal nào đang mở trên Sơ đồ phòng.
+- **Kiểm thử & Xác thực**:
+  - Backend tests: Bổ sung 4 test cases trong [RoomMoveTest.php](file:///d:/PMS/backend/tests/Feature/RoomMoveTest.php), 14/14 tests pass 100%; `RoomMoveSameDayNightTest.php` 2/2 tests pass; toàn bộ 50/50 test cases `tests/Feature/Booking/` pass 100%.
+  - Frontend build: `npm run build` hoàn thành 100% không lỗi.
+
+## [2026-09-22] - Bổ sung hiển thị icon tình trạng phòng trong các danh sách CheckInPage (Đã đến / Đã đi / Đang ở)
+### Module: Đặt phòng / Check-in ([CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+
+- **Yêu cầu**: Đối với các phòng đã gán số phòng trong màn hình CheckInPage (Đã đến, Đã đi, Đang ở...), hiển thị thêm icon tình trạng phòng (Sạch, Bẩn, OOO, OOS, DND,...) bên cạnh số phòng.
+- **Xử lý hoàn thành**:
+  - Import [RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue).
+  - Hoàn thiện mapping `getRoomStatusIcon(room)`, `getRoomStatusIconClass(room)` và `getRoomStatusTooltip(room)` tra cứu từ danh sách phòng vật lý `roomStore.rooms` (kèm fallback `room.room`).
+  - Hỗ trợ đầy đủ các trạng thái: Sẵn sàng, Chờ kiểm tra (Sạch), Chưa dọn (Bẩn), OOO, OOS, DND, dịch vụ dọn phòng, ưu tiên dọn,... kèm màu sắc chuẩn và tooltip tiếng Việt khi hover.
+  - Gắn `<RoomIcon>` hiển thị cạnh `room.room_number` ở cả 2 bảng dữ liệu (Bảng phòng chưa đến / chưa trả và Bảng phòng đã đến / đang ở / đã trả).
+  - Khai báo bổ sung `const canCancelCheckIn = ref(false)` để sửa lỗi `ReferenceError: canCancelCheckIn is not defined` khi chuyển màn hình từ Sơ đồ phòng.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành 100% không có lỗi.
+
+## [2026-09-21] - Sửa nghiệp vụ Hủy nhận phòng (Undo Check-In): Chặn khi có dịch vụ/cọc, cho phép khi đã hủy/chuyển, chuẩn hóa giao diện xác nhận
+### Module: Sơ đồ phòng & Phòng đã đến ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [CheckInPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+
+- **Nghiệp vụ & Lỗi gốc rễ khách phản ánh ("Ràng thiếu điều kiện")**:
+  - Khi check-in phòng -> phát sinh bill/thanh toán/thanh toán trước -> hệ thống trước đây không kiểm tra đầy đủ bill/cọc còn hiệu lực hay đã bị hủy/chuyển.
+  - Sau khi người dùng chuyển bill sang phòng khác hoặc hủy bill/cọc, query cũ vẫn kiểm tra `orWhere('RentalRoomId1', $bookingRoom->id)` và quét Master Folio (`RegisterID2 = booking->id`).
+  - Do cơ chế `quickTransfer`/`transferFolio` nhân bản bill (`replicate()`) giữ nguyên `RentalRoomId1` là ID phòng gốc trong khi `RentalRoomId2` là phòng đích, câu query cũ match phải dòng bill mới trên phòng đích khiến phòng gốc bị chặn oan dù đã sạch hóa đơn.
+- **Xử lý hoàn thành**:
+  - **Backend (`BookingController.php` - phương thức `undoCheckIn`)**:
+    + Kiểm tra chỉ cho phép hủy nhận phòng cho các phòng vừa check-in trong ngày (`check_in_date === system_date`).
+    + Tối ưu kiểm tra hóa đơn dịch vụ (`$hasServiceBills`):
+      * Chỉ xét các bill đang gắn vào phòng hiện tại qua cột sở hữu chính thức `RentalRoomId2 = $bookingRoom->id` (kèm fallback legacy khi cả `RentalRoomId2` và `RegisterID2` rỗng/null và `RentalRoomId1 = $bookingRoom->id`).
+      * Bắt buộc kiểm tra `COALESCE(Edit, 0) = 0` và loại trừ các trạng thái đã hủy/chuyển `whereNotIn('Status', [3, 4])`.
+      * Không quét nhầm Master Folio hay các bill đã được chuyển sang phòng khác (`RentalRoomId2 != $bookingRoom->id`).
+    + Tối ưu kiểm tra thanh toán / cọc (`$hasPayments`):
+      * Chỉ xét bản ghi gắn với phòng `booking_room_id = $bookingRoom->id`, `edit_flag = 0`, `deleted_at IS NULL`, `status != STATUS_DELETED`.
+    + Trả về thông báo lỗi chuẩn nghiệp vụ khi vi phạm:
+      `"Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin"`.
+  - **Frontend (`RoomMapPage.vue` & `CheckInPage.vue`)**:
+    + Chuẩn hóa modal xác nhận hủy nhận phòng:
+      * Câu hỏi: `"Vui lòng chọn tình trạng phòng sau khi thực hiện \"Hủy nhận phòng\""`.
+      * 2 nút lựa chọn: **Dơ** (`dirty`), **Chờ kiểm tra** (`clean`).
+      * Bỏ nút "Đóng" (người dùng đóng bằng nút `[X]` góc trên modal).
+    + Frontend chỉ cho phép thực hiện hủy nhận phòng khi phòng check-in trong ngày hôm nay (`systemDate`).
+- **Kiểm thử**:
+  - Backend tests: Bổ sung 3 test cases trong [UndoCheckInValidationTest.php](file:///d:/PMS/backend/tests/Feature/UndoCheckInValidationTest.php) (chuyển bill sang phòng khác, chuyển cọc sang phòng khác, chuyển bill sang Master Folio). Chạy toàn bộ 9/9 tests pass 100% (25 assertions).
+  - Test tương thích [CheckoutBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/CheckoutBusinessRulesTest.php): 10/10 tests pass.
+  - Frontend build: `npm run build` hoàn thành 100% không có lỗi.
+
+## [2026-09-21] - Sửa lỗi tính năng Chuyển cọc (Khắc phục che mất khúc dưới, lọc đúng phòng đang ở, bỏ dòng Toàn bộ phòng)
+### Module: Đặt phòng / Đặt cọc ([DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue))
+
+- **Nguyên nhân**:
+  - Giao diện modal chuyển cọc cũ bị nhúng bên trong modal cha có CSS `transform: translate(...)`, kích thước input hẹp (`max-w-[260px]`), danh sách dropdown absolute tràn ra ngoài mép dưới modal dẫn đến bị che khuất phần đáy trên màn hình/cửa sổ nhỏ.
+  - Gọi API tải booking có giới hạn cứng `limit: 100` và lọc `status: '0,1'` (thiếu `status: 4`), đồng thời chặn tìm kiếm lại khi `searchResults` đã có dữ liệu làm thiếu nhiều booking so với màn hình Hóa đơn.
+  - Computed `transferOptions` cho phép cả phòng ở trạng thái Đăng ký (`status = 0`) chưa check-in / chưa gán số phòng, dẫn đến hiển thị dòng "Chưa xếp | Khách chưa đặt tên".
+  - Tự động sinh thêm dòng `type: 'room'` hiển thị `[Số phòng] | Toàn bộ phòng` cho từng phòng gây dư thừa.
+- **Xử lý hoàn thành**:
+  - **Khắc phục che mất khúc dưới & Đóng dropdown khi click ngoài**:
+    + Bọc Modal Chuyển cọc trong `<Teleport to="body">` với `z-[2000000]` và đặt modal ở vị trí cao hơn (`pt-20 items-start`) để có khoảng trống lớn phía dưới cho dropdown mở thoải mái.
+    + Thêm logic tự động phát hiện vị trí `checkDropdownPlacement`: Nếu khoảng cách phía dưới nhỏ hơn 230px, dropdown sẽ tự động mở lật ngược lên trên (`openUpwards: bottom-full mb-1.5`), tuyệt đối không bao giờ bị cắt chân hay che mất khúc dưới.
+    + Bổ sung listener `pointerdown` toàn cục đóng dropdown ngay lập tức khi người dùng click ra ngoài ô input/dropdown mà không cần phải đóng modal.
+    + Giữ nguyên form chuẩn xác như giao diện người dùng yêu cầu: có icon mũi tên `⌄` xoay khi đóng mở, ô xóa nhanh `✕`.
+  - **Khắc phục danh sách phòng & booking bị thiếu**:
+    + Đồng bộ với màn hình Hóa đơn: Gọi `fetchBookings({ status: '0,1,4' })` bỏ giới hạn `limit: 100` để lấy toàn bộ booking hiện hành.
+    + Bổ sung debounce tự động gọi server tìm kiếm khi người dùng nhập từ khóa tìm kiếm mà bộ lọc cục bộ chưa có.
+  - **Lọc chuẩn phòng Đang ở & bỏ dòng "Toàn bộ phòng"**:
+    + Bỏ hoàn toàn việc tạo dòng `type: 'room'` ("Toàn bộ phòng").
+    + Chỉ hiển thị các phòng ĐANG Ở (`Number(room.status) === 1`), chưa checkout và đã có số phòng thực tế (`room_number`).
+    + Loại bỏ hoàn toàn các phòng trạng thái Đăng ký (`status = 0`).
+    + Tên khách hiển thị format chuẩn: `[Số phòng] | [Tên khách]`, có fallback chuẩn xác sang `room.guest_name`, `booking.booking_name`, `booking.guest_name`, `booking.contact_name`, không bao giờ hiển thị "Khách chưa đặt tên" hay "Chưa xếp".
+  - **Căn giữa màn hình & Cho phép kéo di chuyển modal (Draggable)**:
+    + Căn giữa modal Chuyển đặt cọc theo trục ngang và dọc (`items-center justify-center p-4`) như các modal chuẩn khác.
+    + Thêm tính năng kéo di chuyển tự do (`cursor-move select-none`, `startDragTransferModal`, `transferModalPos`) tại thanh tiêu đề (header) của modal chuyển cọc.
+    + Khi di chuyển hoặc mở dropdown, tự động tính toán lại vị trí `checkDropdownPlacement` để dropdown bung lên trên (`openUpwards`) nếu sát đáy màn hình.
+- **Kiểm thử**:
+  - `npm run build`: Hoàn thành thành công 100% (0 lỗi).
+
+## [2026-09-21] - Đồng bộ tính toán và hiển thị tiền phòng quá khứ theo hóa đơn thực tế (service_bills)
+### Module: Đặt phòng / Tạo đăng ký ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+
 
 - **Yêu cầu (Mục 1 - 215-239.docx & Bảng booking_room_services)**:
   - Tự động thêm dấu phẩy `,` ngăn cách hàng nghìn và cho phép dấu chấm `.` thập phân khi người dùng nhập số tiền (Đơn giá dịch vụ, Tiền phòng tự nhập, Giá phòng điều chỉnh).
