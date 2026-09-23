@@ -20,39 +20,232 @@ return new class
     {
         $blocks = [
             'header' => [
-                ['id'=>'deposits_sale_hotel_header','type'=>'text','content'=>'<div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <b class="generated-date">Ngày:</b> {{report.generated_at}}</div></div></div>','style'=>['fontSize'=>'10px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'8px','paddingRight'=>'8px','marginTop'=>'0px','marginBottom'=>'2px','fontWeight'=>'normal']],
-                ['id'=>'deposits_sale_divider','type'=>'divider','content'=>'<hr class="header-divider">','style'=>['paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'8px','paddingRight'=>'8px','marginTop'=>'0px','marginBottom'=>'9px']],
-                ['id'=>'deposits_sale_title','type'=>'text','content'=>'<h1>BÁO CÁO TIỀN ĐẶT CỌC</h1>','style'=>['textAlign'=>'center','fontSize'=>'18px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'0px','paddingRight'=>'0px','marginTop'=>'0px','marginBottom'=>'0px','fontWeight'=>'bold']],
-                ['id'=>'deposits_sale_period','type'=>'text','content'=>'<p class="period"><b>Ngày:</b> {{parameters.p_from_date}} &nbsp; ~ &nbsp; {{parameters.p_to_date}}</p>','style'=>['textAlign'=>'center','fontSize'=>'10px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'0px','paddingRight'=>'0px','marginTop'=>'30px','marginBottom'=>'13px','fontWeight'=>'normal']],
-            ],
-            'detail' => [[
-                'id'=>'deposits_sale_table','type'=>'table','dataSource'=>'rows','tableType'=>'dynamic','tableStyle'=>'grid','style'=>['fontSize'=>'10px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'0px','paddingRight'=>'0px','marginTop'=>'0px','marginBottom'=>'0px','fontWeight'=>'normal','width'=>'100%'],
-                'groups'=>[['id'=>'deposits_sale_type_group','field'=>'GroupHeader','label'=>'{{row.GroupHeader}}','className'=>'deposit-type-group','enabledBy'=>'','sort'=>'ASC']],
-                'columns'=>$this->columns(),
-                'customRows'=>[
-                    ['id'=>'deposits_sale_company_total','enabledBy'=>'','scope'=>'group','level'=>0,'className'=>'pms-group-footer','cells'=>[['id'=>'company_total_label','type'=>'text','content'=>'Tổng Theo C.ty','colspan'=>8,'align'=>'right'],['id'=>'company_total_value','type'=>'binding','binding'=>'row.CompanyTotal','colspan'=>1,'align'=>'right','format'=>'number'],['id'=>'company_total_spacer','type'=>'text','content'=>'','colspan'=>2,'align'=>'left']]],
-                    ['id'=>'deposits_sale_deposit_total','enabledBy'=>'','scope'=>'table','level'=>0,'className'=>'deposit-total-row','cells'=>[['id'=>'deposit_total_label','type'=>'text','content'=>'Tổng Tiền Đặt Cọc','colspan'=>8,'align'=>'right'],['id'=>'deposit_total_value','type'=>'binding','binding'=>'aggregate.rows.sum.DepositAmount','colspan'=>1,'align'=>'right','format'=>'number'],['id'=>'deposit_total_spacer','type'=>'text','content'=>'','colspan'=>2,'align'=>'left']]],
-                    ['id'=>'deposits_sale_total','enabledBy'=>'','scope'=>'table','level'=>0,'className'=>'report-total-row','cells'=>[['id'=>'report_total_label','type'=>'text','content'=>'Tổng','colspan'=>8,'align'=>'right'],['id'=>'report_total_value','type'=>'binding','binding'=>'aggregate.rows.sum.Amount','colspan'=>1,'align'=>'right','format'=>'number'],['id'=>'report_total_spacer','type'=>'text','content'=>'','colspan'=>2,'align'=>'left']]],
+                [
+                    'id' => 'deposits_sale_hotel_header',
+                    'type' => 'columns',
+                    'style' => [
+                        'textAlign' => 'left', 'fontSize' => '13px',
+                        'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                        'marginTop' => '0px', 'marginBottom' => '6px', 'color' => '#111111', 'fontWeight' => 'normal',
+                    ],
+                    'columns' => [
+                        [
+                            'width' => '30%',
+                            'blocks' => [[
+                                'id' => 'deposits_sale_hotel_logo',
+                                'type' => 'text',
+                                'content' => '<div class="hotel-logo" style="min-height: 58px;">{{hotel.logo}}</div>',
+                                'style' => [
+                                    'textAlign' => 'left', 'fontSize' => '14px', 'marginLeft' => '20px',
+                                    'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                                    'marginTop' => '0px', 'marginBottom' => '0px', 'color' => '#111111', 'fontWeight' => 'normal',
+                                ],
+                            ]],
+                        ],
+                        [
+                            'width' => '70%',
+                            'blocks' => [[
+                                'id' => 'deposits_sale_hotel_information',
+                                'type' => 'text',
+                                'content' => '<div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} &nbsp;&nbsp;&nbsp;&nbsp; <b>Ngày:</b> {{report.generated_at}}</div></div>',
+                                'style' => [
+                                    'textAlign' => 'right', 'fontSize' => '9px',
+                                    'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                                    'marginTop' => '0px', 'marginBottom' => '0px', 'color' => '#111111', 'fontWeight' => 'normal',
+                                ],
+                            ]],
+                        ],
+                    ],
                 ],
-            ],['id'=>'deposits_sale_allocation_title','type'=>'text','content'=>'<h2>Bảng Phân Bổ Tiền Tệ</h2>','style'=>['textAlign'=>'center','fontSize'=>'18px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'0px','paddingRight'=>'0px','marginTop'=>'28px','marginBottom'=>'14px','fontWeight'=>'bold']],['id'=>'deposits_sale_allocation','type'=>'static-table','tableStyle'=>'grid','style'=>['fontSize'=>'10px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'0px','paddingRight'=>'0px','marginTop'=>'0px','marginBottom'=>'0px','marginLeft'=>'auto','marginRight'=>'auto','fontWeight'=>'normal','width'=>'84%'],'columns'=>[['width'=>'20%'],['width'=>'16%'],['width'=>'16%'],['width'=>'20%'],['width'=>'14%'],['width'=>'14%']],'rows'=>[['cells'=>[['content'=>'<b>HTTT</b>'],['content'=>'<b>Thu Ngân</b>'],['content'=>'<b>Đặt Cọc</b>'],['content'=>'<b>Thu Ngân + Đặt Cọc</b>'],['content'=>'<b>Hoàn Tiền</b>'],['content'=>'<b>Tổng</b>']] ],['cells'=>[['content'=>'{{parameters.p_payment_method}}'],['content'=>'{{aggregate.rows.sum.CashAmount|number}}'],['content'=>'{{aggregate.rows.sum.DepositAmount|number}}'],['content'=>'{{aggregate.rows.sum.PositiveAmount|number}}'],['content'=>'{{aggregate.rows.sum.RefundAmount|number}}'],['content'=>'{{aggregate.rows.sum.Amount|number}}']] ],['cells'=>[['content'=>'Tổng'],['content'=>''],['content'=>''],['content'=>''],['content'=>''],['content'=>'{{aggregate.rows.sum.Amount|number}}']] ]]],
+                [
+                    'id' => 'deposits_sale_divider', 'type' => 'divider', 'content' => '<hr class="header-divider">',
+                    'style' => [
+                        'height' => '16px', 'minHeight' => '16px',
+                        'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '8px', 'paddingRight' => '8px',
+                        'marginTop' => '0px', 'marginBottom' => '9px',
+                    ],
+                ],
+                [
+                    'id' => 'deposits_sale_title', 'type' => 'text', 'content' => 'BÁO CÁO TIỀN ĐẶT CỌC',
+                    'style' => [
+                        'textAlign' => 'center', 'fontFamily' => 'Arial, Helvetica, sans-serif', 'fontSize' => '18px',
+                        'color' => '#111111', 'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                        'marginTop' => '0px', 'marginBottom' => '0px', 'fontWeight' => 'bold',
+                    ],
+                ],
+                [
+                    'id' => 'deposits_sale_period', 'type' => 'text',
+                    'content' => 'Ngày: {{parameters.p_from_date}}  ~  {{parameters.p_to_date}}',
+                    'style' => [
+                        'textAlign' => 'center', 'fontFamily' => 'Arial, Helvetica, sans-serif', 'fontSize' => '10px',
+                        'color' => '#111111', 'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                        'marginTop' => '30px', 'marginBottom' => '13px', 'fontWeight' => 'normal',
+                    ],
+                ],
             ],
-            'footer'=>[['id'=>'deposits_sale_signatures','type'=>'text','content'=>'<div class="signatures">Nhân viên <span>Trưởng phòng</span> Bộ phận kế toán</div>','style'=>['textAlign'=>'center','fontSize'=>'10px','paddingTop'=>'0px','paddingBottom'=>'0px','paddingLeft'=>'0px','paddingRight'=>'0px','marginTop'=>'18px','marginBottom'=>'0px','marginLeft'=>'auto','marginRight'=>'auto','fontWeight'=>'bold','width'=>'84%']]],
+            'detail' => [
+                [
+                    'id' => 'deposits_sale_table', 'type' => 'table', 'dataSource' => 'rows', 'tableType' => 'dynamic',
+                    'tableStyle' => 'grid',
+                    'style' => [
+                        'fontSize' => '10px', 'fontFamily' => 'Arial, Helvetica, sans-serif', 'color' => '#111111',
+                        'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                        'marginTop' => '0px', 'marginBottom' => '0px', 'fontWeight' => 'normal', 'width' => '100%',
+                    ],
+                    'groups' => [[
+                        'id' => 'deposits_sale_type_group', 'field' => 'GroupHeader', 'label' => '{{row.GroupHeader}}',
+                        'className' => '', 'enabledBy' => '', 'sort' => 'ASC',
+                        'headerCells' => [[
+                            'id' => 'deposits_sale_type_group_header', 'type' => 'text', 'content' => '{{row.GroupHeader}}',
+                            'colspan' => 11, 'align' => 'left', 'backgroundColor' => '#ffffff', 'color' => '#111111',
+                            'fontSize' => '10px', 'fontWeight' => 'bold', 'borderColor' => '#ffffff',
+                        ]],
+                    ]],
+                    'columns' => $this->columns(),
+                    'customRows' => [
+                        [
+                            'id' => 'deposits_sale_company_total', 'enabledBy' => '', 'scope' => 'group', 'level' => 0,
+                            'className' => 'pms-group-footer',
+                            'cells' => [
+                                ['id' => 'company_total_label', 'type' => 'text', 'content' => 'Tổng Theo C.ty', 'colspan' => 8, 'align' => 'right'],
+                                ['id' => 'company_total_value', 'type' => 'binding', 'binding' => 'group.sum.Amount', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
+                                ['id' => 'company_total_spacer', 'type' => 'text', 'content' => '', 'colspan' => 2, 'align' => 'left'],
+                            ],
+                        ],
+                        [
+                            'id' => 'deposits_sale_deposit_total', 'enabledBy' => '', 'scope' => 'table', 'level' => 0,
+                            'className' => 'deposit-total-row',
+                            'cells' => [
+                                ['id' => 'deposit_total_label', 'type' => 'text', 'content' => 'Tổng Tiền Đặt Cọc', 'colspan' => 8, 'align' => 'right'],
+                                ['id' => 'deposit_total_value', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.DepositAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
+                                ['id' => 'deposit_total_spacer', 'type' => 'text', 'content' => '', 'colspan' => 2, 'align' => 'left'],
+                            ],
+                        ],
+                        [
+                            'id' => 'deposits_sale_total', 'enabledBy' => '', 'scope' => 'table', 'level' => 0,
+                            'className' => 'report-total-row',
+                            'cells' => [
+                                ['id' => 'report_total_label', 'type' => 'text', 'content' => 'Tổng', 'colspan' => 8, 'align' => 'right'],
+                                ['id' => 'report_total_value', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.Amount', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
+                                ['id' => 'report_total_spacer', 'type' => 'text', 'content' => '', 'colspan' => 2, 'align' => 'left'],
+                            ],
+                        ],
+                    ],
+                ],
+                [
+                    'id' => 'deposits_sale_allocation_title', 'type' => 'text', 'content' => 'Bảng Phân Bổ Tiền Tệ',
+                    'style' => [
+                        'textAlign' => 'center', 'fontFamily' => 'Arial, Helvetica, sans-serif', 'fontSize' => '18px',
+                        'color' => '#111111', 'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                        'marginTop' => '28px', 'marginBottom' => '14px', 'fontWeight' => 'bold',
+                    ],
+                ],
+                [
+                    'id' => 'deposits_sale_allocation', 'type' => 'table', 'dataSource' => 'currency_allocations',
+                    'tableType' => 'dynamic', 'tableStyle' => 'grid',
+                    'style' => [
+                        'fontSize' => '10px', 'fontFamily' => 'Arial, Helvetica, sans-serif', 'color' => '#111111',
+                        'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                        'marginTop' => '0px', 'marginBottom' => '0px', 'marginLeft' => 'auto', 'marginRight' => 'auto',
+                        'fontWeight' => 'normal', 'width' => '84%',
+                    ],
+                    'columns' => [
+                        ['header' => 'HTTT', 'value' => 'item.PaymentMethodName', 'width' => '18%', 'align' => 'center'],
+                        ['header' => 'Mã Thu Ngân', 'value' => 'item.CashierCode', 'width' => '14%', 'align' => 'center'],
+                        ['header' => 'Thu Ngân', 'value' => 'item.CashAmount', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
+                        ['header' => 'Đặt Cọc', 'value' => 'item.DepositAmount', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
+                        ['header' => 'Thu Ngân + Đặt Cọc', 'value' => 'item.PositiveAmount', 'width' => '18%', 'align' => 'right', 'format' => 'number'],
+                        ['header' => 'Hoàn Tiền', 'value' => 'item.RefundAmount', 'width' => '13%', 'align' => 'right', 'format' => 'number'],
+                        ['header' => 'Tổng', 'value' => 'item.Amount', 'width' => '13%', 'align' => 'right', 'format' => 'number'],
+                    ],
+                    'customRows' => [[
+                        'id' => 'deposits_sale_allocation_total', 'scope' => 'table', 'className' => 'allocation-total',
+                        'cells' => [
+                            ['id' => 'allocation_total_label', 'type' => 'text', 'content' => 'Tổng', 'colspan' => 2, 'align' => 'left'],
+                            ['id' => 'allocation_cash_total', 'type' => 'binding', 'binding' => 'aggregate.currency_allocations.sum.CashAmount', 'align' => 'right', 'format' => 'number'],
+                            ['id' => 'allocation_deposit_total', 'type' => 'binding', 'binding' => 'aggregate.currency_allocations.sum.DepositAmount', 'align' => 'right', 'format' => 'number'],
+                            ['id' => 'allocation_positive_total', 'type' => 'binding', 'binding' => 'aggregate.currency_allocations.sum.PositiveAmount', 'align' => 'right', 'format' => 'number'],
+                            ['id' => 'allocation_refund_total', 'type' => 'binding', 'binding' => 'aggregate.currency_allocations.sum.RefundAmount', 'align' => 'right', 'format' => 'number'],
+                            ['id' => 'allocation_grand_total', 'type' => 'binding', 'binding' => 'aggregate.currency_allocations.sum.Amount', 'align' => 'right', 'format' => 'number'],
+                        ],
+                    ]],
+                ],
+            ],
+            'footer' => [[
+                'id' => 'deposits_sale_signatures', 'type' => 'static-table', 'tableStyle' => 'none',
+                'style' => [
+                    'fontSize' => '10px', 'fontFamily' => 'Arial, Helvetica, sans-serif', 'color' => '#111111',
+                    'paddingTop' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px', 'paddingRight' => '0px',
+                    'marginTop' => '18px', 'marginBottom' => '0px', 'marginLeft' => 'auto', 'marginRight' => 'auto',
+                    'fontWeight' => 'bold', 'width' => '84%',
+                ],
+                'columns' => [['width' => '33.333%'], ['width' => '33.333%'], ['width' => '33.333%']],
+                'rows' => [[
+                    'cells' => [
+                        ['content' => 'Nhân viên', 'style' => ['textAlign' => 'center', 'fontSize' => '10px', 'fontWeight' => 'bold', 'color' => '#111111', 'border' => 'none', 'paddingTop' => '0px', 'paddingRight' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px']],
+                        ['content' => 'Trưởng phòng', 'style' => ['textAlign' => 'center', 'fontSize' => '10px', 'fontWeight' => 'bold', 'color' => '#111111', 'border' => 'none', 'paddingTop' => '0px', 'paddingRight' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px']],
+                        ['content' => 'Bộ phận kế toán', 'style' => ['textAlign' => 'center', 'fontSize' => '10px', 'fontWeight' => 'bold', 'color' => '#111111', 'border' => 'none', 'paddingTop' => '0px', 'paddingRight' => '0px', 'paddingBottom' => '0px', 'paddingLeft' => '0px']],
+                    ],
+                ]],
+            ]],
         ];
 
         foreach ($blocks['detail'] as &$block) {
-            if (($block['id'] ?? '') !== 'deposits_sale_allocation') {
+            if (! in_array($block['id'] ?? '', ['deposits_sale_table', 'deposits_sale_allocation'], true)) {
                 continue;
             }
 
-            $block['rows'][0]['style']['fontWeight'] = 'normal';
-            foreach ($block['rows'][0]['cells'] as &$cell) {
-                $cell['content'] = strip_tags($cell['content'], '<br>');
+            foreach ($block['columns'] as &$column) {
+                $column['headerStyle'] = array_merge($this->tableCellStyle(isHeader: true, align: $column['align'] ?? 'left'), $column['headerStyle'] ?? []);
+                $column['cellStyle'] = array_merge($this->tableCellStyle(isHeader: false, align: $column['align'] ?? 'left'), $column['cellStyle'] ?? []);
             }
-            unset($cell);
+            unset($column);
+
+            if (isset($block['customRows'])) {
+                foreach ($block['customRows'] as &$row) {
+                    foreach ($row['cells'] as &$cell) {
+                        $cell = array_merge($this->customTotalCellStyle(), $cell);
+                    }
+                    unset($cell);
+                }
+                unset($row);
+            }
         }
         unset($block);
 
         return $blocks;
+    }
+
+    private function tableCellStyle(bool $isHeader, string $align): array
+    {
+        return [
+            'textAlign' => $align,
+            'verticalAlign' => 'middle',
+            'fontFamily' => 'Arial, Helvetica, sans-serif',
+            'fontSize' => '10px',
+            'fontWeight' => $isHeader ? 'bold' : 'normal',
+            'color' => '#111111',
+            'backgroundColor' => $isHeader ? '#d9deea' : '#ffffff',
+            'border' => '1px solid #aeb5c0',
+            'paddingTop' => '4px',
+            'paddingRight' => '3px',
+            'paddingBottom' => '4px',
+            'paddingLeft' => '3px',
+            'lineHeight' => '1.1',
+            'overflowWrap' => 'anywhere',
+            'whiteSpace' => $align === 'right' ? 'nowrap' : 'normal',
+        ];
+    }
+
+    private function customTotalCellStyle(): array
+    {
+        return [
+            'backgroundColor' => '#d9deea',
+            'color' => '#111111',
+            'fontSize' => '10px',
+            'fontWeight' => 'bold',
+            'borderColor' => '#aeb5c0',
+        ];
     }
 
     private function columns(): array
@@ -70,6 +263,11 @@ return new class
     {
         $html = '';
         foreach (['header', 'detail', 'footer'] as $band) {
+            if ($band === 'header') {
+                $html .= $this->compileHeader($bands[$band] ?? []);
+                continue;
+            }
+
             $html .= '<div class="report-'.($band === 'detail' ? 'detail' : $band).'-band">';
             foreach ($bands[$band] ?? [] as $block) {
                 $html .= $this->compileDesignerBlock($block);
@@ -78,6 +276,18 @@ return new class
         }
 
         return $html;
+    }
+
+    public function compileHeader(array $blocks): string
+    {
+        $html = '<div class="report-header-band">';
+        foreach ($blocks as $block) {
+            if (is_array($block)) {
+                $html .= $this->compileDesignerBlock($block);
+            }
+        }
+
+        return $html.'</div>';
     }
 
     private function compileDesignerBlock(array $block): string
@@ -93,6 +303,22 @@ return new class
 
         if (in_array($block['type'] ?? '', ['text', 'divider'], true)) {
             return $open."\n  ".($block['content'] ?? '')."\n</div>\n";
+        }
+
+        if (($block['type'] ?? '') === 'columns') {
+            $html = $open."\n  <table style=\"width: 100%; border: none; border-collapse: collapse; margin: 0; padding: 0;\">\n    <tr style=\"border: none;\">\n";
+            foreach ($block['columns'] ?? [] as $column) {
+                $width = htmlspecialchars((string) ($column['width'] ?? '50%'), ENT_QUOTES, 'UTF-8');
+                $html .= '      <td style="width: '.$width.'; border: none; padding: 0; vertical-align: top;">' ."\n";
+                foreach ($column['blocks'] ?? [] as $nestedBlock) {
+                    if (is_array($nestedBlock)) {
+                        $html .= $this->compileDesignerBlock($nestedBlock);
+                    }
+                }
+                $html .= "      </td>\n";
+            }
+
+            return $html."    </tr>\n  </table>\n</div>\n";
         }
 
         if (($block['type'] ?? '') === 'static-table') {
@@ -131,7 +357,11 @@ return new class
             $tdStyle .= ' border: none;';
         }
         foreach ($columns as $column) {
-            $html .= '        <th style="'.$thStyle.' width: '.($column['width'] ?? 'auto').'; text-align: '.($column['align'] ?? 'left').';">'.($column['header'] ?? '')."</th>\n";
+            $headerStyle = $this->compileStyle(array_merge([
+                'textAlign' => 'center',
+                'fontWeight' => 'bold',
+            ], $column['headerStyle'] ?? []));
+            $html .= '        <th style="'.$thStyle.' width: '.($column['width'] ?? 'auto').'; '.$headerStyle.';">'.($column['header'] ?? '')."</th>\n";
         }
         $html .= "      </tr>\n    </thead>\n";
         $groups = $block['groups'] ?? [];
@@ -139,12 +369,35 @@ return new class
         $html .= '<tbody'.($groups ? ' class="pms-grouped-rows" data-source="'.$source.'" data-group-by="'.htmlspecialchars((string) ($groups[0]['field'] ?? ''), ENT_QUOTES, 'UTF-8').'"' : '').'>';
         foreach ($groups as $group) {
             $html .= '<tr class="pms-group-header" data-group-level="0" data-group-field="'.htmlspecialchars((string) ($group['field'] ?? ''), ENT_QUOTES, 'UTF-8').'" data-group-sort="'.($group['sort'] ?? 'ASC').'">';
-            $html .= '<td colspan="'.max(1, count($columns)).'" style="'.$tdStyle.' text-align: left; font-weight: bold;">'.($group['label'] ?? '').'</td></tr>';
+            $headerCells = $group['headerCells'] ?? [];
+            if ($headerCells !== []) {
+                foreach ($headerCells as $cell) {
+                    $content = $cell['content'] ?? '';
+                    if (($cell['type'] ?? '') === 'binding') {
+                        $content = '{{'.($cell['binding'] ?? '').'}}';
+                    }
+                    $cellStyle = $this->compileStyle([
+                        'textAlign' => $cell['align'] ?? 'left',
+                        'backgroundColor' => $cell['backgroundColor'] ?? null,
+                        'color' => $cell['color'] ?? null,
+                        'borderColor' => $cell['borderColor'] ?? null,
+                        'fontSize' => $cell['fontSize'] ?? null,
+                        'fontWeight' => $cell['fontWeight'] ?? 'bold',
+                    ]);
+                    $html .= '<td colspan="'.max(1, (int) ($cell['colspan'] ?? count($columns))).'" style="'.$tdStyle.' '.$cellStyle.'">'.$content.'</td>';
+                }
+            } else {
+                $html .= '<td colspan="'.max(1, count($columns)).'" style="'.$tdStyle.' text-align: left; font-weight: bold;">'.($group['label'] ?? '').'</td>';
+            }
+            $html .= '</tr>';
         }
         $html .= '      <tr class="pms-detail-row"'.($groups ? '' : ' data-source="'.$source.'"').">\n";
         foreach ($columns as $column) {
             $format = ($column['format'] ?? '') === 'number' ? '|number' : '';
-            $html .= '        <td style="'.$tdStyle.' text-align: '.($column['align'] ?? 'left').';">{{'.($column['value'] ?? '').$format."}}</td>\n";
+            $cellStyle = $this->compileStyle(array_merge([
+                'textAlign' => $column['align'] ?? 'left',
+            ], $column['cellStyle'] ?? []));
+            $html .= '        <td style="'.$tdStyle.' '.$cellStyle.';">{{'.($column['value'] ?? '').$format."}}</td>\n";
         }
         $html .= "      </tr>\n";
         foreach (($block['customRows'] ?? []) as $row) {
@@ -174,7 +427,15 @@ return new class
             if (($cell['type'] ?? '') === 'binding') {
                 $content = '{{'.($cell['binding'] ?? '').(($cell['format'] ?? '') === 'number' ? '|number' : '').'}}';
             }
-            $html .= '<td colspan="'.max(1, (int) ($cell['colspan'] ?? 1)).'" style="padding: 6px 8px; text-align: '.($cell['align'] ?? 'left').'; font-weight: bold;">'.$content.'</td>';
+            $cellStyle = $this->compileStyle([
+                'textAlign' => $cell['align'] ?? 'left',
+                'backgroundColor' => $cell['backgroundColor'] ?? null,
+                'color' => $cell['color'] ?? null,
+                'borderColor' => $cell['borderColor'] ?? null,
+                'fontSize' => $cell['fontSize'] ?? null,
+                'fontWeight' => $cell['fontWeight'] ?? 'bold',
+            ]);
+            $html .= '<td colspan="'.max(1, (int) ($cell['colspan'] ?? 1)).'" style="padding: 6px 8px; '.$cellStyle.'">'.$content.'</td>';
         }
 
         return $html.'</tr>';
@@ -195,7 +456,8 @@ return new class
     private function css(): string
     {
         return <<<'CSS'
-body{color:#111;font-family:Arial,Helvetica,sans-serif;font-size:10px}.hotel-header{display:grid;grid-template-columns:300px 1fr;align-items:center;min-height:65px}.hotel-logo{display:flex;align-items:center;min-height:55px}.hotel-logo img{max-width:120px;max-height:55px;object-fit:contain}.hotel-information{line-height:1.9;text-align:right}.generated-date{margin-left:140px}.header-divider{margin:0;border:0;border-top:1px solid #333}h1{margin:0;text-align:center;font-size:18px;font-weight:bold}.period{margin:0;text-align:center}.deposit-table,.allocation-table,#deposits_sale_table table,#deposits_sale_allocation table{width:100%;border-collapse:collapse;table-layout:fixed}.deposit-table th,.deposit-table td,.allocation-table th,.deposit-table td,#deposits_sale_table th,#deposits_sale_table td,#deposits_sale_allocation th,#deposits_sale_allocation td{border:1px solid #aeb5c0;padding:4px 3px;line-height:1.1;vertical-align:middle;overflow-wrap:anywhere}.deposit-table th,.allocation-table th,#deposits_sale_table th,#deposits_sale_allocation th,#deposits_sale_allocation tr:first-child td{background:#d9deea;text-align:center;font-weight:bold}.pms-group-header td,.deposit-type-group{background:#fff;border-bottom:0!important;font-weight:bold;text-align:left!important}.pms-group-footer td,.deposit-total-row td,.report-total-row td,.allocation-total td,#deposits_sale_allocation tr:last-child td{background:#d9deea;font-weight:bold}.money,.deposit-table td:nth-child(9),#deposits_sale_table td:nth-child(9){text-align:right;white-space:nowrap}.deposit-table td:nth-child(1),.deposit-table td:nth-child(2),.deposit-table td:nth-child(4),.deposit-table td:nth-child(5),.deposit-table td:nth-child(6),.deposit-table td:nth-child(7),.deposit-table td:nth-child(8),.deposit-table td:nth-child(10),#deposits_sale_table td:nth-child(1),#deposits_sale_table td:nth-child(2),#deposits_sale_table td:nth-child(4),#deposits_sale_table td:nth-child(5),#deposits_sale_table td:nth-child(6),#deposits_sale_table td:nth-child(7),#deposits_sale_table td:nth-child(8),#deposits_sale_table td:nth-child(10){text-align:center}.allocation-table,#deposits_sale_allocation table{width:84%;margin:0 auto}.allocation-table td:not(:first-child),#deposits_sale_allocation td:not(:first-child){text-align:right;white-space:nowrap}#deposits_sale_hotel_header{margin:0 0 2px;padding:0 8px}#deposits_sale_divider{margin:0 8px 9px;padding:0}#deposits_sale_title{margin:0;padding:0}#deposits_sale_period{margin:30px 0 13px;padding:0}#deposits_sale_table{margin:0;padding:0}#deposits_sale_table th,#deposits_sale_table td{padding:4px 3px!important;font-size:10px}#deposits_sale_allocation_title{margin:28px 0 14px;padding:0}#deposits_sale_allocation{margin:0 auto;padding:0}#deposits_sale_allocation td{padding:4px 3px!important;line-height:1.1}#deposits_sale_allocation tr:first-child td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}#deposits_sale_allocation tr:not(:first-child) td{font-weight:normal!important}#deposits_sale_allocation tr:last-child td{font-weight:bold!important}#deposits_sale_signatures{margin:18px auto 0;padding:0}.signatures{display:grid;grid-template-columns:repeat(3,1fr);margin:0 auto;width:84%;text-align:center;font-size:10px;font-weight:bold}.signatures span{display:block}h2{margin:0;text-align:center;font-size:18px;font-weight:bold}@media print{thead{display:table-header-group}tr{break-inside:avoid}}
+#deposits_sale_table table,#deposits_sale_allocation table,#deposits_sale_signatures table{margin:0;table-layout:fixed}
+@media print{thead{display:table-header-group}tr{break-inside:avoid}}
 CSS;
     }
 };
