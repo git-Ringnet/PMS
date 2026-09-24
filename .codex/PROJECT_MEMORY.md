@@ -2,6 +2,9 @@
 
 ## Current Status
 
+- 2026-09-24: Đã triển khai các vấn đề Checkout dòng 226/227/229/230/231/232: giữ trạng thái booking/phòng sau thanh toán; chuẩn hóa marker `pack2/pack4`; lấy tài khoản ngân hàng từ cấu hình; chỉnh sửa mô tả bill/payment; tinh gọn Payment Modal; kéo thả bill/cọc/thanh toán trước sang phòng. Không migration, không backfill dữ liệu lịch sử. PHP lint, route list và frontend build đạt; backend feature test liên quan bị treo không xuất output trong môi trường test hiện tại.
+- 2026-09-24: Đã triển khai Checkout dòng 234–237 và 239–240: xác thực City Ledger theo `companies.sync_acc`; settlement giới hạn ngày lưu trú/ngày hệ thống/quyền ngày cũ; ghép ngày giờ với ca cấu hình cho Payment/Prepayment; giới hạn ngày FO và đêm tiền phòng theo thời gian lưu trú; chặn FO/HK/room-charge khi No Post, không đổi Night Audit. Dòng 238 chưa đổi owner `service_bills` do consumer ngoài Checkout có thể bị ảnh hưởng. Frontend build và PHP lint đạt; backend tests không chạy được vì test connection `mysql_data` chưa cấu hình.
+
 - 2026-09-23: Đã triển khai mã nguồn Dòng 169/170/171 theo đặc tả đã chốt. Dòng 169 dùng `p_branch=__current__` ẩn theo connection hiện tại; Dòng 170 dùng `p_division=__current__/__all__`, chuẩn hóa tuần Thứ Hai–Chủ Nhật và chỉ trừ OOO; Dòng 171 dùng 22 cột Sheet 72/sp_292, phân nhóm thanh toán theo `payment_group` và bảo toàn đẳng thức kế toán. Chưa chạy migration thật hoặc nghiệm thu browser/PDF/dữ liệu thật.
 - 2026-09-23: Hoàn thành nghiên cứu, phân tích sâu và lập bộ tài liệu đặc tả kỹ thuật chi tiết 100% cho 3 báo cáo: Dòng 169 (Báo cáo dự đoán bán phòng / sp_023), Dòng 170 (Báo cáo phòng hàng tuần / sp_023_Division), Dòng 171 (Báo cáo tổng doanh thu / sp_TotalRevenueFromReportSetup & Sheet 72). Bóc tách toàn bộ công thức toán học, ma trận cột (17 cột dòng 169, 2 tầng header 9 cột dòng 170, 22 cột dòng 171), Form Designer reference template PHP, Stored Procedure MySQL 8.0, đẳng thức cân bằng kế toán và quy tắc đối soát chéo bất biến với dòng 166, 167, 168. Lưu tại `.codex/docs/doc_baocao/dong_169_bao_cao_du_doan_ban_phong.md`, `dong_170_bao_cao_phong_hang_tuan.md`, `dong_171_bao_cao_tong_doanh_thu.md` và cẩm nang tổng hợp tại `.codex/docs/reports/ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md`.
 - 2026-09-23: Chuẩn hóa lại luồng Designer cho 7 template Dòng 154/159/160/166/167/168: `content_json` là nguồn giao diện, `content_html` được biên dịch từ JSON, `css` chỉ giữ trình bày; sửa schema `groups`/custom bindings và bổ sung block header/footer còn thiếu. Migration `2026_09_23_170000_sync_revenue_report_json_html_from_templates.php` đồng bộ lại template trên các database branch. Chưa nghiệm thu browser preview/export với dữ liệu thật.
@@ -68,6 +71,9 @@
 
 ## Recent Changes
 
+- 2026-09-24: Sửa `CheckoutPage.vue`, `PaymentModal.vue`, `PrepaymentModal.vue`, `PaymentController.php`, `BookingRoomServiceController.php` và route API cho sáu vấn đề Checkout. API chuyển payment chỉ nhận DPR/AP chưa sử dụng và bảo toàn marker khi audit transfer; service bill có endpoint chỉnh mô tả riêng. Cập nhật `.codex/docs/frontdesk_checkout/README.md` và mapping `payments`.
+- 2026-09-24: Cập nhật giới hạn ngày/ca và quyền City Ledger ở Payment/Prepayment; backend xác thực ngày/ca/Công ty. Checkout date bounds FO và RM theo phòng; No Post áp dụng cho post FO/HK/room-charge. `service_bills` owner logic (dòng 238) để nguyên do ảnh hưởng tới luồng đọc bill ngoài phạm vi.
+
 - 2026-09-23: Thêm migration/procedure/template/test cho ROOM_FORECAST, WEEKLY_ROOM_REPORT và TOTAL_REVENUE. Cập nhật executor/lookup/frontend dùng chung để hỗ trợ đa chi nhánh Dòng 170, preset tuần và ẩn cột tài chính Dòng 169. Test riêng đạt 11/11 (115 assertions), PHP lint, `git diff --check`, route list và frontend build đạt; chưa chạy migration thật.
 - 2026-09-23: Sửa 7 reference template để không dựng HTML báo cáo độc lập ngoài JSON; các giá trị dòng, tổng, nhóm và tham số đều đi qua binding trong `content_json`, sau đó biên dịch thành `content_html` và giữ CSS riêng. Không sửa renderer/designer dùng chung hoặc API.
 - 2026-09-23: Dòng 154 dùng đúng nhóm legacy `Doanh Thu Phòng`/`Doanh Thu Nhà Hàng`; Dòng 160 đọc danh sách nhóm doanh thu từ `hotel_configs`, bổ sung các dòng `1-4/1-6/1-8`, sắp xếp số tự nhiên và giữ trạng thái `6-1 = Đã hoàn tất`; Dòng 166/168 tách mã booking nội bộ có prefix khỏi mã tham chiếu OTA; Dòng 168 Mode 1 lấy toàn bộ doanh thu trong thời gian lưu trú, Mode 2 giữ lọc theo đêm phòng.
@@ -124,6 +130,10 @@
 - 2026-09-10: ReportsPage chỉ dùng bộ lọc legacy riêng cho LAUNDRY_INVOICES/BREAKAGE_INVOICES/MINIBAR_INVOICES; lookup ca/bộ phận và dataset enricher chỉ thêm nhánh cho bốn report mới.
 
 ## Known Risks
+
+- 2026-09-24: Chưa nghiệm thu browser với dữ liệu thật cho kéo thả phòng, chỉnh mô tả inline và tài khoản ngân hàng; hai feature test backend liên quan chạy quá thời gian không trả output trong môi trường hiện tại nên cần chạy lại trên DB test ổn định.
+- 2026-09-24: Dữ liệu lịch sử `payments` có thể còn `pack2=DPR, pack4=PY`; hệ thống không tự backfill, cần quyết định riêng nếu muốn sửa dữ liệu lịch sử.
+- 2026-09-24: Feature tests Checkout hiện không khởi động được trong môi trường do connection `mysql_data` chưa được khai báo; cần cấu hình DB test rồi chạy lại. Dòng 238 cần rà soát/duyệt riêng các consumer ownership trước khi triển khai.
 
 - 2026-09-23: Dòng 169/170/171 chưa được chạy migration trên 5 connection và chưa smoke-test procedure với dữ liệu thật; cần xác minh field thực tế của `service_bills`, `room_night_bills`, `payments` và branch permissions trước UAT.
 - 2026-09-23: `ReportDefinitionController.php`, `ReportLookupController.php` và `ReportsPage.vue` là file dùng chung đã thay đổi để hỗ trợ Dòng 170; cần regression test các báo cáo multi-branch/các control tham số hiện có.
