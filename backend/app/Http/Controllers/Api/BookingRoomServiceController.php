@@ -64,6 +64,39 @@ class BookingRoomServiceController extends Controller
         ]);
     }
 
+    public function updateDescription(Request $request, $billId)
+    {
+        $validated = $request->validate([
+            'description' => 'nullable|string|max:950',
+        ]);
+        $description = trim((string) ($validated['description'] ?? ''));
+
+        DB::transaction(function () use ($billId, $description) {
+            $bill = ServiceBill::whereKey($billId)->lockForUpdate()->firstOrFail();
+            if ((int) $bill->Edit === 1) {
+                abort(422, 'Không thể sửa mô tả bill đã bị hủy hoặc đối trừ.');
+            }
+
+            $bill->DescriptionServive = $description;
+            $bill->UpdatedDate = now();
+            $bill->UpdatedHour = now()->format('H:i:s');
+            $bill->UpdatedUser = Auth::user()?->username ?? 'system';
+            $bill->save();
+
+            BookingRoomService::where('service_bill_id', $bill->Ma)
+                ->whereNull('deleted_at')
+                ->update([
+                    'note' => $description,
+                    'updated_by' => Auth::user()?->username ?? 'system',
+                ]);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã cập nhật mô tả bill.',
+        ]);
+    }
+
     // =========================================
     // GET: Danh sách dịch vụ FO khả dụng (dùng để populate dropdown chọn dịch vụ)
     // GET /booking-room-services/fo-list
@@ -1020,10 +1053,10 @@ class BookingRoomServiceController extends Controller
         }
 
         $postingSource = strtoupper($request->input('posting_source', 'HK'));
-        if (in_array($postingSource, ['HK', 'FB'], true) && $room->no_post) {
+        if ($room->no_post) {
             return response()->json([
                 'success' => false,
-                'message' => 'Phòng đang bật No Post, không thể post bill từ bộ phận này.',
+                'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
             ], 422);
         }
 
@@ -1459,6 +1492,13 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
         }
 
+        if ($room ? $room->no_post : $booking->no_post) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
+            ], 422);
+        }
+
         // Kiểm tra trạng thái nếu có room
         if ($room) {
             $allowCheckedOut = HotelConfig::where('name', 'AllowPostBillCheckedOutRoom')->value('value');
@@ -1470,6 +1510,15 @@ class BookingRoomServiceController extends Controller
         $systemDate = $this->avService->getSystemDate();
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
+
+        $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
+        $stayEnd = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
+        if ($dateFrom->copy()->startOfDay()->lt($stayStart) || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày dịch vụ phải nằm trong thời gian lưu trú, từ ngày đến đến ngày đi.',
+            ], 422);
+        }
 
         // Validate ngày cũ
         if ($dateFrom->lt(Carbon::parse($systemDate)) && !$this->canOperateOldDay()) {
@@ -1749,6 +1798,13 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không có phòng nào để post tiền phòng.'], 422);
         }
 
+        if (($room && $room->no_post) || (!$room && $booking->no_post)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
+            ], 422);
+        }
+
         $systemDate = $this->avService->getSystemDate();
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
@@ -1773,6 +1829,27 @@ class BookingRoomServiceController extends Controller
             if ($roomsToPost->isEmpty()) {
                 return response()->json(['success' => false, 'message' => 'Không có phòng nào đã đến trong khoảng ngày được chọn để post tiền phòng.'], 422);
             }
+        }
+
+        if ($isBookingPost) {
+            $blockedRoom = $roomsToPost->first(fn (BookingRoom $targetRoom) => (bool) $targetRoom->no_post);
+            if ($blockedRoom) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
+                ], 422);
+            }
+        }
+
+        $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
+        $stayEnd = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay()->subDay();
+        if ($stayEnd->lt($stayStart)
+            || $dateFrom->copy()->startOfDay()->lt($stayStart)
+            || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.',
+            ], 422);
         }
 
         foreach ($roomsToPost as $targetRoom) {
@@ -1833,11 +1910,13 @@ class BookingRoomServiceController extends Controller
 
                 $current = $dateFrom->copy()->startOfDay();
                 $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
+                $roomDeparture = Carbon::parse($targetRoom->departure_date ?: $booking?->departure_date)->startOfDay();
+                $roomLastOccupiedNight = $roomDeparture->copy()->subDay();
                 if ($isBookingPost && $current->lt($roomArrival)) {
                     $current = $roomArrival->copy();
                 }
 
-                while ($current->lte($dateTo)) {
+                while ($current->lte($dateTo) && $current->lte($roomLastOccupiedNight)) {
                     // Xác định giá phòng theo mode
                     if ($mode === 'auto') {
                         // Tự động: ưu tiên giá dịch vụ tự động (booking_room_services service_code=RM)
