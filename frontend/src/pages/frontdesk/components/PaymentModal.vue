@@ -1,8 +1,9 @@
 <script setup>
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
-import { HelpCircle, X, Plus, Calendar, Clock, Save, Inbox, Trash2 } from '@lucide/vue'
+import { ref, watch, computed, onMounted } from 'vue'
+import { X, Plus, Clock, Save, Inbox, Trash2 } from '@lucide/vue'
 import http from '@/services/http'
 import { settleBookingPayment } from '@/services/booking-service'
+import { fetchBankAccounts as fetchConfiguredBankAccounts } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
 const props = defineProps({
@@ -16,6 +17,22 @@ const props = defineProps({
     default: ''
   },
   bookingName: {
+    type: String,
+    default: ''
+  },
+  companyName: {
+    type: String,
+    default: 'KHÁCH LẺ'
+  },
+  companyAllowsDebt: {
+    type: Boolean,
+    default: false
+  },
+  arrivalDate: {
+    type: String,
+    default: ''
+  },
+  departureDate: {
     type: String,
     default: ''
   },
@@ -56,16 +73,12 @@ const paymentMethodId = ref('')
 const paymentMethods = ref([])
 const bankAccountOptions = ref([])
 const selectedBankAccount = ref('')
-const company = ref('KHÁCH LẺ')
-const isCard = ref(false)
-const cardCode = ref('')
-const expiryDate = ref('')
-const noteText = ref('')
 
 const currency = ref('VND')
 const workShift = ref('1')
 const timeStr = ref(nowTimeStr())
 const dateStr = ref(props.systemDate || todayDateStr())
+const shiftTimeTouched = ref(false)
 const department = ref('FO')
 
 const payAmountNum = ref(0)
@@ -88,6 +101,25 @@ function todayDateStr() {
   return `${yyyy}-${mm}-${dd}`
 }
 
+function normalizeDate(value) {
+  return String(value || '').trim().slice(0, 10)
+}
+
+const stayStartDate = computed(() => normalizeDate(props.arrivalDate))
+const stayEndDate = computed(() => normalizeDate(props.departureDate))
+const latestPaymentDate = computed(() => {
+  const limits = [stayEndDate.value, normalizeDate(props.systemDate) || todayDateStr()].filter(Boolean)
+  return limits.sort()[0] || ''
+})
+
+function isPaymentDateAllowed(value) {
+  const date = normalizeDate(value)
+  return Boolean(date)
+    && (!stayStartDate.value || date >= stayStartDate.value)
+    && (!stayEndDate.value || date <= stayEndDate.value)
+    && date <= (normalizeDate(props.systemDate) || todayDateStr())
+}
+
 function formatMoney(num) {
   const n = Number(num)
   if (!Number.isFinite(n)) return '0'
@@ -102,6 +134,24 @@ const isBankTransfer = computed(() => {
   const bankName = String(selectedMethod.bank_name || '').toLowerCase()
   return code === 'BT' || name.includes('bank') || name.includes('chuyển khoản') || name.includes('transfer') || bankName.includes('transfer')
 })
+
+const isCityLedgerMethod = (method) => (
+  String(method?.code || '').toUpperCase() === 'AC' || Number(method?.payment_group) === 4
+)
+
+const visiblePaymentMethods = computed(() => paymentMethods.value.filter(method => (
+  props.companyAllowsDebt || !isCityLedgerMethod(method)
+)))
+
+watch(visiblePaymentMethods, (methods) => {
+  if (!methods.some(method => String(method.id || method.code) === String(paymentMethodId.value))) {
+    paymentMethodId.value = methods[0] ? (methods[0].id || methods[0].code) : ''
+  }
+})
+
+const selectedBankAccountDetails = computed(() => bankAccountOptions.value.find(account => (
+  String(account.id) === String(selectedBankAccount.value)
+)) || null)
 
 const netTotalAmount = computed(() => {
   return (Number(props.totalServiceAmount) || 0) - (Number(props.totalDepositAmount) || 0)
@@ -150,24 +200,16 @@ const fetchPaymentMethods = async () => {
 
 const fetchBankAccounts = async () => {
   try {
-    const res = await http.get('/hotel-settings')
-    const settings = res.data?.data || res.data || {}
-    const list = []
-    if (settings.bank || settings.account) {
-      list.push({
-        id: 'hotel_bank_1',
-        display: `${settings.bank || 'Ngân hàng'} - ${settings.account || ''} (${settings.account_name || ''})`.trim()
-      })
-    }
-    list.push(
-      { id: 'mb_bank', display: 'MB Bank - 7451100001168 (Chi nhánh Lâm Đồng)' },
-      { id: 'vcb_bank', display: 'Vietcombank - 0071001234567 (CN Nha Trang)' },
-      { id: 'tcb_bank', display: 'Techcombank - 1903567890123' }
-    )
+    const res = await fetchConfiguredBankAccounts({ is_intermediary: false, is_active: true })
+    const list = (res.data?.data || res.data || [])
+      .filter(account => account.is_active !== false && !account.is_intermediary)
+      .map(account => ({
+        ...account,
+        display: [account.bank_name, account.bank_account_number, account.code]
+          .filter(Boolean)
+          .join(' - ')
+      }))
     bankAccountOptions.value = list
-    if (list.length > 0 && !selectedBankAccount.value) {
-      selectedBankAccount.value = list[0].display
-    }
   } catch (err) {
     console.error('Lỗi khi tải tài khoản ngân hàng:', err)
   }
@@ -179,36 +221,42 @@ function inGroupExcluded(m) {
 }
 
 const workShiftsList = ref([])
-let clockInterval = null
 
 function getAutoWorkShift(timeStrVal) {
-  const [hhStr, mmStr] = (timeStrVal || nowTimeStr()).split(':')
-  const totalMinutes = (parseInt(hhStr, 10) || 0) * 60 + (parseInt(mmStr, 10) || 0)
+  const time = timeStrVal || nowTimeStr()
+  const matchingShift = workShiftsList.value.find(shift => timeMatchesShift(time, shift))
+  if (matchingShift) return String(matchingShift.id ?? matchingShift.name)
 
-  if (workShiftsList.value.length > 0) {
-    for (const sh of workShiftsList.value) {
-      if (!sh.start_time || !sh.end_time) continue
-      const [sH, sM] = sh.start_time.split(':').map(Number)
-      const [eH, eM] = sh.end_time.split(':').map(Number)
-      const startMin = sH * 60 + sM
-      const endMin = eH * 60 + eM
-
-      if (startMin <= endMin) {
-        if (totalMinutes >= startMin && totalMinutes <= endMin) {
-          return String(sh.name || sh.id)
-        }
-      } else {
-        if (totalMinutes >= startMin || totalMinutes <= endMin) {
-          return String(sh.name || sh.id)
-        }
-      }
-    }
-  }
-
-  const hour = parseInt(hhStr, 10) || 0
+  const hour = parseInt(time.slice(0, 2), 10) || 0
   if (hour >= 6 && hour < 14) return '1'
   if (hour >= 14 && hour < 22) return '2'
   return '3'
+}
+
+function timeMatchesShift(timeValue, shift) {
+  if (!shift?.start_time || !shift?.end_time || !/^\d{2}:\d{2}$/.test(timeValue || '')) return false
+  const toMinutes = (value) => {
+    const [hours, minutes] = String(value).slice(0, 5).split(':').map(Number)
+    return hours * 60 + minutes
+  }
+  const time = toMinutes(timeValue)
+  const start = toMinutes(shift.start_time)
+  const end = toMinutes(shift.end_time)
+  if (start === end) return true
+  return start < end ? time >= start && time < end : time >= start || time < end
+}
+
+function isShiftTimeAllowed() {
+  if (!/^\d{2}:\d{2}$/.test(timeStr.value || '')) return false
+  if (workShiftsList.value.length === 0) return true
+  const shift = workShiftsList.value.find(item => String(item.id ?? item.name) === String(workShift.value))
+  if (!shift) return false
+  if (!shift.start_time || !shift.end_time) return true
+  return timeMatchesShift(timeStr.value, shift)
+}
+
+const markShiftTimeTouched = () => {
+  shiftTimeTouched.value = true
 }
 
 const fetchWorkShifts = async () => {
@@ -217,26 +265,20 @@ const fetchWorkShifts = async () => {
     const list = res.data?.data || res.data || []
     if (Array.isArray(list) && list.length > 0) {
       workShiftsList.value = list
+      if (!shiftTimeTouched.value) {
+        const matchingShift = list.find(shift => timeMatchesShift(timeStr.value, shift))
+        if (matchingShift) {
+          workShift.value = String(matchingShift.id ?? matchingShift.name)
+        } else {
+          const firstShift = list[0]
+          workShift.value = String(firstShift.id ?? firstShift.name)
+          const firstShiftStart = String(firstShift.start_time || '').slice(0, 5)
+          if (/^\d{2}:\d{2}$/.test(firstShiftStart)) timeStr.value = firstShiftStart
+        }
+      }
     }
   } catch (err) {
     console.warn('Không thể nạp danh sách ca làm việc từ API, sử dụng ca mặc định.')
-  }
-}
-
-function startRealtimeClock() {
-  stopRealtimeClock()
-  timeStr.value = nowTimeStr()
-  workShift.value = getAutoWorkShift(timeStr.value)
-  clockInterval = setInterval(() => {
-    timeStr.value = nowTimeStr()
-    workShift.value = getAutoWorkShift(timeStr.value)
-  }, 1000)
-}
-
-function stopRealtimeClock() {
-  if (clockInterval) {
-    clearInterval(clockInterval)
-    clockInterval = null
   }
 }
 
@@ -244,34 +286,24 @@ watch(() => props.show, (visible) => {
   if (visible) {
     errorMsg.value = ''
     addedPayments.value = []
+    selectedBankAccount.value = ''
     dateStr.value = props.systemDate || todayDateStr()
     payAmountNum.value = netTotalAmount.value
-
-    startRealtimeClock()
-    fetchWorkShifts().then(() => {
-      workShift.value = getAutoWorkShift(timeStr.value)
-    })
+    timeStr.value = nowTimeStr()
+    shiftTimeTouched.value = false
+    workShift.value = getAutoWorkShift(timeStr.value)
+    fetchWorkShifts()
 
     if (paymentMethods.value.length === 0) {
       fetchPaymentMethods()
     } else if (!paymentMethodId.value && paymentMethods.value[0]) {
       paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
     }
-  } else {
-    stopRealtimeClock()
   }
 })
 
-onUnmounted(() => {
-  stopRealtimeClock()
-})
-
-watch(isCard, (val) => {
-  if (!val) {
-    cardCode.value = ''
-    expiryDate.value = ''
-    noteText.value = ''
-  }
+watch(isBankTransfer, (bankTransfer) => {
+  if (!bankTransfer) selectedBankAccount.value = ''
 })
 
 const handleAddPaymentItem = () => {
@@ -284,22 +316,13 @@ const handleAddPaymentItem = () => {
   const methodName = selectedMethod ? selectedMethod.name : 'Tiền mặt'
   const methodCode = selectedMethod ? (selectedMethod.code || selectedMethod.id) : 'CA'
 
-  let desc = noteText.value.trim()
-  if (!desc) {
-    if (payAmountNum.value < 0 && (String(methodCode).toUpperCase() === 'CA' || methodName.toLowerCase().includes('tiền mặt') || methodName.toLowerCase().includes('cash'))) {
-      desc = 'Refund Cash (Tiền mặt)'
-    } else if (payAmountNum.value < 0) {
-      desc = `Refund ${methodName}`
-    } else {
-      desc = `Thanh toán - ${methodName}`
-    }
-  }
-
-  if (isBankTransfer.value && selectedBankAccount.value) {
-    desc += ` [TK: ${selectedBankAccount.value}]`
-  }
-  if (isCard.value && cardCode.value) {
-    desc += ` [Thẻ: ${cardCode.value}]`
+  let desc = ''
+  if (payAmountNum.value < 0 && (String(methodCode).toUpperCase() === 'CA' || methodName.toLowerCase().includes('tiền mặt') || methodName.toLowerCase().includes('cash'))) {
+    desc = 'Refund Cash (Tiền mặt)'
+  } else if (payAmountNum.value < 0) {
+    desc = `Refund ${methodName}`
+  } else {
+    desc = `Thanh toán - ${methodName}`
   }
 
   addedPayments.value.push({
@@ -307,7 +330,9 @@ const handleAddPaymentItem = () => {
     payment_method_id: paymentMethodId.value,
     method_code: methodCode,
     method_name: methodName,
-    bank_account: isBankTransfer.value ? selectedBankAccount.value : '',
+    bank_account: isBankTransfer.value ? (selectedBankAccountDetails.value?.display || '') : '',
+    bank_account_id: isBankTransfer.value ? (selectedBankAccountDetails.value?.id || null) : null,
+    debit_account: isBankTransfer.value ? (selectedBankAccountDetails.value?.accounting_account || null) : null,
     amount: Number(payAmountNum.value),
     currency: currency.value,
     note: desc
@@ -324,36 +349,39 @@ const handleRemovePaymentItem = (index) => {
 const handleSubmit = async () => {
   errorMsg.value = ''
 
+  if (!isPaymentDateAllowed(dateStr.value)) {
+    errorMsg.value = 'Ngày thanh toán phải nằm trong thời gian lưu trú và không lớn hơn ngày hệ thống.'
+    return
+  }
+  if (!isShiftTimeAllowed()) {
+    errorMsg.value = 'Giờ thanh toán không thuộc ca đã chọn. Vui lòng chọn lại ca hoặc giờ.'
+    return
+  }
+
   let finalPayments = []
   if (addedPayments.value.length > 0) {
     finalPayments = addedPayments.value.map(p => ({
       payment_method_id: p.payment_method_id,
       amount: p.amount,
-      bank_account: p.bank_account,
+      bank_account_id: p.bank_account_id,
+      debit_account: p.debit_account,
       note: p.note
     }))
   } else if (payAmountNum.value !== 0) {
     const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
     const methodName = selectedMethod ? selectedMethod.name : 'Tiền mặt'
     const methodCode = selectedMethod ? (selectedMethod.code || selectedMethod.id) : 'CA'
-    let desc = noteText.value.trim()
-    if (!desc) {
-      if (payAmountNum.value < 0) {
-        desc = `Refund ${methodName}`
-      } else {
-        desc = `Thanh toán - ${methodName}`
-      }
-    }
-    if (isBankTransfer.value && selectedBankAccount.value) {
-      desc += ` [TK: ${selectedBankAccount.value}]`
-    }
-    if (isCard.value && cardCode.value) {
-      desc += ` [Thẻ: ${cardCode.value}]`
+    let desc = ''
+    if (payAmountNum.value < 0) {
+      desc = `Refund ${methodName}`
+    } else {
+      desc = `Thanh toán - ${methodName}`
     }
     finalPayments.push({
       payment_method_id: paymentMethodId.value,
       amount: Number(payAmountNum.value),
-      bank_account: isBankTransfer.value ? selectedBankAccount.value : '',
+      bank_account_id: isBankTransfer.value ? (selectedBankAccountDetails.value?.id || null) : null,
+      debit_account: isBankTransfer.value ? (selectedBankAccountDetails.value?.accounting_account || null) : null,
       note: desc
     })
   }
@@ -395,9 +423,12 @@ const handleSubmit = async () => {
       errorMsg.value = res.data?.message || 'Không thể thực hiện thanh toán.'
     }
   } catch (err) {
-    const backendMsg = err.response?.data?.message
-    const validationErrors = err.response?.data?.errors ? Object.values(err.response.data.errors).flat().join('; ') : ''
-    errorMsg.value = backendMsg || validationErrors || 'Có lỗi xảy ra khi lưu thanh toán.'
+    const response = err.response
+    const backendMsg = response?.data?.message
+    const validationErrors = response?.data?.errors ? Object.values(response.data.errors).flat().join('; ') : ''
+    errorMsg.value = backendMsg || validationErrors || (response?.status === 403
+      ? 'Bạn không có quyền thực hiện thao tác thanh toán này.'
+      : 'Có lỗi xảy ra khi lưu thanh toán.')
   } finally {
     isSubmitting.value = false
   }
@@ -444,7 +475,7 @@ onMounted(() => {
               <div class="flex gap-1">
                 <select v-model="paymentMethodId" class="flex-1 min-w-0 px-2.5 py-1.5 bg-[#ffffcc] border border-gray-300 rounded font-bold text-gray-900 focus:outline-none text-xs truncate">
                   <option value="" disabled>-- Chọn phương thức --</option>
-                  <option v-for="m in paymentMethods" :key="m.id || m.code" :value="m.id || m.code">
+                    <option v-for="m in visiblePaymentMethods" :key="m.id || m.code" :value="m.id || m.code">
                     {{ m.name }}
                   </option>
                 </select>
@@ -455,8 +486,8 @@ onMounted(() => {
             <div v-if="isBankTransfer">
               <label class="block font-bold text-gray-700 mb-1">Tài khoản ngân hàng</label>
               <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-[#ffffcc] border border-gray-300 rounded text-gray-900 font-medium focus:outline-none text-xs truncate">
-                <option value="" disabled>Tài khoản ngân hàng</option>
-                <option v-for="b in bankAccountOptions" :key="b.id" :value="b.display">
+                <option value="">-- Không chọn --</option>
+                <option v-for="b in bankAccountOptions" :key="b.id" :value="b.id">
                   {{ b.display }}
                 </option>
               </select>
@@ -466,59 +497,12 @@ onMounted(() => {
             <div>
               <label class="block font-bold text-gray-700 mb-1">Công ty</label>
               <div class="flex gap-1">
-                <select v-model="company" class="flex-1 px-2.5 py-1 bg-gray-100 border border-gray-300 rounded text-gray-800 font-semibold focus:outline-none text-xs">
-                  <option value="KHÁCH LẺ">KHÁCH LẺ</option>
-                </select>
-                <button type="button" class="bg-sky-100 border border-sky-300 p-1 rounded text-sky-600 font-bold hover:bg-sky-200">
-                  <Plus class="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <!-- Checkbox Thẻ & Mã thẻ -->
-            <div class="grid grid-cols-12 gap-2 items-center pt-1">
-              <div class="col-span-4 flex items-center gap-1.5">
-                <input type="checkbox" v-model="isCard" id="chkCard" class="rounded border-gray-300 cursor-pointer" />
-                <label for="chkCard" class="font-bold text-gray-700 cursor-pointer">Thẻ</label>
-              </div>
-              <div class="col-span-8">
-                <label class="block font-bold text-gray-700 mb-0.5 text-[11px]">Mã thẻ</label>
-                <input 
-                  type="text" 
-                  v-model="cardCode" 
-                  :disabled="!isCard"
-                  class="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs disabled:bg-gray-100 disabled:cursor-not-allowed" 
-                />
-              </div>
-            </div>
-
-            <!-- Ngày hết hạn & Ghi chú -->
-            <div class="grid grid-cols-12 gap-2">
-              <div class="col-span-5">
-                <label class="block font-bold text-gray-700 mb-0.5 text-[11px]">Ngày hết hạn</label>
-                <div class="relative">
-                  <input 
-                    type="text" 
-                    v-model="expiryDate" 
-                    :disabled="!isCard"
-                    placeholder="MM/YY" 
-                    class="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs disabled:bg-gray-100 disabled:cursor-not-allowed" 
-                  />
-                  <Calendar class="w-3 h-3 text-emerald-600 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <div class="flex-1 px-2.5 py-1 bg-gray-100 border border-gray-300 rounded text-gray-800 font-semibold text-xs" aria-readonly="true">
+                  {{ companyName || 'KHÁCH LẺ' }}
                 </div>
               </div>
-
-              <div class="col-span-7">
-                <label class="block font-bold text-gray-700 mb-0.5 text-[11px]">Ghi chú</label>
-                <input 
-                  type="text" 
-                  v-model="noteText" 
-                  :disabled="!isCard"
-                  placeholder="Ghi chú thanh toán..." 
-                  class="w-full px-2 py-1 bg-white border border-gray-300 rounded text-xs disabled:bg-gray-100 disabled:cursor-not-allowed" 
-                />
-              </div>
             </div>
+
           </div>
 
           <!-- RIGHT SUMMARY CONTROLS (6 cols) -->
@@ -540,9 +524,9 @@ onMounted(() => {
               <!-- Ca làm việc -->
               <div class="col-span-2">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Ca làm việc</label>
-                <select v-model="workShift" class="w-full px-1 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center">
+                <select v-model="workShift" @change="markShiftTimeTouched" class="w-full px-1 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center">
                   <template v-if="workShiftsList.length > 0">
-                    <option v-for="sh in workShiftsList" :key="sh.id" :value="String(sh.name || sh.id)">
+                    <option v-for="sh in workShiftsList" :key="sh.id" :value="String(sh.id ?? sh.name)">
                       {{ sh.name }}
                     </option>
                   </template>
@@ -558,7 +542,7 @@ onMounted(() => {
               <div class="col-span-2">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Giờ</label>
                 <div class="relative">
-                  <input type="text" v-model="timeStr" class="w-full pl-1 pr-5 py-1 bg-white border border-gray-300 rounded text-center font-mono text-xs font-semibold" />
+                  <input type="time" v-model="timeStr" step="60" @change="markShiftTimeTouched" class="w-full pl-1 pr-5 py-1 bg-white border border-gray-300 rounded text-center font-mono text-xs font-semibold" />
                   <Clock class="w-3 h-3 text-sky-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
@@ -567,7 +551,7 @@ onMounted(() => {
               <div class="col-span-3">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Ngày</label>
                 <div class="relative">
-                  <input type="date" v-model="dateStr" class="w-full px-1 py-1 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold" />
+                  <input type="date" v-model="dateStr" :min="stayStartDate || undefined" :max="latestPaymentDate || undefined" class="w-full px-1 py-1 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold" />
                 </div>
               </div>
 
@@ -642,9 +626,6 @@ onMounted(() => {
                 <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[120px]">Phương thức thanh toán</th>
                 <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[140px]">Tài khoản ngân hàng</th>
                 <th class="px-2.5 py-1.5 border-r border-gray-300 min-w-[70px]">Tiền tệ</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[100px]">Số tiền</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[110px]">Số tiền tương đương</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[60px]">Phí</th>
                 <th class="px-2.5 py-1.5 border-r border-gray-300 text-right min-w-[100px]">Tổng tiền</th>
                 <th class="px-2.5 py-1.5 text-center min-w-[50px]">Thao tác</th>
               </tr>
@@ -657,9 +638,6 @@ onMounted(() => {
                 <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-800">{{ item.method_code }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 text-gray-700">{{ item.bank_account }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-800">{{ item.currency }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums">{{ formatMoney(0) }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
                 <td class="px-2.5 py-1.5 text-center">
                   <button @click="handleRemovePaymentItem(idx)" class="text-sky-500 hover:text-sky-700 p-1 rounded" title="Xóa dòng">

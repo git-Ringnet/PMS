@@ -24,7 +24,8 @@ import {
   ArrowRightLeft,
   X
 } from '@lucide/vue'
-import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge, fetchServiceBillDetails } from '@/services/booking-service'
+import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServicesFolio, fetchQuickTransferCandidates, quickTransferBookingRoomServices, cancelBookingRoomServices, transferPaymentFolio, splitPayment, transferPayments, fetchSystemDate, deleteBookingPayment, updatePayment, updateBookingNoPost, updateBookingRoomNoPost, checkoutRoom, checkoutChild, previewCheckoutRooms, checkoutBooking, restoreRoomCheckout, restoreBookingCheckout, postRoomCharge, fetchServiceBillDetails } from '@/services/booking-service'
+import http from '@/services/http'
 import { isCheckedOutRecord } from '@/utils/checkout-status'
 import { billBelongsToCurrentRoom, isMasterBillRecord, isMasterOwnedBill, serviceBillCurrentGuestId } from '@/utils/service-bill-ownership'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -484,6 +485,10 @@ const selectedPaymentIds = ref([])
 const draggedServiceGroup = ref(null)
 const draggedPayment = ref(null)
 const draggedOverFolio = ref(null)
+const draggedOverRoom = ref(null)
+const editingDescription = ref(null)
+const descriptionDraft = ref('')
+const isDescriptionSaving = ref(false)
 const isLoading = ref(true)
 const isServiceOperationLoading = ref(false)
 const showSearchDropdown = ref(false)
@@ -2066,9 +2071,72 @@ const handleServiceDragEnd = () => {
   draggedServiceGroup.value = null
   draggedPayment.value = null
   draggedOverFolio.value = null
+  draggedOverRoom.value = null
 }
 
-const canTransferPayment = (payment) => !payment.paymentId && payment.status === 1 && payment.editFlag === 0
+const isDepositOrAdvancePayment = (payment) => {
+  const rawPayment = payment?.rawPayment
+  if (!rawPayment) return false
+  const pack2 = String(rawPayment.pack2 || '').toUpperCase()
+  const pack4 = String(rawPayment.pack4 || '').toUpperCase()
+  return pack4 === 'AP' || (pack2 === 'DPR' && pack4 !== 'PY')
+}
+
+const canTransferPayment = (payment) => (
+  isDepositOrAdvancePayment(payment)
+  && !payment.paymentId
+  && payment.status === 1
+  && payment.editFlag === 0
+)
+
+const roomDropKey = (booking, room, guest = null) => [
+  booking?.bookingId,
+  room?.roomId,
+  guest?.id || room?.primaryGuestId || '',
+].join(':')
+
+const startDescriptionEdit = (type, item) => {
+  const id = type === 'payment' ? item?.id : item?.serviceBillId
+  if (!id || String(id).startsWith('P-fallback')) return
+  editingDescription.value = { type, id: String(id) }
+  descriptionDraft.value = type === 'payment' ? String(item.description || '') : String(item.name || '')
+}
+
+const isDescriptionEditing = (type, id) => (
+  editingDescription.value?.type === type
+  && String(editingDescription.value.id) === String(id)
+)
+
+const cancelDescriptionEdit = () => {
+  editingDescription.value = null
+  descriptionDraft.value = ''
+}
+
+const saveDescriptionEdit = async () => {
+  if (!editingDescription.value || isDescriptionSaving.value) return
+  const { type, id } = editingDescription.value
+  const description = descriptionDraft.value.trim()
+  if (!description) {
+    uiStore.showToast('Mô tả không được để trống.', 'warning')
+    return
+  }
+
+  isDescriptionSaving.value = true
+  try {
+    if (type === 'payment') {
+      await updatePayment(id, { description })
+    } else {
+      await http.patch(`/service-bills/${id}/description`, { description })
+    }
+    cancelDescriptionEdit()
+    await refreshCheckoutData()
+    uiStore.showToast('Đã cập nhật mô tả.', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật mô tả.', 'error')
+  } finally {
+    isDescriptionSaving.value = false
+  }
+}
 
 const handlePaymentDragStart = (payment, event) => {
   if (!canTransferPayment(payment)) {
@@ -2165,6 +2233,98 @@ const handleFolioDrop = async (folio) => {
   } catch (error) {
     console.error('Không thể chuyển Folio dịch vụ:', error)
     uiStore.showToast(error.response?.data?.message || 'Không thể chuyển Folio dịch vụ.', 'error')
+  } finally {
+    isServiceOperationLoading.value = false
+    handleServiceDragEnd()
+  }
+}
+
+const handleRoomDragOver = (booking, room, guest = null) => {
+  draggedOverRoom.value = roomDropKey(booking, room, guest)
+}
+
+const handleRoomDrop = async (booking, room, guest = null) => {
+  const group = draggedServiceGroup.value
+  const payment = draggedPayment.value
+  const destination = {
+    bookingId: booking?.bookingId,
+    roomId: room?.roomId,
+    guestId: guest?.id || room?.primaryGuestId || null,
+  }
+  draggedOverRoom.value = null
+
+  if (!destination.bookingId || !destination.roomId) {
+    handleServiceDragEnd()
+    return
+  }
+
+  if (payment) {
+    if (!canTransferPayment(payment)) {
+      handleServiceDragEnd()
+      return
+    }
+    const selectedTransferablePayments = selectedPaymentItems.value.filter(canTransferPayment)
+    const paymentIdsToTransfer = [...new Set([
+      ...selectedTransferablePayments.map(item => Number(item.id)),
+      Number(payment.id),
+    ])].filter(id => Number.isInteger(id) && id > 0)
+
+    isServiceOperationLoading.value = true
+    try {
+      const response = await transferPayments({
+        payment_ids: paymentIdsToTransfer,
+        target_booking_id: destination.bookingId,
+        target_room_id: destination.roomId,
+        target_guest_id: destination.guestId,
+      })
+      selectedPaymentIds.value = []
+      await refreshCheckoutData()
+      uiStore.showToast(response.data?.message || `Đã chuyển ${paymentIdsToTransfer.length} khoản thanh toán.`, 'success')
+    } catch (error) {
+      uiStore.showToast(error.response?.data?.message || 'Không thể chuyển khoản thanh toán.', 'error')
+    } finally {
+      isServiceOperationLoading.value = false
+      handleServiceDragEnd()
+    }
+    return
+  }
+
+  if (!group || !canTransferServiceGroup(group)) {
+    handleServiceDragEnd()
+    return
+  }
+
+  const isMaster = !selectedRoomItem.value
+  const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value?.bookingId}`
+  const selectedItems = selectedServiceItems.value.filter(service => !service.isPaid && Number(service.status) !== 2)
+  const draggedItems = group.items.filter(service => !service.isPaid && Number(service.status) !== 2)
+  const itemsToTransfer = selectedItems.length > 0
+    ? [...new Map([...selectedItems, ...draggedItems].map(item => [String(item.id), item])).values()]
+    : draggedItems
+
+  if (itemsToTransfer.length === 0) {
+    handleServiceDragEnd()
+    return
+  }
+
+  isServiceOperationLoading.value = true
+  try {
+    const response = isMaster
+      ? await quickTransferBookingRoomServices(destination.roomId, {
+          bill_ids: [...new Set(itemsToTransfer.map(item => Number(item.serviceBillId || item.id)))],
+          target_guest_id: destination.guestId,
+        })
+      : await transferBookingRoomServicesFolio(sourceId, {
+          service_ids: [...new Set(itemsToTransfer.map(item => Number(item.id)))],
+          target_booking_id: destination.bookingId,
+          target_room_id: destination.roomId,
+          target_guest_id: destination.guestId,
+        })
+    selectedServiceIds.value = []
+    await refreshCheckoutData()
+    uiStore.showToast(response.data?.message || 'Đã chuyển bill sang phòng mới.', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể chuyển bill sang phòng mới.', 'error')
   } finally {
     isServiceOperationLoading.value = false
     handleServiceDragEnd()
@@ -2272,7 +2432,11 @@ const frontDeskPrepayments = computed(() => {
 
 const folioDepositTotal = (folio) => {
   const unusedPayments = paymentsList.value.filter(payment => (
-    !payment.paymentCode && Number(payment.status) !== 2 && Number(payment.editFlag) === 0 && !payment.isDeleted
+    isDepositOrAdvancePayment(payment)
+    && !payment.paymentCode
+    && Number(payment.status) !== 2
+    && Number(payment.editFlag) === 0
+    && !payment.isDeleted
   ))
   if (String(folio) === 'A') {
     return unusedPayments.reduce((total, payment) => total + (Number(payment.amount) || 0), 0)
@@ -2325,7 +2489,8 @@ const openPaymentModal = () => {
 const handlePaymentSuccess = async () => {
   showPaymentModal.value = false
   await refreshCheckoutData()
-  clearCheckoutPanels()
+  selectedServiceIds.value = []
+  selectedPaymentIds.value = []
   uiStore.showToast('Đã thực hiện thanh toán thành công!', 'success')
 }
 
@@ -2987,8 +3152,12 @@ onUnmounted(() => {
                         v-for="(guest, gIdx) in getGuestsToDisplay(b, r)"
                         :key="`${r.id}-${guest.id || gIdx}`"
                         @click="selectRoomItemRow(b, r, guest)"
+                        @dragover.prevent="handleRoomDragOver(b, r, guest)"
+                        @dragleave="draggedOverRoom = null"
+                        @drop.prevent="handleRoomDrop(b, r, guest)"
                         :class="[
                           selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          draggedOverRoom === roomDropKey(b, r, guest) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
@@ -3004,8 +3173,12 @@ onUnmounted(() => {
                     <template v-else>
                       <tr
                         @click="selectRoomItemRow(b, r)"
+                        @dragover.prevent="handleRoomDragOver(b, r)"
+                        @dragleave="draggedOverRoom = null"
+                        @drop.prevent="handleRoomDrop(b, r)"
                         :class="[
                           selectedRoomItem && selectedRoomItem.id === r.id ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          draggedOverRoom === roomDropKey(b, r) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
@@ -3118,7 +3291,18 @@ onUnmounted(() => {
                   </td>
                   <td class="px-2.5 py-1.5 tabular-nums">{{ group.dateTime }}</td>
                   <td class="px-2.5 py-1.5 font-bold text-slate-900">{{ group.code }}</td>
-                  <td class="px-2.5 py-1.5">{{ group.name }}</td>
+                  <td class="px-2.5 py-1.5" @click.stop="startDescriptionEdit('service', group)">
+                    <input
+                      v-if="isDescriptionEditing('service', group.serviceBillId)"
+                      v-model="descriptionDraft"
+                      class="w-full min-w-[120px] rounded border border-sky-400 px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      :disabled="isDescriptionSaving"
+                      @keydown.enter.prevent="saveDescriptionEdit"
+                      @keydown.esc.prevent="cancelDescriptionEdit"
+                      @click.stop
+                    />
+                    <span v-else class="cursor-text" title="Click để chỉnh sửa mô tả">{{ group.name }}</span>
+                  </td>
                   <td class="px-2.5 py-1.5">{{ group.department }}</td>
                   <td class="px-2.5 py-1.5 text-right tabular-nums font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
                   <td class="px-2.5 py-1.5 text-center tabular-nums">{{ group.quantity }}</td>
@@ -3206,7 +3390,18 @@ onUnmounted(() => {
                   </td>
                   <td class="px-2.5 py-1.5 tabular-nums">{{ p.dateTime }}</td>
                   <td class="px-2.5 py-1.5">{{ p.department }}</td>
-                  <td class="px-2.5 py-1.5" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'">{{ p.description }}</td>
+                  <td class="px-2.5 py-1.5" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'" @click.stop="startDescriptionEdit('payment', p)">
+                    <input
+                      v-if="isDescriptionEditing('payment', p.id)"
+                      v-model="descriptionDraft"
+                      class="w-full min-w-[120px] rounded border border-sky-400 px-1.5 py-0.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      :disabled="isDescriptionSaving"
+                      @keydown.enter.prevent="saveDescriptionEdit"
+                      @keydown.esc.prevent="cancelDescriptionEdit"
+                      @click.stop
+                    />
+                    <span v-else class="cursor-text" title="Click để chỉnh sửa mô tả">{{ p.description }}</span>
+                  </td>
                   <td class="px-2.5 py-1.5 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
                   <td class="px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900">{{ formatMoney(p.amount) }}</td>
                   <td class="px-2.5 py-1.5 text-center font-bold"><span class="inline-block px-2 py-0.5 text-xs">{{ p.folio }}</span></td>
@@ -3372,8 +3567,8 @@ onUnmounted(() => {
       :bookingRoomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
       :guestId="selectedRoomItem ? selectedGuestId : null"
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
-      :arrivalDate="selectedBooking?.arrivalDate || selectedRoomItem?.rawRoom?.arrival_date || ''"
-      :departureDate="selectedBooking?.departureDate || selectedRoomItem?.rawRoom?.departure_date || ''"
+      :arrivalDate="selectedRoomItem?.rawRoom?.arrival_date || selectedBooking?.arrivalDate || ''"
+      :departureDate="selectedRoomItem?.rawRoom?.departure_date || selectedBooking?.departureDate || ''"
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
       :roomAdjustment="roomAdjustment"
       :systemDate="systemDate"
@@ -3437,6 +3632,10 @@ onUnmounted(() => {
       :bookingId="selectedBooking?.bookingId"
       :bookingCode="selectedBooking?.code"
       :bookingName="selectedBooking?.name"
+      :companyName="selectedBooking?.rawBooking?.company?.name || 'KHÁCH LẺ'"
+      :companyAllowsDebt="Boolean(selectedBooking?.rawBooking?.company?.sync_acc)"
+      :arrivalDate="selectedRoomItem?.rawRoom?.arrival_date || selectedBooking?.arrivalDate || ''"
+      :departureDate="selectedRoomItem?.rawRoom?.departure_date || selectedBooking?.departureDate || ''"
       :selectedRoomId="selectedRoomItem?.roomId || null"
       :selectedGuestId="selectedGuestId"
       :folioId="activeFolioTab"

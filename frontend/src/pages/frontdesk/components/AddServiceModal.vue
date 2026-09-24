@@ -114,6 +114,30 @@ const bookingMaxDate = computed(() => {
   return undefined
 })
 
+// Room-night posting is limited through the last occupied night, not checkout day.
+const roomMaxDate = computed(() => {
+  if (!bookingMaxDate.value) return undefined
+
+  const departure = new Date(`${bookingMaxDate.value}T00:00:00.000Z`)
+  if (Number.isNaN(departure.getTime())) return undefined
+
+  departure.setUTCDate(departure.getUTCDate() - 1)
+  return departure.toISOString().slice(0, 10)
+})
+
+function clampDateToBounds(date, minDate, maxDate) {
+  let boundedDate = date
+  if (minDate && boundedDate < minDate) boundedDate = minDate
+  if (maxDate && boundedDate > maxDate) boundedDate = maxDate
+  return boundedDate
+}
+
+function isDateWithinBounds(date, minDate, maxDate) {
+  return Boolean(date)
+    && (!minDate || date >= minDate)
+    && (!maxDate || date <= maxDate)
+}
+
 // ─────────────────────────────────────────────
 // TAB 1 — DỊCH VỤ
 // ─────────────────────────────────────────────
@@ -237,12 +261,12 @@ onUnmounted(() => {
 watch(() => props.show, (v) => {
   if (v) {
     resetModalPosition()
-    let initialDate = props.systemDate || todayYmd()
-    if (bookingMinDate.value && initialDate < bookingMinDate.value) {
-      initialDate = bookingMinDate.value
-    } else if (bookingMaxDate.value && initialDate > bookingMaxDate.value) {
-      initialDate = bookingMaxDate.value
-    }
+    const initialDate = clampDateToBounds(
+      props.systemDate || todayYmd(),
+      bookingMinDate.value,
+      bookingMaxDate.value,
+    )
+    const initialRoomDate = clampDateToBounds(initialDate, bookingMinDate.value, roomMaxDate.value)
     errorMsg.value = ''
     activeTab.value = 'service'
     serviceFrom.value = initialDate
@@ -252,14 +276,18 @@ watch(() => props.show, (v) => {
     quantity.value    = 1
     unitPrice.value   = 0
     description.value = ''
-    roomFrom.value    = initialDate
-    roomTo.value      = initialDate
+    roomFrom.value    = initialRoomDate
+    roomTo.value      = initialRoomDate
     roomUpdateMode.value  = false
     roomSurcharge.value   = false
     customRoomRate.value  = 0
     if (props.roomAdjustment) {
       const adjustment = props.roomAdjustment
-      const date = String(adjustment.serviceDate || initialDate).slice(0, 10)
+      const date = clampDateToBounds(
+        String(adjustment.serviceDate || initialRoomDate).slice(0, 10),
+        bookingMinDate.value,
+        roomMaxDate.value,
+      )
       activeTab.value = 'room'
       roomFrom.value = date
       roomTo.value = date
@@ -288,6 +316,12 @@ async function handleSubmit() {
     if (activeTab.value === 'service') {
       if (!selectedService.value) { errorMsg.value = 'Vui lòng chọn dịch vụ.'; isSubmitting.value = false; return }
       if (!quantity.value || quantity.value <= 0) { errorMsg.value = 'Số lượng phải > 0.'; isSubmitting.value = false; return }
+      if (!isDateWithinBounds(serviceFrom.value, bookingMinDate.value, bookingMaxDate.value)
+        || !isDateWithinBounds(serviceTo.value, bookingMinDate.value, bookingMaxDate.value)) {
+        errorMsg.value = 'Ngày dịch vụ phải nằm trong thời gian lưu trú, từ ngày đến đến ngày đi.'
+        isSubmitting.value = false
+        return
+      }
       await postFoServiceBill({
         booking_room_id: props.bookingRoomId || undefined,
         guest_id:        props.guestId || undefined,
@@ -303,6 +337,17 @@ async function handleSubmit() {
         currency:     currency.value,
       })
     } else {
+      if (bookingMinDate.value && roomMaxDate.value && bookingMinDate.value > roomMaxDate.value) {
+        errorMsg.value = 'Booking không có đêm lưu trú hợp lệ để post tiền phòng.'
+        isSubmitting.value = false
+        return
+      }
+      if (!isDateWithinBounds(roomFrom.value, bookingMinDate.value, roomMaxDate.value)
+        || !isDateWithinBounds(roomTo.value, bookingMinDate.value, roomMaxDate.value)) {
+        errorMsg.value = 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.'
+        isSubmitting.value = false
+        return
+      }
       if ((roomUpdateMode.value || roomSurcharge.value) && (!customRoomRate.value || customRoomRate.value < 0)) {
         errorMsg.value = 'Vui lòng nhập giá phòng.'
         isSubmitting.value = false
@@ -494,10 +539,10 @@ function handleClose() {
               </label>
               <div class="flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
                 <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0 w-full">
-                  <input v-model="roomFrom" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
+                  <input v-model="roomFrom" type="date" :min="bookingMinDate" :max="roomMaxDate" @click="openDatePicker"
                     class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
                   <span class="text-gray-400 px-1 font-bold">~</span>
-                  <input v-model="roomTo" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
+                  <input v-model="roomTo" type="date" :min="bookingMinDate" :max="roomMaxDate" @click="openDatePicker"
                     class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
                 </div>
               </div>
