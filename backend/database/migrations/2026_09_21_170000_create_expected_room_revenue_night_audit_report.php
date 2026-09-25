@@ -12,10 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         $visitedDatabases = [];
-        $connections = array_values(array_unique(array_merge(
-            ['mysql'],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        $connections = [DB::getDefaultConnection()];
         foreach ($connections as $connection) {
             $db = DB::connection($connection);
             if ($db->getDriverName() !== 'mysql') {
@@ -201,10 +198,7 @@ SQL;
     public function down(): void
     {
         // Keep report metadata and any user-edited Designer template intact.
-        $connections = array_values(array_unique(array_merge(
-            ['mysql'],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        $connections = [DB::getDefaultConnection()];
         foreach ($connections as $connection) {
             $db = DB::connection($connection);
             if ($db->getDriverName() === 'mysql') {

@@ -159,14 +159,15 @@ flowchart LR
 
 - Tên file theo timestamp của project, ví dụ `YYYY_MM_DD_HHMMSS_create_<report>_report.php`; procedure, source, template và definition phải có mã ổn định, nhất quán.
 - Các bảng `report_data_sources`, `report_definitions`, `templates`, `report_definition_template` đã có migration nền tảng. Không tạo lại bảng cho report mới.
-- Tạo/thay `rpt_*` trên connection branch phù hợp. Theo config hiện tại có connection HKT1–HKT4, default application connection và `mysql_system`; danh sách thực tế có thể đổi hoặc có branch động. Đọc `config/database_domains.php`, middleware đổi branch và migration gần nhất; không mặc định danh sách cũ là đầy đủ.
-- Migration mẫu thường đồng bộ trên từng branch database: tạo procedure; upsert `report_data_sources`; tạo template từ `backend/database/report_templates/<report>_reference.php`; upsert `report_definitions`; lấy ID và upsert pivot `report_definition_template` với template mặc định.
+- Tạo/thay `rpt_*` trên connection đích mà migration runner cung cấp. Mỗi lần chạy migration phải chỉ dùng `DB::getDefaultConnection()` hiện hành; không hardcode alias (ví dụ HKT1–HKT4), không duyệt `database_domains.branch_connections` để sửa các DB khác và không mặc định branch mới đã có alias riêng trong config.
+- Migration mẫu thường được runner thực thi riêng trên từng branch database: tạo procedure; upsert `report_data_sources`; tạo template từ `backend/database/report_templates/<report>_reference.php`; upsert `report_definitions`; lấy ID và upsert pivot `report_definition_template` với template mặc định. `up()` và `down()` đều chỉ tác động DB đích của lần chạy hiện tại.
 - Lưu JSON bằng `JSON_UNESCAPED_UNICODE`; giữ `content_json` và `content_html` tương thích. Thêm `created_at`/`updated_at` theo schema.
 - Có thể dùng `updateOrInsert` với stable code/report key để cài mới có tính lặp lại; nhưng phân biệt migration cài mới và migration hiệu chỉnh. Không ghi đè toàn bộ template đã được người dùng chỉnh chỉ để đổi một block. Patch theo ID/field cần thiết và giữ detail/footer, CSS, margins, title/period không thuộc yêu cầu.
 - Chống chạy lặp trên nhiều alias cùng trỏ một DB khi phù hợp; tham khảo `visitedDatabases` trong migration hiện tại. Không giả định mỗi branch connection trỏ một database khác nhau.
 - Không nuốt lỗi migration bằng `catch` rỗng. Nếu cho phép các branch độc lập, log connection/database và lỗi cụ thể; phải báo rõ branch nào không cập nhật. DDL MySQL có thể commit độc lập, nên không coi transaction bọc mọi branch là rollback nguyên tử.
 - `down()` không xóa dữ liệu thiết kế do người dùng sửa nếu migration không sở hữu hoàn toàn dữ liệu đó. Nêu rõ cách rollback và ảnh hưởng.
-- Branch mới được provision bằng chạy các migration hiện có qua `TenantDatabaseService::migrateBranchDatabase`; migration report phải an toàn khi gặp database chưa có data report và không phụ thuộc dữ liệu mẫu riêng của một branch.
+- Branch mới được provision bằng chạy các migration hiện có qua `TenantDatabaseService::migrateBranchDatabase`; migration report phải an toàn khi gặp database chưa có data report và không phụ thuộc dữ liệu mẫu riêng của một branch. Vì runner chạy migration trên DB vừa provision, các migration báo cáo có trong code sẽ được tạo trên DB đó mà không cần thêm alias cố định.
+- Sửa source của migration đã được ghi nhận trong bảng `migrations` không tự chạy lại migration đó trên DB hiện hữu. Khi cần áp dụng lại, xác định rõ quy trình rerun/reset và phạm vi DB; không tự ý reset dữ liệu.
 - Tạo migration file không có nghĩa migration đã chạy. Chỉ chạy lên DB khi nhiệm vụ cho phép; ghi chính xác connection nào đã/ chưa cập nhật.
 
 ## 10. Quy trình làm report mới
@@ -191,6 +192,7 @@ flowchart LR
 - [ ] Parameter schema khớp thứ tự/type procedure; UI schema khớp tên/filter; multi-select/default/date-range hoạt động đúng.
 - [ ] Field aliases khớp 100% `content_json` bindings, group fields, adapter và export fields.
 - [ ] DataSource/definition/template/pivot được đăng ký đúng branch DB; active/menu/default được cấu hình.
+- [ ] Migration chỉ dùng connection đích do runner cung cấp; không lặp qua danh sách branch cố định/configured connections để ghi sang DB khác.
 - [ ] `content_json` phản ánh Design và `content_html` đã được biên dịch/cập nhật cùng lúc; page size, orientation, margins được lưu.
 - [ ] Dataset phụ (nếu có) được tạo bằng adapter được đăng ký; dữ liệu số vẫn là numeric; empty dataset được xử lý.
 - [ ] Bản preview khớp legacy về thứ tự, nhãn, nhóm, tổng, font/layout; print/PDF/XLSX/DOCX được kiểm tra trong phạm vi report.

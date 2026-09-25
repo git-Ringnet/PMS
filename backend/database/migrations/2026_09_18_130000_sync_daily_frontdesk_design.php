@@ -5,14 +5,13 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
     private const TEMPLATE = 'DAILY_FRONTDESK_REFERENCE';
 
     public function up(): void
     {
         $visited = [];
 
-        foreach (self::CONNECTIONS as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             try {
                 $db = DB::connection($connectionName);
                 if ($db->getDriverName() !== 'mysql') {

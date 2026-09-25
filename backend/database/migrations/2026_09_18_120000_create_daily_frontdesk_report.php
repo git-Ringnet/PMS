@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
     private const SOURCE = 'RPT_DAILY_FRONTDESK';
     private const REPORT = 'DAILY_FRONTDESK';
     private const TEMPLATE = 'DAILY_FRONTDESK_REFERENCE';
@@ -14,7 +13,7 @@ return new class extends Migration
     {
         $visited = [];
 
-        foreach (self::CONNECTIONS as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             try {
                 $connection = DB::connection($connectionName);
                 if ($connection->getDriverName() !== 'mysql') {
@@ -417,7 +416,7 @@ SQL;
 
     public function down(): void
     {
-        foreach (self::CONNECTIONS as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             try {
                 $db = DB::connection($connectionName);
                 if ($db->getDriverName() !== 'mysql') {

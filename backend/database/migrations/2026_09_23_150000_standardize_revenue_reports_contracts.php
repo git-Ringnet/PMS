@@ -21,7 +21,7 @@ return new class extends Migration
         $configurations = $this->invoke($baseMigration, 'configurations');
         $visitedDatabases = [];
 
-        foreach ($this->branchConnections() as $connectionName) {
+        foreach ($this->targetConnections() as $connectionName) {
             $db = DB::connection($connectionName);
             if ($db->getDriverName() !== 'mysql') {
                 continue;
@@ -147,11 +147,8 @@ return new class extends Migration
         return $reflection->invokeArgs($migration, $arguments);
     }
 
-    private function branchConnections(): array
+    private function targetConnections(): array
     {
-        return array_values(array_unique(array_merge(
-            [config('database.default', 'mysql')],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        return [DB::getDefaultConnection()];
     }
 };
