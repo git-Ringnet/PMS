@@ -1004,21 +1004,24 @@ class BookingController extends Controller
         // keep its reservation-room dates untouched.
         $canSyncRoomDates = $syncRoomDates && $newArrival >= $sysDateStr;
 
-        $rooms = $booking->bookingRooms()->where('status', \App\Models\BookingRoom::STATUS_BOOKED)->get();
-        foreach ($rooms as $room) {
-            $roomArrival = Carbon::parse($room->arrival_date)->toDateString();
-            $roomDeparture = Carbon::parse($room->departure_date)->toDateString();
+        // Chặn nếu cập nhật ngày booking làm ngày phòng nằm ngoài giai đoạn đăng ký mới (chỉ kiểm tra DB khi request KHÔNG gửi room_allocations)
+        if (!($request->has('room_allocations') && is_array($request->room_allocations))) {
+            $rooms = $booking->bookingRooms()->where('status', \App\Models\BookingRoom::STATUS_BOOKED)->get();
+            foreach ($rooms as $room) {
+                $roomArrival = Carbon::parse($room->arrival_date)->toDateString();
+                $roomDeparture = Carbon::parse($room->departure_date)->toDateString();
 
-            $isBooked = $room->status === \App\Models\BookingRoom::STATUS_BOOKED;
-            if ($isBooked && $canSyncRoomDates) {
-                continue;
-            }
+                $isBooked = $room->status === \App\Models\BookingRoom::STATUS_BOOKED;
+                if ($isBooked && $canSyncRoomDates) {
+                    continue;
+                }
 
-            if ($roomArrival < $newArrival || $roomDeparture > $newDeparture) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Ngày của phòng phải nằm trong giai đoạn của đăng ký ({$newArrival} đến {$newDeparture}). Không thể cập nhật thông tin.",
-                ], 422);
+                if ($roomArrival < $newArrival || $roomDeparture > $newDeparture) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Ngày của phòng phải nằm trong giai đoạn của đăng ký ({$newArrival} đến {$newDeparture}). Không thể cập nhật thông tin.",
+                    ], 422);
+                }
             }
         }
 
@@ -2666,6 +2669,11 @@ class BookingController extends Controller
                 }
 
                 if (!empty($detail['roomNumber'])) {
+                    // Section 7: Bỏ qua phòng tình trạng 100 (phòng đã chuyển) vì nó là phòng cũ trong lịch sử, không check trùng với phòng hiện tại
+                    if ($bookingRoomStatus === 100 || (int)($detail['status'] ?? 0) === 100 || $bookingRoom?->move_room !== null) {
+                        continue;
+                    }
+
                     $roomNumber = $detail['roomNumber'];
                     $room = \App\Models\Room::where('room_number', $roomNumber)->first();
                     if (!$room) {

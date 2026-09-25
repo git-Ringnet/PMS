@@ -507,6 +507,14 @@ async function submitSave() {
       }
 
       uiStore.showToast(res.data?.message || 'Cập nhật nhanh thành công!', 'success')
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('pms-room-updates')
+          bc.postMessage({ type: 'booking-updated', bookingId: props.bookingId, timestamp: Date.now() })
+          bc.postMessage('rooms-updated')
+          bc.close()
+        }
+      } catch (e) {}
       emit('saved', payload)
       close()
     } else {

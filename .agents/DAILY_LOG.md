@@ -18,6 +18,46 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-25] - Hoàn thiện toàn diện Đồng bộ Realtime đa màn hình & Rà soát triệt để các Section Booking 2
+### Module: Đặt phòng / Quản lý đăng ký / Sơ đồ phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue), [SystemSearchModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/SystemSearchModal.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [api.php](file:///d:/PMS/backend/routes/api.php))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi mở 2 tab/màn hình song song cùng một booking (ví dụ: `GAL1`), người dùng ở Tab 1 cập nhật số ngày/đêm từ 3 thành 5 đêm thì Tab 2 không tự động cập nhật, vẫn giữ 3 đêm (lỗi Section 13).
+  - Nguyên nhân:
+    1. Hàm `handleSaveNewBooking` trong [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) sau khi gọi API `updateBooking`, `createBooking`, `addBookingRooms` không phát tín hiệu `notifyRoomUpdates`.
+    2. Ở phía Tab nhận tín hiệu, hàm `refreshMatchingBooking` gọi `fetchBooking` nhưng `fetchBooking` chưa được import ở đầu file, gây ra `ReferenceError: fetchBooking is not defined`.
+    3. Hàm `fillModalForm` chưa được định nghĩa khi modal đang mở ở chế độ xem.
+    4. Nhiều action khác (giao phòng, gán phòng, gỡ số phòng, khóa/mở chuyển phòng, hủy phòng/đăng ký, sao chép, nâng hạng, thêm giường, thêm dịch vụ) chưa phát tín hiệu đồng bộ broadcast.
+- **Nghiệp vụ đã xử lý**:
+  - **Section 13 (Đồng bộ Realtime 2 tab song song & đa màn hình)**:
+    - Bổ sung `fetchBooking` vào imports và định nghĩa hàm `fillModalForm(tab)`.
+    - Viết lại hàm `refreshMatchingBooking`: nhận diện booking theo cả `id`, `dbId`, `bookingCode`, tự động gọi `fetchBooking` cập nhật trực tiếp bản ghi tab trong `tabs.value` và nạp lại form modal nếu đang mở không có thay đổi chưa lưu (`fillModalForm`).
+    - Bổ sung `notifyRoomUpdates(activeTab.value?.dbId)` vào tất cả các action: lưu đăng ký (`handleSaveNewBooking`), giao phòng (`GIAO PHONG`), tự động gán phòng, gỡ số phòng, khóa/mở chuyển phòng, hủy phòng/đăng ký, nhân bản booking, nâng hạng phòng, lưu thêm giường, lưu/xóa dịch vụ bổ sung, cập nhật nhanh, đặt cọc.
+    - Kết nối `BroadcastChannel('pms-room-updates')` và `'pms-channel'` đồng bộ tức thời giữa Room Map và Create Registration.
+  - **Section 2 (Ngày xác nhận)**:
+    - Khi tạo mới: mặc định `confirmDate = sysDate` trong `emptyForm()`.
+    - Trong `handleConfirmDateCalculation(isUserStatusChange = false)`: Nếu là booking cũ (`modalForm.dbId`), chỉ tính lại khi người dùng chủ động đổi trạng thái (`isUserStatusChange = true`), không tự ý đổi khi sửa ngày đến. Khi `calcDate < sysDate`, gán `modalForm.confirmDate = sysDate`.
+  - **Section 3 (Phân quyền FO)**:
+    - Chuẩn hóa route quyền dịch vụ/RM/EB trong [api.php](file:///d:/PMS/backend/routes/api.php) thành `permission:fo.service.add,fo.service.edit`, không bị chặn sai quyền.
+  - **Section 7 (Phòng chuyển)**:
+    - Trong `bookingToTab`: Cột phòng chuyển (`transferredFrom`) tự động truy vết số phòng chuyển đến từ `br.move_room` hoặc phòng chuyển đi tương ứng.
+    - Trong backend [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php): bỏ qua phòng status 100 khi kiểm tra trùng số phòng.
+  - **Section 10 (Gom nhóm thông báo Check-in)**:
+    - Khi giao phòng hàng loạt thất bại, gom các phòng có cùng nguyên nhân lỗi thành 1 dòng (ví dụ: `Phòng 105, 106: đang ở trạng thái chờ kiểm tra (Vacant Clean). Không thể thực hiện nhận phòng.`), tự động loại bỏ tên thông số hệ thống khỏi thông báo.
+  - **Section 15 (Ẩn phòng hủy khi booking active)**:
+    - `filteredActiveRooms`: Chỉ hiển thị các phòng hủy khi trạng thái đăng ký của booking là "Đã hủy" (status = 3).
+  - **Section 16 (SyncRoomDateByBookingDate trên Header & Khóa sửa tên)**:
+    - Bỏ input sửa tên booking trên thanh header summary, luôn hiển thị dạng text cố định.
+    - Ngày đến/đi và Số đêm trên header chỉ cho phép chỉnh sửa khi cấu hình `SyncRoomDateByBookingDate = 1`.
+    - Trong `handleMainDateChange` và `handleMainNightsChange`: chỉ đồng bộ ngày sang phòng con khi `SyncRoomDateByBookingDate = 1` VÀ `checkIn >= sysDate`, và chỉ đồng bộ sang phòng có trạng thái `bookingRoomStatus === 0`.
+  - **Section 17 (Lỗi sửa ngày đi phòng)**:
+    - Backend [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php): Không kiểm tra trùng giai đoạn đối với dữ liệu DB cũ khi request đã gửi mảng `room_allocations` mới.
+  - **Section 19 (Tìm kiếm trạng thái booking khi hủy phòng)**:
+    - [SystemSearchModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/SystemSearchModal.vue): `getDisplayStatus` trả về đúng `booking.status`, không ép về trạng thái 3 khi các phòng con bị hủy.
+- **Kiểm thử**:
+  - Frontend `npm run build` thành công 100%.
+  - Cú pháp PHP hợp lệ 100% trên toàn bộ các file API & Controller.
+
 ## [2026-09-25] - Khắc phục lỗi Tăng/Giảm giá chi tiết từng đêm phòng (Subtable Night Rate Adjustment)
 ### Module: Đặt phòng / Quản lý đăng ký ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 

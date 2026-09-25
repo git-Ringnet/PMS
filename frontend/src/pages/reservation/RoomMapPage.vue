@@ -2080,6 +2080,7 @@ async function changeRoomStatus(room, roomStatusCode) {
 }
 
 let roomMapSyncTimer = null
+let roomMapBc = null
 
 async function refreshRoomMapSnapshot() {
   if (currentTab.value !== 'room-map') return
@@ -2150,6 +2151,14 @@ onMounted(async () => {
       .listen('.reservation.updated', refreshRoomMapSnapshot)
   }
 
+  // Lắng nghe sự kiện realtime qua BroadcastChannel (đồng bộ tức thì giữa các tab)
+  if (typeof BroadcastChannel !== 'undefined') {
+    roomMapBc = new BroadcastChannel('pms-room-updates')
+    roomMapBc.addEventListener('message', () => {
+      refreshRoomMapSnapshot()
+    })
+  }
+
   // Echo là kênh chính; polling là dự phòng khi websocket gián đoạn hoặc tab vừa quay lại.
   roomMapSyncTimer = window.setInterval(refreshRoomMapSnapshot, 15000)
   document.addEventListener('visibilitychange', refreshWhenVisible)
@@ -2162,6 +2171,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', calculateScale)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
   if (roomMapSyncTimer) window.clearInterval(roomMapSyncTimer)
+  if (roomMapBc) {
+    roomMapBc.close()
+    roomMapBc = null
+  }
   // Hủy lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')
